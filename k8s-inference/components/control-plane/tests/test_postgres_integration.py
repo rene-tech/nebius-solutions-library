@@ -2801,6 +2801,7 @@ async def test_scientific_batch_repository_is_durable_fenced_and_excluded_from_g
         service_class=ServiceClass.CUSTOMER_BATCH,
         tenant_queue="scientific",
         model_lane="qwen3-8b",
+        workload_namespace="fs2-models",
         stages=(
             StageSchedulingDecision(
                 stage_id="design",

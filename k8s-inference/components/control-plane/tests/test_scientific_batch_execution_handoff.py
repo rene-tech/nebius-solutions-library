@@ -475,6 +475,7 @@ def scheduling(plan: ScientificBatchPlan) -> SchedulingSnapshot:
         service_class=ServiceClass.CUSTOMER_BATCH,
         tenant_queue="tenant-academic",
         model_lane="alphafold3",
+        workload_namespace="fs2-models",
         stages=tuple(
             StageSchedulingDecision(
                 stage_id=stage.stage_id,
@@ -528,6 +529,7 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
     )
     manifest = renderer.render(resource)
     pod = manifest["spec"]["template"]["spec"]  # type: ignore[index]
+    assert "affinity" not in pod
     model = pod["containers"][0]
     assert {item["mountPath"] for item in model["volumeMounts"]} == {
         "/mnt/fs2-scientific",
@@ -725,7 +727,7 @@ async def test_af3_gpu_stage_materializes_only_validated_cpu_handoff() -> None:
             validator_id=cpu.validator_id,
         )
     )
-    for _ in range(3):
+    for _ in range(5):
         await controller.reconcile_once()
     gpu_resource = cluster.apply_history[-1]
     assert gpu_resource.stage_id == "inference"

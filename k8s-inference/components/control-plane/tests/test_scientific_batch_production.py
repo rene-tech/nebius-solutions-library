@@ -55,7 +55,9 @@ from fs2_serve.scientific_batch.kubernetes import (
     ATTEMPT_LABEL,
     MANIFEST_ANNOTATION,
     HttpScientificBatchCluster,
+    ScientificKubernetesError,
     _failure,
+    _kueue_eviction,
 )
 from fs2_serve.scientific_batch.models import (
     AdapterExecutionPlan,
@@ -81,6 +83,7 @@ from fs2_serve.scientific_batch.models import (
     VerifiedInputManifest,
     WorkloadKind,
     WorkloadObservation,
+    WorkloadRef,
     WorkloadResource,
     WorkloadState,
 )
@@ -91,6 +94,7 @@ from fs2_serve.scientific_batch.profile_catalog import (
     ScientificProfileCatalog,
     ScientificWorkloadProfile,
 )
+from fs2_serve.scientific_batch.protocols import BatchRepositoryConflictError
 from fs2_serve.scientific_batch.scheduling import SchedulingContractError, SchedulingContractResolver
 from fs2_serve.scientific_batch.service import (
     ScientificBatchService,
@@ -577,9 +581,8 @@ async def test_public_http_and_mcp_share_scientific_operation_lifecycle(registry
                     validator_id="protein-design-v1",
                 )
             )
-            await controller.reconcile_once()
-            await controller.reconcile_once()
-            await controller.reconcile_once()
+            for _ in range(5):
+                await controller.reconcile_once()
 
             status = await client.get(f"/v1/operations/{operation_id}")
             events = await client.get(f"/v1/operations/{operation_id}/events")
@@ -664,6 +667,7 @@ def test_internal_state_codec_round_trip_and_rejects_type_coercion() -> None:
         plan=plan,
         captured_at=datetime(2026, 9, 2, tzinfo=UTC),
     )
+    assert snapshot.workload_namespace == "fs2-models"
     state = ScientificBatchState.admit(
         operation_id=uuid4(),
         tenant_id="tenant-a",
@@ -804,6 +808,14 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
             assert body["spec"]["suspend"] is True and body["spec"]["backoffLimit"] == 0
             assert body["spec"]["activeDeadlineSeconds"] == 3600
             assert body["spec"]["template"]["metadata"]["labels"][ATTEMPT_LABEL] == str(attempt_id)
+            pool_expression = body["spec"]["template"]["spec"]["affinity"]["nodeAffinity"][
+                "requiredDuringSchedulingIgnoredDuringExecution"
+            ]["nodeSelectorTerms"][0]["matchExpressions"][-1]
+            assert pool_expression == {
+                "key": "accelerator.fs2.nebius/pool-id",
+                "operator": "In",
+                "values": ["h100-preemptible"],
+            }
             assert MANIFEST_ANNOTATION in body["metadata"]["annotations"]
             body["metadata"]["uid"] = "job-uid"
             return httpx.Response(201, json=body)
@@ -888,7 +900,7 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
 
 
 @pytest.mark.asyncio
-async def test_kubernetes_observer_does_not_infer_actual_admission_before_kueue_resolves(
+async def test_kubernetes_observer_persists_quota_reservation_without_claiming_admitted(
     tmp_path: Path,
 ) -> None:
     attempt_id = uuid4()
@@ -937,7 +949,35 @@ async def test_kubernetes_observer_does_not_infer_actual_admission_before_kueue_
         if request.url.path.endswith("/workloads"):
             return httpx.Response(
                 200,
-                json={"items": [{"metadata": {"uid": "pending-kueue-uid"}, "status": {}}]},
+                json={
+                    "items": [
+                        {
+                            "metadata": {"uid": "pending-kueue-uid"},
+                            "status": {
+                                "conditions": [
+                                    {
+                                        "type": "QuotaReserved",
+                                        "status": "True",
+                                        "lastTransitionTime": "2026-09-02T20:00:00Z",
+                                    }
+                                ],
+                                "admission": {
+                                    "podSetAssignments": [
+                                        {
+                                            "flavors": {"nvidia.com/gpu": "inference-h100-1x"},
+                                            "resourceUsage": {"nvidia.com/gpu": "1"},
+                                        }
+                                    ]
+                                },
+                            },
+                        }
+                    ]
+                },
+            )
+        if request.url.path.endswith("/resourceflavors/inference-h100-1x"):
+            return httpx.Response(
+                200,
+                json={"metadata": {"labels": {"fs2.nebius.ai/pool-id": "h100-preemptible"}}},
             )
         return httpx.Response(200, json={"items": []})
 
@@ -956,9 +996,132 @@ async def test_kubernetes_observer_does_not_infer_actual_admission_before_kueue_
     )
     observation = await cluster.observe(ref)
     assert observation.state is WorkloadState.PENDING
-    assert observation.scheduling_admission is None
+    assert observation.scheduling_admission == SchedulingAdmission(
+        resolved_pool_id="h100-preemptible",
+        admitted_resource_flavor="inference-h100-1x",
+        accelerator_resource_name="nvidia.com/gpu",
+        accelerator_count=1,
+        admitted_at=datetime(2026, 9, 2, 20, 0, tzinfo=UTC),
+    )
     assert LifecyclePhase.ADMITTED not in observation.phases
     assert observation.kueue_workload_uid == "pending-kueue-uid"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_delete_waits_for_uid_absence_and_fences_precondition_conflict(tmp_path: Path) -> None:
+    operation_id = uuid4()
+    ref = WorkloadRef(namespace="fs2-models", name="scientific-delete", kind=WorkloadKind.JOB, uid="job-uid")
+    get_count = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal get_count
+        if request.method == "DELETE":
+            body = json.loads(request.content)
+            assert body["preconditions"] == {"uid": "job-uid"}
+            assert body["propagationPolicy"] == "Foreground"
+            return httpx.Response(202, json={"status": "Success"})
+        get_count += 1
+        if get_count == 3:
+            return httpx.Response(404)
+        return httpx.Response(
+            200,
+            json={
+                "metadata": {
+                    "name": ref.name,
+                    "namespace": ref.namespace,
+                    "uid": ref.uid,
+                    "labels": {"fs2.nebius.ai/operation-id": str(operation_id)},
+                }
+            },
+        )
+
+    token = tmp_path / "delete-token"
+    token.write_text("x" * 32)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.test")
+    cluster = HttpScientificBatchCluster(
+        base_url="https://kubernetes.test",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        controller_id="controller-a",
+        fence=Fence(),
+        renderer=JobRenderer(),
+        writes_enabled=True,
+        client=client,
+    )
+    await cluster.delete(ref, controller_fence=9)
+    assert await cluster.absent(ref) is False
+    assert await cluster.absent(ref) is True
+    await client.aclose()
+
+    async def conflict_handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "DELETE":
+            return httpx.Response(409, json={"reason": "Conflict"})
+        return httpx.Response(
+            200,
+            json={
+                "metadata": {
+                    "name": ref.name,
+                    "namespace": ref.namespace,
+                    "uid": ref.uid,
+                    "labels": {"fs2.nebius.ai/operation-id": str(operation_id)},
+                }
+            },
+        )
+
+    conflict_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(conflict_handler), base_url="https://kubernetes.test"
+    )
+    conflict_cluster = HttpScientificBatchCluster(
+        base_url="https://kubernetes.test",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        controller_id="controller-a",
+        fence=Fence(),
+        renderer=JobRenderer(),
+        writes_enabled=True,
+        client=conflict_client,
+    )
+    with pytest.raises(BatchRepositoryConflictError, match="precondition"):
+        await conflict_cluster.delete(ref, controller_fence=10)
+    await conflict_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_delete_rejects_synchronous_success(tmp_path: Path) -> None:
+    operation_id = uuid4()
+    ref = WorkloadRef(namespace="fs2-models", name="scientific-delete", kind=WorkloadKind.JOB, uid="job-uid")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "DELETE":
+            return httpx.Response(200, json={"status": "Success"})
+        return httpx.Response(
+            200,
+            json={
+                "metadata": {
+                    "name": ref.name,
+                    "namespace": ref.namespace,
+                    "uid": ref.uid,
+                    "labels": {"fs2.nebius.ai/operation-id": str(operation_id)},
+                }
+            },
+        )
+
+    token = tmp_path / "delete-token-200"
+    token.write_text("x" * 32)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.test")
+    cluster = HttpScientificBatchCluster(
+        base_url="https://kubernetes.test",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        controller_id="controller-a",
+        fence=Fence(),
+        renderer=JobRenderer(),
+        writes_enabled=True,
+        client=client,
+    )
+    with pytest.raises(ScientificKubernetesError, match="not accepted asynchronously"):
+        await cluster.delete(ref, controller_fence=9)
     await client.aclose()
 
 
@@ -1191,6 +1354,7 @@ async def test_workload_capability_materializes_and_commits_through_single_artif
         assert not [route for route in app.routes if getattr(route, "path", "").endswith("/commit")]
         await repository.request_cancel(operation_id, tenant_id="tenant-a", actor="test")
         await reconciler.reconcile_once()
+        await reconciler.reconcile_once()
         stale = await client.get(f"/internal/scientific-workloads/artifacts/{input_id}:download")
         assert stale.status_code == 409
     assert artifacts.upload_attempts == [resource.attempt_id] * 3
@@ -1316,6 +1480,14 @@ def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path,
     )
     manifest = renderer.render(resource)
     container = manifest["spec"]["template"]["spec"]["containers"][0]  # type: ignore[index]
+    pool_expressions = manifest["spec"]["template"]["spec"]["affinity"]["nodeAffinity"][  # type: ignore[index]
+        "requiredDuringSchedulingIgnoredDuringExecution"
+    ]["nodeSelectorTerms"][0]["matchExpressions"]
+    assert {
+        "key": "accelerator.fs2.nebius/pool-id",
+        "operator": "In",
+        "values": ["h100-preemptible"],
+    } in pool_expressions
     assert container["image"].endswith("@sha256:" + "a" * 64)
     assert container["command"] == ["python", "-m", "adapter", "run"]
     assert "args" not in container
@@ -1352,7 +1524,10 @@ def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path,
 
 def test_kubernetes_failure_taxonomy_retries_only_known_infrastructure() -> None:
     assert _failure(["BackoffLimitExceeded"])[1] is FailureKind.APPLICATION
-    assert _failure(["Evicted"])[1] is FailureKind.PREEMPTION
+    assert _failure(["Evicted"])[1] is FailureKind.APPLICATION
+    assert _kueue_eviction("Preempted")[1] is FailureKind.PREEMPTION
+    assert _kueue_eviction("EvictedOnManagerCluster")[1] is FailureKind.INFRASTRUCTURE
+    assert _kueue_eviction("DeactivatedByUser")[1] is FailureKind.APPLICATION
     assert _failure(["NodeLost"])[1] is FailureKind.INFRASTRUCTURE
 
 

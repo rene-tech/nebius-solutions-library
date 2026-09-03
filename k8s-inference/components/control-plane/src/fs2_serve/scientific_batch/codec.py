@@ -46,7 +46,7 @@ from .models import (
     WorkloadRef,
 )
 
-STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v6"
+STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v7"
 MAX_STATE_BYTES = 4 * 1024 * 1024
 
 
@@ -235,6 +235,7 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
             "service_class": state.scheduling.service_class.value,
             "tenant_queue": state.scheduling.tenant_queue,
             "model_lane": state.scheduling.model_lane,
+            "workload_namespace": state.scheduling.workload_namespace,
             "stages": [
                 {
                     "stage_id": stage.stage_id,
@@ -275,6 +276,7 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                         },
                         "outcome": attempt.outcome.value,
                         "last_phase": attempt.last_phase.value,
+                        "deletion_requested": attempt.deletion_requested,
                         "resource_released": attempt.resource_released,
                         "scheduling_admission": (
                             None
@@ -602,7 +604,15 @@ def state_from_value(raw: object) -> ScientificBatchState:
 
     scheduling_value = _object(
         value["scheduling"],
-        {"policy_revision", "captured_at", "service_class", "tenant_queue", "model_lane", "stages"},
+        {
+            "policy_revision",
+            "captured_at",
+            "service_class",
+            "tenant_queue",
+            "model_lane",
+            "workload_namespace",
+            "stages",
+        },
         "scientific-batch scheduling snapshot",
     )
     scheduling_keys = {
@@ -658,6 +668,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
         service_class=ServiceClass(_string(scheduling_value["service_class"], "service class")),
         tenant_queue=_string(scheduling_value["tenant_queue"], "tenant queue"),
         model_lane=_string(scheduling_value["model_lane"], "model lane"),
+        workload_namespace=_string(scheduling_value["workload_namespace"], "workload namespace"),
         stages=tuple(decisions),
     )
 
@@ -672,6 +683,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
         "workload",
         "outcome",
         "last_phase",
+        "deletion_requested",
         "resource_released",
         "scheduling_admission",
         "kueue_workload_uid",
@@ -733,6 +745,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
                     ),
                     outcome=AttemptOutcome(_string(attempt["outcome"], "attempt outcome")),
                     last_phase=LifecyclePhase(_string(attempt["last_phase"], "attempt phase")),
+                    deletion_requested=_boolean(attempt["deletion_requested"], "attempt deletion request"),
                     resource_released=_boolean(attempt["resource_released"], "attempt resource release"),
                     scheduling_admission=admission,
                     kueue_workload_uid=_optional_string(attempt["kueue_workload_uid"], "Kueue Workload UID"),
