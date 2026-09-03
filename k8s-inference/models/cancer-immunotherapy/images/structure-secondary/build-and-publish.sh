@@ -4,6 +4,7 @@ set -euo pipefail
 runtime_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 lock_file="${runtime_dir}/image-lock.json"
 mode=build
+sbom_mode=generate
 output_dir="${runtime_dir}/evidence/local"
 registry_root="${FS2_REGISTRY_ROOT:-$(jq -r '.registry_default' "$lock_file")}"
 adapter_worktree="${FS2_RUNTIME_ADAPTER_WORKTREE:-}"
@@ -11,7 +12,7 @@ declare -a requested=()
 
 usage() {
   printf '%s\n' \
-    'usage: build-and-publish.sh [--publish] --adapter-worktree DIR [--registry-root ROOT] [--output-dir DIR] [IMAGE_ID ...]' \
+    'usage: build-and-publish.sh [--publish] [--skip-sbom] --adapter-worktree DIR [--registry-root ROOT] [--output-dir DIR] [IMAGE_ID ...]' \
     '' \
     'Builds linux/amd64 images, runs the weight-free smoke test, and writes SBOMs.' \
     '--publish additionally refuses existing tags, pushes once, and records digests.'
@@ -21,6 +22,10 @@ while (($#)); do
   case "$1" in
     --publish)
       mode=publish
+      shift
+      ;;
+    --skip-sbom)
+      sbom_mode=skip-user-directed
       shift
       ;;
     --output-dir)
@@ -98,7 +103,11 @@ python3 "${runtime_dir}/tests/verify_runtime_adapter_contract.py" \
 adapter_revision="$(git -C "$adapter_worktree" rev-parse HEAD)"
 adapter_branch="$(git -C "$adapter_worktree" symbolic-ref --short HEAD)"
 
-for tool in docker crane jq syft; do
+required_tools=(docker crane jq)
+if [[ "$sbom_mode" == generate ]]; then
+  required_tools+=(syft)
+fi
+for tool in "${required_tools[@]}"; do
   command -v "$tool" >/dev/null || {
     printf 'required tool is missing: %s\n' "$tool" >&2
     exit 1
@@ -217,8 +226,11 @@ for id in "${requested[@]}"; do
   docker inspect "$local_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' | grep -Fx "$revision" >/dev/null
   docker history --no-trunc --format '{{json .}}' "$local_ref" > "${output_dir}/${id}.history.jsonl"
 
-  syft scan "$local_ref" --quiet --output "spdx-json=${output_dir}/${id}.sbom.spdx.json"
-  sbom_sha256="$(sha256sum "${output_dir}/${id}.sbom.spdx.json" | awk '{print $1}')"
+  sbom_sha256=null
+  if [[ "$sbom_mode" == generate ]]; then
+    syft scan "$local_ref" --quiet --output "spdx-json=${output_dir}/${id}.sbom.spdx.json"
+    sbom_sha256="$(sha256sum "${output_dir}/${id}.sbom.spdx.json" | awk '{print $1}')"
+  fi
   published_digest=null
 
   if [[ "$mode" == publish ]]; then
@@ -248,8 +260,9 @@ for id in "${requested[@]}"; do
     --arg local_ref "$local_ref" \
     --argjson smoke "$smoke_json" \
     --arg sbom_sha256 "$sbom_sha256" \
+    --arg sbom_state "$sbom_mode" \
     --arg published_digest "$published_digest" \
-    '{id:$id,source_revision:$source_revision,registry_root:$registry_root,target:$target,local_ref:$local_ref,smoke:$smoke,sbom_sha256:$sbom_sha256,published_digest:(if $published_digest == "null" then null else $published_digest end)}' \
+    '{id:$id,source_revision:$source_revision,registry_root:$registry_root,target:$target,local_ref:$local_ref,smoke:$smoke,sbom_state:$sbom_state,sbom_sha256:(if $sbom_sha256 == "null" then null else $sbom_sha256 end),published_digest:(if $published_digest == "null" then null else $published_digest end)}' \
     >> "$receipt_lines"
 done
 

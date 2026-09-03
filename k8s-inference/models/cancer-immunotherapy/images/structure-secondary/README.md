@@ -265,15 +265,21 @@ Publication is a separate explicit operation:
 
 ```bash
 ./build-and-publish.sh --publish \
+  --skip-sbom \
   --adapter-worktree /path/to/corrected-runtime-adapter-worktree \
   --output-dir /tmp/fs2-structure-image-evidence
 ```
 
+`--skip-sbom` is an explicit user-directed exception for a publication run
+whose earlier local scan evidence is being preserved without regeneration. The
+new receipt records `sbom_state=skip-user-directed` and `sbom_sha256=null`; it
+does not relabel earlier evidence as belonging to the newly built image.
+
 Before the build and again immediately before a push, the script inspects each
 derived destination and refuses to overwrite an existing tag. It never logs in,
 prints credentials, or emits a mutable alias. Build receipts record the selected
-registry root, target, local identity, smoke result, SBOM hash, and—only after a
-successful push—the registry digest. Receipt v2 also binds the exact clean image
+registry root, target, local identity, smoke result, explicit SBOM state/hash,
+and—only after a successful push—the registry digest. Receipt v2 also binds the exact clean image
 source Git revision, fetched `origin/main` revision and merge base, ahead/behind
 state, and the clean pushed runtime-adapter branch/revision whose generated argv
 passed the external parser and mount contract.
