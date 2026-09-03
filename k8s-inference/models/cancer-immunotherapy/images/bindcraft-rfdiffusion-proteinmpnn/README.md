@@ -113,8 +113,13 @@ accepted.
 
 ## Final native successor: production filters and four external trees
 
-`cuda121-r15` is the final native image. It exists because `r14`, built from the
-same BindCraft revision, could not produce truthful production evidence:
+`cuda121-r16` is the final native image. `r14` and `r15` are superseded and
+must not be consumed: `r14` could not produce truthful production evidence, and
+`r15`, which fixed that, predates the controller's runtime-localization marker
+flag. All three are built from the same BindCraft revision `7cd4ace1…`; the tag
+advances because the runtime contract changed, never to overwrite a tag.
+
+`r14` could not produce truthful production evidence because:
 
 * The design metrics read `Average_InterfaceResidues` and `Average_BuriedSASA`,
   which upstream never writes. Both were read with a `"0"` default, so every
@@ -182,13 +187,46 @@ nor the renderer holds a layout: `FS2_BINDCRAFT_EXTERNAL_TREES` points at an
 root and expected identity. A path move that changes no bytes therefore needs no
 rebuild.
 
+### Runtime localization marker
+
+Both `run-trajectory` and `aggregate` require
+`--runtime-localization-marker <absolute path>`. The shared controller
+(`fs2_serve.scientific_batch.models.StageInvocation`) rejects any
+runtime-artifact stage whose argv omits the canonical
+`<working directory>/.fs2/runtime-localization.json`, writes that file itself,
+and exports the same path as `FS2_RUNTIME_LOCALIZATION_MARKER`.
+
+The wrapper reads the marker rather than ignoring it. The controller owns the
+file's schema, so only what it must be is required - an absolute path to a
+readable JSON object, agreeing with the environment variable when that is set -
+and the wrapper records its path, size and SHA-256 in the shard output. When the
+marker carries a `generation` string and the admission document carries one too,
+they must match: a generation that rolls between scheduling and execution then
+fails the shard instead of quietly designing against different weights than the
+scheduler chose. `aggregate` applies the same check across shards, which is the
+only place separately-scheduled Pods can be compared, so one result set can
+never carry two provenances.
+
+The ProteinMPNN lane is a request parameter, not an image constant:
+`FS2_BINDCRAFT_MPNN_WEIGHTS` selects `original` (vanilla) or `soluble`, and with
+the variable unset the pinned advanced template decides. Both weight directories
+are removed from the image and mounted per run.
+
+`run-trajectory` accepts a pre-created empty output directory, because the
+controller creates the stage working directory before starting the container. A
+non-empty one is a re-entered attempt and is rejected rather than merged into.
+
 `qualification/render_semantic_job.py` renders the acceptance run from an
 `fs2.nebius.ai/bindcraft-external-tree-handoff/v1` document. It replaces the
 hand-written native Pod, which pinned a superseded digest and created an *empty*
 `weights_soluble` package - so it read no soluble weights while appearing to
-test that lane. The rendered Job enters the image through its outer entrypoint,
-carries the adapter's argv with the pinned `default_4stage_multimer.json` and
-`default_filters.json` digests, and mounts all four trees read-only:
+test that lane. The rendered Job runs the design stage as an init container and
+the aggregate as the main container over one workspace, because the shard output
+lives on the Pod's own volume and two Jobs could not share it. Both stages enter
+the image through its outer entrypoint, carry the adapter's argv with the pinned
+`default_4stage_multimer.json` and `default_filters.json` digests and the
+localization marker, and mount all four trees read-only; only the design stage
+requests an accelerator:
 
 ```bash
 python3 qualification/render_semantic_job.py \

@@ -20,9 +20,9 @@
         "archive_sha256": "cada0f51f221af568ad0ee84ada2e68317501adad233008d073d66839b1afb8d"
       },
       "dockerfile": "Dockerfile.bindcraft",
-      "build_tag_suffix": "-cuda121-r15",
-      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r15",
-      "supersedes": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:351f8f5fa02f3c74107efa522884301e2c4896b934f9145dfdbbd61b79e57e1f",
+      "build_tag_suffix": "-cuda121-r16",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r16",
+      "supersedes": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:a8ae983d26696e4858e7fbc67a581791c7b26e59544c2fb29c0b34bdcdeedbf5",
       "artifact_kind": "bindcraft-af2-params",
       "external_artifacts": [
         "AlphaFold2 parameters",
