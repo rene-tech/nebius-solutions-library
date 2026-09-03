@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -11,6 +13,14 @@ from pydantic import ValidationError
 
 from fs2_serve.access_models import OperatorPrincipal, OperatorRole, PrincipalKind
 from fs2_serve.api import create_app
+from fs2_serve.fast_start_mechanisms import (
+    GpuResidentQualification,
+    HostMemoryResidencyQualification,
+    RegionalCacheQualification,
+    ResidencyHolder,
+    RetainedCompileCache,
+    WarmPageCacheReadAhead,
+)
 from fs2_serve.model_deployment import (
     FIELD_MANAGER,
     AdoptionMode,
@@ -40,6 +50,7 @@ from fs2_serve.model_deployment import (
     QueueSpec,
     ReconcileAction,
     RenderContext,
+    RenderPlan,
     RolloutSpec,
     RolloutStrategy,
     RuntimeSpec,
@@ -238,8 +249,22 @@ def renderer() -> LegacyManifestRenderer:
                                         "requests": {"nvidia.com/gpu": "1"},
                                         "limits": {"nvidia.com/gpu": "1"},
                                     },
+                                    # The live render mounts the retained payload
+                                    # read-only and discards its JIT cache with
+                                    # the Pod; the fixture mirrors that shape.
+                                    "volumeMounts": [
+                                        {"name": "model", "mountPath": "/models", "readOnly": True},
+                                        {"name": "runtime-cache", "mountPath": "/runtime-cache"},
+                                    ],
                                 }
-                            ]
+                            ],
+                            "volumes": [
+                                {
+                                    "name": "model",
+                                    "persistentVolumeClaim": {"claimName": "qwen-cache-rwx"},
+                                },
+                                {"name": "runtime-cache", "emptyDir": {"sizeLimit": "16Gi"}},
+                            ],
                         },
                     },
                 },
@@ -285,8 +310,7 @@ def modelexpress_qualification(
         coordinator_pod_labels={"fs2-serve.nebius.ai/component": "modelexpress-server"},
         coordinator_cidrs=[],
         pool_refs=selected_pools,
-        pool_transports=pool_transports
-        or {pool_ref: ModelExpressPoolTransport() for pool_ref in selected_pools},
+        pool_transports=pool_transports or {pool_ref: ModelExpressPoolTransport() for pool_ref in selected_pools},
     )
 
 
@@ -678,9 +702,7 @@ def test_renderer_injects_exact_modelexpress_vllm_client_without_claiming_a_leve
     assert container["args"][-2:] == ["--load-format", "modelexpress"]
     environment = {item["name"]: item["value"] for item in container["env"] if "value" in item}
     downward_environment = {
-        item["name"]: item["valueFrom"]["fieldRef"]["fieldPath"]
-        for item in container["env"]
-        if "valueFrom" in item
+        item["name"]: item["valueFrom"]["fieldRef"]["fieldPath"] for item in container["env"] if "valueFrom" in item
     }
     assert environment["MX_SERVER_ADDRESS"] == configured.endpoint
     assert environment["MODEL_EXPRESS_URL"] == configured.endpoint
@@ -709,9 +731,7 @@ def test_renderer_injects_exact_modelexpress_vllm_client_without_claiming_a_leve
     policy_selector = policy["spec"]["podSelector"]["matchLabels"]
     assert policy_selector["fs2-serve.nebius.ai/modelexpress-transfer-group"] == transfer_group
     assert policy["spec"]["ingress"][0] == {
-        "from": [
-            {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}}}
-        ],
+        "from": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}}}],
         "ports": [{"protocol": "TCP", "port": 8000}],
     }
     assert policy["spec"]["ingress"][1]["from"][0]["podSelector"]["matchLabels"] == {
@@ -838,9 +858,7 @@ def test_modelexpress_same_accelerator_hot_and_burst_share_only_compatible_trans
     plan = renderer().render(spec, context)
     deployments = [item.manifest for item in plan.resources if item.kind == "Deployment"]
     transfer_groups = {
-        item["spec"]["template"]["metadata"]["labels"][
-            "fs2-serve.nebius.ai/modelexpress-transfer-group"
-        ]
+        item["spec"]["template"]["metadata"]["labels"]["fs2-serve.nebius.ai/modelexpress-transfer-group"]
         for item in deployments
     }
     assert len(transfer_groups) == 1
@@ -856,9 +874,7 @@ def test_modelexpress_same_accelerator_hot_and_burst_share_only_compatible_trans
     )
     separated = renderer().render(spec, context.model_copy(update={"model_express": incompatible_backend}))
     separated_groups = {
-        item.manifest["spec"]["template"]["metadata"]["labels"][
-            "fs2-serve.nebius.ai/modelexpress-transfer-group"
-        ]
+        item.manifest["spec"]["template"]["metadata"]["labels"]["fs2-serve.nebius.ai/modelexpress-transfer-group"]
         for item in separated.resources
         if item.kind == "Deployment"
     }
@@ -888,9 +904,7 @@ def test_modelexpress_two_pool_binding_allows_a_one_pool_placement_subset() -> N
     plan = renderer().render(spec, context)
 
     deployment = next(item.manifest for item in plan.resources if item.kind == "Deployment")
-    assert deployment["spec"]["template"]["spec"]["nodeSelector"] == {
-        "accelerator.fs2.nebius/pool-id": "reserved-h100"
-    }
+    assert deployment["spec"]["template"]["spec"]["nodeSelector"] == {"accelerator.fs2.nebius/pool-id": "reserved-h100"}
     assert any(item.kind == "NetworkPolicy" for item in plan.resources)
 
 
@@ -955,8 +969,7 @@ def test_actual_qwen_two_pool_render_preserves_inference_dns_https_and_modelexpr
     policies = [item.manifest for item in plan.resources if item.kind == "NetworkPolicy"]
     assert len(deployments) == 2 and len(policies) == 2
     assert all(
-        "app.kubernetes.io/instance" not in item["spec"]["template"]["metadata"]["labels"]
-        for item in deployments
+        "app.kubernetes.io/instance" not in item["spec"]["template"]["metadata"]["labels"] for item in deployments
     )
     for policy in policies:
         assert policy["spec"]["ingress"][0]["ports"] == [{"protocol": "TCP", "port": 8000}]
@@ -989,9 +1002,7 @@ def test_modelexpress_rejects_mixed_accelerators_and_non_vllm_runtime() -> None:
         InfrastructureEnvelope.model_validate(envelope_payload)
 
     qualification_payload["runtimeProfile"] = "nim"
-    qualification_payload["modelExpress"] = modelexpress_qualification("pool-a").model_dump(
-        mode="json", by_alias=True
-    )
+    qualification_payload["modelExpress"] = modelexpress_qualification("pool-a").model_dump(mode="json", by_alias=True)
     with pytest.raises(ValidationError, match="explicit vLLM runtime profile"):
         ModelQualification.model_validate(qualification_payload)
 
@@ -1020,9 +1031,7 @@ def test_modelexpress_external_coordinator_requires_and_renders_an_explicit_cidr
         prometheus_server_address="http://prometheus:9090",
         model_express=configured,
     )
-    policy = next(
-        item.manifest for item in renderer().render(spec, context).resources if item.kind == "NetworkPolicy"
-    )
+    policy = next(item.manifest for item in renderer().render(spec, context).resources if item.kind == "NetworkPolicy")
     assert policy["spec"]["egress"][3] == {
         "to": [{"ipBlock": {"cidr": "192.0.2.0/24"}}],
         "ports": [{"protocol": "TCP", "port": 8443}],
@@ -1389,9 +1398,7 @@ def test_reconcile_prunes_owned_modelexpress_policy_when_integration_is_disabled
         eligible_pools=[envelope().pools["pool-a"]],
         prometheus_server_address="http://prometheus:9090",
     )
-    accelerated_context = plain_context.model_copy(
-        update={"model_express": modelexpress_qualification("pool-a")}
-    )
+    accelerated_context = plain_context.model_copy(update={"model_express": modelexpress_qualification("pool-a")})
     accelerated = renderer().render(spec, accelerated_context)
     observed = [
         ObservedResource(
@@ -1664,3 +1671,143 @@ def test_preview_http_routes_are_feature_gated_and_mutations_return_501(
     assert blocked_adopt.json()["code"] == "model_deployment_writer_disabled"
     assert blocked_delete.status_code == 501
     assert blocked_delete.json()["code"] == "model_deployment_writer_disabled"
+
+
+PLACEHOLDER_DIGEST = "sha256:" + "0" * 64
+
+
+def _self_digested(model: Any, **fields: Any) -> Any:
+    digest_value = model.model_construct(config_digest=PLACEHOLDER_DIGEST, **fields).expected_config_digest()
+    return model(config_digest=digest_value, **fields)
+
+
+def render_regional_cache(pool_refs: Sequence[str] = ("pool-a", "pool-b")) -> RegionalCacheQualification:
+    return _self_digested(
+        RegionalCacheQualification,
+        image_mirror_registry="registry.example",
+        payload_claim_name="qwen-cache-rwx",
+        payload_content_path="/models/qwen/payload",
+        payload_bytes=16397461266,
+        compile_cache=RetainedCompileCache(
+            claim_name="fsm-compile-cache-rwx",
+            sub_path="qwen/driver-580-sm90",
+            abi="driver-580-sm90",
+            mount_path="/runtime-cache",
+            size_limit_bytes=1 << 34,
+        ),
+        warm_page_cache=WarmPageCacheReadAhead(workers=8, read_bytes_limit=1 << 30, timeout_seconds=300),
+        pool_refs=list(pool_refs),
+    )
+
+
+def render_host_memory(pool_refs: Sequence[str] = ("pool-a", "pool-b")) -> HostMemoryResidencyQualification:
+    return _self_digested(
+        HostMemoryResidencyQualification,
+        residency_mode="locked-payload-residency",
+        payload_claim_name="qwen-cache-rwx",
+        payload_content_path="/models/qwen/payload",
+        payload_digest=digest("a"),
+        payload_bytes=16397461266,
+        reserved_bytes=19327352832,
+        node_allocatable_bytes=1648745732096,
+        holder=ResidencyHolder(
+            name="fsm-hostmem-qwen",
+            namespace="fs2-models",
+            receipt_claim_name="fsm-residency-receipt-rwx",
+            receipt_mount_path="/residency",
+        ),
+        receipt_max_age_seconds=180,
+        pool_refs=list(pool_refs),
+    )
+
+
+def render_gpu_resident(pool_refs: Sequence[str] = ("pool-a", "pool-b")) -> GpuResidentQualification:
+    return _self_digested(
+        GpuResidentQualification,
+        residency_mode="standby-engine",
+        standby_replicas=1,
+        accelerators_per_standby_replica=1,
+        minimum_hot_replicas=0,
+        promotion_probe_period_seconds=1,
+        pool_refs=list(pool_refs),
+    )
+
+
+def _pinned(mechanism: str) -> ModelDeploymentSpec:
+    spec = model_spec()
+    wire = spec.model_dump(mode="json", by_alias=True)
+    wire["cache"] = {**wire["cache"], "mechanism": mechanism}
+    return ModelDeploymentSpec.model_validate(wire)
+
+
+def _render(mechanism: str, **context_overrides: Any) -> RenderPlan:
+    base = render_context()
+    context = base.model_copy(update=context_overrides)
+    return renderer().render(_pinned(mechanism), context)
+
+
+def _workload(plan: RenderPlan) -> dict[str, Any]:
+    workloads = [item for item in plan.resources if item.kind == "Deployment" and "hostmem" not in item.name]
+    assert len(workloads) == 1
+    return workloads[0].manifest
+
+
+def test_the_renderer_configures_the_pinned_regional_cache() -> None:
+    plan = _render("regional-cache", regional_cache=render_regional_cache())
+    pod = _workload(plan)["spec"]["template"]
+    volumes = {item["name"]: item for item in pod["spec"]["volumes"]}
+    assert volumes["runtime-cache"]["persistentVolumeClaim"] == {"claimName": "fsm-compile-cache-rwx"}
+    assert pod["metadata"]["annotations"]["fast-start.fs2.nebius/mechanism"] == "regional-cache"
+    assert any(item["name"] == "fs2-warm-page-cache" for item in pod["spec"]["initContainers"])
+
+
+def test_the_renderer_owns_the_host_memory_holder_it_depends_on() -> None:
+    declaration = render_host_memory()
+    plan = _render(
+        "host-memory-residency",
+        host_memory_residency=declaration,
+        residency_holder_image=model_spec().runtime.image,
+    )
+    holders = [item for item in plan.resources if "hostmem" in item.name]
+    assert {item.kind for item in holders} == {"ConfigMap", "Deployment"}
+    holder = next(item for item in holders if item.kind == "Deployment").manifest
+    container = holder["spec"]["template"]["spec"]["containers"][0]
+    assert container["resources"]["requests"]["memory"] == str(declaration.reserved_bytes)
+    # The holder is owned by the ModelDeployment, so deleting the model
+    # reclaims the host RAM instead of stranding it.
+    assert holder["metadata"]["ownerReferences"][0]["kind"] == "ModelDeployment"
+
+    pod = _workload(plan)["spec"]["template"]["spec"]
+    assert pod["affinity"]["podAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]
+    assert any(item["name"] == "fs2-verify-host-memory-residency" for item in pod["initContainers"])
+
+
+def test_a_host_memory_render_without_a_holder_image_is_refused() -> None:
+    with pytest.raises(ValueError, match="holder image"):
+        render_context().model_copy(update={"host_memory_residency": render_host_memory()}).model_validate(
+            {
+                **render_context().model_dump(),
+                "host_memory_residency": render_host_memory().model_dump(),
+            }
+        )
+
+
+def test_the_renderer_parks_a_gpu_resident_standby_on_the_burst_segment() -> None:
+    plan = _render("gpu-resident", gpu_resident=render_gpu_resident())
+    roles = {
+        item.manifest["spec"]["template"]["metadata"]["labels"].get("fast-start.fs2.nebius/gpu-resident-role")
+        for item in plan.resources
+        if item.kind == "Deployment"
+    }
+    assert roles <= {"serving", "standby"}
+    assert "standby" in roles or "serving" in roles
+
+
+def test_a_render_whose_declaration_misses_the_pool_is_refused() -> None:
+    with pytest.raises(ValueError, match="undeclared pool"):
+        render_context().model_copy().model_validate(
+            {
+                **render_context().model_dump(),
+                "regional_cache": render_regional_cache(pool_refs=("pool-a",)).model_dump(),
+            }
+        )

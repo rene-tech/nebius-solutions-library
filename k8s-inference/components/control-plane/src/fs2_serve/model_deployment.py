@@ -46,6 +46,10 @@ from .fast_start_mechanisms import (
     GpuResidentQualification,
     HostMemoryResidencyQualification,
     RegionalCacheQualification,
+    configure_gpu_resident,
+    configure_host_memory_residency,
+    configure_regional_cache,
+    residency_holder_manifests,
 )
 from .models import KubernetesModel
 
@@ -1225,7 +1229,28 @@ class RenderContext(KubernetesModel):
     minimum_total_replicas_override: int | None = Field(default=None, ge=0, le=10000)
     hot_floor_override: int | None = Field(default=None, ge=0, le=10000)
     model_express: ModelExpressQualification | None = None
+    regional_cache: RegionalCacheQualification | None = None
+    host_memory_residency: HostMemoryResidencyQualification | None = None
+    gpu_resident: GpuResidentQualification | None = None
+    residency_holder_image: str | None = Field(
+        default=None,
+        min_length=73,
+        max_length=768,
+        pattern=IMAGE_DIGEST_PATTERN,
+    )
     preview: bool = False
+
+    def mechanism_declaration(
+        self,
+        mechanism: FastStartMechanism,
+    ) -> RegionalCacheQualification | HostMemoryResidencyQualification | GpuResidentQualification | None:
+        if mechanism is FastStartMechanism.REGIONAL_CACHE:
+            return self.regional_cache
+        if mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY:
+            return self.host_memory_residency
+        if mechanism is FastStartMechanism.GPU_RESIDENT:
+            return self.gpu_resident
+        return None
 
     @model_validator(mode="after")
     def owner_required_for_apply(self) -> RenderContext:
@@ -1242,6 +1267,17 @@ class RenderContext(KubernetesModel):
                 raise ValueError("ModelExpress render context contains an unqualified pool")
             if len({item.accelerator_class for item in pools}) != 1:
                 raise ValueError("ModelExpress v0.5.1 render requires one accelerator class")
+        selected_pool_ids = {item.pool_id for item in pools}
+        for mechanism in DECLARED_MECHANISMS:
+            declaration = self.mechanism_declaration(mechanism)
+            if declaration is None:
+                continue
+            if not selected_pool_ids.issubset(declaration.pool_refs):
+                raise ValueError("fast-start mechanism render context contains an undeclared pool")
+        residency = self.host_memory_residency
+        if residency is not None and residency.residency_mode != "runtime-sleep-offload":
+            if self.residency_holder_image is None:
+                raise ValueError("a host-memory residency render needs the holder image")
         return self
 
 
@@ -1974,6 +2010,7 @@ class LegacyManifestRenderer:
             raise ValueError("legacy template primary workload is missing")
 
         known_gpu_resources = {pool.resource_name for pool in (context.eligible_pools or [context.pool])}
+        residency_holders: dict[str, tuple[HostMemoryResidencyQualification, PoolEnvelope]] = {}
         for segment in segments:
             workload = copy.deepcopy(primary_template)
             workload_metadata = workload["metadata"]
@@ -2058,6 +2095,43 @@ class LegacyManifestRenderer:
                     **pod_metadata.get("labels", {}),
                     MODEL_EXPRESS_TRANSFER_GROUP_LABEL: transfer_group,
                 }
+            mechanism = spec.cache.mechanism
+            if mechanism is not None and mechanism in DECLARED_MECHANISMS:
+                declaration = context.mechanism_declaration(mechanism)
+                if declaration is None:
+                    raise ValueError("the selected cold-start mechanism has no reviewed declaration")
+                if segment.pool.pool_id not in declaration.pool_refs:
+                    raise ValueError("the selected cold-start mechanism is not declared for the rendered pool")
+                if isinstance(declaration, RegionalCacheQualification):
+                    configure_regional_cache(
+                        pod_spec=pod_spec,
+                        pod_metadata=pod_metadata,
+                        qualification=declaration,
+                        runtime_image=spec.runtime.image,
+                        runtime_container_name=bundle.runtime_container_name,
+                    )
+                elif isinstance(declaration, HostMemoryResidencyQualification):
+                    configure_host_memory_residency(
+                        pod_spec=pod_spec,
+                        pod_metadata=pod_metadata,
+                        qualification=declaration,
+                        runtime_image=spec.runtime.image,
+                        model_ref=bounded_label_value(spec.model_ref),
+                        runtime_container_name=bundle.runtime_container_name,
+                    )
+                    if declaration.residency_mode != "runtime-sleep-offload":
+                        residency_holders.setdefault(segment.pool.pool_id, (declaration, segment.pool))
+                else:
+                    configure_gpu_resident(
+                        pod_spec=pod_spec,
+                        pod_metadata=pod_metadata,
+                        qualification=declaration,
+                        configured_hot_replicas=hot_floor,
+                        # The hot segment is the promoted serving set; a burst
+                        # segment is where a parked standby waits for promotion.
+                        role="serving" if segment.role == "hot" else "standby",
+                        runtime_container_name=bundle.runtime_container_name,
+                    )
             resources = container.setdefault("resources", {})
             for field in ("requests", "limits"):
                 values = resources.setdefault(field, {})
@@ -2157,6 +2231,23 @@ class LegacyManifestRenderer:
             if owner_references:
                 scaler["metadata"]["ownerReferences"] = owner_references
             rendered.append(scaler)
+
+        for pool_id, (residency, pool) in sorted(residency_holders.items()):
+            assert context.residency_holder_image is not None
+            rendered.extend(
+                residency_holder_manifests(
+                    namespace=context.namespace,
+                    name=_derived_name("fs2-hostmem-", f"{context.name}-{pool_id}"),
+                    model_ref=bounded_label_value(spec.model_ref),
+                    qualification=residency,
+                    image=context.residency_holder_image,
+                    node_selector=pool.node_selector,
+                    tolerations=pool.tolerations,
+                    labels=labels,
+                    annotations=annotations,
+                    owner_references=owner_references,
+                )
+            )
 
         if spec.lifecycle.desired_state is DesiredState.ENABLED:
             if spec.exposure.open_ai or spec.exposure.mcp:
