@@ -5,81 +5,234 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema", "request_id", "tenant_id", "workload_id", "input",
-    "reference_data", "backend", "privacy", "output", "execution"
+    "schema",
+    "request_id",
+    "tenant_id",
+    "workload_id",
+    "input",
+    "reference_data",
+    "backend",
+    "privacy",
+    "output",
+    "execution"
   ],
   "properties": {
-    "schema": {"const": "fs2-serve.nebius.ai/private-preprocess-request/v1"},
-    "request_id": {"type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"},
-    "tenant_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
-    "workload_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
-    "input": {"$ref": "#/$defs/immutableObject"},
+    "schema": {
+      "const": "fs2-serve.nebius.ai/private-preprocess-request/v1"
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+    },
+    "tenant_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "workload_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "input": {
+      "$ref": "#/$defs/immutableObject"
+    },
     "reference_data": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["bundle_id", "revision", "manifest_uri", "manifest_sha256"],
+      "required": [
+        "bundle_id",
+        "revision",
+        "manifest_uri",
+        "manifest_sha256"
+      ],
       "properties": {
-        "bundle_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
-        "revision": {"type": "string", "minLength": 1},
-        "manifest_uri": {"type": "string", "pattern": "^(s3://|file:///).+/(?:sha256/)?[a-f0-9]{64}\\.json$"},
-        "manifest_sha256": {"$ref": "#/$defs/sha256"}
+        "bundle_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest_uri": {
+          "type": "string",
+          "pattern": "^(s3://|file:///).+/(?:sha256/)?[a-f0-9]{64}\\.json$"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
       }
     },
     "backend": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "database_root", "output_format", "threads"],
+      "required": [
+        "kind",
+        "database_root",
+        "output_format",
+        "threads"
+      ],
       "properties": {
-        "kind": {"enum": ["colabfold-search", "protenix-inputprep", "alphafold3-data"]},
-        "database_root": {"type": "string", "pattern": "^/reference-data(?:/|$)"},
-        "output_format": {"enum": ["a3m", "alphafold3-json", "protenix-json"]},
-        "threads": {"type": "integer", "minimum": 1, "maximum": 128}
+        "kind": {
+          "enum": [
+            "colabfold-search",
+            "protenix-inputprep",
+            "alphafold3-data"
+          ]
+        },
+        "database_root": {
+          "type": "string",
+          "pattern": "^/reference-data(?:/|$)"
+        },
+        "output_format": {
+          "enum": [
+            "a3m",
+            "alphafold3-json",
+            "protenix-json"
+          ]
+        },
+        "threads": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "entrypoint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "interpreter",
+            "script"
+          ],
+          "description": "Explicit interpreter and entrypoint inside the runtime image. Only the alphafold3-data backend accepts it; other backends resolve their own executable.",
+          "properties": {
+            "interpreter": {
+              "type": "string",
+              "pattern": "^/[A-Za-z0-9._/+-]*$"
+            },
+            "script": {
+              "type": "string",
+              "pattern": "^/[A-Za-z0-9._/+-]*$"
+            }
+          }
+        }
       }
     },
     "privacy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["network_mode", "public_msa_opt_in", "log_sequence_content"],
+      "required": [
+        "network_mode",
+        "public_msa_opt_in",
+        "log_sequence_content"
+      ],
       "properties": {
-        "network_mode": {"enum": ["private-only", "public-opt-in"]},
-        "public_msa_opt_in": {"type": "boolean"},
-        "log_sequence_content": {"const": false}
+        "network_mode": {
+          "enum": [
+            "private-only",
+            "public-opt-in"
+          ]
+        },
+        "public_msa_opt_in": {
+          "type": "boolean"
+        },
+        "log_sequence_content": {
+          "const": false
+        }
       }
     },
     "output": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["prefix_uri", "retention_days"],
+      "required": [
+        "prefix_uri",
+        "retention_days"
+      ],
       "properties": {
-        "prefix_uri": {"type": "string", "pattern": "^(s3://|file:///).+"},
-        "retention_days": {"type": "integer", "minimum": 1, "maximum": 3650}
+        "prefix_uri": {
+          "type": "string",
+          "pattern": "^(s3://|file:///).+"
+        },
+        "retention_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        }
       }
     },
     "execution": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["image", "cpu", "memory", "ephemeral_storage", "active_deadline_seconds", "backoff_limit"],
+      "required": [
+        "image",
+        "cpu",
+        "memory",
+        "ephemeral_storage",
+        "active_deadline_seconds",
+        "backoff_limit"
+      ],
       "properties": {
-        "image": {"type": "string", "pattern": "^[^@\\s]+@sha256:[a-f0-9]{64}$"},
-        "cpu": {"type": "string", "pattern": "^[1-9][0-9]*$"},
-        "memory": {"type": "string", "pattern": "^[1-9][0-9]*(Mi|Gi)$"},
-        "ephemeral_storage": {"type": "string", "pattern": "^[1-9][0-9]*(Mi|Gi)$"},
-        "active_deadline_seconds": {"type": "integer", "minimum": 60, "maximum": 604800},
-        "backoff_limit": {"type": "integer", "minimum": 0, "maximum": 10}
+        "image": {
+          "type": "string",
+          "pattern": "^[^@\\s]+@sha256:[a-f0-9]{64}$"
+        },
+        "cpu": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "memory": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*(Mi|Gi)$"
+        },
+        "ephemeral_storage": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*(Mi|Gi)$"
+        },
+        "active_deadline_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 604800
+        },
+        "backoff_limit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        }
       }
     }
   },
   "$defs": {
-    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
     "immutableObject": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["uri", "sha256", "bytes", "media_type"],
+      "required": [
+        "uri",
+        "sha256",
+        "bytes",
+        "media_type"
+      ],
       "properties": {
-        "uri": {"type": "string", "pattern": "^(s3://|file:///).+/(?:sha256/)?[a-f0-9]{64}(?:\\.[A-Za-z0-9._-]+)?$"},
-        "sha256": {"$ref": "#/$defs/sha256"},
-        "bytes": {"type": "integer", "minimum": 1},
-        "media_type": {"enum": ["text/x-fasta", "application/json", "chemical/x-pdb", "chemical/x-mmcif"]}
+        "uri": {
+          "type": "string",
+          "pattern": "^(s3://|file:///).+/(?:sha256/)?[a-f0-9]{64}(?:\\.[A-Za-z0-9._-]+)?$"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "media_type": {
+          "enum": [
+            "text/x-fasta",
+            "application/json",
+            "chemical/x-pdb",
+            "chemical/x-mmcif"
+          ]
+        }
       }
     }
   }

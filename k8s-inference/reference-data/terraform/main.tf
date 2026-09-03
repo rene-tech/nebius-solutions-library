@@ -21,6 +21,8 @@ locals {
     "--bundle", var.pipeline.bundle_id,
     "--root", "/reference-data",
     "--object-store-prefix", "s3://${var.object_bucket_name}/reference-data",
+    "--placement", "/etc/fs2-placement/placement.json",
+    "--host-root", var.shared_filesystem_host_path,
   ]
   pipeline_resources = {
     requests = {
@@ -73,6 +75,128 @@ locals {
     value    = var.cpu_pool.taint.value
     effect   = var.cpu_pool.taint.effect
   }]
+  model_requirements = jsondecode(file("${path.module}/../model-requirements.json"))
+  # The bulk stager only downloads, decompresses and hashes. The AlphaFold 3
+  # data pipeline runs jackhmmer and nhmmer over the genetic databases and is
+  # the CPU and memory bound stage, so it declares its own floor.
+  raw_input_required                = local.model_requirements.models.alphafold3.preprocessing_capacity
+  raw_input_required_cpu_millicores = tonumber(local.raw_input_required.cpu) * 1000
+  raw_input_required_memory_parts   = regex("^([1-9][0-9]*)(Ki|Mi|Gi|Ti)$", local.raw_input_required.memory)
+  raw_input_required_memory_mib     = tonumber(local.raw_input_required_memory_parts[0]) * lookup({ Ki = 1 / 1024, Mi = 1, Gi = 1024, Ti = 1048576 }, local.raw_input_required_memory_parts[1])
+  raw_input_required_ephemeral_parts = regex(
+    "^([1-9][0-9]*)(Ki|Mi|Gi|Ti)$",
+    local.raw_input_required.ephemeral_storage,
+  )
+  raw_input_required_ephemeral_mib = tonumber(local.raw_input_required_ephemeral_parts[0]) * lookup({ Ki = 1 / 1024, Mi = 1, Gi = 1024, Ti = 1048576 }, local.raw_input_required_ephemeral_parts[1])
+  preprocess_memory_parts          = regex("^([1-9][0-9]*)(Ki|Mi|Gi|Ti)$", var.preprocess.memory)
+  preprocess_memory_mib            = tonumber(local.preprocess_memory_parts[0]) * lookup({ Ki = 1 / 1024, Mi = 1, Gi = 1024, Ti = 1048576 }, local.preprocess_memory_parts[1])
+  preprocess_ephemeral_parts = regex(
+    "^([1-9][0-9]*)(Ki|Mi|Gi|Ti)$",
+    var.preprocess.ephemeral_storage,
+  )
+  preprocess_ephemeral_mib  = tonumber(local.preprocess_ephemeral_parts[0]) * lookup({ Ki = 1 / 1024, Mi = 1, Gi = 1024, Ti = 1048576 }, local.preprocess_ephemeral_parts[1])
+  preprocess_cpu_millicores = endswith(var.preprocess.cpu, "m") ? tonumber(trimsuffix(var.preprocess.cpu, "m")) : tonumber(var.preprocess.cpu) * 1000
+  # Only the CPU pools and stages this plane owns are rendered here. The
+  # accelerator stage stays with the model plane, so the reference-data module
+  # never names an accelerator resource.
+  placement_contract = {
+    schema       = "fs2-serve.nebius.ai/reference-data-placement-contract/v1"
+    generated_at = "2026-09-03T00:00:00Z"
+    pools = {
+      "reference-cpu" = {
+        resource_class = "cpu"
+        node_selector  = var.cpu_pool.node_labels
+        tolerations    = local.pipeline_tolerations
+        schedulable_capacity = {
+          cpu_millicores        = var.cpu_pool.schedulable_capacity.cpu_millicores
+          memory_mib            = var.cpu_pool.schedulable_capacity.memory_mib
+          ephemeral_storage_mib = var.cpu_pool.schedulable_capacity.ephemeral_storage_mib
+        }
+        queue = {
+          local_queue         = var.queue.local_queue
+          cluster_queue       = var.queue.cluster_queue
+          nominal_cpu         = var.queue.nominal_cpu
+          nominal_memory      = var.queue.nominal_memory
+          nominal_accelerator = null
+        }
+      }
+    }
+    stages = {
+      "staging" = {
+        pool = "reference-cpu"
+        defaults = {
+          cpu                     = var.pipeline.cpu
+          memory                  = var.pipeline.memory
+          ephemeral_storage       = var.pipeline.ephemeral_storage
+          active_deadline_seconds = var.pipeline.active_deadline_seconds
+          backoff_limit           = var.pipeline.backoff_limit
+          threads                 = tonumber(var.pipeline.cpu)
+        }
+      }
+      "raw-input" = {
+        pool = "reference-cpu"
+        defaults = {
+          cpu                     = var.preprocess.cpu
+          memory                  = var.preprocess.memory
+          ephemeral_storage       = var.preprocess.ephemeral_storage
+          active_deadline_seconds = var.preprocess.active_deadline_seconds
+          backoff_limit           = var.preprocess.backoff_limit
+          threads                 = var.preprocess.threads
+        }
+      }
+    }
+  }
+  placement_config_map = "fs2-reference-data-placement-${substr(sha256(jsonencode(local.placement_contract)), 0, 12)}"
+  raw_input_capacity = {
+    required = {
+      cpu               = local.raw_input_required.cpu
+      memory            = local.raw_input_required.memory
+      ephemeral_storage = local.raw_input_required.ephemeral_storage
+      rationale         = local.raw_input_required.rationale
+    }
+    declared = {
+      cpu               = var.preprocess.cpu
+      memory            = var.preprocess.memory
+      ephemeral_storage = var.preprocess.ephemeral_storage
+    }
+    pool = {
+      preset               = var.cpu_pool.preset
+      schedulable_capacity = var.cpu_pool.schedulable_capacity
+      nominal_cpu          = var.queue.nominal_cpu
+      nominal_memory       = var.queue.nominal_memory
+    }
+    # Whether the currently declared pool can actually admit the lane.
+    runnable_on_declared_pool = (
+      local.preprocess_cpu_millicores <= var.cpu_pool.schedulable_capacity.cpu_millicores &&
+      local.preprocess_memory_mib <= var.cpu_pool.schedulable_capacity.memory_mib &&
+      local.preprocess_ephemeral_mib <= var.cpu_pool.schedulable_capacity.ephemeral_storage_mib &&
+      local.preprocess_cpu_millicores <= local.queue_cpu_millicores &&
+      local.preprocess_memory_mib <= local.queue_memory_mib
+    )
+  }
+  # The single public handoff a runtime, controller or Terraform stage binds.
+  handoff_contract = {
+    schema                     = "fs2-serve.nebius.ai/reference-data-terminal-receipt/v1"
+    host_root                  = var.shared_filesystem_host_path
+    mount_path                 = "/reference-data"
+    receipt_sub_path           = "receipts/${var.pipeline.bundle_id}/${local.selected_bundle.revision}.json"
+    status_sub_path            = "status/${var.pipeline.bundle_id}.json"
+    dataset_sub_path_template  = "datasets/${var.pipeline.bundle_id}/${local.selected_bundle.revision}/sha256/<tree_sha256>"
+    max_inline_inventory_files = 4096
+    fields = [
+      "storage.host_root",
+      "storage.mount_path",
+      "storage.dataset_sub_path",
+      "storage.read_only",
+      "content.tree_sha256",
+      "content.manifest_sha256",
+      "content.inventory_sha256",
+      "content.inventory_marker",
+      "content.file_count",
+      "content.expanded_bytes",
+      "content.inline_inventory",
+    ]
+  }
   pipeline_catalog_name = "fs2-stage-af3-catalog-${substr(sha256(jsonencode({
     bundle_id = var.pipeline.bundle_id
     catalog   = local.source_catalog_sha256
@@ -138,6 +262,7 @@ locals {
           { name = "reference-data", mountPath = "/reference-data" },
           { name = "tools", mountPath = "/opt/fs2/reference-data", readOnly = true },
           { name = "catalog", mountPath = "/etc/fs2-stage", readOnly = true },
+          { name = "placement", mountPath = "/etc/fs2-placement", readOnly = true },
           { name = "work", mountPath = "/work" },
         ]
       }]
@@ -160,6 +285,13 @@ locals {
           name = "catalog"
           configMap = {
             name        = local.pipeline_catalog_name
+            defaultMode = 292
+          }
+        },
+        {
+          name = "placement"
+          configMap = {
+            name        = local.placement_config_map
             defaultMode = 292
           }
         },
@@ -218,6 +350,12 @@ resource "terraform_data" "region_contract" {
     object_storage_region = var.object_storage_region
     namespace             = var.namespace
     object_storage_secret = local.credentials_secret
+    placement_contract    = local.placement_contract
+    placement_config_map  = local.placement_config_map
+    pipeline_command      = local.pipeline_command
+    pipeline_pod_template = local.pipeline_pod_template
+    handoff_contract      = local.handoff_contract
+    raw_input_capacity    = local.raw_input_capacity
   }
   lifecycle {
     precondition {
@@ -252,6 +390,19 @@ resource "terraform_data" "region_contract" {
         local.required_capacity.ephemeral_storage_mib <= local.total_schedulable_capacity.ephemeral_storage_mib
       )
       error_message = "pipeline/status requests and Kueue quotas exceed the declared schedulable capacity of the dedicated tainted CPU preprocessing pool; the system node is not fallback capacity."
+    }
+    # The raw-input lane is sized by the model's declared requirement, not by
+    # whatever the current pool happens to fit. Under-declaring it would
+    # advertise a data-pipeline lane that cannot run; whether the pool is large
+    # enough yet is reported by the raw_input_capacity output, not enforced
+    # here, so a fitting CPU class can be planned before it exists.
+    precondition {
+      condition = (
+        local.preprocess_cpu_millicores >= local.raw_input_required_cpu_millicores &&
+        local.preprocess_memory_mib >= local.raw_input_required_memory_mib &&
+        local.preprocess_ephemeral_mib >= local.raw_input_required_ephemeral_mib
+      )
+      error_message = "raw-input preprocessing is declared below the AlphaFold3 data-pipeline requirement recorded in reference-data/model-requirements.json; the bulk reference-data stager's 6 CPU / 24Gi sizing does not run the data pipeline."
     }
   }
 }
@@ -507,6 +658,18 @@ resource "kubernetes_network_policy_v1" "public_source_staging" {
         port     = "443"
       }
     }
+  }
+}
+
+resource "kubernetes_config_map_v1" "placement" {
+  metadata {
+    name      = local.placement_config_map
+    namespace = kubernetes_namespace_v1.reference_data.metadata[0].name
+    labels    = local.common_labels
+  }
+  immutable = true
+  data = {
+    "placement.json" = jsonencode(local.placement_contract)
   }
 }
 

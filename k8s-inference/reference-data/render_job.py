@@ -19,7 +19,10 @@ from typing import Any, Mapping, Sequence
 from reference_data import (
     ContractError,
     canonical_json,
+    check_execution_fits,
     load_json,
+    load_placement_contract,
+    resolve_stage_placement,
     validate_access_receipt,
     validate_catalog,
     validate_preprocess_request,
@@ -64,6 +67,8 @@ def _base_job(
     config_maps: list[dict[str, str]],
     credentials_secret: str | None,
     object_storage_endpoint: str | None,
+    node_selector: Mapping[str, str],
+    tolerations: Sequence[Mapping[str, str]],
 ) -> dict[str, Any]:
     volumes: list[dict[str, Any]] = [
         {
@@ -132,18 +137,8 @@ def _base_job(
                     "serviceAccountName": "fs2-reference-data",
                     "automountServiceAccountToken": False,
                     "enableServiceLinks": False,
-                    "nodeSelector": {
-                        "workload.fs2.nebius/reference-data": "true",
-                        "capacity.fs2.nebius/type": "regular",
-                        "capacity.fs2.nebius/pool": "reference-data",
-                        "storage.fs2.nebius/reference-data": "true",
-                    },
-                    "tolerations": [{
-                        "key": "workload.fs2.nebius/reference-data",
-                        "operator": "Equal",
-                        "value": "true",
-                        "effect": "NoSchedule",
-                    }],
+                    "nodeSelector": dict(node_selector),
+                    "tolerations": [dict(item) for item in tolerations],
                     "securityContext": {
                         "runAsNonRoot": True,
                         "runAsUser": 1000,
@@ -178,8 +173,32 @@ def _base_job(
     }
 
 
+def _placement(args: argparse.Namespace, stage_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Resolve one stage's placement and sizing from the tfvars-derived contract."""
+    contract = load_placement_contract(getattr(args, "placement", None))
+    return contract, resolve_stage_placement(contract, stage_id)
+
+
+def _sized_execution(placement: Mapping[str, Any], overrides: Mapping[str, Any]) -> dict[str, Any]:
+    """Apply explicit overrides on top of the contract's stage defaults."""
+    execution = dict(placement["defaults"])
+    for key, value in overrides.items():
+        if value is not None:
+            execution[key] = value
+    return execution
+
+
 def render_stage(args: argparse.Namespace) -> dict[str, Any]:
     namespace = _reference_namespace(args.namespace)
+    contract, placement = _placement(args, "staging")
+    execution = _sized_execution(placement, {
+        "cpu": getattr(args, "cpu", None),
+        "memory": getattr(args, "memory", None),
+        "ephemeral_storage": getattr(args, "ephemeral_storage", None),
+        "active_deadline_seconds": getattr(args, "active_deadline_seconds", None),
+        "backoff_limit": getattr(args, "backoff_limit", None),
+    })
+    check_execution_fits(execution, contract, "staging")
     catalog = validate_catalog(load_json(args.catalog))
     if args.bundle not in catalog["bundles"]:
         raise ContractError(f"unknown bundle id {args.bundle}")
@@ -222,13 +241,15 @@ def render_stage(args: argparse.Namespace) -> dict[str, Any]:
             "reference-data.fs2.nebius.ai/bundle": args.bundle,
             "reference-data.fs2.nebius.ai/network-mode": "public-source-staging",
         },
-        cpu=args.cpu,
-        memory=args.memory,
-        ephemeral_storage=args.ephemeral_storage,
-        active_deadline_seconds=args.active_deadline_seconds,
-        backoff_limit=args.backoff_limit,
+        cpu=execution["cpu"],
+        memory=execution["memory"],
+        ephemeral_storage=execution["ephemeral_storage"],
+        active_deadline_seconds=execution["active_deadline_seconds"],
+        backoff_limit=execution["backoff_limit"],
         shared_host_path=args.shared_host_path,
         reference_data_read_only=False,
+        node_selector=placement["node_selector"],
+        tolerations=placement["tolerations"],
         telemetry_host_path=None,
         config_maps=[
             {"volume": "tools", "name": args.tools_config_map, "mount": "/opt/fs2/reference-data"},
@@ -242,7 +263,9 @@ def render_stage(args: argparse.Namespace) -> dict[str, Any]:
 
 def render_preprocess(args: argparse.Namespace) -> dict[str, Any]:
     namespace = _reference_namespace(args.namespace)
+    contract, placement = _placement(args, "raw-input")
     document = validate_preprocess_request(load_json(args.request), allow_public_msa=args.allow_public_msa)
+    check_execution_fits(document["execution"], contract, "raw-input")
     digest = hashlib.sha256(canonical_json(document)).hexdigest()
     config_name = f"fs2-preprocess-{digest[:12]}"
     network_mode = document["privacy"]["network_mode"]
@@ -279,6 +302,8 @@ def render_preprocess(args: argparse.Namespace) -> dict[str, Any]:
         backoff_limit=execution["backoff_limit"],
         shared_host_path=args.shared_host_path,
         reference_data_read_only=True,
+        node_selector=placement["node_selector"],
+        tolerations=placement["tolerations"],
         telemetry_host_path=f"{args.shared_host_path.rstrip('/')}/telemetry",
         config_maps=[
             {"volume": "tools", "name": args.tools_config_map, "mount": "/opt/fs2/reference-data"},
@@ -290,6 +315,84 @@ def render_preprocess(args: argparse.Namespace) -> dict[str, Any]:
     return {"apiVersion": "v1", "kind": "List", "items": [config_map, job]}
 
 
+ROUTE_SCHEMA = "fs2-serve.nebius.ai/reference-data-stage-route/v1"
+
+
+def render_route(args: argparse.Namespace) -> dict[str, Any]:
+    """Resolve the two independently placed stages of a raw-input request.
+
+    The data pipeline is a CPU Job on the dedicated reference pool. Inference
+    is a separate stage placed by accelerator flavor, and it consumes only the
+    immutable digests the data stage publishes, so no accelerator is ever
+    allocated while reference databases are being read.
+    """
+    contract, raw_input = _placement(args, "raw-input")
+    inference = resolve_stage_placement(contract, "inference")
+    document = validate_preprocess_request(load_json(args.request), allow_public_msa=args.allow_public_msa)
+    check_execution_fits(document["execution"], contract, "raw-input")
+    check_execution_fits(inference["defaults"], contract, "inference")
+    if "accelerator" in raw_input:
+        raise ContractError("the raw-input stage must not reserve an accelerator")
+    rendered = render_preprocess(args)
+    request_sha256 = hashlib.sha256(canonical_json(document)).hexdigest()
+    return {
+        "schema": ROUTE_SCHEMA,
+        "request_id": document["request_id"],
+        "request_sha256": request_sha256,
+        "reference_data": dict(document["reference_data"]),
+        "stages": [
+            {
+                "id": "raw-input",
+                "resource_class": raw_input["resource_class"],
+                "pool": raw_input["pool"],
+                "queue": raw_input["queue"],
+                "node_selector": raw_input["node_selector"],
+                "tolerations": raw_input["tolerations"],
+                "resources": {
+                    "cpu": document["execution"]["cpu"],
+                    "memory": document["execution"]["memory"],
+                    "ephemeral_storage": document["execution"]["ephemeral_storage"],
+                },
+                "job": rendered["items"][1]["metadata"]["name"],
+                "produces": {
+                    "result_schema": "fs2-serve.nebius.ai/private-preprocess-result/v1",
+                    "output_prefix_uri": document["output"]["prefix_uri"],
+                    "binds": ["request_sha256", "result_manifest_sha256"],
+                },
+            },
+            {
+                "id": "inference",
+                "resource_class": inference["resource_class"],
+                "pool": inference["pool"],
+                "queue": inference["queue"],
+                "node_selector": inference["node_selector"],
+                "tolerations": inference["tolerations"],
+                "accelerator": inference["accelerator"],
+                "resources": {
+                    "cpu": inference["defaults"]["cpu"],
+                    "memory": inference["defaults"]["memory"],
+                    "ephemeral_storage": inference["defaults"]["ephemeral_storage"],
+                },
+                "needs": ["raw-input"],
+                "consumes": {
+                    "handoff_schema": "fs2-serve.nebius.ai/reference-data-terminal-receipt/v1",
+                    "binds": [
+                        "storage.host_root",
+                        "storage.dataset_sub_path",
+                        "content.tree_sha256",
+                        "content.manifest_sha256",
+                        "content.inventory_sha256",
+                        "content.file_count",
+                        "content.expanded_bytes",
+                    ],
+                    "reference_database_download": "prohibited",
+                },
+            },
+        ],
+        "resources": rendered,
+    }
+
+
 def _common(subparser: argparse.ArgumentParser) -> None:
     default_tools_config_map = (
         "fs2-reference-data-tools-"
@@ -299,6 +402,7 @@ def _common(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument("--queue", default="reference-data", type=lambda value: _dns_label(value, "queue"))
     subparser.add_argument("--tools-config-map", default=default_tools_config_map, type=lambda value: _dns_label(value, "tools ConfigMap"))
     subparser.add_argument("--shared-host-path", default="/mnt/fs2-reference-data/data")
+    subparser.add_argument("--placement", type=Path)
     subparser.add_argument("--credentials-secret", type=lambda value: _dns_label(value, "credentials Secret"))
     subparser.add_argument("--object-storage-endpoint")
 
@@ -313,15 +417,19 @@ def parser() -> argparse.ArgumentParser:
     stage.add_argument("--image", required=True)
     stage.add_argument("--access-receipt", type=Path)
     stage.add_argument("--object-store-prefix")
-    stage.add_argument("--cpu", default="6")
-    stage.add_argument("--memory", default="24Gi")
-    stage.add_argument("--ephemeral-storage", default="2Gi")
-    stage.add_argument("--active-deadline-seconds", type=int, default=604800)
-    stage.add_argument("--backoff-limit", type=int, default=2)
+    stage.add_argument("--cpu")
+    stage.add_argument("--memory")
+    stage.add_argument("--ephemeral-storage")
+    stage.add_argument("--active-deadline-seconds", type=int)
+    stage.add_argument("--backoff-limit", type=int)
     preprocess = commands.add_parser("preprocess")
     _common(preprocess)
     preprocess.add_argument("--request", type=Path, required=True)
     preprocess.add_argument("--allow-public-msa", action="store_true")
+    route = commands.add_parser("route")
+    _common(route)
+    route.add_argument("--request", type=Path, required=True)
+    route.add_argument("--allow-public-msa", action="store_true")
     return result
 
 
@@ -332,6 +440,8 @@ def main(arguments: Sequence[str] | None = None) -> int:
             if not re.fullmatch(r"^[^@\s]+@sha256:[a-f0-9]{64}$", args.image):
                 raise ContractError("staging image must be digest-pinned")
             document = render_stage(args)
+        elif args.command == "route":
+            document = render_route(args)
         else:
             document = render_preprocess(args)
         json.dump(document, sys.stdout, indent=2, sort_keys=True)

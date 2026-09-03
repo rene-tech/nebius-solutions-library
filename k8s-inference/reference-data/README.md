@@ -25,6 +25,26 @@ The separate public-MSA network lane requires both Terraform
 backends perform local searches; the opt-in does not silently substitute a
 public API.
 
+See `AF3_REFERENCE_DATA.md` for the AlphaFold 3 path specifically: how staging
+resumes rather than restarts, how objects are claimed individually so several
+workers share the transfer, the bounded terminal handoff contract every consumer
+binds, and how raw AlphaFold 3 input is placed on the CPU pool while inference is
+placed independently by accelerator flavour.
+
+Bulk database staging and the AlphaFold 3 raw data pipeline are sized
+separately: the stager needs 6 CPU / 24 GiB and fits the dedicated
+`8vcpu-32gb` reference pool, while the data pipeline needs at least
+16 CPU / 64 GiB and does not. That requirement is recorded in
+`model-requirements.json`, enforced against every request and at Terraform plan
+time, and the pool's ability to admit the lane is reported rather than assumed.
+
+The single public handoff is
+`fs2-serve.nebius.ai/reference-data-terminal-receipt/v1`, defined by
+`handoff-receipt.schema.json`, with a producer-generated consumer example at
+`examples/af3-terminal-handoff.example.json`. Placement and sizing for the
+reference and raw-input stages come only from root `terraform.tfvars`; the
+reviewed default is `placement-contract.json`.
+
 ## Pinned inventory
 
 `source-catalog.json` is the machine-readable authority. Sizes below are exact

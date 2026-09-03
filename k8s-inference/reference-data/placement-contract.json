@@ -1,0 +1,101 @@
+{
+  "generated_at": "2026-09-03T00:00:00Z",
+  "pools": {
+    "accelerator": {
+      "accelerator": {
+        "count": 1,
+        "resource_name": "nvidia.com/gpu"
+      },
+      "node_selector": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+        "workload.fs2.nebius/gpu": "true"
+      },
+      "queue": {
+        "cluster_queue": "inference-accelerators",
+        "local_queue": "inference-models",
+        "nominal_accelerator": 16,
+        "nominal_cpu": null,
+        "nominal_memory": null
+      },
+      "resource_class": "gpu",
+      "schedulable_capacity": {
+        "cpu_millicores": 127900,
+        "ephemeral_storage_mib": 283687,
+        "memory_mib": 1572748
+      },
+      "tolerations": [
+        {
+          "effect": "NoSchedule",
+          "key": "dedicated",
+          "operator": "Equal",
+          "value": "fs2-inference"
+        }
+      ]
+    },
+    "reference-cpu": {
+      "node_selector": {
+        "capacity.fs2.nebius/pool": "reference-data",
+        "capacity.fs2.nebius/type": "regular",
+        "storage.fs2.nebius/reference-data": "true",
+        "workload.fs2.nebius/reference-data": "true"
+      },
+      "queue": {
+        "cluster_queue": "reference-data-cpu",
+        "local_queue": "reference-data",
+        "nominal_accelerator": null,
+        "nominal_cpu": "6",
+        "nominal_memory": "24Gi"
+      },
+      "resource_class": "cpu",
+      "schedulable_capacity": {
+        "cpu_millicores": 7000,
+        "ephemeral_storage_mib": 114688,
+        "memory_mib": 28672
+      },
+      "tolerations": [
+        {
+          "effect": "NoSchedule",
+          "key": "workload.fs2.nebius/reference-data",
+          "operator": "Equal",
+          "value": "true"
+        }
+      ]
+    }
+  },
+  "schema": "fs2-serve.nebius.ai/reference-data-placement-contract/v1",
+  "stages": {
+    "inference": {
+      "defaults": {
+        "active_deadline_seconds": 21600,
+        "backoff_limit": 2,
+        "cpu": "12",
+        "ephemeral_storage": "16Gi",
+        "memory": "64Gi",
+        "threads": 12
+      },
+      "pool": "accelerator"
+    },
+    "raw-input": {
+      "defaults": {
+        "active_deadline_seconds": 21600,
+        "backoff_limit": 2,
+        "cpu": "16",
+        "ephemeral_storage": "32Gi",
+        "memory": "64Gi",
+        "threads": 16
+      },
+      "pool": "reference-cpu"
+    },
+    "staging": {
+      "defaults": {
+        "active_deadline_seconds": 604800,
+        "backoff_limit": 6,
+        "cpu": "6",
+        "ephemeral_storage": "2Gi",
+        "memory": "24Gi",
+        "threads": 6
+      },
+      "pool": "reference-cpu"
+    }
+  }
+}

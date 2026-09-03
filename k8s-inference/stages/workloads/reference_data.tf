@@ -29,6 +29,7 @@ module "reference_data" {
   }
   service_monitor_enabled = var.reference_data.status.service_monitor_enabled
   pipeline                = var.reference_data.pipeline
+  preprocess              = var.reference_data.preprocess
 }
 
 resource "terraform_data" "reference_data_contract" {

@@ -263,8 +263,28 @@ deployment = {
   #       bundle_id = "alphafold3-public-databases-v3.0"
   #       image     = "cr.eu-north1.nebius.cloud/<registry>/<repository>@sha256:<64-hex-digest>"
   #     }
+  #     # The AlphaFold3 raw data pipeline, which is NOT the bulk stager above.
+  #     # It runs jackhmmer/nhmmer over the genetic databases and needs at
+  #     # least the requirement recorded in reference-data/model-requirements.json.
+  #     # Declaring less is rejected at plan time. Placement always comes from
+  #     # the cpu_pool contract above, so no node name and no accelerator
+  #     # generation is ever written here.
+  #     preprocess = {
+  #       cpu                     = "16"
+  #       memory                  = "64Gi"
+  #       ephemeral_storage       = "32Gi"
+  #       active_deadline_seconds = 21600
+  #       backoff_limit           = 2
+  #       threads                 = 16
+  #     }
   #   }
   # }
+  # The 8vcpu-32gb reference pool stages and downloads the databases but cannot
+  # run the data pipeline. The raw_input_capacity output reports that honestly
+  # rather than failing the plan, so a fitting CPU class can be planned first.
+  # To make the lane runnable, raise cpu_pool.preset and schedulable_capacity
+  # together with queue.nominal_cpu / queue.nominal_memory; GPU inference is
+  # placed independently through the accelerator pools above and is unaffected.
   # To retain populated storage, explicitly set retention_mode="retain" and
   # forbid_deletion=true. That opt-in blocks full-stack destroy and exports
   # exact retained IDs for adoption; it is never inferred from environment.

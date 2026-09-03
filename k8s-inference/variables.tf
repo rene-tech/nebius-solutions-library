@@ -304,6 +304,17 @@ variable "deployment" {
           active_deadline_seconds = optional(number, 604800)
           backoff_limit           = optional(number, 6)
         }), {})
+        # The AlphaFold3 data pipeline, not the bulk reference-data stager.
+        # It must meet reference-data/model-requirements.json; the 8vcpu-32gb
+        # reference pool stages the databases but cannot run this lane.
+        preprocess = optional(object({
+          cpu                     = optional(string, "16")
+          memory                  = optional(string, "64Gi")
+          ephemeral_storage       = optional(string, "32Gi")
+          active_deadline_seconds = optional(number, 21600)
+          backoff_limit           = optional(number, 2)
+          threads                 = optional(number, 16)
+        }), {})
       }), {})
     }), {})
 

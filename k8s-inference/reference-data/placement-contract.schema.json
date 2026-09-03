@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schemas/reference-data-placement-contract/v1",
+  "title": "Reference-data placement and sizing contract",
+  "description": "The only source of node placement and resource sizing for reference-data staging, raw-input preprocessing and accelerator inference stages. Generated from root terraform.tfvars so no renderer, controller or runtime carries a literal node name, accelerator generation or pod field.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "generated_at", "pools", "stages"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/reference-data-placement-contract/v1"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "pools": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+      "additionalProperties": {"$ref": "#/$defs/pool"}
+    },
+    "stages": {
+      "type": "object",
+      "required": ["staging", "raw-input", "inference"],
+      "propertyNames": {"pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+      "additionalProperties": {"$ref": "#/$defs/stage"}
+    }
+  },
+  "$defs": {
+    "quantity_cpu": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+    "quantity_memory": {"type": "string", "pattern": "^[1-9][0-9]*(Mi|Gi)$"},
+    "pool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource_class", "node_selector", "tolerations", "schedulable_capacity", "queue"],
+      "properties": {
+        "resource_class": {"enum": ["cpu", "gpu"]},
+        "node_selector": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"type": "string", "minLength": 1},
+          "propertyNames": {"not": {"enum": ["kubernetes.io/hostname", "metadata.name"]}}
+        },
+        "tolerations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "operator", "value", "effect"],
+            "properties": {
+              "key": {"type": "string", "minLength": 1},
+              "operator": {"const": "Equal"},
+              "value": {"type": "string", "minLength": 1},
+              "effect": {"enum": ["NoSchedule", "NoExecute", "PreferNoSchedule"]}
+            }
+          }
+        },
+        "schedulable_capacity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cpu_millicores", "memory_mib", "ephemeral_storage_mib"],
+          "properties": {
+            "cpu_millicores": {"type": "integer", "minimum": 1},
+            "memory_mib": {"type": "integer", "minimum": 1},
+            "ephemeral_storage_mib": {"type": "integer", "minimum": 1}
+          }
+        },
+        "queue": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["local_queue", "cluster_queue", "nominal_cpu", "nominal_memory", "nominal_accelerator"],
+          "properties": {
+            "local_queue": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+            "cluster_queue": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+            "nominal_cpu": {"oneOf": [{"$ref": "#/$defs/quantity_cpu"}, {"type": "null"}]},
+            "nominal_memory": {"oneOf": [{"$ref": "#/$defs/quantity_memory"}, {"type": "null"}]},
+            "nominal_accelerator": {"oneOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]}
+          }
+        },
+        "accelerator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["resource_name", "count"],
+          "properties": {
+            "resource_name": {"type": "string", "pattern": "^[a-z0-9.-]+/[A-Za-z0-9][A-Za-z0-9._-]*$"},
+            "count": {"type": "integer", "minimum": 1}
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"resource_class": {"const": "cpu"}}},
+          "then": {"not": {"required": ["accelerator"]}}
+        },
+        {
+          "if": {"properties": {"resource_class": {"const": "gpu"}}},
+          "then": {"required": ["accelerator"]}
+        }
+      ]
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pool", "defaults"],
+      "properties": {
+        "pool": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+        "defaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cpu", "memory", "ephemeral_storage", "active_deadline_seconds", "backoff_limit", "threads"],
+          "properties": {
+            "cpu": {"$ref": "#/$defs/quantity_cpu"},
+            "memory": {"$ref": "#/$defs/quantity_memory"},
+            "ephemeral_storage": {"$ref": "#/$defs/quantity_memory"},
+            "active_deadline_seconds": {"type": "integer", "minimum": 60, "maximum": 604800},
+            "backoff_limit": {"type": "integer", "minimum": 0, "maximum": 10},
+            "threads": {"type": "integer", "minimum": 1, "maximum": 128}
+          }
+        }
+      }
+    }
+  }
+}

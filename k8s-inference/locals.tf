@@ -336,12 +336,13 @@ locals {
     enable_dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
     scheduling                      = var.deployment.scheduling
     reference_data = {
-      enabled   = var.deployment.storage.reference_data.enabled
-      namespace = var.deployment.storage.reference_data.namespace
-      queue     = var.deployment.storage.reference_data.queue
-      network   = var.deployment.storage.reference_data.network
-      status    = var.deployment.storage.reference_data.status
-      pipeline  = var.deployment.storage.reference_data.pipeline
+      enabled    = var.deployment.storage.reference_data.enabled
+      namespace  = var.deployment.storage.reference_data.namespace
+      queue      = var.deployment.storage.reference_data.queue
+      network    = var.deployment.storage.reference_data.network
+      status     = var.deployment.storage.reference_data.status
+      pipeline   = var.deployment.storage.reference_data.pipeline
+      preprocess = var.deployment.storage.reference_data.preprocess
     }
     academic_assets = local.academic_assets_contract
     model_express = {
