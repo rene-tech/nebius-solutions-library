@@ -322,4 +322,3 @@ declared as a generated entry bound by its own digest. Proteina-Complexa keeps
 reading the sixteen-entry `alphafold2-params` tree, because ColabDesign resolves
 parameter files by name in `AF2_DIR` and an admission document is not part of
 that contract.
-

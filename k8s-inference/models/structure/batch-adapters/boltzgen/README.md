@@ -82,4 +82,3 @@ Every stage that mounts the dictionary carries a `RuntimeTreeBinding`, and the
 preflight in `adapters.localization` fails closed on an archive-only mount, a
 partial tree, a wrong tree, or an identity mismatch before any argv runs. The
 declaration lives in `catalog/runtime/contracts/scientific-artifact-localization.json`.
-
