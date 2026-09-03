@@ -11,6 +11,7 @@ import copy
 import importlib
 import json
 import re
+from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
@@ -34,8 +35,25 @@ from .models import (
 )
 from .profile_catalog import ScientificProfileCatalog, ScientificWorkloadProfile
 
-EXECUTION_SCHEMA = "fs2-serve.nebius.ai/scientific-execution-map/v2"
+EXECUTION_SCHEMA = "fs2-serve.nebius.ai/scientific-execution-map/v3"
 MOUNT_KINDS = {"artifact-workspace", "reference", "private"}
+REFERENCE_DATASETS_HOST_PATH = "/mnt/fs2-reference-data/data/datasets"
+REFERENCE_DATA_STORAGE_LABEL = "storage.fs2.nebius/reference-data"
+REFERENCE_DATA_GID = 1000
+ACADEMIC_NAMESPACE = "fs2-academic-poc"
+ACADEMIC_SERVICE_ACCOUNT = "fs2-academic-runner"
+ACADEMIC_RUNTIME_PVC = "academic-assets-runtime-rwx"
+ACADEMIC_RUNTIME_GID = 65532
+BINDCRAFT_IMAGE_DIGEST = "sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1"
+BINDCRAFT_AF2_ARTIFACT = "bindcraft-alphafold2-params"
+BINDCRAFT_MPNN_ARTIFACT = "bindcraft-proteinmpnn-weights"
+BINDCRAFT_PYROSETTA_ARTIFACT = "bindcraft-pyrosetta-installed-tree"
+BINDCRAFT_PYROSETTA_DIGEST = "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+BINDCRAFT_PYROSETTA_PATH = "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
+BINDCRAFT_MPNN_PROJECTIONS = {
+    "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights": "vanilla_model_weights",
+    "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble": "soluble_model_weights",
+}
 
 
 class ScientificExecutionMapError(CatalogProfileAdapterError):
@@ -82,6 +100,7 @@ class StageMount:
     name: str
     kind: str
     claim_name: str | None
+    host_path: str | None
     mount_path: str
     sub_path: str | None
     read_only: bool
@@ -100,6 +119,7 @@ class StageExecution:
     active_deadline_seconds: int
     termination_grace_seconds: int
     environment: Mapping[str, str]
+    required_node_labels: Mapping[str, str]
 
 
 def _invocation_json(invocation: StageInvocation) -> str:
@@ -177,14 +197,23 @@ class FileScientificManifestRenderer:
         executions: dict[tuple[str, str], StageExecution] = {}
         runtime_artifacts: dict[tuple[str, str], RuntimeArtifactLocalization] = {}
         variants: dict[str, str] = {}
+        workload_namespaces: dict[str, str] = {}
         plan_adapters: dict[str, tuple[str, str]] = {}
         for raw_model in models:
             model = _object(raw_model, "scientific execution model")
             if set(model) not in (
-                {"model_id", "variant_id", "execution_identity_sha256", "plan_adapter", "stages"},
                 {
                     "model_id",
                     "variant_id",
+                    "workload_namespace",
+                    "execution_identity_sha256",
+                    "plan_adapter",
+                    "stages",
+                },
+                {
+                    "model_id",
+                    "variant_id",
+                    "workload_namespace",
                     "execution_identity_sha256",
                     "plan_adapter",
                     "runtime_artifacts",
@@ -201,6 +230,7 @@ class FileScientificManifestRenderer:
             if model_id in variants:
                 raise ScientificExecutionMapError("scientific execution model ID is duplicated")
             variants[model_id] = variant_id
+            workload_namespaces[model_id] = _service_account(model["workload_namespace"])
             plan_adapter = _object(model["plan_adapter"], "scientific plan adapter")
             if set(plan_adapter) != {"module", "function"}:
                 raise ScientificExecutionMapError("scientific plan adapter fields differ")
@@ -281,6 +311,7 @@ class FileScientificManifestRenderer:
                     "active_deadline_seconds",
                     "termination_grace_seconds",
                     "environment",
+                    "required_node_labels",
                 }
                 if set(stage) != allowed:
                     raise ScientificExecutionMapError("scientific execution stage fields differ")
@@ -291,6 +322,8 @@ class FileScientificManifestRenderer:
                 image_digest = identity["runtime_image_digest"]
                 if not isinstance(image, str) or len(image) > 1024 or not image.endswith(f"@{image_digest}"):
                     raise ScientificExecutionMapError("execution image is not the profile's immutable digest")
+                if model_id == "bindcraft" and image_digest != BINDCRAFT_IMAGE_DIGEST:
+                    raise ScientificExecutionMapError("BindCraft must use the reviewed artifact-free runtime image")
                 collector_id = _bounded_string(stage["collector_id"], "scientific collector ID", maximum=128)
                 if re.fullmatch(r"[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?", collector_id) is None:
                     raise ScientificExecutionMapError("scientific collector ID is invalid")
@@ -306,7 +339,15 @@ class FileScientificManifestRenderer:
                 kinds: list[str] = []
                 for raw_mount in raw_mounts:
                     mount = _object(raw_mount, "scientific execution mount")
-                    if set(mount) != {"name", "kind", "claim_name", "mount_path", "sub_path", "read_only"}:
+                    if set(mount) != {
+                        "name",
+                        "kind",
+                        "claim_name",
+                        "host_path",
+                        "mount_path",
+                        "sub_path",
+                        "read_only",
+                    }:
                         raise ScientificExecutionMapError("scientific execution mount fields differ")
                     name = _bounded_string(mount["name"], "scientific mount name", maximum=63)
                     if re.fullmatch(r"[a-z0-9](?:[-a-z0-9]*[a-z0-9])?", name) is None or name in mount_names:
@@ -328,9 +369,10 @@ class FileScientificManifestRenderer:
                     if not isinstance(read_only, bool):
                         raise ScientificExecutionMapError("scientific mount read_only must be boolean")
                     claim_name = mount["claim_name"]
+                    host_path = mount["host_path"]
                     sub_path = mount["sub_path"]
                     if kind == "artifact-workspace":
-                        if claim_name is not None or sub_path is not None:
+                        if claim_name is not None or host_path is not None or sub_path is not None:
                             raise ScientificExecutionMapError(
                                 "run artifact workspace must use attempt-local emptyDir storage"
                             )
@@ -339,9 +381,40 @@ class FileScientificManifestRenderer:
                                 "run artifact workspace must be writable at /mnt/fs2-scientific"
                             )
                     else:
-                        claim_name = _bounded_string(claim_name, "scientific mount PVC", maximum=253)
-                        if re.fullmatch(r"[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?", claim_name) is None or not read_only:
-                            raise ScientificExecutionMapError("reference/private mounts require a read-only PVC")
+                        if (claim_name is None) == (host_path is None):
+                            raise ScientificExecutionMapError(
+                                "reference/private mounts require exactly one physical read-only source"
+                            )
+                        if claim_name is not None:
+                            claim_name = _bounded_string(claim_name, "scientific mount PVC", maximum=253)
+                            if re.fullmatch(r"[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?", claim_name) is None:
+                                raise ScientificExecutionMapError("scientific mount PVC is invalid")
+                        if host_path is not None:
+                            host_path = _bounded_string(host_path, "scientific mount host path", maximum=512)
+                            parsed_host = PurePosixPath(host_path)
+                            if (
+                                not parsed_host.is_absolute()
+                                or parsed_host == PurePosixPath("/")
+                                or parsed_host.as_posix() != host_path
+                            ):
+                                raise ScientificExecutionMapError("scientific mount host path is unsafe")
+                            if host_path != REFERENCE_DATASETS_HOST_PATH:
+                                raise ScientificExecutionMapError(
+                                    "reference-data host path must use the published datasets root"
+                                )
+                            if (
+                                sub_path is None
+                                or re.fullmatch(
+                                    r"[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?/[^/]+/sha256/[0-9a-f]{64}",
+                                    str(sub_path),
+                                )
+                                is None
+                            ):
+                                raise ScientificExecutionMapError(
+                                    "reference-data host path requires an exact content-addressed dataset subPath"
+                                )
+                        if not read_only:
+                            raise ScientificExecutionMapError("reference/private mounts require a read-only source")
                         if sub_path is not None:
                             sub_path = _bounded_string(sub_path, "scientific mount subPath", maximum=512)
                             parsed_sub_path = PurePosixPath(sub_path)
@@ -357,6 +430,7 @@ class FileScientificManifestRenderer:
                             name=name,
                             kind=cast(str, kind),
                             claim_name=cast(str | None, claim_name),
+                            host_path=cast(str | None, host_path),
                             mount_path=mount_path,
                             sub_path=cast(str | None, sub_path),
                             read_only=read_only,
@@ -387,12 +461,58 @@ class FileScientificManifestRenderer:
                     for key, value in environment.items()
                 ):
                     raise ScientificExecutionMapError("scientific execution environment is invalid")
+                required_node_labels = _object(stage["required_node_labels"], "scientific required node labels")
+                if len(required_node_labels) > 32 or not all(
+                    isinstance(key, str)
+                    and re.fullmatch(r"[a-z0-9.-]+/[A-Za-z0-9][A-Za-z0-9._-]*", key) is not None
+                    and isinstance(value, str)
+                    and 1 <= len(value) <= 63
+                    for key, value in required_node_labels.items()
+                ):
+                    raise ScientificExecutionMapError("scientific required node labels are invalid")
+                if any(mount.host_path is not None for mount in mounts) and not required_node_labels:
+                    raise ScientificExecutionMapError("host-path runtime artifacts require explicit storage placement")
+                if (
+                    any(mount.host_path is not None for mount in mounts)
+                    and required_node_labels.get(REFERENCE_DATA_STORAGE_LABEL) != "true"
+                ):
+                    raise ScientificExecutionMapError(
+                        "reference-data host path requires the canonical storage placement label"
+                    )
+                service_account_name = _service_account(stage["service_account_name"])
+                if model_id == "alphafold3":
+                    if workload_namespaces[model_id] != ACADEMIC_NAMESPACE:
+                        raise ScientificExecutionMapError("AlphaFold3 must execute in the academic asset namespace")
+                    if service_account_name != ACADEMIC_SERVICE_ACCOUNT:
+                        raise ScientificExecutionMapError("AlphaFold3 must use the academic runner service account")
+                    if any(
+                        mount.kind == "private"
+                        and mount.mount_path == "/opt/fs2/academic/alphafold3"
+                        and mount.claim_name != ACADEMIC_RUNTIME_PVC
+                        for mount in mounts
+                    ):
+                        raise ScientificExecutionMapError("AlphaFold3 parameters must use the academic runtime PVC")
+                if model_id == "bindcraft":
+                    if workload_namespaces[model_id] != ACADEMIC_NAMESPACE:
+                        raise ScientificExecutionMapError("BindCraft must execute in the academic asset namespace")
+                    if service_account_name != ACADEMIC_SERVICE_ACCOUNT:
+                        raise ScientificExecutionMapError("BindCraft must use the academic runner service account")
+                    by_path = {mount.mount_path: mount for mount in mounts}
+                    required_paths = {
+                        "/models/alphafold2",
+                        BINDCRAFT_PYROSETTA_PATH,
+                        *BINDCRAFT_MPNN_PROJECTIONS,
+                    }
+                    if not required_paths.issubset(by_path):
+                        raise ScientificExecutionMapError("BindCraft is missing an exact runtime artifact target")
+                    if by_path[BINDCRAFT_PYROSETTA_PATH].claim_name != ACADEMIC_RUNTIME_PVC:
+                        raise ScientificExecutionMapError("BindCraft PyRosetta must use the academic runtime PVC")
                 executions[(model_id, stage_id)] = StageExecution(
                     image=image,
                     collector_id=collector_id,
                     validator_id=validator_id,
                     mounts=tuple(mounts),
-                    service_account_name=_service_account(stage["service_account_name"]),
+                    service_account_name=service_account_name,
                     cpu=cpu,
                     memory=memory,
                     ephemeral_storage=ephemeral_storage,
@@ -405,6 +525,7 @@ class FileScientificManifestRenderer:
                         maximum=24 * 3600,
                     ),
                     environment=cast(Mapping[str, str], environment),
+                    required_node_labels=cast(Mapping[str, str], required_node_labels),
                 )
         expected: set[tuple[str, str]] = set()
         for profile in profiles.list():
@@ -422,6 +543,7 @@ class FileScientificManifestRenderer:
             raise ScientificExecutionMapError("execution map must cover every runnable profile stage exactly")
         self.executions = executions
         self.variants = MappingProxyType(variants)
+        self.workload_namespaces = MappingProxyType(workload_namespaces)
         self.plan_adapters = MappingProxyType(plan_adapters)
         self.runtime_artifacts = MappingProxyType(runtime_artifacts)
         self.tools_image = tools_image
@@ -435,6 +557,14 @@ class FileScientificManifestRenderer:
             return self.variants[model_id]
         except KeyError as error:
             raise ScientificExecutionMapError("scientific model has no exact runtime variant binding") from error
+
+    def workload_namespace(self, model_id: str) -> str:
+        """Return the execution namespace frozen by the operator-owned map."""
+
+        try:
+            return self.workload_namespaces[model_id]
+        except KeyError as error:
+            raise ScientificExecutionMapError("scientific model has no execution namespace binding") from error
 
     def collector_id(self, model_id: str, stage_id: str) -> str:
         try:
@@ -499,7 +629,23 @@ class FileScientificManifestRenderer:
                     validator_id=execution.validator_id,
                 )
             )
-        return replace(plan, invocations=tuple(invocations))
+        bound_plan = replace(plan, invocations=tuple(invocations))
+        if profile.model_id == "bindcraft":
+            for invocation in bound_plan.invocations:
+                if invocation.argv[:2] != ("python", "/opt/fs2/runtime_entrypoint.py"):
+                    raise ScientificExecutionMapError(
+                        "BindCraft must explicitly invoke the reviewed runtime artifact gate"
+                    )
+                environment = {
+                    **self.executions[(profile.model_id, invocation.stage_id)].environment,
+                    **dict(invocation.environment),
+                }
+                if environment.get("FS2_NETWORK_MODE") != "offline":
+                    raise ScientificExecutionMapError("BindCraft must remain fail-closed and offline")
+                pythonpath = environment.get("PYTHONPATH")
+                if pythonpath is not None and pythonpath.split(":", 1)[0] != BINDCRAFT_PYROSETTA_PATH:
+                    raise ScientificExecutionMapError("BindCraft PYTHONPATH bypasses the reviewed PyRosetta tree")
+        return bound_plan
 
     def verify_runtime_artifacts(
         self,
@@ -546,47 +692,97 @@ class FileScientificManifestRenderer:
                 if artifact_id not in invocation.runtime_artifacts:
                     continue
                 mounts = self.executions[(profile.model_id, invocation.stage_id)].mounts
-                artifact_path = PurePosixPath(localization.mount_path)
-                candidates = [
-                    source
-                    for source in mounts
-                    if source.kind in {"reference", "private"}
-                    and (
-                        artifact_path == PurePosixPath(source.mount_path)
-                        or PurePosixPath(source.mount_path) in artifact_path.parents
-                    )
-                ]
-                if not candidates:
-                    raise ScientificExecutionMapError(
-                        f"runtime artifact {artifact_id} is not covered by the stage's read-only mounts"
-                    )
-                binding = next(
-                    (item for item in invocation.runtime_mounts if item.artifact_id == artifact_id),
-                    None,
-                )
+                bindings = tuple(item for item in invocation.runtime_mounts if item.artifact_id == artifact_id)
+                if not bindings:
+                    bindings = (RuntimeArtifactMount(artifact_id=artifact_id, mount_path=localization.mount_path),)
                 expected_manifest = requirement.get("localization_manifest_sha256")
-                if binding is not None and (
-                    binding.mount_path != localization.mount_path
-                    or binding.expected_content_sha256
-                    not in {None, localization.content_digest.removeprefix("sha256:")}
-                    or binding.expected_manifest_sha256 not in {None, expected_manifest}
-                    or binding.readiness_receipt_sha256
-                    not in {None, localization.localization_receipt_digest.removeprefix("sha256:")}
-                    or binding.authorization_receipt_sha256
-                    not in {
-                        None,
-                        None
-                        if access_context.receipt_digest is None
-                        else access_context.receipt_digest.removeprefix("sha256:"),
-                    }
-                ):
-                    raise ScientificExecutionMapError(
-                        f"runtime artifact {artifact_id} invocation mount differs from verified localization"
-                    )
+                for binding in bindings:
+                    binding_path = PurePosixPath(binding.mount_path)
+                    candidates = [
+                        source
+                        for source in mounts
+                        if source.kind in {"reference", "private"}
+                        and (
+                            binding_path == PurePosixPath(source.mount_path)
+                            or PurePosixPath(source.mount_path) in binding_path.parents
+                        )
+                    ]
+                    if not candidates:
+                        raise ScientificExecutionMapError(
+                            f"runtime artifact {artifact_id} is not covered by the stage's read-only mounts"
+                        )
+                    projected = profile.model_id == "bindcraft" and artifact_id == BINDCRAFT_MPNN_ARTIFACT
+                    if (
+                        (not projected and binding.mount_path != localization.mount_path)
+                        or binding.expected_content_sha256
+                        not in {None, localization.content_digest.removeprefix("sha256:")}
+                        or binding.expected_manifest_sha256 not in {None, expected_manifest}
+                        or binding.readiness_receipt_sha256
+                        not in {None, localization.localization_receipt_digest.removeprefix("sha256:")}
+                        or binding.authorization_receipt_sha256
+                        not in {
+                            None,
+                            None
+                            if access_context.receipt_digest is None
+                            else access_context.receipt_digest.removeprefix("sha256:"),
+                        }
+                    ):
+                        raise ScientificExecutionMapError(
+                            f"runtime artifact {artifact_id} invocation mount differs from verified localization"
+                        )
             result.append(localization)
         if not set(execution_plan.required_model_artifacts).issubset(by_id):
             raise ScientificExecutionMapError("adapter requires an undeclared profile runtime artifact")
+        if profile.model_id == "bindcraft":
+            self._verify_bindcraft_runtime(execution_plan, tuple(result))
         return tuple(result)
+
+    @staticmethod
+    def _verify_bindcraft_runtime(
+        execution_plan: AdapterExecutionPlan,
+        localizations: tuple[RuntimeArtifactLocalization, ...],
+    ) -> None:
+        required = {
+            BINDCRAFT_AF2_ARTIFACT,
+            BINDCRAFT_MPNN_ARTIFACT,
+            BINDCRAFT_PYROSETTA_ARTIFACT,
+        }
+        if set(execution_plan.required_model_artifacts) != required:
+            raise ScientificExecutionMapError("BindCraft runtime artifact identities are incomplete")
+        localized = {item.logical_artifact_id: item for item in localizations}
+        if "manifest.json" not in {item.path for item in localized[BINDCRAFT_AF2_ARTIFACT].files}:
+            raise ScientificExecutionMapError("BindCraft AlphaFold2 parameters require manifest.json")
+        mpnn_files = {item.path for item in localized[BINDCRAFT_MPNN_ARTIFACT].files}
+        if any(
+            not any(path.startswith(f"{sub_path}/") for path in mpnn_files)
+            for sub_path in BINDCRAFT_MPNN_PROJECTIONS.values()
+        ):
+            raise ScientificExecutionMapError("BindCraft ProteinMPNN artifact lacks a verified weight subtree")
+        pyrosetta = localized[BINDCRAFT_PYROSETTA_ARTIFACT]
+        if pyrosetta.content_digest.removeprefix(
+            "sha256:"
+        ) != BINDCRAFT_PYROSETTA_DIGEST or "pyrosetta/__init__.py" not in {item.path for item in pyrosetta.files}:
+            raise ScientificExecutionMapError("BindCraft PyRosetta installed-tree identity differs")
+        for invocation in execution_plan.invocations:
+            if invocation.argv[:2] != ("python", "/opt/fs2/runtime_entrypoint.py"):
+                raise ScientificExecutionMapError("BindCraft must explicitly invoke the reviewed runtime artifact gate")
+            by_artifact: dict[str, list[RuntimeArtifactMount]] = defaultdict(list)
+            for mount in invocation.runtime_mounts:
+                by_artifact[mount.artifact_id].append(mount)
+            af2 = by_artifact[BINDCRAFT_AF2_ARTIFACT]
+            pyrosetta_mounts = by_artifact[BINDCRAFT_PYROSETTA_ARTIFACT]
+            mpnn = by_artifact[BINDCRAFT_MPNN_ARTIFACT]
+            if len(af2) != 1 or af2[0].mount_path != "/models/alphafold2":
+                raise ScientificExecutionMapError("BindCraft AlphaFold2 parameters use the wrong target")
+            if (
+                len(pyrosetta_mounts) != 1
+                or pyrosetta_mounts[0].mount_path != BINDCRAFT_PYROSETTA_PATH
+                or ACADEMIC_RUNTIME_GID not in pyrosetta_mounts[0].supplemental_groups
+            ):
+                raise ScientificExecutionMapError("BindCraft PyRosetta installed tree uses the wrong target")
+            projections = {mount.mount_path: mount.sub_path for mount in mpnn}
+            if projections != BINDCRAFT_MPNN_PROJECTIONS:
+                raise ScientificExecutionMapError("BindCraft ProteinMPNN projections are not exact")
 
     def bind_runtime_artifacts(
         self,
@@ -603,17 +799,16 @@ class FileScientificManifestRenderer:
         by_id = {item.logical_artifact_id: item for item in verified}
         invocations: list[StageInvocation] = []
         for invocation in execution_plan.invocations:
-            bindings = {item.artifact_id: item for item in invocation.runtime_mounts}
+            bindings: dict[str, list[RuntimeArtifactMount]] = defaultdict(list)
+            for item in invocation.runtime_mounts:
+                bindings[item.artifact_id].append(item)
             mounted: list[RuntimeArtifactMount] = []
             for artifact_id in invocation.runtime_artifacts:
                 localization = by_id[artifact_id]
-                binding = bindings.get(artifact_id)
-                if binding is None:
-                    binding = RuntimeArtifactMount(
-                        artifact_id=artifact_id,
-                        mount_path=localization.mount_path,
-                    )
-                mounted.append(
+                artifact_bindings = bindings.get(artifact_id) or [
+                    RuntimeArtifactMount(artifact_id=artifact_id, mount_path=localization.mount_path)
+                ]
+                mounted.extend(
                     replace(
                         binding,
                         expected_content_sha256=localization.content_digest.removeprefix("sha256:"),
@@ -624,6 +819,7 @@ class FileScientificManifestRenderer:
                         ),
                         readiness_receipt_sha256=localization.localization_receipt_digest.removeprefix("sha256:"),
                     )
+                    for binding in artifact_bindings
                 )
             invocations.append(replace(invocation, runtime_mounts=tuple(mounted)))
         bound = replace(execution_plan, invocations=tuple(invocations))
@@ -640,13 +836,14 @@ class FileScientificManifestRenderer:
         if invocation.collector_id != execution.collector_id or invocation.validator_id != execution.validator_id:
             raise ScientificExecutionMapError("scientific workload collector or validator binding changed")
         localized = {item.logical_artifact_id: item for item in resource.runtime_artifacts}
-        bindings = {item.artifact_id: item for item in invocation.runtime_mounts}
-        if set(localized) != set(invocation.runtime_artifacts) or set(bindings) != set(invocation.runtime_artifacts):
+        binding_ids = {item.artifact_id for item in invocation.runtime_mounts}
+        if set(localized) != set(invocation.runtime_artifacts) or binding_ids != set(invocation.runtime_artifacts):
             raise ScientificExecutionMapError("runtime artifact localization is incomplete at workload apply")
-        for artifact_id, binding in bindings.items():
-            artifact = localized[artifact_id]
+        for binding in invocation.runtime_mounts:
+            artifact = localized[binding.artifact_id]
+            projected = resource.model_id == "bindcraft" and binding.artifact_id == BINDCRAFT_MPNN_ARTIFACT
             if (
-                artifact.mount_path != binding.mount_path
+                (not projected and artifact.mount_path != binding.mount_path)
                 or artifact.content_digest.removeprefix("sha256:") != binding.expected_content_sha256
                 or artifact.localization_receipt_digest.removeprefix("sha256:") != binding.readiness_receipt_sha256
                 or binding.authorization_receipt_sha256
@@ -657,7 +854,7 @@ class FileScientificManifestRenderer:
                 )
             ):
                 raise ScientificExecutionMapError(
-                    f"runtime artifact {artifact_id} lost its verified localization binding before apply"
+                    f"runtime artifact {binding.artifact_id} lost its verified localization binding before apply"
                 )
         gpu_count = resource.scheduling.accelerator_count
         limits = {
@@ -681,7 +878,7 @@ class FileScientificManifestRenderer:
             "artifacts": [
                 {
                     "artifact_id": item.logical_artifact_id,
-                    "mount_path": item.mount_path,
+                    "mount_path": binding.mount_path,
                     "content_digest": item.content_digest,
                     "artifact_manifest_sha256": (binding.expected_manifest_sha256 or binding.expected_content_sha256),
                     "localization_receipt_digest": item.localization_receipt_digest,
@@ -747,6 +944,22 @@ class FileScientificManifestRenderer:
                     f"runtime artifact {binding.artifact_id} has no physical read-only volume source"
                 )
             source = max(candidates, key=lambda item: len(PurePosixPath(item.mount_path).parts))
+            if (
+                resource.model_id == "alphafold3"
+                and binding.artifact_id == "alphafold3-parameters"
+                and (source.kind != "private" or source.claim_name != ACADEMIC_RUNTIME_PVC)
+            ):
+                raise ScientificExecutionMapError("AlphaFold3 parameters lost their academic PVC binding")
+            if (
+                resource.model_id == "alphafold3"
+                and binding.artifact_id == "alphafold3-public-databases-v3.0"
+                and (source.kind != "reference" or source.host_path != REFERENCE_DATASETS_HOST_PATH)
+            ):
+                raise ScientificExecutionMapError("AlphaFold3 databases lost their content-addressed reference binding")
+            if source.host_path is not None and REFERENCE_DATA_GID not in binding.supplemental_groups:
+                raise ScientificExecutionMapError("reference-data runtime mount requires its published group")
+            if source.claim_name == ACADEMIC_RUNTIME_PVC and ACADEMIC_RUNTIME_GID not in binding.supplemental_groups:
+                raise ScientificExecutionMapError("academic runtime mount requires its published group")
             used_sources.add(source.name)
             volume_mount: dict[str, Any] = {
                 "name": source.name,
@@ -763,13 +976,13 @@ class FileScientificManifestRenderer:
                 volume_mount["subPath"] = PurePosixPath(*sub_parts).as_posix()
             volume_mounts.append(volume_mount)
             if source.name not in volume_names:
-                assert source.claim_name is not None
-                volumes.append(
-                    {
-                        "name": source.name,
-                        "persistentVolumeClaim": {"claimName": source.claim_name, "readOnly": True},
-                    }
-                )
+                physical_source: dict[str, Any]
+                if source.claim_name is not None:
+                    physical_source = {"persistentVolumeClaim": {"claimName": source.claim_name, "readOnly": True}}
+                else:
+                    assert source.host_path is not None
+                    physical_source = {"hostPath": {"path": source.host_path, "type": "Directory"}}
+                volumes.append({"name": source.name, **physical_source})
                 volume_names.add(source.name)
         declared_sources = {mount.name for mount in execution.mounts if mount.kind in {"reference", "private"}}
         if declared_sources != used_sources:
@@ -884,15 +1097,10 @@ class FileScientificManifestRenderer:
             "seccompProfile": {"type": "RuntimeDefault"},
         }
         if supplemental_groups:
-            pod_security.update(
-                {
-                    "supplementalGroups": supplemental_groups,
-                    # No fsGroup is set, so Kubernetes does not recursively
-                    # mutate the immutable multi-GB artifact tree. Keep the
-                    # safe policy explicit if a platform later supplies one.
-                    "fsGroupChangePolicy": "OnRootMismatch",
-                }
-            )
+            # The published immutable trees are pre-owned. Supplemental groups
+            # grant read access without fsGroup, so kubelet has no recursive
+            # permission rewrite to perform for every scientific attempt.
+            pod_security["supplementalGroups"] = supplemental_groups
         affinity: dict[str, Any] | None = None
         if gpu_count:
             if not resource.scheduling.resolved_pool_preference:
@@ -941,6 +1149,8 @@ class FileScientificManifestRenderer:
             ],
             "volumes": volumes,
         }
+        if execution.required_node_labels:
+            pod_spec["nodeSelector"] = dict(execution.required_node_labels)
         if affinity is not None:
             pod_spec["affinity"] = affinity
         return {
@@ -949,6 +1159,11 @@ class FileScientificManifestRenderer:
         }
 
     def render(self, resource: WorkloadResource) -> Mapping[str, Any]:
+        expected_namespace = self.workload_namespace(resource.model_id)
+        if resource.namespace != expected_namespace or resource.route_namespace != expected_namespace:
+            raise ScientificExecutionMapError(
+                "scientific workload namespace differs from the immutable execution-map route"
+            )
         execution = self.executions.get((resource.model_id, resource.stage_id))
         if execution is None:
             raise ScientificExecutionMapError("scientific stage has no qualified execution mapping")

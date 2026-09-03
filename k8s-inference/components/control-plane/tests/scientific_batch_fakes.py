@@ -18,6 +18,7 @@ from fs2_serve.scientific_batch.models import (
     SchedulingSnapshot,
     ScientificBatchPlan,
     ScientificBatchState,
+    StageSchedulingDecision,
     VerifiedInputManifest,
     WorkloadObservation,
     WorkloadRef,
@@ -268,7 +269,13 @@ class FakeScientificBatchCluster:
         )
         return ref
 
-    async def observe(self, ref: WorkloadRef) -> WorkloadObservation:
+    async def observe(
+        self,
+        ref: WorkloadRef,
+        *,
+        scheduling: StageSchedulingDecision,
+    ) -> WorkloadObservation:
+        del scheduling
         return self.observations[self.key(ref)]
 
     async def delete(self, ref: WorkloadRef, *, controller_fence: int) -> None:

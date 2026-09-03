@@ -26,6 +26,8 @@
     "service_class": "customer-batch",
     "tenant_queue": "tenant-academic",
     "model_lane": "example-protein-design",
+    "workload_namespace": "fs2-academic-poc",
+    "route_namespace": "fs2-academic-poc",
     "stages": [
       {
         "stage_id": "design",

@@ -52,8 +52,13 @@ from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
 from fs2_serve.scientific_batch.controller import ScientificBatchController
 from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer, ScientificExecutionMapError
 from fs2_serve.scientific_batch.kubernetes import (
+    ACCELERATOR_COUNT_ANNOTATION,
+    ACCELERATOR_RESOURCE_ANNOTATION,
     ATTEMPT_LABEL,
+    CLUSTER_QUEUE_ANNOTATION,
     MANIFEST_ANNOTATION,
+    ROUTE_NAMESPACE_ANNOTATION,
+    WORKLOAD_NAMESPACE_ANNOTATION,
     HttpScientificBatchCluster,
     ScientificKubernetesError,
     _failure,
@@ -275,6 +280,10 @@ class FakeExecutionBinding:
     def variant_id(self, model_id: str) -> str:
         assert model_id == "protein-design"
         return "protein-design-h100"
+
+    def workload_namespace(self, model_id: str) -> str:
+        assert model_id == "protein-design"
+        return "fs2-models"
 
     def collector_id(self, model_id: str, stage_id: str) -> str:
         assert (model_id, stage_id) == ("protein-design", "design")
@@ -687,6 +696,26 @@ def test_internal_state_codec_round_trip_and_rejects_type_coercion() -> None:
         state_from_value(value)
 
 
+def test_internal_state_codec_reads_v6_and_every_write_upgrades_to_v7() -> None:
+    fixture_path = Path(__file__).parent / "fixtures/scientific-batch-state-v6-ec3440a2.json"
+    encoded = fixture_path.read_bytes()
+    assert hashlib.sha256(encoded).hexdigest() == "06083938ee23816213b3d171fc5d7f4adfff262fd0e661515f12fa7f585605fe"
+    legacy = json.loads(encoded)
+    decoded = state_from_value(legacy)
+    assert decoded.scheduling.workload_namespace == "fs2-models"
+    assert decoded.scheduling.route_namespace == "fs2-models"
+    assert decoded.scheduling.stages[0].resource_class is ResourceClass.GPU
+    assert decoded.execution_plan is not None
+    assert decoded.execution_plan.invocations[0].runtime_mounts[0].expected_manifest_sha256 is None
+    upgraded = state_to_value(decoded)
+    assert upgraded["schema_version"] == "fs2-serve.nebius.ai/scientific-batch-state/v7"
+    assert upgraded["scheduling"]["workload_namespace"] == "fs2-models"
+    assert upgraded["scheduling"]["route_namespace"] == "fs2-models"
+    assert upgraded["scheduling"]["stages"][0]["resource_class"] == "gpu"
+    assert "admitted_resource_flavor" not in upgraded["scheduling"]["stages"][0]
+    assert upgraded["adapter_execution"]["invocations"][0]["runtime_mounts"][0]["expected_manifest_sha256"] is None
+
+
 def test_scientific_status_and_event_transport_models_are_closed() -> None:
     for model in (ScientificBatchStatusResponse, ScientificEventPage):
         schema = model.model_json_schema()
@@ -733,6 +762,44 @@ def test_scheduling_resolver_enforces_canonical_tenant_route_and_priority() -> N
             tenant_id="tenant-a",
             profile=profile_value(),
             plan=batch_plan,
+        )
+
+
+def test_scheduling_resolver_freezes_academic_execution_and_localqueue_namespace() -> None:
+    contract = json.loads(json.dumps(scheduling().contract))
+    contract["service_classes"]["customer-batch"]["default_local_queue"] = "academic-scientific"
+    contract["local_queues"]["academic-scientific"] = {
+        "metadata": {"name": "academic-scientific", "namespace": "fs2-academic-poc"},
+        "spec": {"clusterQueue": "inference"},
+    }
+    contract["local_queue_routes"]["academic-scientific"] = {
+        "namespace": "fs2-academic-poc",
+        "cluster_queue": "inference",
+        "model_ids": ["protein-design"],
+        "tenant_ids": ["academic-poc"],
+    }
+    resolver = SchedulingContractResolver(contract)
+    batch_plan = ScientificBatchPlan((ScientificStagePlan(stage_id="design"),))
+    frozen = resolver.freeze(
+        service_class="customer-batch",
+        model_id="protein-design",
+        tenant_id="academic-poc",
+        profile=profile_value(),
+        plan=batch_plan,
+        workload_namespace="fs2-academic-poc",
+    )
+    assert frozen.workload_namespace == "fs2-academic-poc"
+    assert frozen.route_namespace == "fs2-academic-poc"
+    assert frozen.stage("design").resolved_local_queue == "academic-scientific"
+
+    with pytest.raises(SchedulingContractError, match="execution namespace differs"):
+        resolver.freeze(
+            service_class="customer-batch",
+            model_id="protein-design",
+            tenant_id="academic-poc",
+            profile=profile_value(),
+            plan=batch_plan,
+            workload_namespace="fs2-models",
         )
 
 
@@ -805,6 +872,8 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
             assert body["metadata"]["annotations"]["fs2.nebius.ai/max-queue-seconds"] == "600"
             assert body["metadata"]["annotations"]["fs2.nebius.ai/pool-preference"] == ("h100-preemptible")
             assert body["metadata"]["annotations"]["fs2.nebius.ai/preemption-mode"] == "restartable"
+            assert body["metadata"]["annotations"][ACCELERATOR_RESOURCE_ANNOTATION] == "nvidia.com/gpu"
+            assert body["metadata"]["annotations"][ACCELERATOR_COUNT_ANNOTATION] == "1"
             assert body["spec"]["suspend"] is True and body["spec"]["backoffLimit"] == 0
             assert body["spec"]["activeDeadlineSeconds"] == 3600
             assert body["spec"]["template"]["metadata"]["labels"][ATTEMPT_LABEL] == str(attempt_id)
@@ -828,6 +897,13 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
                         "namespace": "fs2-models",
                         "uid": "job-uid",
                         "labels": {ATTEMPT_LABEL: str(attempt_id)},
+                        "annotations": {
+                            CLUSTER_QUEUE_ANNOTATION: "inference",
+                            ACCELERATOR_RESOURCE_ANNOTATION: "nvidia.com/gpu",
+                            ACCELERATOR_COUNT_ANNOTATION: "1",
+                            WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
+                            ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
+                        },
                     },
                     "status": {"succeeded": 1, "startTime": "2026-09-02T20:00:00Z"},
                 },
@@ -842,18 +918,24 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
                             "status": {
                                 "conditions": [
                                     {
+                                        "type": "QuotaReserved",
+                                        "status": "True",
+                                        "lastTransitionTime": "2026-09-02T19:59:00Z",
+                                    },
+                                    {
                                         "type": "Admitted",
                                         "status": "True",
                                         "lastTransitionTime": "2026-09-02T20:00:00Z",
-                                    }
+                                    },
                                 ],
                                 "admission": {
+                                    "clusterQueue": "inference",
                                     "podSetAssignments": [
                                         {
                                             "flavors": {"nvidia.com/gpu": "inference-h100-1x"},
                                             "resourceUsage": {"nvidia.com/gpu": "1"},
                                         }
-                                    ]
+                                    ],
                                 },
                             },
                         }
@@ -882,7 +964,7 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
         client=client,
     )
     ref = await cluster.apply(resource, controller_fence=7)
-    observation = await cluster.observe(ref)
+    observation = await cluster.observe(ref, scheduling=resource.scheduling)
     assert ref.uid == "job-uid"
     assert observation.attempt_id == attempt_id
     assert observation.state.value == "succeeded"
@@ -891,7 +973,7 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
         admitted_resource_flavor="inference-h100-1x",
         accelerator_resource_name="nvidia.com/gpu",
         accelerator_count=1,
-        admitted_at=datetime(2026, 9, 2, 20, 0, tzinfo=UTC),
+        admitted_at=datetime(2026, 9, 2, 19, 59, tzinfo=UTC),
     )
     assert observation.kueue_workload_uid == "kueue-workload-uid"
     assert fence.calls == [(operation_id, "controller-a", 7)]
@@ -904,6 +986,17 @@ async def test_kubernetes_observer_persists_quota_reservation_without_claiming_a
     tmp_path: Path,
 ) -> None:
     attempt_id = uuid4()
+    decision = (
+        scheduling()
+        .freeze(
+            service_class="customer-batch",
+            model_id="protein-design",
+            tenant_id="tenant-a",
+            profile=profile_value(),
+            plan=ScientificBatchPlan((ScientificStagePlan(stage_id="design"),)),
+        )
+        .stages[0]
+    )
     ref = WorkloadResource(
         operation_id=uuid4(),
         batch_id=uuid4(),
@@ -921,15 +1014,7 @@ async def test_kubernetes_observer_persists_quota_reservation_without_claiming_a
         namespace="fs2-models",
         name="scientific-pending",
         kind=WorkloadKind.JOB,
-        scheduling=scheduling()
-        .freeze(
-            service_class="customer-batch",
-            model_id="protein-design",
-            tenant_id="tenant-a",
-            profile=profile_value(),
-            plan=ScientificBatchPlan((ScientificStagePlan(stage_id="design"),)),
-        )
-        .stages[0],
+        scheduling=decision,
     ).ref
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -942,6 +1027,13 @@ async def test_kubernetes_observer_persists_quota_reservation_without_claiming_a
                         "namespace": ref.namespace,
                         "uid": "pending-job-uid",
                         "labels": {ATTEMPT_LABEL: str(attempt_id)},
+                        "annotations": {
+                            CLUSTER_QUEUE_ANNOTATION: "inference",
+                            ACCELERATOR_RESOURCE_ANNOTATION: "nvidia.com/gpu",
+                            ACCELERATOR_COUNT_ANNOTATION: "1",
+                            WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
+                            ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
+                        },
                     },
                     "status": {},
                 },
@@ -962,12 +1054,13 @@ async def test_kubernetes_observer_persists_quota_reservation_without_claiming_a
                                     }
                                 ],
                                 "admission": {
+                                    "clusterQueue": "inference",
                                     "podSetAssignments": [
                                         {
                                             "flavors": {"nvidia.com/gpu": "inference-h100-1x"},
                                             "resourceUsage": {"nvidia.com/gpu": "1"},
                                         }
-                                    ]
+                                    ],
                                 },
                             },
                         }
@@ -994,7 +1087,7 @@ async def test_kubernetes_observer_persists_quota_reservation_without_claiming_a
         writes_enabled=True,
         client=client,
     )
-    observation = await cluster.observe(ref)
+    observation = await cluster.observe(ref, scheduling=decision)
     assert observation.state is WorkloadState.PENDING
     assert observation.scheduling_admission == SchedulingAdmission(
         resolved_pool_id="h100-preemptible",
@@ -1005,6 +1098,406 @@ async def test_kubernetes_observer_persists_quota_reservation_without_claiming_a
     )
     assert LifecyclePhase.ADMITTED not in observation.phases
     assert observation.kueue_workload_uid == "pending-kueue-uid"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_observer_reports_eviction_after_admission_is_cleared(tmp_path: Path) -> None:
+    attempt_id = uuid4()
+    decision = (
+        scheduling()
+        .freeze(
+            service_class="customer-batch",
+            model_id="protein-design",
+            tenant_id="tenant-a",
+            profile=profile_value(),
+            plan=ScientificBatchPlan((ScientificStagePlan(stage_id="design"),)),
+        )
+        .stages[0]
+    )
+    ref = WorkloadRef(
+        namespace="fs2-models",
+        name="scientific-evicted",
+        kind=WorkloadKind.JOB,
+        uid="evicted-job-uid",
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/scientific-evicted"):
+            return httpx.Response(
+                200,
+                json={
+                    "metadata": {
+                        "name": ref.name,
+                        "namespace": ref.namespace,
+                        "uid": ref.uid,
+                        "labels": {ATTEMPT_LABEL: str(attempt_id)},
+                        "annotations": {
+                            CLUSTER_QUEUE_ANNOTATION: "inference",
+                            ACCELERATOR_RESOURCE_ANNOTATION: "nvidia.com/gpu",
+                            ACCELERATOR_COUNT_ANNOTATION: "1",
+                            WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
+                            ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
+                        },
+                    },
+                    "status": {"startTime": "2026-09-03T07:55:00Z"},
+                },
+            )
+        if request.url.path.endswith("/workloads"):
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "metadata": {"uid": "evicted-kueue-uid"},
+                            "status": {
+                                "conditions": [
+                                    {"type": "Admitted", "status": "False"},
+                                    {"type": "QuotaReserved", "status": "False"},
+                                    {"type": "Evicted", "status": "True", "reason": "Preempted"},
+                                ]
+                            },
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(200, json={"items": []})
+
+    token = tmp_path / "evicted-token"
+    token.write_text("x" * 32)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.test")
+    cluster = HttpScientificBatchCluster(
+        base_url="https://kubernetes.test",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        controller_id="controller-a",
+        fence=Fence(),
+        renderer=JobRenderer(),
+        writes_enabled=True,
+        client=client,
+    )
+    observation = await cluster.observe(ref, scheduling=decision)
+    assert observation.state is WorkloadState.PREEMPTED
+    assert observation.scheduling_admission is None
+    assert observation.kueue_workload_uid == "evicted-kueue-uid"
+    assert observation.failure_kind is FailureKind.PREEMPTION
+    assert observation.failure_code == "Preempted"
+    assert observation.phases == (LifecyclePhase.PREEMPTED,)
+    await client.aclose()
+
+
+@pytest.mark.parametrize(
+    ("raw_reason", "expected_kind"),
+    [
+        ("MaximumExecutionTimeExceeded", FailureKind.APPLICATION),
+        ("RequeuingLimitExceeded", FailureKind.INFRASTRUCTURE),
+    ],
+)
+@pytest.mark.asyncio
+async def test_kubernetes_observer_preserves_raw_kueue_deactivation_reason(
+    tmp_path: Path,
+    raw_reason: str,
+    expected_kind: FailureKind,
+) -> None:
+    attempt_id = uuid4()
+    decision = (
+        scheduling()
+        .freeze(
+            service_class="customer-batch",
+            model_id="protein-design",
+            tenant_id="tenant-a",
+            profile=profile_value(),
+            plan=ScientificBatchPlan((ScientificStagePlan(stage_id="design"),)),
+        )
+        .stage("design")
+    )
+    ref = WorkloadRef(
+        namespace="fs2-models",
+        route_namespace="fs2-models",
+        name=f"scientific-{raw_reason.lower()}",
+        kind=WorkloadKind.JOB,
+        uid="deactivated-job-uid",
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(f"/{ref.name}"):
+            return httpx.Response(
+                200,
+                json={
+                    "metadata": {
+                        "name": ref.name,
+                        "namespace": ref.namespace,
+                        "uid": ref.uid,
+                        "labels": {ATTEMPT_LABEL: str(attempt_id)},
+                        "annotations": {
+                            CLUSTER_QUEUE_ANNOTATION: "inference",
+                            ACCELERATOR_RESOURCE_ANNOTATION: "nvidia.com/gpu",
+                            ACCELERATOR_COUNT_ANNOTATION: "1",
+                            WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
+                            ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
+                        },
+                    },
+                    "status": {},
+                },
+            )
+        if request.url.path.endswith("/workloads"):
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "metadata": {"uid": "deactivated-kueue-uid"},
+                            "status": {
+                                "conditions": [
+                                    {
+                                        "type": "DeactivationTarget",
+                                        "status": "True",
+                                        "reason": raw_reason,
+                                    },
+                                    {"type": "Evicted", "status": "True", "reason": "Deactivated"},
+                                ]
+                            },
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(200, json={"items": []})
+
+    token = tmp_path / f"{raw_reason}-token"
+    token.write_text("x" * 32)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.test")
+    cluster = HttpScientificBatchCluster(
+        base_url="https://kubernetes.test",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        controller_id="controller-a",
+        fence=Fence(),
+        renderer=JobRenderer(),
+        writes_enabled=True,
+        client=client,
+    )
+    observation = await cluster.observe(ref, scheduling=decision)
+    assert observation.state is WorkloadState.FAILED
+    assert observation.failure_kind is expected_kind
+    assert observation.failure_code == raw_reason
+    assert observation.kueue_workload_uid == "deactivated-kueue-uid"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_observer_counts_only_exact_gpu_podsets_in_mixed_jobset(tmp_path: Path) -> None:
+    attempt_id = uuid4()
+    decision = replace(
+        scheduling()
+        .freeze(
+            service_class="customer-batch",
+            model_id="protein-design",
+            tenant_id="tenant-a",
+            profile=profile_value(),
+            plan=ScientificBatchPlan((ScientificStagePlan(stage_id="design"),)),
+        )
+        .stages[0],
+        accelerator_count=4,
+    )
+    ref = WorkloadRef(
+        namespace="fs2-models",
+        name="scientific-mixed-gang",
+        kind=WorkloadKind.JOB_SET,
+        uid="mixed-jobset-uid",
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/scientific-mixed-gang"):
+            return httpx.Response(
+                200,
+                json={
+                    "metadata": {
+                        "name": ref.name,
+                        "namespace": ref.namespace,
+                        "uid": ref.uid,
+                        "labels": {ATTEMPT_LABEL: str(attempt_id)},
+                        "annotations": {
+                            CLUSTER_QUEUE_ANNOTATION: "inference",
+                            ACCELERATOR_RESOURCE_ANNOTATION: "nvidia.com/gpu",
+                            ACCELERATOR_COUNT_ANNOTATION: "4",
+                            WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
+                            ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
+                        },
+                    },
+                    "status": {},
+                },
+            )
+        if request.url.path.endswith("/workloads"):
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "metadata": {"uid": "mixed-kueue-uid"},
+                            "status": {
+                                "conditions": [
+                                    {
+                                        "type": "QuotaReserved",
+                                        "status": "True",
+                                        "lastTransitionTime": "2026-09-03T08:00:00Z",
+                                    }
+                                ],
+                                "admission": {
+                                    "clusterQueue": "inference",
+                                    "podSetAssignments": [
+                                        {
+                                            "name": "coordinator",
+                                            "flavors": {"cpu": "cpu-general"},
+                                            "resourceUsage": {"cpu": "2", "memory": "8Gi"},
+                                        },
+                                        {
+                                            "name": "workers",
+                                            "flavors": {
+                                                "cpu": "cpu-general",
+                                                "nvidia.com/gpu": "inference-h100-1x",
+                                            },
+                                            "resourceUsage": {
+                                                "cpu": "32",
+                                                "memory": "256Gi",
+                                                "example.com/rdma": "4",
+                                                "nvidia.com/gpu": "4",
+                                            },
+                                        },
+                                    ],
+                                },
+                            },
+                        }
+                    ]
+                },
+            )
+        if request.url.path.endswith("/resourceflavors/inference-h100-1x"):
+            return httpx.Response(
+                200,
+                json={"metadata": {"labels": {"fs2.nebius.ai/pool-id": "h100-preemptible"}}},
+            )
+        return httpx.Response(200, json={"items": []})
+
+    token = tmp_path / "mixed-token"
+    token.write_text("x" * 32)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.test")
+    cluster = HttpScientificBatchCluster(
+        base_url="https://kubernetes.test",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        controller_id="controller-a",
+        fence=Fence(),
+        renderer=JobRenderer(),
+        writes_enabled=True,
+        client=client,
+    )
+    observation = await cluster.observe(ref, scheduling=decision)
+    assert observation.scheduling_admission == SchedulingAdmission(
+        resolved_pool_id="h100-preemptible",
+        admitted_resource_flavor="inference-h100-1x",
+        accelerator_resource_name="nvidia.com/gpu",
+        accelerator_count=4,
+        admitted_at=datetime(2026, 9, 3, 8, 0, tzinfo=UTC),
+    )
+    assert observation.kueue_workload_uid == "mixed-kueue-uid"
+    assert LifecyclePhase.ADMITTED not in observation.phases
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_observer_rejects_nonpositive_exact_gpu_podset(tmp_path: Path) -> None:
+    attempt_id = uuid4()
+    decision = replace(
+        scheduling()
+        .freeze(
+            service_class="customer-batch",
+            model_id="protein-design",
+            tenant_id="tenant-a",
+            profile=profile_value(),
+            plan=ScientificBatchPlan((ScientificStagePlan(stage_id="design"),)),
+        )
+        .stages[0],
+        accelerator_count=4,
+    )
+    ref = WorkloadRef(
+        namespace="fs2-models",
+        name="scientific-invalid-gang",
+        kind=WorkloadKind.JOB_SET,
+        uid="invalid-jobset-uid",
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/scientific-invalid-gang"):
+            return httpx.Response(
+                200,
+                json={
+                    "metadata": {
+                        "name": ref.name,
+                        "namespace": ref.namespace,
+                        "uid": ref.uid,
+                        "labels": {ATTEMPT_LABEL: str(attempt_id)},
+                        "annotations": {
+                            CLUSTER_QUEUE_ANNOTATION: "inference",
+                            ACCELERATOR_RESOURCE_ANNOTATION: "nvidia.com/gpu",
+                            ACCELERATOR_COUNT_ANNOTATION: "4",
+                            WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
+                            ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
+                        },
+                    },
+                    "status": {},
+                },
+            )
+        if request.url.path.endswith("/workloads"):
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "metadata": {"uid": "invalid-kueue-uid"},
+                            "status": {
+                                "conditions": [
+                                    {
+                                        "type": "QuotaReserved",
+                                        "status": "True",
+                                        "lastTransitionTime": "2026-09-03T08:00:00Z",
+                                    }
+                                ],
+                                "admission": {
+                                    "clusterQueue": "inference",
+                                    "podSetAssignments": [
+                                        {
+                                            "name": "coordinator",
+                                            "flavors": {"cpu": "cpu-general"},
+                                            "resourceUsage": {"cpu": "2"},
+                                        },
+                                        {
+                                            "name": "workers",
+                                            "flavors": {"nvidia.com/gpu": "inference-h100-8x"},
+                                            "resourceUsage": {"nvidia.com/gpu": "0"},
+                                        },
+                                    ],
+                                },
+                            },
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(200, json={"items": []})
+
+    token = tmp_path / "invalid-mixed-token"
+    token.write_text("x" * 32)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.test")
+    cluster = HttpScientificBatchCluster(
+        base_url="https://kubernetes.test",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        controller_id="controller-a",
+        fence=Fence(),
+        renderer=JobRenderer(),
+        writes_enabled=True,
+        client=client,
+    )
+    with pytest.raises(ScientificKubernetesError, match="GPU PodSet admission is not positive"):
+        await cluster.observe(ref, scheduling=decision)
     await client.aclose()
 
 
@@ -1032,6 +1525,10 @@ async def test_kubernetes_delete_waits_for_uid_absence_and_fences_precondition_c
                     "namespace": ref.namespace,
                     "uid": ref.uid,
                     "labels": {"fs2.nebius.ai/operation-id": str(operation_id)},
+                    "annotations": {
+                        WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
+                        ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
+                    },
                 }
             },
         )
@@ -1065,6 +1562,10 @@ async def test_kubernetes_delete_waits_for_uid_absence_and_fences_precondition_c
                     "namespace": ref.namespace,
                     "uid": ref.uid,
                     "labels": {"fs2.nebius.ai/operation-id": str(operation_id)},
+                    "annotations": {
+                        WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
+                        ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
+                    },
                 }
             },
         )
@@ -1103,6 +1604,10 @@ async def test_kubernetes_delete_rejects_synchronous_success(tmp_path: Path) -> 
                     "namespace": ref.namespace,
                     "uid": ref.uid,
                     "labels": {"fs2.nebius.ai/operation-id": str(operation_id)},
+                    "annotations": {
+                        WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
+                        ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
+                    },
                 }
             },
         )
@@ -1363,11 +1868,12 @@ async def test_workload_capability_materializes_and_commits_through_single_artif
 
 def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path, monkeypatch) -> None:
     execution = {
-        "schema": "fs2-serve.nebius.ai/scientific-execution-map/v2",
+        "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
         "models": [
             {
                 "model_id": "protein-design",
                 "variant_id": "protein-design-h100",
+                "workload_namespace": "fs2-models",
                 "execution_identity_sha256": "f" * 64,
                 "plan_adapter": {
                     "module": "fs2_serve.scientific_batch.adapters",
@@ -1384,6 +1890,7 @@ def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path,
                                 "name": "artifact-workspace",
                                 "kind": "artifact-workspace",
                                 "claim_name": None,
+                                "host_path": None,
                                 "mount_path": "/mnt/fs2-scientific",
                                 "sub_path": None,
                                 "read_only": False,
@@ -1394,6 +1901,7 @@ def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path,
                         "active_deadline_seconds": 3600,
                         "termination_grace_seconds": 60,
                         "environment": {"FS2_ADAPTER_MODE": "production"},
+                        "required_node_labels": {},
                     }
                 ],
             }

@@ -68,6 +68,8 @@ class ScientificExecutionBinding(Protocol):
 
     def variant_id(self, model_id: str) -> str: ...
 
+    def workload_namespace(self, model_id: str) -> str: ...
+
     def collector_id(self, model_id: str, stage_id: str) -> str: ...
 
     def verify_runtime_artifacts(
@@ -126,6 +128,8 @@ class ScientificAttemptView(StrictModel):
     workload_kind: WorkloadKind
     workload_name: str
     workload_uid: str | None
+    workload_namespace: str
+    route_namespace: str
     outcome: AttemptOutcome
     last_phase: LifecyclePhase
     resource_released: bool
@@ -154,6 +158,8 @@ class ScientificBatchView(StrictModel):
     result_published: bool
     scheduling_snapshot_digest: str
     service_class: ServiceClass
+    workload_namespace: str
+    route_namespace: str
     stages: tuple[ScientificStageView, ...] = Field(min_length=1, max_length=64)
 
 
@@ -229,6 +235,8 @@ class ScientificBatchService:
                 result_published=state.result_published,
                 scheduling_snapshot_digest=state.scheduling.digest,
                 service_class=state.scheduling.service_class,
+                workload_namespace=state.scheduling.workload_namespace,
+                route_namespace=state.scheduling.route_namespace,
                 stages=tuple(
                     ScientificStageView(
                         stage_id=stage.stage_id,
@@ -242,6 +250,8 @@ class ScientificBatchService:
                                 workload_kind=attempt.workload.kind,
                                 workload_name=attempt.workload.name,
                                 workload_uid=attempt.workload.uid,
+                                workload_namespace=attempt.workload.namespace,
+                                route_namespace=attempt.workload.route_namespace or attempt.workload.namespace,
                                 outcome=attempt.outcome,
                                 last_phase=attempt.last_phase,
                                 resource_released=attempt.resource_released,
@@ -299,6 +309,7 @@ class ScientificBatchService:
         self._authorize(principal, Scope.INFERENCE_INVOKE, model_id=model_id)
         profile = self.profiles.get(model_id)
         variant_id = self.execution_binding.variant_id(model_id)
+        workload_namespace = self.execution_binding.workload_namespace(model_id)
         if require_mcp_invocable and not profile.mcp_invocable:
             raise ScientificProfileError("scientific workload profile is not MCP-invocable")
         validated = self.profiles.validate_request(profile, request)
@@ -346,6 +357,7 @@ class ScientificBatchService:
                 tenant_id=principal.tenant_id,
                 profile=profile.value,
                 plan=plan,
+                workload_namespace=workload_namespace,
                 captured_at=datetime(1970, 1, 1, tzinfo=UTC),
             )
         except SchedulingContractError as error:
@@ -375,6 +387,7 @@ class ScientificBatchService:
                 tenant_id=principal.tenant_id,
                 profile=profile.value,
                 plan=plan,
+                workload_namespace=workload_namespace,
                 captured_at=operation.accepted_at,
             )
         except SchedulingContractError as error:  # defensive against mutable custom resolvers

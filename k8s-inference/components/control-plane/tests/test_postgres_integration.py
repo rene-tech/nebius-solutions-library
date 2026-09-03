@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import shutil
 from dataclasses import replace
@@ -648,7 +649,7 @@ async def test_real_postgres_rejects_extra_or_reordered_applied_migration_ledger
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
-async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_0015(
+async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_0016(
     postgres_store: PostgresStore,
     tmp_path: Path,
 ) -> None:
@@ -658,6 +659,11 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
     database_name = f"fs2_scientific_batch_upgrade_{uuid4().hex[:10]}"
     prior_dir = tmp_path / "prior-migrations"
     prior_dir.mkdir()
+    legacy_fixture = json.loads((CONTROL_ROOT / "tests/fixtures/scientific-batch-state-v6-ec3440a2.json").read_text())
+    legacy_operation_id = UUID(legacy_fixture["operation_id"])
+    legacy_input_artifact_id = UUID(legacy_fixture["input_artifact_id"])
+    legacy_input_attempt_id = UUID("44444444-4444-4444-8444-444444444444")
+    legacy_token_id = UUID("33333333-3333-4333-8333-333333333333")
     for version, _ in EXPECTED_MIGRATIONS[:-1]:
         migration = CONTROL_ROOT / "migrations" / version
         shutil.copy2(migration, prior_dir / migration.name)
@@ -717,7 +723,76 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
                 await before_connection.fetchval("SELECT to_regclass('public.fs2_scientific_artifacts')")
                 == "fs2_scientific_artifacts"
             )
-            assert await before_connection.fetchval("SELECT to_regclass('public.fs2_scientific_batches')") is None
+            assert (
+                await before_connection.fetchval("SELECT to_regclass('public.fs2_scientific_batches')")
+                == "fs2_scientific_batches"
+            )
+            await before_connection.execute(
+                """
+                INSERT INTO fs2_tokens(
+                    id,prefix,pepper_key_id,digest,principal_id,tenant_id,scopes,models,
+                    max_concurrency,created_by
+                ) VALUES($1,'fs2_pat_legacyv6','pepper-v1','test-digest','legacy-principal',
+                    'tenant-a',ARRAY['inference.invoke'],ARRAY['bindcraft'],1,'migration-test')
+                """,
+                legacy_token_id,
+            )
+            await before_connection.execute(
+                """
+                INSERT INTO fs2_operations(
+                    id,tenant_id,principal_id,token_id,model_id,model_revision,protocol,operation,
+                    idempotency_key,request_hmac_key_id,request_hmac,request_content_type,
+                    payload_expires_at,max_attempts
+                ) VALUES($1,'tenant-a','legacy-principal',$2,'bindcraft','7cd4ace1',
+                    'scientific-batch-v1','design','legacy-v6-fixture','hmac-v1',$3,
+                    'application/json',clock_timestamp()+interval '1 day',2)
+                """,
+                legacy_operation_id,
+                legacy_token_id,
+                "8" * 64,
+            )
+            await before_connection.execute(
+                """
+                INSERT INTO fs2_scientific_stage_attempts(
+                    attempt_id,operation_id,tenant_id,stage_id,shard_id,attempt_number,status,
+                    started_at,retention_expires_at
+                ) VALUES($1,$2,'tenant-a','input','-',1,'running',clock_timestamp(),
+                    clock_timestamp()+interval '1 day')
+                """,
+                legacy_input_attempt_id,
+                legacy_operation_id,
+            )
+            input_digest = "sha256:" + "6" * 64
+            await before_connection.execute(
+                """
+                INSERT INTO fs2_scientific_artifacts(
+                    id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,
+                    size_bytes,media_type,storage_key,access_profile,retention_expires_at
+                ) VALUES($1,$2,$3,'tenant-a','input','-','input',$4,128,'application/json',$5,
+                    'public',clock_timestamp()+interval '1 day')
+                """,
+                legacy_input_artifact_id,
+                legacy_input_attempt_id,
+                legacy_operation_id,
+                input_digest,
+                f"scientific/v1/tenants/tenant-a/operations/{legacy_operation_id}/stages/input/shards/-/"
+                f"attempts/{legacy_input_attempt_id}/input/sha256/{input_digest.removeprefix('sha256:')}",
+            )
+            await before_connection.execute(
+                """
+                INSERT INTO fs2_scientific_batches(
+                    operation_id,batch_id,workload_id,tenant_id,model_id,variant_id,
+                    input_artifact_id,scheduling_digest,status,revision,cancel_requested,state
+                ) VALUES($1,$2,$3,'tenant-a','bindcraft','upstream-pyrosetta',$4,$5,
+                    'queued',0,false,$6::jsonb)
+                """,
+                legacy_operation_id,
+                UUID(legacy_fixture["batch_id"]),
+                UUID(legacy_fixture["workload_id"]),
+                legacy_input_artifact_id,
+                "sha256:" + "0" * 64,
+                json.dumps(legacy_fixture, sort_keys=True, separators=(",", ":")),
+            )
         finally:
             await before_connection.close()
 
@@ -731,7 +806,7 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
                 )
             }
             assert {version: after[version] for version in before} == before
-            assert list(after)[-1] == "0015_scientific_batch_controller.sql"
+            assert list(after)[-1] == "0016_scientific_batch_state_v7.sql"
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_activation_model_fences')")
                 == "fs2_activation_model_fences"
@@ -764,6 +839,73 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
             )
         finally:
             await upgraded_connection.close()
+
+        pool = await asyncpg.create_pool(upgrade_url, min_size=1, max_size=2)
+        try:
+            repository = PostgresScientificBatchRepository(pool)
+            claim = await repository.claim_next(
+                controller_id="legacy-v6-upgrader",
+                lease_seconds=30,
+                now=datetime.now(UTC),
+            )
+            assert claim is not None and claim.operation_id == legacy_operation_id
+            legacy_state = await repository.load(claim)
+            assert legacy_state.scheduling.stages[0].resource_class is ResourceClass.GPU
+            assert legacy_state.execution_plan is not None
+            assert legacy_state.execution_plan.invocations[0].runtime_mounts[0].expected_manifest_sha256 is None
+            upgraded_state = await repository.replace(
+                claim,
+                expected_revision=0,
+                record=replace(legacy_state, revision=1),
+                events=(),
+                now=datetime.now(UTC),
+            )
+            assert upgraded_state.revision == 1
+            await repository.release(claim)
+            cancelled = await repository.request_cancel(
+                legacy_operation_id,
+                tenant_id="tenant-a",
+                actor="migration-test",
+            )
+            assert cancelled.cancel_requested is True
+            async with pool.acquire() as connection:
+                stored = await connection.fetchrow(
+                    "SELECT scheduling_digest,state FROM fs2_scientific_batches WHERE operation_id=$1",
+                    legacy_operation_id,
+                )
+                assert stored is not None
+                stored_state = json.loads(stored["state"])
+                assert stored_state["schema_version"] == "fs2-serve.nebius.ai/scientific-batch-state/v7"
+                assert stored["scheduling_digest"] == cancelled.scheduling.digest
+                assert stored_state["scheduling"]["stages"][0]["resource_class"] == "gpu"
+                assert "admitted_resource_flavor" not in stored_state["scheduling"]["stages"][0]
+                assert (
+                    stored_state["adapter_execution"]["invocations"][0]["runtime_mounts"][0]["expected_manifest_sha256"]
+                    is None
+                )
+                with pytest.raises(asyncpg.PostgresError, match="scientific batch admission is immutable"):
+                    await connection.execute(
+                        """
+                        UPDATE fs2_scientific_batches
+                        SET state=jsonb_set(state,'{scheduling,stages,0,resolved_local_queue}',
+                            '"tampered-queue"'::jsonb)
+                        WHERE operation_id=$1
+                        """,
+                        legacy_operation_id,
+                    )
+                with pytest.raises(asyncpg.PostgresError, match="scientific batch admission is immutable"):
+                    await connection.execute(
+                        """
+                        UPDATE fs2_scientific_batches
+                        SET state=jsonb_set(state,
+                            '{adapter_execution,invocations,0,runtime_mounts,0,expected_manifest_sha256}',
+                            '"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"'::jsonb)
+                        WHERE operation_id=$1
+                        """,
+                        legacy_operation_id,
+                    )
+        finally:
+            await pool.close()
     finally:
         await admin.execute(f'DROP DATABASE IF EXISTS "{database_name}" WITH (FORCE)')
         await admin.close()
@@ -2802,6 +2944,7 @@ async def test_scientific_batch_repository_is_durable_fenced_and_excluded_from_g
         tenant_queue="scientific",
         model_lane="qwen3-8b",
         workload_namespace="fs2-models",
+        route_namespace="fs2-models",
         stages=(
             StageSchedulingDecision(
                 stage_id="design",

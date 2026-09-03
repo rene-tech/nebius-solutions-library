@@ -855,6 +855,8 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
         "--set",
         "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
+        "--set-json",
+        'scientificBatch.executionMap.models=[{"model_id":"protein-design","workload_namespace":"fs2-models"},{"model_id":"alphafold3","workload_namespace":"fs2-academic-poc"}]',
         "--set",
         "scientificArtifacts.enabled=true",
         "--set-string",
@@ -863,6 +865,10 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "scientificArtifacts.egressCidrs[0]=192.0.2.20/32",
     )
     named = {(document["kind"], document["metadata"]["name"]): document for document in documents}
+    namespaced = {
+        (document["kind"], document["metadata"]["name"], document["metadata"].get("namespace")): document
+        for document in documents
+    }
     pod = gateway_deployment(documents)["spec"]["template"]["spec"]
     container = pod["containers"][0]
     environment = {item["name"]: item for item in container["env"]}
@@ -888,8 +894,8 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
     assert volumes["scientific-batch-scheduling"]["configMap"]["name"] == "scientific-scheduling-a1"
     assert volumes["scientific-batch-execution"]["configMap"]["name"] == "scientific-execution-b2"
 
-    role = named[("Role", "fs2-serve-control-plane-scientific-batch")]
-    binding = named[("RoleBinding", "fs2-serve-control-plane-scientific-batch")]
+    role = namespaced[("Role", "fs2-serve-control-plane-scientific-batch", "fs2-models")]
+    binding = namespaced[("RoleBinding", "fs2-serve-control-plane-scientific-batch", "fs2-models")]
     assert role["metadata"]["namespace"] == "fs2-models"
     assert role["rules"] == [
         {"apiGroups": ["batch"], "resources": ["jobs"], "verbs": ["get", "create", "delete"]},
@@ -904,6 +910,25 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
     assert binding["subjects"] == [
         {"kind": "ServiceAccount", "name": "fs2-serve-control-plane-runtime", "namespace": "fs2-system"}
     ]
+    academic_role = namespaced[("Role", "fs2-serve-control-plane-scientific-batch", "fs2-academic-poc")]
+    academic_binding = namespaced[("RoleBinding", "fs2-serve-control-plane-scientific-batch", "fs2-academic-poc")]
+    assert academic_role["rules"] == role["rules"]
+    assert academic_binding["subjects"] == binding["subjects"]
+    execution_map = named[("ConfigMap", "scientific-execution-b2")]
+    assert execution_map["immutable"] is True
+    rendered_map = json.loads(execution_map["data"]["execution-map.json"])
+    assert rendered_map["schema"] == "fs2-serve.nebius.ai/scientific-execution-map/v3"
+    assert {model["workload_namespace"] for model in rendered_map["models"]} == {
+        "fs2-models",
+        "fs2-academic-poc",
+    }
+    for workload_namespace in ("fs2-models", "fs2-academic-poc"):
+        workload_network = namespaced[
+            ("NetworkPolicy", "fs2-serve-control-plane-scientific-workloads", workload_namespace)
+        ]
+        assert workload_network["spec"]["podSelector"]["matchExpressions"] == [
+            {"key": "fs2.nebius.ai/workload-id", "operator": "Exists"}
+        ]
     flavor_role = named[("ClusterRole", "fs2-serve-control-plane-scientific-batch-flavors")]
     assert flavor_role["rules"] == [
         {"apiGroups": ["kueue.x-k8s.io"], "resources": ["resourceflavors"], "verbs": ["get"]}

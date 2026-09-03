@@ -72,6 +72,7 @@ def _state(
         tenant_queue="tenant-oncology",
         model_lane="rfdiffusion",
         workload_namespace="fs2-models",
+        route_namespace="fs2-models",
         stages=(
             StageSchedulingDecision(
                 stage_id="design",
@@ -344,8 +345,7 @@ def test_production_factory_binds_postgres_controller_and_artifact_adapters() ->
 async def test_artifact_adapter_projects_the_canonical_terminal_result_without_signed_handles() -> None:
     document = json.loads(
         (
-            Path(__file__).parents[3]
-            / "catalog/runtime/contracts/examples/scientific-run-result.example.json"
+            Path(__file__).parents[3] / "catalog/runtime/contracts/examples/scientific-run-result.example.json"
         ).read_text()
     )
     document["operation_id"] = str(OPERATION_ID)
@@ -483,8 +483,7 @@ async def test_real_postgres_admin_projection_reads_durable_controller_and_key_a
 
     document = json.loads(
         (
-            Path(__file__).parents[3]
-            / "catalog/runtime/contracts/examples/scientific-run-result.example.json"
+            Path(__file__).parents[3] / "catalog/runtime/contracts/examples/scientific-run-result.example.json"
         ).read_text()
     )
     document.update(

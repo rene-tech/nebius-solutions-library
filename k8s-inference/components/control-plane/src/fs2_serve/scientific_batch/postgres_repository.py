@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import datetime
@@ -10,7 +11,7 @@ from uuid import UUID
 
 import asyncpg
 
-from .codec import state_from_value, state_to_json
+from .codec import LEGACY_STATE_SCHEMA, state_from_value, state_to_json
 from .models import (
     PUBLIC_ARTIFACT_ACCESS_CONTEXT,
     AdapterExecutionPlan,
@@ -27,7 +28,7 @@ from .models import (
 )
 from .protocols import BatchFenceLostError, BatchRepositoryConflictError
 
-SCIENTIFIC_BATCH_MIGRATION = "0015_scientific_batch_controller.sql"
+SCIENTIFIC_BATCH_MIGRATION = "0016_scientific_batch_state_v7.sql"
 
 
 class ScientificBatchNotFoundError(RuntimeError):
@@ -66,7 +67,10 @@ class PostgresScientificBatchRepository:
 
     @staticmethod
     def _state(record: Mapping[str, Any]) -> ScientificBatchState:
+        raw_state = record["state"]
         state = state_from_value(record["state"])
+        raw_value = json.loads(raw_state) if isinstance(raw_state, str) else raw_state
+        legacy = isinstance(raw_value, Mapping) and raw_value.get("schema_version") == LEGACY_STATE_SCHEMA
         if (
             state.operation_id != record["operation_id"]
             or state.batch_id != record["batch_id"]
@@ -78,6 +82,7 @@ class PostgresScientificBatchRepository:
             or state.status.value != record["status"]
             or state.revision != record["revision"]
             or state.cancel_requested != record["cancel_requested"]
+            or (not legacy and state.scheduling.digest != record["scheduling_digest"])
         ):
             raise RuntimeError("stored scientific-batch columns and state differ")
         return state
@@ -317,7 +322,8 @@ class PostgresScientificBatchRepository:
                 updated = await connection.fetchrow(
                     """
                     UPDATE fs2_scientific_batches
-                    SET status=$4,revision=$5,cancel_requested=$6,state=$7::jsonb,updated_at=clock_timestamp()
+                    SET status=$4,revision=$5,cancel_requested=$6,state=$7::jsonb,
+                        scheduling_digest=$9,updated_at=clock_timestamp()
                     WHERE operation_id=$1 AND controller_id=$2 AND fencing_token=$3 AND revision=$8
                       AND lease_expires_at>clock_timestamp()
                     RETURNING *
@@ -330,6 +336,7 @@ class PostgresScientificBatchRepository:
                     record.cancel_requested,
                     payload,
                     expected_revision,
+                    record.scheduling.digest,
                 )
                 if updated is None:
                     raise BatchFenceLostError("scientific-batch claim or revision is stale")
@@ -458,13 +465,14 @@ class PostgresScientificBatchRepository:
             updated = await connection.fetchrow(
                 """
                 UPDATE fs2_scientific_batches
-                SET cancel_requested=true,state=$3::jsonb,updated_at=clock_timestamp()
+                SET cancel_requested=true,state=$3::jsonb,scheduling_digest=$4,updated_at=clock_timestamp()
                 WHERE operation_id=$1 AND tenant_id=$2
                 RETURNING *
                 """,
                 operation_id,
                 tenant_id,
                 state_to_json(replacement),
+                replacement.scheduling.digest,
             )
             await connection.execute(
                 """
@@ -523,5 +531,6 @@ DROP TABLE IF EXISTS fs2_scientific_batch_events;
 DROP TABLE IF EXISTS fs2_scientific_batches;
 DROP FUNCTION IF EXISTS fs2_scientific_batch_append_only();
 DROP FUNCTION IF EXISTS fs2_scientific_batch_state_immutable();
-DELETE FROM fs2_schema_migrations WHERE version='0015_scientific_batch_controller.sql';
+DELETE FROM fs2_schema_migrations
+WHERE version IN ('0016_scientific_batch_state_v7.sql','0015_scientific_batch_controller.sql');
 """.strip()

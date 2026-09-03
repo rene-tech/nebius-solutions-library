@@ -78,6 +78,7 @@ def snapshot(
         tenant_queue="cancer-immunotherapy",
         model_lane="protein-design",
         workload_namespace="fs2-scientific",
+        route_namespace="fs2-scientific",
         stages=tuple(
             StageSchedulingDecision(
                 stage_id=stage.stage_id,
@@ -365,35 +366,49 @@ async def test_preemption_retries_with_new_attempt_and_stale_observation_is_fenc
     await reconciler.reconcile_once()
     first = repository.records[operation_id].stage("fold").attempts[0]
     cluster.deletion_polls_before_absent[cluster.key(first.workload)] = 1
+    first_reservation = SchedulingAdmission(
+        resolved_pool_id="h100-preemptible",
+        admitted_resource_flavor="inference-h100-1x",
+        accelerator_resource_name="nvidia.com/gpu",
+        accelerator_count=1,
+        admitted_at=NOW,
+    )
+    cluster.set_observation(
+        first.workload,
+        WorkloadObservation(
+            ref=first.workload,
+            attempt_id=first.attempt_id,
+            state=WorkloadState.PENDING,
+            phases=(),
+            scheduling_admission=first_reservation,
+            kueue_workload_uid="evicted-kueue-uid",
+        ),
+    )
+    await reconciler.reconcile_once()
     cluster.set_observation(
         first.workload,
         WorkloadObservation(
             ref=first.workload,
             attempt_id=first.attempt_id,
             state=WorkloadState.PREEMPTED,
-            phases=(LifecyclePhase.ADMITTED, LifecyclePhase.ACTIVE_COMPUTE),
-            scheduling_admission=SchedulingAdmission(
-                resolved_pool_id="h100-preemptible",
-                admitted_resource_flavor="inference-h100-1x",
-                accelerator_resource_name="nvidia.com/gpu",
-                accelerator_count=1,
-                admitted_at=NOW,
-            ),
+            phases=(),
+            scheduling_admission=None,
+            kueue_workload_uid="evicted-kueue-uid",
             failure_kind=FailureKind.PREEMPTION,
-            failure_code="node_preempted",
+            failure_code="Preempted",
         ),
     )
     await reconciler.reconcile_once()
     observed = repository.records[operation_id].stage("fold").latest_attempt("main")
     assert observed is not None and observed.outcome is AttemptOutcome.PREEMPTED
+    assert observed.scheduling_admission == first_reservation
+    assert observed.kueue_workload_uid == "evicted-kueue-uid"
     assert not observed.resource_released
     await reconciler.reconcile_once()
     deletion_pending = repository.records[operation_id].stage("fold").latest_attempt("main")
     assert deletion_pending is not None
     assert deletion_pending.deletion_requested and not deletion_pending.resource_released
-    assert LifecyclePhase.TEARDOWN not in [
-        event.draft.phase for event in repository.events[operation_id]
-    ]
+    assert LifecyclePhase.TEARDOWN not in [event.draft.phase for event in repository.events[operation_id]]
     pending_revision = repository.records[operation_id].revision
     await reconciler.reconcile_once()
     assert repository.records[operation_id].revision == pending_revision
@@ -434,6 +449,129 @@ async def test_preemption_retries_with_new_attempt_and_stale_observation_is_fenc
     assert repository.records[operation_id].status is BatchStatus.SUCCEEDED
     assert len(cluster.apply_history) == 2
     assert any(event.draft.kind is BatchEventKind.RETRY_SCHEDULED for event in repository.events[operation_id])
+
+
+@pytest.mark.asyncio
+async def test_same_workload_rereservation_is_deleted_and_retry_gets_fresh_queue_clock() -> None:
+    repository = FakeScientificBatchRepository()
+    cluster = FakeScientificBatchCluster()
+    current_time = [NOW]
+    reconciler = ScientificBatchController(
+        repository=repository,
+        cluster=cluster,
+        controller_id="controller-pod:uid-1",
+        namespace="fs2-scientific",
+        clock=lambda: current_time[0],
+    )
+    operation_id = uuid4()
+    batch_plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="fold", max_attempts=3),))
+    await reconciler.admit(
+        operation_id=operation_id,
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        plan=batch_plan,
+        scheduling=snapshot(batch_plan),
+    )
+
+    await reconciler.reconcile_once()
+    first = repository.records[operation_id].stage("fold").attempts[0]
+    first_reservation = SchedulingAdmission(
+        resolved_pool_id="h100-preemptible",
+        admitted_resource_flavor="inference-h100-1x",
+        accelerator_resource_name="nvidia.com/gpu",
+        accelerator_count=1,
+        admitted_at=NOW + timedelta(seconds=5),
+    )
+    cluster.set_observation(
+        first.workload,
+        WorkloadObservation(
+            ref=first.workload,
+            attempt_id=first.attempt_id,
+            state=WorkloadState.PENDING,
+            phases=(),
+            scheduling_admission=first_reservation,
+            kueue_workload_uid="stable-kueue-uid",
+        ),
+    )
+    current_time[0] = NOW + timedelta(seconds=10)
+    await reconciler.reconcile_once()
+    reserved = repository.records[operation_id].stage("fold").attempts[0]
+    assert reserved.scheduling_admission == first_reservation
+    assert reserved.kueue_workload_uid == "stable-kueue-uid"
+    assert repository.records[operation_id].scheduling.stage("fold").resolved_cluster_queue == (
+        "inference-accelerators"
+    )
+
+    # QuotaReserved -> Admitted is the same reservation and keeps the original
+    # assignment timestamp.
+    cluster.set_observation(
+        first.workload,
+        WorkloadObservation(
+            ref=first.workload,
+            attempt_id=first.attempt_id,
+            state=WorkloadState.PENDING,
+            phases=(LifecyclePhase.ADMITTED,),
+            scheduling_admission=first_reservation,
+            kueue_workload_uid="stable-kueue-uid",
+        ),
+    )
+    current_time[0] = NOW + timedelta(seconds=20)
+    await reconciler.reconcile_once()
+    admitted = repository.records[operation_id].stage("fold").attempts[0]
+    assert admitted.outcome is AttemptOutcome.ACTIVE
+    assert admitted.last_phase is LifecyclePhase.ADMITTED
+
+    cluster.set_observation(
+        first.workload,
+        WorkloadObservation(
+            ref=first.workload,
+            attempt_id=first.attempt_id,
+            state=WorkloadState.PENDING,
+            phases=(),
+            scheduling_admission=SchedulingAdmission(
+                resolved_pool_id="h100-capacity-block",
+                admitted_resource_flavor="inference-h100-8x",
+                accelerator_resource_name="nvidia.com/gpu",
+                accelerator_count=1,
+                admitted_at=NOW + timedelta(seconds=700),
+            ),
+            kueue_workload_uid="stable-kueue-uid",
+        ),
+    )
+    current_time[0] = NOW + timedelta(seconds=700)
+    await reconciler.reconcile_once()
+    fenced = repository.records[operation_id].stage("fold").attempts[0]
+    assert fenced.outcome is AttemptOutcome.PREEMPTED
+    assert fenced.failure_kind is FailureKind.PREEMPTION
+    assert fenced.failure_code == "kueue_same_workload_rereserved"
+    assert fenced.scheduling_admission == first_reservation
+    assert fenced.kueue_workload_uid == "stable-kueue-uid"
+
+    for seconds in (701, 702, 703, 704):
+        current_time[0] = NOW + timedelta(seconds=seconds)
+        await reconciler.reconcile_once()
+    stage = repository.records[operation_id].stage("fold")
+    second = stage.latest_attempt("main")
+    assert second is not None and second.attempt_number == 2
+    assert second.attempt_id != first.attempt_id
+    assert second.started_at == NOW + timedelta(seconds=704)
+    assert cluster.delete_history == [first.workload]
+
+    # This timestamp exceeds the first attempt's queue deadline but not the
+    # second attempt's fresh deadline.
+    current_time[0] = NOW + timedelta(seconds=1200)
+    await reconciler.reconcile_once()
+    still_queued = repository.records[operation_id].stage("fold").latest_attempt("main")
+    assert still_queued is not None and still_queued.outcome is AttemptOutcome.ACTIVE
+
+    current_time[0] = NOW + timedelta(seconds=1305)
+    await reconciler.reconcile_once()
+    expired = repository.records[operation_id].stage("fold").latest_attempt("main")
+    assert expired is not None and expired.outcome is AttemptOutcome.FAILED
+    assert expired.failure_code == "queue_deadline_exceeded"
+    assert LifecyclePhase.PREEMPTED in [
+        event.draft.phase for event in repository.events[operation_id] if event.draft.attempt_id == first.attempt_id
+    ]
 
 
 @pytest.mark.asyncio
@@ -746,8 +884,7 @@ async def test_cancel_cascades_to_active_attempts_and_never_creates_downstream_s
     deleting = repository.records[operation_id]
     assert deleting.status is BatchStatus.RUNNING
     assert all(
-        attempt.deletion_requested and not attempt.resource_released
-        for attempt in deleting.stage("prepare").attempts
+        attempt.deletion_requested and not attempt.resource_released for attempt in deleting.stage("prepare").attempts
     )
     revision = deleting.revision
     await reconciler.reconcile_once()

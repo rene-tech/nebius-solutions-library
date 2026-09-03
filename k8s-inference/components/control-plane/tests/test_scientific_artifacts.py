@@ -243,6 +243,8 @@ def scheduling_snapshot(stage_ids: tuple[str, ...] = ("design",)) -> dict[str, A
         "service_class": "customer-batch",
         "tenant_queue": "tenant-academic",
         "model_lane": "proteina-complexa",
+        "workload_namespace": "fs2-models",
+        "route_namespace": "fs2-models",
         "stages": [
             {
                 "stage_id": stage_id,

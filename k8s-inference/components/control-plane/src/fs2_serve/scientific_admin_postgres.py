@@ -176,11 +176,7 @@ def _admission_state(state: ScientificBatchState) -> tuple[str, str]:
     latest = stage.attempts[-1] if stage.attempts else None
     if latest is not None and latest.outcome is AttemptOutcome.PREEMPTED:
         return "evicted", "The latest attempt was preempted and awaits controller reconciliation."
-    if (
-        latest is not None
-        and not latest.resource_released
-        and latest.last_phase.rank >= LifecyclePhase.ADMITTED.rank
-    ):
+    if latest is not None and not latest.resource_released and latest.last_phase.rank >= LifecyclePhase.ADMITTED.rank:
         return "admitted", "The admitted workload has not yet reached its UID-confirmed release boundary."
     return "pending", "The controller has not observed a Kueue admission event."
 
@@ -318,9 +314,7 @@ def _attempt(
         status = attempt.outcome.value
     admission = attempt.scheduling_admission
     gpu_count = (
-        admission.accelerator_count
-        if admission is not None
-        else (0 if resource_class is ResourceClass.CPU else None)
+        admission.accelerator_count if admission is not None else (0 if resource_class is ResourceClass.CPU else None)
     )
     failure = None
     if attempt.failure_code is not None:
@@ -698,12 +692,8 @@ class PostgresScientificArtifactAdminAdapter:
                     ),
                     admitted_at=admission.admitted_at if admission is not None else None,
                     resolved_pool_id=admission.resolved_pool_id if admission is not None else None,
-                    admitted_resource_flavor=(
-                        admission.admitted_resource_flavor if admission is not None else None
-                    ),
-                    accelerator_resource_name=(
-                        admission.accelerator_resource_name if admission is not None else None
-                    ),
+                    admitted_resource_flavor=(admission.admitted_resource_flavor if admission is not None else None),
+                    accelerator_resource_name=(admission.accelerator_resource_name if admission is not None else None),
                 )
             )
         access = result.access_admission
