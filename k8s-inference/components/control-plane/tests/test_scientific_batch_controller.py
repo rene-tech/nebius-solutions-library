@@ -816,6 +816,7 @@ async def test_negative_semantic_commit_cannot_unlock_downstream_stage() -> None
         (FailureKind.USER_INPUT, "invalid_sequence"),
         (FailureKind.SCIENTIFIC_VALIDATION, "invalid_structure"),
         (FailureKind.APPLICATION, "model_rejected_request"),
+        (FailureKind.APPLICATION, "EXECUTION_TIMEOUT"),
     ],
 )
 async def test_only_infrastructure_failures_are_retried(failure_kind: FailureKind, failure_code: str) -> None:

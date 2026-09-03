@@ -75,10 +75,12 @@ pool/ResourceFlavor/resource/count/time assignment on the attempt, deletes the
 UID-fenced Job or JobSet, waits for confirmed absence, and only then creates a
 new attempt. It never accepts same-Workload automatic requeue as a continuation,
 so the new attempt receives a new identity and a fresh queue deadline.
-Raw Kueue `DeactivationTarget` causes are retained: `MaximumExecutionTimeExceeded`
-is terminal application/policy failure, while `RequeuingLimitExceeded` is an
-infrastructure failure eligible for the normal bounded new-attempt retry. A
-generic `Deactivated` condition never replaces either exact cause.
+Raw Kueue `DeactivationTarget` causes and their later
+`DeactivatedDueTo<Cause>`/`EvictedDueToDeactivatedDueTo<Cause>` forms are
+normalized identically. `MaximumExecutionTimeExceeded` is the terminal
+application/policy code `EXECUTION_TIMEOUT`, while `RequeuingLimitExceeded`
+is an infrastructure failure eligible for the normal bounded new-attempt
+retry. A generic `Deactivated` condition never replaces either exact cause.
 
 For a mixed JobSet, reservation parsing is scoped to the stage's exact frozen
 accelerator resource. CPU-only coordinator PodSets and unrelated extended
