@@ -1,0 +1,103 @@
+{
+  "schema": "fs2-serve.nebius.ai/fast-start-mechanism-campaign/v1",
+  "measurement_basis": "CapacityAvailableToSemanticReady",
+  "minimum_qualifying_samples": 20,
+  "qualifying_percentile": 0.95,
+  "attempt_order": "strict-control-candidate-alternation",
+  "notes": [
+    "The control arm is the exact conventional render that serves this model today, including its discarded emptyDir compile cache.",
+    "Cold arms measure PodScheduled to first validated semantic response. Promotion arms measure from the prober's own clock, which includes the trigger dispatch, so their reported activation is conservative.",
+    "Shared-filesystem page-cache state is not controlled between cold attempts and is recorded as an uncontrolled variable. host-memory-residency is the only arm that guarantees residency, and the per-attempt runtime weight-load seconds make the difference visible."
+  ],
+  "targets": {
+    "qwen3-8b": {
+      "state": "runnable",
+      "role": "proving-ground",
+      "model_ref": "qwen3-8b",
+      "namespace": "fs2-models",
+      "pool_ref": "h100-reserved-8x",
+      "accelerator_class": "nvidia-h100-sxm5-80gb",
+      "capacity_type": "regular",
+      "capacity_source": "capacity-block",
+      "startup_scenario": "prepared-node-zero-pod",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+      "image_mirror_registry": "cr.eu-north1.nebius.cloud",
+      "runtime_container_name": "vllm",
+      "service_port": 8000,
+      "payload_claim_name": "qwen3-8b-cache-rwx-7af24455",
+      "payload_content_path": "/models/qwen3-8b/sha256/5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d/payload",
+      "payload_digest": "sha256:5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d",
+      "payload_bytes": 16397461266,
+      "payload_mount_path": "/models",
+      "compile_cache_claim_name": "fsm-compile-cache-rwx",
+      "compile_cache_abi": "driver-580.159.04-sm90",
+      "residency_receipt_claim_name": "fsm-residency-receipt-rwx",
+      "residency_reserved_bytes": 19327352832,
+      "node_allocatable_bytes": 1648745732096,
+      "accelerators_per_replica": 1,
+      "accelerator_resource_name": "nvidia.com/gpu",
+      "runtime_args": [
+        "/models/qwen3-8b/sha256/5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d/payload",
+        "--served-model-name",
+        "qwen3-8b",
+        "Qwen/Qwen3-8B",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--dtype",
+        "bfloat16",
+        "--tensor-parallel-size",
+        "1",
+        "--max-model-len",
+        "32768",
+        "--gpu-memory-utilization",
+        "0.80",
+        "--generation-config",
+        "vllm",
+        "--enable-prefix-caching"
+      ],
+      "semantic_request": {
+        "path": "/v1/chat/completions",
+        "body": {
+          "model": "qwen3-8b",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Reply with the single word READY."
+            }
+          ],
+          "max_tokens": 8,
+          "temperature": 0,
+          "chat_template_kwargs": {
+            "enable_thinking": false
+          }
+        },
+        "validator": "openai-chat-nonempty"
+      },
+      "arms": [
+        "conventional",
+        "regional-cache",
+        "host-memory-residency",
+        "host-memory-residency-sleep-offload",
+        "gpu-resident"
+      ],
+      "residency_receipt_mount": "/residency",
+      "residency_mode": "mapped-payload-residency",
+      "residency_mode_finding": "locked-payload-residency is unavailable on this cluster for a non-root runtime identity. Measured live on the H100 capacity-block node as uid 1000 with capabilities.add=[IPC_LOCK]: CapBnd=0x4000, CapEff=0x0, RLIMIT_MEMLOCK=8388608 bytes. Added capabilities reach only the bounding set for a non-root container, so mlock fails with ENOMEM. The holder therefore runs mapped-payload-residency and reports residency_guaranteed=false rather than claiming a guarantee.",
+      "node_name_source": "--node, because the node is a run-time target rather than a model fact"
+    },
+    "boltzgen": {
+      "state": "pending-serving-runtime",
+      "role": "priority-cancer-model",
+      "blocker": "BoltzGen has a qualified H100 runtime image but no serving HTTP endpoint on this cluster yet; its scientific batch adapter runs as a Job rather than a readiness-probed Service.",
+      "activation_requirement": "Populate the same keys as the qwen3-8b target once a BoltzGen serving profile with a readiness probe and a semantic request exists, then run the campaign with --target boltzgen. No mechanism code changes are needed.",
+      "arms": [
+        "conventional",
+        "regional-cache",
+        "host-memory-residency",
+        "gpu-resident"
+      ]
+    }
+  }
+}
