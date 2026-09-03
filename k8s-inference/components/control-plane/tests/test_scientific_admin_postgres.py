@@ -134,12 +134,19 @@ def _state(
 
 def _model() -> ScientificModelReadiness:
     return ScientificModelReadiness.model_validate(
-        {
-            "model_id": "rfdiffusion",
-            "display_name": "RFdiffusion",
-            "readiness": "candidate",
-            "readiness_reason": "Candidate runtime.",
-            "execution_mode": "scientific-batch",
+            {
+                "model_id": "rfdiffusion",
+                "candidate_id": "rfdiffusion",
+                "display_name": "RFdiffusion",
+                "readiness": "candidate",
+                "readiness_reason": "Candidate runtime.",
+                "workload_profile": "published",
+                "missing_evidence": ["qualified-evidence"],
+                "qualification": {
+                    "state": "evidence-absent",
+                    "reason": "The candidate has no joined runtime qualification evidence.",
+                },
+                "execution_mode": "scientific-batch",
             "batch_supported": True,
             "interactive_supported": False,
             "service_classes": ["customer-batch", "bulk-backfill"],
@@ -342,7 +349,9 @@ def test_production_factory_binds_postgres_controller_and_artifact_adapters() ->
     )
 
     assert isinstance(service.runs, PostgresScientificRunAdminAdapter)
-    assert service.artifacts.__class__.__name__ == "PostgresScientificArtifactAdminAdapter"
+    assert service.artifacts is None
+    assert service.capabilities().run_history.available is True
+    assert service.capabilities().artifacts.available is False
 
 
 async def test_artifact_adapter_projects_the_canonical_terminal_result_without_signed_handles() -> None:

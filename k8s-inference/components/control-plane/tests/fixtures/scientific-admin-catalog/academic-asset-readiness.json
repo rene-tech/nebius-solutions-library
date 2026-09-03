@@ -1,0 +1,16 @@
+{
+  "schema": "fs2-serve.nebius.ai/academic-asset-readiness/v1",
+  "comment": "Admin-owned projection fixture for deployment-bound academic authorization.",
+  "request_time_license_receipt_required": false,
+  "models": [
+    {
+      "model_id": "alphafold3",
+      "asset_id": "alphafold3",
+      "access_profile": "academic",
+      "use_authorization_status": "Granted",
+      "execution_authorization_status": "Authorized",
+      "serving_admission": "AdmittedNoPerRequestLicenseReceipt",
+      "formal_license_status": "FormalAcceptancePending"
+    }
+  ]
+}

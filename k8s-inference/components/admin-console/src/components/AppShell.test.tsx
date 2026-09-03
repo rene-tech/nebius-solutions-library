@@ -6,6 +6,7 @@ import { adminApi, AdminApiError } from "../api/client";
 import { SessionContext } from "../auth/SessionContext";
 import { testSession } from "../test/accessFixtures";
 import { AppShell } from "./AppShell";
+import { browserFixture } from "../test/browserFixtures";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -24,6 +25,12 @@ function renderShell() {
 
 describe("application shell context state", () => {
   it("never labels a failed context request as live and exposes a correlated retry", async () => {
+    vi.spyOn(adminApi, "scientificCapabilities").mockRejectedValue(new AdminApiError(
+      "scientific capability endpoint is absent",
+      404,
+      "request-capability",
+      "not_found",
+    ));
     vi.spyOn(adminApi, "context").mockRejectedValue(new AdminApiError(
       "no server-authorized cluster context is configured",
       503,
@@ -38,5 +45,22 @@ describe("application shell context state", () => {
     expect(screen.getByText("Request request-context")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
     expect(screen.getByText("Overview content")).toBeInTheDocument();
+  });
+
+  it("hides unavailable scientific navigation without affecting the rest of the portal", async () => {
+    vi.spyOn(adminApi, "context").mockResolvedValue(
+      structuredClone(browserFixture("/admin/api/v1/context")) as never,
+    );
+    vi.spyOn(adminApi, "scientificCapabilities").mockRejectedValue(new AdminApiError(
+      "scientific capability endpoint is absent",
+      404,
+      "request-capability",
+      "not_found",
+    ));
+    renderShell();
+
+    expect(await screen.findByText("Overview content")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Scientific/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Models/ })).toBeInTheDocument();
   });
 });

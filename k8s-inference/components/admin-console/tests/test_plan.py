@@ -173,6 +173,14 @@ class AdminConsolePlanTests(unittest.TestCase):
         self.assertTrue(
             {path for _, path in model_deployment_routes}.issubset(endpoints)
         )
+        scientific_routes = {
+            ("GET", "/admin/api/v1/scientific-capabilities"),
+            ("GET", "/admin/api/v1/scientific-runs"),
+            ("GET", "/admin/api/v1/scientific-runs/{run_id}"),
+            ("GET", "/admin/api/v1/scientific-models"),
+        }
+        self.assertTrue(scientific_routes.issubset(contract_routes))
+
         feature_paths = {
             path
             for group in self.api_contract["feature_gated_route_groups"]
@@ -180,7 +188,10 @@ class AdminConsolePlanTests(unittest.TestCase):
         }
         self.assertEqual(
             feature_paths,
-            {path for _, path in configuration_routes | model_deployment_routes},
+            {
+                path
+                for _, path in configuration_routes | model_deployment_routes | scientific_routes
+            },
         )
         disabled_only = {
             (route["method"], route["path"], route["status"], route["code"])
@@ -266,9 +277,9 @@ class AdminConsolePlanTests(unittest.TestCase):
                     )
                 self.assertRegex(source, pattern)
 
-    def test_scientific_admin_contract_is_explicitly_fixture_only(self) -> None:
+    def test_scientific_admin_contract_gates_routes_by_real_producer_capabilities(self) -> None:
         contract = self.scientific_fixture_contract
-        self.assertEqual(contract["status"], "fixture-only-pending-backend-integration")
+        self.assertEqual(contract["status"], "capability-gated-live-model-readiness")
         self.assertFalse(contract["access"]["credentials_exposed"])
         self.assertEqual(
             contract["gpu_accounting"]["evidence_states"],
@@ -277,19 +288,33 @@ class AdminConsolePlanTests(unittest.TestCase):
         self.assertIn("never rendered as measured", contract["gpu_accounting"]["invariant"])
         self.assertIn("explicit-alternative", contract["access"]["native_gate_invariant"])
 
+        # Fixtures back tests and Vite fixture mode only; production must not
+        # fall back to them, and the contract must say which producers are absent.
+        self.assertIn("no fixture fallback", contract["production_behavior"])
+        self.assertEqual(
+            set(contract["pending_producers"]),
+            {"scientific-controller", "scientific-artifacts"},
+        )
+
+        # The capability route and every potentially enabled data route are
+        # sealed in the API contract; runtime registration remains producer-gated.
         scientific_paths = {route["path"] for route in contract["routes"]}
         live_paths = {route["path"] for route in self.api_contract["routes"]}
-        self.assertTrue(scientific_paths.isdisjoint(live_paths))
+        self.assertTrue(scientific_paths.issubset(live_paths))
         self.assertEqual(
             scientific_paths,
             {
+                "/admin/api/v1/scientific-capabilities",
                 "/admin/api/v1/scientific-runs",
                 "/admin/api/v1/scientific-runs/{run_id}",
                 "/admin/api/v1/scientific-models",
             },
         )
+        gated = {group["id"]: group for group in self.api_contract["feature_gated_route_groups"]}
+        self.assertEqual(set(gated["scientific-operations"]["paths"]), scientific_paths)
 
         client_source = (ROOT / "src" / "api" / "client.ts").read_text()
+        self.assertIn('request<ScientificCapabilities>("/scientific-capabilities"', client_source)
         self.assertIn('request<ScientificRunList>("/scientific-runs"', client_source)
         self.assertIn('request<ScientificModelReadinessList>("/scientific-models"', client_source)
 

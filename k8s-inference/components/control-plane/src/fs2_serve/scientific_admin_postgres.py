@@ -233,6 +233,11 @@ def _summary(
     state: ScientificBatchState,
     model: ScientificModelReadiness,
 ) -> ScientificRunSummary:
+    execution_mode = model.execution_mode
+    if execution_mode is None:
+        raise ScientificAdminSourceUnavailableError(
+            f"scientific model {state.model_id} has no published execution profile"
+        )
     stage = _active_stage(state)
     scheduling = state.scheduling.stage(stage.stage_id)
     admission_state, admission_reason = _admission_state(state)
@@ -258,7 +263,7 @@ def _summary(
         model=ScientificRunModel(
             model_id=state.model_id,
             display_name=model.display_name,
-            execution_mode=model.execution_mode,
+            execution_mode=execution_mode,
             backend=ScientificBackendIdentity.model_validate(backend),
         ),
         access=model.access,
@@ -749,15 +754,22 @@ def postgres_scientific_admin_read_service(
 ) -> ScientificAdminReadService:
     """Build the production admin service over canonical durable sources."""
 
-    models = ScientificProfileDiscoveryAdapter(scientific_batches=scientific_batches)
     run_models = ScientificCatalogFileAdapter(
         registry=registry,
         receipts_file=scientific_receipts_file(catalog_dir),
     )
+    models = ScientificProfileDiscoveryAdapter(
+        scientific_batches=scientific_batches,
+        global_catalog=run_models,
+    )
     batches = PostgresScientificBatchRepository(pool)
     return ScientificAdminReadService(
         runs=PostgresScientificRunAdminAdapter(pool=pool, batches=batches, models=run_models),
-        artifacts=PostgresScientificArtifactAdminAdapter(artifact_service),
+        artifacts=(
+            PostgresScientificArtifactAdminAdapter(artifact_service)
+            if artifact_service is not None
+            else None
+        ),
         models=models,
         source_max_age_seconds=source_max_age_seconds,
         adapter_timeout_seconds=adapter_timeout_seconds,

@@ -49,18 +49,45 @@ class ScientificExplicitAlternative(StrictModel):
     reason: str = Field(min_length=1, max_length=200)
 
 
+class ScientificAccessAuthorization(StrictModel):
+    """Deployment-bound academic authorization; never a caller credential.
+
+    Every field is copied from the generated academic asset readiness
+    projection. Nothing here is synthesised, so a field the projection does not
+    publish is absent rather than invented.
+    """
+
+    asset_id: str = Field(min_length=1, max_length=128)
+    backend_id: str | None = Field(default=None, min_length=1, max_length=128)
+    license_id: str | None = Field(default=None, min_length=1, max_length=200)
+    use_authorization_status: Literal["Granted"] = "Granted"
+    execution_authorization_status: Literal["Authorized"] = "Authorized"
+    serving_admission: Literal["PendingRuntimeReadiness", "AdmittedNoPerRequestLicenseReceipt"]
+    asset_namespace: str | None = Field(default=None, min_length=1, max_length=63)
+
+
 class ScientificAccessGate(StrictModel):
     profile: Literal["standard", "academic"]
     state: Literal["not-required", "unverified", "verified", "blocked"]
     gate: str = Field(min_length=1, max_length=300)
     receipt_digest: str | None = Field(default=None, max_length=128)
+    request_time_license_receipt_required: Literal[False] = False
+    authorization: ScientificAccessAuthorization | None = None
+    formal_license_status: Literal[
+        "FormalAcceptancePending", "FormalAcceptanceRecorded", "not-applicable"
+    ] = "not-applicable"
     credentials_exposed: Literal[False] = False
     alternative: ScientificExplicitAlternative | None = None
 
     @model_validator(mode="after")
-    def verified_gate_has_receipt(self) -> ScientificAccessGate:
-        if self.profile == "academic" and self.state == "verified" and self.receipt_digest is None:
-            raise ValueError("verified academic access requires a non-secret receipt digest")
+    def access_evidence_is_consistent(self) -> ScientificAccessGate:
+        if self.profile == "academic":
+            if self.state == "verified" and self.authorization is None and self.receipt_digest is None:
+                raise ValueError("verified academic access requires deployment authorization or an access receipt")
+            if self.formal_license_status == "not-applicable":
+                raise ValueError("academic access must report formal licence status separately")
+        elif self.authorization is not None or self.formal_license_status != "not-applicable":
+            raise ValueError("standard access cannot carry academic authorization state")
         if self.credentials_exposed:
             raise ValueError("scientific access credentials cannot be exposed")
         return self
@@ -319,19 +346,83 @@ class ScientificCachingReadiness(StrictModel):
     reason: str = Field(min_length=1, max_length=300)
 
 
+class ScientificQualificationJoin(StrictModel):
+    """Why a candidate is or is not joined to a live registry model.
+
+    A candidate is only qualified when the whole immutable execution identity
+    matches. Matching a serving lane name alone would let a candidate inherit a
+    different vendor's image and qualification.
+    """
+
+    state: Literal["qualified", "identity-mismatch", "not-registered", "evidence-absent"]
+    reason: str = Field(min_length=1, max_length=300)
+    serving_lane_id: str | None = Field(default=None, min_length=1, max_length=128)
+    compared: list[str] = Field(default_factory=list, max_length=8)
+    mismatched: list[str] = Field(default_factory=list, max_length=8)
+
+
 class ScientificModelReadiness(StrictModel):
     model_id: str = Field(min_length=1, max_length=128)
+    candidate_id: str = Field(min_length=1, max_length=128)
     display_name: str = Field(min_length=1, max_length=200)
     readiness: Literal["qualified", "candidate", "blocked", "unknown"]
     readiness_reason: str = Field(min_length=1, max_length=300)
-    execution_mode: Literal["scientific-batch", "hybrid"]
+    workload_profile: Literal["published", "absent"]
+    missing_evidence: list[str] = Field(default_factory=list, max_length=12)
+    qualification: ScientificQualificationJoin
+    execution_mode: Literal["scientific-batch", "hybrid"] | None = None
     batch_supported: bool
-    interactive_supported: bool
-    service_classes: list[ScientificServiceClass] = Field(max_length=8)
+    interactive_supported: bool | None = None
+    service_classes: list[ScientificServiceClass] = Field(default_factory=list, max_length=8)
     backend: ScientificBackendIdentity
     access: ScientificAccessGate
     caching: ScientificCachingReadiness
 
+    @model_validator(mode="after")
+    def absent_profile_withholds_execution_shape(self) -> ScientificModelReadiness:
+        if self.workload_profile == "absent":
+            if self.readiness == "qualified":
+                raise ValueError("a model without a published workload profile cannot be qualified")
+            if self.execution_mode is not None or self.service_classes:
+                raise ValueError("a model without a published workload profile has no execution shape")
+            if "workload-profile" not in self.missing_evidence:
+                raise ValueError("an absent workload profile must be listed as missing evidence")
+        elif self.execution_mode is None:
+            raise ValueError("a published workload profile must declare its execution mode")
+        if self.readiness == "qualified" and self.qualification.state != "qualified":
+            raise ValueError("qualified readiness requires a qualified execution-identity join")
+        return self
+
+
+class ScientificModelProjectionIssue(StrictModel):
+    """A bounded catalog defect isolated from otherwise valid model rows."""
+
+    candidate_id: str | None = Field(default=None, min_length=1, max_length=128)
+    source: Literal["candidate-receipt", "workload-profile", "academic-readiness", "variant-map"]
+    reason: str = Field(min_length=1, max_length=300)
+
+
+class ScientificCapability(StrictModel):
+    available: bool
+    reason: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="after")
+    def unavailable_capability_explains_itself(self) -> ScientificCapability:
+        if not self.available and self.reason is None:
+            raise ValueError("an unavailable scientific capability must say why")
+        if self.available and self.reason is not None:
+            raise ValueError("an available scientific capability needs no reason")
+        return self
+
+
+class ScientificCapabilities(StrictModel):
+    """What this control-plane build can serve, so the console can gate truthfully."""
+
+    model_readiness: ScientificCapability
+    run_history: ScientificCapability
+    artifacts: ScientificCapability
+
 
 class ScientificModelReadinessList(StrictModel):
     items: list[ScientificModelReadiness] = Field(max_length=256)
+    projection_issues: list[ScientificModelProjectionIssue] = Field(default_factory=list, max_length=256)

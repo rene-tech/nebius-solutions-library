@@ -3,11 +3,11 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import axe from "axe-core";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { adminApi } from "../../api/client";
+import { adminApi, AdminApiError } from "../../api/client";
 import type { AdminEnvelope } from "../../api/types";
 import type { ScientificRunList } from "../../api/scientificTypes";
 import { SessionContext } from "../../auth/SessionContext";
-import { testSession } from "../../test/accessFixtures";
+import { tenantPrincipal, testSession } from "../../test/accessFixtures";
 import { browserFixture } from "../../test/browserFixtures";
 import { ScientificRunsPage } from "./ScientificRunsPage";
 
@@ -18,15 +18,16 @@ function fixture<T = never>(path: string): T {
 }
 
 function prepareApi() {
+  vi.spyOn(adminApi, "scientificCapabilities").mockResolvedValue(fixture("/admin/api/v1/scientific-capabilities"));
   vi.spyOn(adminApi, "scientificRuns").mockResolvedValue(fixture("/admin/api/v1/scientific-runs"));
   vi.spyOn(adminApi, "scientificModels").mockResolvedValue(fixture("/admin/api/v1/scientific-models"));
 }
 
-function renderPage(entry = "/admin/scientific-runs") {
+function renderPage(entry = "/admin/scientific-runs", session = testSession) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <SessionContext.Provider value={{ session: testSession, logout: async () => undefined, loggingOut: false, logoutError: null }}>
+      <SessionContext.Provider value={{ session, logout: async () => undefined, loggingOut: false, logoutError: null }}>
         <MemoryRouter initialEntries={[entry]}><main><ScientificRunsPage /></main></MemoryRouter>
       </SessionContext.Provider>
     </QueryClientProvider>,
@@ -44,10 +45,12 @@ describe("scientific runs fixture contract", () => {
     expect(within(completed).getByText("model-artifact-local")).toBeInTheDocument();
     expect(within(completed).getAllByText("measured").length).toBeGreaterThanOrEqual(4);
 
-    const blocked = screen.getByRole("row", { name: /Neoantigen complex ranking/ });
-    expect(within(blocked).getByText(/academic · blocked/)).toBeInTheDocument();
-    expect(within(blocked).getByText((_, element) => element?.classList.contains("scientific-alternative") === true && element.textContent?.includes("OpenFold3") === true)).toHaveTextContent("it is not represented as native AlphaFold3");
-    expect(within(blocked).getAllByText("unavailable").length).toBeGreaterThan(0);
+    const alphaFold = screen.getByRole("row", { name: /Neoantigen complex ranking/ });
+    expect(within(alphaFold).getByText(/academic · verified/)).toBeInTheDocument();
+    expect(within(alphaFold).getByText(/Use Granted · execution Authorized/)).toBeInTheDocument();
+    expect(within(alphaFold).getByText("No request-time licence receipt")).toBeInTheDocument();
+    expect(within(alphaFold).getByText((_, element) => element?.classList.contains("scientific-alternative") === true && element.textContent?.includes("OpenFold3") === true)).toHaveTextContent("it is not represented as native AlphaFold3");
+    expect(within(alphaFold).getAllByText("unavailable").length).toBeGreaterThan(0);
 
     const cancelled = screen.getByRole("row", { name: /PD-L1 binder refinement/ });
     expect(within(cancelled).getByText(/estimated/)).toBeInTheDocument();
@@ -80,7 +83,7 @@ describe("scientific runs fixture contract", () => {
       limit: 100,
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Next page" }));
     await waitFor(() => expect(runs).toHaveBeenCalledTimes(2));
     expect(runs.mock.calls[1][1]).toMatchObject({ cursor: "scientific-next" });
   });
@@ -97,5 +100,79 @@ describe("scientific runs fixture contract", () => {
     });
     const results = await axe.run(container, { rules: { "color-contrast": { enabled: false } } });
     expect(results.violations).toEqual([]);
+  });
+
+  it("keeps model readiness available when the run repository fails", async () => {
+    vi.spyOn(adminApi, "scientificCapabilities").mockResolvedValue(fixture("/admin/api/v1/scientific-capabilities"));
+    vi.spyOn(adminApi, "scientificRuns").mockRejectedValue(new AdminApiError(
+      "Scientific controller reporting is unavailable.",
+      503,
+      "request-science",
+      "scientific_controller_unavailable",
+    ));
+    vi.spyOn(adminApi, "scientificModels").mockResolvedValue(fixture("/admin/api/v1/scientific-models"));
+    renderPage();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Scientific controller reporting is unavailable.");
+    expect(screen.getByRole("alert")).toHaveTextContent("request-science");
+    expect(await screen.findByRole("heading", { name: "Scientific model readiness" })).toBeInTheDocument();
+    expect(await screen.findByRole("row", { name: /RFdiffusion.*qualified/ })).toBeInTheDocument();
+  });
+
+  it("shows partial-source state even when a real endpoint returns no rows", async () => {
+    const partial = fixture<AdminEnvelope<ScientificRunList>>("/admin/api/v1/scientific-runs");
+    partial.data.items = [];
+    partial.meta.sources = [{
+      id: "scientific-artifacts",
+      state: "unavailable",
+      observed_at: null,
+      age_seconds: null,
+      reason: "artifact repository unavailable",
+    }];
+    vi.spyOn(adminApi, "scientificRuns").mockResolvedValue(partial);
+    vi.spyOn(adminApi, "scientificCapabilities").mockResolvedValue(fixture("/admin/api/v1/scientific-capabilities"));
+    vi.spyOn(adminApi, "scientificModels").mockResolvedValue(fixture("/admin/api/v1/scientific-models"));
+    renderPage();
+
+    expect(await screen.findByText("Partial data")).toBeInTheDocument();
+    expect(screen.getByText("scientific-artifacts: artifact repository unavailable")).toBeInTheDocument();
+    expect(screen.getByText("No scientific runs match the selected context.")).toBeInTheDocument();
+  });
+
+  it("does not call an absent run backend and still renders model readiness", async () => {
+    const capabilities = fixture<AdminEnvelope<import("../../api/scientificTypes").ScientificCapabilities>>("/admin/api/v1/scientific-capabilities");
+    capabilities.data.run_history = { available: false, reason: "The durable scientific run reader is not configured." };
+    capabilities.data.artifacts = { available: false, reason: "The artifact result reader is not configured." };
+    vi.spyOn(adminApi, "scientificCapabilities").mockResolvedValue(capabilities);
+    const runs = vi.spyOn(adminApi, "scientificRuns");
+    vi.spyOn(adminApi, "scientificModels").mockResolvedValue(fixture("/admin/api/v1/scientific-models"));
+
+    renderPage();
+
+    expect(await screen.findByText("Scientific run history is not enabled")).toBeInTheDocument();
+    expect(screen.getByText("The durable scientific run reader is not configured.")).toBeInTheDocument();
+    expect(await screen.findByRole("row", { name: /RFdiffusion.*qualified/ })).toBeInTheDocument();
+    expect(runs).not.toHaveBeenCalled();
+  });
+
+  it("lets a tenant viewer use run history without requesting global model readiness", async () => {
+    const capabilities = fixture<AdminEnvelope<import("../../api/scientificTypes").ScientificCapabilities>>("/admin/api/v1/scientific-capabilities");
+    capabilities.data.model_readiness = {
+      available: false,
+      reason: "Scientific model readiness requires a global operator.",
+    };
+    vi.spyOn(adminApi, "scientificCapabilities").mockResolvedValue(capabilities);
+    const runs = vi.spyOn(adminApi, "scientificRuns").mockResolvedValue(fixture("/admin/api/v1/scientific-runs"));
+    const models = vi.spyOn(adminApi, "scientificModels");
+
+    renderPage(
+      "/admin/scientific-runs",
+      { ...testSession, principal: { ...tenantPrincipal, tenant_id: "tenant-oncology" } },
+    );
+
+    expect(await screen.findByRole("row", { name: /CD8 binder backbone screen/ })).toBeInTheDocument();
+    expect(await screen.findByText("Scientific model readiness is not enabled")).toBeInTheDocument();
+    expect(runs.mock.calls[0][1]).toMatchObject({ tenantId: "tenant-oncology" });
+    expect(models).not.toHaveBeenCalled();
   });
 });

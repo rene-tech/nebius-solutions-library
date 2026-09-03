@@ -4,13 +4,16 @@ import { adminApi, AdminApiError } from "../api/client";
 import { formatTimestamp } from "../lib/format";
 import { sharedContextParams } from "../lib/search";
 import { useSession } from "../auth/SessionContext";
+import { useScientificCapabilities } from "../pages/scientific/useScientificCapabilities";
 
-const navigation = [
+const navigationBeforeScientific = [
   ["Overview", "/admin", "OV"],
   ["Models", "/admin/models", "MO"],
   ["Live model config", "/admin/model-deployments", "LC"],
   ["Operations", "/admin/operations", "OP"],
-  ["Scientific runs", "/admin/scientific-runs", "SR"],
+] as const;
+
+const navigationAfterScientific = [
   ["Academic assets", "/admin/academic-assets", "AA"],
   ["Users & API keys", "/admin/access", "AK"],
   ["Capacity & queues", "/admin/capacity", "CQ"],
@@ -19,14 +22,15 @@ const navigation = [
   ["Audit", "/admin/audit", "AU"],
 ] as const;
 
-function titleFor(pathname: string) {
+function titleFor(pathname: string, scientificLabel: string) {
   if (pathname === "/admin/model-deployments/new") return "Draft model deployment";
   if (/^\/admin\/model-deployments\/[^/]+/.test(pathname)) return "Model deployment";
   if (/^\/admin\/models\/[^/]+/.test(pathname)) return "Model detail";
   if (/^\/admin\/operations\/[^/]+/.test(pathname)) return "Operation detail";
   if (/^\/admin\/scientific-runs\/[^/]+/.test(pathname)) return "Scientific run detail";
+  if (pathname === "/admin/scientific-runs") return scientificLabel;
   if (/^\/admin\/academic-assets/.test(pathname)) return "Academic assets";
-  return navigation.find(([, path]) => path === pathname)?.[0] ?? "FS2 Serve";
+  return [...navigationBeforeScientific, ...navigationAfterScientific].find(([, path]) => path === pathname)?.[0] ?? "FS2 Serve";
 }
 
 export function AppShell() {
@@ -35,6 +39,18 @@ export function AppShell() {
   const [searchParams, setSearchParams] = useSearchParams();
   const sharedContext = sharedContextParams(searchParams);
   const sharedContextSearch = sharedContext.toString();
+  const scientificCapabilitiesQuery = useScientificCapabilities(sharedContext);
+  const scientificCapabilities = scientificCapabilitiesQuery.data?.data;
+  const showScientific = scientificCapabilities?.model_readiness.available === true
+    || scientificCapabilities?.run_history.available === true;
+  const scientificLabel = scientificCapabilities?.run_history.available === true
+    ? "Scientific runs"
+    : "Scientific models";
+  const navigation = [
+    ...navigationBeforeScientific,
+    ...(showScientific ? [[scientificLabel, "/admin/scientific-runs", "SR"]] as const : []),
+    ...navigationAfterScientific,
+  ];
   const contextQuery = useQuery({
     queryKey: ["admin-context", sharedContextSearch],
     queryFn: ({ signal }) => adminApi.context(sharedContext, signal),
@@ -142,8 +158,8 @@ export function AppShell() {
       <main id="main-content" className="main-content" tabIndex={-1}>
         <div className="page-heading">
           <div>
-            <span className="breadcrumb">FS2 Serve / {titleFor(location.pathname)}</span>
-            <h1>{titleFor(location.pathname)}</h1>
+            <span className="breadcrumb">FS2 Serve / {titleFor(location.pathname, scientificLabel)}</span>
+            <h1>{titleFor(location.pathname, scientificLabel)}</h1>
           </div>
           <div className="page-heading__context">
             {selected?.region ? <span className="quiet-chip">{selected.region}</span> : null}

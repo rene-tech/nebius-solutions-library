@@ -290,10 +290,19 @@ class ManagedNodeScalerProbe:
 class KubernetesCapacityConfig:
     model_namespace: str = "fs2-models"
     system_namespace: str = "fs2-system"
+    # Kueue LocalQueues and Workloads are namespaced. Scientific lanes such as
+    # fs2-academic-poc and fs2-reference-data live outside the model namespace,
+    # so the queue projection covers this whole set and reports which
+    # namespaces it read. Listing only the model namespace silently hides them.
+    queue_namespaces: tuple[str, ...] = ()
     kueue_api_version: str = "v1beta2"
     semantic_pool_label: str = "capacity.fs2.nebius/pool"
     pool_label_fallbacks: tuple[str, ...] = ("accelerator.fs2.nebius/pool-id",)
+    # The scheduler renders the stable accelerator class into
+    # ResourceFlavor.spec.nodeLabels and onto the node itself; the provider keys
+    # follow it for clusters that publish their own vocabulary.
     gpu_class_label_keys: tuple[str, ...] = (
+        "accelerator.fs2.nebius/class",
         "nvidia.com/gpu.product",
         "nebius.com/gpu-name",
         "gpu.nvidia.com/class",
@@ -304,17 +313,26 @@ class KubernetesCapacityConfig:
         "cloud.google.com/gke-spot",
         "nebius.com/preemptible",
     )
+    # A ResourceFlavor carries its capacity type as an annotation, because
+    # Kueue bounds spec.nodeLabels to eight entries and the flavor spends them
+    # on the accelerator class and pool identity.
+    capacity_type_annotation_keys: tuple[str, ...] = ("fs2-serve.nebius.ai/capacity-type",)
     node_scaler_provider: str | None = None
     node_scaler_pools: tuple[ManagedNodeScalerPoolContract, ...] = ()
 
     def __post_init__(self) -> None:
         if _NAMESPACE.fullmatch(self.model_namespace) is None or _NAMESPACE.fullmatch(self.system_namespace) is None:
             raise ValueError("admin Kubernetes namespace is invalid")
+        if len(self.queue_namespaces) > 32:
+            raise ValueError("admin Kueue queue namespace set exceeds its bound")
+        if any(_NAMESPACE.fullmatch(value) is None for value in self.queue_namespaces):
+            raise ValueError("admin Kueue queue namespace is invalid")
         if self.kueue_api_version not in {"v1beta1", "v1beta2"}:
             raise ValueError("unsupported Kueue API version")
         label_keys = (
             *self.gpu_class_label_keys,
             *self.capacity_type_label_keys,
+            *self.capacity_type_annotation_keys,
             self.semantic_pool_label,
             *self.pool_label_fallbacks,
         )
@@ -327,8 +345,16 @@ class KubernetesCapacityConfig:
             raise ValueError("managed node-scaler pool identifiers must be unique")
         if self.node_scaler_provider not in {None, "nebius-managed-node-group-autoscaler"}:
             raise ValueError("unsupported managed node-scaler provider")
+
         if self.node_scaler_pools and self.node_scaler_provider is None:
             raise ValueError("managed node-scaler pools require a provider")
+
+    @property
+    def resolved_queue_namespaces(self) -> tuple[str, ...]:
+        """Namespaces the Kueue queue projection reads, model namespace first."""
+
+        ordered = [self.model_namespace, *self.queue_namespaces]
+        return tuple(dict.fromkeys(ordered))
 
     @property
     def pool_label_keys(self) -> tuple[str, ...]:
@@ -339,9 +365,16 @@ class KubernetesCapacityConfig:
         return (*self.pool_label_fallbacks, self.semantic_pool_label)
 
 
-def _capacity_type(labels: Mapping[str, object], config: KubernetesCapacityConfig) -> AdminCapacityType:
-    for key in config.capacity_type_label_keys:
-        raw = labels.get(key)
+def _capacity_type(
+    labels: Mapping[str, object],
+    config: KubernetesCapacityConfig,
+    annotations: Mapping[str, object] | None = None,
+) -> AdminCapacityType:
+    candidates = [(key, labels) for key in config.capacity_type_label_keys]
+    if annotations is not None:
+        candidates.extend((key, annotations) for key in config.capacity_type_annotation_keys)
+    for key, source in candidates:
+        raw = source.get(key)
         if not isinstance(raw, str):
             continue
         value = raw.casefold()
@@ -862,22 +895,26 @@ class KubernetesCapacityAdminAdapter:
         )
 
     async def _node_pools(self) -> AdminNodePoolInventory:
+        # GPU allocation is summed over every namespace that can place a GPU
+        # Pod. Counting only the model namespace understates allocation on any
+        # node also running an academic or reference-data workload.
+        namespaces = self.config.resolved_queue_namespaces
         results = await asyncio.gather(
             self.reader.list("/api/v1/nodes"),
-            self.reader.list(f"/api/v1/namespaces/{self.config.model_namespace}/pods"),
+            *(self.reader.list(f"/api/v1/namespaces/{namespace}/pods") for namespace in namespaces),
             return_exceptions=True,
         )
         nodes_result: object = results[0]
-        pods_result: object = results[1]
+        pod_results = results[1:]
         if isinstance(nodes_result, BaseException):
             return AdminNodePoolInventory(
                 state=AdminSourceState.UNAVAILABLE,
                 reason="Kubernetes node inventory is unavailable",
                 items=[],
             )
-        pods_available = not isinstance(pods_result, BaseException)
+        pods_available = not any(isinstance(value, BaseException) for value in pod_results)
         nodes = cast(list[Mapping[str, Any]], nodes_result)
-        pods = cast(list[Mapping[str, Any]], pods_result) if isinstance(pods_result, list) else []
+        pods = [pod for page in pod_results if isinstance(page, list) for pod in page] if pods_available else []
         allocation_by_node: defaultdict[tuple[str, str], Decimal] = defaultdict(Decimal)
         allocation_valid = pods_available
         if pods_available:
@@ -1008,15 +1045,23 @@ class KubernetesCapacityAdminAdapter:
 
     async def _kueue(self) -> AdminKueueProjection:
         prefix = f"/apis/kueue.x-k8s.io/{self.config.kueue_api_version}"
-        paths = (
+        namespaces = self.config.resolved_queue_namespaces
+        cluster_scoped = (
             f"{prefix}/resourceflavors",
             f"{prefix}/clusterqueues",
-            f"{prefix}/namespaces/{self.config.model_namespace}/localqueues",
-            f"{prefix}/namespaces/{self.config.model_namespace}/workloads",
-            f"{prefix}/cohorts",
         )
+        # LocalQueues and Workloads are namespaced, so every configured lane is
+        # listed. A single failing namespace fails the projection rather than
+        # returning a queue set that silently omits one lane's workloads.
+        namespaced = tuple(
+            f"{prefix}/namespaces/{namespace}/{resource}"
+            for resource in ("localqueues", "workloads")
+            for namespace in namespaces
+        )
+        paths = (*cluster_scoped, *namespaced, f"{prefix}/cohorts")
+        required = len(cluster_scoped) + len(namespaced)
         values = await asyncio.gather(*(self.reader.list(path) for path in paths), return_exceptions=True)
-        if any(isinstance(value, BaseException) for value in values[:4]):
+        if any(isinstance(value, BaseException) for value in values[:required]):
             return AdminKueueProjection(
                 state=AdminSourceState.UNAVAILABLE,
                 reason="Kueue API projection is unavailable",
@@ -1028,8 +1073,12 @@ class KubernetesCapacityAdminAdapter:
                 cohorts_reason="Kueue Cohort API is unavailable",
                 workloads=[],
             )
-        flavors_raw, cluster_raw, local_raw, workloads_raw = (value for value in values[:4] if isinstance(value, list))
-        cohorts_value = values[4]
+        listed = [value for value in values[:required] if isinstance(value, list)]
+        flavors_raw, cluster_raw = listed[0], listed[1]
+        split = 2 + len(namespaces)
+        local_raw = [item for page in listed[2:split] for item in page]
+        workloads_raw = [item for page in listed[split:required] for item in page]
+        cohorts_value = values[required]
         cohorts_raw = cohorts_value if isinstance(cohorts_value, list) else []
         cohorts_state = AdminSourceState.AVAILABLE if isinstance(cohorts_value, list) else AdminSourceState.UNAVAILABLE
         cohorts_reason = None if cohorts_state == AdminSourceState.AVAILABLE else "Kueue Cohort API is unavailable"
@@ -1054,9 +1103,10 @@ class KubernetesCapacityAdminAdapter:
     def _resource_flavor(self, value: Mapping[str, Any]) -> AdminResourceFlavor:
         metadata = _mapping(value.get("metadata"))
         labels = _mapping(_mapping(value.get("spec")).get("nodeLabels"))
+        annotations = _mapping(metadata.get("annotations"))
         return AdminResourceFlavor(
             name=str(metadata.get("name", "unknown"))[:253],
-            capacity_type=_capacity_type(labels, self.config),
+            capacity_type=_capacity_type(labels, self.config, annotations),
             gpu_class=_first_label(labels, self.config.gpu_class_label_keys),
         )
 

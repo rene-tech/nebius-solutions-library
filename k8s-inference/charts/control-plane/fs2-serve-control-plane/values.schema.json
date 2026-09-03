@@ -1164,6 +1164,14 @@
             "systemNamespace": {
               "$ref": "#/$defs/dnsName"
             },
+            "kueueExtraNamespaces": {
+              "type": "array",
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/dnsName"
+              }
+            },
             "kueueApiVersion": {
               "enum": [
                 "v1beta1",

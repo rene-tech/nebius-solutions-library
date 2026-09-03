@@ -119,6 +119,13 @@ class Settings(BaseSettings):
         max_length=63,
         pattern=r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
     )
+    # Additional namespaces whose Kueue LocalQueues and Workloads belong in the
+    # capacity projection, such as the academic and reference-data lanes. The
+    # model namespace is always read and need not be repeated here.
+    admin_kueue_extra_namespaces: tuple[str, ...] = Field(
+        default=(),
+        max_length=32,
+    )
     admin_kueue_api_version: Literal["v1beta1", "v1beta2"] = "v1beta2"
     admin_kubernetes_cache_ttl_seconds: float = Field(default=15, ge=1, le=60)
     admin_node_scaler_provider: Literal["nebius-managed-node-group-autoscaler"] | None = None

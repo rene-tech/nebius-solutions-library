@@ -1,0 +1,78 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-workload-profiles/v1",
+  "comment": "Admin-owned projection fixture. Revisions and digests are synthetic placeholders, never published identities.",
+  "profiles": [
+    {
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "model_id": "alphafold3",
+      "display_name": "AlphaFold 3 (native)",
+      "execution_mode": "scientific-batch",
+      "state": "candidate-unqualified",
+      "route_exposed": false,
+      "source": {
+        "kind": "git",
+        "repository": "google-deepmind/alphafold3",
+        "revision": "1111111111111111111111111111111111111111"
+      },
+      "execution_identity": {
+        "model_revision": "1111111111111111111111111111111111111111",
+        "runtime_image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "runtime_recipe_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "workload_recipe_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "execution_identity_sha256": null
+      },
+      "access": {
+        "profile": "academic",
+        "state": "verified",
+        "receipt_digest": null,
+        "credentials_embedded": false,
+        "request_time_license_receipt_required": false,
+        "authorization": {
+          "authorization_id": "fixture-academic-authorization",
+          "tenant_id": "fixture-tenant",
+          "scope": "academic-noncommercial",
+          "use_class": "academic-non-commercial",
+          "granted_by_role": "platform-owner",
+          "identity_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+          "asset_ids": ["alphafold3"],
+          "use_authorization_status": "Granted",
+          "execution_authorization_status": "Authorized"
+        }
+      },
+      "interface": {
+        "service_classes": ["customer-batch", "interactive"]
+      }
+    },
+    {
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "model_id": "rfdiffusion-upstream",
+      "display_name": "RFdiffusion",
+      "execution_mode": "scientific-batch",
+      "state": "candidate-unqualified",
+      "route_exposed": false,
+      "source": {
+        "kind": "git",
+        "repository": "RosettaCommons/RFdiffusion",
+        "revision": "4444444444444444444444444444444444444444"
+      },
+      "execution_identity": {
+        "model_revision": "4444444444444444444444444444444444444444",
+        "runtime_image_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "runtime_recipe_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+        "workload_recipe_sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+        "execution_identity_sha256": null
+      },
+      "access": {
+        "profile": "standard",
+        "state": "not-required",
+        "receipt_digest": null,
+        "credentials_embedded": false,
+        "request_time_license_receipt_required": false,
+        "authorization": null
+      },
+      "interface": {
+        "service_classes": ["customer-batch"]
+      }
+    }
+  ]
+}

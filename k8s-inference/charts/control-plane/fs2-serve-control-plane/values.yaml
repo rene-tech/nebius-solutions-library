@@ -441,6 +441,11 @@ adminReadAdapters:
     tokenExpirationSeconds: 600
     modelNamespace: fs2-models
     systemNamespace: fs2-system
+    # Extra namespaces whose Kueue LocalQueues and Workloads belong in the
+    # capacity projection, such as the academic and reference-data lanes. Each
+    # entry grants list access to localqueues and workloads in that namespace
+    # only. The model namespace is always read and must not be repeated.
+    kueueExtraNamespaces: []
     kueueApiVersion: v1beta2
   observability:
     enabled: false

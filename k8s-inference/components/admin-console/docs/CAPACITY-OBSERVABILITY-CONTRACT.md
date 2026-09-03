@@ -90,7 +90,25 @@ only `list`: a ClusterRole covers cluster-scoped `nodes`, ResourceFlavors,
 ClusterQueues, and Cohorts, while explicit namespace Roles cover:
 
 - model-namespace `pods`, HPAs, LocalQueues, Workloads, and ScaledObjects;
-- system-namespace HPAs.
+- system-namespace HPAs;
+- one Role per entry in `adminReadAdapters.capacity.kueueExtraNamespaces`,
+  granting `list` on LocalQueues and Workloads in that namespace only.
+
+## Kueue scheduler contract
+
+LocalQueues and Workloads are namespaced. Scientific lanes such as
+`fs2-academic-poc` and `fs2-reference-data` therefore have to be named in
+`kueueExtraNamespaces`; reading only the model namespace silently omits their
+queues and understates contention. Every configured namespace is listed, and a
+single unreadable namespace fails the whole projection rather than returning a
+queue set that quietly drops one lane.
+
+The scheduler renders a ResourceFlavor with the stable accelerator class in
+`spec.nodeLabels["accelerator.fs2.nebius/class"]` and the capacity type in the
+`fs2-serve.nebius.ai/capacity-type` annotation, because Kueue bounds
+`spec.nodeLabels` to eight entries and the flavor spends them on the class and
+the pool identity. The reader consumes both, so a flavor reports its exact GPU
+class and capacity type instead of `unknown`.
 
 The projection intentionally omits `audience`, so Kubernetes selects the
 apiserver's configured identifier. This is provider-neutral: the retained

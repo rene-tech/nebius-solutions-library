@@ -13,6 +13,7 @@ import {
   ScientificStatusChip,
   shortDigest,
 } from "./ScientificPresentation";
+import { useScientificCapabilities } from "./useScientificCapabilities";
 
 function safeHref(link: ScientificObservabilityLink): string | null {
   if (!link.available || !link.href) return null;
@@ -29,6 +30,8 @@ export function ScientificRunDetailPage() {
   const { runId = "" } = useParams();
   const [searchParams] = useSearchParams();
   const context = sharedContextParams(searchParams);
+  const capabilitiesQuery = useScientificCapabilities(context);
+  const runsAvailable = capabilitiesQuery.data?.data.run_history.available === true;
   const backParams = new URLSearchParams(context);
   for (const key of ["tenant", "model", "run_status", "service_class", "access_state", "cursor"]) {
     const value = searchParams.get(key);
@@ -37,11 +40,23 @@ export function ScientificRunDetailPage() {
   const query = useQuery({
     queryKey: ["admin-scientific-run", runId, context.toString()],
     queryFn: ({ signal }) => adminApi.scientificRun(runId, context, signal),
-    enabled: Boolean(runId),
+    enabled: Boolean(runId) && runsAvailable,
   });
 
+  if (capabilitiesQuery.isPending) {
+    return <div className="state-panel state-panel--loading" role="status">Checking scientific run capability…</div>;
+  }
+  if (!runsAvailable) {
+    return (
+      <div className="state-panel" role="status">
+        <strong>Scientific run history is not enabled</strong>
+        <span>{capabilitiesQuery.data?.data.run_history.reason ?? capabilitiesQuery.error?.message ?? "No durable scientific run reader is configured."}</span>
+      </div>
+    );
+  }
+
   return (
-    <DataBoundary data={query.data} error={query.error} pending={query.isPending}>
+    <DataBoundary data={query.data} error={query.error} pending={query.isPending} loadingLabel="Loading scientific run detail…">
       {({ data }) => {
         const { run } = data;
         const measuredIdleCauses = run.gpu_accounting.idle_by_cause.filter((entry) => entry.duration.evidence === "measured");
@@ -53,14 +68,14 @@ export function ScientificRunDetailPage() {
               <ScientificStatusChip state={run.status} reason={run.error?.message ?? `Run is ${run.status}.`} />
             </section>
 
-            <section className={`inline-notice ${run.access.state === "blocked" ? "inline-notice--error" : run.access.profile === "academic" ? "inline-notice--warning" : ""}`} aria-labelledby="scientific-access-title">
+            <section className={`inline-notice ${run.access.state === "blocked" ? "inline-notice--error" : run.access.state === "unverified" ? "inline-notice--warning" : ""}`} aria-labelledby="scientific-access-title">
               <strong id="scientific-access-title">Access admission</strong>
               <AccessGate access={run.access} />
               <span className="secondary-line scientific-secondary">Credentials are never exposed in this projection. Receipt digests are non-secret admission evidence.</span>
             </section>
 
             <div className="metric-grid">
-              <ScientificMetricCard label="GPU allocated" value={run.gpu_accounting.allocated} detail={`${run.gpu_accounting.gpu_count} GPU · ${run.gpu_accounting.capacity_type}`} />
+              <ScientificMetricCard label="GPU allocated" value={run.gpu_accounting.allocated} detail={`${run.gpu_accounting.gpu_count === null ? "GPU count unavailable" : `${run.gpu_accounting.gpu_count} GPU`} · ${run.gpu_accounting.capacity_type}`} />
               <ScientificMetricCard label="GPU active" value={run.gpu_accounting.active} detail="Active compute from the lifecycle ledger" />
               <ScientificMetricCard label="GPU idle" value={run.gpu_accounting.idle_total} detail={`${measuredIdleCauses.length} measured idle causes`} />
               <ScientificMetricCard label="GPU grace / drain" value={run.gpu_accounting.grace_drain} detail="Measured separately from active compute" />
@@ -106,10 +121,10 @@ export function ScientificRunDetailPage() {
                 <div><dt>Backend</dt><dd>{run.model.backend.backend_id}</dd></div>
                 <div><dt>Backend kind</dt><dd>{run.model.backend.kind}</dd></div>
                 <div><dt>Source</dt><dd>{run.model.backend.source_repository}</dd></div>
-                <div><dt>Source revision</dt><dd><code title={run.model.backend.source_revision}>{shortDigest(run.model.backend.source_revision)}</code></dd></div>
-                <div><dt>Model revision</dt><dd><code title={run.model.backend.model_revision}>{shortDigest(run.model.backend.model_revision)}</code></dd></div>
-                <div><dt>Runtime image</dt><dd><code title={run.model.backend.runtime_image_digest}>{shortDigest(run.model.backend.runtime_image_digest)}</code></dd></div>
-                <div><dt>Execution identity</dt><dd><code title={run.model.backend.execution_identity_digest}>{shortDigest(run.model.backend.execution_identity_digest)}</code></dd></div>
+                <div><dt>Source revision</dt><dd><code title={run.model.backend.source_revision ?? undefined}>{shortDigest(run.model.backend.source_revision)}</code></dd></div>
+                <div><dt>Model revision</dt><dd><code title={run.model.backend.model_revision ?? undefined}>{shortDigest(run.model.backend.model_revision)}</code></dd></div>
+                <div><dt>Runtime image</dt><dd><code title={run.model.backend.runtime_image_digest ?? undefined}>{shortDigest(run.model.backend.runtime_image_digest)}</code></dd></div>
+                <div><dt>Execution identity</dt><dd><code title={run.model.backend.execution_identity_digest ?? undefined}>{shortDigest(run.model.backend.execution_identity_digest)}</code></dd></div>
                 <div><dt>Fast-start observed</dt><dd>{formatTimestamp(run.fast_start.observed_at)}</dd></div>
               </dl>
               <p className="supporting-copy">{run.fast_start.reason}</p>
@@ -143,14 +158,14 @@ export function ScientificRunDetailPage() {
                     <div className="table-frame scientific-attempts">
                       <table className="resource-table">
                         <caption className="sr-only">Attempts for {stage.display_name}</caption>
-                        <thead><tr><th scope="col">Attempt</th><th scope="col">Status</th><th scope="col">Started</th><th scope="col">Completed</th><th scope="col">Workload / job</th><th scope="col">Placement</th><th scope="col">Checkpoint</th><th scope="col">Error</th></tr></thead>
+                        <thead><tr><th scope="col">Attempt</th><th scope="col">Status</th><th scope="col">Started</th><th scope="col">Completed</th><th scope="col">Workload / job</th><th scope="col">Admission / placement</th><th scope="col">Checkpoint</th><th scope="col">Error</th></tr></thead>
                         <tbody>{stage.attempts.map((attempt) => <tr key={attempt.id}>
                           <th scope="row">#{attempt.number}<span className="secondary-line">{attempt.id}</span></th>
                           <td><ScientificStatusChip state={attempt.status} reason={attempt.error?.message ?? `Attempt is ${attempt.status}.`} /></td>
                           <td>{formatTimestamp(attempt.started_at)}</td>
                           <td>{formatTimestamp(attempt.completed_at)}</td>
                           <td><code>{attempt.workload_uid ?? "Not created"}</code><span className="secondary-line">{attempt.job_uid ?? "No job"}</span></td>
-                          <td>{attempt.gpu_uuids.length ? `${attempt.gpu_uuids.length} GPU` : "CPU"}<span className="secondary-line">{attempt.pod_uids.length} pod · {attempt.node_uids.length} node</span></td>
+                          <td>{attempt.gpu_count === null ? "GPU count unavailable" : attempt.gpu_count ? `${attempt.gpu_count} GPU` : "CPU"}<span className="secondary-line">Admitted {formatTimestamp(attempt.admitted_at)}</span><span className="secondary-line">Pool {attempt.resolved_pool_id ?? "unavailable"} · flavor {attempt.admitted_resource_flavor ?? "unavailable"}</span><span className="secondary-line">Resource {attempt.accelerator_resource_name ?? "unavailable"}</span><span className="secondary-line">{attempt.pod_count === null ? "pod count unavailable" : `${attempt.pod_count} pod`} · {attempt.node_count === null ? "node count unavailable" : `${attempt.node_count} node`}</span></td>
                           <td>{attempt.checkpoint_output_artifact_id ?? attempt.checkpoint_input_artifact_id ?? "None"}</td>
                           <td>{attempt.error ? <><code>{attempt.error.code}</code><span className="secondary-line scientific-secondary">{attempt.error.message} · {attempt.error.retryable ? "retryable" : "terminal"}</span></> : "No error"}</td>
                         </tr>)}</tbody>
@@ -197,12 +212,12 @@ export function ScientificRunDetailPage() {
                 <dl className="definition-grid">
                   <div><dt>Can cancel now</dt><dd>{run.cancellation.can_cancel ? "Yes" : "No"}</dd></div>
                   <div><dt>Mode</dt><dd>{run.cancellation.mode}</dd></div>
-                  <div><dt>Grace</dt><dd>{run.cancellation.grace_seconds}s</dd></div>
+                  <div><dt>Grace</dt><dd>{run.cancellation.grace_seconds === null ? "Unavailable" : `${run.cancellation.grace_seconds}s`}</dd></div>
                   <div><dt>Requested</dt><dd>{formatTimestamp(run.cancellation.requested_at)}</dd></div>
                   <div><dt>Requested by</dt><dd>{run.cancellation.requested_by ?? "No request"}</dd></div>
                   <div><dt>Reason</dt><dd>{run.cancellation.reason ?? "No request"}</dd></div>
                 </dl>
-                <p className="supporting-copy">This surface is read-only until the scientific operation API exposes an authorized cancellation command.</p>
+                <p className="supporting-copy">This admin projection is read-only; this build does not publish a scientific cancellation command.</p>
               </section>
             </div>
 

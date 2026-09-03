@@ -50,6 +50,17 @@ export interface ScientificAccessGate {
   state: ScientificAccessState;
   gate: string;
   receipt_digest: string | null;
+  request_time_license_receipt_required: false;
+  authorization: {
+    asset_id: string;
+    backend_id: string | null;
+    license_id: string | null;
+    use_authorization_status: "Granted";
+    execution_authorization_status: "Authorized";
+    serving_admission: "PendingRuntimeReadiness" | "AdmittedNoPerRequestLicenseReceipt";
+    asset_namespace: string | null;
+  } | null;
+  formal_license_status: "FormalAcceptancePending" | "FormalAcceptanceRecorded" | "not-applicable";
   credentials_exposed: false;
   alternative: {
     model_id: string;
@@ -63,10 +74,10 @@ export interface ScientificBackendIdentity {
   backend_id: string;
   kind: string;
   source_repository: string;
-  source_revision: string;
-  model_revision: string;
-  runtime_image_digest: string;
-  execution_identity_digest: string;
+  source_revision: string | null;
+  model_revision: string | null;
+  runtime_image_digest: string | null;
+  execution_identity_digest: string | null;
 }
 
 export interface ScientificQueueState {
@@ -113,7 +124,7 @@ export interface ScientificLifecyclePhase {
 }
 
 export interface ScientificGpuAccounting {
-  gpu_count: number;
+  gpu_count: number | null;
   capacity_type: "regular" | "preemptible" | "capacity-block" | "unknown";
   allocated: ScientificEvidenceMeasurement;
   active: ScientificEvidenceMeasurement;
@@ -140,9 +151,13 @@ export interface ScientificAttempt {
   completed_at: string | null;
   workload_uid: string | null;
   job_uid: string | null;
-  pod_uids: string[];
-  node_uids: string[];
-  gpu_uuids: string[];
+  pod_count: number | null;
+  node_count: number | null;
+  gpu_count: number | null;
+  admitted_at: string | null;
+  resolved_pool_id: string | null;
+  admitted_resource_flavor: string | null;
+  accelerator_resource_name: string | null;
   checkpoint_input_artifact_id: string | null;
   checkpoint_output_artifact_id: string | null;
   error: ScientificError | null;
@@ -218,7 +233,7 @@ export interface ScientificRunSummary {
     requested_by: string | null;
     reason: string | null;
     mode: "terminate-attempt" | "checkpoint-then-terminate";
-    grace_seconds: number;
+    grace_seconds: number | null;
     can_cancel: boolean;
   };
 }
@@ -258,12 +273,22 @@ export interface ScientificCachingReadiness {
 
 export interface ScientificModelReadiness {
   model_id: string;
+  candidate_id: string;
   display_name: string;
   readiness: "qualified" | "candidate" | "blocked" | "unknown";
   readiness_reason: string;
-  execution_mode: ScientificExecutionMode;
+  workload_profile: "published" | "absent";
+  missing_evidence: string[];
+  qualification: {
+    state: "qualified" | "identity-mismatch" | "not-registered" | "evidence-absent";
+    reason: string;
+    serving_lane_id: string | null;
+    compared: string[];
+    mismatched: string[];
+  };
+  execution_mode: ScientificExecutionMode | null;
   batch_supported: boolean;
-  interactive_supported: boolean;
+  interactive_supported: boolean | null;
   service_classes: ScientificServiceClass[];
   backend: ScientificBackendIdentity;
   access: ScientificAccessGate;
@@ -272,6 +297,22 @@ export interface ScientificModelReadiness {
 
 export interface ScientificModelReadinessList {
   items: ScientificModelReadiness[];
+  projection_issues: Array<{
+    candidate_id: string | null;
+    source: "candidate-receipt" | "workload-profile" | "academic-readiness" | "variant-map";
+    reason: string;
+  }>;
+}
+
+export interface ScientificCapability {
+  available: boolean;
+  reason: string | null;
+}
+
+export interface ScientificCapabilities {
+  model_readiness: ScientificCapability;
+  run_history: ScientificCapability;
+  artifacts: ScientificCapability;
 }
 
 export type AcademicAssetState =

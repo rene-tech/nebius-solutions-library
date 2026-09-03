@@ -73,6 +73,7 @@ describe("same-origin admin API boundary", () => {
     vi.stubGlobal("fetch", fetchMock);
     const context = new URLSearchParams({ project: "fixture-project", token: "must-not-flow" });
 
+    await adminApi.scientificCapabilities(context);
     await adminApi.scientificRuns(context, {
       cursor: "scientific-cursor",
       tenantId: "tenant-oncology",
@@ -87,6 +88,7 @@ describe("same-origin admin API boundary", () => {
     await adminApi.scientificModels(context);
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/admin/api/v1/scientific-capabilities?project=fixture-project",
       "/admin/api/v1/scientific-runs?project=fixture-project&limit=200&cursor=scientific-cursor&tenant_id=tenant-oncology&model_id=alphafold3-native&service_class=interactive&access_state=blocked&admission_state=inadmissible&run_status=waiting-for-access",
       "/admin/api/v1/scientific-runs/run%2Fneeds-encoding?project=fixture-project",
       "/admin/api/v1/scientific-models?project=fixture-project",
