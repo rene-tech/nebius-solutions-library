@@ -24,8 +24,14 @@ resource "nebius_iam_v1_group_membership" "nodepull_target_registry" {
 }
 
 resource "nebius_iam_v1_access_permit" "nodepull_registry" {
+  # Managed Kubernetes node credential exchange currently requires the
+  # node-group service account to hold viewer at project scope. A viewer permit
+  # attached only to the Registry resource is accepted by IAM but kubelet image
+  # pulls receive 403 for manifests that are not already cached on the node.
+  # Keep this in the target project (rather than a tenant default group), and
+  # retain the dedicated run-owned group so destroy removes the grant.
   parent_id   = nebius_iam_v1_group.target_registry_readers.id
-  resource_id = nebius_registry_v1_registry.images.id
+  resource_id = data.nebius_iam_v2_project.target.id
   role        = "viewer"
 }
 

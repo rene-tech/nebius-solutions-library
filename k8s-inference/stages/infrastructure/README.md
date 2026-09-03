@@ -13,8 +13,8 @@ run-owned resources:
 
 - a Nebius Managed Kubernetes control plane and regular CPU system pool;
 - one node group for each selected accelerator pool or NVLink rack;
-- the node-pull service account and narrowly scoped, project-local
-  registry-reader groups;
+- the node-pull service account and run-owned, project-local reader group used
+  by Managed Kubernetes node credential exchange;
 - a cluster-regional runtime artifact mirror, shared model-cache filesystem, and worker security
   group;
 - when enabled, exactly seven reference-data resources: one lifecycle-selected
@@ -28,6 +28,12 @@ another deployment. Capacity and quota failures are returned to the operator.
 Each external registry is resolved by ID and receives a reader group in its
 own project. This permits same-tenant, cross-project image pulls without a
 tenant-scoped group or tenant-level IAM write.
+
+For the cluster-local target registry, the run-owned node-pull group receives
+`viewer` on the target project. Nebius Managed Kubernetes node credential
+exchange requires project-scoped viewer access; a permit attached only to the
+Registry resource returns `403 Forbidden` for uncached manifests. The grant is
+still isolated from tenant-wide default groups and is removed with the run.
 
 ## Inputs and accelerator pools
 

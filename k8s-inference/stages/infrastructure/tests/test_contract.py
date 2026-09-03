@@ -241,8 +241,14 @@ class DisposableTerraformContractTests(unittest.TestCase):
         )
         self.assertIn(
             'resource "nebius_iam_v1_access_permit" "nodepull_registry" {\n'
+            "  # Managed Kubernetes node credential exchange currently requires the\n"
+            "  # node-group service account to hold viewer at project scope. A viewer permit\n"
+            "  # attached only to the Registry resource is accepted by IAM but kubelet image\n"
+            "  # pulls receive 403 for manifests that are not already cached on the node.\n"
+            "  # Keep this in the target project (rather than a tenant default group), and\n"
+            "  # retain the dedicated run-owned group so destroy removes the grant.\n"
             "  parent_id   = nebius_iam_v1_group.target_registry_readers.id\n"
-            "  resource_id = nebius_registry_v1_registry.images.id\n"
+            "  resource_id = data.nebius_iam_v2_project.target.id\n"
             '  role        = "viewer"',
             iam,
         )
