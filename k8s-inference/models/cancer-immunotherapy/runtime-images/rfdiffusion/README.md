@@ -191,16 +191,26 @@ using the `fs2-flat-tree-inventory/v1` digest and the localization plane's
 `.fs2-runtime-tree.json` marker schema, so the tree moves to that plane without
 restaging. Promotion is atomic and never overwrites an existing generation.
 
-Artifact delivery is `catalog-accepted-localization-pending`. The
-`rfdiffusion-checkpoints` catalog entry is now **accepted on main** (`9d48fe0e`), and
-this runtime's checkpoint identity matches it exactly — `0fcf7d7c…`, 483,616,107
-bytes, from the `files.ipd.uw.edu` URL the catalog names. What is still pending is
-**live content-addressed localization and promotion**: nothing has published an
-RFdiffusion generation onto the shared plane yet, so qualification reads a task-owned
-generation on the shared qualification claim, staged with the localization plane's own
-inventory algorithm and marker schema so it is portable without restaging. Because the
-runtime resolves artifacts by sha256 through the manifest's relative paths, no image
-change is needed when the canonical plane publishes.
+**Checkpoint localization is not this runtime's to claim.** Raw single-file artifact
+localization is owned by `fs2-single-file-model-artifact-localization-r20260903`. This
+runtime publishes no generation, writes no `.fs2-runtime-tree.json` marker and emits no
+localization receipt. An earlier revision of `stage_checkpoint.py` did mimic the plane's
+marker schema; that was a task-local substitute for another task's contract and was
+removed rather than left to be mistaken for it. The exact object identity, licence,
+visibility and argv binding were handed to that owner, and this runtime will consume the
+accepted contract once it lands.
+
+What remains here is run-input staging: fetch the exact bytes, refuse them unless both
+sha256 and byte count match the accepted catalog, and place them at
+`<root>/inputs/sha256/<object sha256>/Base_ckpt.pt`. The digest in that path is the
+object's own catalog digest, not a tree-inventory generation, and it retires the moment
+the localization contract is accepted.
+
+Delivery is mixed-plane *capable* — `render_job.py` takes repeatable `--plane` and
+refuses to run with none, so the single-claim assumption is gone — but no plane binding
+is claimed for this checkpoint. The accepted foundation carries no rfdiffusion artifact,
+has published nothing to either plane, and cannot yet express a raw single-file object
+at all.
 
 **The route is closed.** `route_exposed` is `false` and this runtime is not servable
 until the adapter/controller execution contract is reconciled (see `contract/`).

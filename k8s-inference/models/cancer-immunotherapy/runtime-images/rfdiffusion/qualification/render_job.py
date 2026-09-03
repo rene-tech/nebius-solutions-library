@@ -88,7 +88,6 @@ def render(
         "fs2.nebius.ai/source-revision": LOCK["source"]["revision"],
         "fs2.nebius.ai/source-tag": LOCK["source"]["tag"],
         "fs2.nebius.ai/checkpoint-sha256": LOCK["external_artifacts"][0]["sha256"],
-        "fs2.nebius.ai/artifact-generation": LOCK["artifact_delivery"]["generation"]["generation"],
         "fs2.nebius.ai/artifact-planes": ",".join(p[0] for p in planes),
     }
 
@@ -189,7 +188,6 @@ def render(
 
 
 def main(argv: list[str]) -> int:
-    generation = LOCK["artifact_delivery"]["generation"]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--name", required=True)
     parser.add_argument("--namespace", default="fs2-models")

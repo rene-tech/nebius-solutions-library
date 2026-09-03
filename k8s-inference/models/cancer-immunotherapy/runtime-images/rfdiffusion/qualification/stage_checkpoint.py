@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
-"""Stage the official public RFdiffusion Base checkpoint as a content-addressed generation.
+"""Place the Base checkpoint where a qualification run can read it.
 
-Runs inside the cluster, next to the artifact plane. It downloads the exact public
-object, verifies its sha256 against the artifact catalog, and promotes it into
+This is **run-input plumbing, not localization.** Artifact localization for raw
+single-file checkpoints is owned by
+``fs2-single-file-model-artifact-localization-r20260903``, and this runtime makes no
+localization claim: it publishes no generation, writes no ``.fs2-runtime-tree.json``
+marker, emits no localization receipt, and nothing it writes is admissible as a
+localized tree. An earlier revision of this script did mimic the plane's marker
+schema; that was a task-local substitute for someone else's contract and has been
+removed rather than left to be mistaken for the real thing.
 
-    <root>/generations/<artifact_id>/sha256/<generation>/
+What it does: fetch the exact public object, refuse it unless both its sha256 and its
+byte count match the accepted catalog, and put it at a path named by the object's own
+digest so a rerun cannot silently pick up different bytes. That is the whole job.
 
-where ``generation`` is the tree inventory digest under ``fs2-flat-tree-inventory/v1``
--- the same algorithm the scientific-localization plane uses, so this staging binds to
-that plane unchanged once it publishes.
-
-Promotion is atomic: the tree is built in a sibling staging directory, sealed
-read-only, then renamed. Re-staging an existing generation is a no-op, never an
-overwrite.
+The path is ``<root>/inputs/sha256/<object sha256>/Base_ckpt.pt``. The digest in the
+path is the *object's* digest from the catalog, not a tree-inventory generation, and
+carries no meaning beyond "these are the bytes that hash to this".
 """
 
 from __future__ import annotations
@@ -25,61 +29,32 @@ import shutil
 import sys
 import tempfile
 import urllib.request
-import zlib
 from pathlib import Path
-from typing import Any
 
-INVENTORY_ALGORITHM = "fs2-flat-tree-inventory/v1"
-MARKER_NAME = ".fs2-runtime-tree.json"
-MARKER_SCHEMA = "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
-
-ARTIFACT_ID = "rfdiffusion-base-checkpoint"
-ARTIFACT_KIND = "rfdiffusion-checkpoints"
-SOURCE_REVISION = "9273ef67335acaf91df0150473a274759229cdf6"
-
-# Exactly the catalog entry for the official public Base checkpoint.
+# Exactly the accepted catalog entry for the official public Base checkpoint.
 CHECKPOINT = {
-    "path": "Base_ckpt.pt",
+    "filename": "Base_ckpt.pt",
     "url": "https://files.ipd.uw.edu/pub/RFdiffusion/6f5902ac237024bdd0c176cb93063dc4/Base_ckpt.pt",
     "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
     "bytes": 483616107,
+    "license_id": "BSD-3-Clause",
+    "source_revision": "9273ef67335acaf91df0150473a274759229cdf6",
 }
 
 
-def sha256_and_crc32(path: Path) -> tuple[str, int, int]:
+def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
-    crc = 0
-    size = 0
     with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        for chunk in iter(lambda: handle.read(4 * 1024 * 1024), b""):
             digest.update(chunk)
-            crc = zlib.crc32(chunk, crc)
-            size += len(chunk)
-    return digest.hexdigest(), crc & 0xFFFFFFFF, size
-
-
-def inventory_digest(root: Path) -> tuple[str, list[dict[str, Any]]]:
-    rows: list[dict[str, Any]] = []
-    for path in sorted(p for p in root.rglob("*") if p.is_file()):
-        if path.name == MARKER_NAME:
-            continue
-        _, crc, size = sha256_and_crc32(path)
-        rows.append(
-            {"bytes": size, "crc32": crc, "path": str(path.relative_to(root))}
-        )
-    payload = json.dumps(rows, separators=(",", ":"), sort_keys=True) + "\n"
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest(), rows
-
-
-def marker_bytes(document: dict[str, Any]) -> bytes:
-    return (json.dumps(document, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    return digest.hexdigest()
 
 
 def download(url: str, destination: Path, expected_sha256: str, expected_bytes: int) -> str:
     destination.parent.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256()
     written = 0
-    request = urllib.request.Request(url, headers={"User-Agent": "fs2-rfdiffusion-stage/1"})
+    request = urllib.request.Request(url, headers={"User-Agent": "fs2-rfdiffusion-stage/2"})
     with urllib.request.urlopen(request, timeout=1800) as response:  # noqa: S310 - pinned https source
         with destination.open("wb") as handle:
             while True:
@@ -90,6 +65,8 @@ def download(url: str, destination: Path, expected_sha256: str, expected_bytes: 
                 written += len(chunk)
                 handle.write(chunk)
     actual = digest.hexdigest()
+    # Size is checked too, but identity is the digest: ActiveSite_ckpt.pt is exactly
+    # the same number of bytes as Base_ckpt.pt.
     if written != expected_bytes:
         raise SystemExit(f"{url}: expected {expected_bytes} bytes, received {written}")
     if actual != expected_sha256:
@@ -97,103 +74,51 @@ def download(url: str, destination: Path, expected_sha256: str, expected_bytes: 
     return actual
 
 
-def seal(root: Path) -> None:
-    for path in sorted(root.rglob("*"), reverse=True):
-        path.chmod(0o444 if path.is_file() else 0o555)
-    root.chmod(0o555)
-
-
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default=os.environ.get("FS2_ARTIFACT_ROOT", "/artifacts"))
-    parser.add_argument("--artifact-id", default=ARTIFACT_ID)
     parser.add_argument("--report", default="/dev/stdout")
     args = parser.parse_args(argv)
 
-    root = Path(args.root)
-    artifact_root = root / "generations" / args.artifact_id
-    artifact_root.mkdir(parents=True, exist_ok=True)
-    digest_root = artifact_root / "sha256"
-    digest_root.mkdir(parents=True, exist_ok=True)
+    directory = Path(args.root) / "inputs" / "sha256" / CHECKPOINT["sha256"]
+    target = directory / CHECKPOINT["filename"]
 
-    staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=str(artifact_root)))
-    try:
-        target = staging / CHECKPOINT["path"]
-        print(f"downloading {CHECKPOINT['url']}", flush=True)
-        actual_sha = download(
-            CHECKPOINT["url"], target, CHECKPOINT["sha256"], CHECKPOINT["bytes"]
-        )
-        print(f"verified {CHECKPOINT['path']} sha256={actual_sha}", flush=True)
-
-        generation, rows = inventory_digest(staging)
-        final = digest_root / generation
-
-        if final.is_dir():
-            print(f"generation already present, no-op: {final}", flush=True)
-            report = {
-                "schema": "fs2-serve.nebius.ai/rfdiffusion-checkpoint-staging/v1",
-                "state": "already-present",
-                "artifact_id": args.artifact_id,
-                "generation": generation,
-                "sub_path": str(final.relative_to(root)),
-                "absolute_path": str(final),
-                "checkpoint_sha256": actual_sha,
-            }
-            Path(args.report).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
-            print(json.dumps(report, indent=2, sort_keys=True))
-            return 0
-
-        marker = {
-            "schema": MARKER_SCHEMA,
-            "artifact_id": args.artifact_id,
-            "artifact_kind": ARTIFACT_KIND,
-            "generation": generation,
-            "inventory_algorithm": INVENTORY_ALGORITHM,
-            "inventory_sha256": generation,
-            "entry_count": len(rows),
-            "directory_count": 0,
-            "total_bytes": sum(r["bytes"] for r in rows),
-            "volume_kind": "persistentVolumeClaim",
-            "read_only": True,
-            "visibility": "public",
-            "source_uri": CHECKPOINT["url"],
-            "source_sha256": CHECKPOINT["sha256"],
-            "source_bytes": CHECKPOINT["bytes"],
-            "source_revision": SOURCE_REVISION,
-            "license_id": "BSD-3-Clause",
-            "generator_identity": "fs2-rfdiffusion-final-image-h100-successor-r20260903",
-            "sub_path": str(final.relative_to(root)),
-            "consumer_paths": ["/models/rfdiffusion-checkpoints"],
-        }
-        (staging / MARKER_NAME).write_bytes(marker_bytes(marker))
-
-        seal(staging)
-        os.rename(staging, final)
-        staging = None  # renamed; nothing to clean up
-        print(f"promoted generation {generation} -> {final}", flush=True)
-
-        report = {
-            "schema": "fs2-serve.nebius.ai/rfdiffusion-checkpoint-staging/v1",
-            "state": "promoted",
-            "artifact_id": args.artifact_id,
-            "generation": generation,
-            "inventory_algorithm": INVENTORY_ALGORITHM,
-            "sub_path": str(final.relative_to(root)),
-            "absolute_path": str(final),
-            "checkpoint_sha256": actual_sha,
-            "checkpoint_bytes": CHECKPOINT["bytes"],
-            "marker_sha256": hashlib.sha256(marker_bytes(marker)).hexdigest(),
-            "entries": rows,
-        }
-        Path(args.report).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
-        print(json.dumps(report, indent=2, sort_keys=True))
-        return 0
-    finally:
-        if staging is not None and Path(staging).is_dir():
-            for path in sorted(Path(staging).rglob("*"), reverse=True):
-                path.chmod(0o700)
-            Path(staging).chmod(0o700)
+    if target.is_file() and sha256_file(target) == CHECKPOINT["sha256"]:
+        state = "already-present"
+    else:
+        directory.mkdir(parents=True, exist_ok=True)
+        staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=str(directory)))
+        try:
+            downloaded = staging / CHECKPOINT["filename"]
+            print(f"fetching {CHECKPOINT['url']}", flush=True)
+            download(CHECKPOINT["url"], downloaded, CHECKPOINT["sha256"], CHECKPOINT["bytes"])
+            downloaded.chmod(0o444)
+            os.replace(downloaded, target)
+            state = "staged"
+        finally:
             shutil.rmtree(staging, ignore_errors=True)
+
+    report = {
+        "schema": "fs2-serve.nebius.ai/rfdiffusion-run-input-staging/v1",
+        "state": state,
+        "is_localization": False,
+        "note": (
+            "Run-input staging for semantic qualification only. Not a localized "
+            "generation, not admissible as one, and not a substitute for the contract "
+            "owned by fs2-single-file-model-artifact-localization-r20260903."
+        ),
+        "filename": CHECKPOINT["filename"],
+        "sha256": CHECKPOINT["sha256"],
+        "size_bytes": target.stat().st_size,
+        "license_id": CHECKPOINT["license_id"],
+        "source_uri": CHECKPOINT["url"],
+        "source_revision": CHECKPOINT["source_revision"],
+        "relative_path": str(target.relative_to(Path(args.root))),
+        "absolute_path": str(target),
+    }
+    Path(args.report).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0
 
 
 if __name__ == "__main__":

@@ -209,9 +209,9 @@
     }
   ],
   "artifact_delivery": {
-    "state": "catalog-accepted-localization-entry-absent",
+    "state": "localization-owned-elsewhere-not-claimed",
     "model": "mixed-plane",
-    "detail": "Delivery is mixed-plane, not one shared claim at a task-owned subPath. Each plane is mounted read-only at <artifact-root>/<plane-name> and the input manifest's relative paths begin with the plane name, so a request can draw the checkpoint from a public plane and a target structure from another plane without either hosting the other's bytes. qualification/render_job.py takes repeatable --plane NAME=CLAIM[:SUBPATH] and refuses to run with no plane, so no single-claim default can be inherited by accident.",
+    "detail": "Delivery is mixed-plane capable: qualification/render_job.py takes repeatable --plane and refuses to run with none, so the single-claim assumption is gone. But no plane binding is claimed for this checkpoint. The accepted localization foundation carries no rfdiffusion artifact, has published nothing to either plane, and cannot yet express a raw single-file object at all; that contract is being written by the owner named above. Until it is accepted this runtime reads a task-owned run input and says so.",
     "planes": [
       {
         "name": "public",
@@ -241,15 +241,21 @@
       "detail": "The accepted localization contract carries no rfdiffusion artifact. Its six entries are alphafold2-params, alphafold2-params-bindcraft, bindcraft-pyrosetta-installed-tree, boltzgen-inference-molecules and the two colabdesign-mpnn weight trees. Until an rfdiffusion entry exists, this runtime cannot bind a canonical generation and qualification reads a task-owned one."
     },
     "transitional_claim": "fs2-runtime-qualification-artifacts-r20260902",
-    "generation": {
-      "artifact_id": "rfdiffusion-base-checkpoint",
-      "inventory_algorithm": "fs2-flat-tree-inventory/v1",
-      "generation": "5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab",
-      "sub_path": "rfdiffusion/generations/rfdiffusion-base-checkpoint/sha256/5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab",
-      "marker": ".fs2-runtime-tree.json",
-      "marker_sha256": "e4f89f03b140d2e3a66c77926bb3e1bd7fb320cfeaeaadc3261a050995e2078a",
-      "staged_by": "qualification/stage_checkpoint.py",
-      "note": "The generation digest and marker follow the localization plane's published algorithm and marker schema so the tree is portable to it without restaging."
+    "localization_owner": {
+      "task": "fs2-single-file-model-artifact-localization-r20260903",
+      "scope": "raw single-file artifact localization, including this checkpoint",
+      "handoff_sent": "data/handoffs/fs2-rfdiffusion-base-ckpt-to-single-file-localization-20260903.md",
+      "this_runtime_claims": "No checkpoint localization and no qualified generation. This runtime publishes no generation, writes no .fs2-runtime-tree.json marker and emits no localization receipt. An earlier revision of qualification/stage_checkpoint.py did mimic the plane's marker schema; that was a task-local substitute for another task's contract and was removed rather than left to be mistaken for it."
+    },
+    "run_input_staging": {
+      "purpose": "place the exact checkpoint bytes where a qualification Job can read them",
+      "is_localization": false,
+      "tool": "qualification/stage_checkpoint.py",
+      "path": "<root>/inputs/sha256/<object sha256>/Base_ckpt.pt",
+      "addressing": "named by the object's own catalog sha256, not by a tree-inventory generation; the digest in the path means only 'these are the bytes that hash to this'",
+      "verification": "sha256 and byte count both checked against the accepted catalog before use",
+      "interim_claim": "fs2-runtime-qualification-artifacts-r20260902",
+      "retires_when": "the single-file localization contract is accepted, at which point this staging is deleted"
     }
   },
   "mount_contract": {
@@ -288,7 +294,8 @@
       "terminal_success_after_upstream": "the envelope reports succeeded only after marker verification",
       "determinism": "seed 8100 reproduced byte-identically across three independently built images and four nodes"
     },
-    "scope": "One design-backbone and one scaffold-motif run, each once. No throughput, contention, elasticity, multi-design fan-out or snapshot measurement, and no cold-start measurement for this digest: both runs landed on nodes that already held the layers."
+    "scope": "One design-backbone and one scaffold-motif run, each once. No throughput, contention, elasticity, multi-design fan-out or snapshot measurement, and no cold-start measurement for this digest: both runs landed on nodes that already held the layers. Checkpoint localization is explicitly out of scope and unqualified here.",
+    "localization_state": "not-claimed; owned by fs2-single-file-model-artifact-localization-r20260903"
   },
   "upstream_contract_defects": [
     {
@@ -327,9 +334,9 @@
   "follow_ups": [
     {
       "id": "align-rfdiffusion-with-the-localization-foundation",
-      "owner": "scientific artifact localization owner, with this runtime",
+      "owner": "fs2-single-file-model-artifact-localization-r20260903, with this runtime as consumer",
       "blocking": "blocks canonical delivery and route exposure, not this semantic qualification",
-      "detail": "The accepted foundation at origin/main 3a7ceb25 carries no rfdiffusion artifact, and nothing has been published to either plane yet (binding-handoff evidence still reads generations_published: false). This runtime therefore qualified against a task-owned interim and states so rather than implying canonical delivery.",
+      "detail": "Checkpoint localization is owned by the single-file localization task. This runtime supplied the exact object identity, licence, visibility and runtime argv binding, and will consume the accepted contract once it lands. Nothing here is qualified as a localized generation.",
       "alignment_required": [
         "Register an rfdiffusion artifact in catalog/runtime/contracts/scientific-artifact-localization.json; nothing can stage, promote or admit without an entry there.",
         "Decide between the one-file rfdiffusion-base-checkpoint identity this runtime uses and the eight-file rfdiffusion-checkpoints identity in model-artifacts. Declaring both as separate identities is the sanctioned pattern, as alphafold2-params and alphafold2-params-bindcraft already do.",
