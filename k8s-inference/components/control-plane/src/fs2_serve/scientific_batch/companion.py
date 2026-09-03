@@ -19,11 +19,13 @@ import zstandard
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from .adapters import CollectedArtifactFile, CollectionPendingError, collect_stage_output
-from .models import ArtifactMaterialization, MaterializationMode, StageInvocation
+from .models import ArtifactMaterialization, MaterializationMode, RuntimeArtifactMount, StageInvocation
 
 _ROOT = Path("/mnt/fs2-scientific")
 _MAX_ARCHIVE_FILES = 4096
 _MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
+_MAX_RUNTIME_MARKER_BYTES = 64 * 1024
+RUNTIME_LOCALIZATION_SCHEMA = "fs2-serve.nebius.ai/runtime-localization-marker/v1"
 
 
 def _contained(path: Path, *, root: Path | None = None) -> Path:
@@ -35,12 +37,56 @@ def _contained(path: Path, *, root: Path | None = None) -> Path:
     return resolved
 
 
-def prepare_workspace(workspace: Path) -> None:
-    """Create only the invocation directory beneath the controller-owned root."""
+def prepare_workspace(workspace: Path, *, runtime_localization_json: str) -> None:
+    """Create the invocation directory and its trusted runtime receipt marker."""
 
     target = _contained(workspace)
     target.mkdir(parents=True, exist_ok=False)
     target.chmod(0o700)
+    encoded = runtime_localization_json.encode()
+    if len(encoded) > _MAX_RUNTIME_MARKER_BYTES:
+        raise ValueError("runtime localization marker exceeds the bound")
+    try:
+        marker = json.loads(encoded)
+    except (UnicodeError, ValueError) as error:
+        raise ValueError("runtime localization marker is invalid") from error
+    if (
+        not isinstance(marker, dict)
+        or marker.get("schema") != RUNTIME_LOCALIZATION_SCHEMA
+        or set(marker)
+        != {
+            "schema",
+            "operation_id",
+            "attempt_id",
+            "tenant_id",
+            "model_id",
+            "variant_id",
+            "stage_id",
+            "artifacts",
+        }
+        or not isinstance(marker.get("artifacts"), list)
+    ):
+        raise ValueError("runtime localization marker fields differ")
+    canonical = json.dumps(marker, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    marker_directory = target / ".fs2"
+    marker_directory.mkdir(mode=0o700)
+    temporary = marker_directory / ".runtime-localization.json.tmp"
+    destination = marker_directory / "runtime-localization.json"
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(canonical)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, destination)
+        directory = os.open(marker_directory, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 def _safe_relative(value: str) -> PurePosixPath:
@@ -200,33 +246,6 @@ class WorkloadArtifactHttpClient:
         finalized.raise_for_status()
         return cast(dict[str, Any], finalized.json())
 
-    def commit(
-        self,
-        *,
-        handoff_artifact_id: str,
-        handoff_ref: Mapping[str, Any],
-        manifest_ref: Mapping[str, Any],
-        validation_ref: Mapping[str, Any],
-        semantic_valid: bool,
-    ) -> None:
-        response = self.client.post(
-            f"{self.base_url}/internal/scientific-workloads/commit",
-            headers=self.headers,
-            json={
-                "handoff_artifact_id": handoff_artifact_id,
-                "handoff_digest": f"sha256:{handoff_ref['sha256']}",
-                "handoff_size_bytes": handoff_ref["size_bytes"],
-                "handoff_media_type": handoff_ref["media_type"],
-                "handoff_compression": handoff_ref.get("compression"),
-                "manifest_artifact_id": manifest_ref["artifact_id"],
-                "validation_artifact_id": validation_ref["artifact_id"],
-                "manifest_digest": f"sha256:{manifest_ref['sha256']}",
-                "validation_digest": f"sha256:{validation_ref['sha256']}",
-                "semantic_valid": semantic_valid,
-            },
-        )
-        response.raise_for_status()
-
 
 def materialize_artifact(
     *,
@@ -293,6 +312,19 @@ def _invocation(value: str) -> StageInvocation:
         )
         for item in raw["materializations"]
     )
+    runtime_mounts = tuple(
+        RuntimeArtifactMount(
+            artifact_id=item["artifact_id"],
+            mount_path=item["mount_path"],
+            sub_path=item["sub_path"],
+            read_only=item["read_only"],
+            expected_content_sha256=item["expected_content_sha256"],
+            authorization_receipt_sha256=item["authorization_receipt_sha256"],
+            readiness_receipt_sha256=item["readiness_receipt_sha256"],
+            supplemental_groups=tuple(item["supplemental_groups"]),
+        )
+        for item in raw["runtime_mounts"]
+    )
     return StageInvocation(
         stage_id=raw["stage_id"],
         shard_id=raw["shard_id"],
@@ -308,6 +340,7 @@ def _invocation(value: str) -> StageInvocation:
         max_output_bytes=raw["max_output_bytes"],
         materializations=materializations,
         runtime_artifacts=tuple(raw["runtime_artifacts"]),
+        runtime_mounts=runtime_mounts,
     )
 
 
@@ -376,6 +409,16 @@ def collect_and_commit(
     Draft202012Validator(schema).validate(manifest)
     manifest_bytes = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
     validation = dict(collected.validation)
+    if validation.get("collector_id", invocation.collector_id) != invocation.collector_id:
+        raise ValueError("collector evidence changed the bound collector identity")
+    validation.update(
+        {
+            "collector_id": invocation.collector_id,
+            "stage_id": invocation.stage_id,
+            "shard_id": invocation.shard_id,
+            "logical_output_id": invocation.produces,
+        }
+    )
     semantic_valid = validation.get("status") == "passed" and validation.get("validator_id") == invocation.validator_id
     if not semantic_valid:
         raise ValueError("collector semantic validation did not pass the bound validator")
@@ -389,16 +432,12 @@ def collect_and_commit(
     validation_ref = client.upload(
         identity=f"{invocation.produces}:validation",
         content=validation_bytes,
-        media_type="application/json",
+        media_type="application/vnd.fs2.scientific-validation+json",
         compression=None,
     )
     if invocation.handoff_name is not None and invocation.handoff_name not in refs:
         raise ValueError("collector omitted the invocation's exact handoff entry")
-    handoff = manifest_ref if invocation.handoff_name is None else refs[invocation.handoff_name]
-    client.commit(
-        handoff_artifact_id=handoff["artifact_id"],
-        handoff_ref=handoff,
-        manifest_ref=manifest_ref,
-        validation_ref=validation_ref,
-        semantic_valid=semantic_valid,
-    )
+    # Finalization above is the durable collection boundary. The controller
+    # closes the observed attempt and commits the aggregate canonical stage
+    # manifest through the artifact service after every shard succeeds.
+    del manifest_ref, validation_ref

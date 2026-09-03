@@ -458,7 +458,8 @@ class PostgresStore:
                     f"fs2_scientific_stage_attempts,fs2_scientific_artifacts,fs2_scientific_uploads,"
                     f"fs2_scientific_stage_commits,fs2_scientific_stage_commit_attempts,"
                     f"fs2_scientific_run_results,fs2_scientific_artifact_events,"
-                    f"fs2_scientific_retention_ledger,"
+                    f"fs2_scientific_retention_ledger,fs2_scientific_batches,"
+                    f"fs2_scientific_batch_events,"
                     f"fs2_reporting_model_usage,fs2_reporting_principal_usage,"
                     f"fs2_reporting_terminal_totals,fs2_activation_intents,fs2_activation_events,"
                     f"fs2_activation_target_state,fs2_activation_controller_status,"
@@ -470,7 +471,8 @@ class PostgresStore:
                     f"fs2_configuration_reconciliation_events_id_seq,"
                     f"fs2_model_deployment_status_events_id_seq,"
                     f"fs2_scientific_artifact_events_id_seq,"
-                    f"fs2_scientific_retention_ledger_id_seq FROM {role}"
+                    f"fs2_scientific_retention_ledger_id_seq,"
+                    f"fs2_scientific_batch_events_sequence_seq FROM {role}"
                 )
                 await connection.execute(
                     f"REVOKE ALL ON FUNCTION fs2_activation_model_lock_key(text),"
@@ -480,7 +482,9 @@ class PostgresStore:
                     f"fs2_scientific_validate_attempt_transition(),"
                     f"fs2_scientific_validate_upload_transition(),"
                     f"fs2_scientific_reject_mutation(),"
-                    f"fs2_scientific_guard_retention_delete() FROM {role}"
+                    f"fs2_scientific_guard_retention_delete(),"
+                    f"fs2_scientific_batch_state_immutable(),"
+                    f"fs2_scientific_batch_append_only() FROM {role}"
                 )
             await connection.execute(
                 f"GRANT SELECT ON fs2_reporting_model_usage,fs2_reporting_principal_usage,"
@@ -521,6 +525,12 @@ class PostgresStore:
             await connection.execute(
                 f"GRANT UPDATE (artifact_id,finalized_at) ON fs2_scientific_uploads TO {quoted_runtime}"
             )
+            await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_batches TO {quoted_runtime}")
+            await connection.execute(
+                f"GRANT UPDATE (status,revision,cancel_requested,state,controller_id,"
+                f"fencing_token,lease_expires_at,updated_at) ON fs2_scientific_batches TO {quoted_runtime}"
+            )
+            await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_batch_events TO {quoted_runtime}")
             await connection.execute(
                 f"GRANT DELETE ON fs2_scientific_stage_attempts,fs2_scientific_artifacts,"
                 f"fs2_scientific_uploads,fs2_scientific_stage_commits,"
@@ -548,7 +558,8 @@ class PostgresStore:
                 f"fs2_configuration_reconciliation_events_id_seq,"
                 f"fs2_model_deployment_status_events_id_seq,"
                 f"fs2_scientific_artifact_events_id_seq,"
-                f"fs2_scientific_retention_ledger_id_seq TO {quoted_runtime}"
+                f"fs2_scientific_retention_ledger_id_seq,"
+                f"fs2_scientific_batch_events_sequence_seq TO {quoted_runtime}"
             )
             await connection.execute(
                 f"GRANT EXECUTE ON FUNCTION fs2_runtime_ensure_activation_intent(uuid,integer,text,text,"
@@ -2816,7 +2827,8 @@ class PostgresStore:
                 JOIN fs2_tokens t ON t.id=o.token_id
                     AND t.revoked_at IS NULL
                     AND (t.expires_at IS NULL OR t.expires_at>clock_timestamp())
-                WHERE o.status='queued' AND o.available_at<=clock_timestamp()
+                WHERE o.status='queued' AND o.protocol<>'scientific-batch-v1'
+                  AND o.available_at<=clock_timestamp()
                   AND o.payload_expires_at>clock_timestamp()
                   AND (o.deadline_at IS NULL OR o.deadline_at>clock_timestamp())
                   AND o.attempt<o.max_attempts
@@ -2857,6 +2869,7 @@ class PostgresStore:
                     WITH charge AS (
                         SELECT id,reserved_gpu_seconds/GREATEST(1,max_attempts-attempt) AS amount
                         FROM fs2_operations WHERE id=$1 AND token_id=$4 AND status='queued'
+                          AND protocol<>'scientific-batch-v1'
                           AND available_at<=clock_timestamp() AND payload_expires_at>clock_timestamp()
                           AND (deadline_at IS NULL OR deadline_at>clock_timestamp())
                           AND attempt<max_attempts FOR UPDATE

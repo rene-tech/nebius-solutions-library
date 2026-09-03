@@ -328,26 +328,6 @@ app.kubernetes.io/component: model-controller
 - name: FS2_SCIENTIFIC_BATCH_API_TIMEOUT_SECONDS
   value: {{ .Values.scientificBatch.apiTimeoutSeconds | quote }}
 {{- end }}
-{{- if .Values.artifactService.enabled }}
-- name: FS2_ARTIFACT_SERVICE_ENABLED
-  value: "true"
-- name: FS2_ARTIFACT_STORE_ENDPOINT
-  value: {{ .Values.artifactService.endpoint | quote }}
-- name: FS2_ARTIFACT_STORE_BUCKET
-  value: {{ .Values.artifactService.bucket | quote }}
-- name: FS2_ARTIFACT_STORE_REGION
-  value: {{ .Values.artifactService.region | quote }}
-- name: FS2_ARTIFACT_STORE_ACCESS_KEY
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.artifactService.credentialsSecretName }}
-      key: {{ .Values.artifactService.accessKeyKey }}
-- name: FS2_ARTIFACT_STORE_SECRET_KEY
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.artifactService.credentialsSecretName }}
-      key: {{ .Values.artifactService.secretKeyKey }}
-{{- end }}
 - name: FS2_ADMIN_ADAPTER_TIMEOUT_SECONDS
   value: {{ .Values.adminReadAdapters.adapterTimeoutSeconds | quote }}
 - name: FS2_ADMIN_SOURCE_MAX_AGE_SECONDS

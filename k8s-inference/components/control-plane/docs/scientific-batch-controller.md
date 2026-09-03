@@ -11,8 +11,9 @@ the internal records into public schemas.
 
 Every batch is keyed by the UUID of an existing durable FS2 Operation. Migration
 `0015_scientific_batch_controller.sql` stores only orchestration state, events,
-and foreign keys to artifact-service-owned rows; it does not create a second
-public operation ledger or duplicate artifact metadata.
+and controller fencing; it does not create a second public operation ledger or
+duplicate the artifact-service-owned attempt, artifact, stage-commit, or result
+tables.
 `batch_id` and logical `workload_id` are deterministic, stable children of the
 Operation. Both survive retry; only `attempt_id` and the concrete Kubernetes
 resource name change. The service projects these internal UUIDs to opaque
@@ -33,6 +34,15 @@ The scheduling types are an internal frozen consumption model, not a competing
 Kueue policy authority. Integration must project the reviewed Kueue scheduling
 contract into these fields; this controller does not choose queues, priorities,
 flavors, images, commands, or paths.
+
+The resolver verifies the contract's caller-selectable flag, tenant/model
+`local_queue_routes`, LocalQueue-to-ClusterQueue binding, WorkloadPriorityClass
+value, ordered compatible pools, each pool's ResourceFlavor and extended
+resource, queue deadline, execution deadline, and preemption mode. Queue expiry
+is enforced from the frozen attempt start without retry; the execution deadline
+is projected to both Kueue's max-exec label and the Job or JobSet Job template.
+The exact Kueue admission, Workload UID, admitted flavor, pool, and accelerator
+quantity are then persisted from live status rather than guessed at submission.
 
 ## Catalog profile adapter boundary
 
@@ -70,6 +80,10 @@ failure.
 - Workload names and attempt UUIDs are deterministic functions of Operation,
   stage, shard, and attempt number. Re-applying after a process crash therefore
   adopts the same object instead of duplicating work.
+- Attempt identity and the active stage are committed before Kubernetes apply.
+  The second fenced transition binds the returned Job/JobSet UID. A crash in
+  between leaves a recognizable pending apply, and a fast Kueue admission can
+  never present a companion capability before the controller record exists.
 - A terminal observation is durable before workload deletion. The separate
   `resource_released` marker is persisted after an idempotent, UID-fenced
   delete, before the durable stage-success transition. If the controller loses
@@ -166,10 +180,11 @@ artifact-pointer JSON schemas.
   directly.
 
 The artifact service remains the sole owner of uploads, immutable artifact
-records, terminal result manifests, and their public projection. Stage commit
-rows contain only the exact successful attempt set and foreign keys/digests for
-the manifest and semantic evidence. A successful Job cannot unlock a successor
-until this join has been committed and reopened.
+records, per-attempt lifecycle, stage commits, terminal result manifests, and
+their public projection. Its stage-commit rows bind the exact successful
+attempt set to an atomically synthesized aggregate manifest and validation
+digest. A successful Job cannot unlock a successor until this commit has been
+committed and reopened.
 
 ## Kubernetes and Helm wiring
 
@@ -241,8 +256,10 @@ A registered collector has the signature
 It returns bounded `CollectedArtifactFile` records and a validation mapping
 whose `validator_id` equals the invocation. The controller companion performs
 all byte transport, immutable artifact creation, output-manifest/evidence
-publication, and the one attempt-fenced commit. Model-owned code only locates
-and semantically validates files beneath the supplied contained workspace.
+publication, and attempt close. After every shard is successful and quota has
+been released, the controller asks the canonical artifact service to atomically
+commit the exact attempt set for the stage. Model-owned code only locates and
+semantically validates files beneath the supplied contained workspace.
 
 Each execution-map stage has exactly `stage_id`, digest-qualified `image`,
 `collector_id`, `validator_id`, `mounts`, `service_account_name`, `resources`,
@@ -259,8 +276,9 @@ contained copy/extract/overlay/input rewrite. The model gets only the resulting
 paths. The fixed controller-tools collector sidecar calls the registered
 collector after the model exits, validates bounds and semantic evidence,
 uploads each output plus canonical manifest/evidence, and commits the exact
-handoff. A successor is rendered only after that commit is reopened and all
-artifact identities match its successful predecessor attempt.
+handoff artifacts. A successor is rendered only after the controller's atomic
+stage commit is reopened and all artifact identities match its successful
+predecessor attempt.
 
 Additional `reference` and `private` mounts require an exact PVC claim, are
 always read-only, and may use a safe relative `sub_path`. Every mount object has
@@ -283,25 +301,47 @@ never become image, collector, validator, queue, priority, flavor, mount,
 claim, or URL values. Adapter-generated paths must remain under the contained
 workspace root.
 
-`runtime_artifacts` is an operator attestation, not a request field. Each item
-binds a logical artifact ID and read-only mount path to an exact aggregate
-content digest, complete `(path, sha256, size_bytes)` file manifest, and
-localization receipt digest. Before a durable batch row or Kubernetes object
-exists, the controller requires exact equality with the qualified profile's
-artifact requirements and proves every consuming invocation is covered by a
-read-only reference/private mount. Missing, partial, or digest-different model
-weights/databases fail admission before GPU scheduling.
+`runtime_artifacts` is an operator attestation, not a request field. Each
+execution-map item binds a logical artifact ID and physical read-only source to
+an exact aggregate content digest, complete `(path, sha256, size_bytes)` file
+manifest, and localization receipt digest. Each `StageInvocation` lists the
+runtime artifacts used by that enabled stage and carries one exact
+`RuntimeArtifactMount` per ID: approved target `mount_path`, optional safe
+`sub_path`, expected content SHA, authorization/readiness receipt SHAs, and
+supplemental groups. The renderer exposes only those exact bindings, emits the
+verified receipt document atomically at
+`<working_directory>/.fs2/runtime-localization.json`, and requires that exact
+path in model argv. Wrappers verify the small marker rather than rehashing a
+multi-GB tree per attempt. The Pod security context sets
+`fsGroupChangePolicy=OnRootMismatch` without setting `fsGroup`, so Kubernetes
+does not recursively chown a multi-GB immutable tree.
+
+Before a durable batch row or Kubernetes object exists, the controller verifies
+every plan-required artifact and rejects any required ID undeclared by the
+qualified profile. Profile artifacts for disabled stages may remain unused;
+this is required for AlphaFold3 `input_mode=enriched`, where the CPU reference
+stage is intentionally absent. Missing, partial, receipt-different, or
+digest-different weights/databases fail admission before GPU scheduling.
 
 The frozen `ArtifactAccessContext` carries the tenant, `public|restricted|academic`
 profile, and non-secret receipt digest to every materializer/collector
 capability. Thus an academic AlphaFold3 CPU preprocessing invocation can consume
-the authorized raw input while its GPU successor consumes only the committed,
-validated processed JSON; raw input is not implicitly forwarded.
+the authorized raw input while its GPU successor consumes only one committed,
+validated immutable handoff envelope containing relative `processed.json` and
+its digest-bound provenance marker; raw input is not implicitly forwarded. The
+same relative envelope contract is used for enriched input and survives
+relocation into the GPU workspace—producer absolute paths are never trusted.
+Protenix preprocessing uses the same relative-path rule, and both its CPU and
+GPU invocations must declare the complete common bundle
+`components.cif`, `components.cif.rdkit_mol.pkl`,
+`clusters-by-entity-40.txt`, and `obsolete_release_date.csv`; a weights-only GPU
+stage is invalid.
 
 Helm's `scientificBatch.enabled` and `scientificBatch.writesEnabled` gates are
 both false by default and must be enabled together. Enabling requires:
 
 - immutable scheduling-contract and execution-map ConfigMaps;
+- the canonical `scientificArtifacts.enabled` PostgreSQL/S3 service;
 - bounded Kubernetes API egress CIDRs;
 - Job, JobSet, and Pod read/write RBAC in the configured workload namespace;
 - a catalog profile whose route, immutable execution identity, access state,
@@ -321,11 +361,14 @@ map, and scheduling ConfigMap.
 The deterministic fake repository enforces compare-and-swap revisions,
 immutable admission, monotonically sequenced events, and controller fences.
 The fake cluster enforces immutable names and mutation fences. The focused
-tests cover sequential commit gating, delayed artifact publication, fan-out and gang rendering, quota
-handoff (including an injected crash after external deletion), complete phase ingestion, infrastructure preemption/retry,
-stale-attempt observations, non-retryable taxonomy, cancellation races and
-cascade, public HTTP/MCP lifecycle dispatch, Kubernetes REST creation, durable
-PostgreSQL fencing, and invalid DAGs/snapshots.
+tests cover sequential commit gating, contained logical-manifest resolution,
+relative AF3/Protenix handoff relocation, exact runtime mounts and localization
+receipts, delayed artifact publication, fan-out and gang rendering, quota
+handoff (including an injected crash after external deletion), canonical
+scheduling routing/deadlines, complete phase ingestion, infrastructure
+preemption/retry, stale-attempt observations, non-retryable taxonomy,
+cancellation races and cascade, public HTTP/MCP lifecycle dispatch, Kubernetes
+REST creation, durable PostgreSQL fencing, and invalid DAGs/snapshots.
 
 Run them with:
 
@@ -334,11 +377,14 @@ cd k8s-inference/components/control-plane
 PYTHONPATH="src:../../catalog/runtime" uv run pytest -q \
   tests/test_scientific_batch_controller.py \
   tests/test_scientific_batch_catalog_adapter.py \
-  tests/test_scientific_batch_production.py
+  tests/test_scientific_batch_production.py \
+  tests/test_scientific_batch_execution_handoff.py \
+  tests/test_scientific_artifacts.py
 
 # Requires a disposable PostgreSQL database.
 FS2_TEST_DATABASE_URL=postgresql://... uv run pytest -q \
   tests/test_postgres_integration.py -k scientific_batch
 
-helm lint ../../charts/control-plane/fs2-serve-control-plane
+# Includes schema-valid test values, Helm lint/template, static checks, and the full suite.
+bash scripts/test.sh
 ```
