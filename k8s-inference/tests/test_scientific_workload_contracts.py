@@ -402,6 +402,44 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                 else:
                     self.assertIsNone(prefix)
 
+    def test_published_localized_identities_are_a_stable_public_interface(self) -> None:
+        """Other workers stage against these exact names, digests and paths.
+
+        The artifact-cache plane mirrors trees by artifact ID and admits them by
+        inventory digest, so renaming an artifact or recomputing a digest without
+        coordinating breaks a consumer that has already staged bytes. Changing a
+        row here is therefore a deliberate interface change, not a refactor.
+        """
+
+        published = {
+            "alphafold2-params": (
+                "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+                "/opt/fs2/artifacts/alphafold2-params",
+            ),
+            "alphafold2-params-bindcraft": (
+                "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+                "/models/alphafold2",
+            ),
+            "colabdesign-mpnn-weights-vanilla": (
+                "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+                "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+            ),
+            "colabdesign-mpnn-weights-soluble": (
+                "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+                "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
+            ),
+            "boltzgen-inference-molecules": (
+                "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+                "/opt/fs2/artifacts/boltzgen-inference-molecules",
+            ),
+        }
+        contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
+        observed = {
+            item["artifact_id"]: (item["tree"]["inventory_sha256"], item["tree"]["mount_paths"][0])
+            for item in contract["artifacts"]
+        }
+        self.assertEqual(published, observed)
+
     def test_every_localized_tree_has_a_distinct_identity_and_mount(self) -> None:
         contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
         digests = [item["tree"]["inventory_sha256"] for item in contract["artifacts"]]
