@@ -22,22 +22,76 @@
   "non_overwriting_publication": {
     "policy": "every tag is asserted absent before publication; a tag is never overwritten",
     "chain": [
-      {"tag_suffix": "-cuda121-r12", "digest": "sha256:fcc5b0da20f8bee01e78ad042ba597f7596cd52322a542ff4e48c855abae0177", "created": "2026-09-03T02:42:14Z", "state": "superseded", "finding": "semantic run used settings_filters/no_filters.json; its accepted design's mean pLDDT 0.79 would not pass the production filter set"},
-      {"tag_suffix": "-cuda121-r13", "digest": "sha256:5ea7696fbcfdf35bb80f5662bb4d9bc1d40744f51b37a0a897babec8ef688892", "created": "2026-09-03T02:49:56Z", "state": "superseded", "finding": "predates the relaxed-complex and interface-statistic runtime change"},
-      {"tag_suffix": "-cuda121-r14", "digest": "sha256:351f8f5fa02f3c74107efa522884301e2c4896b934f9145dfdbbd61b79e57e1f", "created": "2026-09-03T03:00:58Z", "state": "superseded-not-qualified", "finding": "read Average_InterfaceResidues and Average_BuriedSASA, which upstream never writes, each defaulted to \"0\"; reported a hard-coded hotspot_geometry_validated; overrode the pinned template with one validation recycle and one MPNN sequence"},
-      {"tag_suffix": "-cuda121-r15", "digest": "sha256:a8ae983d26696e4858e7fbc67a581791c7b26e59544c2fb29c0b34bdcdeedbf5", "created": "2026-09-03T03:52:24Z", "state": "superseded-not-qualified", "finding": "corrected every r14 defect and added the four-tree admission gate, but predates the controller's --runtime-localization-marker requirement"},
-      {"tag_suffix": "-cuda121-r16", "digest": "sha256:72fe33653b0670af707d0234be51091c53a61b43f44d25f69a4cbbaffbf0896d", "created": "2026-09-03T04:09:39Z", "state": "final"}
+      {
+        "tag_suffix": "-cuda121-r12",
+        "digest": "sha256:fcc5b0da20f8bee01e78ad042ba597f7596cd52322a542ff4e48c855abae0177",
+        "created": "2026-09-03T02:42:14Z",
+        "state": "superseded",
+        "finding": "semantic run used settings_filters/no_filters.json; its accepted design's mean pLDDT 0.79 would not pass the production filter set"
+      },
+      {
+        "tag_suffix": "-cuda121-r13",
+        "digest": "sha256:5ea7696fbcfdf35bb80f5662bb4d9bc1d40744f51b37a0a897babec8ef688892",
+        "created": "2026-09-03T02:49:56Z",
+        "state": "superseded",
+        "finding": "predates the relaxed-complex and interface-statistic runtime change"
+      },
+      {
+        "tag_suffix": "-cuda121-r14",
+        "digest": "sha256:351f8f5fa02f3c74107efa522884301e2c4896b934f9145dfdbbd61b79e57e1f",
+        "created": "2026-09-03T03:00:58Z",
+        "state": "superseded-not-qualified",
+        "finding": "read Average_InterfaceResidues and Average_BuriedSASA, which upstream never writes, each defaulted to \"0\"; reported a hard-coded hotspot_geometry_validated; overrode the pinned template with one validation recycle and one MPNN sequence"
+      },
+      {
+        "tag_suffix": "-cuda121-r15",
+        "digest": "sha256:a8ae983d26696e4858e7fbc67a581791c7b26e59544c2fb29c0b34bdcdeedbf5",
+        "created": "2026-09-03T03:52:24Z",
+        "state": "superseded-not-qualified",
+        "finding": "corrected every r14 defect and added the four-tree admission gate, but predates the controller's --runtime-localization-marker requirement"
+      },
+      {
+        "tag_suffix": "-cuda121-r16",
+        "digest": "sha256:72fe33653b0670af707d0234be51091c53a61b43f44d25f69a4cbbaffbf0896d",
+        "created": "2026-09-03T04:09:39Z",
+        "state": "final"
+      }
     ]
   },
   "source_identity_in_published_image": {
     "method": "SHA-256 of each runtime file read from the pulled digest reference, compared to the repository working tree",
     "match": true,
     "files": [
-      {"path": "/opt/fs2/bindcraft/runtime_entrypoint.py", "sha256": "0f82578de0d4f851414f91752ecb5e93b97194812f10d43c66849bce22c83dc4", "size_bytes": 39056, "repository_path": "runtime/bindcraft_runtime_entrypoint.py"},
-      {"path": "/opt/fs2/bindcraft/tree_identity.py", "sha256": "9a4d944ea802af83b6a340a2234a70d5e493bf7a57284e773ee9a762b9b7be35", "size_bytes": 7145, "repository_path": "runtime/tree_identity.py"},
-      {"path": "/opt/fs2/runtime_entrypoint.py", "sha256": "25be621b72005010e7924f90144f00f001b595cd7423efe5a7dffed732495f92", "size_bytes": 8677, "repository_path": "runtime/runtime_entrypoint.py"},
-      {"path": "/opt/fs2/artifact_gate.py", "sha256": "8df100f0fb062f3a4ff5c3d345036249124ec240c8c427124f27dcb647d13527", "size_bytes": 5001, "repository_path": "runtime/artifact_gate.py"},
-      {"path": "/opt/fs2/bin/bindcraft-batch", "sha256": "1c62303bb5eca99581fcd0ca9c45cb27d3a8e275875d198db57bec2edb2b7be3", "size_bytes": 336, "repository_path": "models/structure/runtime/bindcraft-native/bin/bindcraft-batch"}
+      {
+        "path": "/opt/fs2/bindcraft/runtime_entrypoint.py",
+        "sha256": "0f82578de0d4f851414f91752ecb5e93b97194812f10d43c66849bce22c83dc4",
+        "size_bytes": 39056,
+        "repository_path": "runtime/bindcraft_runtime_entrypoint.py"
+      },
+      {
+        "path": "/opt/fs2/bindcraft/tree_identity.py",
+        "sha256": "9a4d944ea802af83b6a340a2234a70d5e493bf7a57284e773ee9a762b9b7be35",
+        "size_bytes": 7145,
+        "repository_path": "runtime/tree_identity.py"
+      },
+      {
+        "path": "/opt/fs2/runtime_entrypoint.py",
+        "sha256": "25be621b72005010e7924f90144f00f001b595cd7423efe5a7dffed732495f92",
+        "size_bytes": 8677,
+        "repository_path": "runtime/runtime_entrypoint.py"
+      },
+      {
+        "path": "/opt/fs2/artifact_gate.py",
+        "sha256": "8df100f0fb062f3a4ff5c3d345036249124ec240c8c427124f27dcb647d13527",
+        "size_bytes": 5001,
+        "repository_path": "runtime/artifact_gate.py"
+      },
+      {
+        "path": "/opt/fs2/bin/bindcraft-batch",
+        "sha256": "1c62303bb5eca99581fcd0ca9c45cb27d3a8e275875d198db57bec2edb2b7be3",
+        "size_bytes": 336,
+        "repository_path": "models/structure/runtime/bindcraft-native/bin/bindcraft-batch"
+      }
     ]
   },
   "controller_interface": {
@@ -46,10 +100,26 @@
     "state": "satisfied on sha256:72fe3365",
     "behaviour": "read, not ignored: the marker must be an absolute path to a readable JSON object and must agree with FS2_RUNTIME_LOCALIZATION_MARKER when that is set; its path, size and SHA-256 are recorded in the shard output, and a generation it declares is cross-checked against the mounted trees",
     "verified": [
-      {"subcommand": "run-trajectory", "check": "--help lists --runtime-localization-marker", "result": "present"},
-      {"subcommand": "aggregate", "check": "--help lists --runtime-localization-marker", "result": "present"},
-      {"subcommand": "run-trajectory", "check": "adapter's exact argv with workspace /mnt/fs2-scientific/work/design/design-000", "result": "argparse accepted; marker, request, input manifest, pinned settings and filter digests and target artifact all admitted; stopped at the next real gate with 'external tree admission declaration is unavailable'"},
-      {"subcommand": "aggregate", "check": "adapter's exact argv, mirror form", "result": "argparse accepted; marker admitted; stopped at the absent shard output as expected with no shards present"}
+      {
+        "subcommand": "run-trajectory",
+        "check": "--help lists --runtime-localization-marker",
+        "result": "present"
+      },
+      {
+        "subcommand": "aggregate",
+        "check": "--help lists --runtime-localization-marker",
+        "result": "present"
+      },
+      {
+        "subcommand": "run-trajectory",
+        "check": "adapter's exact argv with workspace /mnt/fs2-scientific/work/design/design-000",
+        "result": "argparse accepted; marker, request, input manifest, pinned settings and filter digests and target artifact all admitted; stopped at the next real gate with 'external tree admission declaration is unavailable'"
+      },
+      {
+        "subcommand": "aggregate",
+        "check": "adapter's exact argv, mirror form",
+        "result": "argparse accepted; marker admitted; stopped at the absent shard output as expected with no shards present"
+      }
     ],
     "open_dependency": "the controller companion must also publish the external tree admission document and point FS2_BINDCRAFT_EXTERNAL_TREES at it, beside .fs2/request.json and .fs2/input-manifest.json; without it the design stage fails closed",
     "mpnn_lane": "FS2_BINDCRAFT_MPNN_WEIGHTS selects original or soluble; unset defers to the pinned advanced template. Both colabdesign weight directories are absent from the image and mounted per run.",
@@ -57,25 +127,100 @@
   },
   "external_tree_contract": {
     "roles": [
-      {"role": "pyrosetta-site-packages", "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages", "identity_algorithm": "fs2-tree-manifest/v1", "authority": "pinned in the image; the licensed tree this image is built around", "pinned_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"},
-      {"role": "alphafold2-params", "mount_path": "/models/alphafold2", "identity_algorithm": "fs2-flat-tree-inventory/v1", "authority": "declared per run by the platform artifact plane"},
-      {"role": "colabdesign-mpnn-weights-vanilla", "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights", "identity_algorithm": "fs2-flat-tree-inventory/v1", "authority": "declared per run by the platform artifact plane"},
-      {"role": "colabdesign-mpnn-weights-soluble", "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble", "identity_algorithm": "fs2-flat-tree-inventory/v1", "authority": "declared per run by the platform artifact plane"}
+      {
+        "role": "pyrosetta-site-packages",
+        "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+        "identity_algorithm": "fs2-tree-manifest/v1",
+        "authority": "pinned in the image; the licensed tree this image is built around",
+        "pinned_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+      },
+      {
+        "role": "alphafold2-params",
+        "mount_path": "/models/alphafold2",
+        "identity_algorithm": "fs2-flat-tree-inventory/v1",
+        "authority": "declared per run by the platform artifact plane"
+      },
+      {
+        "role": "colabdesign-mpnn-weights-vanilla",
+        "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+        "identity_algorithm": "fs2-flat-tree-inventory/v1",
+        "authority": "declared per run by the platform artifact plane"
+      },
+      {
+        "role": "colabdesign-mpnn-weights-soluble",
+        "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
+        "identity_algorithm": "fs2-flat-tree-inventory/v1",
+        "authority": "declared per run by the platform artifact plane"
+      }
     ],
     "algorithm_agreement": [
-      {"algorithm": "fs2-tree-manifest/v1", "kept_identical_to": "academic-assets/scripts/install_tree.py", "proven_by": "unit test comparing both implementations on the same tree"},
-      {"algorithm": "fs2-flat-tree-inventory/v1", "kept_identical_to": "scientific-localization staging receipts", "proven_by": "recomputed digests equal the published receipt digests for both ColabDesign trees"}
+      {
+        "algorithm": "fs2-tree-manifest/v1",
+        "kept_identical_to": "academic-assets/scripts/install_tree.py",
+        "proven_by": "unit test comparing both implementations on the same tree"
+      },
+      {
+        "algorithm": "fs2-flat-tree-inventory/v1",
+        "kept_identical_to": "scientific-localization staging receipts",
+        "proven_by": "recomputed digests equal the published receipt digests for both ColabDesign trees"
+      }
     ],
     "no_metadata_only_shortcut": "every admitted tree is read in full; a size-and-shape check would pass on a tree whose contents were swapped"
   },
   "measured_tree_identity_cost": {
-    "environment": {"project": "project-e00rene", "region": "eu-north1", "context": "k8s-inference-h100", "namespace": "fs2-academic-poc", "claim": "academic-assets-runtime-rwx", "node": "computeinstance-e00m0hsph76ajt9sdb", "accelerator_class": "nvidia-h100-sxm5-80gb", "capacity_source": "capacity-block"},
+    "environment": {
+      "project": "project-e00rene",
+      "region": "eu-north1",
+      "context": "k8s-inference-h100",
+      "namespace": "fs2-academic-poc",
+      "claim": "academic-assets-runtime-rwx",
+      "node": "computeinstance-e00m0hsph76ajt9sdb",
+      "accelerator_class": "nvidia-h100-sxm5-80gb",
+      "capacity_source": "capacity-block"
+    },
     "note": "measured read-only against the current mutable localization layout to size the per-run gate; these digests are not pinned in the image and the run that consumes them is gated on the immutable generation",
     "trees": [
-      {"artifact": "pyrosetta-bindcraft/site-packages", "algorithm": "fs2-tree-manifest/v1", "sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d", "bytes": 3287122494, "files": 8697, "symlinks": 0, "elapsed_seconds": 14.853, "throughput_mib_per_s": 211.1, "matches_installer_receipt": true},
-      {"artifact": "alphafold2-params-bindcraft", "algorithm": "fs2-flat-tree-inventory/v1", "sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f", "bytes": 5587959437, "entries": 17, "elapsed_seconds": 5.363, "throughput_mib_per_s": 993.7, "matches_staging_receipt": true},
-      {"artifact": "colabdesign-mpnn-weights-vanilla", "algorithm": "fs2-flat-tree-inventory/v1", "sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f", "bytes": 26602793, "entries": 5, "elapsed_seconds": 0.035, "throughput_mib_per_s": 722.1, "matches_staging_receipt": true},
-      {"artifact": "colabdesign-mpnn-weights-soluble", "algorithm": "fs2-flat-tree-inventory/v1", "sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146", "bytes": 26601241, "entries": 5, "elapsed_seconds": 0.034, "throughput_mib_per_s": 738.7, "matches_staging_receipt": true}
+      {
+        "artifact": "pyrosetta-bindcraft/site-packages",
+        "algorithm": "fs2-tree-manifest/v1",
+        "sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+        "bytes": 3287122494,
+        "files": 8697,
+        "symlinks": 0,
+        "elapsed_seconds": 14.853,
+        "throughput_mib_per_s": 211.1,
+        "matches_installer_receipt": true
+      },
+      {
+        "artifact": "alphafold2-params-bindcraft",
+        "algorithm": "fs2-flat-tree-inventory/v1",
+        "sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+        "bytes": 5587959437,
+        "entries": 17,
+        "elapsed_seconds": 5.363,
+        "throughput_mib_per_s": 993.7,
+        "matches_staging_receipt": true
+      },
+      {
+        "artifact": "colabdesign-mpnn-weights-vanilla",
+        "algorithm": "fs2-flat-tree-inventory/v1",
+        "sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+        "bytes": 26602793,
+        "entries": 5,
+        "elapsed_seconds": 0.035,
+        "throughput_mib_per_s": 722.1,
+        "matches_staging_receipt": true
+      },
+      {
+        "artifact": "colabdesign-mpnn-weights-soluble",
+        "algorithm": "fs2-flat-tree-inventory/v1",
+        "sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+        "bytes": 26601241,
+        "entries": 5,
+        "elapsed_seconds": 0.034,
+        "throughput_mib_per_s": 738.7,
+        "matches_staging_receipt": true
+      }
     ],
     "total_gate_seconds": 20.285,
     "conclusion": "full-content verification of all four trees costs about 20 s against trajectories that run for minutes, so no metadata-only shortcut is warranted"
@@ -84,27 +229,69 @@
     "image": "sha256:72fe33653b0670af707d0234be51091c53a61b43f44d25f69a4cbbaffbf0896d",
     "predecessor_proofs_on": "sha256:a8ae983d26696e4858e7fbc67a581791c7b26e59544c2fb29c0b34bdcdeedbf5",
     "cases": [
-      {"case": "no external tree admission declaration", "result": "rejected", "reason": "external tree admission declaration is unavailable", "exit_code": 78},
-      {"case": "three public trees admitted by full content, licensed tree content wrong", "result": "rejected", "reason": "pyrosetta-site-packages: mounted tree is not the immutable tree this runtime is pinned to", "note": "the AlphaFold2 and both ColabDesign trees were each read in full and matched their declared identities before the licensed tree was rejected, so the positive path for the three public trees is proven in-image"},
-      {"case": "soluble ColabDesign tree byte-swapped after publication", "result": "rejected", "reason": "colabdesign-mpnn-weights-soluble: mounted tree is not the immutable tree this runtime is pinned to"},
-      {"case": "full outer-entrypoint chain with a valid AlphaFold2 artifact manifest", "result": "outer artifact gate passed, then rejected at the shared PyRosetta binding", "reason": "PyRosetta installed dist-info is missing from the tenant-private mount", "note": "confirms the rendered Job's environment satisfies the shared external artifact gate; the licensed tree's positive path needs the real 3.29 GB mount"}
+      {
+        "case": "no external tree admission declaration",
+        "result": "rejected",
+        "reason": "external tree admission declaration is unavailable",
+        "exit_code": 78
+      },
+      {
+        "case": "three public trees admitted by full content, licensed tree content wrong",
+        "result": "rejected",
+        "reason": "pyrosetta-site-packages: mounted tree is not the immutable tree this runtime is pinned to",
+        "note": "the AlphaFold2 and both ColabDesign trees were each read in full and matched their declared identities before the licensed tree was rejected, so the positive path for the three public trees is proven in-image"
+      },
+      {
+        "case": "soluble ColabDesign tree byte-swapped after publication",
+        "result": "rejected",
+        "reason": "colabdesign-mpnn-weights-soluble: mounted tree is not the immutable tree this runtime is pinned to"
+      },
+      {
+        "case": "full outer-entrypoint chain with a valid AlphaFold2 artifact manifest",
+        "result": "outer artifact gate passed, then rejected at the shared PyRosetta binding",
+        "reason": "PyRosetta installed dist-info is missing from the tenant-private mount",
+        "note": "confirms the rendered Job's environment satisfies the shared external artifact gate; the licensed tree's positive path needs the real 3.29 GB mount"
+      }
     ]
   },
   "offline_test_evidence": {
-    "image_contract_suite": {"command": "python3 -m unittest discover -s tests", "tests": 60, "result": "passed"},
-    "native_adapter_suite": {"command": "PYTHONPATH=catalog/runtime python3 -m unittest discover -s models/structure/runtime/bindcraft-native/tests", "tests": 4, "result": "passed"},
-    "artifact_free_image_smoke": {"command": "docker run --network none <digest> --fs2-image-smoke", "result": "passed", "embedded_model_artifacts": false, "embedded_pyrosetta": false}
+    "image_contract_suite": {
+      "command": "python3 -m unittest discover -s tests",
+      "tests": 60,
+      "result": "passed"
+    },
+    "native_adapter_suite": {
+      "command": "PYTHONPATH=catalog/runtime python3 -m unittest discover -s models/structure/runtime/bindcraft-native/tests",
+      "tests": 4,
+      "result": "passed"
+    },
+    "artifact_free_image_smoke": {
+      "command": "docker run --network none <digest> --fs2-image-smoke",
+      "result": "passed",
+      "embedded_model_artifacts": false,
+      "embedded_pyrosetta": false
+    }
   },
   "live_semantic_acceptance": {
     "state": "not executed",
     "blocker": "the canonical immutable four-tree localization generation is not published yet",
     "instruction": "do not bind the mutable scientific-localization/public/<artifact_id> paths or its three-tree handoff; wait for the immutable /sha256/<tree> four-tree handoff with in-generation stable terminal markers and recursive PyRosetta identity",
     "observed_state_of_the_claim": {
-      "checked_at": "2026-09-03T04:05:00Z",
+      "checked_at": "2026-09-03T04:22:00Z",
+      "rechecked": "twice, 17 minutes apart, with the same result",
       "sha256_generation_root": "absent",
-      "scientific_localization_children": ["public"],
+      "scientific_localization_children": [
+        "public"
+      ],
       "public_markers": "present but empty",
-      "public_receipts": ["alphafold2-params-bindcraft", "alphafold2-params", "boltzgen-inference-molecules", "colabdesign-mpnn-weights-soluble", "colabdesign-mpnn-weights-vanilla"],
+      "generations_or_immutable_root": "absent",
+      "public_receipts": [
+        "alphafold2-params-bindcraft",
+        "alphafold2-params",
+        "boltzgen-inference-molecules",
+        "colabdesign-mpnn-weights-soluble",
+        "colabdesign-mpnn-weights-vanilla"
+      ],
       "scientific_ingestion": "holds only a partial Proteina-Complexa checkpoint download, unrelated to BindCraft"
     },
     "ready_to_run": "qualification/render_semantic_job.py renders the whole run from the handoff document; nothing else is outstanding on the image side",
@@ -115,10 +302,25 @@
     ]
   },
   "cleanup": {
-    "task_owned_pods_deleted": ["fs2-bcr14-inspect-models", "fs2-bcr14-inspect-models2", "fs2-bcr14-inspect-academic", "fs2-bcr14-inspect-academic2", "fs2-bcr14-identity-probe", "fs2-bcr14-manifest-sha", "fs2-bcr16-gen-probe"],
-    "task_owned_configmaps_deleted": ["fs2-bcr14-identity-probe", "fs2-bcr14-manifest-sha", "fs2-bcr16-gen-probe"],
+    "task_owned_pods_deleted": [
+      "fs2-bcr14-inspect-models",
+      "fs2-bcr14-inspect-models2",
+      "fs2-bcr14-inspect-academic",
+      "fs2-bcr14-inspect-academic2",
+      "fs2-bcr14-identity-probe",
+      "fs2-bcr14-manifest-sha",
+      "fs2-bcr16-gen-probe",
+      "fs2-bindcraft-r15-claim-explore",
+      "fs2-bindcraft-r15-claim-explore2"
+    ],
+    "task_owned_configmaps_deleted": [
+      "fs2-bcr14-identity-probe",
+      "fs2-bcr14-manifest-sha",
+      "fs2-bcr16-gen-probe"
+    ],
     "task_owned_resources_remaining": 0,
     "shared_resources_touched": "none; every probe mounted the shared claims read-only and no shared service, queue, Terraform resource or B300 node was modified",
-    "other_tenants": "the qwen3-8b hot deployment on computeinstance-e00p3acr87k9k4mckj was running before and after and was never contended for; no probe requested an accelerator"
+    "other_tenants": "qwen3-8b-b300-hot-h100-reserved-8x remained 1/1 available throughout; no probe requested an accelerator and no shared claim was mounted writable",
+    "note": "fs2-bindcraft-r15-claim-explore and -explore2 were left Succeeded by an earlier session of this task, identified by app.kubernetes.io/managed-by=fs2-bindcraft-final-image-h100-successor, and were removed in this pass"
   }
 }
