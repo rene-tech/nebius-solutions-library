@@ -1,0 +1,183 @@
+{
+  "generations": [
+    {
+      "absolute_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+      "artifact_id": "complexa-protein",
+      "consumers": [
+        {
+          "model_id": "proteina-complexa",
+          "reads": [
+            "/opt/fs2/artifacts/complexa-protein/complexa.ckpt",
+            "/opt/fs2/artifacts/complexa-protein/complexa_ae.ckpt"
+          ]
+        }
+      ],
+      "entry_count": 2,
+      "files": [
+        {
+          "bytes": 2934289381,
+          "path": "complexa.ckpt",
+          "sha256": "589db1741f29838c7961386f6b873087238c72682e56189b89e0ae02610c19e9"
+        },
+        {
+          "bytes": 4100101779,
+          "path": "complexa_ae.ckpt",
+          "sha256": "35f8865efd269995eeaf1670e1c1085acfe2988c40abdeda8e09a0e15eb40816"
+        }
+      ],
+      "generation": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+      "inventory_algorithm": "fs2-tree-inventory/v2",
+      "marker_name": ".fs2-runtime-tree.json",
+      "marker_sha256": "b84403b26e5ac4acd2ea3203d3ea7936e8ef009a9ac1c19fbcfddd7c40667851",
+      "model_id": "proteina-complexa-protein-target-160m-v1",
+      "mount_paths": [
+        "/opt/fs2/artifacts/complexa-protein"
+      ],
+      "read_only": true,
+      "source": {
+        "entitlement_state": "not-required",
+        "license_id": "NVIDIA-Open-Model-License-2024-06",
+        "revision": "ffed199e32612b98ffa04f4640d34d37b137fca5",
+        "uri": "hf://nvidia/NV-Proteina-Complexa-Protein-Target-160M-v1"
+      },
+      "sub_path": "scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+      "total_bytes": 7034391160
+    },
+    {
+      "absolute_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+      "artifact_id": "complexa-ligand",
+      "consumers": [
+        {
+          "model_id": "proteina-complexa",
+          "reads": [
+            "/opt/fs2/artifacts/complexa-ligand/complexa_ligand.ckpt",
+            "/opt/fs2/artifacts/complexa-ligand/complexa_ligand_ae.ckpt"
+          ]
+        }
+      ],
+      "entry_count": 2,
+      "files": [
+        {
+          "bytes": 1790554392,
+          "path": "complexa_ligand.ckpt",
+          "sha256": "8175213eac5ec6433fed1756d055ce3f867129bfdb033040e1a0560ca558bfe5"
+        },
+        {
+          "bytes": 4100184649,
+          "path": "complexa_ligand_ae.ckpt",
+          "sha256": "898da17022cdeaaaea7caace41c8b6fe7bfcb78be4876b0113127eb9bb1527e6"
+        }
+      ],
+      "generation": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+      "inventory_algorithm": "fs2-tree-inventory/v2",
+      "marker_name": ".fs2-runtime-tree.json",
+      "marker_sha256": "868551c2ec89d8296155ac5e5e0a674205cbc851c301ed58f32014d7fe404177",
+      "model_id": "proteina-complexa-ligand-target-160m-v1",
+      "mount_paths": [
+        "/opt/fs2/artifacts/complexa-ligand"
+      ],
+      "read_only": true,
+      "source": {
+        "entitlement_state": "not-required",
+        "license_id": "NVIDIA-Open-Model-License-2024-06",
+        "revision": "bc90c8b2c701ceb52d5faef72600b6b5be880244",
+        "uri": "hf://nvidia/NV-Proteina-Complexa-Ligand-Target-160M-v1"
+      },
+      "sub_path": "scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+      "total_bytes": 5890739041
+    },
+    {
+      "absolute_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+      "artifact_id": "complexa-ame",
+      "consumers": [
+        {
+          "model_id": "proteina-complexa",
+          "reads": [
+            "/opt/fs2/artifacts/complexa-ame/complexa_ame.ckpt",
+            "/opt/fs2/artifacts/complexa-ame/complexa_ame_ae.ckpt"
+          ]
+        }
+      ],
+      "entry_count": 2,
+      "files": [
+        {
+          "bytes": 1792013880,
+          "path": "complexa_ame.ckpt",
+          "sha256": "d11319693d024d0427abc356a86350a694a1cb7dceb8db642c8041e5a20a9f7b"
+        },
+        {
+          "bytes": 4100197925,
+          "path": "complexa_ame_ae.ckpt",
+          "sha256": "63b1358c5459e968628094fdc9a2a6a95ac003606fcf7b1a3a21174458a69734"
+        }
+      ],
+      "generation": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+      "inventory_algorithm": "fs2-tree-inventory/v2",
+      "marker_name": ".fs2-runtime-tree.json",
+      "marker_sha256": "18199cf0468000baefa7ed0cb604a2a7c64d0228ddf8d8e5579d6c1e543267db",
+      "model_id": "proteina-complexa-ame-160m-v1",
+      "mount_paths": [
+        "/opt/fs2/artifacts/complexa-ame"
+      ],
+      "read_only": true,
+      "source": {
+        "entitlement_state": "not-required",
+        "license_id": "NVIDIA-Open-Model-License-2024-06",
+        "revision": "9743d749a8754080a32fda857d95579dfa4dabae",
+        "uri": "hf://nvidia/NV-Proteina-Complexa-AME-160M-v1"
+      },
+      "sub_path": "scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+      "total_bytes": 5892211805
+    },
+    {
+      "absolute_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+      "artifact_id": "rosettafold3-checkpoint",
+      "consumers": [
+        {
+          "model_id": "proteina-complexa",
+          "reads": [
+            "/opt/fs2/artifacts/rosettafold3-checkpoint/rf3_foundry_01_24_latest_remapped.ckpt"
+          ],
+          "role": "reward-and-evaluation"
+        }
+      ],
+      "entry_count": 1,
+      "files": [
+        {
+          "bytes": 3038876446,
+          "path": "rf3_foundry_01_24_latest_remapped.ckpt",
+          "sha256": "364ef592fd8042a9cf4176d045015190f8322f961ccca38d891b20ca578d3bb0"
+        }
+      ],
+      "generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+      "inventory_algorithm": "fs2-tree-inventory/v2",
+      "marker_name": ".fs2-runtime-tree.json",
+      "marker_sha256": "94002c4a6a8c7fdbdda20e658785cf63a7708728afccf9615f1d54ea71657822",
+      "model_id": "rosettafold3-foundry-2024-01",
+      "mount_paths": [
+        "/opt/fs2/artifacts/rosettafold3-checkpoint"
+      ],
+      "read_only": true,
+      "source": {
+        "entitlement_state": "not-required",
+        "license_id": "BSD-3-Clause",
+        "revision": "foundry-production-b02eed6a-checksum-lock",
+        "uri": "https://files.ipd.uw.edu/pub/rf3/"
+      },
+      "sub_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+      "total_bytes": 3038876446
+    }
+  ],
+  "note": [
+    "Mount a generation by its exact sub-path, read-only. The path is the digest of its own content, so a different tree is a different path and this one can never change under a consumer.",
+    "Admit the mount from the in-generation terminal marker .fs2-runtime-tree.json rather than rehashing gigabytes at start-up. The marker digest below pins its exact bytes.",
+    "The plane is a Terraform-managed host directory, not a claim, so a generation is addressed by host_root and sub_path and carries no namespace or claim."
+  ],
+  "plane": {
+    "host_root": "/mnt/fs2-reference-data/data",
+    "node_requirement": "storage.fs2.nebius/reference-data=true (present on the 8xH100 inference nodes)",
+    "verified_from_node_class": "nvidia-h100-sxm5-80gb",
+    "volume_kind": "host-path"
+  },
+  "schema": "fs2-serve.nebius.ai/scientific-generation-handoff/v1"
+}

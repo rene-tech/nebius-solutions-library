@@ -1,0 +1,43 @@
+{
+  "bytes_released": 21856218452,
+  "released": [
+    {
+      "artifact_id": "complexa-protein",
+      "bytes_released": 7034391160,
+      "dry_run": false,
+      "generation": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+      "published_bytes": 7034391160,
+      "published_path": "/reference/scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+      "source_root": "/claim/scientific-ingestion/fs2-proteina-complexa-r20260903/staging/complexa-protein"
+    },
+    {
+      "artifact_id": "complexa-ligand",
+      "bytes_released": 5890739041,
+      "dry_run": false,
+      "generation": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+      "published_bytes": 5890739041,
+      "published_path": "/reference/scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+      "source_root": "/claim/scientific-ingestion/fs2-proteina-complexa-r20260903/staging/complexa-ligand"
+    },
+    {
+      "artifact_id": "complexa-ame",
+      "bytes_released": 5892211805,
+      "dry_run": false,
+      "generation": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+      "published_bytes": 5892211805,
+      "published_path": "/reference/scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+      "source_root": "/claim/scientific-ingestion/fs2-proteina-complexa-r20260903/staging/complexa-ame"
+    },
+    {
+      "artifact_id": "rosettafold3-checkpoint",
+      "bytes_released": 3038876446,
+      "dry_run": false,
+      "generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+      "published_bytes": 3038876446,
+      "published_path": "/reference/scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+      "source_root": "/claim/scientific-ingestion/fs2-proteina-complexa-r20260903/staging/rosettafold3-checkpoint"
+    }
+  ],
+  "schema": "fs2-serve.nebius.ai/scientific-reclaim-receipt/v1",
+  "staging_root": "/claim/scientific-ingestion/fs2-proteina-complexa-r20260903/staging"
+}

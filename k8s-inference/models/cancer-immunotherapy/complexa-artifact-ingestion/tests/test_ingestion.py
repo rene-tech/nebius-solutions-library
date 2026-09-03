@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT))
 
 import fetch_artifacts as fa  # noqa: E402
 import promote_generations as pg  # noqa: E402
+import reclaim_staging as rs  # noqa: E402
 import render_ingestion_jobs as rij  # noqa: E402
 
 REPO = ROOT.parents[2]
@@ -414,9 +415,86 @@ class RendererTests(unittest.TestCase):
         self.assertIn("/claim/a/b/.receipts/staging.r1.json", command)
 
 
+class PromoteRendererTests(unittest.TestCase):
+    def render(self, **overrides: object) -> dict[str, object]:
+        arguments: dict[str, object] = {
+            "name": "promote", "namespace": "ns", "run_id": "r1", "image": "python:3.11-slim",
+            "claim": "claim-a", "config_map": "cm", "verifier_config_map": "verifier",
+            "staging_sub_path": "a/b", "host_root": "/mnt/example-reference-data/data",
+            "tree_prefix": "scientific-localization/public",
+            "artifact_ids": ("complexa-protein",),
+            "node_selectors": {"storage.example/cache": "true"},
+            "reference_user": 1000, "reference_group": 1000,
+            "ingress_user": 65532, "ingress_group": 65532,
+            "supplemental_groups": (65532, 1000),
+            "cpu": "1", "memory": "2Gi", "deadline_seconds": 100,
+            "reclaim": True, "dry_run_reclaim": False,
+        }
+        arguments.update(overrides)
+        return rij.promote_job(**arguments)
+
+    def pod(self, **overrides: object) -> dict[str, object]:
+        return self.render(**overrides)["spec"]["template"]["spec"]
+
+    def test_the_copy_runs_before_anything_is_released(self) -> None:
+        pod = self.pod()
+        self.assertEqual([item["name"] for item in pod["initContainers"]], ["promote"])
+        self.assertEqual([item["name"] for item in pod["containers"]], ["reclaim"])
+
+    def test_each_step_runs_as_the_account_that_owns_what_it_writes(self) -> None:
+        pod = self.pod()
+        promote = pod["initContainers"][0]["securityContext"]
+        reclaim = pod["containers"][0]["securityContext"]
+        self.assertEqual(promote["runAsUser"], 1000)
+        self.assertEqual(reclaim["runAsUser"], 65532)
+        self.assertEqual(pod["securityContext"]["supplementalGroups"], [65532, 1000])
+
+    def test_never_sets_fsgroup(self) -> None:
+        self.assertNotIn("fsGroup", self.pod()["securityContext"])
+
+    def test_the_copy_cannot_write_to_the_ingress_claim(self) -> None:
+        mounts = {item["name"]: item for item in self.pod()["initContainers"][0]["volumeMounts"]}
+        self.assertTrue(mounts["claim"]["readOnly"])
+        self.assertNotIn("readOnly", mounts["reference"])
+
+    def test_the_release_step_cannot_write_to_the_reference_plane(self) -> None:
+        mounts = {item["name"]: item for item in self.pod()["containers"][0]["volumeMounts"]}
+        self.assertTrue(mounts["reference"]["readOnly"])
+        self.assertNotIn("readOnly", mounts["claim"])
+
+    def test_publishes_under_the_host_root_with_host_addressing(self) -> None:
+        command = self.pod()["initContainers"][0]["command"]
+        self.assertIn("--volume-kind", command)
+        self.assertEqual(command[command.index("--volume-kind") + 1], "host-path")
+        self.assertEqual(command[command.index("--host-root") + 1], "/mnt/example-reference-data/data")
+        generations = command[command.index("--generations-root") + 1]
+        self.assertEqual(generations, "/reference/scientific-localization/public/generations")
+        self.assertIn("--allow-cross-filesystem-copy", command)
+
+    def test_the_release_step_is_driven_by_the_promotion_receipt(self) -> None:
+        promote = self.pod()["initContainers"][0]["command"]
+        reclaim = self.pod()["containers"][0]["command"]
+        self.assertEqual(
+            promote[promote.index("--receipt") + 1],
+            reclaim[reclaim.index("--promotion-receipt") + 1],
+        )
+
+    def test_skipping_the_release_leaves_a_job_that_still_has_a_container(self) -> None:
+        pod = self.pod(reclaim=False)
+        self.assertEqual([item["name"] for item in pod["containers"]], ["done"])
+
+    def test_hardcodes_no_project_region_or_registry(self) -> None:
+        rendered = json.dumps(self.render())
+        for token in ("eu-north1", "project-e00rene", "cr.eu-north1.nebius.cloud", "nvidia.com/gpu"):
+            self.assertNotIn(token, rendered)
+
+    def test_declares_no_toleration_so_promotion_cannot_land_on_a_gpu(self) -> None:
+        self.assertNotIn("tolerations", self.pod())
+
+
 @unittest.skipIf(localization_adapters() is None,
                  "the reviewed localization successor is not available on this branch")
-class PromotionTests(ServerCase):
+class PromotionBase(ServerCase):
     def setUp(self) -> None:
         super().setUp()
         self.package_parent = build_package(self.tmp / "pkg", localization_adapters())
@@ -440,6 +518,25 @@ class PromotionTests(ServerCase):
             "--namespace", "ns", "--claim", "claim-a", "--receipt", str(receipt),
         ])
 
+    def pretend_cross_filesystem(self) -> None:
+        """Force the cross-device branch while both paths really are local.
+
+        The copy, the digest check, and the rename that follows it all run for
+        real; only the device comparison is staged, because a test cannot
+        conjure a second filesystem.
+        """
+
+        class Elsewhere:
+            @staticmethod
+            def stat() -> object:
+                return type("S", (), {"st_dev": -1})()
+
+        original = pg.nearest_existing
+        pg.nearest_existing = lambda path: Elsewhere  # type: ignore[assignment,return-value]
+        self.addCleanup(setattr, pg, "nearest_existing", original)
+
+
+class PromotionTests(PromotionBase):
     def test_publishes_a_content_addressed_generation_with_its_terminal_marker(self) -> None:
         contract, staging, generations = self.stage({"a.ckpt": blob(4_000, 31), "b.ckpt": blob(6_000, 37)})
         receipt = self.tmp / "promotion.json"
@@ -499,7 +596,56 @@ class PromotionTests(ServerCase):
             (staging / "demo" / name).write_bytes(data)
         second = self.tmp / "two.json"
         self.assertEqual(self.promote(contract, staging, generations, second), 0)
-        self.assertEqual(json.loads(second.read_text())["generations"][0]["generation"], generation)
+        entry = json.loads(second.read_text())["generations"][0]
+        self.assertEqual(entry["generation"], generation)
+        self.assertTrue(entry["already_published"])
+
+    def test_a_cross_filesystem_rerun_reuses_and_leaves_no_temporary_copy(self) -> None:
+        payloads = {"a.ckpt": blob(3_300, 131)}
+        contract, staging, generations = self.stage(payloads)
+        self.pretend_cross_filesystem()
+        arguments = [
+            "--contract", str(contract), "--staging-root", str(staging),
+            "--generations-root", str(generations),
+            "--localization-package-parent", str(self.package_parent),
+            "--volume-kind", "host-path", "--host-root", "/mnt/example-reference-data/data",
+            "--allow-cross-filesystem-copy",
+        ]
+        first = self.tmp / "one.json"
+        self.assertEqual(pg.main([*arguments, "--receipt", str(first)]), 0)
+        generation = json.loads(first.read_text())["generations"][0]["generation"]
+
+        second = self.tmp / "two.json"
+        self.assertEqual(pg.main([*arguments, "--receipt", str(second)]), 0)
+        entry = json.loads(second.read_text())["generations"][0]
+        self.assertTrue(entry["already_published"])
+        self.assertEqual(entry["generation"], generation)
+        # The redundant second copy is released rather than left on the plane.
+        self.assertEqual([item.name for item in (generations / "demo").iterdir()], ["sha256"])
+
+    def test_a_reused_generation_whose_bytes_changed_is_refused(self) -> None:
+        # The tool proved the bytes it staged; it has proved nothing about bytes
+        # another writer published under the same digest.
+        contract, staging, generations = self.stage({"a.ckpt": blob(2_400, 137)})
+        self.pretend_cross_filesystem()
+        arguments = [
+            "--contract", str(contract), "--staging-root", str(staging),
+            "--generations-root", str(generations),
+            "--localization-package-parent", str(self.package_parent),
+            "--volume-kind", "host-path", "--host-root", "/mnt/example-reference-data/data",
+            "--allow-cross-filesystem-copy",
+        ]
+        first = self.tmp / "one.json"
+        self.assertEqual(pg.main([*arguments, "--receipt", str(first)]), 0)
+        published = Path(json.loads(first.read_text())["generations"][0]["published_path"])
+        published.chmod(0o755)
+        target = published / "a.ckpt"
+        target.chmod(0o644)
+        target.write_bytes(blob(2_400, 138))
+
+        second = self.tmp / "two.json"
+        self.assertEqual(pg.main([*arguments, "--receipt", str(second)]), 1)
+        self.assertIn("not the", json.loads(second.read_text())["failures"][0]["error"])
 
     def test_a_corrupted_staged_file_is_never_promoted(self) -> None:
         contract, staging, generations = self.stage({"a.ckpt": blob(3_500, 53)})
@@ -545,6 +691,80 @@ class PromotionTests(ServerCase):
         # The staged file is untouched, so a corrected run can still promote it.
         self.assertEqual((staging / "demo" / "a.ckpt").stat().st_mode & 0o200, 0o200)
 
+    def test_a_cross_filesystem_source_is_copied_verified_then_renamed(self) -> None:
+        payloads = {"a.ckpt": blob(4_000, 83), "b.ckpt": blob(2_500, 89)}
+        contract, staging, generations = self.stage(payloads)
+        self.pretend_cross_filesystem()
+        receipt = self.tmp / "promotion.json"
+        code = pg.main([
+            "--contract", str(contract), "--staging-root", str(staging),
+            "--generations-root", str(generations),
+            "--localization-package-parent", str(self.package_parent),
+            "--namespace", "ns", "--claim", "claim-a", "--receipt", str(receipt),
+            "--allow-cross-filesystem-copy",
+        ])
+        self.assertEqual(code, 0)
+        entry = json.loads(receipt.read_text())["generations"][0]
+        self.assertEqual(entry["commit"]["method"], "cross-filesystem-copy-then-rename")
+        published = generations / "demo" / "sha256" / entry["generation"]
+        for name, data in payloads.items():
+            self.assertEqual((published / name).read_bytes(), data)
+        self.assertTrue((published / ".fs2-runtime-tree.json").is_file())
+        # The ingress copy survives the promotion; releasing it is a separate,
+        # receipt-gated step.
+        self.assertTrue((staging / "demo" / "a.ckpt").is_file())
+        # No reserved temporary directory is left behind.
+        self.assertEqual([item.name for item in (generations / "demo").iterdir()], ["sha256"])
+
+    def test_a_host_backed_generation_is_addressed_by_its_host_root(self) -> None:
+        contract, staging, generations = self.stage({"a.ckpt": blob(1_800, 91)})
+        self.pretend_cross_filesystem()
+        receipt = self.tmp / "promotion.json"
+        code = pg.main([
+            "--contract", str(contract), "--staging-root", str(staging),
+            "--generations-root", str(generations),
+            "--localization-package-parent", str(self.package_parent),
+            "--volume-kind", "host-path", "--host-root", "/mnt/example-reference-data/data",
+            "--receipt", str(receipt), "--allow-cross-filesystem-copy",
+        ])
+        self.assertEqual(code, 0)
+        entry = json.loads(receipt.read_text())["generations"][0]
+        marker = json.loads(Path(entry["published_path"]).joinpath(".fs2-runtime-tree.json").read_text())
+        self.assertEqual(marker["host_root"], "/mnt/example-reference-data/data")
+        self.assertEqual(marker["claim"], "")
+        self.assertEqual(marker["namespace"], "")
+
+    def test_mixing_claim_and_host_addressing_is_refused(self) -> None:
+        # A marker carrying both would describe a location that does not exist.
+        contract, staging, generations = self.stage({"a.ckpt": blob(1_600, 93)})
+        self.pretend_cross_filesystem()
+        receipt = self.tmp / "promotion.json"
+        code = pg.main([
+            "--contract", str(contract), "--staging-root", str(staging),
+            "--generations-root", str(generations),
+            "--localization-package-parent", str(self.package_parent),
+            "--volume-kind", "host-path", "--host-root", "/mnt/example-reference-data/data",
+            "--namespace", "ns", "--claim", "claim-a",
+            "--receipt", str(receipt), "--allow-cross-filesystem-copy",
+        ])
+        self.assertEqual(code, 1)
+        self.assertIn("host root", json.loads(receipt.read_text())["failures"][0]["error"])
+
+    def test_a_corrupted_source_never_reaches_the_destination(self) -> None:
+        contract, staging, generations = self.stage({"a.ckpt": blob(3_000, 97)})
+        (staging / "demo" / "a.ckpt").write_bytes(blob(3_000, 98))
+        self.pretend_cross_filesystem()
+        receipt = self.tmp / "promotion.json"
+        code = pg.main([
+            "--contract", str(contract), "--staging-root", str(staging),
+            "--generations-root", str(generations),
+            "--localization-package-parent", str(self.package_parent),
+            "--receipt", str(receipt), "--allow-cross-filesystem-copy",
+        ])
+        self.assertEqual(code, 1)
+        self.assertFalse((generations / "demo" / "sha256").exists())
+        self.assertIn("contract says", json.loads(receipt.read_text())["failures"][0]["error"])
+
     def test_the_receipt_records_the_rename_as_the_commit(self) -> None:
         contract, staging, generations = self.stage({"a.ckpt": blob(1_100, 73)})
         receipt = self.tmp / "promotion.json"
@@ -581,6 +801,97 @@ class PromotionTests(ServerCase):
         promoter = json.loads(receipt.read_text())["promoter"]
         self.assertEqual(promoter["module"], "fs2_localization.localization")
         self.assertIn("promote_generation", promoter["functions"])
+
+
+class ReclaimTests(PromotionBase):
+    def promoted(self, payloads: dict[str, bytes]) -> tuple[Path, Path, Path]:
+        contract, staging, generations = self.stage(payloads)
+        self.pretend_cross_filesystem()
+        receipt = self.tmp / "promotion.json"
+        # The real ingress crosses from the tenant claim to the Terraform-managed
+        # reference plane, which is a host directory, so these exercise exactly
+        # that addressing rather than the claim-backed one.
+        code = pg.main([
+            "--contract", str(contract), "--staging-root", str(staging),
+            "--generations-root", str(generations),
+            "--localization-package-parent", str(self.package_parent),
+            "--volume-kind", "host-path", "--host-root", "/mnt/example-reference-data/data",
+            "--receipt", str(receipt), "--allow-cross-filesystem-copy",
+        ])
+        self.assertEqual(code, 0)
+        return receipt, staging, generations
+
+    def reclaim(self, receipt: Path, staging: Path, out: Path, *extra: str) -> int:
+        return rs.main([
+            "--promotion-receipt", str(receipt), "--staging-root", str(staging),
+            "--receipt", str(out), *extra,
+        ])
+
+    def test_releases_ingress_once_the_generation_is_confirmed(self) -> None:
+        receipt, staging, _ = self.promoted({"a.ckpt": blob(2_200, 101)})
+        out = self.tmp / "reclaim.json"
+        self.assertEqual(self.reclaim(receipt, staging, out), 0)
+        self.assertFalse((staging / "demo").exists())
+        document = json.loads(out.read_text())
+        self.assertEqual(document["bytes_released"], 2_200)
+        self.assertEqual(document["released"][0]["artifact_id"], "demo")
+
+    def test_a_dry_run_reports_without_deleting(self) -> None:
+        receipt, staging, _ = self.promoted({"a.ckpt": blob(1_700, 103)})
+        out = self.tmp / "reclaim.json"
+        self.assertEqual(self.reclaim(receipt, staging, out, "--dry-run"), 0)
+        self.assertTrue((staging / "demo" / "a.ckpt").is_file())
+        self.assertEqual(json.loads(out.read_text())["released"][0]["bytes_released"], 1_700)
+
+    def test_refuses_when_the_published_generation_is_gone(self) -> None:
+        receipt, staging, generations = self.promoted({"a.ckpt": blob(1_900, 107)})
+        entry = json.loads(receipt.read_text())["generations"][0]
+        published = Path(entry["published_path"])
+        published.chmod(0o755)
+        shutil.rmtree(published)
+        out = self.tmp / "reclaim.json"
+        self.assertEqual(self.reclaim(receipt, staging, out), 1)
+        self.assertTrue((staging / "demo" / "a.ckpt").is_file())
+        self.assertIn("missing", json.loads(out.read_text())["refused"][0]["error"])
+
+    def test_refuses_when_the_terminal_marker_was_changed(self) -> None:
+        receipt, staging, _ = self.promoted({"a.ckpt": blob(2_100, 109)})
+        entry = json.loads(receipt.read_text())["generations"][0]
+        published = Path(entry["published_path"])
+        published.chmod(0o755)
+        marker = published / ".fs2-runtime-tree.json"
+        marker.chmod(0o644)
+        marker.write_text("{}")
+        out = self.tmp / "reclaim.json"
+        self.assertEqual(self.reclaim(receipt, staging, out), 1)
+        self.assertTrue((staging / "demo" / "a.ckpt").is_file())
+        self.assertIn("does not match", json.loads(out.read_text())["refused"][0]["error"])
+
+    def test_refuses_a_source_outside_the_staging_root(self) -> None:
+        receipt, staging, _ = self.promoted({"a.ckpt": blob(1_400, 113)})
+        document = json.loads(receipt.read_text())
+        outside = self.tmp / "not-staging"
+        outside.mkdir()
+        (outside / "a.ckpt").write_bytes(b"x")
+        document["generations"][0]["source_root"] = str(outside)
+        receipt.write_text(json.dumps(document))
+        out = self.tmp / "reclaim.json"
+        self.assertEqual(self.reclaim(receipt, staging, out), 1)
+        self.assertTrue((outside / "a.ckpt").is_file())
+        self.assertIn("outside the staging root", json.loads(out.read_text())["refused"][0]["error"])
+
+    def test_a_truncated_published_file_blocks_release(self) -> None:
+        receipt, staging, _ = self.promoted({"a.ckpt": blob(2_600, 127)})
+        entry = json.loads(receipt.read_text())["generations"][0]
+        published = Path(entry["published_path"])
+        published.chmod(0o755)
+        target = published / "a.ckpt"
+        target.chmod(0o644)
+        target.write_bytes(b"short")
+        out = self.tmp / "reclaim.json"
+        self.assertEqual(self.reclaim(receipt, staging, out), 1)
+        self.assertTrue((staging / "demo" / "a.ckpt").is_file())
+        self.assertIn("bytes", json.loads(out.read_text())["refused"][0]["error"])
 
 
 if __name__ == "__main__":

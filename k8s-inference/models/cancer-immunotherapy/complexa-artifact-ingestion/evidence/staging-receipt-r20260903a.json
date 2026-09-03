@@ -1,0 +1,143 @@
+{
+  "artifacts": [
+    {
+      "artifact_id": "complexa-protein",
+      "file_count": 2,
+      "files": [
+        {
+          "attempts": 1,
+          "bytes": 2934289381,
+          "downloaded_bytes": 2934289381,
+          "path": "complexa.ckpt",
+          "resumed_from": 0,
+          "seconds": 111.825,
+          "sha256": "589db1741f29838c7961386f6b873087238c72682e56189b89e0ae02610c19e9",
+          "state": "downloaded"
+        },
+        {
+          "attempts": 1,
+          "bytes": 4100101779,
+          "downloaded_bytes": 4100101779,
+          "path": "complexa_ae.ckpt",
+          "resumed_from": 0,
+          "seconds": 234.859,
+          "sha256": "35f8865efd269995eeaf1670e1c1085acfe2988c40abdeda8e09a0e15eb40816",
+          "state": "downloaded"
+        }
+      ],
+      "source": {
+        "entitlement_state": "not-required",
+        "license_id": "NVIDIA-Open-Model-License-2024-06",
+        "resolver": "huggingface-resolve",
+        "revision": "ffed199e32612b98ffa04f4640d34d37b137fca5",
+        "uri": "hf://nvidia/NV-Proteina-Complexa-Protein-Target-160M-v1"
+      },
+      "staged_at": "2026-09-03T04:05:51Z",
+      "total_bytes": 7034391160
+    },
+    {
+      "artifact_id": "complexa-ligand",
+      "file_count": 2,
+      "files": [
+        {
+          "attempts": 1,
+          "bytes": 1790554392,
+          "downloaded_bytes": 1790554392,
+          "path": "complexa_ligand.ckpt",
+          "resumed_from": 0,
+          "seconds": 111.024,
+          "sha256": "8175213eac5ec6433fed1756d055ce3f867129bfdb033040e1a0560ca558bfe5",
+          "state": "downloaded"
+        },
+        {
+          "attempts": 1,
+          "bytes": 4100184649,
+          "downloaded_bytes": 4100184649,
+          "path": "complexa_ligand_ae.ckpt",
+          "resumed_from": 0,
+          "seconds": 291.572,
+          "sha256": "898da17022cdeaaaea7caace41c8b6fe7bfcb78be4876b0113127eb9bb1527e6",
+          "state": "downloaded"
+        }
+      ],
+      "source": {
+        "entitlement_state": "not-required",
+        "license_id": "NVIDIA-Open-Model-License-2024-06",
+        "resolver": "huggingface-resolve",
+        "revision": "bc90c8b2c701ceb52d5faef72600b6b5be880244",
+        "uri": "hf://nvidia/NV-Proteina-Complexa-Ligand-Target-160M-v1"
+      },
+      "staged_at": "2026-09-03T04:11:38Z",
+      "total_bytes": 5890739041
+    },
+    {
+      "artifact_id": "complexa-ame",
+      "file_count": 2,
+      "files": [
+        {
+          "attempts": 1,
+          "bytes": 1792013880,
+          "downloaded_bytes": 1792013880,
+          "path": "complexa_ame.ckpt",
+          "resumed_from": 0,
+          "seconds": 134.907,
+          "sha256": "d11319693d024d0427abc356a86350a694a1cb7dceb8db642c8041e5a20a9f7b",
+          "state": "downloaded"
+        },
+        {
+          "attempts": 1,
+          "bytes": 4100197925,
+          "downloaded_bytes": 4100197925,
+          "path": "complexa_ame_ae.ckpt",
+          "resumed_from": 0,
+          "seconds": 530.182,
+          "sha256": "63b1358c5459e968628094fdc9a2a6a95ac003606fcf7b1a3a21174458a69734",
+          "state": "downloaded"
+        }
+      ],
+      "source": {
+        "entitlement_state": "not-required",
+        "license_id": "NVIDIA-Open-Model-License-2024-06",
+        "resolver": "huggingface-resolve",
+        "revision": "9743d749a8754080a32fda857d95579dfa4dabae",
+        "uri": "hf://nvidia/NV-Proteina-Complexa-AME-160M-v1"
+      },
+      "staged_at": "2026-09-03T04:18:20Z",
+      "total_bytes": 5892211805
+    },
+    {
+      "artifact_id": "rosettafold3-checkpoint",
+      "file_count": 1,
+      "files": [
+        {
+          "attempts": 1,
+          "bytes": 3038876446,
+          "downloaded_bytes": 3038876446,
+          "path": "rf3_foundry_01_24_latest_remapped.ckpt",
+          "resumed_from": 0,
+          "seconds": 277.987,
+          "sha256": "364ef592fd8042a9cf4176d045015190f8322f961ccca38d891b20ca578d3bb0",
+          "state": "downloaded"
+        }
+      ],
+      "source": {
+        "entitlement_state": "not-required",
+        "license_id": "BSD-3-Clause",
+        "resolver": "direct-https",
+        "revision": "foundry-production-b02eed6a-checksum-lock",
+        "uri": "https://files.ipd.uw.edu/pub/rf3/"
+      },
+      "staged_at": "2026-09-03T04:29:26Z",
+      "total_bytes": 3038876446
+    }
+  ],
+  "generated_at": "2026-09-03T04:34:04Z",
+  "schema": "fs2-serve.nebius.ai/scientific-ingestion-receipt/v1",
+  "staging": {
+    "claim": "academic-assets-runtime-rwx",
+    "namespace": "fs2-academic-poc",
+    "root": "/claim/scientific-ingestion/fs2-proteina-complexa-r20260903/staging",
+    "sub_path": "scientific-ingestion/fs2-proteina-complexa-r20260903/staging",
+    "visibility": "task-private"
+  }
+}

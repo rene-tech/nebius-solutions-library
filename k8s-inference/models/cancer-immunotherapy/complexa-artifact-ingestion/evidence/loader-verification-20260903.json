@@ -1,0 +1,91 @@
+{
+  "artifacts": [
+    "complexa-protein",
+    "complexa-ligand",
+    "complexa-ame",
+    "rosettafold3-checkpoint"
+  ],
+  "failures": 0,
+  "files": [
+    {
+      "bytes": 2934289381,
+      "container_kind": "mapping",
+      "elements": 415220798,
+      "generation": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+      "load_mode": "weights_only=False,mmap=True",
+      "load_seconds": 1.515,
+      "path": "complexa.ckpt",
+      "tensors": 1286
+    },
+    {
+      "bytes": 4100101779,
+      "container_kind": "mapping",
+      "elements": 256178440,
+      "generation": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+      "load_mode": "weights_only=False,mmap=True",
+      "load_seconds": 1.87,
+      "path": "complexa_ae.ckpt",
+      "tensors": 773
+    },
+    {
+      "bytes": 1790554392,
+      "container_kind": "mapping",
+      "elements": 425740672,
+      "generation": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+      "load_mode": "weights_only=False,mmap=True",
+      "load_seconds": 0.972,
+      "path": "complexa_ligand.ckpt",
+      "tensors": 1655
+    },
+    {
+      "bytes": 4100184649,
+      "container_kind": "mapping",
+      "elements": 256178450,
+      "generation": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+      "load_mode": "weights_only=False,mmap=True",
+      "load_seconds": 2.004,
+      "path": "complexa_ligand_ae.ckpt",
+      "tensors": 783
+    },
+    {
+      "bytes": 1792013880,
+      "container_kind": "mapping",
+      "elements": 426015438,
+      "generation": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+      "load_mode": "weights_only=False,mmap=True",
+      "load_seconds": 0.979,
+      "path": "complexa_ame.ckpt",
+      "tensors": 1611
+    },
+    {
+      "bytes": 4100197925,
+      "container_kind": "mapping",
+      "elements": 256178486,
+      "generation": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+      "load_mode": "weights_only=False,mmap=True",
+      "load_seconds": 1.99,
+      "path": "complexa_ame_ae.ckpt",
+      "tensors": 819
+    },
+    {
+      "bytes": 3038876446,
+      "container_kind": "mapping",
+      "elements": 758644597,
+      "generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+      "load_mode": "weights_only=False,mmap=True",
+      "load_seconds": 3.527,
+      "path": "rf3_foundry_01_24_latest_remapped.ckpt",
+      "tensors": 8867
+    }
+  ],
+  "note": "torch.load through the published Proteina-Complexa runtime image. weights_only=True is attempted first and falls back, because these are training checkpoints carrying optimizer and hyper-parameter objects the restricted unpickler refuses; the bytes were digest-verified before publication.",
+  "observation": {
+    "cluster_context": "k8s-inference-h100",
+    "generations_root": "/mnt/fs2-reference-data/data/scientific-localization/public/generations",
+    "job": "fs2-complexa-loader-r20260903",
+    "namespace": "fs2-academic-poc",
+    "node_class": "system CPU node (storage.fs2.nebius/shared-cache=true)",
+    "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca"
+  },
+  "schema": "fs2-serve.nebius.ai/scientific-loader-probe/v1"
+}

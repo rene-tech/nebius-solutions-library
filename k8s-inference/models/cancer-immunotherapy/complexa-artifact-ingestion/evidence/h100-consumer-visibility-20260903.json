@@ -1,0 +1,93 @@
+{
+  "artifacts": [
+    {
+      "artifact_id": "complexa-protein",
+      "files": [
+        {
+          "bytes": 2934289381,
+          "matches_contract": true,
+          "path": "complexa.ckpt",
+          "read_mb_per_second": 1033.0,
+          "sha256_prefix": "589db1741f29838c"
+        },
+        {
+          "bytes": 4100101779,
+          "matches_contract": true,
+          "path": "complexa_ae.ckpt",
+          "read_mb_per_second": 995.4,
+          "sha256_prefix": "35f8865efd269995"
+        }
+      ],
+      "mount": "/reference/scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+      "state": "OK"
+    },
+    {
+      "artifact_id": "complexa-ligand",
+      "files": [
+        {
+          "bytes": 1790554392,
+          "matches_contract": true,
+          "path": "complexa_ligand.ckpt",
+          "read_mb_per_second": 991.8,
+          "sha256_prefix": "8175213eac5ec643"
+        },
+        {
+          "bytes": 4100184649,
+          "matches_contract": true,
+          "path": "complexa_ligand_ae.ckpt",
+          "read_mb_per_second": 1006.0,
+          "sha256_prefix": "898da17022cdeaaa"
+        }
+      ],
+      "mount": "/reference/scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+      "state": "OK"
+    },
+    {
+      "artifact_id": "complexa-ame",
+      "files": [
+        {
+          "bytes": 1792013880,
+          "matches_contract": true,
+          "path": "complexa_ame.ckpt",
+          "read_mb_per_second": 998.2,
+          "sha256_prefix": "d11319693d024d04"
+        },
+        {
+          "bytes": 4100197925,
+          "matches_contract": true,
+          "path": "complexa_ame_ae.ckpt",
+          "read_mb_per_second": 994.8,
+          "sha256_prefix": "63b1358c5459e968"
+        }
+      ],
+      "mount": "/reference/scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+      "state": "OK"
+    },
+    {
+      "artifact_id": "rosettafold3-checkpoint",
+      "files": [
+        {
+          "bytes": 3038876446,
+          "matches_contract": true,
+          "path": "rf3_foundry_01_24_latest_remapped.ckpt",
+          "read_mb_per_second": 986.3,
+          "sha256_prefix": "364ef592fd8042a9"
+        }
+      ],
+      "mount": "/reference/scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+      "state": "OK"
+    }
+  ],
+  "note": "Every contracted file re-hashed in full from the consumer node class, read-only. Publication happened on a CPU node; this proves the H100 nodes see exactly those bytes through the same Terraform-managed host root.",
+  "observation": {
+    "cluster_context": "k8s-inference-h100",
+    "generations_root": "/mnt/fs2-reference-data/data/scientific-localization/public/generations",
+    "gpu_requested": 0,
+    "job": "fs2-complexa-h100-visibility-r20260903",
+    "namespace": "fs2-academic-poc",
+    "node_class": "nvidia-h100-sxm5-80gb, 8 GPU, capacity-block, taint dedicated=fs2-inference",
+    "node_digest": "ba03959da8c5832d"
+  },
+  "problems": 0,
+  "schema": "fs2-serve.nebius.ai/scientific-generation-visibility/v1"
+}

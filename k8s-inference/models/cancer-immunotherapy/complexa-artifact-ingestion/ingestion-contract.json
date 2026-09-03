@@ -3,7 +3,7 @@
   "notes": [
     "Source identities are consumed verbatim from the pinned manifests in candidate 58e84e51 (k8s-inference/model-artifacts/manifest-complexa-{protein,ligand,ame}.json and manifest-rosettafold3-checkpoint.json). Only the pinned identities were consumed; that candidate's mutable final-consumer-path contract was not.",
     "These artifacts are published upstream as individually addressable files, not as an archive, so the archive/tree duality that governs safe-extract-tar artifacts does not apply. The downloaded set of verified files IS the tree.",
-    "tree.inventory_sha256 is deliberately absent until an ingestion run computes it from verified bytes. crc32 over real content cannot be predicted from upstream metadata, and a generation named by a guessed digest would be a lie. Runs record the computed value in their receipt; publish_identities pins it here afterwards as an interface."
+    "tree.inventory_sha256 is deliberately absent. A generation is named by a digest measured from real bytes, which cannot be predicted from upstream metadata, and a contract that declared one up front would be asserting an identity it has not seen. The measured value lives in the promotion receipt and the binding handoff under evidence/, which is where a consumer pins it."
   ],
   "artifacts": [
     {
