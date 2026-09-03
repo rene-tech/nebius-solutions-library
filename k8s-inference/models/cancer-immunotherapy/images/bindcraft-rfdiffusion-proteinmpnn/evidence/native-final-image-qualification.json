@@ -127,16 +127,21 @@
     "artifact_id_is_not_matched": "the admission document's artifact_id must be a non-empty string but is never compared to an expected value; the role key selects the algorithm and mount. The adapter's bindcraft-pyrosetta-installed-tree is preferred over the renderer's example value because it matches the ID in the adapter's artifact-lock.json",
     "input_manifest_digest_is_not_verified": "the wrapper cross-checks only request.input_manifest.artifact_id against manifest.manifest_id, so the manifest's own sha256/size_bytes and both files' on-disk formatting are free; request_sha256 is hashed over a re-canonicalization of the parsed request. The target structure itself is still gated: its size and SHA-256 are verified against the manifest entry before design starts. Reported to the adapter task as a deliberate gap rather than silently tightened",
     "reported_defect_in_consumer": {
-      "where": "models/structure/runtime/bindcraft-native/parameters.schema.json versus the adapter's design sharding",
-      "finding": "the adapter distributes designs with shards = min(designs, 32), which exceeds accepted_designs_per_shard maximum 10 as soon as designs > 320; the schema's hard ceiling is shard_count 64 x 10 = 640 designs, so a claimed 1..1024 range cannot validate",
+      "where": "the batch adapter's design sharding against models/structure/runtime/bindcraft-native/parameters.schema.json",
+      "finding": "shards = min(designs, 32) exceeded accepted_designs_per_shard maximum 10 once designs passed 320, and the schema cannot express more than shard_count 64 x 10 = 640 designs at any shard count, so the adapter's claimed 1..1024 range could not validate",
       "boundaries": {
         "320": "valid",
-        "321": "rejected, quota 11",
+        "321": "quota 11, rejected",
         "641": "not representable at any shard count"
       },
-      "suggested": "shards = min(64, ceil(designs / 10)) covers 1..640 with no schema change; anything above needs a public parameter-schema change",
+      "state": "resolved by the adapter task in 8a7a015b",
+      "resolution": "the adapter refuses above 320 at parse time and names both governing bounds, keeping shards = min(designs, 32) so small requests stay parallel. This is better than the shards = ceil(designs / 10) that was suggested here, which would have collapsed four one-design shards into a single shard doing four designs and serialised work that need not be",
       "owner": "fs2-bindcraft-scientific-batch-adapter-successor-r20260903",
-      "reported": true
+      "open_decision": {
+        "question": "whether BindCraft should be able to run more than 320 designs in one request",
+        "needs": "either the catalog profile's design max_parallelism above 102, or the native per-shard cap raised to at least 16 with 64 shards",
+        "not_taken_here": "this task did not raise the cap. parameters.schema.json is not owned by the image task: it arrives on this branch only through the inherited primary-adapters commit and is not yet on main, so its owner is the primary-adapters task, and the public parameter schema that admits 1024 belongs to the scientific runtime onboarding task"
+      }
     }
   },
   "external_tree_contract": {
