@@ -507,11 +507,11 @@ def job(args: argparse.Namespace, handoff: dict[str, Any], config_name: str) -> 
         # then reads regular, read-only files without weakening that gate.
         "initContainers": [
             {
-                # The mounted-filesystem provisioner owns the new volume as
-                # nobody:nogroup and root is squashed. Prepare only this task's
-                # run directory as that unprivileged owner. Do not set fsGroup
-                # on the Pod: it would also recursively mutate the academic
-                # model claim, the exact failure this must not reintroduce.
+                # The mounted-filesystem provisioner creates a root-owned 0755
+                # volume and squashes chown. Prepare only this task's run
+                # directory as root and chmod that directory; never chown and
+                # never set fsGroup on the Pod, which would also mutate the
+                # academic model claim.
                 "name": "prepare-workspace",
                 "image": args.image,
                 "imagePullPolicy": "IfNotPresent",
@@ -521,7 +521,7 @@ def job(args: argparse.Namespace, handoff: dict[str, Any], config_name: str) -> 
                     "limits": {"cpu": "1", "memory": "256Mi"},
                 },
                 "securityContext": {
-                    **security, "runAsNonRoot": True, "runAsUser": 65534, "runAsGroup": 65534,
+                    **security, "runAsNonRoot": False, "runAsUser": 0, "runAsGroup": 0,
                 },
                 "volumeMounts": [{"name": "workspace", "mountPath": "/workspace"}],
             },

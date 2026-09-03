@@ -1401,8 +1401,8 @@ class SemanticJobRenderTests(unittest.TestCase):
             spec = job["spec"]["template"]["spec"]
             prepare = spec["initContainers"][0]
             self.assertEqual(prepare["name"], "prepare-workspace")
-            self.assertEqual(prepare["securityContext"]["runAsUser"], 65534)
-            self.assertTrue(prepare["securityContext"]["runAsNonRoot"])
+            self.assertEqual(prepare["securityContext"]["runAsUser"], 0)
+            self.assertFalse(prepare["securityContext"]["runAsNonRoot"])
             self.assertEqual(
                 prepare["volumeMounts"], [{"name": "workspace", "mountPath": "/workspace"}]
             )
