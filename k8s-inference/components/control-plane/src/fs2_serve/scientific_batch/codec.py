@@ -30,6 +30,8 @@ from .models import (
     MaterializationMode,
     PreemptionMode,
     ResourceClass,
+    RuntimeArtifactAdmissionRole,
+    RuntimeArtifactAdmissionSpec,
     RuntimeArtifactAggregateTree,
     RuntimeArtifactFile,
     RuntimeArtifactLocalization,
@@ -52,6 +54,7 @@ from .models import (
     StageStatus,
     StageToleration,
     StageVolumeBinding,
+    StageWorkspaceDocument,
     VerifiedInputManifest,
     WorkloadKind,
     WorkloadRef,
@@ -265,6 +268,36 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                             }
                             for item in invocation.runtime_mounts
                         ],
+                        **(
+                            {}
+                            if not invocation.workspace_documents and invocation.runtime_admission is None
+                            else {
+                                "workspace_documents": [
+                                    {
+                                        "relative_path": item.relative_path,
+                                        "canonical_json": item.canonical_json,
+                                    }
+                                    for item in invocation.workspace_documents
+                                ],
+                                "runtime_admission": (
+                                    None
+                                    if invocation.runtime_admission is None
+                                    else {
+                                        "schema": invocation.runtime_admission.schema,
+                                        "relative_path": invocation.runtime_admission.relative_path,
+                                        "roles": [
+                                            {
+                                                "role": role.role,
+                                                "artifact_id": role.artifact_id,
+                                                "mount_path": role.mount_path,
+                                                "identity_field": role.identity_field,
+                                            }
+                                            for role in invocation.runtime_admission.roles
+                                        ],
+                                    }
+                                ),
+                            }
+                        ),
                         "materializations": [
                             {
                                 "artifact_id": item.artifact_id,
@@ -670,27 +703,28 @@ def state_from_value(raw: object) -> ScientificBatchState:
         execution = _object(value["adapter_execution"], execution_fields, "adapter execution")
         invocations: list[StageInvocation] = []
         for raw_invocation in _items(execution["invocations"], "adapter invocations"):
-            invocation = _object(
-                raw_invocation,
-                {
-                    "stage_id",
-                    "shard_id",
-                    "argv",
-                    "environment",
-                    "working_directory",
-                    "consumes",
-                    "produces",
-                    "collector_id",
-                    "validator_id",
-                    "handoff_name",
-                    "max_output_artifacts",
-                    "max_output_bytes",
-                    "runtime_artifacts",
-                    "runtime_mounts",
-                    "materializations",
-                },
-                "adapter invocation",
-            )
+            invocation_fields = {
+                "stage_id",
+                "shard_id",
+                "argv",
+                "environment",
+                "working_directory",
+                "consumes",
+                "produces",
+                "collector_id",
+                "validator_id",
+                "handoff_name",
+                "max_output_artifacts",
+                "max_output_bytes",
+                "runtime_artifacts",
+                "runtime_mounts",
+                "materializations",
+            }
+            if not legacy_before_v8 and isinstance(raw_invocation, Mapping):
+                raw_invocation_fields = set(raw_invocation)
+                if {"workspace_documents", "runtime_admission"} & raw_invocation_fields:
+                    invocation_fields.update({"workspace_documents", "runtime_admission"})
+            invocation = _object(raw_invocation, invocation_fields, "adapter invocation")
             environment: list[tuple[str, str]] = []
             for raw_item in _items(invocation["environment"], "adapter environment", maximum=128):
                 items = _items(raw_item, "adapter environment item", maximum=2)
@@ -761,6 +795,53 @@ def state_from_value(raw: object) -> ScientificBatchState:
                         ),
                     )
                 )
+            workspace_documents: tuple[StageWorkspaceDocument, ...] = ()
+            runtime_admission: RuntimeArtifactAdmissionSpec | None = None
+            if "workspace_documents" in invocation:
+                workspace_documents = tuple(
+                    StageWorkspaceDocument(
+                        relative_path=_string(document["relative_path"], "workspace document path"),
+                        canonical_json=_string(document["canonical_json"], "workspace document JSON"),
+                    )
+                    for document in (
+                        _object(
+                            raw_document,
+                            {"relative_path", "canonical_json"},
+                            "workspace document",
+                        )
+                        for raw_document in _items(invocation["workspace_documents"], "workspace documents", maximum=16)
+                    )
+                )
+                if invocation["runtime_admission"] is not None:
+                    raw_admission = _object(
+                        invocation["runtime_admission"],
+                        {"schema", "relative_path", "roles"},
+                        "runtime artifact admission",
+                    )
+                    runtime_admission = RuntimeArtifactAdmissionSpec(
+                        schema=_string(raw_admission["schema"], "runtime artifact admission schema"),
+                        relative_path=_string(raw_admission["relative_path"], "runtime artifact admission path"),
+                        roles=tuple(
+                            RuntimeArtifactAdmissionRole(
+                                role=_string(role["role"], "runtime artifact admission role"),
+                                artifact_id=_string(role["artifact_id"], "runtime artifact admission ID"),
+                                mount_path=_string(role["mount_path"], "runtime artifact admission mount"),
+                                identity_field=_string(
+                                    role["identity_field"], "runtime artifact admission identity field"
+                                ),
+                            )
+                            for role in (
+                                _object(
+                                    raw_role,
+                                    {"role", "artifact_id", "mount_path", "identity_field"},
+                                    "runtime artifact admission role",
+                                )
+                                for raw_role in _items(
+                                    raw_admission["roles"], "runtime artifact admission roles", maximum=64
+                                )
+                            )
+                        ),
+                    )
             invocations.append(
                 StageInvocation(
                     stage_id=_string(invocation["stage_id"], "invocation stage ID"),
@@ -778,6 +859,8 @@ def state_from_value(raw: object) -> ScientificBatchState:
                     materializations=tuple(materializations),
                     runtime_artifacts=_string_items(invocation["runtime_artifacts"], "runtime artifact", maximum=64),
                     runtime_mounts=tuple(runtime_mounts),
+                    workspace_documents=workspace_documents,
+                    runtime_admission=runtime_admission,
                 )
             )
         stage_bindings: list[StageExecutionBinding] = []

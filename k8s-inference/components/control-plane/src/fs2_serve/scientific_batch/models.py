@@ -545,9 +545,14 @@ class RuntimeArtifactAggregateTree:
         elif self.storage_kind is RuntimeArtifactTreeKind.REFERENCE_DATA_PLANE:
             if self.manifest_algorithm != "fs2-serve.nebius.ai/reference-data-manifest/v1":
                 raise ValueError("reference-data manifest schema is unsupported")
-            if len(parts) < 5 or parts[0] != "datasets" or parts[-2:] != (
-                "sha256",
-                self.tree_digest.removeprefix("sha256:"),
+            if (
+                len(parts) < 5
+                or parts[0] != "datasets"
+                or parts[-2:]
+                != (
+                    "sha256",
+                    self.tree_digest.removeprefix("sha256:"),
+                )
             ):
                 raise ValueError("reference-data dataset path differs from its tree digest")
             if self.marker_relative_path != ".fs2-manifest-sha256":
@@ -672,6 +677,87 @@ class RuntimeArtifactMount:
 
 
 @dataclass(frozen=True, slots=True)
+class StageWorkspaceDocument:
+    """One adapter-owned canonical JSON document materialized by the controller."""
+
+    relative_path: str
+    canonical_json: str
+
+    def __post_init__(self) -> None:
+        path = PurePosixPath(self.relative_path)
+        if (
+            path.is_absolute()
+            or len(path.parts) < 2
+            or path.parts[0] != ".fs2"
+            or path.suffix != ".json"
+            or any(part in {"", ".", ".."} for part in path.parts)
+        ):
+            raise ValueError("stage workspace document must be a safe .fs2 JSON path")
+        encoded = self.canonical_json.encode()
+        if not encoded or len(encoded) > 1024 * 1024:
+            raise ValueError("stage workspace document exceeds the bound")
+        try:
+            value = json.loads(encoded)
+        except (UnicodeError, ValueError) as error:
+            raise ValueError("stage workspace document is invalid JSON") from error
+        canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        if canonical != self.canonical_json:
+            raise ValueError("stage workspace document must use canonical JSON")
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeArtifactAdmissionRole:
+    """Adapter vocabulary for one controller-verified runtime tree role."""
+
+    role: str
+    artifact_id: str
+    mount_path: str
+    identity_field: str = "content-digest"
+
+    def __post_init__(self) -> None:
+        if re.fullmatch(r"^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$", self.role) is None:
+            raise ValueError("runtime artifact admission role is invalid")
+        if _ARTIFACT_ID_RE.fullmatch(self.artifact_id) is None:
+            raise ValueError("runtime artifact admission role has an invalid artifact ID")
+        mount = PurePosixPath(self.mount_path)
+        if not mount.is_absolute() or mount == PurePosixPath("/") or mount.as_posix() != self.mount_path:
+            raise ValueError("runtime artifact admission role has an invalid mount path")
+        if self.identity_field not in {
+            "content-digest",
+            "tree-digest",
+            "manifest-digest",
+            "inventory-digest",
+        }:
+            raise ValueError("runtime artifact admission identity field is unsupported")
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeArtifactAdmissionSpec:
+    """Controller-filled admission document consumed by a model runtime gate."""
+
+    schema: str
+    relative_path: str
+    roles: tuple[RuntimeArtifactAdmissionRole, ...]
+
+    def __post_init__(self) -> None:
+        if re.fullmatch(r"^[a-z0-9][a-z0-9.-]*/[a-z0-9][a-z0-9._/-]*/v[1-9][0-9]*$", self.schema) is None:
+            raise ValueError("runtime artifact admission schema is invalid")
+        path = PurePosixPath(self.relative_path)
+        if (
+            path.is_absolute()
+            or len(path.parts) != 2
+            or path.parts[0] != ".fs2"
+            or path.suffix != ".json"
+            or any(part in {"", ".", ".."} for part in path.parts)
+        ):
+            raise ValueError("runtime artifact admission must use one safe .fs2 JSON path")
+        role_names = tuple(item.role for item in self.roles)
+        artifact_ids = tuple(item.artifact_id for item in self.roles)
+        if not self.roles or len(role_names) != len(set(role_names)) or len(artifact_ids) != len(set(artifact_ids)):
+            raise ValueError("runtime artifact admission roles must be non-empty and unique")
+
+
+@dataclass(frozen=True, slots=True)
 class StageInvocation:
     """Immutable, shell-free workload payload attached to one attempt unit."""
 
@@ -690,6 +776,8 @@ class StageInvocation:
     materializations: tuple[ArtifactMaterialization, ...] = ()
     runtime_artifacts: tuple[str, ...] = ()
     runtime_mounts: tuple[RuntimeArtifactMount, ...] = ()
+    workspace_documents: tuple[StageWorkspaceDocument, ...] = ()
+    runtime_admission: RuntimeArtifactAdmissionSpec | None = None
 
     def __post_init__(self) -> None:
         _check_name(self.stage_id, "stage_id")
@@ -717,6 +805,18 @@ class StageInvocation:
         mount_targets = tuple(item.mount_path for item in self.runtime_mounts)
         if len(set(mount_targets)) != len(mount_targets):
             raise ValueError("runtime artifact mount targets must be unique")
+        document_paths = tuple(item.relative_path for item in self.workspace_documents)
+        if len(document_paths) != len(set(document_paths)):
+            raise ValueError("stage workspace document paths must be unique")
+        if self.runtime_admission is not None:
+            if self.runtime_admission.relative_path in document_paths:
+                raise ValueError("runtime artifact admission path collides with an adapter document")
+            admission_artifacts = {item.artifact_id for item in self.runtime_admission.roles}
+            if admission_artifacts != set(self.runtime_artifacts):
+                raise ValueError("runtime artifact admission roles must cover every stage runtime artifact")
+            bound_paths = {item.artifact_id: item.mount_path for item in self.runtime_mounts}
+            if any(bound_paths.get(item.artifact_id) != item.mount_path for item in self.runtime_admission.roles):
+                raise ValueError("runtime artifact admission roots differ from the exact stage mounts")
         materialized = tuple(item.artifact_id for item in self.materializations)
         if len(set(materialized)) != len(materialized) or set(materialized) != set(self.consumes):
             raise ValueError("materializations must cover every consumed logical artifact exactly once")

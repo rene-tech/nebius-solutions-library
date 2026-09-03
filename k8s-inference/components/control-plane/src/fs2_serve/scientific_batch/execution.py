@@ -182,6 +182,27 @@ def _invocation_json(invocation: StageInvocation) -> str:
                 }
                 for item in invocation.runtime_mounts
             ],
+            "workspace_documents": [
+                {"relative_path": item.relative_path, "canonical_json": item.canonical_json}
+                for item in invocation.workspace_documents
+            ],
+            "runtime_admission": (
+                None
+                if invocation.runtime_admission is None
+                else {
+                    "schema": invocation.runtime_admission.schema,
+                    "relative_path": invocation.runtime_admission.relative_path,
+                    "roles": [
+                        {
+                            "role": role.role,
+                            "artifact_id": role.artifact_id,
+                            "mount_path": role.mount_path,
+                            "identity_field": role.identity_field,
+                        }
+                        for role in invocation.runtime_admission.roles
+                    ],
+                }
+            ),
             "materializations": [
                 {
                     "artifact_id": item.artifact_id,
@@ -533,9 +554,7 @@ class FileScientificManifestRenderer:
                             f"scientific execution resource {resource_kind} fields differ"
                         )
                     cpu = _bounded_string(values["cpu"], f"scientific {resource_kind} CPU", maximum=32)
-                    memory = _bounded_string(
-                        values["memory"], f"scientific {resource_kind} memory", maximum=32
-                    )
+                    memory = _bounded_string(values["memory"], f"scientific {resource_kind} memory", maximum=32)
                     ephemeral_storage = _bounded_string(
                         values["ephemeral_storage"],
                         f"scientific {resource_kind} ephemeral storage",
@@ -547,9 +566,7 @@ class FileScientificManifestRenderer:
                         re.fullmatch(r"[1-9][0-9]*(?:Ki|Mi|Gi|Ti)", item) is None
                         for item in (memory, ephemeral_storage)
                     ):
-                        raise ScientificExecutionMapError(
-                            f"scientific {resource_kind} storage quantity is invalid"
-                        )
+                        raise ScientificExecutionMapError(f"scientific {resource_kind} storage quantity is invalid")
                     parsed_resources[resource_kind] = (cpu, memory, ephemeral_storage)
                 request_cpu, request_memory, request_ephemeral_storage = parsed_resources["requests"]
                 limit_cpu, limit_memory, limit_ephemeral_storage = parsed_resources["limits"]
@@ -636,9 +653,10 @@ class FileScientificManifestRenderer:
         self.tools_image = tools_image
         self.internal_api_url = internal_api_url
         self.capability_authority = capability_authority
-        if academic_authorization_receipt_sha256 is not None and re.fullmatch(
-            r"[a-f0-9]{64}", academic_authorization_receipt_sha256
-        ) is None:
+        if (
+            academic_authorization_receipt_sha256 is not None
+            and re.fullmatch(r"[a-f0-9]{64}", academic_authorization_receipt_sha256) is None
+        ):
             raise ScientificExecutionMapError("academic deployment authorization digest is invalid")
         self.academic_tenant_id = academic_tenant_id
         self.academic_authorization_receipt_sha256 = academic_authorization_receipt_sha256
@@ -1191,9 +1209,7 @@ class FileScientificManifestRenderer:
                     "readiness_receipt_sha256": binding.readiness_receipt_sha256,
                     "authorization_receipt_sha256": binding.authorization_receipt_sha256,
                     "verification_receipt": (
-                        None
-                        if item.verification_receipt_json is None
-                        else json.loads(item.verification_receipt_json)
+                        None if item.verification_receipt_json is None else json.loads(item.verification_receipt_json)
                     ),
                     "aggregate_tree": (
                         None
@@ -1359,7 +1375,10 @@ class FileScientificManifestRenderer:
                     "--workspace",
                     invocation.working_directory,
                 ],
-                "env": [{"name": "FS2_RUNTIME_ARTIFACTS_JSON", "value": runtime_marker_json}],
+                "env": [
+                    {"name": "FS2_RUNTIME_ARTIFACTS_JSON", "value": runtime_marker_json},
+                    {"name": "FS2_STAGE_INVOCATION_JSON", "value": _invocation_json(invocation)},
+                ],
                 "volumeMounts": [workspace_mount],
                 "resources": {
                     "requests": {"cpu": "50m", "memory": "64Mi"},

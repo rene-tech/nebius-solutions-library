@@ -357,9 +357,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             internal_api_url=settings.scientific_batch_internal_api_url,
             capability_authority=scientific_capabilities,
             academic_tenant_id=settings.scientific_batch_academic_tenant_id,
-            academic_authorization_receipt_sha256=(
-                settings.scientific_batch_academic_authorization_receipt_sha256
-            ),
+            academic_authorization_receipt_sha256=(settings.scientific_batch_academic_authorization_receipt_sha256),
         )
         scientific_batch_cluster = HttpScientificBatchCluster(
             base_url=settings.scientific_batch_kubernetes_api_url,
@@ -675,9 +673,14 @@ def main() -> None:
         if not args.workspace:
             parser.error("scientific workspace is required")
         runtime_localization_json = os.environ.get("FS2_RUNTIME_ARTIFACTS_JSON")
-        if not runtime_localization_json:
-            parser.error("scientific runtime localization marker is required")
-        prepare_workspace(Path(args.workspace), runtime_localization_json=runtime_localization_json)
+        stage_invocation_json = os.environ.get("FS2_STAGE_INVOCATION_JSON")
+        if not runtime_localization_json or not stage_invocation_json:
+            parser.error("scientific runtime localization marker and stage invocation are required")
+        prepare_workspace(
+            Path(args.workspace),
+            runtime_localization_json=runtime_localization_json,
+            stage_invocation_json=stage_invocation_json,
+        )
     elif args.command == "scientific-verify-runtime-artifacts":
         runtime_localization_json = os.environ.get("FS2_RUNTIME_ARTIFACTS_JSON")
         if not runtime_localization_json:

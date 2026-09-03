@@ -33,7 +33,11 @@ from fs2_serve.scientific_batch.artifact_bridge import ArtifactServiceBridge
 from fs2_serve.scientific_batch.capability import ScientificWorkloadCapabilityAuthority
 from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
 from fs2_serve.scientific_batch.controller import ScientificBatchController
-from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer, ScientificExecutionMapError
+from fs2_serve.scientific_batch.execution import (
+    FileScientificManifestRenderer,
+    ScientificExecutionMapError,
+    _invocation_json,
+)
 from fs2_serve.scientific_batch.models import (
     AdapterExecutionPlan,
     ArtifactAccessContext,
@@ -43,6 +47,8 @@ from fs2_serve.scientific_batch.models import (
     MaterializationMode,
     ResolvedArtifactMaterialization,
     ResourceClass,
+    RuntimeArtifactAdmissionRole,
+    RuntimeArtifactAdmissionSpec,
     RuntimeArtifactMount,
     RuntimeArtifactTreeKind,
     SchedulingAdmission,
@@ -55,6 +61,7 @@ from fs2_serve.scientific_batch.models import (
     StagePlacementClass,
     StageResourceEnvelope,
     StageSchedulingDecision,
+    StageWorkspaceDocument,
     VerifiedInputManifest,
     WorkloadKind,
     WorkloadObservation,
@@ -69,6 +76,30 @@ NOW = datetime(2026, 9, 2, 21, tzinfo=UTC)
 def sha(value: bytes | str) -> str:
     raw = value.encode() if isinstance(value, str) else value
     return "sha256:" + hashlib.sha256(raw).hexdigest()
+
+
+def prepare_invocation_json(stage_id: str) -> str:
+    return json.dumps(
+        {
+            "stage_id": stage_id,
+            "shard_id": "main",
+            "argv": ["scientific-stage"],
+            "environment": [],
+            "working_directory": f"/mnt/fs2-scientific/work/{stage_id}/main",
+            "consumes": [],
+            "produces": f"{stage_id}-result",
+            "collector_id": "test-collector-v1",
+            "validator_id": "test-validator-v1",
+            "handoff_name": None,
+            "max_output_artifacts": 1,
+            "max_output_bytes": 1024,
+            "materializations": [],
+            "runtime_artifacts": [],
+            "runtime_mounts": [],
+            "workspace_documents": [],
+            "runtime_admission": None,
+        }
+    )
 
 
 class ArtifactRecords:
@@ -573,7 +604,10 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
         "/mnt/fs2-scientific/work/prepare/main/.fs2/runtime-localization.json"
     )
     prepare = pod["initContainers"][0]
-    assert prepare["env"] == [{"name": "FS2_RUNTIME_ARTIFACTS_JSON", "value": runtime_env}]
+    assert {item["name"] for item in prepare["env"]} == {
+        "FS2_RUNTIME_ARTIFACTS_JSON",
+        "FS2_STAGE_INVOCATION_JSON",
+    }
     verifier = pod["initContainers"][1]
     assert verifier["name"] == "verify-runtime-artifacts"
     assert {item["mountPath"] for item in verifier["volumeMounts"]} == {
@@ -1714,6 +1748,7 @@ def test_companion_materializes_collects_validates_and_commits_exact_handoff(
     companion.prepare_workspace(
         workspace,
         runtime_localization_json=json.dumps(runtime_marker),
+        stage_invocation_json=prepare_invocation_json("fold"),
     )
     assert json.loads((workspace / ".fs2/runtime-localization.json").read_text()) == runtime_marker
     input_bytes = b">target\nACDE\n"
@@ -1913,13 +1948,97 @@ def test_companion_verifies_reference_plane_and_materializes_exact_terminal_rece
     scientific_root.mkdir()
     monkeypatch.setattr(companion, "_ROOT", scientific_root)
     workspace = scientific_root / "work" / "data-pipeline" / "main"
-    companion.prepare_workspace(workspace, runtime_localization_json=marker_json)
+    companion.prepare_workspace(
+        workspace,
+        runtime_localization_json=marker_json,
+        stage_invocation_json=prepare_invocation_json("data-pipeline"),
+    )
     receipt_path = workspace / ".fs2/runtime-artifacts/alphafold3-public-databases-v3.0.receipt.json"
     assert receipt_path.read_bytes() == receipt_bytes
 
     (dataset / companion.REFERENCE_DATA_TREE_MARKER).write_text("0" * 64, encoding="utf-8")
     with pytest.raises(ValueError, match="publication marker differs"):
         companion.verify_runtime_artifacts(runtime_localization_json=marker_json)
+
+
+def test_prepare_workspace_materializes_frozen_documents_and_controller_fills_tree_admission(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "scientific"
+    root.mkdir()
+    monkeypatch.setattr(companion, "_ROOT", root)
+    documents = (
+        StageWorkspaceDocument(".fs2/request.json", '{"operation":"design-binder"}'),
+        StageWorkspaceDocument(".fs2/input-manifest.json", '{"entries":[],"schema":"manifest/v1"}'),
+    )
+    roles = (
+        RuntimeArtifactAdmissionRole("alphafold2-params", "alphafold2-params-bindcraft", "/models/af2"),
+        RuntimeArtifactAdmissionRole("pyrosetta-site-packages", "bindcraft-pyrosetta", "/opt/fs2/academic/p"),
+    )
+    invocation = StageInvocation(
+        stage_id="design",
+        shard_id="main",
+        argv=("scientific-stage",),
+        environment=(),
+        working_directory="/mnt/fs2-scientific/work/design/main",
+        consumes=(),
+        produces="design-result",
+        runtime_artifacts=tuple(item.artifact_id for item in roles),
+        runtime_mounts=tuple(RuntimeArtifactMount(item.artifact_id, item.mount_path) for item in roles),
+        workspace_documents=documents,
+        runtime_admission=RuntimeArtifactAdmissionSpec(
+            schema="fs2.nebius.ai/bindcraft-external-tree-admission/v1",
+            relative_path=".fs2/external-trees.json",
+            roles=roles,
+        ),
+    )
+    marker = {
+        "schema": companion.RUNTIME_LOCALIZATION_SCHEMA,
+        "operation_id": str(uuid4()),
+        "attempt_id": str(uuid4()),
+        "tenant_id": "academic-poc",
+        "model_id": "bindcraft",
+        "variant_id": "v1-5-3-pyrosetta-academic",
+        "stage_id": "design",
+        "artifacts": [
+            {
+                "artifact_id": role.artifact_id,
+                "mount_path": role.mount_path,
+                "content_digest": f"sha256:{index + 1}".ljust(71, str(index + 1)),
+                "artifact_manifest_sha256": str(index + 3) * 64,
+                "localization_receipt_digest": f"sha256:{str(index + 5) * 64}",
+                "sub_path": None,
+                "readiness_receipt_sha256": str(index + 6) * 64,
+                "authorization_receipt_sha256": None,
+                "verification_receipt": None,
+                "files": [{"path": "identity", "digest": f"sha256:{str(index + 7) * 64}", "size_bytes": 1}],
+                "aggregate_tree": None,
+            }
+            for index, role in enumerate(roles)
+        ],
+    }
+    marker_json = json.dumps(marker, sort_keys=True, separators=(",", ":"))
+    workspace = root / "work" / "design" / "main"
+    companion.prepare_workspace(
+        workspace,
+        runtime_localization_json=marker_json,
+        stage_invocation_json=_invocation_json(invocation),
+    )
+    assert (workspace / ".fs2/request.json").read_text() == documents[0].canonical_json
+    assert (workspace / ".fs2/input-manifest.json").read_text() == documents[1].canonical_json
+    admission = json.loads((workspace / ".fs2/external-trees.json").read_bytes())
+    assert admission["schema"] == invocation.runtime_admission.schema
+    assert admission["generation"] == hashlib.sha256(marker_json.encode()).hexdigest()
+    assert admission["trees"] == [
+        {
+            "role": role.role,
+            "artifact_id": role.artifact_id,
+            "root": role.mount_path,
+            "sha256": marker["artifacts"][index]["content_digest"].removeprefix("sha256:"),
+        }
+        for index, role in enumerate(roles)
+    ]
 
 
 def _collection_invocation(*, collector_id: str, validator_id: str) -> dict[str, object]:
@@ -1989,6 +2108,7 @@ def _prepared_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
                 "artifacts": [],
             }
         ),
+        stage_invocation_json=prepare_invocation_json("fold"),
     )
     return workspace
 

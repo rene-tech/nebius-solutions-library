@@ -19,7 +19,15 @@ import zstandard
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from .adapters import CollectedArtifactFile, CollectionPendingError, collect_stage_output
-from .models import ArtifactMaterialization, MaterializationMode, RuntimeArtifactMount, StageInvocation
+from .models import (
+    ArtifactMaterialization,
+    MaterializationMode,
+    RuntimeArtifactAdmissionRole,
+    RuntimeArtifactAdmissionSpec,
+    RuntimeArtifactMount,
+    StageInvocation,
+    StageWorkspaceDocument,
+)
 
 _ROOT = Path("/mnt/fs2-scientific")
 _MAX_ARCHIVE_FILES = 4096
@@ -106,13 +114,75 @@ def _contained(path: Path, *, root: Path | None = None) -> Path:
     return resolved
 
 
-def prepare_workspace(workspace: Path, *, runtime_localization_json: str) -> None:
-    """Create the invocation directory and its trusted runtime receipt marker."""
+def _write_exclusive(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
+    with os.fdopen(descriptor, "wb") as output:
+        output.write(payload)
+        output.flush()
+        os.fsync(output.fileno())
+
+
+def _admission_identity(artifact: Mapping[str, Any], identity_field: str) -> str:
+    tree = artifact.get("aggregate_tree")
+    values: dict[str, object] = {"content-digest": artifact.get("content_digest")}
+    if isinstance(tree, Mapping):
+        values.update(
+            {
+                "tree-digest": tree.get("tree_digest"),
+                "manifest-digest": tree.get("manifest_digest"),
+                "inventory-digest": tree.get("inventory_digest"),
+            }
+        )
+    value = values.get(identity_field)
+    if not isinstance(value, str) or not value.startswith("sha256:"):
+        raise ValueError("runtime artifact admission identity is unavailable")
+    return value.removeprefix("sha256:")
+
+
+def _runtime_admission(invocation: StageInvocation, marker: Mapping[str, Any]) -> tuple[str, bytes] | None:
+    spec = invocation.runtime_admission
+    if spec is None:
+        return None
+    artifacts = {artifact["artifact_id"]: artifact for artifact in cast(list[dict[str, Any]], marker["artifacts"])}
+    trees: list[dict[str, str]] = []
+    for role in spec.roles:
+        artifact = artifacts.get(role.artifact_id)
+        if artifact is None or artifact.get("mount_path") != role.mount_path:
+            raise ValueError("runtime artifact admission differs from verified localization")
+        trees.append(
+            {
+                "role": role.role,
+                "artifact_id": role.artifact_id,
+                "root": role.mount_path,
+                "sha256": _admission_identity(artifact, role.identity_field),
+            }
+        )
+    value = {
+        "schema": spec.schema,
+        "generation": hashlib.sha256(
+            json.dumps(marker, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+        ).hexdigest(),
+        "trees": trees,
+    }
+    return spec.relative_path, json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+
+
+def prepare_workspace(
+    workspace: Path,
+    *,
+    runtime_localization_json: str,
+    stage_invocation_json: str,
+) -> None:
+    """Create the invocation directory and its trusted frozen documents."""
 
     target = _contained(workspace)
     target.mkdir(parents=True, exist_ok=False)
     target.chmod(0o700)
     marker = _runtime_marker(runtime_localization_json)
+    invocation = _invocation(stage_invocation_json)
+    if invocation.stage_id != marker["stage_id"]:
+        raise ValueError("stage invocation differs from runtime localization marker")
     canonical = json.dumps(marker, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     marker_directory = target / ".fs2"
     marker_directory.mkdir(mode=0o700)
@@ -126,12 +196,15 @@ def prepare_workspace(workspace: Path, *, runtime_localization_json: str) -> Non
         receipt_directory.mkdir(mode=0o700)
         for artifact_id, receipt in receipts:
             payload = json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
-            receipt_path = receipt_directory / f"{artifact_id}.receipt.json"
-            descriptor = os.open(receipt_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
-            with os.fdopen(descriptor, "wb") as output:
-                output.write(payload)
-                output.flush()
-                os.fsync(output.fileno())
+            _write_exclusive(receipt_directory / f"{artifact_id}.receipt.json", payload)
+    for document in invocation.workspace_documents:
+        _write_exclusive(
+            target.joinpath(*PurePosixPath(document.relative_path).parts), document.canonical_json.encode()
+        )
+    admission = _runtime_admission(invocation, marker)
+    if admission is not None:
+        path, payload = admission
+        _write_exclusive(target.joinpath(*PurePosixPath(path).parts), payload)
     temporary = marker_directory / ".runtime-localization.json.tmp"
     destination = marker_directory / "runtime-localization.json"
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
@@ -317,8 +390,7 @@ def _verify_reference_data_plane(*, artifact: dict[str, Any], mount: Path, tree:
         or receipt_content.get("inventory_marker") != tree["marker_relative_path"]
         or receipt_content.get("file_count") != tree["file_count"]
         or receipt_content.get("expanded_bytes") != tree["expanded_bytes"]
-        or "sha256:" + hashlib.sha256(canonical_receipt).hexdigest()
-        != artifact["localization_receipt_digest"]
+        or "sha256:" + hashlib.sha256(canonical_receipt).hexdigest() != artifact["localization_receipt_digest"]
     ):
         raise ValueError("reference-data terminal receipt differs from the mounted publication")
 
@@ -560,6 +632,28 @@ def _invocation(value: str) -> StageInvocation:
         )
         for item in raw["runtime_mounts"]
     )
+    workspace_documents = tuple(
+        StageWorkspaceDocument(relative_path=item["relative_path"], canonical_json=item["canonical_json"])
+        for item in raw.get("workspace_documents", [])
+    )
+    raw_admission = raw.get("runtime_admission")
+    runtime_admission = (
+        None
+        if raw_admission is None
+        else RuntimeArtifactAdmissionSpec(
+            schema=raw_admission["schema"],
+            relative_path=raw_admission["relative_path"],
+            roles=tuple(
+                RuntimeArtifactAdmissionRole(
+                    role=item["role"],
+                    artifact_id=item["artifact_id"],
+                    mount_path=item["mount_path"],
+                    identity_field=item["identity_field"],
+                )
+                for item in raw_admission["roles"]
+            ),
+        )
+    )
     return StageInvocation(
         stage_id=raw["stage_id"],
         shard_id=raw["shard_id"],
@@ -576,6 +670,8 @@ def _invocation(value: str) -> StageInvocation:
         materializations=materializations,
         runtime_artifacts=tuple(raw["runtime_artifacts"]),
         runtime_mounts=runtime_mounts,
+        workspace_documents=workspace_documents,
+        runtime_admission=runtime_admission,
     )
 
 
