@@ -16,8 +16,8 @@
     "license": "BSD-3-Clause",
     "license_state": "verified",
     "license_covers_weights": true,
-    "build_commit": null,
-    "attestation_vcs_revision": null
+    "build_commit": "76d1e7da005d0e57aa9cbe319298cc7e974cc7ca",
+    "attestation_vcs_revision": "76d1e7da005d0e57aa9cbe319298cc7e974cc7ca"
   },
   "image": {
     "id": "rfdiffusion",
@@ -58,9 +58,12 @@
       "other_families": "unqualified-pending-per-family-evidence",
       "architecture_policy": "Qualified on H100 (sm90) only. torch 2.3.0/cu121 and the prebuilt DGL cu121 wheel ship a fixed set of compiled kernels and this runtime has audited neither the cubin nor the PTX they carry, so no portability claim is made for any other GPU family. Nothing in the image hard-codes a device selector, so another family needs per-family evidence rather than a code change; until that evidence exists it is unqualified. Accelerator breadth belongs in the Terraform resource profiles, not in a binary property of this image."
     },
-    "published_digest": null,
-    "published_reference": null,
-    "attestation_predicate_types": null,
+    "published_digest": "sha256:c63e82292d69609eef1d4624ae9a68ef9d106377bb61334d6dda5ff0f04a4563",
+    "published_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:c63e82292d69609eef1d4624ae9a68ef9d106377bb61334d6dda5ff0f04a4563",
+    "attestation_predicate_types": [
+      "https://slsa.dev/provenance/v1",
+      "https://spdx.dev/Document"
+    ],
     "supersedes": [
       {
         "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r8",
@@ -177,13 +180,29 @@
     "conflict": "The artifact catalog's consumer layout binds rfdiffusion-checkpoints at /models/rfdiffusion-checkpoints, while the superseded r6/r7 images hard-coded FS2_ARTIFACT_ROOT=/models/rfdiffusion. This runtime resolves the conflict by not hard-coding either: the checkpoint is located through the input manifest's relative path under --artifact-root, so the same image works at any mount point the plane chooses."
   },
   "qualification": {
-    "state": "pending-live-h100-run",
-    "evidence": [],
+    "state": "h100-semantic-qualified",
+    "qualified_digest": "sha256:c63e82292d69609eef1d4624ae9a68ef9d106377bb61334d6dda5ff0f04a4563",
+    "qualified_accelerator": "nvidia-h100-sxm5-80gb (sm90)",
+    "other_accelerators": "not-qualified; each family needs its own evidence",
     "route_exposed": false,
-    "qualified_accelerator": "nvidia-h100-sm90",
-    "other_accelerators": "not-qualified",
-    "evidence_transfer_policy": "Evidence is bound to an exact image digest. No receipt from r6, r7 or r8 transfers to this image; qualification stays pending until this digest itself completes a live H100 semantic run.",
-    "scope": "one bounded unconditional monomer design; no throughput, snapshot, elasticity or contention measurement"
+    "evidence": [
+      "evidence/h100-run-receipt.json",
+      "evidence/h100-semantic-qualification.json",
+      "evidence/h100-semantic-qualification-warm.json",
+      "evidence/design/design_8100.pdb"
+    ],
+    "evidence_transfer_policy": "Evidence is bound to an exact image digest. No receipt from r6, r7 or r8 transfers to this image, and no receipt here transfers to a later one.",
+    "kubelet_image_id_verified": true,
+    "criteria_met": {
+      "cuda_execution": "upstream .trb recorded NVIDIA H100 80GB HBM3 on both runs",
+      "parseable_structure": "76 residues, 304 atoms, complete N/CA/C backbone on every residue",
+      "requested_contig_length": "76 residues designed against contig 76-76",
+      "all_glycine_unconditional_backbone": "glycine_fraction 1.0",
+      "physical_geometry": "max CA-CA deviation 0.125 A from 3.8 A; 30.5 A extent",
+      "terminal_success_after_upstream": "envelope reports succeeded only after marker verification",
+      "determinism": "identical output sha256 78600be2... from seed 8100 on two different H100 nodes"
+    },
+    "scope": "One bounded unconditional monomer design, run twice. No motif-scaffolding run, no throughput, contention, elasticity or snapshot measurement. The scaffold-motif operation is implemented and covered by offline tests but has no live receipt."
   },
   "upstream_contract_defects": [
     {
@@ -209,6 +228,28 @@
       "observed": "when inference.schedule_directory_path is unset, the schedule cache directory defaults to <package>/../../schedules and is created with os.mkdir",
       "impact": "under readOnlyRootFilesystem, or any image that seals its own upstream tree, the run dies with OSError EROFS after the checkpoint loads and before any diffusion step",
       "resolution": "the adapter always passes inference.schedule_directory_path under its writable scratch directory and creates it first. Observed live on H100 Job fs2-rfd-semantic-r8-cold; fixed for r9."
+    }
+  ],
+  "follow_ups": [
+    {
+      "id": "preseed-igso3-schedule-cache-for-fast-start",
+      "owner": "fast-start workstream",
+      "blocking": false,
+      "observed": "On the true-cold run, checkpoint load plus IGSO3 schedule calculation took 28.1 s of a 67 s schedule-to-semantic-complete, against 20.1 s of actual 50-step diffusion. The schedule cache starts empty in every container because it is redirected to ephemeral scratch.",
+      "proposal": "Preseed the deterministic IGSO3 schedules through the platform cache tier, or bake a read-only seed copy into the image and copy it into writable scratch at start. The schedules depend only on the diffuser parameters, so they are safely shareable. Never make the image root writable to achieve this.",
+      "not_a_gpu_snapshot": true
+    },
+    {
+      "id": "register-rfdiffusion-in-the-shared-runtime-probe",
+      "owner": "scientific-runtime-onboarding successor",
+      "blocking": false,
+      "detail": "models/cancer-immunotherapy/runtime-images/runtime_probe.py has CONFIG entries only for proteina-complexa, boltzgen and mosaic. This runtime deliberately did not edit that shared file to avoid colliding with its active owner; it ships its own 'probe' subcommand instead. Adding an rfdiffusion entry is a one-line change for whoever owns that file."
+    },
+    {
+      "id": "reconcile-adapter-parameter-schema",
+      "owner": "controller / onboarding owners",
+      "blocking": false,
+      "detail": "This runtime implements fs2-serve.nebius.ai/rfdiffusion-parameters/v1 with operations design-backbone and scaffold-motif, matching the onboarding declaration. The pending batch-adapter branch instead defines rfdiffusion-upstream-base-parameters/v1 with typed contig objects. One of the two must win before the controller route is exposed; the argv contract in adapter.argv_contract is what this image actually accepts."
     }
   ]
 }

@@ -1,0 +1,191 @@
+{
+  "schema": "fs2.nebius.ai/rfdiffusion-h100-run-receipt/v1",
+  "recorded_at": "2026-09-03T05:15:00Z",
+  "owner_task": "fs2-rfdiffusion-final-image-h100-successor-r20260903",
+  "runtime_image": {
+    "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:c63e82292d69609eef1d4624ae9a68ef9d106377bb61334d6dda5ff0f04a4563",
+    "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r9",
+    "digest": "sha256:c63e82292d69609eef1d4624ae9a68ef9d106377bb61334d6dda5ff0f04a4563",
+    "size_bytes": 4154019160,
+    "kubelet_image_id_matches_published_digest": true,
+    "attestation_vcs_revision": "76d1e7da005d0e57aa9cbe319298cc7e974cc7ca",
+    "attestation_predicate_types": [
+      "https://slsa.dev/provenance/v1",
+      "https://spdx.dev/Document"
+    ]
+  },
+  "environment": {
+    "project": "project-e00rene",
+    "region": "eu-north1",
+    "kubeconfig": "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+    "context": "k8s-inference-h100",
+    "namespace": "fs2-models",
+    "kube_system_namespace_uid": "5e8135da-4a78-4669-863d-455840d0700b",
+    "local_queue": "inference-models",
+    "cluster_queue": "inference-accelerators",
+    "b300_touched": false
+  },
+  "external_checkpoint": {
+    "artifact_id": "artifact.rfdiffusion.base-ckpt",
+    "file": "Base_ckpt.pt",
+    "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+    "size_bytes": 483616107,
+    "embedded_in_image": false,
+    "digest_verified_by_runtime_each_run": true,
+    "generation": "5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab",
+    "generation_sub_path": "rfdiffusion/generations/rfdiffusion-base-checkpoint/sha256/5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab",
+    "claim": "fs2-runtime-qualification-artifacts-r20260902"
+  },
+  "request": {
+    "operation": "design-backbone",
+    "contigs": ["76-76"],
+    "num_designs": 1,
+    "seed": 8100,
+    "diffuser_T": 50,
+    "upstream_argv": [
+      "python",
+      "/opt/rfdiffusion/scripts/run_inference.py",
+      "inference.output_prefix=<run>/designs/design",
+      "inference.ckpt_override_path=/opt/fs2/artifacts/Base_ckpt.pt",
+      "inference.num_designs=1",
+      "inference.design_startnum=8100",
+      "inference.deterministic=True",
+      "diffuser.T=50",
+      "contigmap.contigs=[76-76]",
+      "inference.schedule_directory_path=/tmp/fs2-rfdiffusion/schedules",
+      "hydra.run.dir=/tmp/fs2-rfdiffusion/hydra",
+      "hydra.output_subdir=null"
+    ],
+    "shell_free": true
+  },
+  "runs": [
+    {
+      "id": "warm-image-node",
+      "job": "fs2-rfd-semantic-r9-cold",
+      "pod": "fs2-rfd-semantic-r9-cold-9smvn",
+      "pod_uid": "0606fe1b-3afd-46d2-8ce7-72db6ad6642b",
+      "node": "computeinstance-e00nycmfmarxv6kq9w",
+      "node_uid": "201014a0-232f-4890-89ea-4eae126b8fd6",
+      "accelerator": {
+        "class": "nvidia-h100-sxm5-80gb",
+        "pool_id": "h100-1x",
+        "instance_type": "gpu-h100-sxm",
+        "capacity_type": "elastic-autoscaled",
+        "gpus_requested": 1,
+        "device_reported_by_upstream": "NVIDIA H100 80GB HBM3"
+      },
+      "admission": "Kueue LocalQueue inference-models, ClusterQueue inference-accelerators",
+      "exit_code": 0,
+      "container_started_at": "2026-09-03T05:11:18Z",
+      "container_finished_at": "2026-09-03T05:11:49Z",
+      "image_pull_seconds": 0.296,
+      "cache_level": {
+        "declared_by_plan": "cold-registry-pull",
+        "observed": "image-and-artifact-local",
+        "declaration_was_wrong": true,
+        "detail": "The plan declared a cold registry pull, but this node had already pulled the r8 layer set and every layer except the adapter layer was resident, so the pull completed in 296 ms. The declaration is recorded as made and corrected here rather than quietly rewritten. The 'true-cold-node' run below is the honest cold-start measurement.",
+        "gpu_snapshot_used": false
+      },
+      "phases_seconds": {
+        "validate_request": 0.003,
+        "resolve_checkpoint": 0.383,
+        "resolve_inputs": 0.0,
+        "upstream_execute": 30.992,
+        "verify_artifacts": 0.061,
+        "write_envelope": 0.003,
+        "adapter_total": 31.443
+      },
+      "model_ready_seconds": 9.364,
+      "upstream_design_seconds": 20.513
+    },
+    {
+      "id": "true-cold-node",
+      "job": "fs2-rfd-semantic-r9-truecold",
+      "pod": "fs2-rfd-semantic-r9-truecold-cpqhz",
+      "node": "computeinstance-e00m0hsph76ajt9sdb",
+      "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+      "accelerator": {
+        "class": "nvidia-h100-sxm5-80gb",
+        "pool_id": "h100-reserved-8x",
+        "instance_type": "gpu-h100-sxm",
+        "capacity_type": "capacity-block",
+        "gpus_requested": 1,
+        "device_reported_by_upstream": "NVIDIA H100 80GB HBM3"
+      },
+      "admission": "unqueued, node-pinned to a node that had never pulled this digest",
+      "exit_code": 0,
+      "container_started_at": "2026-09-03T05:12:58Z",
+      "container_finished_at": "2026-09-03T05:13:56Z",
+      "image_pull_seconds": 7.252,
+      "cache_level": {
+        "declared_by_plan": "cold-registry-pull",
+        "observed": "cold-registry-pull",
+        "declaration_was_wrong": false,
+        "detail": "This node had never pulled this digest. The 7.252 s pull of a 4.15 GB image reflects an in-region registry and base layers already resident from sibling RFdiffusion images; it is not a from-nothing node pull. The from-nothing figure is recorded under fresh_node_reference below.",
+        "gpu_snapshot_used": false
+      },
+      "phases_seconds": {
+        "validate_request": 0.003,
+        "resolve_checkpoint": 0.436,
+        "resolve_inputs": 0.0,
+        "upstream_execute": 56.612,
+        "verify_artifacts": 0.059,
+        "write_envelope": 0.003,
+        "adapter_total": 57.112
+      },
+      "model_ready_seconds": 35.909,
+      "upstream_design_seconds": 19.59,
+      "upstream_phase_timestamps": {
+        "container_start": "2026-09-03T05:12:58Z",
+        "loading_checkpoint": "2026-09-03T05:13:07.222Z",
+        "first_design_started": "2026-09-03T05:13:35.366Z",
+        "first_diffusion_timestep": "2026-09-03T05:13:37.222Z",
+        "last_diffusion_timestep": "2026-09-03T05:13:54.367Z",
+        "design_finished": "2026-09-03T05:13:55.411Z"
+      },
+      "upstream_phase_breakdown_seconds": {
+        "import_and_config": 9.2,
+        "checkpoint_load_and_igso3_schedule": 28.14,
+        "diffusion_50_steps": 20.05
+      },
+      "schedule_to_semantic_complete_seconds": 67.0
+    }
+  ],
+  "fresh_node_reference": {
+    "detail": "The superseded r8 attempt scheduled onto a node the cluster autoscaler had just created, so it is the only from-nothing datum captured. Recorded for scale, not as qualification: it belongs to a different digest.",
+    "digest": "sha256:9aae23f0465c77e47a07d6afc820a1173bd5d2474c818423356e06efb799c0f6",
+    "node": "computeinstance-e00nycmfmarxv6kq9w",
+    "node_scale_up_to_scheduled_seconds": 154,
+    "image_pull_seconds": 118.6,
+    "image_size_bytes": 4154018578,
+    "autoscaler_event": "pod triggered scale-up: mk8snodegroup-e00n67290jzpdmffbv 0->1 (max: 2)"
+  },
+  "determinism": {
+    "claim": "the deterministic-seed contract is real, not asserted",
+    "evidence": "Both runs above executed seed 8100 on two different H100 nodes and produced a byte-identical structure, sha256 78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806.",
+    "independent_corroboration": "The superseded r6 generation, built independently on the mixed BindCraft/RFdiffusion branch, recorded the same output sha256 for the same seed and contig. An independently rebuilt image reproducing a prior image's exact bytes is strong evidence that seed -> inference.design_startnum is the correct mapping."
+  },
+  "preserved_workloads": {
+    "checked_after_all_runs": true,
+    "fs2-models/qwen3-8b-b300-hot-h100-reserved-8x": "1/1 available",
+    "fs2-models/qwen3-8b-b300-burst-h100-1x": "0/0, unchanged",
+    "fs2-models/cosmos3-nano-burst-h100-1x": "0/0, unchanged",
+    "detail": "No shared service, Deployment, route, queue or Terraform resource was modified. Only task-owned Jobs, Pods and a ConfigMap were created."
+  },
+  "cleanup": {
+    "task_owned_jobs_deleted": [
+      "fs2-rfd-semantic-r8-cold",
+      "fs2-rfd-semantic-r9-cold",
+      "fs2-rfd-semantic-r9-truecold",
+      "fs2-rfd-stage-base-ckpt"
+    ],
+    "task_owned_pods_deleted": [
+      "fs2-rfd-artifact-probe",
+      "fs2-rfd-deps-probe",
+      "fs2-rfd-mkrun",
+      "fs2-rfd-export"
+    ],
+    "task_owned_configmaps_deleted": ["fs2-rfd-stage-tools", "fs2-rfd-request-r8"],
+    "retained": "The staged checkpoint generation and the exported run directories are retained on the shared qualification claim under rfdiffusion/, because they are the artifact plane and the evidence this receipt refers to."
+  }
+}

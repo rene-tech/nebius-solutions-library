@@ -191,3 +191,43 @@ python3 build_rfdiffusion.py --record             # publish and record the diges
 ```
 
 Live evidence is in `evidence/`.
+
+## H100 acceptance
+
+Published digest `sha256:c63e8229…`, run twice on the shared cluster
+(`project-e00rene` / `eu-north1`, context `k8s-inference-h100`, namespace
+`fs2-models`). In both runs the kubelet `imageID` was exactly the published
+digest, and the checkpoint was re-verified by sha256 inside the container.
+
+| | warm-image node | true-cold node |
+| --- | --- | --- |
+| Node | `…e00nycmfmarxv6kq9w` (elastic, autoscaled) | `…e00m0hsph76ajt9sdb` (capacity block) |
+| Admission | Kueue `inference-models` | unqueued, node-pinned |
+| Image pull | 0.30 s (layers resident) | 7.25 s |
+| Model ready | 9.4 s | 35.9 s |
+| 50-step diffusion | 20.5 s | 19.6 s |
+| Adapter total | 31.4 s | 57.1 s |
+| Schedule → semantic complete | — | ~67 s |
+
+Both produced a 76-residue all-glycine backbone with a complete N/CA/C backbone on
+every residue, CA-CA spacing within 0.125 Å of 3.8 Å, and a 30.5 Å extent. Upstream
+recorded `NVIDIA H100 80GB HBM3` in the `.trb` for both.
+
+**Determinism.** Both runs used seed 8100 on *different* H100 nodes and produced a
+byte-identical structure, `sha256:78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806`
+— committed at `evidence/design/design_8100.pdb`, so the claim is re-checkable. The
+superseded r6 image, built independently on the mixed branch, recorded that same
+output digest for the same seed. An independently rebuilt image reproducing a prior
+image's exact bytes is real evidence that `seed → inference.design_startnum` is the
+correct mapping.
+
+**Cache level, honestly.** The first run's plan declared `cold-registry-pull`, but
+that node already held the r8 layers and the pull took 296 ms, so the declaration was
+wrong. The receipt records the declaration as made *and* the observed level, rather
+than quietly rewriting it. The true-cold run is the honest cold-start number. Neither
+is a GPU snapshot; this runtime uses none.
+
+**Known cold-start cost.** On the true-cold run, checkpoint load plus IGSO3 schedule
+calculation took 28.1 s against 20.1 s of actual diffusion, because the schedule cache
+starts empty in every container. That is a fast-start optimisation, tracked in
+`image-lock.json` under `follow_ups`, not a correctness problem.
