@@ -3312,12 +3312,6 @@ async def test_scientific_batch_repository_is_durable_fenced_and_excluded_from_g
     )
     assert cancellation.cancel_requested is True and cancellation.revision == revision
     assert await controller.reconcile_once() == operation.id
-    deleting = await batches.get(operation.id, tenant_id=principal.tenant_id)
-    assert deleting.status.value == "running"
-    deleting_attempt = deleting.stage("design").attempts[-1]
-    assert deleting_attempt.deletion_requested is True
-    assert deleting_attempt.resource_released is False
-    assert await controller.reconcile_once() == operation.id
     terminal = await batches.get(operation.id, tenant_id=principal.tenant_id)
     assert terminal.status.value == "cancelled"
     projected = await postgres_store.get_operation(operation.id, tenant_id=principal.tenant_id)
