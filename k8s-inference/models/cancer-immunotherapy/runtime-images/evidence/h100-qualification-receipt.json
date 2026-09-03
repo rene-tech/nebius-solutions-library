@@ -1,0 +1,335 @@
+{
+  "schema": "fs2.nebius.ai/scientific-runtime-h100-qualification-receipt/v1",
+  "generated_at": "2026-09-03T00:07:03Z",
+  "scope": {
+    "task": "fs2-cancer-images-complexa-boltzgen-mosaic-r20260902",
+    "branch": "agent/fs2-cancer-images-complexa-boltzgen-mosaic-r20260902",
+    "repository_head_before_task_commit": "6551d8708c829fe99d229d1f547b8bd8cab0231e",
+    "models_qualified_here": [
+      "proteina-complexa",
+      "boltzgen-portable",
+      "boltzgen-optimized"
+    ],
+    "mosaic": {
+      "state": "delegated-not-ready",
+      "handoff": "mosaic-v2-handoff.md",
+      "owner_task": "fs2-cancer-images-mosaic-runtime-qualification-r20260903",
+      "notes": "The v2 image, Job, logs, sources, adapter argv, and semantic blocker were preserved and handed off. This task performed no later Mosaic code change or GPU launch."
+    }
+  },
+  "qualification_boundary": {
+    "image_probe": "Import, CLI, CUDA ABI, and one-device tensor probes qualify only the container image.",
+    "model_readiness": "A pass below requires digest-pinned execution, exact externally mounted artifacts, a real model/domain forward on project-e00rene H100, and semantic validation of generated output.",
+    "weights_embedded_in_default_images": false,
+    "artifact_mount": "/opt/fs2/artifacts"
+  },
+  "environment": {
+    "project": "project-e00rene",
+    "region": "eu-north1",
+    "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+    "kube_context": "k8s-inference-h100",
+    "namespace": "fs2-models",
+    "local_queue": "inference-models",
+    "cluster_queue": "inference-accelerators",
+    "node": {
+      "name": "computeinstance-e00phxdecf401f6rq5",
+      "uid": "0a2a9c6d-c5fe-4194-93b9-510281c6732b",
+      "node_group_id": "mk8snodegroup-e00n67290jzpdmffbv",
+      "platform": "gpu-h100-sxm",
+      "preset": "1gpu-16vcpu-200gb",
+      "gpu": "NVIDIA H100 SXM5 80GB",
+      "gpu_count": 1,
+      "preemptible": true,
+      "preemption_policy": "STOP",
+      "preemption_priority": 5
+    }
+  },
+  "artifact_receipts": {
+    "proteina-complexa": [
+      {
+        "path": "proteina-complexa/complexa.ckpt",
+        "repository": "nvidia/NV-Proteina-Complexa-Protein-Target-160M-v1",
+        "revision": "ffed199e32612b98ffa04f4640d34d37b137fca5",
+        "bytes": 2934289381,
+        "sha256": "589db1741f29838c7961386f6b873087238c72682e56189b89e0ae02610c19e9"
+      },
+      {
+        "path": "proteina-complexa/complexa_ae.ckpt",
+        "repository": "nvidia/NV-Proteina-Complexa-Protein-Target-160M-v1",
+        "revision": "ffed199e32612b98ffa04f4640d34d37b137fca5",
+        "bytes": 4100101779,
+        "sha256": "35f8865efd269995eeaf1670e1c1085acfe2988c40abdeda8e09a0e15eb40816"
+      }
+    ],
+    "boltzgen": [
+      {
+        "path": "boltzgen/boltzgen1_diverse.ckpt",
+        "repository": "boltzgen/boltzgen-1",
+        "revision": "c1be29e1f82ffcc72264f64b993c43fb4e0d17f0",
+        "bytes": 1930847192,
+        "sha256": "360af8bd6e59527ff6ec25dd81253967f3bd3567d200053b10680634751f8e3c"
+      },
+      {
+        "path": "boltzgen/mols.zip",
+        "repository": "boltzgen/inference-data",
+        "revision": "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c",
+        "bytes": 391401102,
+        "sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53"
+      }
+    ]
+  },
+  "qualifications": [
+    {
+      "id": "proteina-complexa",
+      "status": "passed",
+      "execution_path": "portable",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
+      "job": {
+        "name": "fs2-model-forward-complexa-v9-20260902",
+        "uid": "c9b7b9ef-c3be-402c-ac6d-ad2a67023d58",
+        "pod": "fs2-model-forward-complexa-v9-20260902-pzrk2",
+        "pod_uid": "f6f67a8f-1c71-46e0-b114-3742ce17acfb",
+        "started_at": "2026-09-02T23:11:59Z",
+        "finished_at": "2026-09-02T23:12:33Z",
+        "exit_code": 0,
+        "gpu_count": 1,
+        "argv": [
+          "complexa",
+          "design",
+          "--steps",
+          "generate",
+          "--verbose",
+          "/opt/fs2/source/configs/search_binder_local_pipeline.yaml",
+          "++run_name=h100_minimal",
+          "++ckpt_path=/opt/fs2/artifacts/proteina-complexa",
+          "++ckpt_name=complexa.ckpt",
+          "++autoencoder_ckpt_path=/opt/fs2/artifacts/proteina-complexa/complexa_ae.ckpt",
+          "++generation.task_name=02_PDL1",
+          "++generation.dataloader.dataset.nres.low=64",
+          "++generation.dataloader.dataset.nres.high=65",
+          "++generation.dataloader.dataset.nres.nsamples=1",
+          "++generation.dataloader.dataset.nres.nrepeat_per_sample=1",
+          "++generation.dataloader.batch_size=1",
+          "++generation.search.algorithm=single-pass",
+          "++generation.reward_model=null",
+          "++generation.args.nsteps=2",
+          "++hydra.run.dir=/work/qualification/hydra/complexa",
+          "++root_path=/work/qualification/runs/complexa-v9"
+        ]
+      },
+      "validator": {
+        "job": "fs2-validate-complexa-tight-v1-20260903",
+        "job_uid": "c6f1bba2-1450-48e1-8f2f-651e8a68af5d",
+        "pod_uid": "66c65e59-658b-4f1c-ba44-dcf7cc7e1e39",
+        "exit_code": 0,
+        "candidate_files_examined": 1,
+        "generated_path": "/work/qualification/runs/complexa-v9/job_0_n_179_id_0_single_orig0/job_0_n_179_id_0_single_orig0.pdb",
+        "generated_sha256": "d6d30f635ca96c33a9df9808a0301729d47647c3d1e86992b87e52140912e24e",
+        "atoms": 1437,
+        "chains": 2,
+        "residues": 179,
+        "sequence_diversity": 20,
+        "max_chain_extent_angstrom": 836.369
+      }
+    },
+    {
+      "id": "boltzgen-portable",
+      "status": "passed",
+      "execution_path": "portable-no-fused-kernels",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:e2bb0a15c7585916ed650e851903bfe55643141f6521e36cdcb382670c0d3c02",
+      "job": {
+        "name": "fs2-model-forward-boltzgen-portable-v4-20260903",
+        "uid": "775e5433-0936-4d5b-a7dd-b5ff1137f6c7",
+        "pod": "fs2-model-forward-boltzgen-portable-v4-20260903-7tdsz",
+        "pod_uid": "655359f2-d018-4f82-8692-c4a055b67020",
+        "started_at": "2026-09-02T23:53:55Z",
+        "finished_at": "2026-09-02T23:54:27Z",
+        "exit_code": 0,
+        "gpu_count": 1,
+        "kernel_evidence": "Using kernels: False [device capability: (9, 0)]",
+        "argv": [
+          "boltzgen",
+          "run",
+          "/opt/fs2/source/example/vanilla_protein/1g13prot.yaml",
+          "--output",
+          "/work/qualification/runs/boltzgen-portable-v4",
+          "--protocol",
+          "protein-anything",
+          "--num_designs",
+          "1",
+          "--budget",
+          "1",
+          "--steps",
+          "design",
+          "--no_subprocess",
+          "--devices",
+          "1",
+          "--num_workers",
+          "0",
+          "--use_kernels",
+          "false",
+          "--design_checkpoints",
+          "/opt/fs2/artifacts/boltzgen/boltzgen1_diverse.ckpt",
+          "--moldir",
+          "/opt/fs2/artifacts/boltzgen",
+          "--config",
+          "design",
+          "sampling_steps=20",
+          "recycling_steps=0",
+          "data.num_workers=0",
+          "diffusion_samples=1",
+          "--skip_inverse_folding"
+        ]
+      },
+      "validator": {
+        "job": "fs2-validate-boltzgen-portable-v4-20260903",
+        "job_uid": "a48269a0-fe5f-4cf5-994f-5958645b3ff7",
+        "pod_uid": "b1457daa-2e91-4717-8b73-9989972b4a44",
+        "exit_code": 0,
+        "candidate_files_examined": 1,
+        "generated_path": "/work/qualification/runs/boltzgen-portable-v4/intermediate_designs/1g13prot.cif",
+        "generated_sha256": "703b6c9477d38537ca1d6f46a3fb9f4aa7acc1209be1870f29c8930bfea88596",
+        "atoms": 2140,
+        "chains": 2,
+        "residues": 302,
+        "sequence_diversity": 19,
+        "max_chain_extent_angstrom": 49.3226585
+      }
+    },
+    {
+      "id": "boltzgen-optimized",
+      "status": "passed",
+      "execution_path": "fused-cuequivariance-kernels",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+      "job": {
+        "name": "fs2-model-forward-boltzgen-optimized-v1-20260903",
+        "uid": "922739ec-116a-4a89-a5f0-30b3ba4108bf",
+        "pod": "fs2-model-forward-boltzgen-optimized-v1-20260903-vqxq5",
+        "pod_uid": "a118e704-6e11-4afe-b56f-645358ab90f8",
+        "started_at": "2026-09-03T00:00:27Z",
+        "finished_at": "2026-09-03T00:01:02Z",
+        "exit_code": 0,
+        "gpu_count": 1,
+        "kernel_evidence": "Using kernels: True [device capability: (9, 0)]",
+        "argv": [
+          "boltzgen",
+          "run",
+          "/opt/fs2/source/example/vanilla_protein/1g13prot.yaml",
+          "--output",
+          "/work/qualification/runs/boltzgen-optimized-v1",
+          "--protocol",
+          "protein-anything",
+          "--num_designs",
+          "1",
+          "--budget",
+          "1",
+          "--steps",
+          "design",
+          "--no_subprocess",
+          "--devices",
+          "1",
+          "--num_workers",
+          "0",
+          "--design_checkpoints",
+          "/opt/fs2/artifacts/boltzgen/boltzgen1_diverse.ckpt",
+          "--moldir",
+          "/opt/fs2/artifacts/boltzgen",
+          "--config",
+          "design",
+          "sampling_steps=20",
+          "recycling_steps=0",
+          "data.num_workers=0",
+          "diffusion_samples=1",
+          "--skip_inverse_folding",
+          "--folding_checkpoint",
+          "/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt"
+        ]
+      },
+      "validator": {
+        "job": "fs2-validate-boltzgen-optimized-v1-20260903",
+        "job_uid": "f5c8d8df-ca04-4e71-a903-1a212de870b7",
+        "pod_uid": "170948d9-57ec-4f6b-830f-63d19e9ebfbb",
+        "exit_code": 0,
+        "candidate_files_examined": 1,
+        "generated_path": "/work/qualification/runs/boltzgen-optimized-v1/intermediate_designs/1g13prot.cif",
+        "generated_sha256": "816e3a5bf6e34132cac2b988066f46b0c03360be9ec68a7afd0ac2901a976988",
+        "atoms": 2001,
+        "chains": 2,
+        "residues": 287,
+        "sequence_diversity": 19,
+        "max_chain_extent_angstrom": 49.2331552
+      }
+    }
+  ],
+  "negative_evidence": [
+    {
+      "model": "boltzgen",
+      "attempt": "two-sampling-step-domain-forward",
+      "result": "rejected",
+      "reason": "The generated intermediate retained diffusion-sentinel geometry; the validator was tightened to exclude the input visualization and reject degenerate per-chain coordinates."
+    },
+    {
+      "model": "boltzgen",
+      "attempt": "fused-kernel-cueq-v1",
+      "result": "image-superseded",
+      "reason": "Source-compatible cuEquivariance fixed the Python API mismatch, but Triton JIT had no runtime C compiler."
+    },
+    {
+      "model": "boltzgen",
+      "attempt": "fused-kernel-cueq-v2",
+      "result": "portable-path-passed-optimized-path-superseded",
+      "reason": "The image added gcc and passed a portable model forward, but Triton's runtime extension compilation also required Python.h. cueq-v3 adds python3-dev."
+    },
+    {
+      "model": "boltzgen",
+      "attempt": "portable-v3",
+      "result": "infrastructure-preemption",
+      "reason": "The assigned preemptible replacement node computeinstance-e00e1wn2707gc5968v became unreachable and stopped heartbeating; this was not classified as a model failure."
+    }
+  ],
+  "supply_chain_scan": {
+    "scanner": "Trivy 0.70.0",
+    "database_updated_at": "2026-09-02T07:08:42.639995689Z",
+    "command_policy": "vulnerability scanner, CRITICAL severity, fixed-version available only",
+    "images": [
+      {
+        "id": "proteina-complexa",
+        "digest": "sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
+        "critical_findings": 3,
+        "findings": [
+          {
+            "id": "CVE-2025-68121",
+            "component": "wandb-core embedded Go stdlib",
+            "installed": "v1.25.5",
+            "fixed": "1.24.13, 1.25.7, 1.26.0-rc.3"
+          },
+          {
+            "id": "CVE-2026-33186",
+            "component": "wandb-core google.golang.org/grpc",
+            "installed": "v1.77.0",
+            "fixed": "1.79.3"
+          },
+          {
+            "id": "CVE-2026-56854",
+            "component": "wandb-core golang.org/x/crypto",
+            "installed": "v0.45.0",
+            "fixed": "0.55.0"
+          }
+        ],
+        "disposition": "Recorded, not silently waived. The pinned source-compatible WandB 0.23.1 binary is not exercised by the inference qualification, but remains present because the imported upstream autoencoder module imports WandB. Upgrade/rebuild needs a separate compatibility qualification."
+      },
+      {
+        "id": "boltzgen-optimized",
+        "digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+        "critical_findings": 0,
+        "findings": []
+      }
+    ]
+  },
+  "deployment": {
+    "persistent_model_deployment_created": false,
+    "registry_images_pushed_only": true,
+    "shared_service_replaced": false,
+    "temporary_resources": "All Complexa/BoltzGen qualification Jobs and the C/B-only validation ConfigMap were removed. The shared staging PVC and Mosaic-owned resources remain for the dedicated Mosaic task."
+  }
+}
