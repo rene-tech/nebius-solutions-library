@@ -6,35 +6,43 @@
 
 locals {
   academic_chart_values = {
-    enabled   = var.academic_assets.enabled
-    namespace = var.academic_assets.namespace
-    claim     = var.academic_assets.runtime_claim.name
-    mountRoot = var.academic_assets.delivery.mount_root
-    assetGid  = var.academic_assets.delivery.asset_gid
-    readOnly  = true
+    enabled                 = var.academic_assets.enabled
+    namespace               = var.academic_assets.namespace
+    claim                   = var.academic_assets.runtime_claim.name
+    mountRoot               = var.academic_assets.delivery.mount_root
+    assetGid                = var.academic_assets.delivery.asset_gid
+    readOnly                = true
+    tenantId                = var.academic_assets.tenant_id
+    readinessManifestSha256 = var.academic_assets.readiness_manifest_sha256
 
     # The renderer needs the exact bindings, not just a claim and a mount root:
     # a subPath mount cannot be generated from those alone.
     runtimeBindings = {
       for key, asset in var.academic_assets.assets : key => {
-        modelId             = asset.model_id
-        artifactId          = asset.runtime_binding.artifact_id
-        sourceSubPath       = asset.runtime_binding.source_sub_path
-        consumerPath        = asset.runtime_binding.consumer_path
-        mechanism           = asset.runtime_binding.mechanism
-        contentIdentityKind = asset.runtime_binding.content_identity_kind
-        contentDigestSha256 = asset.runtime_binding.content_digest_sha256
-        readOnly            = true
+        modelId                  = asset.model_id
+        artifactId               = asset.runtime_binding.artifact_id
+        sourceSubPath            = asset.runtime_binding.source_sub_path
+        consumerPath             = asset.runtime_binding.consumer_path
+        mechanism                = asset.runtime_binding.mechanism
+        contentIdentityKind      = asset.runtime_binding.content_identity_kind
+        contentManifestAlgorithm = asset.runtime_binding.content_manifest_algorithm
+        contentDigestSha256      = asset.runtime_binding.content_digest_sha256
+        sizeBytes                = asset.runtime_binding.size_bytes
+        sourceArtifact           = asset.runtime_binding.source_artifact
+        readOnly                 = true
       } if asset.runtime_binding != null
     }
 
     # Academic Jobs run where the claim lives; a claim cannot be mounted from
     # another namespace.
     execution = {
-      enabled        = var.academic_assets.enabled && var.academic_assets.execution.enabled
-      namespace      = var.academic_assets.namespace
-      localQueue     = var.academic_assets.execution.local_queue
-      serviceAccount = var.academic_assets.execution.service_account
+      enabled                   = var.academic_assets.enabled && var.academic_assets.execution.enabled
+      namespace                 = var.academic_assets.namespace
+      localQueue                = var.academic_assets.execution.local_queue
+      clusterQueue              = var.academic_assets.execution.cluster_queue
+      referenceDataLocalQueue   = try(module.kueue_scheduling.contract.cpu_classes["reference-data"].local_queue, "")
+      referenceDataClusterQueue = try(module.kueue_scheduling.contract.cpu_classes["reference-data"].cluster_queue, "")
+      serviceAccount            = var.academic_assets.execution.service_account
     }
   }
 }

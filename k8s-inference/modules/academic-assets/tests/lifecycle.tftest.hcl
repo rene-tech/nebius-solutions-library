@@ -39,6 +39,9 @@ variables {
       general_shared_cache    = false
       deny_egress_on_validate = true
     }
+    execution = {
+      enabled = false
+    }
     assets = {
       alphafold3 = {
         model_id      = "alphafold3"

@@ -150,6 +150,26 @@ variable "academic_assets" {
   }
 
   validation {
+    condition = !var.academic_assets.enabled || !var.academic_assets.execution.enabled || try(
+      can(regex("^[a-f0-9]{64}$", var.academic_assets.readiness_manifest_sha256)) &&
+      length(var.academic_assets.assets) > 0 &&
+      alltrue([
+        for asset in values(var.academic_assets.assets) :
+        asset.runtime_binding != null &&
+        asset.runtime_binding.content_digest_sha256 != null &&
+        asset.runtime_binding.size_bytes != null &&
+        asset.runtime_binding.source_artifact != null &&
+        (
+          asset.runtime_binding.content_identity_kind != "tree-manifest" ||
+          asset.runtime_binding.content_manifest_algorithm != null
+        )
+      ]),
+      false,
+    )
+    error_message = "Academic execution requires the exact readiness receipt and complete source/content identity for every runtime binding."
+  }
+
+  validation {
     condition = alltrue([
       for key, asset in var.academic_assets.assets :
       asset.runtime_binding == null || (

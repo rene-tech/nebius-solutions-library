@@ -681,13 +681,10 @@ locals {
       namespace      = var.deployment.scientific_batch.namespace
     }
     academic_assets = local.academic_assets_contract
-    # Feature gate only. The scientific execution map is the controller
-    # owner's contract and its ConfigMap has exactly one owner: the control-
-    # plane chart. This stage publishes only the Kueue scheduling policy.
-    scientific_batch = {
-      enabled        = var.deployment.scientific_batch.enabled
-      writes_enabled = var.deployment.scientific_batch.writes_enabled
-    }
+    # The chart is the sole execution-map owner; the workloads stage forwards
+    # the exact v3 document and artifact-service binding without creating a
+    # competing ConfigMap or persistence schema.
+    scientific_batch = var.deployment.scientific_batch
     model_express = {
       enabled         = var.deployment.acceleration.model_express.enabled
       deployment_mode = var.deployment.acceleration.model_express.deployment_mode

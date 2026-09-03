@@ -83,9 +83,10 @@ output "academic_assets" {
       local_queue_manifest  = local.academic_local_queue_manifest
     }
 
-    embeds_licensed_bytes = var.academic_assets.delivery.embed_licensed_bytes
-    tenant_id             = var.academic_assets.tenant_id
-    institution_id        = var.academic_assets.institution_id
+    embeds_licensed_bytes     = var.academic_assets.delivery.embed_licensed_bytes
+    tenant_id                 = var.academic_assets.tenant_id
+    institution_id            = var.academic_assets.institution_id
+    readiness_manifest_sha256 = var.academic_assets.readiness_manifest_sha256
 
     # The exact binding a runtime consumes. Deriving a path from the asset key
     # would be wrong for an installed tree, so an asset without a declared binding

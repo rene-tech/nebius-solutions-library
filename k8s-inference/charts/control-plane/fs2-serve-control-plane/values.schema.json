@@ -690,10 +690,11 @@
               "maxItems": 256,
               "items": {
                 "type": "object",
-                "required": ["model_id", "workload_namespace"],
+                "required": ["model_id", "workload_namespace", "access_profile"],
                 "properties": {
                   "model_id": {"type": "string", "minLength": 1, "maxLength": 63},
-                  "workload_namespace": {"type": "string", "minLength": 1, "maxLength": 63}
+                  "workload_namespace": {"type": "string", "minLength": 1, "maxLength": 63},
+                  "access_profile": {"enum": ["public", "academic"]}
                 }
               }
             }
@@ -1309,11 +1310,11 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "0e5b4432885ffc0dcdaec8edde2c0bc8ec8662478bacaa59670b2bffb30c8fe1"},
-            "migrationSetSha256": {"const": "72ae1b37e07a9b2cdf16f60d79b338dc669ef4d5b26c7277021b60f81c62fa44"},
-            "migrationCount": {"const": 16},
+            "contractPayloadSha256": {"const": "88665d6c508bdca6c756d9a6d1b29394e6571f72f441018b9afd26b4ff74ce1b"},
+            "migrationSetSha256": {"const": "5de2500fc6bc0b75f028614936af7fa6c177bc96d78eebe79e3736bae10e65ce"},
+            "migrationCount": {"const": 17},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0016_scientific_batch_state_v7.sql"},
+            "lastMigrationVersion": {"const": "0017_scientific_batch_state_v8.sql"},
             "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false
@@ -1997,6 +1998,7 @@
         "mountRoot",
         "assetGid",
         "readOnly",
+        "tenantId",
         "runtimeBindings",
         "execution"
       ],
@@ -2024,6 +2026,15 @@
         "readOnly": {
           "const": true
         },
+        "tenantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63
+        },
+        "readinessManifestSha256": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{64}$"
+        },
         "runtimeBindings": {
           "type": "object",
           "description": "Exact localizers keyed by asset. Each states the source subPath on the claim and the consumer path the runtime reads.",
@@ -2037,6 +2048,10 @@
               "consumerPath",
               "mechanism",
               "contentIdentityKind",
+              "contentManifestAlgorithm",
+              "contentDigestSha256",
+              "sizeBytes",
+              "sourceArtifact",
               "readOnly"
             ],
             "properties": {
@@ -2075,6 +2090,25 @@
                 ],
                 "pattern": "^[0-9a-f]{64}$"
               },
+              "contentManifestAlgorithm": {
+                "type": ["string", "null"],
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "sizeBytes": {
+                "type": ["integer", "null"],
+                "minimum": 1
+              },
+              "sourceArtifact": {
+                "type": ["object", "null"],
+                "additionalProperties": false,
+                "required": ["filename", "sha256", "size_bytes"],
+                "properties": {
+                  "filename": {"type": "string", "minLength": 1, "maxLength": 512},
+                  "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                  "size_bytes": {"type": "integer", "minimum": 1}
+                }
+              },
               "readOnly": {
                 "const": true
               }
@@ -2088,6 +2122,9 @@
             "enabled",
             "namespace",
             "localQueue",
+            "clusterQueue",
+            "referenceDataLocalQueue",
+            "referenceDataClusterQueue",
             "serviceAccount"
           ],
           "properties": {
@@ -2101,6 +2138,16 @@
             "localQueue": {
               "type": "string",
               "minLength": 1
+            },
+            "clusterQueue": {
+              "type": "string",
+              "minLength": 1
+            },
+            "referenceDataLocalQueue": {
+              "type": "string"
+            },
+            "referenceDataClusterQueue": {
+              "type": "string"
             },
             "serviceAccount": {
               "type": "string",

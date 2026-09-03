@@ -38,6 +38,9 @@ variables {
       general_shared_cache    = false
       deny_egress_on_validate = true
     }
+    execution = {
+      enabled = false
+    }
     assets = {
       alphafold3 = {
         model_id      = "alphafold3"
@@ -250,6 +253,15 @@ run "an_unsafe_binding_is_refused" {
 
 run "execution_is_bound_to_the_namespace_that_holds_the_claim" {
   command = plan
+
+  variables {
+    academic_assets = merge(var.academic_assets, {
+      readiness_manifest_sha256 = "1111111111111111111111111111111111111111111111111111111111111111"
+      execution = {
+        enabled = true
+      }
+    })
+  }
 
   assert {
     condition = (

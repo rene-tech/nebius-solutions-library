@@ -847,6 +847,39 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
 
 
 def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() -> None:
+    academic_model = {
+        "model_id": "alphafold3",
+        "workload_namespace": "fs2-academic-poc",
+        "access_profile": "academic",
+        "stages": [
+            {
+                "service_account_name": "fs2-academic-runner",
+                "mounts": [
+                    {
+                        "kind": "private",
+                        "claim_name": "academic-assets-runtime-rwx",
+                        "mount_path": "/models/af3.bin.zst",
+                        "sub_path": "alphafold3/af3.bin.zst",
+                    }
+                ],
+            }
+        ],
+    }
+    academic_binding = {
+        "alphafold3": {
+            "modelId": "alphafold3",
+            "artifactId": "alphafold3-parameters",
+            "sourceSubPath": "alphafold3/af3.bin.zst",
+            "consumerPath": "/models/af3.bin.zst",
+            "mechanism": "subpath-file-mount",
+            "contentIdentityKind": "file-digest",
+            "contentManifestAlgorithm": None,
+            "contentDigestSha256": "a" * 64,
+            "sizeBytes": 1020545840,
+            "sourceArtifact": {"filename": "af3.bin.zst", "sha256": "a" * 64, "size_bytes": 1020545840},
+            "readOnly": True,
+        }
+    }
     documents = render(
         "--set",
         "scientificBatch.enabled=true",
@@ -857,11 +890,25 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "--set",
         "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
         "--set-json",
-        'scientificBatch.executionMap.models=[{"model_id":"protein-design","workload_namespace":"fs2-models"},{"model_id":"alphafold3","workload_namespace":"fs2-academic-poc"}]',
+        "scientificBatch.executionMap.models="
+        + json.dumps(
+            [
+                {"model_id": "protein-design", "workload_namespace": "fs2-models", "access_profile": "public"},
+                academic_model,
+            ]
+        ),
         "--set",
         "academicAssets.enabled=true",
         "--set",
         "academicAssets.execution.enabled=true",
+        "--set",
+        "academicAssets.readinessManifestSha256=" + "b" * 64,
+        "--set",
+        "academicAssets.execution.referenceDataLocalQueue=academic-scientific-cpu",
+        "--set",
+        "academicAssets.execution.referenceDataClusterQueue=reference-data-cpu",
+        "--set-json",
+        "academicAssets.runtimeBindings=" + json.dumps(academic_binding),
         "--set",
         "scientificArtifacts.enabled=true",
         "--set-string",
@@ -1042,7 +1089,7 @@ def test_academic_scientific_execution_requires_the_exact_namespace_local_contra
             "--set",
             "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
             "--set-json",
-            'scientificBatch.executionMap.models=[{"model_id":"alphafold3","workload_namespace":"fs2-academic-poc"}]',
+            'scientificBatch.executionMap.models=[{"model_id":"alphafold3","workload_namespace":"fs2-academic-poc","access_profile":"academic"}]',
             "--set",
             "scientificArtifacts.enabled=true",
             "--set-string",

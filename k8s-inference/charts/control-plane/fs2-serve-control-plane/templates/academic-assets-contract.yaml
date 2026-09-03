@@ -25,6 +25,10 @@ data:
   embeds_licensed_bytes: "false"
   general_shared_cache: "false"
   world_readable: "false"
+  tenant_id: {{ .Values.academicAssets.tenantId | quote }}
+  readiness_manifest_sha256: {{ if .Values.academicAssets.execution.enabled }}{{ required "academicAssets.readinessManifestSha256 is required" .Values.academicAssets.readinessManifestSha256 | quote }}{{ else }}"unavailable"{{ end }}
+  execution_contract: |-
+    {{- .Values.academicAssets.execution | toJson | nindent 4 }}
   # Generated from the exact bindings: each entry is a real subPath mount, which
   # could not be produced from the claim and mount root alone.
   runtime_binding_mounts: |
@@ -54,7 +58,10 @@ data:
       consumerPath: {{ $binding.consumerPath }}
       mechanism: {{ $binding.mechanism }}
       contentIdentityKind: {{ $binding.contentIdentityKind }}
+      contentManifestAlgorithm: {{ $binding.contentManifestAlgorithm | default "null" }}
       contentDigestSha256: {{ $binding.contentDigestSha256 | default "null" }}
+      sizeBytes: {{ $binding.sizeBytes | default "null" }}
+      sourceArtifact: {{ $binding.sourceArtifact | toJson }}
   {{- end }}
 {{- else }}
     {}

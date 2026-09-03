@@ -888,7 +888,7 @@ class FileScientificManifestRenderer:
         if (
             preprocessing.resource_class.value != "cpu"
             or preprocessing.placement_class is None
-            or preprocessing.placement_class.value != "reference-data-cpu"
+            or preprocessing.placement_class.value != "reference-data"
             or preprocessing.resources.cpu_millis != AF3_PREPROCESS_CPU_MILLIS
             or preprocessing.resources.limit_cpu_millis != AF3_PREPROCESS_CPU_MILLIS
             or preprocessing.resources.memory_bytes != AF3_PREPROCESS_MEMORY_BYTES

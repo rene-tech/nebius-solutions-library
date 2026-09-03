@@ -63,6 +63,15 @@ class SchedulingContractResolver:
         self.local_queue_routes = _object(self.contract.get("local_queue_routes"), "Kueue local queue routes")
         self.pools = _object(self.contract.get("pools"), "Kueue accelerator pools")
         self.cpu_classes = _object(self.contract.get("cpu_classes"), "Kueue CPU placement classes")
+        self.cpu_stage_requests = _object(self.contract.get("cpu_stage_requests"), "Kueue CPU stage requests")
+        self.namespace_bound_models = _object(
+            self.contract.get("namespace_bound_models"), "Kueue namespace-bound models"
+        )
+        if not all(
+            isinstance(model_id, str) and isinstance(namespace, str)
+            for model_id, namespace in self.namespace_bound_models.items()
+        ):
+            raise SchedulingContractError("Kueue namespace-bound model mapping is invalid")
         if self.contract.get("pool_node_label_key") != "accelerator.fs2.nebius/pool-id":
             raise SchedulingContractError("Kueue contract uses a non-canonical accelerator pool label")
 
@@ -145,13 +154,25 @@ class SchedulingContractResolver:
             desired_queue = None if placement is None else placement.get("local_queue")
             if desired_queue is not None and not isinstance(desired_queue, str):
                 raise SchedulingContractError("scientific stage LocalQueue is invalid")
-            local_queue_name, route_namespace, cluster_queue_name = self._resolve_route(
-                service_class=service_class,
-                model_id=model_id,
-                tenant_id=tenant_id,
-                default_local_queue=cast(str, policy["default_local_queue"]),
-                desired_local_queue=desired_queue,
-            )
+            placement_class = stage.placement_class
+            cpu_class: Mapping[str, Any] | None = None
+            if stage.resource_class is ResourceClass.CPU:
+                placement_class = placement_class or StagePlacementClass.GENERAL_CPU
+                cpu_class = _object(self.cpu_classes.get(placement_class.value), "Kueue CPU placement class")
+                cpu_queue = cpu_class.get("local_queue")
+                if not isinstance(cpu_queue, str):
+                    raise SchedulingContractError("Kueue CPU placement class has no LocalQueue")
+                if desired_queue is not None and desired_queue != cpu_queue:
+                    raise SchedulingContractError("profile stage LocalQueue differs from the Kueue CPU class")
+                local_queue_name, route_namespace, cluster_queue_name = self._route_identity(cpu_queue)
+            else:
+                local_queue_name, route_namespace, cluster_queue_name = self._resolve_route(
+                    service_class=service_class,
+                    model_id=model_id,
+                    tenant_id=tenant_id,
+                    default_local_queue=cast(str, policy["default_local_queue"]),
+                    desired_local_queue=desired_queue,
+                )
             resolved_namespace = workload_namespace or route_namespace
             if placement is not None and placement.get("namespace") != route_namespace:
                 raise SchedulingContractError("profile stage namespace differs from the routed LocalQueue")
@@ -162,7 +183,6 @@ class SchedulingContractResolver:
             if placement is not None and placement.get("cluster_queue") != cluster_queue_name:
                 raise SchedulingContractError("profile stage ClusterQueue differs from the routed LocalQueue")
 
-            placement_class = stage.placement_class
             requested_flavor = None if placement is None else placement.get("resource_flavor")
             if requested_flavor is not None and not isinstance(requested_flavor, str):
                 raise SchedulingContractError("profile stage ResourceFlavor is invalid")
@@ -172,9 +192,7 @@ class SchedulingContractResolver:
             accelerator_resource: str | None = None
             accelerator_count = 0
             if stage.resource_class is ResourceClass.CPU:
-                if placement_class is None:
-                    placement_class = StagePlacementClass.GENERAL_CPU
-                cpu_class = _object(self.cpu_classes.get(placement_class.value), "Kueue CPU placement class")
+                assert cpu_class is not None
                 if (
                     cpu_class.get("local_queue") != local_queue_name
                     or cpu_class.get("cluster_queue") != cluster_queue_name
@@ -200,6 +218,44 @@ class SchedulingContractResolver:
                 )
                 if len(tolerations) != len(raw_tolerations):
                     raise SchedulingContractError("CPU class tolerations are invalid")
+                resources = stage.resources
+                if resources is None:
+                    raise SchedulingContractError("CPU stage has no frozen resource envelope")
+                capacity = _object(cpu_class.get("schedulable_capacity"), "CPU class schedulable capacity")
+                capacity_cpu = capacity.get("cpu_millicores")
+                capacity_memory = capacity.get("memory_mib")
+                capacity_ephemeral = capacity.get("ephemeral_storage_mib")
+                if any(
+                    not isinstance(value, int) or isinstance(value, bool) or value < 1
+                    for value in (capacity_cpu, capacity_memory, capacity_ephemeral)
+                ):
+                    raise SchedulingContractError("CPU class schedulable capacity is invalid")
+                capacity_cpu = cast(int, capacity_cpu)
+                capacity_memory = cast(int, capacity_memory)
+                capacity_ephemeral = cast(int, capacity_ephemeral)
+                requested_memory_mib = (resources.memory_bytes + 1024**2 - 1) // 1024**2
+                requested_ephemeral_mib = (resources.ephemeral_storage_bytes + 1024**2 - 1) // 1024**2
+                if (
+                    resources.cpu_millis > capacity_cpu
+                    or requested_memory_mib > capacity_memory
+                    or requested_ephemeral_mib > capacity_ephemeral
+                ):
+                    raise SchedulingContractError("CPU stage resource envelope exceeds its placement class")
+                assert placement_class is not None
+                declared_request = self.cpu_stage_requests.get(placement_class.value)
+                if declared_request is not None:
+                    request = _object(declared_request, "Kueue CPU stage request")
+                    request_cpu = request.get("cpu_millicores")
+                    request_memory = request.get("memory_mib")
+                    if (
+                        not isinstance(request_cpu, int)
+                        or isinstance(request_cpu, bool)
+                        or not isinstance(request_memory, int)
+                        or isinstance(request_memory, bool)
+                        or resources.cpu_millis > request_cpu
+                        or requested_memory_mib > request_memory
+                    ):
+                        raise SchedulingContractError("CPU stage resource envelope exceeds its declared request")
             else:
                 placement_class = placement_class or StagePlacementClass.ACCELERATOR
                 stage_accelerator = (
@@ -262,6 +318,9 @@ class SchedulingContractResolver:
         if len(namespaces) != 1:
             raise SchedulingContractError("one scientific run cannot span execution namespaces")
         frozen_namespace = cast(str, next(iter(namespaces)))
+        bound_namespace = self.namespace_bound_models.get(model_id)
+        if bound_namespace is not None and frozen_namespace != bound_namespace:
+            raise SchedulingContractError("namespace-bound model resolved outside its licensed asset namespace")
         return SchedulingSnapshot(
             policy_revision=self.revision,
             captured_at=captured_at or datetime.now(UTC),
@@ -316,6 +375,9 @@ class SchedulingContractResolver:
             if any(default_route.get(key) != [] for key in ("model_ids", "tenant_ids", "service_classes")):
                 raise SchedulingContractError("Kueue fallback LocalQueue is not explicitly unrestricted")
             local_queue_name = default_local_queue
+        return self._route_identity(local_queue_name)
+
+    def _route_identity(self, local_queue_name: str) -> tuple[str, str, str]:
         local_queue = _object(self.local_queues.get(local_queue_name), "Kueue LocalQueue")
         metadata = _object(local_queue.get("metadata"), "Kueue LocalQueue metadata")
         spec = _object(local_queue.get("spec"), "Kueue LocalQueue spec")

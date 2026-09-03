@@ -2054,6 +2054,30 @@ class DeploymentContractTests(unittest.TestCase):
             control_plane_source,
         )
 
+    def test_workloads_hands_the_scientific_contract_to_one_chart_owner(self) -> None:
+        control_plane_source = (
+            DEPLOY_ROOT / "stages/workloads/control_plane.tf"
+        ).read_text(encoding="utf-8")
+        execution_map_template = (
+            DEPLOY_ROOT
+            / "charts/control-plane/fs2-serve-control-plane/templates/scientific-execution-map.yaml"
+        ).read_text(encoding="utf-8")
+
+        for expression in (
+            "module.kueue_scheduling.contract.scientific_workload_namespace",
+            "kubernetes_config_map_v1.scientific_scheduling_contract.metadata[0].name",
+            "var.scientific_batch.execution_map",
+            "scientificArtifacts = {",
+            "credentials_secret_name",
+            "artifactStoreCidrs",
+        ):
+            with self.subTest(expression=expression):
+                self.assertIn(expression, control_plane_source)
+        self.assertIn('.Values.scientificBatch.executionMap.schema', execution_map_template)
+        self.assertIn('resource-owner: helm/fs2-serve-control-plane', execution_map_template)
+        self.assertIn('immutable: true', execution_map_template)
+        self.assertNotIn('resource "kubernetes_config_map_v1" "scientific_execution', control_plane_source)
+
     def test_h100_cosmos_and_qwen_open_the_exact_distinct_runtime_ports(self) -> None:
         inventory = json.loads(
             (

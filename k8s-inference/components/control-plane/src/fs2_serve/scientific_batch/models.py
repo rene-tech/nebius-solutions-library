@@ -71,7 +71,7 @@ class ResourceClass(StrEnum):
 class StagePlacementClass(StrEnum):
     """Operator-owned placement lane frozen independently for every stage."""
 
-    REFERENCE_DATA_CPU = "reference-data-cpu"
+    REFERENCE_DATA_CPU = "reference-data"
     GENERAL_CPU = "general-cpu"
     ACCELERATOR = "accelerator"
 

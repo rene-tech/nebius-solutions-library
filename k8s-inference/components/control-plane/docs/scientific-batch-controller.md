@@ -14,17 +14,21 @@ Every batch is keyed by the UUID of an existing durable FS2 Operation. Migration
 and controller fencing; it does not create a second public operation ledger or
 duplicate the artifact-service-owned attempt, artifact, stage-commit, or result
 tables.
-Migration `0016_scientific_batch_state_v7.sql` permits a rolling read of existing
-v6 rows and upgrades them on their next controller write. The closed codec
+Migration `0016_scientific_batch_state_v7.sql` first permitted a rolling read of
+v6 rows. Migration `0017_scientific_batch_state_v8.sql` now preserves both v6
+and v7 rows and upgrades them on their next controller write. The closed codec
 derives the former single execution/LocalQueue namespace from an applied
 attempt, or from the historical `fs2-models` default when no attempt exists;
-every emitted state is v7 with both namespaces explicit. The migration also
-normalizes the exact historical v6 scheduling-stage representation (removing
+every emitted state is v8 with both namespaces explicit. The migrations
+normalize the exact historical v6 scheduling-stage representation (removing
 the provisional admitted-flavor slot and deriving `resource_class` from the
 immutable plan) and adds JSON null for the formerly absent runtime-mount
-manifest identity before enforcing immutable-admission equality. A frozen
-`ec3440a2` v6 codec fixture is exercised through real PostgreSQL `replace` and
-`request_cancel` writes; queue or runtime-manifest drift remains rejected.
+manifest identity. V8 additionally freezes the execution-map content digest,
+per-stage image/resource bindings, and bounded aggregate-tree artifact identity
+without rewriting legacy bytes during the trigger comparison. Frozen `ec3440a2`
+v6 and `545d71d9` v7 codec fixtures are exercised through real PostgreSQL
+`replace` and `request_cancel` writes; queue, admission, execution-map, or
+runtime-manifest drift remains rejected.
 `batch_id` and logical `workload_id` are deterministic, stable children of the
 Operation. Both survive retry; only `attempt_id` and the concrete Kubernetes
 resource name change. The service projects these internal UUIDs to opaque
@@ -89,14 +93,15 @@ Every PodSet that does request the exact GPU resource must carry a positive
 quantity and one consistent ResourceFlavor; their total must equal the frozen
 accelerator count before the assignment is persisted.
 
-A unique model-specific `local_queue_routes` entry takes precedence over the
-service class's default LocalQueue, and a matching tenant selector is mandatory
-when that route is tenant-bounded. A tenant-only route is used only when no
-model-specific route exists. Ambiguous routes, a tenant/model mismatch, or an
-execution-map namespace different from the selected LocalQueue namespace fail
-before durable batch admission. The execution map contributes only the model's
-operator-owned workload namespace; it cannot supply or override the LocalQueue,
-ClusterQueue, priority, pool, flavor, or resource fields.
+Routes are filtered by service class, model, and tenant. A matching exact tenant
+route outranks a wildcard-tenant route; the explicitly unrestricted service-class
+default is used only when no selected route remains. Exact and wildcard routes
+may coexist, but two routes at the same rank are rejected. A namespace-bound
+model that would fall through outside its licensed-asset namespace, any selector
+mismatch, or an execution-map namespace different from the selected LocalQueue
+namespace fails before durable batch admission. The execution map contributes
+only the model's operator-owned workload namespace; it cannot supply or override
+the LocalQueue, ClusterQueue, priority, pool, flavor, or resource fields.
 
 ## Catalog profile adapter boundary
 
@@ -393,8 +398,11 @@ workspace root.
 
 `runtime_artifacts` is an operator attestation, not a request field. Each
 execution-map item binds a logical artifact ID and physical read-only source to
-an exact aggregate content digest, complete `(path, sha256, size_bytes)` file
-manifest, and localization receipt digest. Each `StageInvocation` lists the
+an exact content digest and localization receipt. Small artifacts use a bounded
+`(path, sha256, size_bytes)` file manifest. Large installed trees use the v8
+aggregate identity `(algorithm, tree digest, total bytes, file count, marker
+path)`; this represents the observed 8,697-file PyRosetta tree without exceeding
+the 4,096-entry bound. Each `StageInvocation` lists the
 runtime artifacts used by that enabled stage and carries one or more exact
 `RuntimeArtifactMount` projections per ID: approved target `mount_path`, optional safe
 `sub_path`, expected content SHA, authorization/readiness receipt SHAs, and
@@ -438,9 +446,11 @@ GPU invocations must declare the complete common bundle
 `clusters-by-entity-40.txt`, and `obsolete_release_date.csv`; a weights-only GPU
 stage is invalid.
 
-Native BindCraft is additionally fenced to the reviewed artifact-free image
-`sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1`
-and the academic namespace, ServiceAccount, PVC, and GID contract. Its AF2
+Native BindCraft is additionally fenced to the exact digest-qualified image
+selected by the runtime catalog and the Terraform academic namespace,
+ServiceAccount, PVC, and GID handoff. The admitted image digest is persisted and
+injected as `FS2_RUNTIME_IMAGE_DIGEST`; it is never a hard-coded controller
+constant. Its AF2
 artifact must contain `manifest.json` and mount at `/models/alphafold2`; the
 PyRosetta installed tree must have content identity
 `a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d`
@@ -452,23 +462,25 @@ two exact ColabDesign package directories. BindCraft argv must begin with
 bypass the image's AF2 artifact gate, and the merged environment must remain
 offline.
 
-Native AlphaFold3 follows the merged academic contract exactly: Jobs execute in
-`fs2-academic-poc`, use LocalQueue `academic-scientific` and ServiceAccount
-`fs2-academic-runner`, and mount parameters from
-`academic-assets-runtime-rwx` read-only with supplemental GID 65532. Its final
-database mount uses the content-addressed reference-data subtree above with GID
-1000. The execution map must remain disabled for that binding until the stager's
-published manifest supplies the final tree digest; no broad-root placeholder is
-valid.
+Native AlphaFold3 follows the Terraform academic handoff exactly: namespace,
+GPU LocalQueue/ClusterQueue, reference-data LocalQueue/ClusterQueue, runner
+ServiceAccount, private claim, supplemental GID, readiness receipt, and complete
+source/content identities are equality-validated rather than embedded as model
+literals. The CPU stage uses the distinct reference-data queue, exact 6 CPU / 24
+GiB envelope, and matching jackhmmer/nhmmer thread flags; only it mounts the
+content-addressed database subtree. The dependent GPU stage mounts parameters,
+never the host database, and consumes only the validated preprocessing envelope.
+The execution map remains disabled until the stager supplies the final tree
+digest; no broad-root placeholder is valid.
 
-The same namespace rule applies to native BindCraft. For this academic proof of
-concept, the scheduling contract routes both model IDs for the authorized
-academic tenant to `academic-scientific`; the scheduling snapshot freezes
-`workload_namespace=route_namespace=fs2-academic-poc`. Kubernetes create,
-observe, UID-fenced delete, and result projection all consume that frozen value.
-Helm rejects an academic execution-map binding unless the reviewed namespace,
-PVC, LocalQueue, and ServiceAccount contract is enabled, so no rendered Job can
-pretend to mount the licensed claim from `fs2-models`.
+The same namespace rule applies to native BindCraft. The scheduling contract
+routes every access-profile=`academic` model for the authorized tenant to the
+Terraform-provided academic lane; the snapshot freezes the resolved namespace
+per stage. Kubernetes create, observe, UID-fenced delete, and result projection
+all consume that frozen value. Helm derives academic enforcement from the access
+profile and rejects any execution-map binding that differs from the complete
+Terraform handoff, so a rendered Job cannot pretend to mount a licensed claim
+cross-namespace.
 
 Helm's `scientificBatch.enabled` and `scientificBatch.writesEnabled` gates are
 both false by default and must be enabled together. Enabling requires:
@@ -499,7 +511,7 @@ The fake cluster enforces immutable names and mutation fences. The focused
 tests cover sequential commit gating, contained logical-manifest resolution,
 relative AF3/Protenix handoff relocation, exact runtime mounts and localization
 receipts, the dual-target BindCraft MPNN projection and explicit runtime gate,
-the frozen v6-to-v7 real-PostgreSQL write path, delayed artifact publication,
+the frozen v6/v7-to-v8 real-PostgreSQL write paths, delayed artifact publication,
 fan-out and gang rendering, routed
 LocalQueue namespaces, required GPU pool affinity, and quota handoff (including
 DELETE 202, a still-present UID, confirmed absence, and a DELETE 409 fence),

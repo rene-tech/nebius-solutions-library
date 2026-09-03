@@ -86,6 +86,8 @@ from fs2_serve.scientific_batch.models import (
     ServiceClass,
     StageExecutionBinding,
     StageInvocation,
+    StagePlacementClass,
+    StageResourceEnvelope,
     StageVolumeBinding,
     VerifiedInputManifest,
     WorkloadKind,
@@ -225,6 +227,8 @@ def scheduling() -> SchedulingContractResolver:
                 }
             },
             "cpu_classes": {},
+            "cpu_stage_requests": {},
+            "namespace_bound_models": {},
             "pools": {
                 "h100-hot": {
                     "resource_flavor": "h100-hot-flavor",
@@ -264,6 +268,10 @@ def scheduling_with_academic_route(*, shadow: bool = False) -> dict[str, object]
         "model_ids": ["alphafold3", "bindcraft"],
         "tenant_ids": [ACADEMIC_TENANT_ID],
         "service_classes": ["customer-batch"],
+    }
+    contract["namespace_bound_models"] = {
+        "alphafold3": namespace,
+        "bindcraft": namespace,
     }
     if shadow:
         contract["local_queues"]["academic-shadow"] = {
@@ -902,6 +910,139 @@ def test_scheduling_resolver_rejects_ambiguous_model_tenant_execution_namespaces
             tenant_id=ACADEMIC_TENANT_ID,
             profile=academic_profile,
             plan=ScientificBatchPlan((ScientificStagePlan(stage_id="design"),)),
+            workload_namespace="fs2-academic-poc",
+        )
+
+
+def test_scheduling_resolver_prefers_exact_route_and_fails_closed_for_bound_model() -> None:
+    contract = scheduling_with_academic_route()
+    profile = profile_value()
+    profile["model_id"] = "alphafold3"
+    plan = ScientificBatchPlan((ScientificStagePlan(stage_id="design"),))
+    frozen = SchedulingContractResolver(contract).freeze(
+        service_class="customer-batch",
+        model_id="alphafold3",
+        tenant_id=ACADEMIC_TENANT_ID,
+        profile=profile,
+        plan=plan,
+        workload_namespace="fs2-academic-poc",
+    )
+    assert frozen.stage("design").resolved_local_queue == "academic-scientific"
+
+    with pytest.raises(SchedulingContractError, match="namespace-bound model resolved outside"):
+        SchedulingContractResolver(contract).freeze(
+            service_class="customer-batch",
+            model_id="alphafold3",
+            tenant_id="unmatched-tenant",
+            profile=profile,
+            plan=plan,
+        )
+
+
+def test_controller_consumes_exact_terraform_scheduling_fixture_with_per_stage_routes() -> None:
+    fixture = SOLUTION_ROOT / "modules/kueue-scheduling/tests/fixtures/controller-contract.json"
+    encoded = fixture.read_bytes()
+    resolver = SchedulingContractResolver.load(fixture)
+    assert resolver.raw_contract_sha256 == f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+    profile = profile_value()
+    profile["model_id"] = "example-licensed-model"
+    profile["resources"] = {"gpu_count": 1, "compatible_pool_ids": ["reserved", "burst"]}
+    profile["workload"] = {
+        "retry": {"max_attempts": 2},
+        "stages": [
+            {
+                "id": "data-pipeline",
+                "needs": [],
+                "resource_class": "cpu",
+                "admission_mode": "independent-jobs",
+                "min_parallelism": 1,
+                "max_parallelism": 1,
+                "checkpoint_mode": "restart",
+                "preemption_mode": "restartable",
+            },
+            {
+                "id": "inference",
+                "needs": ["data-pipeline"],
+                "resource_class": "gpu",
+                "admission_mode": "independent-jobs",
+                "min_parallelism": 1,
+                "max_parallelism": 1,
+                "checkpoint_mode": "restart",
+                "preemption_mode": "restartable",
+            },
+        ],
+    }
+    plan = ScientificBatchPlan(
+        (
+            ScientificStagePlan(
+                stage_id="data-pipeline",
+                resource_class=ResourceClass.CPU,
+                placement_class=StagePlacementClass.REFERENCE_DATA_CPU,
+                resources=StageResourceEnvelope(
+                    cpu_millis=6000,
+                    memory_bytes=24 * 1024**3,
+                    ephemeral_storage_bytes=50 * 1024**3,
+                    limit_cpu_millis=6000,
+                    limit_memory_bytes=24 * 1024**3,
+                    limit_ephemeral_storage_bytes=50 * 1024**3,
+                ),
+            ),
+            ScientificStagePlan(stage_id="inference", depends_on=("data-pipeline",)),
+        )
+    )
+    frozen = resolver.freeze(
+        service_class="customer-batch",
+        model_id="example-licensed-model",
+        tenant_id="tenant-academic",
+        profile=profile,
+        plan=plan,
+        workload_namespace="fs2-academic-poc",
+    )
+    cpu, gpu = frozen.stages
+    assert (cpu.resolved_local_queue, cpu.resolved_cluster_queue) == (
+        "academic-scientific-cpu",
+        "reference-data-cpu",
+    )
+    assert cpu.placement_class is StagePlacementClass.REFERENCE_DATA_CPU
+    assert dict(cpu.node_selector) == {"workload.fs2.nebius/reference-data": "true"}
+    assert (gpu.resolved_local_queue, gpu.resolved_cluster_queue) == (
+        "academic-scientific",
+        "inference-accelerators",
+    )
+    assert gpu.resolved_pool_preference == ("reserved", "burst")
+
+
+def test_controller_rejects_cpu_stage_larger_than_terraform_capacity() -> None:
+    fixture = SOLUTION_ROOT / "modules/kueue-scheduling/tests/fixtures/controller-contract.json"
+    profile = profile_value()
+    profile["model_id"] = "example-licensed-model"
+    profile["resources"] = {"gpu_count": 1, "compatible_pool_ids": ["reserved"]}
+    profile["workload"]["stages"][0]["id"] = "data-pipeline"
+    profile["workload"]["stages"][0]["resource_class"] = "cpu"
+    plan = ScientificBatchPlan(
+        (
+            ScientificStagePlan(
+                stage_id="data-pipeline",
+                resource_class=ResourceClass.CPU,
+                placement_class=StagePlacementClass.REFERENCE_DATA_CPU,
+                resources=StageResourceEnvelope(
+                    cpu_millis=16001,
+                    memory_bytes=24 * 1024**3,
+                    ephemeral_storage_bytes=100 * 1024**3,
+                    limit_cpu_millis=16001,
+                    limit_memory_bytes=24 * 1024**3,
+                    limit_ephemeral_storage_bytes=100 * 1024**3,
+                ),
+            ),
+        )
+    )
+    with pytest.raises(SchedulingContractError, match="exceeds its placement class"):
+        SchedulingContractResolver.load(fixture).freeze(
+            service_class="customer-batch",
+            model_id="example-licensed-model",
+            tenant_id="tenant-academic",
+            profile=profile,
+            plan=plan,
             workload_namespace="fs2-academic-poc",
         )
 

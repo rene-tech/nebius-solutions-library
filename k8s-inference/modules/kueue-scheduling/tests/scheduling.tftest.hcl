@@ -194,10 +194,16 @@ variables {
       }
     }
   }
+
 }
 
 run "renders_weighted_shared_accelerator_queues" {
   command = plan
+
+  assert {
+    condition     = jsonencode(output.contract) == jsonencode(jsondecode(file("${path.module}/tests/fixtures/controller-contract.json")))
+    error_message = "The controller fixture must be the exact Terraform-generated scheduling document, not a hand-authored superset."
+  }
 
   assert {
     condition = output.contract.shared_pool_quota == {

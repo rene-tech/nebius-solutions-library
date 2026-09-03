@@ -11,6 +11,45 @@ locals {
     # runtime learns which claim to mount, where, and which group grants read
     # access. The control plane itself never mounts licensed bytes.
     academicAssets = local.academic_chart_values
+    scientificBatch = {
+      enabled                         = var.scientific_batch.enabled
+      writesEnabled                   = var.scientific_batch.writes_enabled
+      namespace                       = module.kueue_scheduling.contract.scientific_workload_namespace
+      kubernetesApiUrl                = "https://kubernetes.default.svc"
+      schedulingContractConfigMapName = kubernetes_config_map_v1.scientific_scheduling_contract.metadata[0].name
+      schedulingContractKey           = local.scheduling_contract_key
+      executionMapConfigMapName       = "fs2-${var.run_id}-scientific-execution"
+      executionMapKey                 = "execution-map.json"
+      executionMap                    = var.scientific_batch.execution_map
+      workers                         = var.scientific_batch.workers
+      pollSeconds                     = var.scientific_batch.poll_seconds
+      leaseSeconds                    = var.scientific_batch.lease_seconds
+      apiTimeoutSeconds               = var.scientific_batch.api_timeout_seconds
+      tokenExpirationSeconds          = var.scientific_batch.token_expiration_seconds
+    }
+    scientificArtifacts = {
+      enabled          = var.scientific_batch.artifacts.enabled
+      endpoint         = var.scientific_batch.artifacts.endpoint
+      bucket           = var.scientific_batch.artifacts.bucket
+      region           = var.scientific_batch.artifacts.region
+      addressingStyle  = var.scientific_batch.artifacts.addressing_style
+      verifyTls        = var.scientific_batch.artifacts.verify_tls
+      handleTtlSeconds = var.scientific_batch.artifacts.handle_ttl_seconds
+      maxBytes         = var.scientific_batch.artifacts.max_bytes
+      retentionSeconds = var.scientific_batch.artifacts.retention_seconds
+      mediaTypes       = var.scientific_batch.artifacts.media_types
+      egressCidrs      = sort(tolist(var.scientific_batch.artifacts.egress_cidrs))
+    }
+    secrets = {
+      artifactStore = {
+        name = (
+          var.scientific_batch.artifacts.enabled
+          ? var.scientific_batch.artifacts.credentials_secret_name
+          : "fs2-serve-artifact-store"
+        )
+        key = var.scientific_batch.artifacts.credentials_secret_key
+      }
+    }
     catalog = {
       delivery                          = "image"
       imagePath                         = "/opt/fs2/catalog"
@@ -37,6 +76,7 @@ locals {
     } : {})
     networkPolicy = {
       kubernetesApiCidrs = sort(tolist(local.kubernetes_api_egress_cidrs))
+      artifactStoreCidrs = sort(tolist(var.scientific_batch.artifacts.egress_cidrs))
       dns                = { podLabels = { "k8s-app" = "coredns" } }
       prometheus = {
         namespaceLabels = { "kubernetes.io/metadata.name" = "fs2-observability" }
@@ -209,6 +249,7 @@ resource "helm_release" "control_plane" {
     kubernetes_config_map_v1.admin_configuration,
     kubernetes_config_map_v1.model_controller_envelope,
     kubernetes_config_map_v1.model_controller_bundles,
+    kubernetes_config_map_v1.scientific_scheduling_contract,
     kubernetes_manifest.model,
   ]
 }

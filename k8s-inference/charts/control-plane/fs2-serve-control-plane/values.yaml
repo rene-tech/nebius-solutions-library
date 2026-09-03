@@ -294,11 +294,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: 0e5b4432885ffc0dcdaec8edde2c0bc8ec8662478bacaa59670b2bffb30c8fe1
-    migrationSetSha256: 72ae1b37e07a9b2cdf16f60d79b338dc669ef4d5b26c7277021b60f81c62fa44
-    migrationCount: 16
+    contractPayloadSha256: 88665d6c508bdca6c756d9a6d1b29394e6571f72f441018b9afd26b4ff74ce1b
+    migrationSetSha256: 5de2500fc6bc0b75f028614936af7fa6c177bc96d78eebe79e3736bae10e65ce
+    migrationCount: 17
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0016_scientific_batch_state_v7.sql
+    lastMigrationVersion: 0017_scientific_batch_state_v8.sql
     namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
   resources:
     requests:
@@ -595,6 +595,8 @@ academicAssets:
   mountRoot: /opt/fs2/academic
   assetGid: 65532
   readOnly: true
+  tenantId: tenant-academic
+  readinessManifestSha256: null
   # Exact per-object bindings. A subPath mount cannot be derived from a claim and a
   # mount root alone, so the renderer consumes these directly.
   runtimeBindings: {}
@@ -604,6 +606,9 @@ academicAssets:
     enabled: false
     namespace: fs2-academic-poc
     localQueue: academic-scientific
+    clusterQueue: inference-accelerators
+    referenceDataLocalQueue: ""
+    referenceDataClusterQueue: ""
     serviceAccount: fs2-academic-runner
 
 # Scientific artifact provenance and result service. Disabled by default: the

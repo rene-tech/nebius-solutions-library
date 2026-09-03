@@ -1,0 +1,639 @@
+{
+  "cluster_queue_namespaces": {
+    "customer-batch": [
+      "fs2-models"
+    ],
+    "inference-accelerators": [
+      "fs2-academic-poc",
+      "fs2-models"
+    ],
+    "reference-data-cpu": [
+      "fs2-academic-poc",
+      "fs2-reference-data"
+    ]
+  },
+  "cluster_queue_pool_order": {
+    "customer-batch": [
+      "reserved",
+      "burst",
+      "partitioned"
+    ],
+    "inference-accelerators": [
+      "reserved",
+      "burst",
+      "partitioned"
+    ]
+  },
+  "cluster_queues": {
+    "customer-batch": {
+      "apiVersion": "kueue.x-k8s.io/v1beta2",
+      "kind": "ClusterQueue",
+      "metadata": {
+        "annotations": {
+          "fs2-serve.nebius.ai/accelerator-pool-ids": "reserved,burst,partitioned",
+          "fs2-serve.nebius.ai/admitted-namespaces": "fs2-models",
+          "fs2-serve.nebius.ai/priority-precedence": "localqueue-fair-share-then-priority"
+        },
+        "labels": {},
+        "name": "customer-batch"
+      },
+      "spec": {
+        "admissionScope": {
+          "admissionMode": "UsageBasedAdmissionFairSharing"
+        },
+        "cohortName": "inference-shared",
+        "fairSharing": {
+          "weight": "4"
+        },
+        "flavorFungibility": {
+          "preference": "PreemptionOverBorrowing",
+          "whenCanBorrow": "TryNextFlavor",
+          "whenCanPreempt": "TryNextFlavor"
+        },
+        "namespaceSelector": {
+          "matchExpressions": [
+            {
+              "key": "kubernetes.io/metadata.name",
+              "operator": "In",
+              "values": [
+                "fs2-models"
+              ]
+            }
+          ]
+        },
+        "preemption": {
+          "reclaimWithinCohort": "LowerPriority",
+          "withinClusterQueue": "LowerPriority"
+        },
+        "queueingStrategy": "BestEffortFIFO",
+        "resourceGroups": [
+          {
+            "coveredResources": [
+              "example.com/accelerator"
+            ],
+            "flavors": [
+              {
+                "name": "example-reserved",
+                "resources": [
+                  {
+                    "borrowingLimit": "4",
+                    "name": "example.com/accelerator",
+                    "nominalQuota": "2"
+                  }
+                ]
+              },
+              {
+                "name": "example-burst",
+                "resources": [
+                  {
+                    "borrowingLimit": "3",
+                    "name": "example.com/accelerator",
+                    "nominalQuota": "1"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "coveredResources": [
+              "example.com/accelerator-slice"
+            ],
+            "flavors": [
+              {
+                "name": "example-partitioned",
+                "resources": [
+                  {
+                    "name": "example.com/accelerator-slice",
+                    "nominalQuota": "0"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "stopPolicy": "None"
+      }
+    },
+    "inference-accelerators": {
+      "apiVersion": "kueue.x-k8s.io/v1beta2",
+      "kind": "ClusterQueue",
+      "metadata": {
+        "annotations": {
+          "fs2-serve.nebius.ai/accelerator-pool-ids": "reserved,burst,partitioned",
+          "fs2-serve.nebius.ai/admitted-namespaces": "fs2-academic-poc,fs2-models",
+          "fs2-serve.nebius.ai/priority-precedence": "localqueue-fair-share-then-priority"
+        },
+        "labels": {},
+        "name": "inference-accelerators"
+      },
+      "spec": {
+        "admissionScope": {
+          "admissionMode": "UsageBasedAdmissionFairSharing"
+        },
+        "cohortName": "inference-shared",
+        "fairSharing": {
+          "weight": "1"
+        },
+        "flavorFungibility": {
+          "whenCanBorrow": "MayStopSearch",
+          "whenCanPreempt": "TryNextFlavor"
+        },
+        "namespaceSelector": {
+          "matchExpressions": [
+            {
+              "key": "kubernetes.io/metadata.name",
+              "operator": "In",
+              "values": [
+                "fs2-academic-poc",
+                "fs2-models"
+              ]
+            }
+          ]
+        },
+        "preemption": {
+          "reclaimWithinCohort": "LowerPriority",
+          "withinClusterQueue": "LowerPriority"
+        },
+        "queueingStrategy": "BestEffortFIFO",
+        "resourceGroups": [
+          {
+            "coveredResources": [
+              "example.com/accelerator"
+            ],
+            "flavors": [
+              {
+                "name": "example-reserved",
+                "resources": [
+                  {
+                    "lendingLimit": "0",
+                    "name": "example.com/accelerator",
+                    "nominalQuota": "2"
+                  }
+                ]
+              },
+              {
+                "name": "example-burst",
+                "resources": [
+                  {
+                    "name": "example.com/accelerator",
+                    "nominalQuota": "0"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "coveredResources": [
+              "example.com/accelerator-slice"
+            ],
+            "flavors": [
+              {
+                "name": "example-partitioned",
+                "resources": [
+                  {
+                    "name": "example.com/accelerator-slice",
+                    "nominalQuota": "0"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "stopPolicy": "None"
+      }
+    }
+  },
+  "cohort": {
+    "apiVersion": "kueue.x-k8s.io/v1beta2",
+    "kind": "Cohort",
+    "metadata": {
+      "annotations": {},
+      "labels": {},
+      "name": "inference-shared"
+    },
+    "spec": {
+      "fairSharing": {
+        "weight": "1"
+      },
+      "resourceGroups": [
+        {
+          "coveredResources": [
+            "example.com/accelerator"
+          ],
+          "flavors": [
+            {
+              "name": "example-burst",
+              "resources": [
+                {
+                  "name": "example.com/accelerator",
+                  "nominalQuota": "3"
+                }
+              ]
+            },
+            {
+              "name": "example-reserved",
+              "resources": [
+                {
+                  "name": "example.com/accelerator",
+                  "nominalQuota": "4"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "coveredResources": [
+            "example.com/accelerator-slice"
+          ],
+          "flavors": [
+            {
+              "name": "example-partitioned",
+              "resources": [
+                {
+                  "name": "example.com/accelerator-slice",
+                  "nominalQuota": "2"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "core_capacity": null,
+  "core_queue_quotas": {},
+  "core_resource_admission": "excluded-not-budgeted",
+  "core_resource_flavor": null,
+  "core_shared_quota": null,
+  "cpu_classes": {
+    "reference-data": {
+      "cluster_queue": "reference-data-cpu",
+      "local_queue": "academic-scientific-cpu",
+      "namespace": "fs2-academic-poc",
+      "node_selector": {
+        "workload.fs2.nebius/reference-data": "true"
+      },
+      "pool_id": "reference-cpu",
+      "schedulable_capacity": {
+        "cpu_millicores": 16000,
+        "ephemeral_storage_mib": 51200,
+        "memory_mib": 65536
+      },
+      "tolerations": [
+        {
+          "effect": "NoSchedule",
+          "key": "workload.fs2.nebius/reference-data",
+          "operator": "Equal",
+          "value": "true"
+        }
+      ]
+    }
+  },
+  "cpu_stage_execution": "available",
+  "cpu_stage_requests": {},
+  "external_cluster_queue_names": [
+    "reference-data-cpu"
+  ],
+  "external_cluster_queue_quotas": {},
+  "external_local_queue_names": [
+    "academic-scientific"
+  ],
+  "local_queue_routes": {
+    "academic-scientific": {
+      "cluster_queue": "inference-accelerators",
+      "model_ids": [
+        "example-licensed-model"
+      ],
+      "namespace": "fs2-academic-poc",
+      "service_classes": [
+        "bulk-backfill",
+        "customer-batch",
+        "interactive",
+        "platform-critical",
+        "presentation"
+      ],
+      "tenant_ids": [
+        "tenant-academic"
+      ]
+    },
+    "academic-scientific-cpu": {
+      "cluster_queue": "reference-data-cpu",
+      "model_ids": [],
+      "namespace": "fs2-academic-poc",
+      "service_classes": [],
+      "tenant_ids": []
+    },
+    "cancer-primary": {
+      "cluster_queue": "customer-batch",
+      "model_ids": [
+        "example-primary-model"
+      ],
+      "namespace": "fs2-models",
+      "service_classes": [
+        "customer-batch"
+      ],
+      "tenant_ids": []
+    },
+    "cancer-secondary": {
+      "cluster_queue": "customer-batch",
+      "model_ids": [
+        "example-secondary-model"
+      ],
+      "namespace": "fs2-models",
+      "service_classes": [
+        "bulk-backfill"
+      ],
+      "tenant_ids": []
+    },
+    "inference-models": {
+      "cluster_queue": "inference-accelerators",
+      "model_ids": [],
+      "namespace": "fs2-models",
+      "service_classes": [],
+      "tenant_ids": []
+    }
+  },
+  "local_queues": {
+    "academic-scientific": {
+      "apiVersion": "kueue.x-k8s.io/v1beta2",
+      "kind": "LocalQueue",
+      "metadata": {
+        "annotations": {
+          "fs2-serve.nebius.ai/model-lane-count": "1",
+          "fs2-serve.nebius.ai/model-lane-sha256": "c1a7afcff5c58e4dd77f99817d87e1a44b1804fe89fc6c9980b58603a4bbcb56",
+          "fs2-serve.nebius.ai/tenant-lane-count": "1",
+          "fs2-serve.nebius.ai/tenant-lane-sha256": "fd229f3c1ccd24cb645e2da3e8eadd8783e8784755ac48d2cdebbd724c25d282"
+        },
+        "labels": {},
+        "name": "academic-scientific",
+        "namespace": "fs2-academic-poc"
+      },
+      "spec": {
+        "clusterQueue": "inference-accelerators",
+        "fairSharing": {
+          "weight": "1"
+        }
+      }
+    },
+    "academic-scientific-cpu": {
+      "apiVersion": "kueue.x-k8s.io/v1beta2",
+      "kind": "LocalQueue",
+      "metadata": {
+        "annotations": {
+          "fs2-serve.nebius.ai/model-lane-count": "0",
+          "fs2-serve.nebius.ai/model-lane-sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "fs2-serve.nebius.ai/tenant-lane-count": "0",
+          "fs2-serve.nebius.ai/tenant-lane-sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "labels": {},
+        "name": "academic-scientific-cpu",
+        "namespace": "fs2-academic-poc"
+      },
+      "spec": {
+        "clusterQueue": "reference-data-cpu",
+        "fairSharing": {
+          "weight": "1"
+        }
+      }
+    },
+    "cancer-primary": {
+      "apiVersion": "kueue.x-k8s.io/v1beta2",
+      "kind": "LocalQueue",
+      "metadata": {
+        "annotations": {
+          "fs2-serve.nebius.ai/model-lane-count": "1",
+          "fs2-serve.nebius.ai/model-lane-sha256": "2b6838e6b620927688d528e3b829dd43aa69a60d2b907eef0ebd1c1439a768dc",
+          "fs2-serve.nebius.ai/tenant-lane-count": "0",
+          "fs2-serve.nebius.ai/tenant-lane-sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "labels": {},
+        "name": "cancer-primary",
+        "namespace": "fs2-models"
+      },
+      "spec": {
+        "clusterQueue": "customer-batch",
+        "fairSharing": {
+          "weight": "4"
+        }
+      }
+    },
+    "cancer-secondary": {
+      "apiVersion": "kueue.x-k8s.io/v1beta2",
+      "kind": "LocalQueue",
+      "metadata": {
+        "annotations": {
+          "fs2-serve.nebius.ai/model-lane-count": "1",
+          "fs2-serve.nebius.ai/model-lane-sha256": "13d5b9cacc82ff5ef278704c274af97f70f97418b41062295611803a3c0482d3",
+          "fs2-serve.nebius.ai/tenant-lane-count": "0",
+          "fs2-serve.nebius.ai/tenant-lane-sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "labels": {},
+        "name": "cancer-secondary",
+        "namespace": "fs2-models"
+      },
+      "spec": {
+        "clusterQueue": "customer-batch",
+        "fairSharing": {
+          "weight": "1"
+        }
+      }
+    },
+    "inference-models": {
+      "apiVersion": "kueue.x-k8s.io/v1beta2",
+      "kind": "LocalQueue",
+      "metadata": {
+        "annotations": {
+          "fs2-serve.nebius.ai/model-lane-count": "0",
+          "fs2-serve.nebius.ai/model-lane-sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "fs2-serve.nebius.ai/tenant-lane-count": "0",
+          "fs2-serve.nebius.ai/tenant-lane-sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "labels": {},
+        "name": "inference-models",
+        "namespace": "fs2-models"
+      },
+      "spec": {
+        "clusterQueue": "inference-accelerators",
+        "fairSharing": {
+          "weight": "1"
+        }
+      }
+    }
+  },
+  "namespace_bound_models": {
+    "example-licensed-model": "fs2-academic-poc"
+  },
+  "pool_capacity": {
+    "burst": 4,
+    "partitioned": 2,
+    "reserved": 8
+  },
+  "pool_node_label_key": "accelerator.fs2.nebius/pool-id",
+  "pools": {
+    "burst": {
+      "accelerator_resource_name": "example.com/accelerator",
+      "capacity": 4,
+      "resource_flavor": "example-burst"
+    },
+    "partitioned": {
+      "accelerator_resource_name": "example.com/accelerator-slice",
+      "capacity": 2,
+      "resource_flavor": "example-partitioned"
+    },
+    "reserved": {
+      "accelerator_resource_name": "example.com/accelerator",
+      "capacity": 8,
+      "resource_flavor": "example-reserved"
+    }
+  },
+  "priority_precedence": {
+    "customer-batch": "localqueue-fair-share-then-priority",
+    "inference-accelerators": "localqueue-fair-share-then-priority"
+  },
+  "resource_flavor_pool_ids": {
+    "example-burst": "burst",
+    "example-partitioned": "partitioned",
+    "example-reserved": "reserved"
+  },
+  "schema": "fs2-serve.nebius.ai/kueue-scheduling/v1",
+  "scientific_workload_namespace": "fs2-models",
+  "service_classes": {
+    "bulk-backfill": {
+      "caller_selectable": true,
+      "default_local_queue": "cancer-secondary",
+      "description": "Opportunistic bulk or backfill work that yields to higher service classes.",
+      "max_execution_seconds": null,
+      "max_queue_seconds": null,
+      "pool_preference": [
+        "reserved",
+        "burst",
+        "partitioned"
+      ],
+      "preemption_mode": "restartable",
+      "priority": -100,
+      "workload_priority_class": "batch"
+    },
+    "customer-batch": {
+      "caller_selectable": true,
+      "default_local_queue": "cancer-primary",
+      "description": "Deterministic test batch policy.",
+      "max_execution_seconds": 21600,
+      "max_queue_seconds": 3600,
+      "pool_preference": [
+        "reserved",
+        "burst",
+        "partitioned"
+      ],
+      "preemption_mode": "restartable",
+      "priority": 0,
+      "workload_priority_class": "standard"
+    },
+    "interactive": {
+      "caller_selectable": true,
+      "default_local_queue": "inference-models",
+      "description": "Latency-sensitive interactive proof-of-concept work.",
+      "max_execution_seconds": null,
+      "max_queue_seconds": null,
+      "pool_preference": [
+        "reserved",
+        "burst",
+        "partitioned"
+      ],
+      "preemption_mode": "restartable",
+      "priority": 100,
+      "workload_priority_class": "interactive"
+    },
+    "platform-critical": {
+      "caller_selectable": false,
+      "default_local_queue": "inference-models",
+      "description": "Cluster-control and recovery work that must not be displaced by customer workloads.",
+      "max_execution_seconds": null,
+      "max_queue_seconds": null,
+      "pool_preference": [
+        "reserved",
+        "burst",
+        "partitioned"
+      ],
+      "preemption_mode": "restartable",
+      "priority": 10000,
+      "workload_priority_class": "platform-critical"
+    },
+    "presentation": {
+      "caller_selectable": true,
+      "default_local_queue": "inference-models",
+      "description": "Time-bounded live presentation work that outranks interactive and batch traffic.",
+      "max_execution_seconds": null,
+      "max_queue_seconds": null,
+      "pool_preference": [
+        "reserved",
+        "burst",
+        "partitioned"
+      ],
+      "preemption_mode": "restartable",
+      "priority": 1000,
+      "workload_priority_class": "presentation"
+    }
+  },
+  "shared_pool_quota": {
+    "burst": 3,
+    "partitioned": 2,
+    "reserved": 4
+  },
+  "workload_priority_classes": {
+    "batch": {
+      "apiVersion": "kueue.x-k8s.io/v1beta2",
+      "description": "FS2 inference batch workload priority",
+      "kind": "WorkloadPriorityClass",
+      "metadata": {
+        "annotations": {},
+        "labels": {},
+        "name": "batch"
+      },
+      "value": -100
+    },
+    "interactive": {
+      "apiVersion": "kueue.x-k8s.io/v1beta2",
+      "description": "FS2 inference interactive workload priority",
+      "kind": "WorkloadPriorityClass",
+      "metadata": {
+        "annotations": {},
+        "labels": {},
+        "name": "interactive"
+      },
+      "value": 100
+    },
+    "platform-critical": {
+      "apiVersion": "kueue.x-k8s.io/v1beta2",
+      "description": "FS2 inference platform-critical workload priority",
+      "kind": "WorkloadPriorityClass",
+      "metadata": {
+        "annotations": {},
+        "labels": {},
+        "name": "platform-critical"
+      },
+      "value": 10000
+    },
+    "presentation": {
+      "apiVersion": "kueue.x-k8s.io/v1beta2",
+      "description": "FS2 inference presentation workload priority",
+      "kind": "WorkloadPriorityClass",
+      "metadata": {
+        "annotations": {},
+        "labels": {},
+        "name": "presentation"
+      },
+      "value": 1000
+    },
+    "standard": {
+      "apiVersion": "kueue.x-k8s.io/v1beta2",
+      "description": "FS2 inference standard workload priority",
+      "kind": "WorkloadPriorityClass",
+      "metadata": {
+        "annotations": {},
+        "labels": {},
+        "name": "standard"
+      },
+      "value": 0
+    }
+  }
+}

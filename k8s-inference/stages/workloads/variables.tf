@@ -753,12 +753,57 @@ variable "scientific_batch" {
   type = object({
     enabled        = optional(bool, false)
     writes_enabled = optional(bool, false)
+    execution_map = optional(any, {
+      schema = "fs2-serve.nebius.ai/scientific-execution-map/v3"
+      models = []
+    })
+    workers                  = optional(number, 2)
+    poll_seconds             = optional(string, "0.25")
+    lease_seconds            = optional(string, "30")
+    api_timeout_seconds      = optional(string, "5")
+    token_expiration_seconds = optional(number, 600)
+    artifacts = optional(object({
+      enabled                 = optional(bool, false)
+      endpoint                = optional(string, "https://storage.eu-north1.nebius.cloud")
+      bucket                  = optional(string, "fs2-scientific-artifacts")
+      region                  = optional(string, "eu-north1")
+      addressing_style        = optional(string, "path")
+      verify_tls              = optional(bool, true)
+      credentials_secret_name = optional(string, "")
+      credentials_secret_key  = optional(string, "credentials.json")
+      handle_ttl_seconds      = optional(number, 600)
+      max_bytes               = optional(number, 1099511627776)
+      retention_seconds       = optional(number, 7776000)
+      media_types = optional(list(string), [
+        "application/octet-stream",
+        "application/json",
+        "application/gzip",
+        "application/vnd.fs2.scientific-manifest+json",
+        "application/vnd.fs2.scientific-validation+json",
+        "chemical/x-pdb",
+        "chemical/x-cif",
+        "text/plain",
+        "text/x-fasta",
+      ])
+      egress_cidrs = optional(set(string), [])
+    }), {})
   })
   default = {}
 
   validation {
     condition     = !var.scientific_batch.writes_enabled || var.scientific_batch.enabled
     error_message = "scientific_batch writes require enabled=true."
+  }
+
+  validation {
+    condition = !var.scientific_batch.enabled || try(
+      var.scientific_batch.execution_map.schema == "fs2-serve.nebius.ai/scientific-execution-map/v3" &&
+      length(var.scientific_batch.execution_map.models) > 0 &&
+      var.scientific_batch.artifacts.enabled &&
+      length(var.scientific_batch.artifacts.credentials_secret_name) > 0,
+      false,
+    )
+    error_message = "scientific_batch.enabled requires a non-empty schema-v3 execution map plus the canonical artifact service and its existing credential Secret."
   }
 }
 
@@ -1429,5 +1474,25 @@ variable "academic_assets" {
       ])
     )
     error_message = "academic_assets tenant, namespace, LocalQueue, and model identities must be Kubernetes label-safe values of at most 63 characters so the derived Kueue route is renderable."
+  }
+
+  validation {
+    condition = !var.academic_assets.enabled || !var.academic_assets.execution.enabled || try(
+      can(regex("^[a-f0-9]{64}$", var.academic_assets.readiness_manifest_sha256)) &&
+      length(var.academic_assets.assets) > 0 &&
+      alltrue([
+        for asset in values(var.academic_assets.assets) :
+        asset.runtime_binding != null &&
+        asset.runtime_binding.content_digest_sha256 != null &&
+        asset.runtime_binding.size_bytes != null &&
+        asset.runtime_binding.source_artifact != null &&
+        (
+          asset.runtime_binding.content_identity_kind != "tree-manifest" ||
+          asset.runtime_binding.content_manifest_algorithm != null
+        )
+      ]),
+      false,
+    )
+    error_message = "Academic execution requires the exact readiness receipt and complete source/content identity for every runtime binding."
   }
 }

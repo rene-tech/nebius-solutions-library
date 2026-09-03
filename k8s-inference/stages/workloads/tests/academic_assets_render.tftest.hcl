@@ -257,6 +257,9 @@ run "enabled_academic_config_reaches_the_chart" {
         general_shared_cache    = false
         deny_egress_on_validate = true
       }
+      execution = {
+        enabled = false
+      }
       assets                    = {}
       readiness_manifest_sha256 = null
     }
