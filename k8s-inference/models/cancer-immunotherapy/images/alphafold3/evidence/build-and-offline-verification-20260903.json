@@ -248,7 +248,52 @@
       "effect": "A pod following the published binding, runAsUser 12345 with supplementalGroups [65532] and no fsGroup, now gets EACCES opening /models/af3.bin.zst, because 65532 is the owning uid while the group is 10001. Licensed bytes are also now group writable, which the academic-assets contract forbids.",
       "attributed_cause": "Two pods in fs2-academic-poc, fs2-cxq-p-fsg and fs2-cxq-perm2, mounted the claim with fsGroup 10001. With the default fsGroupChangePolicy of Always the kubelet recursively chowns the whole claim, which is exactly the outcome the parameter binding contract warns about.",
       "impact_on_this_acceptance": "None. The H100 acceptance recorded above ran and passed before this change, verified the artifact digest at that time, and the artifact content is unchanged.",
-      "not_repaired_by_this_task": "The claim and its permissions are owned by the academic-assets work and its Terraform module. Changing ownership or modes on another task's licensed asset is outside this task's scope, so the finding is reported rather than patched."
+      "not_repaired_by_this_task": "The claim and its permissions are owned by the academic-assets work and its Terraform module. Changing ownership or modes on another task's licensed asset is outside this task's scope, so the finding is reported rather than patched.",
+      "blast_radius": {
+        "verified_by": "this task, with a read-only audit pod using supplementalGroups [65532] and no fsGroup, since deleted",
+        "first_extended_by": "the fast-start live campaign task, which found the second damaged tree",
+        "observed_at": "2026-09-03T04:52:00Z",
+        "claim": "academic-assets-runtime-rwx in fs2-academic-poc",
+        "unreadable_to_a_conforming_pod": [
+          {
+            "tree": "alphafold3",
+            "mode": "2770",
+            "owner_uid": 65532,
+            "group": 10001,
+            "holds": "the licensed AlphaFold 3 parameter object"
+          },
+          {
+            "tree": "pyrosetta-bindcraft",
+            "mode": "2770",
+            "owner_uid": 65532,
+            "group": 10001,
+            "holds": "the licensed PyRosetta wheel and installed tree",
+            "note": "belongs to the BindCraft work, which has been notified directly"
+          }
+        ],
+        "still_readable": [
+          {
+            "tree": "scientific-ingestion",
+            "mode": "2775",
+            "group": 10001
+          },
+          {
+            "tree": "scientific-localization",
+            "mode": "2775",
+            "group": 10001,
+            "contains": [
+              "public/alphafold2-params",
+              "public/alphafold2-params-bindcraft",
+              "public/boltzgen-inference-molecules",
+              "public/colabdesign-mpnn-weights-soluble",
+              "public/colabdesign-mpnn-weights-vanilla"
+            ],
+            "read_probe": "a file under public/ was opened successfully"
+          }
+        ],
+        "why_some_survived": "The recursive chown moved every tree to group 10001, but only the two gated trees were mode 2770. The localization trees kept their world-traverse and world-read bits at 2775, so a pod outside the new group can still reach them. The damage tracks the mode the tree already had, not what it holds.",
+        "not_a_full_outage": "Work that depends only on the public localization trees is not blocked. Only the two licensed trees are."
+      }
     },
     {
       "finding": "the runtime reports an unreadable parameter mount as a traceback rather than a fail-closed receipt",
