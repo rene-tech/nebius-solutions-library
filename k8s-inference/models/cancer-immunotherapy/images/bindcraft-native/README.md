@@ -217,6 +217,23 @@ active thresholds require `Average_n_InterfaceResidues` ≥ 7, `Average_dSASA` �
 `Average_i_pTM` ≥ 0.5 — so a design that passes has, by construction, non-zero
 interface residues, non-zero buried area and a non-zero PyRosetta score.
 
+### The acceptance receipt must say which claim state it ran against
+
+The academic claim is currently **non-conforming**. Its published delivery
+contract is `asset_gid` 65532 with supplemental-group access, but the tree is
+owned by group 10001 because pods mounting it with `fsGroup: 10001` had the
+kubelet recursively chown it. Repair belongs to the academic-assets owner; four
+tasks have hit it.
+
+This matters for evidence, not for whether the run works. The Pod runs as
+`10001:10001` with supplemental group 65532, so it reaches a repaired tree
+through the supplemental group and the damaged tree through its primary group —
+it passes either way. A green run therefore proves the semantics and proves
+nothing about the access contract. The acceptance receipt must record the uid,
+gid and mode of all four admitted tree roots, measured at run time, as a
+first-class field; a conformance claim may only be made when that shows gid
+65532.
+
 Two requirements the handoff must satisfy, both cheap now and expensive after
 publication:
 

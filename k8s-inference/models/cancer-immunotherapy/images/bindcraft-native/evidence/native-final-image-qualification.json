@@ -237,7 +237,9 @@
         "works_in_both_states": "the Pod runs runAsUser 10001 runAsGroup 10001 with supplemental group 65532, so it reaches a repaired tree through the supplemental group and the damaged tree through its primary group",
         "hazard_to_watch": "that robustness masks the fault: an acceptance run would succeed against the damaged claim and must not be read as proving the 65532 supplemental-group access contract. Re-measure the ownership at run time and record it beside the result."
       },
-      "shared_repair": "repairing the claim is the academic-assets owner's call, not this task's; four tasks have now hit it and none has repaired it, and this task will not chown a shared claim it does not own"
+      "shared_repair": "repairing the claim is the academic-assets owner's call, not this task's; four tasks have now hit it and none has repaired it, and this task will not chown a shared claim it does not own",
+      "latent_risk": "no pod currently mounting the claim sets fsGroup, so a repair would hold today, but seven fs2-cxq-* pods run with fsGroup 10001 against other volumes; if one ever mounts this claim the chown recurs. Confirmed read-only by the BindCraft adapter task.",
+      "receipt_requirement": "the live acceptance receipt must carry the measured ownership as a first-class field, not a log line, so a reader who sees the receipt after the claim is repaired still knows which state the run used"
     }
   },
   "external_tree_contract": {
@@ -437,7 +439,13 @@
       "purpose": "proves the two-stage Job shape - init design container with one GPU, aggregate main container without one, four read-only subPath mounts - is API-valid, so the live run cannot be delayed by a manifest error once the generation lands"
     },
     "requirements_communicated": "the localization owner is not a reachable session, so the three requirements were written to data/handoffs/fs2-bindcraft-image-requirements-to-artifact-localization-20260903.md with the measured identities to compare against after re-publication",
-    "polling_stopped": "no further probes will be run. The requirement note in data/handoffs/fs2-bindcraft-image-requirements-to-artifact-localization-20260903.md asks the publisher to ping this task, which is cheaper than repeated cluster probes"
+    "polling_stopped": "no further probes will be run. The requirement note in data/handoffs/fs2-bindcraft-image-requirements-to-artifact-localization-20260903.md asks the publisher to ping this task, which is cheaper than repeated cluster probes",
+    "required_receipt_fields": {
+      "why": "a green run cannot distinguish a repaired claim from a damaged one, because the Pod reaches a repaired tree through supplemental group 65532 and the damaged tree through its primary group 10001. The receipt has to say which it ran against or the result is unreadable later.",
+      "runtime_tree_ownership": "REQUIRED and not yet collectable from the image: uid, gid and mode of each of the four admitted tree roots, measured on the node at run time, recorded per role",
+      "how_to_collect_without_a_rebuild": "run the same read-only ownership probe used on 2026-09-03 against the mounted roots in the run's namespace immediately before or after the design Job, and copy its output into this field; the probe mounts the claims read-only and requests no accelerator",
+      "contract_conformance_claim": "may only be asserted when the measured gid is 65532 with consumer access by supplemental group; a run against gid 10001 is a valid semantic run and NOT evidence of the delivery contract"
+    }
   },
   "cleanup": {
     "task_owned_pods_deleted": [
@@ -476,5 +484,21 @@
     "now": "one stage per Job over a durable workspace claim; the GPU is released when design ends",
     "handoff": "content-addressed: the aggregate re-reads every artifact the design stage published and holds it to that shard's declared SHA-256 and size, rejecting a missing, rewritten or escaping path",
     "server_validated": "both rendered Jobs passed kubectl apply --dry-run=server against k8s-inference-h100 with synthetic content-addressed subPaths; nothing was created"
+  },
+  "deferred_r18_proposal": {
+    "state": "proposed, not built; r17 remains the final digest unless this is approved",
+    "why_bundled": "both items change files that go into the image, so they should cost one rebuild, not two",
+    "items": [
+      {
+        "change": "narrow the shared outer entrypoint so a non-design stage neither verifies the 5.59 GB AlphaFold2 tree nor binds the licensed PyRosetta tree",
+        "benefit": "removes licensed surface and 5.59 GB of I/O from a CPU stage that opens neither; lets an aggregate Job mount zero of the four instead of two",
+        "raised_by": "fs2-bindcraft-scientific-batch-adapter-successor-r20260903"
+      },
+      {
+        "change": "have tree_identity record each admitted tree root's uid, gid and mode in its receipt",
+        "benefit": "makes runtime_tree_ownership a first-class field the run produces itself, instead of a separate probe a human must remember to correlate"
+      }
+    ],
+    "cost": "one non-overwriting rebuild to r18 and a re-verification pass; no behavioural change to the design stage"
   }
 }
