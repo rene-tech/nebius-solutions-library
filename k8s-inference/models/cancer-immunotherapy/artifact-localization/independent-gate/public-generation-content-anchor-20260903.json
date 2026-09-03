@@ -1,0 +1,338 @@
+{
+  "cleanup": {
+    "deleted_config_maps": [
+      "fs2-fablegate-anchor-r20260903"
+    ],
+    "deleted_jobs": [
+      "fs2-fablegate-anchor-r20260903"
+    ],
+    "immutable_generations_retained": true,
+    "read_only_mount": true
+  },
+  "cluster": {
+    "b300_touched": false,
+    "context": "k8s-inference-h100",
+    "host_root": "/mnt/fs2-reference-data/data",
+    "namespace": "fs2-academic-poc",
+    "note": "opaque Nebius resource IDs are held in the task run record, not in the public export",
+    "project": "project-e00rene",
+    "region": "eu-north1"
+  },
+  "collected_at": "2026-09-03T07:19:54Z",
+  "corroboration": {
+    "claim": "the candidate's own BindCraft mount probe reported a SHA-256 for each ProteinMPNN v_48_020 checkpoint; both reproduce exactly from the bytes on disk",
+    "colabdesign-mpnn-weights-soluble": {
+      "file": "v_48_020.pkl",
+      "matches_candidate_probe": true,
+      "sha256": "f3f705752e625a173ac5ea4d2b2e46bd10ff13905a73bcc1ca2ecd3420b361e1"
+    },
+    "colabdesign-mpnn-weights-vanilla": {
+      "file": "v_48_020.pkl",
+      "matches_candidate_probe": true,
+      "sha256": "993194d9cbe9334f6c2c81bddeb1404ea831711bca8e38b591b4116060484ac3"
+    }
+  },
+  "gated_candidate": "0fe049f2ec50814569495e3f182f5fbfbe8c6335",
+  "generations": [
+    {
+      "artifact_id": "alphafold2-params",
+      "content_tree_sha256": "105d93b43349cb3b93402b1767063c24df65fe27ab10beea1a498d166bd8fd57",
+      "entry_count": 16,
+      "files": [
+        {
+          "bytes": 18657,
+          "path": "LICENSE",
+          "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+        },
+        {
+          "bytes": 373069562,
+          "path": "params_model_1.npz",
+          "sha256": "f95e453e6a290ddf317ba1c9698d53fa110cf007ea979b0eae43e6ad38b4e364"
+        },
+        {
+          "bytes": 373043148,
+          "path": "params_model_1_multimer_v3.npz",
+          "sha256": "611da8fc7478928f68de12e8b226260ef1f4ce62bcc29b008572e52f4f212959"
+        },
+        {
+          "bytes": 373103340,
+          "path": "params_model_1_ptm.npz",
+          "sha256": "5e564f79af5bcd54ccef6e2a6bb0ff01015d01650ebc41d4575e35f0de9ecc84"
+        },
+        {
+          "bytes": 373069562,
+          "path": "params_model_2.npz",
+          "sha256": "4da37ed3b71f08d935f913dfab0133977cd0d76ad37cd9333ff294d7fae43f87"
+        },
+        {
+          "bytes": 373043148,
+          "path": "params_model_2_multimer_v3.npz",
+          "sha256": "51362b0844382ae0f5720c59b81dd13a43eea40fbf9995dd2573bdab88865378"
+        },
+        {
+          "bytes": 373103340,
+          "path": "params_model_2_ptm.npz",
+          "sha256": "23645d9a82c4af2ed54cd48a7b3c1c2575dc6aa9fe931adb4d7203ca5f0dc398"
+        },
+        {
+          "bytes": 371712506,
+          "path": "params_model_3.npz",
+          "sha256": "3cc4584dc0b0d1bdd1f7af14bd0692d00df3aa0e738d0d1b314821ad7eee4ffe"
+        },
+        {
+          "bytes": 373043148,
+          "path": "params_model_3_multimer_v3.npz",
+          "sha256": "46d9bcad288edc7ad5a6362ee8e5f84307a69712e00e6c36b1ef9daf96ebc9ce"
+        },
+        {
+          "bytes": 371746284,
+          "path": "params_model_3_ptm.npz",
+          "sha256": "b53a724294cdd46a45d530b306bced8e429ffee74a4f9a2a897551b30966c415"
+        },
+        {
+          "bytes": 371712506,
+          "path": "params_model_4.npz",
+          "sha256": "b0a78b7e18661abc6097a905f48505004e6e3993c5dc41fb6820acf56e9c1d12"
+        },
+        {
+          "bytes": 373043148,
+          "path": "params_model_4_multimer_v3.npz",
+          "sha256": "59bdabd2d69c07fe26b37882d544acbd1b9f89f196828f4220da49e0610b572c"
+        },
+        {
+          "bytes": 371746284,
+          "path": "params_model_4_ptm.npz",
+          "sha256": "07d0e285ad1406ce3d91a2f6633a8ce9ee99155a53d24ee7783f8fd1e89f5d3a"
+        },
+        {
+          "bytes": 371712506,
+          "path": "params_model_5.npz",
+          "sha256": "5d261ec6e18ba87784541f5ce113570018b3338df61ae577661b6232358d47e7"
+        },
+        {
+          "bytes": 373043148,
+          "path": "params_model_5_multimer_v3.npz",
+          "sha256": "917742be5a105d6b80f13f1f13f20459f27ec3fdcd34ea088b359f4502d6177f"
+        },
+        {
+          "bytes": 371746284,
+          "path": "params_model_5_ptm.npz",
+          "sha256": "2f8d0bd193e7d6e837958ba92acdc3f02b23b61bf841fa043fc076ee0e1996a5"
+        }
+      ],
+      "generation": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+      "read_seconds": 4.134,
+      "total_bytes": 5587956571
+    },
+    {
+      "artifact_id": "alphafold2-params-bindcraft",
+      "content_tree_sha256": "c42f749137d6afe84a84c24278815776d2052c2e52a7f4866e4a6bf82b318cc6",
+      "entry_count": 17,
+      "files": [
+        {
+          "bytes": 18657,
+          "path": "LICENSE",
+          "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+        },
+        {
+          "bytes": 2866,
+          "path": "manifest.json",
+          "sha256": "9d0b7e45378ed707cfc31585f3ae960282dc76f3e2c4f60b545b02dbc728423b"
+        },
+        {
+          "bytes": 373069562,
+          "path": "params_model_1.npz",
+          "sha256": "f95e453e6a290ddf317ba1c9698d53fa110cf007ea979b0eae43e6ad38b4e364"
+        },
+        {
+          "bytes": 373043148,
+          "path": "params_model_1_multimer_v3.npz",
+          "sha256": "611da8fc7478928f68de12e8b226260ef1f4ce62bcc29b008572e52f4f212959"
+        },
+        {
+          "bytes": 373103340,
+          "path": "params_model_1_ptm.npz",
+          "sha256": "5e564f79af5bcd54ccef6e2a6bb0ff01015d01650ebc41d4575e35f0de9ecc84"
+        },
+        {
+          "bytes": 373069562,
+          "path": "params_model_2.npz",
+          "sha256": "4da37ed3b71f08d935f913dfab0133977cd0d76ad37cd9333ff294d7fae43f87"
+        },
+        {
+          "bytes": 373043148,
+          "path": "params_model_2_multimer_v3.npz",
+          "sha256": "51362b0844382ae0f5720c59b81dd13a43eea40fbf9995dd2573bdab88865378"
+        },
+        {
+          "bytes": 373103340,
+          "path": "params_model_2_ptm.npz",
+          "sha256": "23645d9a82c4af2ed54cd48a7b3c1c2575dc6aa9fe931adb4d7203ca5f0dc398"
+        },
+        {
+          "bytes": 371712506,
+          "path": "params_model_3.npz",
+          "sha256": "3cc4584dc0b0d1bdd1f7af14bd0692d00df3aa0e738d0d1b314821ad7eee4ffe"
+        },
+        {
+          "bytes": 373043148,
+          "path": "params_model_3_multimer_v3.npz",
+          "sha256": "46d9bcad288edc7ad5a6362ee8e5f84307a69712e00e6c36b1ef9daf96ebc9ce"
+        },
+        {
+          "bytes": 371746284,
+          "path": "params_model_3_ptm.npz",
+          "sha256": "b53a724294cdd46a45d530b306bced8e429ffee74a4f9a2a897551b30966c415"
+        },
+        {
+          "bytes": 371712506,
+          "path": "params_model_4.npz",
+          "sha256": "b0a78b7e18661abc6097a905f48505004e6e3993c5dc41fb6820acf56e9c1d12"
+        },
+        {
+          "bytes": 373043148,
+          "path": "params_model_4_multimer_v3.npz",
+          "sha256": "59bdabd2d69c07fe26b37882d544acbd1b9f89f196828f4220da49e0610b572c"
+        },
+        {
+          "bytes": 371746284,
+          "path": "params_model_4_ptm.npz",
+          "sha256": "07d0e285ad1406ce3d91a2f6633a8ce9ee99155a53d24ee7783f8fd1e89f5d3a"
+        },
+        {
+          "bytes": 371712506,
+          "path": "params_model_5.npz",
+          "sha256": "5d261ec6e18ba87784541f5ce113570018b3338df61ae577661b6232358d47e7"
+        },
+        {
+          "bytes": 373043148,
+          "path": "params_model_5_multimer_v3.npz",
+          "sha256": "917742be5a105d6b80f13f1f13f20459f27ec3fdcd34ea088b359f4502d6177f"
+        },
+        {
+          "bytes": 371746284,
+          "path": "params_model_5_ptm.npz",
+          "sha256": "2f8d0bd193e7d6e837958ba92acdc3f02b23b61bf841fa043fc076ee0e1996a5"
+        }
+      ],
+      "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+      "read_seconds": 4.18,
+      "total_bytes": 5587959437
+    },
+    {
+      "artifact_id": "boltzgen-inference-molecules",
+      "content_tree_sha256": "e9d3e1fef769a954c76b58aedb05fdb9974b85ba25b9ec66696948f1bc97214d",
+      "entry_count": 45227,
+      "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+      "read_seconds": 58.561,
+      "total_bytes": 1820698819
+    },
+    {
+      "artifact_id": "colabdesign-mpnn-weights-soluble",
+      "content_tree_sha256": "563a3127e5ef53dfa694c45357602a6ae1539ce551e2793b4b247643be5a4072",
+      "entry_count": 5,
+      "files": [
+        {
+          "bytes": 1,
+          "path": "__init__.py",
+          "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+        },
+        {
+          "bytes": 6650310,
+          "path": "v_48_002.pkl",
+          "sha256": "71f50e774950063da724870cb9377020b54ed1630cb025a44dc3079fe1f5af82"
+        },
+        {
+          "bytes": 6650310,
+          "path": "v_48_010.pkl",
+          "sha256": "b54d7ddbfac98eedd4ee37c93515c91691abb681b59fa2717c178d31cd7dd18a"
+        },
+        {
+          "bytes": 6650310,
+          "path": "v_48_020.pkl",
+          "sha256": "f3f705752e625a173ac5ea4d2b2e46bd10ff13905a73bcc1ca2ecd3420b361e1"
+        },
+        {
+          "bytes": 6650310,
+          "path": "v_48_030.pkl",
+          "sha256": "36ee859552bca57676f7e1b4f094c5dea4d37534e0e27351fa7582ac14d0ab78"
+        }
+      ],
+      "generation": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+      "read_seconds": 0.033,
+      "total_bytes": 26601241
+    },
+    {
+      "artifact_id": "colabdesign-mpnn-weights-vanilla",
+      "content_tree_sha256": "98cee3c35f9dd78253757b0f0b6a9301273971e35c71b11f078150b4e22fbe66",
+      "entry_count": 5,
+      "files": [
+        {
+          "bytes": 1,
+          "path": "__init__.py",
+          "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+        },
+        {
+          "bytes": 6650698,
+          "path": "v_48_002.pkl",
+          "sha256": "cf9c5980389312d26e8d25699e3d1372a9563b81770b4ca04c02027dcceb27a2"
+        },
+        {
+          "bytes": 6650698,
+          "path": "v_48_010.pkl",
+          "sha256": "7020cb9bda0c5722c7ededcfd00f8546af1510c66a44fb7acaebcaa33c1479ea"
+        },
+        {
+          "bytes": 6650698,
+          "path": "v_48_020.pkl",
+          "sha256": "993194d9cbe9334f6c2c81bddeb1404ea831711bca8e38b591b4116060484ac3"
+        },
+        {
+          "bytes": 6650698,
+          "path": "v_48_030.pkl",
+          "sha256": "e6b7882f9ca25c24379c29aeb9b8e78e8bcffab5699a3521fd22c50713220697"
+        }
+      ],
+      "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+      "read_seconds": 0.031,
+      "total_bytes": 26602793
+    }
+  ],
+  "method": {
+    "algorithm": "fs2-flat-tree-content-sha256/v1",
+    "definition": "the same canonical serialization as the v1 inventory, over {bytes, path, sha256} rows sorted by path, with no whitespace, sorted keys and one trailing newline",
+    "gpu_allocations_created": 0,
+    "script": "content_anchor.py",
+    "script_sha256": "ad3285c069af8d49b984a403bf14c5f8af7b815b0ceae1311830f6d3f47c92b4"
+  },
+  "outcome": {
+    "generations_anchored": 5,
+    "state": "anchored",
+    "verdict": "Every published generation now has a collision-resistant identity in the repository, derived from the bytes on the live plane, alongside the CRC-32-based name the platform assigns."
+  },
+  "owner_task": "fs2-live-scientific-evidence-fable-gate-r20260903",
+  "question": "the generation name binds each file only by length and CRC-32; what is the cryptographic identity of those bytes?",
+  "reviewer": "claude-fable-5-1-xhigh, independent of the publishing worker",
+  "run": {
+    "completed_at": "2026-09-03T07:19:54Z",
+    "exit_codes": [
+      0
+    ],
+    "gpu_requested": 0,
+    "image_digest": "docker.io/library/python@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534",
+    "job": "fs2-fablegate-anchor-r20260903",
+    "job_uid": "0c267301-38f7-4b9f-a491-e0505d9a3cf2",
+    "node_class": "nvidia-h100-sxm5-80gb",
+    "node_digest": "5e3ad019c6df4d8b",
+    "pod": "fs2-fablegate-anchor-r20260903-t5lfh",
+    "pod_uid": "c248ea0a-46b9-4674-8256-175e21882b02",
+    "started_at": "2026-09-03T07:18:43Z"
+  },
+  "schema": "fs2-serve.nebius.ai/public-generation-content-anchor/v1",
+  "why": {
+    "consequence": "The generation name is strong against corruption and weak against construction. It does not make the published trees wrong: a separate recompute on four H100 nodes showed they are exactly what the receipts describe. It means the name alone cannot prove that to a reader who does not already trust the writer.",
+    "demonstrated": "The reviewer built two different 64-byte payloads differing in 19 bits with identical CRC-32 100ece8c and different SHA-256, and confirmed both produce the identical v1 generation name.",
+    "finding": "fs2-flat-tree-inventory/v1 serializes {bytes, crc32, path} per file, so the SHA-256 that names a generation covers CRC-32 checksums rather than content digests. CRC-32 is affine over GF(2): for a fixed length the kernel of the map is non-trivial above four bytes, so a same-length, same-CRC-32, different-content file is constructed by elimination rather than found by search.",
+    "scope": "This is a property of the inventory algorithm, not a defect this candidate introduced, and the algorithm is owned by the localization adapter rather than by this review. Adding a content hash to the inventory itself is left to that owner; this file records the missing identity so it exists in the repository in the meantime."
+  }
+}

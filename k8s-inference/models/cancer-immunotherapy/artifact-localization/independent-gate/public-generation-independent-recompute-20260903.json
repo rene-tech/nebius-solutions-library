@@ -1,0 +1,542 @@
+{
+  "cleanup": {
+    "deleted_config_maps": [
+      "fs2-fablegate-recompute-r20260903"
+    ],
+    "deleted_jobs": [
+      "fs2-fablegate-recompute-r20260903-m0",
+      "fs2-fablegate-recompute-r20260903-p3",
+      "fs2-fablegate-recompute-r20260903-pe1",
+      "fs2-fablegate-recompute-r20260903-pe2"
+    ],
+    "immutable_generations_retained": true,
+    "read_only_mount": true
+  },
+  "cluster": {
+    "b300_touched": false,
+    "context": "k8s-inference-h100",
+    "host_root": "/mnt/fs2-reference-data/data",
+    "namespace": "fs2-academic-poc",
+    "note": "opaque Nebius resource IDs are held in the task run record, not in the public export",
+    "project": "project-e00rene",
+    "region": "eu-north1",
+    "tree_prefix": "scientific-localization/public/generations"
+  },
+  "collected_at": "2026-09-03T06:42:19Z",
+  "gated_candidate": "0fe049f2ec50814569495e3f182f5fbfbe8c6335",
+  "method": {
+    "gpu_allocations_created": 0,
+    "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+    "reimplemented_independently": true,
+    "script": "recompute_generations.py",
+    "script_sha256": "e82d42b4773c49d336dac3c57da1a0146adc34fc5ed0cf47eaa7d81b0771dcec",
+    "shares_code_with_candidate": false,
+    "summary": "Two task-owned CPU Jobs, one pinned to each reserved H100 node, mounted the public reference-data host root read-only and recomputed every generation identity from the bytes on disk. The recompute re-implements fs2-flat-tree-inventory/v1 from its written definition and shares no code with the candidate, so a bug in the publishing code cannot also make this check pass."
+  },
+  "node_digest_derivation": {
+    "confirms": "the candidate's two admission node digests are two distinct, real, reserved H100 nodes; the reviewer resolved each digest back to its Ready node object at review time and then repeated the recompute on the two preemptible H100 nodes that joined the pool during the review",
+    "distinct_nodes": 4,
+    "note": "the opaque Nebius instance IDs are deliberately absent: they may not enter this repository's public export, so they live in the task's private run record",
+    "rule": "sha256(node name)[:16], the same rule the candidate's probes use"
+  },
+  "nodes": [
+    {
+      "admitted_by_candidate": true,
+      "capacity": "existing-reserved-capacity-block",
+      "completed_at": "2026-09-03T06:41:41Z",
+      "exit_codes": [
+        0
+      ],
+      "generations": [
+        {
+          "artifact_id": "alphafold2-params",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "read_seconds": 2.059,
+          "recomputed_entry_count": 16,
+          "recomputed_inventory_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "recomputed_marker_sha256": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f",
+          "recomputed_total_bytes": 5587956571,
+          "state": "passed"
+        },
+        {
+          "artifact_id": "alphafold2-params-bindcraft",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "read_seconds": 2.077,
+          "recomputed_entry_count": 17,
+          "recomputed_inventory_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "recomputed_marker_sha256": "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0",
+          "recomputed_total_bytes": 5587959437,
+          "state": "passed"
+        },
+        {
+          "artifact_id": "boltzgen-inference-molecules",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "read_seconds": 56.727,
+          "recomputed_entry_count": 45227,
+          "recomputed_inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "recomputed_marker_sha256": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+          "recomputed_total_bytes": 1820698819,
+          "state": "passed"
+        },
+        {
+          "artifact_id": "colabdesign-mpnn-weights-soluble",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "read_seconds": 0.027,
+          "recomputed_entry_count": 5,
+          "recomputed_inventory_sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "recomputed_marker_sha256": "471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660",
+          "recomputed_total_bytes": 26601241,
+          "state": "passed"
+        },
+        {
+          "artifact_id": "colabdesign-mpnn-weights-vanilla",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "read_seconds": 0.026,
+          "recomputed_entry_count": 5,
+          "recomputed_inventory_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "recomputed_marker_sha256": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8",
+          "recomputed_total_bytes": 26602793,
+          "state": "passed"
+        }
+      ],
+      "gpu_requested": 0,
+      "image_digest": "docker.io/library/python@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534",
+      "job": "fs2-fablegate-recompute-r20260903-m0",
+      "job_uid": "bb22f27e-d425-46db-9c11-06b76101c463",
+      "node_class": "nvidia-h100-sxm5-80gb",
+      "node_digest": "5e3ad019c6df4d8b",
+      "pod": "fs2-fablegate-recompute-r20260903-m0-snkmx",
+      "pod_uid": "dea26134-b9ed-41f6-9754-d71db419eb1a",
+      "pool": "h100-reserved-8x",
+      "started_at": "2026-09-03T06:40:37Z",
+      "state": "passed"
+    },
+    {
+      "admitted_by_candidate": true,
+      "capacity": "existing-reserved-capacity-block",
+      "completed_at": "2026-09-03T06:42:19Z",
+      "exit_codes": [
+        0
+      ],
+      "generations": [
+        {
+          "artifact_id": "alphafold2-params",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "read_seconds": 3.155,
+          "recomputed_entry_count": 16,
+          "recomputed_inventory_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "recomputed_marker_sha256": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f",
+          "recomputed_total_bytes": 5587956571,
+          "state": "passed"
+        },
+        {
+          "artifact_id": "alphafold2-params-bindcraft",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "read_seconds": 2.072,
+          "recomputed_entry_count": 17,
+          "recomputed_inventory_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "recomputed_marker_sha256": "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0",
+          "recomputed_total_bytes": 5587959437,
+          "state": "passed"
+        },
+        {
+          "artifact_id": "boltzgen-inference-molecules",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "read_seconds": 93.612,
+          "recomputed_entry_count": 45227,
+          "recomputed_inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "recomputed_marker_sha256": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+          "recomputed_total_bytes": 1820698819,
+          "state": "passed"
+        },
+        {
+          "artifact_id": "colabdesign-mpnn-weights-soluble",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "read_seconds": 0.033,
+          "recomputed_entry_count": 5,
+          "recomputed_inventory_sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "recomputed_marker_sha256": "471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660",
+          "recomputed_total_bytes": 26601241,
+          "state": "passed"
+        },
+        {
+          "artifact_id": "colabdesign-mpnn-weights-vanilla",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "read_seconds": 0.03,
+          "recomputed_entry_count": 5,
+          "recomputed_inventory_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "recomputed_marker_sha256": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8",
+          "recomputed_total_bytes": 26602793,
+          "state": "passed"
+        }
+      ],
+      "gpu_requested": 0,
+      "image_digest": "docker.io/library/python@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534",
+      "job": "fs2-fablegate-recompute-r20260903-p3",
+      "job_uid": "f224b9fc-56b0-489b-bea1-242fc0195ad8",
+      "node_class": "nvidia-h100-sxm5-80gb",
+      "node_digest": "ba03959da8c5832d",
+      "pod": "fs2-fablegate-recompute-r20260903-p3-w2kl6",
+      "pod_uid": "90568161-3c5e-4d2e-9d90-fd67498bd9d8",
+      "pool": "h100-reserved-8x",
+      "started_at": "2026-09-03T06:40:37Z",
+      "state": "passed"
+    },
+    {
+      "admitted_by_candidate": false,
+      "capacity": "preemptible",
+      "completed_at": "2026-09-03T07:02:32Z",
+      "exit_codes": [
+        0
+      ],
+      "generations": [
+        {
+          "artifact_id": "alphafold2-params",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "read_seconds": 3.547,
+          "recomputed_entry_count": 16,
+          "recomputed_inventory_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "recomputed_marker_sha256": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f",
+          "recomputed_total_bytes": 5587956571,
+          "state": "passed"
+        },
+        {
+          "artifact_id": "alphafold2-params-bindcraft",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "read_seconds": 3.668,
+          "recomputed_entry_count": 17,
+          "recomputed_inventory_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "recomputed_marker_sha256": "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0",
+          "recomputed_total_bytes": 5587959437,
+          "state": "passed"
+        },
+        {
+          "artifact_id": "boltzgen-inference-molecules",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "read_seconds": 93.588,
+          "recomputed_entry_count": 45227,
+          "recomputed_inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "recomputed_marker_sha256": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+          "recomputed_total_bytes": 1820698819,
+          "state": "passed"
+        },
+        {
+          "artifact_id": "colabdesign-mpnn-weights-soluble",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "read_seconds": 0.042,
+          "recomputed_entry_count": 5,
+          "recomputed_inventory_sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "recomputed_marker_sha256": "471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660",
+          "recomputed_total_bytes": 26601241,
+          "state": "passed"
+        },
+        {
+          "artifact_id": "colabdesign-mpnn-weights-vanilla",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "read_seconds": 0.041,
+          "recomputed_entry_count": 5,
+          "recomputed_inventory_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "recomputed_marker_sha256": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8",
+          "recomputed_total_bytes": 26602793,
+          "state": "passed"
+        }
+      ],
+      "gpu_requested": 0,
+      "image_digest": "docker.io/library/python@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534",
+      "job": "fs2-fablegate-recompute-r20260903-pe1",
+      "job_uid": "78daf983-c160-4542-921a-7a3b77a47d9d",
+      "node_class": "nvidia-h100-sxm5-80gb",
+      "node_digest": "65c0a5d8bf5f9191",
+      "pod": "fs2-fablegate-recompute-r20260903-pe1-m6ld6",
+      "pod_uid": "eadf66d5-c0a5-40dd-8472-e7aab2b4fbd7",
+      "pool": "h100-1x",
+      "started_at": "2026-09-03T07:00:43Z",
+      "state": "passed"
+    },
+    {
+      "admitted_by_candidate": false,
+      "capacity": "preemptible",
+      "completed_at": "2026-09-03T07:02:53Z",
+      "exit_codes": [
+        0
+      ],
+      "generations": [
+        {
+          "artifact_id": "alphafold2-params",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "read_seconds": 3.493,
+          "recomputed_entry_count": 16,
+          "recomputed_inventory_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "recomputed_marker_sha256": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f",
+          "recomputed_total_bytes": 5587956571,
+          "state": "passed"
+        },
+        {
+          "artifact_id": "alphafold2-params-bindcraft",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "read_seconds": 3.712,
+          "recomputed_entry_count": 17,
+          "recomputed_inventory_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "recomputed_marker_sha256": "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0",
+          "recomputed_total_bytes": 5587959437,
+          "state": "passed"
+        },
+        {
+          "artifact_id": "boltzgen-inference-molecules",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "read_seconds": 94.945,
+          "recomputed_entry_count": 45227,
+          "recomputed_inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "recomputed_marker_sha256": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+          "recomputed_total_bytes": 1820698819,
+          "state": "passed"
+        },
+        {
+          "artifact_id": "colabdesign-mpnn-weights-soluble",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "read_seconds": 0.044,
+          "recomputed_entry_count": 5,
+          "recomputed_inventory_sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "recomputed_marker_sha256": "471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660",
+          "recomputed_total_bytes": 26601241,
+          "state": "passed"
+        },
+        {
+          "artifact_id": "colabdesign-mpnn-weights-vanilla",
+          "checks": {
+            "entry_count_matches_receipt": true,
+            "inventory_matches_generation_name": true,
+            "marker_declares_same_generation": true,
+            "marker_digest_matches_receipt": true,
+            "marker_parses": true,
+            "marker_present": true,
+            "no_non_regular_entries": true,
+            "total_bytes_matches_receipt": true
+          },
+          "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "read_seconds": 0.041,
+          "recomputed_entry_count": 5,
+          "recomputed_inventory_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "recomputed_marker_sha256": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8",
+          "recomputed_total_bytes": 26602793,
+          "state": "passed"
+        }
+      ],
+      "gpu_requested": 0,
+      "image_digest": "docker.io/library/python@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534",
+      "job": "fs2-fablegate-recompute-r20260903-pe2",
+      "job_uid": "e65970d6-2c24-4a3a-9f84-f1a442b6cbd9",
+      "node_class": "nvidia-h100-sxm5-80gb",
+      "node_digest": "aa00460086ee7b64",
+      "pod": "fs2-fablegate-recompute-r20260903-pe2-9j5pq",
+      "pod_uid": "d7220596-a2f2-4d3f-bfcd-a98837373816",
+      "pool": "h100-1x",
+      "started_at": "2026-09-03T07:00:43Z",
+      "state": "passed"
+    }
+  ],
+  "outcome": {
+    "generations_recomputed": 5,
+    "h100_nodes": 4,
+    "h100_nodes_added_by_reviewer": 2,
+    "h100_nodes_admitted_by_candidate": 2,
+    "mismatches": 0,
+    "state": "confirmed",
+    "verdict": "Every published generation directory name is the true content identity of the bytes on disk, and every in-generation marker file hashes to the manifest digest the candidate pinned, on all four H100 nodes that carried the reference-data label at review time: the two reserved capacity-block nodes the candidate admitted, and the two preemptible nodes that joined afterwards and were never probed by the candidate."
+  },
+  "owner_task": "fs2-live-scientific-evidence-fable-gate-r20260903",
+  "question": "do the five published public generations on the live H100 nodes actually hash to the identities the candidate checked in?",
+  "reviewer": "claude-fable-5-1-xhigh, independent of the publishing worker",
+  "schema": "fs2-serve.nebius.ai/independent-generation-recompute/v1",
+  "scope_note": "The candidate's claim that both existing H100 nodes admitted the markers was true of the two reserved nodes at 06:18Z. The pool has since scaled: two preemptible 1x H100 nodes carrying the same reference-data label joined at 06:53Z and 06:58Z. The claim is therefore time-bound and the evidence that states it carries no timestamp. This receipt closes the gap by reading the generations from those two nodes as well."
+}
