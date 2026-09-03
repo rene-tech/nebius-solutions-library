@@ -1,5 +1,12 @@
 # Cancer-immunotherapy live acceptance preparation
 
+The narrowed 2026-09-03 live admin-console proof is recorded in
+[`LIVE_ADMIN_MODEL_CONFIGURATION_ACCEPTANCE_20260903.md`](LIVE_ADMIN_MODEL_CONFIGURATION_ACCEPTANCE_20260903.md).
+It proves reversible scale/idle policy and API-key control, while retaining the
+exact placement cold-cutover, cache qualification, safe-sandbox and Qwen
+continuity gaps. It does not change the preparation-only status of the broader
+cancer-model execution matrix below.
+
 This directory prepares the final H100 acceptance wave without claiming that it
 has run. The checked-in plan is bound to reviewed `main` commit
 `c83b97c6f18b09f13b0623d20f6436398337085f`. It covers the nine requested model
