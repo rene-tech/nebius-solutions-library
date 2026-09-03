@@ -12,7 +12,7 @@ import importlib
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any, cast
@@ -26,6 +26,7 @@ from .models import (
     ArtifactAccessContext,
     RuntimeArtifactFile,
     RuntimeArtifactLocalization,
+    RuntimeArtifactMount,
     ScientificInputArtifact,
     StageInvocation,
     WorkloadKind,
@@ -124,6 +125,7 @@ def _invocation_json(invocation: StageInvocation) -> str:
                     "sub_path": item.sub_path,
                     "read_only": item.read_only,
                     "expected_content_sha256": item.expected_content_sha256,
+                    "expected_manifest_sha256": item.expected_manifest_sha256,
                     "authorization_receipt_sha256": item.authorization_receipt_sha256,
                     "readiness_receipt_sha256": item.readiness_receipt_sha256,
                     "supplemental_groups": list(item.supplemental_groups),
@@ -479,11 +481,25 @@ class FileScientificManifestRenderer:
         )
         if tuple(stage.stage_id for stage in plan.controller_plan.stages) != profile_stage_ids:
             raise ScientificExecutionMapError("scientific plan adapter changed the canonical profile stages")
+        invocations: list[StageInvocation] = []
         for invocation in plan.invocations:
             execution = self.executions[(profile.model_id, invocation.stage_id)]
-            if invocation.collector_id != execution.collector_id or invocation.validator_id != execution.validator_id:
+            if invocation.collector_id not in {
+                "controller-unbound",
+                execution.collector_id,
+            } or invocation.validator_id not in {
+                "controller-unbound",
+                execution.validator_id,
+            }:
                 raise ScientificExecutionMapError("adapter collector or validator differs from the execution map")
-        return plan
+            invocations.append(
+                replace(
+                    invocation,
+                    collector_id=execution.collector_id,
+                    validator_id=execution.validator_id,
+                )
+            )
+        return replace(plan, invocations=tuple(invocations))
 
     def verify_runtime_artifacts(
         self,
@@ -529,22 +545,6 @@ class FileScientificManifestRenderer:
             for invocation in execution_plan.invocations:
                 if artifact_id not in invocation.runtime_artifacts:
                     continue
-                binding = next(item for item in invocation.runtime_mounts if item.artifact_id == artifact_id)
-                if (
-                    binding.mount_path != localization.mount_path
-                    or binding.expected_content_sha256 != localization.content_digest.removeprefix("sha256:")
-                    or binding.readiness_receipt_sha256
-                    != localization.localization_receipt_digest.removeprefix("sha256:")
-                    or binding.authorization_receipt_sha256
-                    != (
-                        None
-                        if access_context.receipt_digest is None
-                        else access_context.receipt_digest.removeprefix("sha256:")
-                    )
-                ):
-                    raise ScientificExecutionMapError(
-                        f"runtime artifact {artifact_id} invocation mount differs from verified localization"
-                    )
                 mounts = self.executions[(profile.model_id, invocation.stage_id)].mounts
                 artifact_path = PurePosixPath(localization.mount_path)
                 candidates = [
@@ -560,10 +560,78 @@ class FileScientificManifestRenderer:
                     raise ScientificExecutionMapError(
                         f"runtime artifact {artifact_id} is not covered by the stage's read-only mounts"
                     )
+                binding = next(
+                    (item for item in invocation.runtime_mounts if item.artifact_id == artifact_id),
+                    None,
+                )
+                expected_manifest = requirement.get("localization_manifest_sha256")
+                if binding is not None and (
+                    binding.mount_path != localization.mount_path
+                    or binding.expected_content_sha256
+                    not in {None, localization.content_digest.removeprefix("sha256:")}
+                    or binding.expected_manifest_sha256 not in {None, expected_manifest}
+                    or binding.readiness_receipt_sha256
+                    not in {None, localization.localization_receipt_digest.removeprefix("sha256:")}
+                    or binding.authorization_receipt_sha256
+                    not in {
+                        None,
+                        None
+                        if access_context.receipt_digest is None
+                        else access_context.receipt_digest.removeprefix("sha256:"),
+                    }
+                ):
+                    raise ScientificExecutionMapError(
+                        f"runtime artifact {artifact_id} invocation mount differs from verified localization"
+                    )
             result.append(localization)
         if not set(execution_plan.required_model_artifacts).issubset(by_id):
             raise ScientificExecutionMapError("adapter requires an undeclared profile runtime artifact")
         return tuple(result)
+
+    def bind_runtime_artifacts(
+        self,
+        profile: ScientificWorkloadProfile,
+        execution_plan: AdapterExecutionPlan,
+        access_context: ArtifactAccessContext,
+        localizations: tuple[RuntimeArtifactLocalization, ...],
+    ) -> AdapterExecutionPlan:
+        """Inject controller-observed receipts into the immutable adapter plan."""
+
+        verified = self.verify_runtime_artifacts(profile, execution_plan, access_context)
+        if verified != localizations:
+            raise ScientificExecutionMapError("runtime localization changed during durable admission")
+        by_id = {item.logical_artifact_id: item for item in verified}
+        invocations: list[StageInvocation] = []
+        for invocation in execution_plan.invocations:
+            bindings = {item.artifact_id: item for item in invocation.runtime_mounts}
+            mounted: list[RuntimeArtifactMount] = []
+            for artifact_id in invocation.runtime_artifacts:
+                localization = by_id[artifact_id]
+                binding = bindings.get(artifact_id)
+                if binding is None:
+                    binding = RuntimeArtifactMount(
+                        artifact_id=artifact_id,
+                        mount_path=localization.mount_path,
+                    )
+                mounted.append(
+                    replace(
+                        binding,
+                        expected_content_sha256=localization.content_digest.removeprefix("sha256:"),
+                        authorization_receipt_sha256=(
+                            None
+                            if access_context.receipt_digest is None
+                            else access_context.receipt_digest.removeprefix("sha256:")
+                        ),
+                        readiness_receipt_sha256=localization.localization_receipt_digest.removeprefix("sha256:"),
+                    )
+                )
+            invocations.append(replace(invocation, runtime_mounts=tuple(mounted)))
+        bound = replace(execution_plan, invocations=tuple(invocations))
+        try:
+            bound.assert_controller_bound()
+        except ValueError as error:
+            raise ScientificExecutionMapError("adapter plan is not fully bound for admission") from error
+        return bound
 
     def _pod(self, resource: WorkloadResource, execution: StageExecution) -> dict[str, Any]:
         invocation = resource.invocation
@@ -615,6 +683,7 @@ class FileScientificManifestRenderer:
                     "artifact_id": item.logical_artifact_id,
                     "mount_path": item.mount_path,
                     "content_digest": item.content_digest,
+                    "artifact_manifest_sha256": (binding.expected_manifest_sha256 or binding.expected_content_sha256),
                     "localization_receipt_digest": item.localization_receipt_digest,
                     "sub_path": binding.sub_path,
                     "readiness_receipt_sha256": binding.readiness_receipt_sha256,

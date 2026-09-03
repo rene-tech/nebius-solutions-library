@@ -413,6 +413,7 @@ class RuntimeArtifactMount:
     sub_path: str | None = None
     read_only: bool = True
     expected_content_sha256: str | None = None
+    expected_manifest_sha256: str | None = None
     authorization_receipt_sha256: str | None = None
     readiness_receipt_sha256: str | None = None
     supplemental_groups: tuple[int, ...] = ()
@@ -433,6 +434,7 @@ class RuntimeArtifactMount:
                 raise ValueError("runtime artifact sub_path must be a safe relative path")
         for value, label in (
             (self.expected_content_sha256, "expected content digest"),
+            (self.expected_manifest_sha256, "expected manifest digest"),
             (self.authorization_receipt_sha256, "authorization receipt digest"),
             (self.readiness_receipt_sha256, "readiness receipt digest"),
         ):
@@ -455,9 +457,9 @@ class StageInvocation:
     working_directory: str
     consumes: tuple[str, ...]
     produces: str
-    collector_id: str
-    validator_id: str
-    handoff_name: str | None
+    collector_id: str = "controller-unbound"
+    validator_id: str = "controller-unbound"
+    handoff_name: str | None = None
     max_output_artifacts: int = 1024
     max_output_bytes: int = 128 * 1024 * 1024 * 1024
     materializations: tuple[ArtifactMaterialization, ...] = ()
@@ -485,10 +487,10 @@ class StageInvocation:
         if len(set(self.runtime_artifacts)) != len(self.runtime_artifacts):
             raise ValueError("stage runtime artifact IDs must be unique")
         mounted = tuple(item.artifact_id for item in self.runtime_mounts)
-        if len(set(mounted)) != len(mounted) or set(mounted) != set(self.runtime_artifacts):
-            raise ValueError("runtime mounts must exactly bind every stage runtime artifact")
+        if self.runtime_mounts and (len(set(mounted)) != len(mounted) or set(mounted) != set(self.runtime_artifacts)):
+            raise ValueError("explicit runtime mounts must exactly bind every stage runtime artifact")
         marker_path = f"{self.working_directory}/.fs2/runtime-localization.json"
-        if self.runtime_artifacts and marker_path not in self.argv:
+        if self.runtime_mounts and self.runtime_artifacts and marker_path not in self.argv:
             raise ValueError("runtime artifact stages must pass the canonical localization marker to argv")
         materialized = tuple(item.artifact_id for item in self.materializations)
         if len(set(materialized)) != len(materialized) or set(materialized) != set(self.consumes):
@@ -544,8 +546,6 @@ class AdapterExecutionPlan:
         consumed_outputs = {
             logical_id for item in self.invocations for logical_id in item.consumes if logical_id in producer_stage
         }
-        if any(item.produces in consumed_outputs and item.handoff_name is None for item in self.invocations):
-            raise ValueError("a predecessor consumed downstream must declare an exact handoff entry")
         for item in self.invocations:
             for logical_id in item.consumes:
                 stage_id = producer_stage.get(logical_id)
@@ -555,6 +555,25 @@ class AdapterExecutionPlan:
         sink_stages = {stage.stage_id for stage in self.controller_plan.stages if stage.stage_id not in depended_on}
         if len(sink_stages) != 1 or sum(item.stage_id in sink_stages for item in self.invocations) != 1:
             raise ValueError("an executable plan requires one canonical terminal output invocation")
+
+    def assert_controller_bound(self) -> None:
+        """Reject an adapter plan that still lacks trusted execution evidence."""
+
+        produced = {item.produces for item in self.invocations}
+        consumed_outputs = {
+            logical_id for item in self.invocations for logical_id in item.consumes if logical_id in produced
+        }
+        for invocation in self.invocations:
+            if invocation.collector_id == "controller-unbound" or invocation.validator_id == "controller-unbound":
+                raise ValueError("controller execution identities are not bound")
+            if invocation.runtime_artifacts and {item.artifact_id for item in invocation.runtime_mounts} != set(
+                invocation.runtime_artifacts
+            ):
+                raise ValueError("controller runtime artifact mounts are not bound")
+            if any(item.readiness_receipt_sha256 is None for item in invocation.runtime_mounts):
+                raise ValueError("controller runtime localization receipts are not bound")
+            if invocation.produces in consumed_outputs and invocation.handoff_name is None:
+                raise ValueError("a predecessor consumed downstream must declare an exact handoff entry")
 
     def invocation(self, stage_id: str, shard_id: str | None) -> StageInvocation:
         key = (stage_id, shard_id or "gang")
