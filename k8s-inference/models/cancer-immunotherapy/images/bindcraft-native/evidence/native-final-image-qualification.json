@@ -1,6 +1,6 @@
 {
   "schema": "fs2.nebius.ai/cancer-runtime-final-image-qualification/v1",
-  "recorded_at": "2026-09-03T04:15:00Z",
+  "recorded_at": "2026-09-03T06:05:00Z",
   "model": "bindcraft-native-pyrosetta",
   "package_scope": {
     "path": "k8s-inference/models/cancer-immunotherapy/images/bindcraft-native",
@@ -25,16 +25,24 @@
     "archive_sha256": "cada0f51f221af568ad0ee84ada2e68317501adad233008d073d66839b1afb8d"
   },
   "final_image": {
-    "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r16",
-    "digest": "sha256:72fe33653b0670af707d0234be51091c53a61b43f44d25f69a4cbbaffbf0896d",
-    "created": "2026-09-03T04:09:39Z",
+    "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r17",
+    "digest": "sha256:aefd9b1cfd3002182b0b19a147e86cb138b39af315f1b061bf4a10c119654850",
     "platform": "linux/amd64",
     "attestation_predicate_types": [
       "https://slsa.dev/provenance/v1",
       "https://spdx.dev/Document"
     ],
     "registry_digest_verified_after_push": true,
-    "qualification_state": "offline-qualified; live H100 semantic acceptance gated on the immutable four-tree localization generation"
+    "attested_source": {
+      "revision": "bd5ce9911f0f513f81ca284d6b55129af1cf1892",
+      "source": "https://github.com/rene-tech/nebius-solutions-library.git",
+      "context_path": "k8s-inference/models/cancer-immunotherapy/images/bindcraft-native",
+      "reachable_from": [
+        "origin/agent/fs2-bindcraft-final-image-h100-successor-r20260903-clean"
+      ],
+      "verified": "the publisher read the published SLSA provenance back and required the attested revision and context to be the ones it built"
+    },
+    "qualification_state": "offline-qualified; live H100 production-filter semantics gated on the immutable four-tree localization generation"
   },
   "non_overwriting_publication": {
     "policy": "every tag is asserted absent before publication; a tag is never overwritten",
@@ -71,13 +79,19 @@
         "tag_suffix": "-cuda121-r16",
         "digest": "sha256:72fe33653b0670af707d0234be51091c53a61b43f44d25f69a4cbbaffbf0896d",
         "created": "2026-09-03T04:09:39Z",
+        "state": "superseded-not-qualified",
+        "finding": "behaviourally correct but not reconstructible: its SLSA provenance attests revision ce3ca6cd, reachable only from a superseded branch, and it carried an adapter.commit label naming 3475ce0e, rebased away and reachable from nothing. It was also built from a working tree holding uncommitted edits"
+      },
+      {
+        "tag_suffix": "-cuda121-r17",
+        "digest": "sha256:aefd9b1cfd3002182b0b19a147e86cb138b39af315f1b061bf4a10c119654850",
         "state": "final"
       }
     ]
   },
   "source_identity_in_published_image": {
     "method": "SHA-256 of each runtime file read from the pulled digest reference, compared to the repository working tree",
-    "match": "pending r17 publication; these are the intended bytes and the publisher fails closed unless the pulled image matches",
+    "match": true,
     "files": [
       {
         "path": "/opt/fs2/bindcraft/runtime_entrypoint.py",
@@ -109,7 +123,8 @@
         "size_bytes": 336,
         "repository_path": "models/structure/runtime/bindcraft-native/bin/bindcraft-batch"
       }
-    ]
+    ],
+    "verified_against": "sha256:aefd9b1cfd3002182b0b19a147e86cb138b39af315f1b061bf4a10c119654850"
   },
   "controller_interface": {
     "requirement": "--runtime-localization-marker <absolute path> accepted on both subcommands",
@@ -218,7 +233,14 @@
         "proven_by": "recomputed digests equal the published receipt digests for both ColabDesign trees"
       }
     ],
-    "no_metadata_only_shortcut": "every admitted tree is read in full; a size-and-shape check would pass on a tree whose contents were swapped"
+    "no_metadata_only_shortcut": "every admitted tree is read in full; a size-and-shape check would pass on a tree whose contents were swapped",
+    "backing_stores": {
+      "correction": "the renderer previously assumed one claim held all four trees, which could not have mounted three of them",
+      "public_trees": "immutable generations on the reference-data filesystem, reached by hostPath, so both Jobs carry the handoff's node selector",
+      "licensed_tree": "the private academic claim only",
+      "enforced": "a handoff serving the licensed tree from a public volume, or a public tree from the private claim, is refused",
+      "handoff_schema": "fs2.nebius.ai/bindcraft-external-tree-handoff/v2, which adds a per-tree volume source and a node selector"
+    }
   },
   "measured_tree_identity_cost": {
     "environment": {
@@ -311,7 +333,8 @@
     "image_contract_suite": {
       "command": "python3 -m unittest discover -s tests",
       "tests": 65,
-      "result": "pending re-run"
+      "result": "passed",
+      "note": "an earlier receipt claimed 60 tests against a 56-test suite; both numbers are corrected here"
     },
     "native_adapter_suite": {
       "command": "PYTHONPATH=catalog/runtime python3 -m unittest discover -s models/structure/runtime/bindcraft-native/tests",
@@ -320,9 +343,13 @@
     },
     "artifact_free_image_smoke": {
       "command": "docker run --network none <digest> --fs2-image-smoke",
-      "result": "passed",
+      "result": "passed on r17",
       "embedded_model_artifacts": false,
       "embedded_pyrosetta": false
+    },
+    "batch_subcommand_smoke": {
+      "command": "docker run --network none --entrypoint /opt/fs2/bin/bindcraft-batch <digest> {run-trajectory,aggregate} --help",
+      "result": "both subcommands accept --runtime-localization-marker on the published r17"
     }
   },
   "live_semantic_acceptance": {
@@ -386,5 +413,21 @@
     "shared_resources_touched": "none; every probe mounted the shared claims read-only and no shared service, queue, Terraform resource or B300 node was modified",
     "other_tenants": "qwen3-8b-b300-hot-h100-reserved-8x remained 1/1 available throughout; no probe requested an accelerator and no shared claim was mounted writable",
     "note": "fs2-bindcraft-r15-claim-explore and -explore2 were left Succeeded by an earlier session of this task, identified by app.kubernetes.io/managed-by=fs2-bindcraft-final-image-h100-successor, and were removed in this pass"
+  },
+  "provenance_enforcement": {
+    "why": "an attested revision that cannot be resolved back to source proves nothing, which is what r16 shipped",
+    "clean_source": "publication refuses a dirty working tree across the package and the adapter wrapper",
+    "reachable_revision": "publication refuses a HEAD not contained in any pushed remote branch",
+    "revision_equality": "the published SLSA provenance is read back and the attested revision must equal the built revision",
+    "context_equality": "the attested build context must be this package's path",
+    "source_stability": "every build input is re-hashed after the build and must be unchanged; the fingerprint is recorded",
+    "adapter_binding": "the wrapper is pinned by SHA-256 in the lock, re-hashed by load_lock, and labelled as adapter.wrapper.sha256; the dangling adapter.commit label is gone",
+    "observed_fingerprint": "b74f0a8d6fa3424c53f2471279cedc1b17cacf74d93fe92f6f06b2986df34a0f"
+  },
+  "stage_topology": {
+    "correction": "the design GPU init container plus CPU main container held the accelerator for the whole Pod lifetime, so a GPU sat idle through the CPU-only aggregation",
+    "now": "one stage per Job over a durable workspace claim; the GPU is released when design ends",
+    "handoff": "content-addressed: the aggregate re-reads every artifact the design stage published and holds it to that shard's declared SHA-256 and size, rejecting a missing, rewritten or escaping path",
+    "server_validated": "both rendered Jobs passed kubectl apply --dry-run=server against k8s-inference-h100 with synthetic content-addressed subPaths; nothing was created"
   }
 }
