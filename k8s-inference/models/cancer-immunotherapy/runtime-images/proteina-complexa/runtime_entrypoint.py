@@ -10,10 +10,15 @@ path.  It owns five responsibilities that the upstream project does not:
    The pairs are pinned here by artifact id, file name, byte count and
    SHA-256, so a run can never silently mix the ligand score model with the
    AME autoencoder.
-2. **Artifact marker verification.**  Every required file is checked for
-   presence and exact byte count before a GPU is touched; content digests are
-   verified when asked for.  A missing or short artifact fails the run instead
-   of producing a plausible-looking structure from a truncated checkpoint.
+2. **Immutable generation verification.**  Checkpoints arrive as content
+   addressed generations on the shared reference-data host plane, promoted by
+   the ingestion successor's terminal run.  Before a GPU is touched the mount
+   must prove it is the pinned generation: the reserved marker must describe
+   this artifact, generation, sub-path, plane, licence visibility and inventory
+   algorithm, the marker's own document digest must equal what the promotion
+   receipt published, and a tree digest recomputed from the mounted bytes must
+   reproduce the generation name.  Per-file byte counts are always checked and
+   content digests are verified when asked for.
 3. **Target resolution.**  Upstream's target dictionaries carry *relative*
    ``target_path`` values (``./assets/target_data/...``), so a run only
    resolves its target when the process happens to be started from the source
@@ -23,9 +28,13 @@ path.  It owns five responsibilities that the upstream project does not:
    begin with a digit (``02_PDL1``, ``39_7V11_LIGAND``) and Hydra's override
    grammar only admits key segments that start with a letter or underscore, so
    ``++generation.target_dict_cfg.02_PDL1.target_path=...`` is a parse error.
-   Instead the run directory gets an ``assets`` symlink to the in-image asset
-   root, which makes upstream's own relative path resolve, and the target is
-   independently resolved and checked for existence before launch.
+   Instead the image bakes a read-only working directory whose ``assets``
+   link resolves upstream's own relative path, so the binding is part of the
+   image digest rather than a writable ``.env`` or a symlink created at run
+   time.  Target structures are treated as a real artifact: each is pinned by
+   digest against the upstream source archive and verified before model load,
+   because a run that loads both checkpoints and then cannot find its target
+   has failed on a missing artifact.
 4. **Phase timing and truthful cache reporting.**  Upstream reports one
    ``Total generation time``.  The controller needs the split between
    interpreter import, checkpoint load and sampling, which is recovered from
@@ -50,6 +59,7 @@ import os
 import re
 import subprocess
 import sys
+import zlib
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -157,6 +167,89 @@ RF3_ARTIFACT = {
     "role": "reward-and-evaluation",
 }
 
+# The immutable public generations promoted onto the shared reference-data host
+# plane by the ingestion successor's terminal run r20260903b. A generation is
+# named by its own content: the directory name equals the fs2-tree-inventory/v2
+# digest of the tree it holds, so a mount either is that generation or is not.
+HOST_ROOT = "/mnt/fs2-reference-data/data"
+GENERATION_ROOT = "scientific-localization/public/generations"
+MARKER_NAME = ".fs2-runtime-tree.json"
+MARKER_SCHEMA = "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
+INVENTORY_ALGORITHM = "fs2-tree-inventory/v2"
+
+GENERATIONS: dict[str, dict[str, Any]] = {
+    "complexa-protein": {
+        "marker_sha256": "b84403b26e5ac4acd2ea3203d3ea7936e8ef009a9ac1c19fbcfddd7c40667851",
+        "generation": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+        "entry_count": 2,
+        "total_bytes": 7034391160,
+        "license_id": "NVIDIA-Open-Model-License-2024-06",
+        "source_uri": "hf://nvidia/NV-Proteina-Complexa-Protein-Target-160M-v1",
+        "source_revision": "ffed199e32612b98ffa04f4640d34d37b137fca5",
+    },
+    "complexa-ligand": {
+        "marker_sha256": "868551c2ec89d8296155ac5e5e0a674205cbc851c301ed58f32014d7fe404177",
+        "generation": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+        "entry_count": 2,
+        "total_bytes": 5890739041,
+        "license_id": "NVIDIA-Open-Model-License-2024-06",
+        "source_uri": "hf://nvidia/NV-Proteina-Complexa-Ligand-Target-160M-v1",
+        "source_revision": "bc90c8b2c701ceb52d5faef72600b6b5be880244",
+    },
+    "complexa-ame": {
+        "marker_sha256": "18199cf0468000baefa7ed0cb604a2a7c64d0228ddf8d8e5579d6c1e543267db",
+        "generation": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+        "entry_count": 2,
+        "total_bytes": 5892211805,
+        "license_id": "NVIDIA-Open-Model-License-2024-06",
+        "source_uri": "hf://nvidia/NV-Proteina-Complexa-AME-160M-v1",
+        "source_revision": "9743d749a8754080a32fda857d95579dfa4dabae",
+    },
+    "rosettafold3-checkpoint": {
+        "marker_sha256": "94002c4a6a8c7fdbdda20e658785cf63a7708728afccf9615f1d54ea71657822",
+        "generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "entry_count": 1,
+        "total_bytes": 3038876446,
+        "license_id": "BSD-3-Clause",
+        "source_uri": "https://files.ipd.uw.edu/pub/rf3/",
+        "source_revision": "foundry-production-b02eed6a-checksum-lock",
+    },
+}
+
+# Target structures are a real runtime dependency, not incidental image content:
+# a run that loads both checkpoints and then cannot find its target has failed
+# on a missing artifact. They ship inside the pinned upstream source archive, so
+# their public identity is that archive at its pinned revision, and each file is
+# pinned by its own digest and verified before the model is loaded.
+TARGET_DATA = {
+    "source_uri": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
+    "source_revision": SOURCE_REVISION,
+    "archive_sha256": "4a9448653fe9ae4e9e46c3204ef0e3c6ac9563a4cc5626c7a11d8441c485fb3b",
+    "license_id": "Apache-2.0",
+    "binding": "baked into the image at /opt/fs2/source/assets and reached through an "
+    "image-baked read-only working directory; never a writable .env and never a "
+    "symlink created at run time",
+    "files": {
+        "assets/target_data/bindcraft_targets/PD-L1.pdb": {
+            "bytes": 74614,
+            "sha256": "5e949950d8255ec3bf390b8bf24f5c71c6ac8fc65bc553d7e477563c9599b93e",
+        },
+        "assets/target_data/ligand_targets/7v11_ligand_centered.pdb": {
+            "bytes": 4045,
+            "sha256": "ffa26a9b1ed40e7a0cdc4a9f74ce105b965f65d095b66d60b30c8e1cf79fb391",
+        },
+        "assets/target_data/ame_input_structures/M0024_1nzy.pdb": {
+            "bytes": 8586,
+            "sha256": "70cff8a74c8fa5628a94a93828e98e9b16651c83927feb038b834e46696372eb",
+        },
+    },
+}
+
+# The image bakes this directory with a read-only ``assets`` symlink to the
+# source asset root, so upstream's relative ./assets/... target paths resolve
+# from a working directory that is part of the image digest.
+BAKED_WORKDIR = Path("/opt/fs2/complexa/workdir")
+
 STANDARD_RESIDUES = frozenset(
     """ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE PRO SER THR TRP
     TYR VAL""".split()
@@ -194,6 +287,179 @@ class RuntimeFailure(Exception):
 
 def _artifact_root() -> Path:
     return Path(os.environ.get("FS2_ARTIFACT_ROOT", "/opt/fs2/artifacts"))
+
+
+_SAFE_SEGMENT = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._+-]*")
+
+
+def _safe_relative(value: str) -> bool:
+    """The plane's own rule for an inventoried entry path.
+
+    No absolute path, no traversal and no leading dot at any depth, which is
+    what keeps the reserved marker name outside the inventory and therefore
+    unforgeable.
+    """
+    if not value or value.startswith("/") or len(value) > 1024:
+        return False
+    return all(_SAFE_SEGMENT.fullmatch(segment) for segment in value.split("/"))
+
+
+def _crc32(path: Path) -> int:
+    value = 0
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+            value = zlib.crc32(chunk, value)
+    return value & 0xFFFFFFFF
+
+
+def tree_inventory_v2(root: Path) -> tuple[str, int, int, int]:
+    """Recompute ``fs2-tree-inventory/v2`` over a mounted generation.
+
+    This is the check that cannot be forged by editing a document: the digest is
+    taken from the bytes actually mounted, and a generation directory is named
+    by that digest, so a mount either is the generation it claims or is not.
+    Returns (digest, file count, total bytes, directory count).
+    """
+    rows: list[dict[str, Any]] = []
+    files = total = directories = 0
+    for base, directory_names, file_names in os.walk(root):
+        for name in sorted(directory_names):
+            relative = os.path.relpath(os.path.join(base, name), root)
+            if not _safe_relative(relative):
+                continue
+            rows.append({"kind": "directory", "path": relative})
+            directories += 1
+        for name in sorted(file_names):
+            relative = os.path.relpath(os.path.join(base, name), root)
+            if relative == MARKER_NAME or not _safe_relative(relative):
+                continue
+            entry = Path(base, name)
+            size = entry.stat().st_size
+            rows.append(
+                {
+                    "bytes": size,
+                    "crc32": f"{_crc32(entry):08x}",
+                    "kind": "file",
+                    "path": relative,
+                }
+            )
+            files += 1
+            total += size
+    rows.sort(key=lambda row: row["path"])
+    payload = (json.dumps(rows, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8")
+    return hashlib.sha256(payload).hexdigest(), files, total, directories
+
+
+def _marker_sha256(document: dict[str, Any]) -> str:
+    return hashlib.sha256(
+        (json.dumps(document, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    ).hexdigest()
+
+
+def verify_generation(mount: Path, artifact_id: str) -> dict[str, Any]:
+    """Prove a mount is exactly the pinned immutable generation.
+
+    Mirrors the plane's own admission rules: the marker must describe this
+    artifact, this generation, this sub-path, this plane and this licence
+    visibility, its own document digest must match what the promotion receipt
+    published, and the tree recomputed from the mounted bytes must reproduce the
+    generation name. Bytes that are right in the wrong place, under the wrong
+    licence, or measured by the wrong algorithm are still wrong.
+    """
+    pinned = GENERATIONS.get(artifact_id)
+    if pinned is None:
+        raise _fail(f"no generation is pinned for {artifact_id}")
+    started = time.monotonic()
+
+    marker_path = mount / MARKER_NAME
+    if not marker_path.is_file():
+        raise _fail(f"{artifact_id} mount carries no {MARKER_NAME}: {mount}")
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+
+    expected_sub_path = f"{GENERATION_ROOT}/{artifact_id}/sha256/{pinned['generation']}"
+    checks: list[tuple[str, Any, Any]] = [
+        ("schema", marker.get("schema"), MARKER_SCHEMA),
+        ("artifact_id", marker.get("artifact_id"), artifact_id),
+        ("generation", marker.get("generation"), pinned["generation"]),
+        ("inventory_sha256", marker.get("inventory_sha256"), pinned["generation"]),
+        ("sub_path", marker.get("sub_path"), expected_sub_path),
+        ("read_only", marker.get("read_only"), True),
+        ("inventory_algorithm", marker.get("inventory_algorithm"), INVENTORY_ALGORITHM),
+        ("volume_kind", marker.get("volume_kind"), "host-path"),
+        ("visibility", marker.get("visibility"), "public"),
+        ("host_root", marker.get("host_root"), HOST_ROOT),
+        ("namespace", marker.get("namespace"), ""),
+        ("claim", marker.get("claim"), ""),
+        ("entry_count", marker.get("entry_count"), pinned["entry_count"]),
+        ("total_bytes", marker.get("total_bytes"), pinned["total_bytes"]),
+        ("license_id", marker.get("license_id"), pinned["license_id"]),
+        ("source_uri", marker.get("source_uri"), pinned["source_uri"]),
+        ("source_revision", marker.get("source_revision"), pinned["source_revision"]),
+    ]
+    for field, observed, expected in checks:
+        if observed != expected:
+            raise _fail(
+                f"{artifact_id} generation marker {field} is {observed!r}, expected {expected!r}"
+            )
+
+    observed_marker_digest = _marker_sha256(marker)
+    if observed_marker_digest != pinned["marker_sha256"]:
+        raise _fail(
+            f"{artifact_id} generation marker digest is {observed_marker_digest}, "
+            f"and {pinned['marker_sha256']} was published by the promotion receipt"
+        )
+
+    digest, files, total, directories = tree_inventory_v2(mount)
+    if digest != pinned["generation"]:
+        raise _fail(
+            f"{artifact_id} mount recomputes to {digest}, "
+            f"which is not the pinned generation {pinned['generation']}"
+        )
+    if files != pinned["entry_count"] or total != pinned["total_bytes"]:
+        raise _fail(
+            f"{artifact_id} mount holds {files} files and {total} bytes, expected "
+            f"{pinned['entry_count']} and {pinned['total_bytes']}"
+        )
+
+    return {
+        "artifact_id": artifact_id,
+        "mount": str(mount),
+        "generation": pinned["generation"],
+        "sub_path": expected_sub_path,
+        "host_root": HOST_ROOT,
+        "volume_kind": "host-path",
+        "visibility": "public",
+        "license_id": pinned["license_id"],
+        "source_uri": pinned["source_uri"],
+        "source_revision": pinned["source_revision"],
+        "marker_sha256": observed_marker_digest,
+        "inventory_algorithm": INVENTORY_ALGORITHM,
+        "recomputed_generation": digest,
+        "entry_count": files,
+        "total_bytes": total,
+        "directory_count": directories,
+        "seconds": round(time.monotonic() - started, 3),
+    }
+
+
+def verify_target_structure(relative: str) -> dict[str, Any]:
+    """Verify one bundled target structure against its pinned identity."""
+    pinned = TARGET_DATA["files"].get(relative)
+    if pinned is None:
+        raise _fail(f"target structure {relative} carries no pinned identity")
+    path = SOURCE_ROOT / relative
+    record = verify_file(path, pinned, f"target structure {relative}", digests=True)
+    record.update(
+        {
+            "relative_path": relative,
+            "source_uri": TARGET_DATA["source_uri"],
+            "source_revision": TARGET_DATA["source_revision"],
+            "archive_sha256": TARGET_DATA["archive_sha256"],
+            "license_id": TARGET_DATA["license_id"],
+            "binding": TARGET_DATA["binding"],
+        }
+    )
+    return record
 
 
 def verify_file(path: Path, expected: dict[str, Any], label: str, *, digests: bool) -> dict[str, Any]:
@@ -270,33 +536,36 @@ def resolve_target(variant: dict[str, Any], task_name: str) -> dict[str, Any]:
     }
 
 
-def link_assets(work_directory: Path) -> dict[str, Any]:
-    """Make upstream's relative ``./assets/...`` target paths resolve.
+def verify_working_directory(work_directory: Path) -> dict[str, Any]:
+    """Confirm the image-baked working directory resolves upstream assets.
 
-    The upstream target dictionaries declare ``./assets/target_data/...``,
-    resolved against the process working directory.  A symlink to the in-image
-    asset root turns those declarations into real files without touching
-    upstream configs and without an override Hydra cannot parse.
-
-    The link lives in a scratch working directory, never in the output root:
-    the asset tree contains dozens of target structures, and a link to it
-    inside the output root would be walked by output discovery and counted as
-    generated output.
+    Upstream target dictionaries declare ./assets/target_data/..., resolved
+    against the process working directory, and Hydra cannot express an absolute
+    override for them because most task names begin with a digit while its key
+    grammar admits only a leading letter or underscore. The image therefore
+    bakes a working directory holding a read-only assets link to the source
+    asset root, so the binding is part of the image digest. Nothing is created
+    here: a missing or redirected link fails the run rather than being repaired,
+    because repairing it at run time is the mutable side effect this contract
+    exists to avoid.
     """
-    work_directory.mkdir(parents=True, exist_ok=True)
     link = work_directory / "assets"
-    target = SOURCE_ROOT / "assets"
-    if not target.is_dir():
-        raise _fail(f"in-image asset root is missing: {target}")
-    if link.is_symlink():
-        if link.readlink() != target:
-            link.unlink()
-            link.symlink_to(target)
-    elif link.exists():
-        raise _fail(f"{link} exists and is not the expected symlink")
-    else:
-        link.symlink_to(target)
-    return {"link": str(link), "target": str(target)}
+    expected = SOURCE_ROOT / "assets"
+    if not work_directory.is_dir():
+        raise _fail(f"the image-baked working directory is missing: {work_directory}")
+    if not link.is_symlink():
+        raise _fail(f"{link} is not the image-baked asset link")
+    resolved = link.resolve()
+    if resolved != expected.resolve():
+        raise _fail(f"{link} resolves to {resolved}, expected {expected}")
+    if not (link / "target_data").is_dir():
+        raise _fail(f"{link}/target_data is not readable")
+    return {
+        "working_directory": str(work_directory),
+        "asset_link": str(link),
+        "resolves_to": str(resolved),
+        "created_at_run_time": False,
+    }
 
 
 def cuda_preflight() -> dict[str, Any]:
@@ -346,7 +615,7 @@ def build_argv(
         # No target_path override: Hydra's override grammar rejects key
         # segments that begin with a digit, and most upstream task names do.
         # The run directory's ``assets`` symlink is what makes upstream's own
-        # relative target_path resolve. See link_assets().
+        # relative target_path resolve. See verify_working_directory().
         f"++generation.dataloader.batch_size={request['batch_size']}",
         f"++generation.dataloader.dataset.nres.nsamples={request['samples']}",
         f"++generation.args.nsteps={request['nsteps']}",
@@ -784,6 +1053,27 @@ def describe() -> dict[str, Any]:
             for name, spec in VARIANTS.items()
         },
         "shared_artifacts": [RF3_ARTIFACT],
+        "generations": {
+            artifact_id: {
+                "generation": pinned["generation"],
+                "marker_sha256": pinned["marker_sha256"],
+                "sub_path": f"{GENERATION_ROOT}/{artifact_id}/sha256/{pinned['generation']}",
+                "host_root": HOST_ROOT,
+                "volume_kind": "host-path",
+                "visibility": "public",
+                "license_id": pinned["license_id"],
+                "entry_count": pinned["entry_count"],
+                "total_bytes": pinned["total_bytes"],
+            }
+            for artifact_id, pinned in GENERATIONS.items()
+        },
+        "target_data": TARGET_DATA,
+        "working_directory": str(BAKED_WORKDIR),
+        "reward_models": {
+            "protein": "AlphaFold2 through ColabDesign, bound by AF2_DIR",
+            "ligand": "RosettaFold3, bound by RF3_CKPT_PATH and RF3_EXEC_PATH",
+            "ame": "RosettaFold3, bound by RF3_CKPT_PATH and RF3_EXEC_PATH",
+        },
         "gpu_snapshot": {
             "captured": False,
             "restored": False,
@@ -821,6 +1111,12 @@ def run(arguments: argparse.Namespace) -> int:
     try:
         artifact_dir = Path(arguments.artifact_dir or (_artifact_root() / variant["artifact_id"]))
         phase_started = time.monotonic()
+
+        # The mount must be the pinned immutable generation before anything else
+        # happens: marker, plane, licence, document digest, and a tree digest
+        # recomputed from the mounted bytes.
+        generation = verify_generation(artifact_dir, variant["artifact_id"])
+
         markers = [
             verify_file(
                 artifact_dir / variant["checkpoint"]["name"],
@@ -835,37 +1131,47 @@ def run(arguments: argparse.Namespace) -> int:
                 digests=request["verify_content_digests"],
             ),
         ]
-        rf3_path = Path(
-            os.environ.get(
-                "RF3_CKPT_PATH",
-                str(_artifact_root() / "rosettafold3" / RF3_ARTIFACT["name"]),
-            )
+
+        rf3_root = Path(
+            os.environ.get("FS2_RF3_ROOT", str(_artifact_root() / "rosettafold3-checkpoint"))
         )
-        rf3_record: dict[str, Any]
-        if rf3_path.is_file():
-            rf3_record = verify_file(
-                rf3_path,
-                RF3_ARTIFACT,
-                "rosettafold3 checkpoint",
-                digests=request["verify_content_digests"],
+        rf3_path = rf3_root / RF3_ARTIFACT["name"]
+        rf3_required = request["reward_model"] == "upstream-default" and variant_name in (
+            "ligand",
+            "ame",
+        )
+        if rf3_root.is_dir() and (rf3_root / MARKER_NAME).is_file():
+            rf3_record: dict[str, Any] = verify_generation(rf3_root, "rosettafold3-checkpoint")
+            rf3_record.update(
+                verify_file(
+                    rf3_path,
+                    RF3_ARTIFACT,
+                    "rosettafold3 checkpoint",
+                    digests=request["verify_content_digests"],
+                )
             )
             rf3_record["bound"] = True
-            rf3_record["exercised"] = request["reward_model"] == "upstream-default"
+            rf3_record["exercised"] = rf3_required
+            rf3_record["role"] = RF3_ARTIFACT["role"]
         else:
             rf3_record = {
                 "label": "rosettafold3 checkpoint",
                 "path": str(rf3_path),
                 "bound": False,
                 "exercised": False,
-                "note": "not mounted for this run",
+                "role": RF3_ARTIFACT["role"],
+                "note": "no RosettaFold3 generation is mounted for this run",
             }
-            if request["reward_model"] == "upstream-default" and variant_name in ("ligand", "ame"):
+            if rf3_required:
                 raise _fail(
-                    "the upstream default reward model for this variant is RosettaFold3, "
-                    f"but its checkpoint is absent: {rf3_path}"
+                    "this request asks for the upstream default reward model, which for "
+                    f"the {variant_name} pipeline is RosettaFold3, but no RosettaFold3 "
+                    f"generation is mounted at {rf3_root}"
                 )
+
         result["artifact_verification"] = {
             "artifact_dir": str(artifact_dir),
+            "generation": generation,
             "markers": markers,
             "rosettafold3": rf3_record,
             "seconds": round(time.monotonic() - phase_started, 3),
@@ -874,9 +1180,10 @@ def run(arguments: argparse.Namespace) -> int:
 
         result["cuda"] = cuda_preflight()
         target = resolve_target(variant, request["task_name"])
-        result["target"] = target
+        relative_target = os.path.relpath(target["target_path"], SOURCE_ROOT)
+        result["target"] = {**target, "identity": verify_target_structure(relative_target)}
         work_root = Path(arguments.work_dir)
-        result["asset_link"] = link_assets(work_root)
+        result["working_directory"] = verify_working_directory(work_root)
 
         environment = dict(os.environ)
         environment.update(variant["environment"])
@@ -983,9 +1290,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     runner.add_argument(
         "--work-dir",
-        default="/tmp/fs2-complexa-run",
-        help="writable scratch directory used as the upstream working directory; "
-        "it holds the assets symlink and is deliberately outside the output root",
+        default=str(BAKED_WORKDIR),
+        help="the image-baked working directory that resolves relative asset "
+        "paths; it is read-only and outside the output root",
     )
     runner.add_argument(
         "--cache-level",

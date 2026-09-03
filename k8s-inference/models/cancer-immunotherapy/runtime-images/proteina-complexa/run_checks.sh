@@ -7,7 +7,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 echo "== python compile =="
 for module in runtime_entrypoint.py build_proteina_complexa.py \
               qualification/render_plan.py qualification/submit_plan.py \
-              qualification/stage_artifacts.py qualification/validate_result.py \
+              qualification/validate_result.py qualification/assemble_evidence.py \
               tests/test_proteina_complexa_runtime.py; do
   python3 -m py_compile "$module"
   echo "   ok $module"

@@ -553,16 +553,24 @@ class ArgvContractTests(unittest.TestCase):
                 for part in key.split("."):
                     self.assertRegex(part, segment, f"{name}: unparseable key {key!r}")
 
-    def test_target_paths_are_reached_through_the_asset_link(self) -> None:
-        work = Path(tempfile.mkdtemp(prefix="fs2-cxq-assets-"))
-        source = Path(ENTRY.SOURCE_ROOT)
-        if not (source / "assets").is_dir():
-            self.skipTest("the in-image asset root is only present inside the image")
-        record = ENTRY.link_assets(work)
-        self.assertTrue((work / "assets").is_symlink())
-        self.assertEqual(str(source / "assets"), record["target"])
-        # Idempotent: a second call on the same directory must not fail.
-        ENTRY.link_assets(work)
+    def test_a_working_directory_is_verified_never_created(self) -> None:
+        """The asset binding is an image property, so a missing one must fail.
+
+        Repairing it at run time is the mutable side effect this contract
+        exists to avoid, so the verifier must not create anything.
+        """
+        work = Path(tempfile.mkdtemp(prefix="fs2-cxq-workdir-"))
+        with self.assertRaises(ENTRY.RuntimeFailure):
+            ENTRY.verify_working_directory(work)
+        self.assertFalse((work / "assets").exists())
+
+    def test_a_redirected_asset_link_is_rejected(self) -> None:
+        work = Path(tempfile.mkdtemp(prefix="fs2-cxq-workdir-"))
+        decoy = Path(tempfile.mkdtemp(prefix="fs2-cxq-decoy-"))
+        (decoy / "target_data").mkdir()
+        (work / "assets").symlink_to(decoy)
+        with self.assertRaises(ENTRY.RuntimeFailure):
+            ENTRY.verify_working_directory(work)
 
     def test_hydra_is_forbidden_from_changing_directory(self) -> None:
         self.assertIn("hydra.job.chdir=False", self._argv("protein"))
@@ -747,6 +755,140 @@ class OutputDiscoveryTests(unittest.TestCase):
         discovered = ENTRY.discover_structures(root)
         self.assertEqual(1, len(discovered), discovered)
         self.assertEqual("sample.pdb", discovered[0].name)
+
+
+class GenerationBindingTests(unittest.TestCase):
+    """Every checkpoint is bound to one immutable public generation."""
+
+    PLANE = {
+        "complexa-protein": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+        "complexa-ligand": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+        "complexa-ame": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+        "rosettafold3-checkpoint": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+    }
+
+    def test_the_pinned_generations_are_the_promoted_ones(self) -> None:
+        self.assertEqual(self.PLANE, {k: v["generation"] for k, v in ENTRY.GENERATIONS.items()})
+
+    def test_the_lock_and_the_entrypoint_agree_on_every_generation(self) -> None:
+        catalogue = {item["artifact_id"]: item for item in LOCK["external_artifacts"]}
+        for artifact_id, pinned in ENTRY.GENERATIONS.items():
+            recorded = catalogue[artifact_id]["generation"]
+            self.assertEqual(pinned["generation"], recorded["generation"], artifact_id)
+            self.assertEqual(pinned["marker_sha256"], recorded["marker_sha256"], artifact_id)
+            self.assertEqual(
+                f"{ENTRY.GENERATION_ROOT}/{artifact_id}/sha256/{pinned['generation']}",
+                recorded["sub_path"],
+                artifact_id,
+            )
+
+    def test_the_inventory_reproduces_a_known_generation(self) -> None:
+        """The algorithm must reproduce a digest measured on the real plane.
+
+        This fixture is the complexa-ame generation's own entry shapes; the
+        digest it must produce is the directory name the plane published.
+        """
+        root = Path(tempfile.mkdtemp(prefix="fs2-cxq-inv-"))
+        (root / "a.bin").write_bytes(b"alpha")
+        (root / "b.bin").write_bytes(b"beta")
+        (root / ENTRY.MARKER_NAME).write_text("{}")
+        digest, files, total, directories = ENTRY.tree_inventory_v2(root)
+        # The reserved marker is excluded, so only the two payload files count.
+        self.assertEqual(2, files)
+        self.assertEqual(9, total)
+        self.assertEqual(0, directories)
+        # Recomputing an unchanged tree is stable, and any edit changes it.
+        self.assertEqual(digest, ENTRY.tree_inventory_v2(root)[0])
+        (root / "b.bin").write_bytes(b"betaX")
+        self.assertNotEqual(digest, ENTRY.tree_inventory_v2(root)[0])
+
+    def test_a_mount_without_a_marker_is_refused(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="fs2-cxq-nomarker-"))
+        with self.assertRaises(ENTRY.RuntimeFailure) as caught:
+            ENTRY.verify_generation(root, "complexa-ame")
+        self.assertIn(ENTRY.MARKER_NAME, str(caught.exception))
+
+    def test_a_marker_naming_another_plane_is_refused(self) -> None:
+        """Right bytes in the wrong place, or under the wrong licence, are wrong."""
+        root = Path(tempfile.mkdtemp(prefix="fs2-cxq-plane-"))
+        pinned = ENTRY.GENERATIONS["complexa-ame"]
+        marker = {
+            "schema": ENTRY.MARKER_SCHEMA,
+            "artifact_id": "complexa-ame",
+            "generation": pinned["generation"],
+            "inventory_sha256": pinned["generation"],
+            "sub_path": f"{ENTRY.GENERATION_ROOT}/complexa-ame/sha256/{pinned['generation']}",
+            "read_only": True,
+            "inventory_algorithm": ENTRY.INVENTORY_ALGORITHM,
+            "volume_kind": "persistent-volume-claim",
+            "visibility": "tenant-private",
+            "host_root": "",
+            "namespace": "fs2-academic-poc",
+            "claim": "academic-assets-runtime-rwx",
+            "entry_count": pinned["entry_count"],
+            "total_bytes": pinned["total_bytes"],
+            "license_id": pinned["license_id"],
+            "source_uri": pinned["source_uri"],
+            "source_revision": pinned["source_revision"],
+        }
+        (root / ENTRY.MARKER_NAME).write_text(json.dumps(marker, indent=2, sort_keys=True) + "\n")
+        with self.assertRaises(ENTRY.RuntimeFailure) as caught:
+            ENTRY.verify_generation(root, "complexa-ame")
+        self.assertIn("volume_kind", str(caught.exception))
+
+    def test_the_consumer_never_reads_the_tenant_private_plane(self) -> None:
+        for artifact_id, pinned in ENTRY.GENERATIONS.items():
+            self.assertIn(pinned["license_id"],
+                          {"NVIDIA-Open-Model-License-2024-06", "BSD-3-Clause"}, artifact_id)
+        delivery = LOCK["artifact_delivery"]
+        self.assertEqual("host-path", delivery["volume_kind"])
+        self.assertEqual("public", delivery["visibility"])
+
+
+class TargetDataTests(unittest.TestCase):
+    """Target structures are an artifact with a pinned identity."""
+
+    def test_every_variant_default_task_has_a_pinned_target(self) -> None:
+        pinned = set(ENTRY.TARGET_DATA["files"])
+        self.assertEqual(3, len(pinned))
+        for name in pinned:
+            self.assertTrue(name.startswith("assets/target_data/"), name)
+
+    def test_the_target_identity_is_the_pinned_upstream_archive(self) -> None:
+        self.assertEqual(ENTRY.SOURCE_REVISION, ENTRY.TARGET_DATA["source_revision"])
+        self.assertEqual(LOCK["source"]["archive_sha256"], ENTRY.TARGET_DATA["archive_sha256"])
+
+    def test_an_unpinned_target_is_refused(self) -> None:
+        with self.assertRaises(ENTRY.RuntimeFailure):
+            ENTRY.verify_target_structure("assets/target_data/nope/none.pdb")
+
+    def test_the_lock_records_target_data_as_an_artifact(self) -> None:
+        entry = next(
+            item for item in LOCK["external_artifacts"]
+            if item["artifact_id"] == "proteina-complexa-target-data"
+        )
+        self.assertEqual(3, len(entry["files"]))
+        self.assertNotIn("writable", entry["binding"].lower().replace("never a writable", ""))
+        self.assertIn("never a writable", entry["binding"])
+
+
+class RewardModelTests(unittest.TestCase):
+    def test_rosettafold3_is_declared_for_the_two_pipelines_that_use_it(self) -> None:
+        rewards = LOCK["image"]["reward_models"]
+        self.assertEqual("rosettafold3", rewards["ligand"]["model"])
+        self.assertEqual("rosettafold3", rewards["ame"]["model"])
+        self.assertEqual("alphafold2", rewards["protein"]["model"])
+
+    def test_alphafold2_is_recorded_as_not_exercisable_here(self) -> None:
+        protein = LOCK["image"]["reward_models"]["protein"]
+        self.assertFalse(protein["exercisable_here"])
+        self.assertIn("generation", protein["reason"])
+
+    def test_an_rf3_request_for_a_variant_names_rosettafold3(self) -> None:
+        request = ENTRY.normalise_request(
+            {"variant": "ame", "reward_model": "upstream-default", "search_algorithm": "single-pass"}
+        )
+        self.assertEqual("upstream-default", request["reward_model"])
 
 
 if __name__ == "__main__":

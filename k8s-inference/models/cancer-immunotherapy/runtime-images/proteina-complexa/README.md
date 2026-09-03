@@ -36,8 +36,52 @@ byte count and SHA-256 and verified before a GPU is touched.
 All three are NVIDIA Open Model License, `entitlement_state: not-required`.
 RosettaFold3 (`rf3_foundry_01_24_latest_remapped.ckpt`, 3,038,876,446 B,
 BSD-3-Clause) is the reward and evaluation folding model for `ligand` and
-`ame`; it is **bound and marker-verified on every run** but only *exercised*
-when a request asks for `reward_model: upstream-default`.
+`ame`; it is bound and generation-verified on every run, and *exercised* when a
+request asks for `reward_model: upstream-default`.
+
+### Where the checkpoints come from
+
+Not from a claim this task fills. Each artifact is one **immutable public
+generation** on the shared reference-data host plane, promoted by the ingestion
+successor's terminal run `r20260903b` (four generations, zero failures):
+
+| artifact | generation |
+| --- | --- |
+| `complexa-protein` | `eaaf891e…607536` |
+| `complexa-ligand` | `61247c8d…d9cea5` |
+| `complexa-ame` | `d38c622e…29afa5a` |
+| `rosettafold3-checkpoint` | `d909fe65…3164bce` |
+
+Host root `/mnt/fs2-reference-data/data`, sub-path
+`scientific-localization/public/generations/<artifact id>/sha256/<generation>`,
+mounted read-only. The plane root is mounted and the prefix carried in the
+sub-path, which is the convention the localization foundation set. Every GPU
+node in this cluster carries the required `storage.fs2.nebius/reference-data`
+label.
+
+Both artifacts are `visibility: public` and host-path, so this consumer reads
+no tenant-private tree, needs no mixed-plane machinery, and never places a
+public byte on the academic claim.
+
+Before a GPU is touched the entrypoint reproduces the plane's own admission
+rules: the reserved `.fs2-runtime-tree.json` marker must name this artifact,
+generation, sub-path, plane, visibility, licence and inventory algorithm; the
+marker's own document digest must equal the one the promotion receipt
+published; and an `fs2-tree-inventory/v2` digest **recomputed from the mounted
+bytes** must reproduce the generation name. A document can be edited; a
+recomputed tree digest cannot.
+
+### Target structures are an artifact too
+
+A run that loads two multi-gigabyte checkpoints and then cannot find its target
+has failed on a missing artifact, so the target structures are pinned like any
+other: their public identity is the upstream source archive at
+`54058860`, each file is pinned by digest, and each is verified before model
+load. They are bound by an **image-baked** read-only working directory
+(`/opt/fs2/complexa/workdir/assets -> /opt/fs2/source/assets`), never by a
+writable `.env` and never by a symlink created at run time — the binding is
+part of the image digest, and the entrypoint verifies it rather than repairing
+it.
 
 ## What this image is, and is not
 
@@ -96,10 +140,14 @@ Mounts the caller must provide:
 
 | Path | Contents | Mode |
 | --- | --- | --- |
-| `/opt/fs2/artifacts/complexa-<variant>` | that variant's checkpoint pair | read-only |
-| `/opt/fs2/artifacts/rosettafold3` | RF3 checkpoint | read-only |
+| `/opt/fs2/artifacts/complexa-<variant>` | that variant's generation | read-only |
+| `/opt/fs2/artifacts/rosettafold3-checkpoint` | the RF3 generation | read-only |
 | `/workspace` | outputs | read-write as gid 10001 |
 | `/tmp` | caches | read-write |
+
+The two artifact mounts are sub-paths of one `hostPath` volume on the plane
+root; only `/workspace` is a claim, and it holds nothing but this run's own
+output.
 
 The output volume must be writable by the runtime user. On
 `csi-mounted-fs-path-sc` the volume root is root-owned, so the pod needs
@@ -144,10 +192,18 @@ needs an upstream patch.
 
 | Script | Role |
 | --- | --- |
-| `stage_artifacts.py` | stage the pinned artifacts into a claim, verifying every byte |
-| `render_plan.py` | render the ConfigMap and the three variant Jobs as pure data |
+| `render_plan.py` | render the ConfigMap and the variant Jobs as pure data |
 | `submit_plan.py` | apply the plan, then collect node, image-phase and schedule-to-complete evidence |
 | `validate_result.py` | re-derive the verdict from the artifacts without importing the entrypoint |
+| `assemble_evidence.py` | turn the receipts and the verdict into the two evidence documents |
+
+`render_plan.py --reward-model upstream-default --variant ligand --variant ame`
+renders the RosettaFold3 runs. It refuses `--variant protein` with a reward
+model, because the protein pipeline's reward is AlphaFold2 and no
+`alphafold2-params` generation is published on this plane — the merged
+localization contract declares that artifact with a `proteina-complexa`
+consumer bound by `AF2_DIR`, but its binding handoff still reports
+`generations_published: false`.
 
 Run the offline suite with `./run_checks.sh`. Live evidence lands in
 `evidence/`.

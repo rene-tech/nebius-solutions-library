@@ -107,6 +107,29 @@
       "route_exposed": false,
       "servable": false,
       "servable_gate": "all three variants qualified on real H100 AND the scientific batch controller route exercised end to end. The controller route is owned by another workstream and is not deployed here, so this runtime is never reported as servable by this task."
+    },
+    "baked_working_directory": {
+      "path": "/opt/fs2/complexa/workdir",
+      "asset_link": "assets -> /opt/fs2/source/assets",
+      "why": "upstream target dictionaries carry relative ./assets/... paths and Hydra cannot express an absolute override for task names that begin with a digit, so the binding is baked into the image rather than created at run time"
+    },
+    "reward_models": {
+      "protein": {
+        "model": "alphafold2",
+        "binding": "AF2_DIR",
+        "exercisable_here": false,
+        "reason": "no alphafold2-params generation is published on the plane"
+      },
+      "ligand": {
+        "model": "rosettafold3",
+        "binding": "RF3_CKPT_PATH and RF3_EXEC_PATH",
+        "exercisable_here": true
+      },
+      "ame": {
+        "model": "rosettafold3",
+        "binding": "RF3_CKPT_PATH and RF3_EXEC_PATH",
+        "exercisable_here": true
+      }
     }
   },
   "weight_policy": {
@@ -135,7 +158,22 @@
           "bytes": 4100101779,
           "sha256": "35f8865efd269995eeaf1670e1c1085acfe2988c40abdeda8e09a0e15eb40816"
         }
-      ]
+      ],
+      "generation": {
+        "generation": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+        "marker_sha256": "b84403b26e5ac4acd2ea3203d3ea7936e8ef009a9ac1c19fbcfddd7c40667851",
+        "sub_path": "scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+        "entry_count": 2,
+        "total_bytes": 7034391160,
+        "inventory_algorithm": "fs2-tree-inventory/v2"
+      },
+      "plane": {
+        "volume_kind": "host-path",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "visibility": "public",
+        "node_requirement": "storage.fs2.nebius/reference-data=true",
+        "owner_uid_gid": 1000
+      }
     },
     {
       "artifact_id": "complexa-ligand",
@@ -157,7 +195,22 @@
           "bytes": 4100184649,
           "sha256": "898da17022cdeaaaea7caace41c8b6fe7bfcb78be4876b0113127eb9bb1527e6"
         }
-      ]
+      ],
+      "generation": {
+        "generation": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+        "marker_sha256": "868551c2ec89d8296155ac5e5e0a674205cbc851c301ed58f32014d7fe404177",
+        "sub_path": "scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+        "entry_count": 2,
+        "total_bytes": 5890739041,
+        "inventory_algorithm": "fs2-tree-inventory/v2"
+      },
+      "plane": {
+        "volume_kind": "host-path",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "visibility": "public",
+        "node_requirement": "storage.fs2.nebius/reference-data=true",
+        "owner_uid_gid": 1000
+      }
     },
     {
       "artifact_id": "complexa-ame",
@@ -179,7 +232,22 @@
           "bytes": 4100197925,
           "sha256": "63b1358c5459e968628094fdc9a2a6a95ac003606fcf7b1a3a21174458a69734"
         }
-      ]
+      ],
+      "generation": {
+        "generation": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+        "marker_sha256": "18199cf0468000baefa7ed0cb604a2a7c64d0228ddf8d8e5579d6c1e543267db",
+        "sub_path": "scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+        "entry_count": 2,
+        "total_bytes": 5892211805,
+        "inventory_algorithm": "fs2-tree-inventory/v2"
+      },
+      "plane": {
+        "volume_kind": "host-path",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "visibility": "public",
+        "node_requirement": "storage.fs2.nebius/reference-data=true",
+        "owner_uid_gid": 1000
+      }
     },
     {
       "artifact_id": "rosettafold3-checkpoint",
@@ -196,7 +264,22 @@
           "bytes": 3038876446,
           "sha256": "364ef592fd8042a9cf4176d045015190f8322f961ccca38d891b20ca578d3bb0"
         }
-      ]
+      ],
+      "generation": {
+        "generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "marker_sha256": "94002c4a6a8c7fdbdda20e658785cf63a7708728afccf9615f1d54ea71657822",
+        "sub_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "entry_count": 1,
+        "total_bytes": 3038876446,
+        "inventory_algorithm": "fs2-tree-inventory/v2"
+      },
+      "plane": {
+        "volume_kind": "host-path",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "visibility": "public",
+        "node_requirement": "storage.fs2.nebius/reference-data=true",
+        "owner_uid_gid": 1000
+      }
     },
     {
       "artifact_id": "alphafold2-params",
@@ -205,18 +288,57 @@
       "entitlement_state": "not-required",
       "mount_path": "/opt/fs2/artifacts/alphafold2",
       "role": "reward and evaluation folding model for the protein-binder pipeline, reached through ColabDesign. Not required by, and not mounted for, the reward-free qualification runs.",
-      "files": []
+      "files": [],
+      "generation": null,
+      "plane": {
+        "state": "not-published",
+        "note": "no generation for this artifact exists on the localization plane; the merged contract declares alphafold2-params with a proteina-complexa consumer bound by AF2_DIR, but its binding handoff reports generations_published: false, so the AlphaFold2 reward path for the protein pipeline cannot be exercised here"
+      }
+    },
+    {
+      "artifact_id": "proteina-complexa-target-data",
+      "model_id": "proteina-complexa",
+      "source_uri": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
+      "source_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+      "archive_sha256": "4a9448653fe9ae4e9e46c3204ef0e3c6ac9563a4cc5626c7a11d8441c485fb3b",
+      "license_id": "Apache-2.0",
+      "entitlement_state": "not-required",
+      "mount_path": "/opt/fs2/source/assets/target_data",
+      "role": "target structures the design pipelines condition on; a real runtime dependency, not incidental image content",
+      "binding": "baked into the image at /opt/fs2/source/assets and reached through an image-baked read-only working directory; never a writable .env and never a symlink created at run time",
+      "delivery": "baked into the image from the pinned upstream source archive, so its identity is covered by the image digest and needs no mount",
+      "files": [
+        {
+          "path": "assets/target_data/ame_input_structures/M0024_1nzy.pdb",
+          "bytes": 8586,
+          "sha256": "70cff8a74c8fa5628a94a93828e98e9b16651c83927feb038b834e46696372eb"
+        },
+        {
+          "path": "assets/target_data/bindcraft_targets/PD-L1.pdb",
+          "bytes": 74614,
+          "sha256": "5e949950d8255ec3bf390b8bf24f5c71c6ac8fc65bc553d7e477563c9599b93e"
+        },
+        {
+          "path": "assets/target_data/ligand_targets/7v11_ligand_centered.pdb",
+          "bytes": 4045,
+          "sha256": "ffa26a9b1ed40e7a0cdc4a9f74ce105b965f65d095b66d60b30c8e1cf79fb391"
+        }
+      ]
     }
   ],
   "artifact_delivery": {
-    "state": "transitional-task-scoped",
-    "canonical_plane": "unavailable",
-    "detail": "the canonical regional artifact plane owned by fs2-cancer-model-artifact-cache-ingestion-r20260902 and the content-addressed generations owned by fs2-proteina-complexa-public-artifact-live-ingestion-r20260903 are both still unmerged, so this task consumes the ingestion successor's verified staging tree read-only",
-    "consumed_claim": "fs2-academic-poc/academic-assets-runtime-rwx",
-    "consumed_subpath": "scientific-ingestion/fs2-proteina-complexa-r20260903/staging",
-    "consumed_receipt": "scientific-ingestion/fs2-proteina-complexa-r20260903/staging/.receipts/staging.r20260903a.json",
-    "receipt_state": "7 files across 4 artifacts, 0 failures; every recorded sha256 equals the identity pinned in external_artifacts above",
-    "promotion_note": "the ingestion owner promotes this staging tree into content-addressed generations. The identities this lock pins are the file identities, which promotion does not change, so the runtime contract survives promotion; only artifact_delivery.consumed_subpath moves."
+    "state": "immutable-public-generations",
+    "plane": "shared reference-data host plane",
+    "host_root": "/mnt/fs2-reference-data/data",
+    "generation_root": "scientific-localization/public/generations",
+    "volume_kind": "host-path",
+    "visibility": "public",
+    "node_requirement": "storage.fs2.nebius/reference-data=true, present on every GPU node in this cluster",
+    "promoted_by": "fs2-proteina-complexa-public-artifact-live-ingestion-r20260903, terminal run r20260903b, four generations, zero failures",
+    "promotion_receipt": "scientific-localization/public/complexa-ingestion/receipts/promotion.r20260903b.json",
+    "licence_separation": "Complexa and RosettaFold3 are public and host-path, so this consumer never touches the tenant-private academic claim and never places a public byte on it. No mixed-plane machinery is needed because no licensed tree is read.",
+    "admission": "the runtime entrypoint reproduces the plane's own admission rules: marker schema, artifact, generation, sub-path, plane, visibility, licence and inventory algorithm, the marker document digest published by the promotion receipt, and a fs2-tree-inventory/v2 digest recomputed from the mounted bytes",
+    "supersedes": "an earlier revision of this task staged the same file identities into its own claim because the ingestion successor had removed its staging tree mid-run; that path is abandoned in favour of the promoted generations"
   },
   "upstream_contract_defects": [
     {

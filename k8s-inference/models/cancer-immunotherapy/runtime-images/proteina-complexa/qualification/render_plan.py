@@ -26,22 +26,36 @@ ENTRYPOINT = HERE.parent / "runtime_entrypoint.py"
 
 NAMESPACE = "fs2-academic-poc"
 OWNER_TASK = "fs2-complexa-final-h100-qualification-r20260903"
-# Checkpoints live in this task's own claim, staged and byte-verified by
-# qualification/stage_artifacts.py. The public-artifact ingestion successor owns
-# the canonical content-addressed generations, but that task is unmerged and
-# removed its staging tree while this qualification was running, so depending on
-# it is not reproducible. The pinned file identities are identical either way.
-ARTIFACT_CLAIM = "fs2-cxq-out-r20260903"
-ARTIFACT_SUBPATH = "checkpoints"
+
+# Checkpoints come from the immutable public generations the ingestion
+# successor promoted onto the shared reference-data host plane in its terminal
+# run r20260903b. The plane root is mounted and the generation carried in the
+# subPath, which is the convention the localization foundation established; the
+# prefix is never itself a subPath. Complexa and RosettaFold3 are both public
+# and host-path, so no tenant-private plane is involved and no public byte ever
+# lands on the academic claim.
+HOST_ROOT = "/mnt/fs2-reference-data/data"
+HOST_PLANE_NODE_LABEL = "storage.fs2.nebius/reference-data"
+GENERATION_ROOT = "scientific-localization/public/generations"
+PUBLIC_PLANE_GID = 1000
+
+# Only the run's own outputs are written, and only to this task-owned claim.
 OUTPUT_CLAIM = "fs2-cxq-out-r20260903"
 ENTRYPOINT_PATH = "/opt/fs2/complexa/runtime_entrypoint.py"
 REQUEST_MOUNT = "/opt/fs2/requests"
+RF3_ARTIFACT_ID = "rosettafold3-checkpoint"
 
 VARIANT_TASKS = {
     "protein": "02_PDL1",
     "ligand": "39_7V11_LIGAND",
     "ame": "M0024_1nzy_og",
 }
+
+# The upstream default reward model differs per pipeline: the protein binder
+# pipeline scores with AlphaFold2 through ColabDesign, while the ligand and AME
+# pipelines score and evaluate with RosettaFold3. Only the RosettaFold3 variants
+# can prove RF3, so an RF3 run is offered for those two.
+RF3_REWARD_VARIANTS = ("ligand", "ame")
 
 
 def _sha256(path: Path) -> str:
@@ -50,6 +64,25 @@ def _sha256(path: Path) -> str:
 
 def _lock() -> dict[str, Any]:
     return json.loads(IMAGE_LOCK.read_text(encoding="utf-8"))
+
+
+def _generations() -> dict[str, dict[str, Any]]:
+    """The pinned generations, read from the entrypoint that also verifies them.
+
+    Loading them from one place is what keeps the mount the plan renders and the
+    generation the runtime admits from ever drifting apart.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("complexa_entrypoint", ENTRYPOINT)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.GENERATIONS
+
+
+def generation_sub_path(artifact_id: str, generation: str) -> str:
+    return f"{GENERATION_ROOT}/{artifact_id}/sha256/{generation}"
 
 
 def request_document(variant: str, run_id: str, arguments: argparse.Namespace) -> dict[str, Any]:
@@ -62,8 +95,10 @@ def request_document(variant: str, run_id: str, arguments: argparse.Namespace) -
         "batch_size": arguments.batch_size,
         "nsteps": arguments.nsteps,
         "seed": arguments.seed,
-        "reward_model": "none",
-        "search_algorithm": "single-pass",
+        "reward_model": arguments.reward_model,
+        "search_algorithm": (
+            "single-pass" if arguments.reward_model == "none" else arguments.search_algorithm
+        ),
         "verify_content_digests": arguments.verify_digests,
     }
 
@@ -83,9 +118,22 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
     )
 
     entrypoint_source = ENTRYPOINT.read_text(encoding="utf-8")
+    selected = arguments.variant or list(VARIANT_TASKS)
+    unknown = [name for name in selected if name not in VARIANT_TASKS]
+    if unknown:
+        raise SystemExit(f"unknown variant(s): {unknown}; known are {sorted(VARIANT_TASKS)}")
+    if arguments.reward_model == "upstream-default":
+        unprovable = [name for name in selected if name not in RF3_REWARD_VARIANTS]
+        if unprovable:
+            raise SystemExit(
+                "the upstream default reward model for "
+                f"{unprovable} is AlphaFold2, not RosettaFold3, and no AlphaFold2 "
+                "generation is published on this plane; restrict the run to "
+                f"{list(RF3_REWARD_VARIANTS)} to prove RosettaFold3"
+            )
     requests = {
         variant: request_document(variant, f"{arguments.run_prefix}-{variant}", arguments)
-        for variant in VARIANT_TASKS
+        for variant in selected
     }
 
     # The requests always arrive through a ConfigMap mounted at /opt/fs2/requests.
@@ -114,25 +162,16 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
     }
 
     # read-only belongs on the mount, never on the claim. A PersistentVolumeClaim
-    # marked readOnly attaches the whole volume read-only, so when the checkpoints
-    # and the outputs live in one claim the output mount inherits that and the run
-    # dies with EROFS. When they are one claim, share a single volume and let each
-    # mount carry its own mode.
-    shared_claim = ARTIFACT_CLAIM == OUTPUT_CLAIM
-    artifact_volume = "store" if shared_claim else "checkpoints"
-    output_volume = "store" if shared_claim else "outputs"
-    if shared_claim:
-        claim_volumes = [
-            {"name": "store", "persistentVolumeClaim": {"claimName": OUTPUT_CLAIM}}
-        ]
-    else:
-        claim_volumes = [
-            {"name": "checkpoints", "persistentVolumeClaim": {"claimName": ARTIFACT_CLAIM}},
-            {"name": "outputs", "persistentVolumeClaim": {"claimName": OUTPUT_CLAIM}},
-        ]
+    # marked readOnly attaches the whole volume read-only, which is how an
+    # earlier revision made its own output mount fail with EROFS.
+    generations = _generations()
+    for artifact_id in list(VARIANT_TASKS) + [RF3_ARTIFACT_ID]:
+        key = artifact_id if artifact_id == RF3_ARTIFACT_ID else f"complexa-{artifact_id}"
+        if key not in generations:
+            raise SystemExit(f"no generation is pinned for {key}")
 
     jobs = []
-    for variant in VARIANT_TASKS:
+    for variant in selected:
         name = f"{arguments.run_prefix}-{variant}"
         artifact_id = f"complexa-{variant}"
         jobs.append(
@@ -166,12 +205,23 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
                             # this from becoming a recursive ownership walk over
                             # the ~31 GiB checkpoint tree on every cold start.
                             "securityContext": {
+                                # Only the output claim needs this. hostPath is
+                                # not an fsGroup-managed volume type, so the
+                                # 670 GiB shared plane is never walked, and
+                                # OnRootMismatch keeps even the claim cheap.
                                 "fsGroup": 10001,
                                 "fsGroupChangePolicy": "OnRootMismatch",
+                                # The public plane is owned by uid/gid 1000.
+                                "supplementalGroups": [PUBLIC_PLANE_GID],
                             },
-                            # Capability-driven placement: the accelerator class
-                            # label, not a hard-coded H100-only node name.
-                            "nodeSelector": {"nebius.com/gpu": "true"},
+                            # Capability-driven for the accelerator, plus the
+                            # storage label the host plane requires. Neither
+                            # names a node: an H100 is selected by having a GPU,
+                            # not by being called H100.
+                            "nodeSelector": {
+                                "nebius.com/gpu": "true",
+                                HOST_PLANE_NODE_LABEL: "true",
+                            },
                             "tolerations": [
                                 {
                                     "key": "dedicated",
@@ -209,7 +259,7 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
                                         {
                                             "name": "RF3_CKPT_PATH",
                                             "value": (
-                                                "/opt/fs2/artifacts/rosettafold3/"
+                                                f"/opt/fs2/artifacts/{RF3_ARTIFACT_ID}/"
                                                 "rf3_foundry_01_24_latest_remapped.ckpt"
                                             ),
                                         },
@@ -229,15 +279,20 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
                                     },
                                     "volumeMounts": [
                                         {
-                                            "name": artifact_volume,
+                                            "name": "trees",
                                             "mountPath": f"/opt/fs2/artifacts/{artifact_id}",
-                                            "subPath": f"{ARTIFACT_SUBPATH}/{artifact_id}",
+                                            "subPath": generation_sub_path(
+                                                artifact_id, generations[artifact_id]["generation"]
+                                            ),
                                             "readOnly": True,
                                         },
                                         {
-                                            "name": artifact_volume,
-                                            "mountPath": "/opt/fs2/artifacts/rosettafold3",
-                                            "subPath": f"{ARTIFACT_SUBPATH}/rosettafold3-checkpoint",
+                                            "name": "trees",
+                                            "mountPath": f"/opt/fs2/artifacts/{RF3_ARTIFACT_ID}",
+                                            "subPath": generation_sub_path(
+                                                RF3_ARTIFACT_ID,
+                                                generations[RF3_ARTIFACT_ID]["generation"],
+                                            ),
                                             "readOnly": True,
                                         },
                                         {
@@ -258,7 +313,7 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
                                             else []
                                         ),
                                         {
-                                            "name": output_volume,
+                                            "name": "outputs",
                                             "mountPath": "/workspace",
                                             "subPath": arguments.run_prefix,
                                         },
@@ -267,7 +322,14 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
                                 }
                             ],
                             "volumes": [
-                                *claim_volumes,
+                                {
+                                    "name": "trees",
+                                    "hostPath": {"path": HOST_ROOT, "type": "Directory"},
+                                },
+                                {
+                                    "name": "outputs",
+                                    "persistentVolumeClaim": {"claimName": OUTPUT_CLAIM},
+                                },
                                 {
                                     "name": "contract",
                                     "configMap": {
@@ -315,6 +377,25 @@ def main() -> int:
         choices=["cold", "image-local", "artifact-local", "warm", "unknown"],
     )
     parser.add_argument("--verify-digests", action="store_true")
+    parser.add_argument(
+        "--reward-model",
+        default="none",
+        choices=["none", "upstream-default"],
+        help="'none' isolates the Complexa score model; 'upstream-default' runs the "
+        "pipeline's own reward model, which is RosettaFold3 for ligand and AME and "
+        "AlphaFold2 through ColabDesign for protein",
+    )
+    parser.add_argument(
+        "--search-algorithm",
+        default="best-of-n",
+        help="search algorithm when a reward model is enabled",
+    )
+    parser.add_argument(
+        "--variant",
+        action="append",
+        default=None,
+        help="restrict the plan to these variants; repeatable",
+    )
     parser.add_argument(
         "--entrypoint-source",
         default="baked",

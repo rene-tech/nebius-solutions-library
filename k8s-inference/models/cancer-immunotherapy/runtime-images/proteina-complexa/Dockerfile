@@ -76,7 +76,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     test -x /usr/local/cuda-12.6/bin/ptxas && \
     test -x /usr/local/cuda-12.6/bin/nvcc && \
     groupadd --gid 10001 fs2 && useradd --uid 10001 --gid 10001 --create-home fs2 && \
-    mkdir -p /opt/fs2/artifacts /workspace /work /tmp/fs2-home && \
+    mkdir -p /opt/fs2/artifacts /opt/fs2/complexa/workdir /workspace /work /tmp/fs2-home && \
+    ln -s /opt/fs2/source/assets /opt/fs2/complexa/workdir/assets && \
+    test -d /opt/fs2/complexa/workdir/assets/target_data && \
     chown -R 10001:10001 /opt/fs2/artifacts /workspace /work /tmp/fs2-home
 
 LABEL org.opencontainers.image.source="https://github.com/NVIDIA-BioNeMo/Proteina-Complexa" \
@@ -96,9 +98,9 @@ ENV CUDA_HOME=/usr/local/cuda-12.6 \
     PYTHONPATH=/opt/fs2/source/src \
     FS2_ARTIFACT_ROOT=/opt/fs2/artifacts \
     DATA_PATH=/opt/fs2/source/assets \
-    RF3_CKPT_PATH=/opt/fs2/artifacts/rosettafold3/rf3_foundry_01_24_latest_remapped.ckpt \
+    RF3_CKPT_PATH=/opt/fs2/artifacts/rosettafold3-checkpoint/rf3_foundry_01_24_latest_remapped.ckpt \
     RF3_EXEC_PATH=/opt/venv/bin/rf3 \
-    AF2_DIR=/opt/fs2/artifacts/alphafold2 \
+    AF2_DIR=/opt/fs2/artifacts/alphafold2-params \
     SC_EXEC=/opt/fs2/artifacts/tools/sc \
     DSSP_EXEC=/opt/fs2/artifacts/tools/dssp \
     PYTHONUNBUFFERED=1 \
@@ -113,8 +115,13 @@ ENV HOME=/tmp/fs2-home \
     NUMBA_CACHE_DIR=/tmp/fs2-home/numba \
     TRITON_CACHE_DIR=/tmp/fs2-home/triton
 
-# Fail the build rather than publish an image whose batch contract cannot load.
-RUN python /opt/fs2/complexa/runtime_entrypoint.py describe > /dev/null
+# Fail the build rather than publish an image whose batch contract cannot load,
+# or one whose baked working directory does not resolve the target structures.
+RUN python /opt/fs2/complexa/runtime_entrypoint.py describe > /dev/null && \
+    python -c "import pathlib,sys; sys.path.insert(0,'/opt/fs2/complexa'); \
+import runtime_entrypoint as e; \
+print(e.verify_working_directory(e.BAKED_WORKDIR)); \
+[e.verify_target_structure(name) for name in e.TARGET_DATA['files']]" > /dev/null
 
 USER 10001:10001
 WORKDIR /workspace
