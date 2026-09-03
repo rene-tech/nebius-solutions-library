@@ -1,0 +1,104 @@
+{
+  "attempt_id": "attempt-cold-04",
+  "batch_id": "boltzgen-pdl1-cold-r20260903",
+  "configure_argv": [
+    "boltzgen",
+    "configure",
+    "/mnt/fs2-scientific/work/boltzgen/ad062d0f5b7f4527caf7/pdl1-face/inputs/design-specs/pdl1-face.yaml",
+    "--output",
+    "/mnt/fs2-scientific/work/boltzgen/ad062d0f5b7f4527caf7/pdl1-face",
+    "--protocol",
+    "protein-anything",
+    "--devices",
+    "1",
+    "--num_workers",
+    "1",
+    "--num_designs",
+    "1",
+    "--budget",
+    "1",
+    "--design_checkpoints",
+    "/opt/fs2/artifacts/boltzgen-checkpoints/boltzgen1_diverse.ckpt",
+    "/opt/fs2/artifacts/boltzgen-checkpoints/boltzgen1_adherence.ckpt",
+    "--inverse_fold_checkpoint",
+    "/opt/fs2/artifacts/boltzgen-checkpoints/boltzgen1_ifold.ckpt",
+    "--folding_checkpoint",
+    "/opt/fs2/artifacts/boltzgen-checkpoints/boltz2_conf_final.ckpt",
+    "--affinity_checkpoint",
+    "/opt/fs2/artifacts/boltzgen-checkpoints/boltz2_aff.ckpt",
+    "--moldir",
+    "/opt/fs2/artifacts/boltzgen-inference-molecules",
+    "--steps",
+    "design",
+    "inverse_folding",
+    "folding",
+    "design_folding",
+    "analysis",
+    "filtering"
+  ],
+  "design_argv": [
+    "boltzgen",
+    "execute",
+    "/mnt/fs2-scientific/work/boltzgen/ad062d0f5b7f4527caf7/pdl1-face",
+    "--steps",
+    "design"
+  ],
+  "environment": {
+    "HF_HUB_DISABLE_TELEMETRY": "1",
+    "HF_HUB_OFFLINE": "1",
+    "TRANSFORMERS_OFFLINE": "1"
+  },
+  "input_artifact_bytes": 143360,
+  "input_artifact_sha256": "74e4d125b60b884938b858dab6b14405a071bed940c6931605170a172dcd765c",
+  "operation_id": "boltzgen-qual-cold-r20260903",
+  "request": {
+    "input_manifest": {
+      "artifact_id": "boltzgen.qual.pdl1.r20260903",
+      "media_type": "application/x-tar",
+      "sha256": "74e4d125b60b884938b858dab6b14405a071bed940c6931605170a172dcd765c",
+      "size_bytes": 143360
+    },
+    "operation": "design-binders",
+    "parameters": {
+      "batches": [
+        {
+          "budget": 1,
+          "num_designs": 1,
+          "reuse_completed": false,
+          "shard_id": "pdl1-face"
+        }
+      ],
+      "protocol": "protein-anything"
+    },
+    "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "service_class": "customer-batch"
+  },
+  "request_sha256": "71d3584742548893cefb27fd34cb10bb62335130ee2127e6a4e889277f2d9e26",
+  "runtime_artifacts": [
+    "boltzgen-checkpoints",
+    "boltzgen-inference-molecules"
+  ],
+  "runtime_trees": [
+    {
+      "archive_sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
+      "artifact_id": "boltzgen-inference-molecules",
+      "entry_count": 45227,
+      "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+      "tree_inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
+    }
+  ],
+  "scenario": "cold",
+  "scheduling": {
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "capacity_type": "preemptible",
+    "cluster_queue": "inference-accelerators",
+    "gpu_count": 1,
+    "local_queue": "inference-models",
+    "pool_id": "h100-1x",
+    "resource_flavor": "inference-h100-1x",
+    "workload_priority_class": "batch",
+    "workload_priority_value": -100
+  },
+  "schema": "fs2-serve.nebius.ai/boltzgen-h100-generated-plan/v1",
+  "working_directory": "/mnt/fs2-scientific/work/boltzgen/ad062d0f5b7f4527caf7/pdl1-face"
+}

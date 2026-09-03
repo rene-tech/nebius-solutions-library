@@ -1,0 +1,125 @@
+{
+  "schema": "fs2-serve.nebius.ai/boltzgen-h100-runtime-lock/v1",
+  "model_id": "boltzgen",
+  "variant_id": "upstream-v0-3-2",
+  "owner_task": "fs2-boltzgen-h100-codex-successor-r20260903",
+  "route_exposed": false,
+  "source": {
+    "repository": "https://github.com/HannesStark/boltzgen",
+    "tag": "v0.3.2",
+    "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+    "archive_url": "https://codeload.github.com/HannesStark/boltzgen/tar.gz/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+    "archive_sha256": "475d7e71a75766c0eddffb6995002c1dbdc1f1197f091c1c42e1eaedc4746b07",
+    "license": "MIT"
+  },
+  "image": {
+    "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen",
+    "tag": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0-cueq-v3",
+    "digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+    "config_digest": "sha256:e7f33739f36417d447a0871d4abdd8431f1f64f07baf3543b2c4073c207c08cd",
+    "platform": "linux/amd64",
+    "runs_as": "10001:10001",
+    "cuda_abi": "12.6",
+    "pytorch": "2.7.1+cu126",
+    "cuequivariance": "0.10.0",
+    "publisher": {
+      "task": "fs2-cancer-images-complexa-boltzgen-mosaic-r20260902",
+      "commit": "07adbbb8",
+      "publication_receipt_commit": "4a1c0f9038bc122a9f624107d540a03ae576dee8"
+    },
+    "build_inputs": {
+      "dockerfile": "Dockerfile",
+      "dockerfile_sha256": "5877f9cc8fcbaf37f9b3d1128081434198623be728e2079fa346ff6f2277e955",
+      "dependency_lock": "requirements.lock",
+      "dependency_lock_sha256": "254df7d448411e63370034049763c654fc9bca132e8b711d14354b71ba1643e2"
+    },
+    "sbom": {
+      "format": "spdx-json",
+      "generator": "syft-1.43.0",
+      "sha256": "f8a1202c8cdc78ea61c223b45d85c9cf8252ac35b1bec979e8ca8c18be238356",
+      "package_count": 346,
+      "file_count": 7377
+    },
+    "critical_scan": {
+      "scanner": "trivy-0.70.0",
+      "fixed_version_available_critical_findings": 0,
+      "observed_at": "2026-09-03T00:05:00Z"
+    }
+  },
+  "artifacts": {
+    "boltzgen-checkpoints": {
+      "source_uri": "hf://boltzgen/boltzgen-1",
+      "source_revision": "c1be29e1f82ffcc72264f64b993c43fb4e0d17f0",
+      "source_url_template": "https://huggingface.co/boltzgen/boltzgen-1/resolve/{revision}/{name}",
+      "license": "MIT",
+      "mount_path": "/opt/fs2/artifacts/boltzgen-checkpoints",
+      "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+      "generation": "ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+      "marker_sha256": "723ada21585427b7cec08ddeccbba3279e74bd3c4660c8d12cc0d33e3f36a44f",
+      "entry_count": 6,
+      "total_bytes": 10234382415,
+      "files": [
+        {"path": "boltz2_aff.ckpt", "bytes": 2061914091, "sha256": "6dc13d488015666d3c3fdffd29fab54d72e4f2597b654f996cdcf5937feab090"},
+        {"path": "boltz2_conf_final.ckpt", "bytes": 2087255089, "sha256": "525a51ef306da7282a54d23a4a5b91212fc60d0ff6b23b56dd6351de3b387530"},
+        {"path": "boltzgen1_adherence.ckpt", "bytes": 1930858014, "sha256": "ac7078b3dc13064c68e0c3fd542e5bc538c33558bf6607f65e499eb336ca5e5d"},
+        {"path": "boltzgen1_diverse.ckpt", "bytes": 1930847192, "sha256": "360af8bd6e59527ff6ec25dd81253967f3bd3567d200053b10680634751f8e3c"},
+        {"path": "boltzgen1_ifold.ckpt", "bytes": 12582656, "sha256": "dd4cf108c94471bdc3a326b7b180fa3854dc019110fae780208c30b50bd56578"},
+        {"path": "boltzgen1_structuretrained_small.ckpt", "bytes": 2210925373, "sha256": "e2455b6ff5156218ef3999be894d1a8e4574f0531cefcd9d67d9c1d2d015937b"}
+      ]
+    },
+    "boltzgen-inference-molecules": {
+      "source_uri": "https://huggingface.co/datasets/boltzgen/inference-data/resolve/c3d36fd276e9caf098c75d4113c6d5eb320b1a4c/mols.zip",
+      "source_revision": "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c",
+      "license": "MIT",
+      "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+      "archive_sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
+      "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+      "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+      "marker_sha256": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+      "entry_count": 45227,
+      "total_bytes": 1820698819
+    }
+  },
+  "input": {
+    "target": "human PD-L1 (CD274) chain A from PDB 5J89",
+    "source_uri": "https://files.rcsb.org/download/5J89.cif",
+    "source_sha256": "321a604f520452820ef9333fd2710b25d1529f92c5c736d500aac454bdbbbfe3",
+    "source_bytes": 831552,
+    "projection": "gemmi-0.7.5 retain only model chain A polymer residues, normalize label_asym_id and auth_asym_id to A, and write canonical mmCIF",
+    "projected_sha256": "93aeba8e72dcb98589f5da5ac5379f0c81f676cbf704a77a7d977faeb6c7ed19",
+    "projected_bytes": 139547,
+    "binding_site_auth_residues": [54, 56, 58, 60, 61, 63, 66, 113, 115, 117, 121, 123, 124, 125]
+  },
+  "adapter": {
+    "repository_path": "components/control-plane/src/fs2_serve/scientific_batch/adapters/boltzgen.py",
+    "base_commit": "0d5343c7cda15f1e3cdbdd7bc2c5bebfa32fd659",
+    "source_sha256": "8eb4eb922f0331f0dcb6aa9d5b873607796f5e8689a15410ad25d439b5717e4a",
+    "operation": "design-binders",
+    "service_class": "customer-batch",
+    "local_queue": "inference-models",
+    "priority_class": "batch",
+    "profile_digest_before_qualification": "sha256:1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544",
+    "qualified_image_handoff_required": true
+  },
+  "cluster": {
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "context": "k8s-inference-h100",
+    "namespace": "fs2-models",
+    "private_resource_ids": "recorded-in-agent-task-deck-evidence",
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "allowed_pool_ids": ["h100-1x", "h100-reserved-8x"],
+    "forbidden_accelerators": ["b300"]
+  },
+  "qualification": {
+    "state": "qualified-h100-design-stage",
+    "scope": "configure plus design stage for one PD-L1 binder; later stages remain route-level acceptance work",
+    "determinism": "The adapter exposes no seed; validation is deterministic over exact result bytes, but generated bytes are not claimed reproducible.",
+    "route_effect": "none",
+    "completed_at": "2026-09-03T07:34:56Z",
+    "evidence_path": "evidence/h100-qualification-receipt.json",
+    "evidence_sha256": "f4a36ad7b8367e3383f584f96377313d39a26b5a08343d789311a41b04b79a46",
+    "cold_structure_sha256": "e687eb501e3e68ced71573321d2ff78570f57c30082831b26e975cafc95c72b7",
+    "prepared_structure_sha256": "65dc3eb2ca8104a5cb52b2f4108058e6da406d3c5569253bbf94ce4300bf891c"
+  }
+}
