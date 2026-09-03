@@ -24,8 +24,8 @@
     "platform": "linux/amd64",
     "registry": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models",
     "repository": "rfdiffusion",
-    "tag_suffix": "-cuda121-r10",
-    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion:9273ef67335acaf91df0150473a274759229cdf6-cuda121-r10",
+    "tag_suffix": "-cuda121-r11",
+    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion:9273ef67335acaf91df0150473a274759229cdf6-cuda121-r11",
     "dockerfile": "Dockerfile",
     "build_context": ".",
     "python": "3.10.14",
@@ -43,7 +43,7 @@
     "runtime_inputs": {
       "Dockerfile": "1126ee31a234fa6424ee0396120df5de5c9618a7db1a7005e4ceacae67bcb034",
       "requirements.lock": "11c21670e7d55838dda6eb41ed18deb325e8f996938cf8b03959ecda10307ff6",
-      "runtime_entrypoint.py": "cc0cee7c88988f79c16b5419538132bbdbbaeff0174f6d808aced72fa67d43bc",
+      "runtime_entrypoint.py": "4f304961981345c4fb0c4b3cb27839223380d332fec12ffe44ab388a361a614b",
       "fetch_verified.py": "a13a92f56907bf8d6f3b2301f2aea420a3a82c1a7eacaab5a0b4a40ce7a0ee96"
     },
     "runtime_input_policy": "Every file that enters the image is sha256-pinned here and re-verified by build_rfdiffusion.py before the build starts, so the published layers can be tied back to the checked-in runtime.",
@@ -62,6 +62,12 @@
     "published_reference": null,
     "attestation_predicate_types": null,
     "supersedes": [
+      {
+        "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r10",
+        "digest": "sha256:89eae6d0f7b21fea4fdf7b0d0ba0fd4661324bc6e55d810d12ab1357c519084b",
+        "deployable": false,
+        "reason": "Correctly attested (SLSA names clean commit 1b5a648b) and its design-backbone run succeeded on H100. Superseded on a false negative in its own semantic validator: motif CA RMSD was computed on raw coordinates, so RFdiffusion's recentring of the design read as motif loss. The live scaffold-motif run produced a correct structure -- all 12 motif identities preserved, upstream reporting ~0.19 A sampled motif RMSD -- but the wrapper rejected it at 47.956 A. Re-measured on those exact exported bytes, the move was a 47.96 A translation with 1.0 deg of rotation and the superposed CA RMSD is 0.1129 A. r11 measures after optimal superposition. The 1.5 A threshold was not loosened."
+      },
       {
         "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r9",
         "digest": "sha256:c63e82292d69609eef1d4624ae9a68ef9d106377bb61334d6dda5ff0f04a4563",
@@ -145,6 +151,23 @@
       "state": "frozen-for-adapter-reconciliation",
       "detail": "The scientific batch adapter owner is reconciling the obsolete /opt/fs2/bin/rfdiffusion-batch contract to this image's CLI and translating their typed public request into the internal rfdiffusion-parameters/v1 schema. The CLI, the internal schema and the adapter id are frozen for the duration; any change ships as a new fixture and a new adapter id, never as a redefinition. Enforced by tests/test_adapter_contract.py::FrozenContractTests.",
       "handoff": "contract/README.md plus contract/fixtures/*/golden-argv.json"
+    },
+    "motif_verification": {
+      "method": "horn-quaternion-optimal-superposition",
+      "measured_on": "CA atoms at the positions upstream's con_ref_pdb_idx / con_hal_pdb_idx map",
+      "threshold_angstrom": 1.5,
+      "reports": [
+        "rmsd_angstrom (compared against the threshold)",
+        "rmsd_unaligned_angstrom",
+        "rigid_body_rotation_degrees",
+        "rigid_body_translation_angstrom"
+      ],
+      "rationale": "Upstream emits designs in its own recentred frame, so raw-coordinate RMSD measures where a design was placed rather than whether the motif survived. Both values are reported so a reviewer can see the size of the rigid-body move that was removed rather than having to trust that one was.",
+      "regression_tests": [
+        "test_rigid_body_translation_is_not_motif_loss",
+        "test_rigid_body_rotation_is_not_motif_loss",
+        "test_real_motif_distortion_still_fails"
+      ]
     }
   },
   "weight_policy": {
@@ -204,7 +227,7 @@
     "qualified_accelerator": "nvidia-h100-sxm5-80gb (sm90)",
     "other_accelerators": "not-qualified; each family needs its own evidence",
     "evidence": [],
-    "evidence_transfer_policy": "Evidence is bound to an exact image digest. No receipt from r6, r7, r8 or r9 transfers to this image.",
+    "evidence_transfer_policy": "Evidence is bound to an exact image digest. Nothing from r6-r10 transfers.",
     "scope": "one design-backbone and one scaffold-motif run; no throughput, contention, elasticity or snapshot measurement"
   },
   "upstream_contract_defects": [
@@ -231,6 +254,14 @@
       "observed": "when inference.schedule_directory_path is unset, the schedule cache directory defaults to <package>/../../schedules and is created with os.mkdir",
       "impact": "under readOnlyRootFilesystem, or any image that seals its own upstream tree, the run dies with OSError EROFS after the checkpoint loads and before any diffusion step",
       "resolution": "the adapter always passes inference.schedule_directory_path under its writable scratch directory and creates it first. Observed live on H100 Job fs2-rfd-semantic-r8-cold; fixed for r9."
+    },
+    {
+      "id": "designs-are-emitted-in-a-recentred-frame",
+      "severity": "validator-shaping",
+      "location": "upstream 9273ef67, inference.recenter defaults to True",
+      "observed": "A scaffolded motif is chemically identical to the reference but placed elsewhere in space. On the live r10 run the offset was a 47.96 A translation with 1.0 deg of rotation.",
+      "impact": "any validator comparing raw coordinates rejects correct designs",
+      "resolution": "motif RMSD is measured after optimal superposition; both aligned and unaligned values are recorded."
     }
   ],
   "follow_ups": [

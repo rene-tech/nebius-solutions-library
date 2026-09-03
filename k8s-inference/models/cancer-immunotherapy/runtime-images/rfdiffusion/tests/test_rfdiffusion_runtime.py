@@ -395,13 +395,31 @@ class MotifPreservationTests(_VerifyHarness):
             rt.Residue(chain="A", seq=3, insertion_code="", name="ASP", ca=(7.6, 0.0, 0.0)),
         ]
 
-    def _designed_outputs(self, tmp: Path, motif_names: list[str], shift: float = 0.0) -> Path:
+    def _designed_outputs(
+        self,
+        tmp: Path,
+        motif_names: list[str],
+        shift: float = 0.0,
+        rotate_degrees: float = 0.0,
+        distort: float = 0.0,
+    ) -> Path:
+        import math
+
         designs = tmp / "designs"
         designs.mkdir(parents=True, exist_ok=True)
         prefix = designs / "design"
         residues = backbone(5, start=1)
+        angle = math.radians(rotate_degrees)
         for offset, name in enumerate(motif_names):
-            residues.append(("A", 6 + offset, name, (3.8 * offset + shift, 0.0, 0.0)))
+            # Reference motif CA positions are (3.8 * offset, 0, 0).
+            x, y, z = 3.8 * offset, 0.0, 0.0
+            if distort:
+                # Move alternate residues apart: a real change of shape, which no
+                # rigid transform can undo.
+                y += distort if offset % 2 == 0 else -distort
+            rx = x * math.cos(angle) - y * math.sin(angle)
+            ry = x * math.sin(angle) + y * math.cos(angle)
+            residues.append(("A", 6 + offset, name, (rx + shift, ry, z)))
         residues.extend(backbone(5, start=11))
         write_pdb(Path(f"{prefix}_0.pdb"), residues)
         trb = {
@@ -419,8 +437,8 @@ class MotifPreservationTests(_VerifyHarness):
             prefix = self._designed_outputs(Path(tmp), ["LYS", "TRP", "ASP"])
             verification = rt.verify_design(0, prefix, self._scaffold_parameters(), self._reference())
             self.assertEqual(verification.motif_positions, 3)
-            self.assertIsNotNone(verification.motif_ca_rmsd)
-            self.assertAlmostEqual(verification.motif_ca_rmsd, 0.0, places=6)
+            self.assertIsNotNone(verification.motif_fit)
+            self.assertAlmostEqual(verification.motif_fit["rmsd"], 0.0, places=6)
 
     def test_mutated_motif_residue_is_terminal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -429,12 +447,43 @@ class MotifPreservationTests(_VerifyHarness):
                 rt.verify_design(0, prefix, self._scaffold_parameters(), self._reference())
             self.assertIn("identity changed", str(ctx.exception))
 
-    def test_displaced_motif_exceeds_rmsd_limit(self) -> None:
+    def test_rigid_body_translation_is_not_motif_loss(self) -> None:
+        """Regression for the r10 false negative.
+
+        RFdiffusion emits designs in its own recentred frame, so a perfectly
+        scaffolded motif can sit far from the reference. A pure translation must
+        superpose away to zero, not be reported as a destroyed motif.
+        """
         with tempfile.TemporaryDirectory() as tmp:
-            prefix = self._designed_outputs(Path(tmp), ["LYS", "TRP", "ASP"], shift=9.0)
+            prefix = self._designed_outputs(Path(tmp), ["LYS", "TRP", "ASP"], shift=48.0)
+            verification = rt.verify_design(
+                0, prefix, self._scaffold_parameters(), self._reference()
+            )
+            self.assertAlmostEqual(verification.motif_fit["rmsd"], 0.0, places=6)
+            self.assertGreater(verification.motif_fit["rmsd_unaligned"], 40.0)
+
+    def test_rigid_body_rotation_is_not_motif_loss(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            prefix = self._designed_outputs(
+                Path(tmp), ["LYS", "TRP", "ASP"], rotate_degrees=137.0, shift=25.0
+            )
+            verification = rt.verify_design(
+                0, prefix, self._scaffold_parameters(), self._reference()
+            )
+            # The synthetic motif is collinear, so rotation about its own axis is
+            # underdetermined; 1e-3 A is far below any structural threshold.
+            self.assertLess(verification.motif_fit["rmsd"], 1e-3)
+            self.assertGreater(verification.motif_fit["rotation_degrees"], 1.0)
+
+    def test_real_motif_distortion_still_fails(self) -> None:
+        """Superposition must not become a way to launder a broken motif."""
+        with tempfile.TemporaryDirectory() as tmp:
+            prefix = self._designed_outputs(
+                Path(tmp), ["LYS", "TRP", "ASP"], distort=4.0
+            )
             with self.assertRaises(rt.VerificationError) as ctx:
                 rt.verify_design(0, prefix, self._scaffold_parameters(), self._reference())
-            self.assertIn("RMSD", str(ctx.exception))
+            self.assertIn("after optimal superposition", str(ctx.exception))
 
     def test_missing_motif_mapping_is_terminal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

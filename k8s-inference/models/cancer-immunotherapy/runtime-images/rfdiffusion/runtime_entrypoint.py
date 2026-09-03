@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import pickle
 import re
@@ -438,13 +439,159 @@ def parse_pdb_residues(path: Path) -> list[Residue]:
     ]
 
 
-def _rmsd(a: Sequence[tuple[float, float, float]], b: Sequence[tuple[float, float, float]]) -> float:
+Vector = tuple[float, float, float]
+
+
+def _rmsd(a: Sequence[Vector], b: Sequence[Vector]) -> float:
+    """Plain coordinate RMSD, with no superposition."""
     if len(a) != len(b) or not a:
         raise VerificationError("cannot compute RMSD over mismatched or empty coordinate sets")
     total = 0.0
     for p, q in zip(a, b):
         total += (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2
     return (total / len(a)) ** 0.5
+
+
+def _centroid(points: Sequence[Vector]) -> Vector:
+    n = float(len(points))
+    return (
+        sum(p[0] for p in points) / n,
+        sum(p[1] for p in points) / n,
+        sum(p[2] for p in points) / n,
+    )
+
+
+def _jacobi_eigensystem(
+    matrix: list[list[float]], iterations: int = 100, tolerance: float = 1e-12
+) -> tuple[list[float], list[list[float]]]:
+    """Cyclic Jacobi eigendecomposition of a real symmetric matrix.
+
+    Stdlib only, on purpose: the offline contract tests must run without numpy, and
+    the matrix here is 4x4, so a direct Jacobi sweep is both exact enough and easier
+    to audit than pulling in a linear-algebra dependency. Returns eigenvalues and
+    eigenvectors, where eigenvectors[i] is the vector for eigenvalues[i].
+    """
+    size = len(matrix)
+    a = [row[:] for row in matrix]
+    v = [[1.0 if i == j else 0.0 for j in range(size)] for i in range(size)]
+
+    for _ in range(iterations):
+        off = 0.0
+        for i in range(size):
+            for j in range(i + 1, size):
+                off += a[i][j] * a[i][j]
+        if off <= tolerance:
+            break
+        for p in range(size):
+            for q in range(p + 1, size):
+                if abs(a[p][q]) <= tolerance:
+                    continue
+                theta = (a[q][q] - a[p][p]) / (2.0 * a[p][q])
+                sign = 1.0 if theta >= 0 else -1.0
+                t = sign / (abs(theta) + (theta * theta + 1.0) ** 0.5)
+                c = 1.0 / (t * t + 1.0) ** 0.5
+                s = t * c
+                for k in range(size):
+                    akp, akq = a[k][p], a[k][q]
+                    a[k][p] = c * akp - s * akq
+                    a[k][q] = s * akp + c * akq
+                for k in range(size):
+                    apk, aqk = a[p][k], a[q][k]
+                    a[p][k] = c * apk - s * aqk
+                    a[q][k] = s * apk + c * aqk
+                for k in range(size):
+                    vkp, vkq = v[k][p], v[k][q]
+                    v[k][p] = c * vkp - s * vkq
+                    v[k][q] = s * vkp + c * vkq
+
+    eigenvalues = [a[i][i] for i in range(size)]
+    eigenvectors = [[v[row][col] for row in range(size)] for col in range(size)]
+    return eigenvalues, eigenvectors
+
+
+def superpose(mobile: Sequence[Vector], reference: Sequence[Vector]) -> dict[str, Any]:
+    """Optimally superpose ``mobile`` onto ``reference`` and report the residual.
+
+    Horn's quaternion method: build the 3x3 correlation matrix of the centred point
+    sets, form the 4x4 key matrix, and take the eigenvector of its largest eigenvalue
+    as the optimal rotation quaternion.
+
+    This exists because RFdiffusion emits designs in its own recentred frame. Comparing
+    raw coordinates therefore measures where the design was *placed*, not whether the
+    motif was *kept*: a perfectly scaffolded motif can sit tens of angstroms from the
+    reference after a rigid-body move. Motif preservation is only meaningful after
+    optimal superposition, and the rigid transform itself is reported so a reviewer can
+    see how large a move was removed.
+    """
+    if len(mobile) != len(reference) or not mobile:
+        raise VerificationError("cannot superpose mismatched or empty coordinate sets")
+
+    mobile_centroid = _centroid(mobile)
+    reference_centroid = _centroid(reference)
+    m = [(p[0] - mobile_centroid[0], p[1] - mobile_centroid[1], p[2] - mobile_centroid[2]) for p in mobile]
+    r = [
+        (p[0] - reference_centroid[0], p[1] - reference_centroid[1], p[2] - reference_centroid[2])
+        for p in reference
+    ]
+
+    s = [[sum(m[i][a] * r[i][b] for i in range(len(m))) for b in range(3)] for a in range(3)]
+    sxx, sxy, sxz = s[0]
+    syx, syy, syz = s[1]
+    szx, szy, szz = s[2]
+
+    key = [
+        [sxx + syy + szz, syz - szy, szx - sxz, sxy - syx],
+        [syz - szy, sxx - syy - szz, sxy + syx, szx + sxz],
+        [szx - sxz, sxy + syx, -sxx + syy - szz, syz + szy],
+        [sxy - syx, szx + sxz, syz + szy, -sxx - syy + szz],
+    ]
+    eigenvalues, eigenvectors = _jacobi_eigensystem(key)
+    best = max(range(4), key=lambda i: eigenvalues[i])
+    qw, qx, qy, qz = eigenvectors[best]
+    norm = (qw * qw + qx * qx + qy * qy + qz * qz) ** 0.5
+    if norm == 0.0:
+        raise VerificationError("superposition produced a degenerate rotation")
+    qw, qx, qy, qz = qw / norm, qx / norm, qy / norm, qz / norm
+
+    rotation = [
+        [
+            qw * qw + qx * qx - qy * qy - qz * qz,
+            2.0 * (qx * qy - qw * qz),
+            2.0 * (qx * qz + qw * qy),
+        ],
+        [
+            2.0 * (qx * qy + qw * qz),
+            qw * qw - qx * qx + qy * qy - qz * qz,
+            2.0 * (qy * qz - qw * qx),
+        ],
+        [
+            2.0 * (qx * qz - qw * qy),
+            2.0 * (qy * qz + qw * qx),
+            qw * qw - qx * qx - qy * qy + qz * qz,
+        ],
+    ]
+
+    aligned = [
+        (
+            rotation[0][0] * p[0] + rotation[0][1] * p[1] + rotation[0][2] * p[2] + reference_centroid[0],
+            rotation[1][0] * p[0] + rotation[1][1] * p[1] + rotation[1][2] * p[2] + reference_centroid[1],
+            rotation[2][0] * p[0] + rotation[2][1] * p[1] + rotation[2][2] * p[2] + reference_centroid[2],
+        )
+        for p in m
+    ]
+
+    trace = rotation[0][0] + rotation[1][1] + rotation[2][2]
+    cosine = max(-1.0, min(1.0, (trace - 1.0) / 2.0))
+    rotation_degrees = math.degrees(math.acos(cosine))
+    translation = math.dist(mobile_centroid, reference_centroid)
+
+    return {
+        "rmsd": _rmsd(aligned, reference),
+        "rmsd_unaligned": _rmsd(mobile, reference),
+        "rotation_degrees": rotation_degrees,
+        "translation_angstrom": translation,
+        "aligned": aligned,
+    }
 
 
 # --------------------------------------------------------------------------------
@@ -598,7 +745,7 @@ class DesignVerification:
     device: str
     upstream_seconds: float
     motif_positions: int = 0
-    motif_ca_rmsd: float | None = None
+    motif_fit: dict[str, Any] | None = None
     trajectory_paths: list[Path] = field(default_factory=list)
 
 
@@ -687,7 +834,7 @@ def verify_design(
         )
 
     if parameters.operation == OPERATION_SCAFFOLD_MOTIF:
-        verification.motif_positions, verification.motif_ca_rmsd = _verify_motif(
+        verification.motif_positions, verification.motif_fit = _verify_motif(
             trb=trb,
             trb_path=trb_path,
             designed=residues,
@@ -705,7 +852,7 @@ def _verify_motif(
     designed: list[Residue],
     reference: list[Residue],
     parameters: RFdiffusionParameters,
-) -> tuple[int, float]:
+) -> tuple[int, dict[str, Any]]:
     """Check the motif survived, using upstream's own contig mapping."""
     ref_idx = trb.get("con_ref_pdb_idx")
     hal_idx = trb.get("con_hal_pdb_idx")
@@ -758,13 +905,18 @@ def _verify_motif(
         ref_coords.append(ref_residue.ca)
         designed_coords.append(hal_residue.ca)
 
-    rmsd = _rmsd(ref_coords, designed_coords)
+    # Superpose before measuring. Upstream emits the design in its own recentred
+    # frame, so raw coordinates measure placement, not motif preservation.
+    fit = superpose(designed_coords, ref_coords)
+    rmsd = fit["rmsd"]
     if rmsd > parameters.motif_ca_rmsd_limit:
         raise VerificationError(
-            f"motif CA RMSD {rmsd:.3f} A exceeds the limit "
-            f"{parameters.motif_ca_rmsd_limit:.3f} A; the motif was not preserved"
+            f"motif CA RMSD {rmsd:.3f} A after optimal superposition exceeds the limit "
+            f"{parameters.motif_ca_rmsd_limit:.3f} A; the motif was not preserved "
+            f"(unaligned {fit['rmsd_unaligned']:.3f} A, rigid-body move "
+            f"{fit['rotation_degrees']:.1f} deg / {fit['translation_angstrom']:.3f} A)"
         )
-    return len(ref_idx), rmsd
+    return len(ref_idx), fit
 
 
 # --------------------------------------------------------------------------------
@@ -1089,7 +1241,23 @@ def command_run(args: argparse.Namespace) -> int:
                 "upstream_seconds": round(v.upstream_seconds, 3),
                 "motif_positions_preserved": v.motif_positions or None,
                 "motif_ca_rmsd_angstrom": (
-                    round(v.motif_ca_rmsd, 4) if v.motif_ca_rmsd is not None else None
+                    round(v.motif_fit["rmsd"], 4) if v.motif_fit else None
+                ),
+                "motif_superposition": (
+                    {
+                        "method": "horn-quaternion-optimal-superposition",
+                        "rmsd_angstrom": round(v.motif_fit["rmsd"], 4),
+                        "rmsd_unaligned_angstrom": round(v.motif_fit["rmsd_unaligned"], 4),
+                        "rigid_body_rotation_degrees": round(v.motif_fit["rotation_degrees"], 3),
+                        "rigid_body_translation_angstrom": round(v.motif_fit["translation_angstrom"], 4),
+                        "note": (
+                            "Upstream emits designs in its own recentred frame. The unaligned "
+                            "value measures placement, not motif preservation; only the "
+                            "superposed value is compared against the limit."
+                        ),
+                    }
+                    if v.motif_fit
+                    else None
                 ),
                 "trajectory_files": [
                     str(p.relative_to(output_dir)) for p in v.trajectory_paths

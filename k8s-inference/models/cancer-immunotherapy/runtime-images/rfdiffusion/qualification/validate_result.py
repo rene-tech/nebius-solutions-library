@@ -27,6 +27,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+# Reused deliberately. The independence that matters here is re-deriving every number
+# from the exported bytes instead of trusting the envelope; re-implementing Horn's
+# method a second time would add a second thing to get wrong, not a second opinion.
+from runtime_entrypoint import parse_pdb_residues, superpose  # noqa: E402
+
 MIN_CA_CA = 3.4
 MAX_CA_CA = 4.2
 MIN_EXTENT_ANGSTROM = 5.0
@@ -149,7 +156,55 @@ def run_metadata(path: Path) -> dict[str, Any]:
     }
 
 
-def validate(run_root: Path, expected_digest: str) -> dict[str, Any]:
+def recompute_motif(
+    run_root: Path, declared: dict[str, Any], trb_path: Path, reference_pdb: Path
+) -> dict[str, Any]:
+    """Re-derive the motif RMSD from the exported structures, not the envelope."""
+    with trb_path.open("rb") as handle:
+        trb = pickle.load(handle)
+    ref_idx = trb.get("con_ref_pdb_idx") or []
+    hal_idx = trb.get("con_hal_pdb_idx") or []
+    if not ref_idx or len(ref_idx) != len(hal_idx):
+        raise ValidationError(f"{trb_path.name}: unusable motif mapping")
+
+    reference = {(r.chain, r.seq): r for r in parse_pdb_residues(reference_pdb)}
+    designed = {(r.chain, r.seq): r for r in parse_pdb_residues(run_root / declared["pdb"]["path"])}
+
+    ref_coords, hal_coords = [], []
+    for position, (ref_entry, hal_entry) in enumerate(zip(ref_idx, hal_idx)):
+        rk = (str(ref_entry[0]), int(ref_entry[1]))
+        hk = (str(hal_entry[0]), int(hal_entry[1]))
+        if rk not in reference or hk not in designed:
+            raise ValidationError(f"motif position {position}: {rk} or {hk} absent")
+        if reference[rk].name != designed[hk].name:
+            raise ValidationError(
+                f"motif position {position}: identity changed, "
+                f"{reference[rk].name} -> {designed[hk].name}"
+            )
+        ref_coords.append(reference[rk].ca)
+        hal_coords.append(designed[hk].ca)
+
+    fit = superpose(hal_coords, ref_coords)
+    reported = declared.get("motif_ca_rmsd_angstrom")
+    if reported is None:
+        raise ValidationError("a scaffold-motif design must report a motif CA RMSD")
+    if abs(fit["rmsd"] - float(reported)) > 0.01:
+        raise ValidationError(
+            f"recomputed motif RMSD {fit['rmsd']:.4f} A disagrees with the reported "
+            f"{float(reported):.4f} A"
+        )
+    return {
+        "positions": len(ref_idx),
+        "rmsd_angstrom": round(fit["rmsd"], 4),
+        "rmsd_unaligned_angstrom": round(fit["rmsd_unaligned"], 4),
+        "rigid_body_rotation_degrees": round(fit["rotation_degrees"], 3),
+        "rigid_body_translation_angstrom": round(fit["translation_angstrom"], 4),
+        "superposition": "horn-quaternion-optimal-superposition",
+        "recomputed_independently_from_exported_structures": True,
+    }
+
+
+def validate(run_root: Path, expected_digest: str, reference_pdb: Path | None = None) -> dict[str, Any]:
     envelope_path = run_root / "result.json"
     if not envelope_path.is_file():
         raise ValidationError(f"no result envelope at {envelope_path}")
@@ -208,13 +263,18 @@ def validate(run_root: Path, expected_digest: str) -> dict[str, Any]:
                 f"requested {requested['minimum']}..{requested['maximum']}"
             )
 
+        motif_report = None
         if envelope["operation"] == "scaffold-motif":
             if declared.get("motif_positions_preserved") != metadata["motif_positions"]:
                 raise ValidationError(
                     f"{trb_path.name}: motif position count disagrees with the envelope"
                 )
-            if declared.get("motif_ca_rmsd_angstrom") is None:
-                raise ValidationError("a scaffold-motif design must report a motif CA RMSD")
+            if reference_pdb is None:
+                raise ValidationError(
+                    "a scaffold-motif run needs --reference-pdb so the motif can be "
+                    "recomputed rather than taken on trust"
+                )
+            motif_report = recompute_motif(run_root, declared, trb_path, reference_pdb)
         else:
             if structure["glycine_fraction"] < 1.0:
                 raise ValidationError(
@@ -230,6 +290,7 @@ def validate(run_root: Path, expected_digest: str) -> dict[str, Any]:
                 "seed": declared["seed"],
                 "structure": structure,
                 "run_metadata": metadata,
+                "motif": motif_report,
                 "trajectory_files": declared.get("trajectory_files") or [],
             }
         )
@@ -255,11 +316,12 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-root", required=True, type=Path)
     parser.add_argument("--runtime-image-digest", required=True)
+    parser.add_argument("--reference-pdb", type=Path, default=None)
     parser.add_argument("--output", default="-")
     args = parser.parse_args(argv)
 
     try:
-        report = validate(args.run_root, args.runtime_image_digest)
+        report = validate(args.run_root, args.runtime_image_digest, args.reference_pdb)
     except ValidationError as exc:
         print(f"QUALIFICATION FAILED: {exc}", file=sys.stderr)
         return 1
