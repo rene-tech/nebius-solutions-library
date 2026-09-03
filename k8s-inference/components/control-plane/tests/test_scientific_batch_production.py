@@ -65,6 +65,8 @@ from fs2_serve.scientific_batch.kubernetes import (
     _kueue_eviction,
 )
 from fs2_serve.scientific_batch.models import (
+    COLLECTION_DEADLINE_MARGIN_SECONDS,
+    COLLECTION_GRACE_SECONDS,
     AdapterExecutionPlan,
     ArtifactAccessContext,
     ArtifactMaterialization,
@@ -89,6 +91,7 @@ from fs2_serve.scientific_batch.models import (
     StagePlacementClass,
     StageResourceEnvelope,
     StageVolumeBinding,
+    StageSchedulingDecision,
     VerifiedInputManifest,
     WorkloadKind,
     WorkloadObservation,
@@ -1696,6 +1699,312 @@ async def test_kubernetes_observer_normalizes_raw_and_composed_kueue_deactivatio
     await client.aclose()
 
 
+STAGE_FINISHED_AT = datetime(2026, 9, 3, 4, 0, tzinfo=UTC)
+
+
+def _collection_ref(attempt_id: UUID) -> tuple[WorkloadRef, StageSchedulingDecision]:
+    decision = (
+        scheduling()
+        .freeze(
+            service_class="customer-batch",
+            model_id="protein-design",
+            tenant_id="tenant-a",
+            profile=profile_value(),
+            plan=ScientificBatchPlan((ScientificStagePlan(stage_id="design"),)),
+        )
+        .stages[0]
+    )
+    ref = WorkloadResource(
+        operation_id=uuid4(),
+        batch_id=uuid4(),
+        workload_id=uuid4(),
+        attempt_id=attempt_id,
+        stage_id="design",
+        shard_id="main",
+        attempt_number=1,
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        variant_id="protein-design-h100",
+        input_artifact_id=uuid4(),
+        service_class=ServiceClass.CUSTOMER_BATCH,
+        scheduling_snapshot_digest="sha256:" + "a" * 64,
+        namespace="fs2-models",
+        name="scientific-collecting",
+        kind=WorkloadKind.JOB,
+        scheduling=decision,
+    ).ref
+    return ref, decision
+
+
+def _staged_pod(
+    *,
+    stage: dict[str, object] | None,
+    collector_terminated: bool = False,
+    pod_reason: str | None = None,
+    phase: str = "Running",
+) -> dict[str, object]:
+    """One staged Pod: the model container beside its artifact collector."""
+
+    statuses: list[dict[str, object]] = [
+        {
+            "name": "scientific-stage",
+            "state": {"terminated": stage} if stage is not None else {"running": {}},
+        },
+        {
+            "name": "artifact-collector",
+            "state": (
+                {"terminated": {"exitCode": 0, "reason": "Completed"}} if collector_terminated else {"running": {}}
+            ),
+        },
+    ]
+    status: dict[str, object] = {
+        "phase": phase,
+        "conditions": [{"type": "PodScheduled", "status": "True"}],
+        "containerStatuses": statuses,
+    }
+    if pod_reason is not None:
+        status["reason"] = pod_reason
+    return {"metadata": {"uid": "collecting-pod-uid"}, "status": status}
+
+
+def _collection_cluster(
+    tmp_path: Path,
+    ref: WorkloadRef,
+    attempt_id: UUID,
+    *,
+    pod: dict[str, object],
+    now: datetime,
+) -> tuple[HttpScientificBatchCluster, httpx.AsyncClient]:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/pods"):
+            return httpx.Response(200, json={"items": [pod]})
+        if request.url.path.endswith(f"/{ref.name}"):
+            return httpx.Response(
+                200,
+                json={
+                    "metadata": {
+                        "name": ref.name,
+                        "namespace": ref.namespace,
+                        "uid": "collecting-job-uid",
+                        "labels": {ATTEMPT_LABEL: str(attempt_id)},
+                        "annotations": {
+                            CLUSTER_QUEUE_ANNOTATION: "inference",
+                            ACCELERATOR_RESOURCE_ANNOTATION: "nvidia.com/gpu",
+                            ACCELERATOR_COUNT_ANNOTATION: "1",
+                            WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
+                            ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
+                        },
+                    },
+                    "status": {"startTime": "2026-09-03T03:00:00Z"},
+                },
+            )
+        if request.url.path.endswith("/workloads"):
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "metadata": {"uid": "collecting-kueue-uid"},
+                            "status": {
+                                "conditions": [
+                                    {
+                                        "type": "QuotaReserved",
+                                        "status": "True",
+                                        "lastTransitionTime": "2026-09-03T03:00:00Z",
+                                    },
+                                    {
+                                        "type": "Admitted",
+                                        "status": "True",
+                                        "lastTransitionTime": "2026-09-03T03:00:00Z",
+                                    },
+                                ],
+                                "admission": {
+                                    "clusterQueue": "inference",
+                                    "podSetAssignments": [
+                                        {
+                                            "flavors": {"nvidia.com/gpu": "inference-h100-1x"},
+                                            "resourceUsage": {"nvidia.com/gpu": "1"},
+                                        }
+                                    ],
+                                },
+                            },
+                        }
+                    ]
+                },
+            )
+        if request.url.path.endswith("/resourceflavors/inference-h100-1x"):
+            return httpx.Response(
+                200,
+                json={
+                    "metadata": {
+                        "labels": {"accelerator.fs2.nebius/pool-id": "h100-preemptible"}
+                    }
+                },
+            )
+        return httpx.Response(200, json={"items": []})
+
+    token = tmp_path / "collecting-token"
+    token.write_text("x" * 32)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.test")
+    cluster = HttpScientificBatchCluster(
+        base_url="https://kubernetes.test",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        controller_id="controller-a",
+        fence=Fence(),
+        renderer=JobRenderer(),
+        writes_enabled=True,
+        client=client,
+        clock=lambda: now,
+    )
+    return cluster, client
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_observer_fails_promptly_when_the_model_exits_without_a_result(
+    tmp_path: Path,
+) -> None:
+    """A dead model must not hold its GPUs until activeDeadlineSeconds."""
+
+    attempt_id = uuid4()
+    ref, decision = _collection_ref(attempt_id)
+    cluster, client = _collection_cluster(
+        tmp_path,
+        ref,
+        attempt_id,
+        pod=_staged_pod(
+            stage={"exitCode": 1, "reason": "Error", "finishedAt": "2026-09-03T04:00:00Z"},
+        ),
+        # One second after the model died: no grace is spent on a failed stage.
+        now=STAGE_FINISHED_AT + timedelta(seconds=1),
+    )
+    observation = await cluster.observe(ref, scheduling=decision)
+    assert observation.state is WorkloadState.FAILED
+    assert observation.failure_kind is FailureKind.APPLICATION
+    assert observation.failure_code == "Error"
+    # A dead model is the stage's own result, so the controller must not retry.
+    assert not observation.failure_kind.retryable
+    assert observation.pod_uids == ("collecting-pod-uid",)
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_observer_keeps_oom_and_preemption_classes_for_a_stalled_collection(
+    tmp_path: Path,
+) -> None:
+    """The prompt verdict reuses the taxonomy the deadline would have applied."""
+
+    attempt_id = uuid4()
+    ref, decision = _collection_ref(attempt_id)
+    cluster, client = _collection_cluster(
+        tmp_path,
+        ref,
+        attempt_id,
+        pod=_staged_pod(stage={"exitCode": 137, "reason": "OOMKilled", "finishedAt": "2026-09-03T04:00:00Z"}),
+        now=STAGE_FINISHED_AT + timedelta(seconds=1),
+    )
+    oom = await cluster.observe(ref, scheduling=decision)
+    assert (oom.state, oom.failure_kind, oom.failure_code) == (
+        WorkloadState.FAILED,
+        FailureKind.APPLICATION,
+        "OOMKilled",
+    )
+    assert _failure(["OOMKilled"]) == (WorkloadState.FAILED, FailureKind.APPLICATION, "OOMKilled")
+    await client.aclose()
+
+    preempted_cluster, preempted_client = _collection_cluster(
+        tmp_path,
+        ref,
+        attempt_id,
+        pod=_staged_pod(
+            stage={"exitCode": 137, "reason": "Error", "finishedAt": "2026-09-03T04:00:00Z"},
+            pod_reason="Preempted",
+        ),
+        now=STAGE_FINISHED_AT + timedelta(seconds=1),
+    )
+    preempted = await preempted_cluster.observe(ref, scheduling=decision)
+    assert preempted.state is WorkloadState.PREEMPTED
+    assert preempted.failure_kind is FailureKind.PREEMPTION
+    # Preemption stays retryable, and the attempt still reports the phase.
+    assert preempted.failure_kind.retryable
+    assert LifecyclePhase.PREEMPTED in preempted.phases
+    await preempted_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_observer_bounds_collection_after_the_model_succeeded(
+    tmp_path: Path,
+) -> None:
+    """A successful model that published nothing collectable is still bounded."""
+
+    attempt_id = uuid4()
+    ref, decision = _collection_ref(attempt_id)
+    stage = {"exitCode": 0, "reason": "Completed", "finishedAt": "2026-09-03T04:00:00Z"}
+    inside_cluster, inside_client = _collection_cluster(
+        tmp_path,
+        ref,
+        attempt_id,
+        pod=_staged_pod(stage=stage),
+        now=STAGE_FINISHED_AT + timedelta(seconds=COLLECTION_GRACE_SECONDS - 1),
+    )
+    inside = await inside_cluster.observe(ref, scheduling=decision)
+    # Inside the grace the collector is still legitimately publishing.
+    assert inside.state is WorkloadState.RUNNING
+    assert inside.failure_kind is None
+    await inside_client.aclose()
+
+    expired_cluster, expired_client = _collection_cluster(
+        tmp_path,
+        ref,
+        attempt_id,
+        pod=_staged_pod(stage=stage),
+        now=STAGE_FINISHED_AT + timedelta(seconds=COLLECTION_GRACE_SECONDS),
+    )
+    expired = await expired_cluster.observe(ref, scheduling=decision)
+    assert expired.state is WorkloadState.FAILED
+    assert expired.failure_kind is FailureKind.APPLICATION
+    assert expired.failure_code == "collection_deadline_exceeded"
+    assert not expired.failure_kind.retryable
+    await expired_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_observer_leaves_running_and_settled_pods_to_the_existing_paths(
+    tmp_path: Path,
+) -> None:
+    """The handshake fires only while a collection is genuinely outstanding."""
+
+    attempt_id = uuid4()
+    ref, decision = _collection_ref(attempt_id)
+    running_cluster, running_client = _collection_cluster(
+        tmp_path,
+        ref,
+        attempt_id,
+        pod=_staged_pod(stage=None),
+        now=STAGE_FINISHED_AT + timedelta(days=1),
+    )
+    running = await running_cluster.observe(ref, scheduling=decision)
+    assert running.state is WorkloadState.RUNNING
+    assert running.failure_kind is None
+    await running_client.aclose()
+
+    settled_cluster, settled_client = _collection_cluster(
+        tmp_path,
+        ref,
+        attempt_id,
+        pod=_staged_pod(
+            stage={"exitCode": 1, "reason": "Error", "finishedAt": "2026-09-03T04:00:00Z"},
+            collector_terminated=True,
+            phase="Failed",
+        ),
+        now=STAGE_FINISHED_AT + timedelta(days=1),
+    )
+    settled = await settled_cluster.observe(ref, scheduling=decision)
+    # Both containers terminated, so the Job status settles this attempt.
+    assert settled.failure_kind is None
+    await settled_client.aclose()
+
+
 @pytest.mark.asyncio
 async def test_kubernetes_observer_counts_only_exact_gpu_podsets_in_mixed_jobset(tmp_path: Path) -> None:
     attempt_id = uuid4()
@@ -2429,7 +2738,13 @@ def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path,
     assert environment["FS2_COLLECTOR_ID"] == "protein-design-output-v1"
     assert environment["FS2_VALIDATOR_ID"] == "protein-design-v1"
     assert manifest["spec"]["template"]["spec"]["initContainers"][0]["name"] == "prepare-workspace"  # type: ignore[index]
-    assert manifest["spec"]["template"]["spec"]["containers"][1]["name"] == "artifact-collector"  # type: ignore[index]
+    collector = manifest["spec"]["template"]["spec"]["containers"][1]  # type: ignore[index]
+    assert collector["name"] == "artifact-collector"
+    # The collector must give up before the Job's own deadline kills the Pod,
+    # so a stalled collection still yields a deterministic controller failure.
+    collection_bound = int(collector["command"][collector["command"].index("--collection-deadline-seconds") + 1])
+    assert collection_bound == 3600 - COLLECTION_DEADLINE_MARGIN_SECONDS
+    assert 0 < collection_bound < manifest["spec"]["activeDeadlineSeconds"]  # type: ignore[index]
     assert all("request" not in item["name"].lower() for item in container["env"])
     gang = replace(
         resource,

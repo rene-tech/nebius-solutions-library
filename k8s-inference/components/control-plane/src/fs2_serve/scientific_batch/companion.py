@@ -8,7 +8,7 @@ import json
 import os
 import tarfile
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -28,6 +28,17 @@ _MAX_RUNTIME_MARKER_BYTES = 64 * 1024
 RUNTIME_LOCALIZATION_SCHEMA = "fs2-serve.nebius.ai/runtime-localization-marker/v1"
 RUNTIME_TREE_IDENTITY_SCHEMA = "fs2-serve.nebius.ai/runtime-tree-identity/v1"
 RUNTIME_TREE_IDENTITY_FILE = ".fs2-runtime-tree.json"
+
+
+class CollectionDeadlineError(RuntimeError):
+    """The model published no collectable output inside the stage's bound.
+
+    The collector shares its Pod with the model container under
+    ``restartPolicy: Never``, so an unbounded wait keeps the whole Job -- and
+    its admitted GPUs -- alive until ``activeDeadlineSeconds``.  Failing here
+    instead exits the collector non-zero, which lets Kubernetes settle the Pod
+    and hand the controller an ordinary application failure.
+    """
 
 
 def _runtime_marker(runtime_localization_json: str) -> dict[str, Any]:
@@ -459,10 +470,15 @@ def collect_and_commit(
     invocation_json: str,
     workspace: Path,
     catalog_dir: Path,
+    collection_deadline_seconds: float,
     poll_seconds: float = 2,
     max_artifacts: int,
     max_output_bytes: int,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> None:
+    if collection_deadline_seconds <= 0 or poll_seconds <= 0:
+        raise ValueError("collector deadline and poll interval must be positive")
     invocation = _invocation(invocation_json)
     if (
         collector_id != invocation.collector_id
@@ -471,12 +487,18 @@ def collect_and_commit(
         or max_output_bytes != invocation.max_output_bytes
     ):
         raise ValueError("collector arguments differ from the canonical invocation")
+    deadline = monotonic() + collection_deadline_seconds
     while True:
         try:
             collected = collect_stage_output(invocation, workspace)
             break
         except CollectionPendingError:
-            time.sleep(poll_seconds)
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise CollectionDeadlineError(
+                    "scientific collector reached its bound before the model published its output"
+                ) from None
+            sleep(min(poll_seconds, remaining))
     refs: dict[str, dict[str, Any]] = {}
     root = workspace.resolve(strict=True)
     if not 1 <= len(collected.artifacts) <= invocation.max_output_artifacts:

@@ -26,6 +26,7 @@ from fs2_serve.scientific_batch import companion
 from fs2_serve.scientific_batch.adapters import (
     CollectedArtifactFile,
     CollectedStageOutput,
+    CollectionPendingError,
     register_adapter,
 )
 from fs2_serve.scientific_batch.artifact_bridge import ArtifactServiceBridge
@@ -1754,6 +1755,7 @@ def test_companion_materializes_collects_validates_and_commits_exact_handoff(
         catalog_dir=CATALOG_ROOT,
         max_artifacts=invocation.max_output_artifacts,
         max_output_bytes=invocation.max_output_bytes,
+        collection_deadline_seconds=30,
         poll_seconds=0.001,
     )
     structure_ref = client.uploads["fold-result:structure"][1]
@@ -1763,3 +1765,228 @@ def test_companion_materializes_collects_validates_and_commits_exact_handoff(
     validation = json.loads(client.uploads["fold-result:validation"][0])
     assert validation["status"] == "passed"
     assert validation["logical_output_id"] == "fold-result"
+
+
+def _collection_invocation(*, collector_id: str, validator_id: str) -> dict[str, object]:
+    """The canonical collector payload, matching the renderer's environment."""
+
+    return {
+        "stage_id": "fold",
+        "shard_id": "main",
+        "argv": ["fold-model", "--input", "/mnt/fs2-scientific/work/fold/main/input.fasta"],
+        "environment": [],
+        "working_directory": "/mnt/fs2-scientific/work/fold/main",
+        "consumes": [],
+        "produces": "fold-result",
+        "collector_id": collector_id,
+        "validator_id": validator_id,
+        "handoff_name": "structure",
+        "max_output_artifacts": 8,
+        "max_output_bytes": 1024,
+        "materializations": [],
+        "runtime_artifacts": [],
+        "runtime_mounts": [],
+    }
+
+
+class _CollectorUploads:
+    """Minimal artifact port; the collector only uploads on the success path."""
+
+    def __init__(self) -> None:
+        self.uploads: dict[str, tuple[bytes, dict[str, object]]] = {}
+
+    def upload(
+        self,
+        *,
+        identity: str,
+        content: bytes,
+        media_type: str,
+        compression: str | None,
+    ) -> dict[str, object]:
+        reference: dict[str, object] = {
+            "artifact_id": str(uuid4()),
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "size_bytes": len(content),
+            "media_type": media_type,
+        }
+        if compression is not None:
+            reference["compression"] = compression
+        self.uploads[identity] = (content, reference)
+        return reference
+
+
+def _prepared_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    root = tmp_path / "scientific"
+    root.mkdir()
+    monkeypatch.setattr(companion, "_ROOT", root)
+    workspace = root / "work" / "fold" / "main"
+    companion.prepare_workspace(
+        workspace,
+        runtime_localization_json=json.dumps(
+            {
+                "schema": companion.RUNTIME_LOCALIZATION_SCHEMA,
+                "operation_id": str(uuid4()),
+                "attempt_id": str(uuid4()),
+                "tenant_id": "tenant-a",
+                "model_id": "fold-model",
+                "variant_id": "fold-model-h100",
+                "stage_id": "fold",
+                "artifacts": [],
+            }
+        ),
+    )
+    return workspace
+
+
+def test_collector_waits_through_pending_polls_then_publishes_and_exits(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A slow but successful model still collects, well inside the bound."""
+
+    workspace = _prepared_workspace(tmp_path, monkeypatch)
+    payload = _collection_invocation(
+        collector_id="handshake-positive-collector-v1",
+        validator_id="handshake-positive-validator-v1",
+    )
+    polls = 0
+
+    def collect(bound: StageInvocation, path: Path) -> CollectedStageOutput:
+        nonlocal polls
+        polls += 1
+        if polls < 3:
+            # The model is still computing; nothing is published atomically yet.
+            raise CollectionPendingError("stage output is not published")
+        output = path / "structure.pdb"
+        output.write_bytes(b"ATOM      1  CA  ALA A   1\n")
+        return CollectedStageOutput(
+            artifacts=(
+                CollectedArtifactFile(
+                    name="structure",
+                    semantic_type="protein-structure-pdb/v1",
+                    path=output,
+                    media_type="chemical/x-pdb",
+                ),
+            ),
+            validation={"validator_id": bound.validator_id, "status": "passed"},
+        )
+
+    register_adapter(
+        model_id="handshake-positive-model",
+        compiler=lambda *args, **kwargs: None,  # type: ignore[arg-type]
+        collectors={str(payload["collector_id"]): collect},
+    )
+    elapsed = 0.0
+    slept: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        nonlocal elapsed
+        slept.append(seconds)
+        elapsed += seconds
+
+    client = _CollectorUploads()
+    companion.collect_and_commit(
+        client=client,  # type: ignore[arg-type]
+        collector_id=str(payload["collector_id"]),
+        validator_id=str(payload["validator_id"]),
+        invocation_json=json.dumps(payload),
+        workspace=workspace,
+        catalog_dir=CATALOG_ROOT,
+        max_artifacts=int(payload["max_output_artifacts"]),  # type: ignore[call-overload]
+        max_output_bytes=int(payload["max_output_bytes"]),  # type: ignore[call-overload]
+        collection_deadline_seconds=600,
+        poll_seconds=5,
+        monotonic=lambda: elapsed,
+        sleep=sleep,
+    )
+    assert polls == 3
+    assert slept == [5, 5]
+    assert elapsed < 600
+    # Exact positive completion: the handoff entry, manifest, and validation
+    # are all published before the collector returns successfully.
+    assert set(client.uploads) == {
+        "fold-result:structure",
+        "fold-result:manifest",
+        "fold-result:validation",
+    }
+    manifest = json.loads(client.uploads["fold-result:manifest"][0])
+    assert manifest["entries"][0]["name"] == "structure"
+    assert json.loads(client.uploads["fold-result:validation"][0])["status"] == "passed"
+
+
+def test_collector_fails_its_bound_when_the_model_publishes_no_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing result terminates the collector instead of looping forever."""
+
+    workspace = _prepared_workspace(tmp_path, monkeypatch)
+    payload = _collection_invocation(
+        collector_id="handshake-missing-collector-v1",
+        validator_id="handshake-missing-validator-v1",
+    )
+    polls = 0
+
+    def collect(bound: StageInvocation, path: Path) -> CollectedStageOutput:
+        nonlocal polls
+        polls += 1
+        raise CollectionPendingError("stage output is never published")
+
+    register_adapter(
+        model_id="handshake-missing-model",
+        compiler=lambda *args, **kwargs: None,  # type: ignore[arg-type]
+        collectors={str(payload["collector_id"]): collect},
+    )
+    elapsed = 0.0
+
+    def sleep(seconds: float) -> None:
+        nonlocal elapsed
+        elapsed += seconds
+
+    client = _CollectorUploads()
+    with pytest.raises(companion.CollectionDeadlineError):
+        companion.collect_and_commit(
+            client=client,  # type: ignore[arg-type]
+            collector_id=str(payload["collector_id"]),
+            validator_id=str(payload["validator_id"]),
+            invocation_json=json.dumps(payload),
+            workspace=workspace,
+            catalog_dir=CATALOG_ROOT,
+            max_artifacts=int(payload["max_output_artifacts"]),  # type: ignore[call-overload]
+            max_output_bytes=int(payload["max_output_bytes"]),  # type: ignore[call-overload]
+            collection_deadline_seconds=30,
+            poll_seconds=4,
+            monotonic=lambda: elapsed,
+            sleep=sleep,
+        )
+    # The wait is bounded exactly, and the final poll never sleeps past it.
+    assert elapsed == 30
+    assert polls == 9
+    assert not client.uploads
+
+
+def test_collector_rejects_an_unbounded_collection_request(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No caller may reintroduce the unbounded poll that held GPUs open."""
+
+    workspace = _prepared_workspace(tmp_path, monkeypatch)
+    payload = _collection_invocation(
+        collector_id="handshake-unbounded-collector-v1",
+        validator_id="handshake-unbounded-validator-v1",
+    )
+    for deadline, poll in ((0, 2), (-1, 2), (30, 0)):
+        with pytest.raises(ValueError, match="must be positive"):
+            companion.collect_and_commit(
+                client=_CollectorUploads(),  # type: ignore[arg-type]
+                collector_id=str(payload["collector_id"]),
+                validator_id=str(payload["validator_id"]),
+                invocation_json=json.dumps(payload),
+                workspace=workspace,
+                catalog_dir=CATALOG_ROOT,
+                max_artifacts=int(payload["max_output_artifacts"]),  # type: ignore[call-overload]
+                max_output_bytes=int(payload["max_output_bytes"]),  # type: ignore[call-overload]
+                collection_deadline_seconds=deadline,
+                poll_seconds=poll,
+            )

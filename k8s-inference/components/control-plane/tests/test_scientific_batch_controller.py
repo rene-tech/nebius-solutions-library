@@ -817,6 +817,10 @@ async def test_negative_semantic_commit_cannot_unlock_downstream_stage() -> None
         (FailureKind.SCIENTIFIC_VALIDATION, "invalid_structure"),
         (FailureKind.APPLICATION, "model_rejected_request"),
         (FailureKind.APPLICATION, "EXECUTION_TIMEOUT"),
+        # The collector/model handshake reports these two, and neither may
+        # re-queue a stage whose model already produced no collectable result.
+        (FailureKind.APPLICATION, "collection_deadline_exceeded"),
+        (FailureKind.APPLICATION, "OOMKilled"),
     ],
 )
 async def test_only_infrastructure_failures_are_retried(failure_kind: FailureKind, failure_code: str) -> None:

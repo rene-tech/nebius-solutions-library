@@ -654,6 +654,7 @@ def main() -> None:
     parser.add_argument("--validator-id")
     parser.add_argument("--max-artifacts", type=int)
     parser.add_argument("--max-output-bytes", type=int)
+    parser.add_argument("--collection-deadline-seconds", type=int)
     args = parser.parse_args()
     settings = Settings()
     logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -707,8 +708,11 @@ def main() -> None:
                     or not invocation
                     or args.max_artifacts is None
                     or args.max_output_bytes is None
+                    or args.collection_deadline_seconds is None
                 ):
-                    parser.error("scientific collector identity, workspace, and invocation are required")
+                    parser.error(
+                        "scientific collector identity, workspace, invocation, and collection deadline are required"
+                    )
                 collect_and_commit(
                     client=client,
                     collector_id=args.collector_id,
@@ -716,6 +720,7 @@ def main() -> None:
                     invocation_json=invocation,
                     workspace=Path(args.workspace),
                     catalog_dir=settings.catalog_dir,
+                    collection_deadline_seconds=args.collection_deadline_seconds,
                     max_artifacts=args.max_artifacts,
                     max_output_bytes=args.max_output_bytes,
                 )

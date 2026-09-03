@@ -175,6 +175,66 @@ grace/drain, and the batch remains nonterminal while any exact UID is still
 present. Only confirmed absence emits teardown and permits every non-succeeded
 stage to become cancelled; no later stage can be created.
 
+## Model and collector exit handshake
+
+A staged Pod runs exactly two regular containers: `scientific-stage`, the model
+itself, and `artifact-collector`, which publishes the model's output. Under
+`restartPolicy: Never` Kubernetes settles a Pod only once *every* container has
+terminated, so a model that dies without publishing a result used to leave the
+collector polling for output that could never arrive. The Job then held its
+admitted GPU reservation until `activeDeadlineSeconds` expired, which on a
+long-running scientific stage is hours of wasted H100 capacity.
+
+Two bounds close that gap.
+
+The observer settles the attempt. `observe` already lists the attempt's Pods
+and reads their container statuses, so it now also resolves an outstanding
+collection directly from them:
+
+- The model terminated non-zero while the collector is still running. The
+  attempt fails immediately, classified by the same `_failure` taxonomy the
+  Job-failure path applies to the same reasons. An `OOMKilled` stage stays a
+  non-retryable application failure and a `Preempted` stage stays a retryable
+  preemption, so the verdict is exactly the one the deadline would have
+  produced, only much earlier.
+- The model terminated successfully but the collector has not finished within
+  `COLLECTION_GRACE_SECONDS` of the model's own `finishedAt`. The attempt fails
+  with `collection_deadline_exceeded` as a non-retryable application failure,
+  because a stage that published nothing collectable is its own result and must
+  not re-queue. This grace is deliberately generous, since expiring it kills a
+  collection that may still be uploading a large artifact; it only has to be
+  far shorter than a scientific stage's multi-hour active deadline. A stage
+  whose model exited non-zero gets no grace at all.
+
+Both verdicts are ordinary terminal observations, so the existing reconciler
+path deletes the workload and releases quota with no new owner, scheduler, or
+public schema. The handshake stays out of the way whenever the model is still
+running or both containers have already terminated.
+
+The collector also bounds itself. The renderer passes
+`--collection-deadline-seconds`, derived from the stage's active deadline less
+`COLLECTION_DEADLINE_MARGIN_SECONDS`, and the poll loop raises
+`CollectionDeadlineError` at that bound instead of sleeping forever. The
+collector therefore exits non-zero and yields a deterministic controller
+failure code even if the controller is unavailable, rather than being killed
+opaquely by `DeadlineExceeded`.
+
+The Pod's container statuses are used as the termination marker rather than a
+supervisor wrapped around the model's argv, because wrapping regresses exactly
+the cases this handshake exists to catch. A wrapper becomes PID 1, so it
+absorbs the SIGTERM that drains a preempted stage; the container's own exit
+code and `state.terminated.reason` become the wrapper's, destroying the
+`OOMKilled` attribution the taxonomy depends on; and the third-party scientific
+runtime images contain no trusted supervisor binary to run.
+
+The out-of-memory case was measured rather than assumed. On a cgroup v2 node a
+probe container ran `sh -c "<allocate past the limit>; echo WRAPPER-SURVIVED"`
+under a 64Mi limit and ended `OOMKilled` with exit code 137 and **no log output
+at all**: `memory.oom.group` had killed the shell alongside the allocation, so
+the wrapper never reached its marker. A marker-writing supervisor is therefore
+silent for precisely the failure it would be introduced to report, while the
+Pod's container status still carries the exact `OOMKilled` reason.
+
 ## Lifecycle evidence
 
 Lifecycle markers are monotonic within an attempt. A retry starts a new
@@ -518,6 +578,9 @@ DELETE 202, a still-present UID, confirmed absence, and a DELETE 409 fence),
 canonical scheduling routing/deadlines, same-poll QuotaReserved persistence,
 complete phase ingestion, exact Kueue preemption/retry, stale-attempt
 observations, non-retryable taxonomy,
+the model/collector exit handshake (positive completion after pending polls,
+non-zero model exit, OOM and preemption classification, a missing result, and
+both the observer's and the collector's own deadline bounds),
 cancellation races and cascade, public HTTP/MCP lifecycle dispatch, Kubernetes
 REST creation, unresolved-versus-actual Kueue admission, closed API transports,
 durable PostgreSQL fencing, and invalid DAGs/snapshots.

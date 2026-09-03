@@ -24,6 +24,9 @@ from .capability import ScientificWorkloadCapabilityAuthority
 from .catalog_adapter import CatalogProfileAdapterError
 from .companion import RUNTIME_LOCALIZATION_SCHEMA
 from .models import (
+    COLLECTION_DEADLINE_MARGIN_SECONDS,
+    COLLECTOR_CONTAINER_NAME,
+    STAGE_CONTAINER_NAME,
     AdapterExecutionPlan,
     ArtifactAccessContext,
     RuntimeArtifactAggregateTree,
@@ -1305,8 +1308,9 @@ class FileScientificManifestRenderer:
                     "securityContext": companion_security,
                 }
             )
+        collection_deadline_seconds = max(1, execution.active_deadline_seconds - COLLECTION_DEADLINE_MARGIN_SECONDS)
         collector = {
-            "name": "artifact-collector",
+            "name": COLLECTOR_CONTAINER_NAME,
             "image": self.tools_image,
             "imagePullPolicy": "IfNotPresent",
             "command": [
@@ -1324,6 +1328,8 @@ class FileScientificManifestRenderer:
                 str(invocation.max_output_artifacts),
                 "--max-output-bytes",
                 str(invocation.max_output_bytes),
+                "--collection-deadline-seconds",
+                str(collection_deadline_seconds),
             ],
             "env": companion_env,
             "volumeMounts": [workspace_mount],
@@ -1376,7 +1382,7 @@ class FileScientificManifestRenderer:
             "initContainers": init_containers,
             "containers": [
                 {
-                    "name": "scientific-stage",
+                    "name": STAGE_CONTAINER_NAME,
                     "image": execution.image,
                     "imagePullPolicy": "IfNotPresent",
                     "command": list(invocation.argv),
