@@ -1,0 +1,109 @@
+{
+  "schema": "fs2.nebius.ai/cancer-runtime-h100-postroll-smoke/v1",
+  "recorded_at": "2026-09-03T01:24:27Z",
+  "scope": "Post-Terraform-roll digest-pinned import and CLI smoke only; semantic readiness remains established by h100-semantic-validation.json",
+  "environment": {
+    "project": "project-e00rene",
+    "region": "eu-north1",
+    "kubeconfig": "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+    "context": "k8s-inference-h100",
+    "api_server": "https://pu.mk8scluster-e00j5z9te7x5dd9g6a.mk8s.eu-north1.nebius.cloud:443",
+    "namespace": "fs2-academic-poc",
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "capacity_source": "capacity-block",
+    "node": "computeinstance-e00m0hsph76ajt9sdb"
+  },
+  "node_roll_gate": {
+    "terraform_state_os_lock_available_before_smoke": true,
+    "coordination_locks_available_before_smoke": true,
+    "lock_info_present_after_cleanup": false,
+    "ready_schedulable_h100_nodes": {
+      "computeinstance-e00m0hsph76ajt9sdb": 8,
+      "computeinstance-e00p3acr87k9k4mckj": 8
+    }
+  },
+  "registry_access": {
+    "mode": "preconfigured approved H100 cluster pull path",
+    "pod_image_pull_secret_added": false,
+    "default_service_account_image_pull_secrets": [],
+    "credential_data_read_or_printed": false
+  },
+  "scope_guard": {
+    "forge_cluster_contacted": false,
+    "forge_credentials_read_or_reused": false,
+    "forge_namespace_used": false,
+    "forge_models_namespace_on_approved_target": "absent",
+    "fs2_ci_resources_in_forge_models_on_approved_target": 0
+  },
+  "runs": [
+    {
+      "model": "bindcraft-native-pyrosetta",
+      "pod_uid": "784a17f3-66fa-4928-83fc-52a90593a481",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1",
+      "import_probe": {
+        "exit_code": 0,
+        "torch": "2.3.0",
+        "torch_cuda": "12.1",
+        "device": "NVIDIA H100 80GB HBM3",
+        "jax_devices": ["cuda:0"],
+        "cuda_tensor_square_sum": 140.0,
+        "pyrosetta_origin": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages/pyrosetta/__init__.py"
+      },
+      "cli": "/opt/fs2/bin/bindcraft-batch run-trajectory --help",
+      "cli_exit_code": 0,
+      "private_mount": {
+        "sub_path": "pyrosetta-bindcraft/site-packages",
+        "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+        "read_only": true,
+        "supplemental_groups": [65532],
+        "fs_group": null
+      }
+    },
+    {
+      "model": "rfdiffusion",
+      "pod_uid": "0d5e0c92-70fb-4514-af8d-e5ed636616af",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:e502a3267793bb19d1d1ff22b2210c65d05247b24e5460cfc5ef49d9a75750d7",
+      "import_probe": {
+        "exit_code": 0,
+        "torch": "2.3.0",
+        "torch_cuda": "12.1",
+        "dgl": "2.3.0+cu121",
+        "device": "NVIDIA H100 80GB HBM3",
+        "module": "rfdiffusion.RoseTTAFoldModel",
+        "cuda_tensor_square_sum": 140.0
+      },
+      "upstream_cli": "python /opt/rfdiffusion/scripts/run_inference.py --help",
+      "upstream_cli_exit_code": 0,
+      "wrapper_cli": "/opt/fs2/bin/rfdiffusion-batch aggregate --shards /work/empty --expected-shards 0 --staging-manifest /work/manifest.staging.json --output-manifest /work/manifest.json",
+      "wrapper_cli_exit_code": 0,
+      "wrapper_cli_pod_uid": "a44114f6-08ce-4de4-947a-ede5ad5d2ac2",
+      "wrapper_output": {
+        "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+        "artifacts": [],
+        "complete": true
+      }
+    },
+    {
+      "model": "proteinmpnn",
+      "pod_uid": "e2b2ab0f-3a9a-4bdb-94f0-014f14dfeb10",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteinmpnn@sha256:d115781382fc3644616dd480f9b06312f853f73ec6c03a6de4887757e125dfbd",
+      "import_probe": {
+        "exit_code": 0,
+        "torch": "2.3.0",
+        "torch_cuda": "12.1",
+        "device": "NVIDIA H100 80GB HBM3",
+        "module": "/opt/proteinmpnn/protein_mpnn_utils.py",
+        "cuda_tensor_square_sum": 140.0
+      },
+      "cli": "python /opt/proteinmpnn/protein_mpnn_run.py --help",
+      "cli_exit_code": 0
+    }
+  ],
+  "cleanup": {
+    "verified_at": "2026-09-03T01:24:27Z",
+    "task_labeled_pods_or_jobs_remaining": 0,
+    "named_postroll_pods_or_jobs_remaining": 0,
+    "shared_resources_modified": false,
+    "model_service_deployed": false
+  }
+}

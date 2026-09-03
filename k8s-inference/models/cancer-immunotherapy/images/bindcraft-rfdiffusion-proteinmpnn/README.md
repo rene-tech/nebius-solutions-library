@@ -122,6 +122,16 @@ no cgroup OOM or memory-limit event occurred with the 96 GiB request / 128 GiB
 limit. Temporary Pods were deleted after evidence capture. No model service was
 deployed.
 
+After the Terraform H100 node roll, the same three requested digest references
+were pulled again through the approved cluster registry path and exercised in
+task-labelled Pods. BindCraft passed CUDA/JAX/PyRosetta imports plus the typed
+trajectory CLI help path; RFdiffusion passed CUDA/DGL/model imports, upstream
+Hydra help, and a valid corrected-wrapper aggregate invocation; ProteinMPNN
+passed CUDA/module imports and upstream CLI help. This bounded post-roll check
+is recorded in `evidence/h100-postroll-import-cli-smoke.json` and does not
+replace the full semantic evidence above. It contacted no Forge cluster, used
+no Forge credential or namespace, and left zero task Pods or Jobs behind.
+
 Trivy 0.70.0 HIGH/CRITICAL `--ignore-unfixed` results are recorded in
 `evidence/vulnerability-scans.json`. The report is evidence, not a zero-finding
 claim or an implicit policy exception.
