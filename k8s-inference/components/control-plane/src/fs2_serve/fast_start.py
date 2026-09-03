@@ -35,7 +35,7 @@ from .fast_start_identity import (
     identity_mismatches,
     mechanism_config_digest,
 )
-from .fast_start_mechanisms import FastStartMechanism
+from .fast_start_mechanisms import FastStartCacheMechanismStatus, FastStartMechanism
 from .models import KubernetesModel
 
 if TYPE_CHECKING:
@@ -376,6 +376,10 @@ class FastStartStatus(FastStartAssessment):
     hot: bool | None = None
     automatic: FastStartAutomaticStatus | None = None
     mechanisms: dict[str, FastStartMechanismStatus] = Field(default_factory=dict, max_length=16)
+    #: Configured cold-start cache mechanisms.  Being ``Configured`` here never
+    #: raises ``qualifiedLevel``, ``assignedLevel`` or ``effectiveLevel``; a
+    #: mechanism with no populated cohort is reported next to an ``Off`` level.
+    cache_mechanisms: dict[str, FastStartCacheMechanismStatus] = Field(default_factory=dict, max_length=16)
 
 
 def nearest_rank(values: Sequence[float | None], fraction: float) -> float | None:
