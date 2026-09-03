@@ -84,6 +84,7 @@ from .scientific_batch.companion import (
 from .scientific_batch.controller import ScientificBatchController
 from .scientific_batch.execution import FileScientificManifestRenderer
 from .scientific_batch.kubernetes import HttpScientificBatchCluster
+from .scientific_batch.lifecycle_bridge import ScientificLifecycleBridge
 from .scientific_batch.models import MaterializationMode
 from .scientific_batch.postgres_repository import PostgresScientificBatchRepository
 from .scientific_batch.profile_catalog import ScientificProfileCatalog
@@ -386,6 +387,13 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             namespace=settings.scientific_batch_namespace,
             result_publisher=scientific_artifact_bridge,
             artifact_lifecycle=scientific_artifact_bridge,
+            lifecycle=ScientificLifecycleBridge(
+                lifecycle=lifecycle,
+                batches=scientific_repository,
+                operations=store,
+                cluster=settings.admin_context_cluster,
+                source_resolution_seconds=settings.scientific_batch_poll_seconds,
+            ),
             lease_seconds=settings.scientific_batch_lease_seconds,
         )
         scientific_batches = ScientificBatchService(

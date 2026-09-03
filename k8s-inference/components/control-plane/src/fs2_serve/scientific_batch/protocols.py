@@ -96,6 +96,19 @@ class ScientificBatchArtifactLifecycle(Protocol):
     ) -> tuple[AttemptArtifactCommit, ...]: ...
 
 
+class ScientificBatchLifecycle(Protocol):
+    """Idempotent projection into the canonical workload lifecycle ledger."""
+
+    async def sync(self, state: ScientificBatchState) -> None: ...
+
+    async def observe(
+        self,
+        state: ScientificBatchState,
+        attempt: ScientificAttemptState,
+        observation: WorkloadObservation,
+    ) -> None: ...
+
+
 class LegacyArtifactCommitReader(Protocol):
     """In-memory core-test seam retained without a second production table."""
 
