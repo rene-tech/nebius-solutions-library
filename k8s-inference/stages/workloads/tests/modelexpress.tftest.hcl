@@ -333,8 +333,9 @@ run "dynamic_controller_envelope_includes_rendered_scheduling_choices" {
       }
       local_queues = {
         science-batch = {
-          cluster_queue = "science-batch"
-          model_ids     = ["qwen3-8b"]
+          cluster_queue   = "science-batch"
+          model_ids       = ["qwen3-8b"]
+          service_classes = ["customer-batch"]
         }
       }
     }

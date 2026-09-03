@@ -277,7 +277,7 @@
           "items": {
             "type": "string",
             "pattern": "^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$",
-            "maxLength": 128
+            "maxLength": 63
           }
         },
         "required_node_labels": {

@@ -58,7 +58,7 @@ def validate_overrides(overrides: Any, selected_profile: dict[str, Any]) -> list
         if pool_id not in selected_ids:
             errors.append(f"capacity override uses unknown pool ID {pool_id!r}")
             continue
-        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,126}[a-z0-9]", pool_id):
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,61}[a-z0-9]", pool_id):
             errors.append(f"capacity override pool ID {pool_id!r} is not stable")
         if not isinstance(bounds, dict) or set(bounds) != {"min_nodes", "max_nodes"}:
             errors.append(

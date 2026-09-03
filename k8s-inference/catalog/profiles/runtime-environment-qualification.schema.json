@@ -103,7 +103,7 @@
             "additionalProperties": false,
             "required": ["poolRef", "capacityType"],
             "properties": {
-              "poolRef": {"type": "string", "minLength": 1, "maxLength": 128},
+              "poolRef": {"type": "string", "minLength": 1, "maxLength": 63},
               "capacityType": {"enum": ["regular", "preemptible"]}
             }
           }

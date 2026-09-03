@@ -16,7 +16,7 @@
     }
   },
   "$defs": {
-    "id": {"type": "string", "pattern": "^[a-z0-9](?:[-_a-z0-9]*[a-z0-9])?$"},
+    "id": {"type": "string", "maxLength": 63, "pattern": "^[a-z0-9](?:[-_a-z0-9]*[a-z0-9])?$"},
     "profile": {
       "type": "object",
       "additionalProperties": false,
@@ -38,12 +38,14 @@
         "pool_order": {
           "type": "array",
           "minItems": 2,
+          "maxItems": 32,
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/id"}
         },
         "pools": {
           "type": "object",
           "minProperties": 2,
+          "maxProperties": 32,
           "propertyNames": {"$ref": "#/$defs/id"},
           "additionalProperties": {
             "type": "object",

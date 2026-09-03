@@ -123,17 +123,47 @@ deployment = {
     # handoff instead; set handoff_receipt there and omit fresh_install.
   }
 
-  # Optional Kueue policy for multiple customer/model lanes. Pool keys are the
-  # accelerator_pools IDs above. Nominal quotas are operator-selected GPU
-  # floors; Terraform assigns all unreserved physical capacity to the cohort so
-  # queues can borrow it. Omit this block to retain the stable single queue.
+  # Kueue queue, priority, and fair-capacity policy.
+  #
+  # This deployment enables the licensed academic assets below, whose claim can
+  # only be mounted from its own namespace. The scheduling owner therefore adds
+  # an academic lane in that namespace on the stable ClusterQueue, which then
+  # serves two lanes. Kueue's usage-based admission fair sharing orders pending
+  # work by decayed LocalQueue usage BEFORE WorkloadPriorityClass, so a higher
+  # service class in a different lane is not categorically admitted first.
+  # Acknowledging that ordering is required and explicit.
+  scheduling = {
+    fair_share_precedence_acknowledged = true
+    # Both licensed models below are scientific-only, so no serving placement
+    # records which accelerators they are qualified for, and the academic lane
+    # routes both. The operator states the qualification. Terraform checks
+    # every ID against the selected pools and refuses a set spanning two
+    # extended resource names, because Kueue cannot fall back across them.
+    model_eligible_pool_ids = {
+      alphafold3 = ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"]
+      bindcraft  = ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"]
+    }
+  }
+
+  # Additional customer/model lanes are optional. Pool keys are the
+  # accelerator_pools IDs above, and every pool_preference and flavor_order
+  # must list exactly those IDs in the order that queue should search. Nominal
+  # quotas are operator-selected accelerator floors; Terraform assigns all
+  # unreserved physical capacity to the shared Cohort so queues can borrow it.
+  # Replace every <placeholder> with an ID from this file: nothing here is
+  # specific to a GPU model.
+  #
   # scheduling = {
-  #   cohort = { enabled = true, name = "inference-shared" }
+  #   cohort                             = { enabled = true, name = "inference-shared" }
+  #   fair_share_precedence_acknowledged = true
   #   cluster_queues = {
   #     customer-batch = {
-  #       fair_sharing_weight = 4
+  #       fair_sharing_weight                = 4
+  #       flavor_order                       = ["<first-pool-id>", "<second-pool-id>"]
+  #       fair_share_precedence_acknowledged = true
   #       pool_quotas = {
-  #         "pool-id-from-accelerator-pools" = { nominal_quota = 1 }
+  #         "<first-pool-id>"  = { nominal_quota = 1 }
+  #         "<second-pool-id>" = { nominal_quota = 0 }
   #       }
   #       preemption = {
   #         reclaim_within_cohort = "LowerPriority"
@@ -145,13 +175,22 @@ deployment = {
   #     customer-primary = {
   #       cluster_queue       = "customer-batch"
   #       fair_sharing_weight = 4
-  #       model_ids           = ["one-selected-model-id"]
+  #       model_ids           = ["<one-selected-model-id>"]
+  #       service_classes     = ["presentation", "interactive", "customer-batch"]
   #     }
   #     customer-secondary = {
   #       cluster_queue       = "customer-batch"
   #       fair_sharing_weight = 1
-  #       model_ids           = ["another-selected-model-id"]
+  #       model_ids           = ["<another-selected-model-id>"]
+  #       service_classes     = ["bulk-backfill"]
   #     }
+  #   }
+  #   service_classes = {
+  #     platform-critical = { workload_priority_class = "platform-critical", priority = 10000, preemption_mode = "restartable", pool_preference = ["<first-pool-id>", "<second-pool-id>"] }
+  #     presentation      = { workload_priority_class = "presentation", priority = 1000, preemption_mode = "restartable", pool_preference = ["<first-pool-id>", "<second-pool-id>"] }
+  #     interactive       = { workload_priority_class = "interactive", priority = 100, preemption_mode = "restartable", pool_preference = ["<first-pool-id>", "<second-pool-id>"] }
+  #     customer-batch    = { workload_priority_class = "standard", priority = 0, preemption_mode = "restartable", pool_preference = ["<first-pool-id>", "<second-pool-id>"] }
+  #     bulk-backfill     = { workload_priority_class = "batch", priority = -100, preemption_mode = "restartable", pool_preference = ["<first-pool-id>", "<second-pool-id>"] }
   #   }
   # }
 
@@ -179,6 +218,72 @@ deployment = {
   #           nixl_backend           = "UCX"
   #           nic_pin                = "auto"
   #         }
+  #       }
+  #     }
+  #   }
+  # }
+
+  # Elastic general-purpose CPU capacity for scientific preprocessing and
+  # aggregation that does not touch the reference databases: BindCraft and
+  # FreeBindCraft aggregation resolve the portable class "general-cpu" onto
+  # these pools. They are a separate owner from the reference-data pool, with
+  # their own taint, ResourceFlavor and ClusterQueue, so neither lane can
+  # consume the other's capacity. schedulable_capacity is the measured capacity
+  # of one node after the Kubernetes and DaemonSet reserve, not a preset guess;
+  # the lane's Kueue quota is exactly this multiplied by the node ceiling.
+  # cpu_pools = {
+  #   "general-cpu-8x" = {
+  #     platform      = "cpu-d3"
+  #     preset        = "8vcpu-32gb"
+  #     capacity_type = "preemptible"
+  #     # An elastic envelope; use fixed_nodes instead for a pinned pool.
+  #     autoscaling = { min_nodes = 0, max_nodes = 4 }
+  #     schedulable_capacity = {
+  #       cpu_millicores        = 7000
+  #       memory_mib            = 28672
+  #       ephemeral_storage_mib = 114688
+  #     }
+  #     boot_disk = { type = "NETWORK_SSD", size_gib = 160 }
+  #   }
+  # }
+
+  # A general CPU pool budgets cpu and memory, which Kueue drops before
+  # admission unless core admission is on, so declaring one requires
+  # scheduling.core_capacity. Merge these into the scheduling block above
+  # rather than adding a second one.
+  #
+  # scheduling = {
+  #   general_cpu = {
+  #     cluster_queue = "general-cpu"
+  #     local_queue   = "general-cpu"
+  #     # Exactly one execution namespace: fs2-models, which the platform
+  #     # always provisions, or the academic tenant namespace when academic
+  #     # assets are enabled. Left unset it resolves to the academic namespace
+  #     # if that tenant is on and to fs2-models otherwise. A class is bound to
+  #     # one namespace because a consumer keys LocalQueues by bare name and
+  #     # cannot represent the same name in two namespaces.
+  #     namespace = "fs2-models"
+  #   }
+  #   # Count cpu and memory in Kueue admission, coupled to each accelerator
+  #   # pool. Each pool's budget is its measured per-node schedulable capacity
+  #   # times its maximum node count; a preset's nominal size is not
+  #   # schedulable capacity and is not accepted as a substitute. The CPU pool
+  #   # is never part of it: its ClusterQueue is external, with its own flavor
+  #   # and quota.
+  #   budget_core_resources = true
+  #   # Each measurement names the pool it was read from, the command that
+  #   # produced it, when it was taken and the SHA-256 of that payload, so a
+  #   # reviewer can check the number instead of trusting it.
+  #   accelerator_schedulable_capacity = {
+  #     "nebius-b300-preemptible-1x" = {
+  #       cpu_millicores = 22000
+  #       memory_mib     = 344064
+  #       evidence = {
+  #         pool_id        = "nebius-b300-preemptible-1x"
+  #         node_group_id  = "mk8snodegroup-yourgroupid"
+  #         source         = "kubectl get node -l accelerator.fs2.nebius/pool-id=nebius-b300-preemptible-1x -o json"
+  #         captured_at    = "2026-09-03T06:00:00Z"
+  #         payload_sha256 = "<sha256 of that payload>"
   #       }
   #     }
   #   }
@@ -217,14 +322,18 @@ deployment = {
   #       retention_mode = "disposable"
   #     }
   #     namespace = "fs2-reference-data"
+  #     # Sized so one AlphaFold 3 raw-input pod (16 CPU / 64 GiB, from
+  #     # reference-data/model-requirements.json) fits on a single node. The
+  #     # 8vcpu-32gb class can stage and hash the databases but cannot run that
+  #     # lane, and a pod is never split across nodes.
   #     cpu_pool = {
   #       platform        = "cpu-d3"
-  #       preset          = "8vcpu-32gb"
+  #       preset          = "32vcpu-128gb"
   #       node_count      = 1
   #       # Conservative capacity after Kubernetes/system DaemonSet reserve.
   #       schedulable_capacity = {
-  #         cpu_millicores        = 7000
-  #         memory_mib            = 28672
+  #         cpu_millicores        = 30000
+  #         memory_mib            = 122880
   #         ephemeral_storage_mib = 114688
   #       }
   #       boot_disk_type  = "NETWORK_SSD"
@@ -243,12 +352,14 @@ deployment = {
   #       # Omit bucket_name for the deterministic deployment/run-derived name.
   #       max_size_gib = 2048
   #     }
+  #     # The quota must admit the raw-input lane, not just the stager, or the
+  #     # Job would sit pending behind its own queue rather than its pool.
   #     queue = {
   #       resource_flavor = "reference-data-cpu"
   #       cluster_queue   = "reference-data-cpu"
   #       local_queue     = "reference-data"
-  #       nominal_cpu     = "6"
-  #       nominal_memory  = "24Gi"
+  #       nominal_cpu     = "16"
+  #       nominal_memory  = "64Gi"
   #     }
   #     network = {
   #       allow_public_source_staging = true
@@ -279,12 +390,13 @@ deployment = {
   #     }
   #   }
   # }
-  # The 8vcpu-32gb reference pool stages and downloads the databases but cannot
+  # An 8vcpu-32gb reference pool stages and downloads the databases but cannot
   # run the data pipeline. The raw_input_capacity output reports that honestly
   # rather than failing the plan, so a fitting CPU class can be planned first.
   # To make the lane runnable, raise cpu_pool.preset and schedulable_capacity
-  # together with queue.nominal_cpu / queue.nominal_memory; GPU inference is
-  # placed independently through the accelerator pools above and is unaffected.
+  # together with queue.nominal_cpu / queue.nominal_memory as shown above; GPU
+  # inference is placed independently through the accelerator pools above and is
+  # unaffected.
   # To retain populated storage, explicitly set retention_mode="retain" and
   # forbid_deletion=true. That opt-in blocks full-stack destroy and exports
   # exact retained IDs for adoption; it is never inferred from environment.

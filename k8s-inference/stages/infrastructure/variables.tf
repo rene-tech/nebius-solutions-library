@@ -312,6 +312,90 @@ variable "shared_cache" {
   }
 }
 
+variable "cpu_pools" {
+  description = "Elastic general-purpose CPU node groups for scientific preprocessing and aggregation. Capacity bounds are already resolved by the facade; this stage provisions exactly what it is given and never derives a node count from a preset."
+  type = map(object({
+    platform      = string
+    preset        = string
+    capacity_type = string
+    min_nodes     = number
+    max_nodes     = number
+    elastic       = bool
+    schedulable_capacity = object({
+      cpu_millicores        = number
+      memory_mib            = number
+      ephemeral_storage_mib = number
+    })
+    boot_disk = object({
+      type     = string
+      size_gib = number
+    })
+    shared_filesystem = bool
+    node_labels       = map(string)
+    max_surge         = number
+    max_unavailable   = number
+    drain_timeout     = string
+  }))
+  default = {}
+
+  validation {
+    condition = try(alltrue([
+      for pool_id, pool in var.cpu_pools : (
+        can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", pool_id)) &&
+        can(regex("^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$", pool.platform)) &&
+        can(regex("^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$", pool.preset)) &&
+        contains(["regular", "preemptible"], pool.capacity_type) &&
+        floor(pool.min_nodes) == pool.min_nodes &&
+        floor(pool.max_nodes) == pool.max_nodes &&
+        pool.min_nodes >= 0 &&
+        pool.max_nodes >= 1 &&
+        pool.max_nodes >= pool.min_nodes &&
+        pool.max_nodes <= 64 &&
+        # A fixed pool has one node count; only an elastic pool may differ.
+        (pool.elastic || pool.min_nodes == pool.max_nodes) &&
+        floor(pool.schedulable_capacity.cpu_millicores) == pool.schedulable_capacity.cpu_millicores &&
+        pool.schedulable_capacity.cpu_millicores >= 1000 &&
+        floor(pool.schedulable_capacity.memory_mib) == pool.schedulable_capacity.memory_mib &&
+        pool.schedulable_capacity.memory_mib >= 1024 &&
+        floor(pool.schedulable_capacity.ephemeral_storage_mib) == pool.schedulable_capacity.ephemeral_storage_mib &&
+        pool.schedulable_capacity.ephemeral_storage_mib >= 1024 &&
+        contains(["NETWORK_SSD", "NETWORK_SSD_IO_M3", "NETWORK_SSD_NON_REPLICATED"], pool.boot_disk.type) &&
+        floor(pool.boot_disk.size_gib) == pool.boot_disk.size_gib &&
+        pool.boot_disk.size_gib >= 32 &&
+        pool.boot_disk.size_gib <= 4096 &&
+        floor(pool.max_surge) == pool.max_surge &&
+        floor(pool.max_unavailable) == pool.max_unavailable &&
+        pool.max_surge >= 0 &&
+        pool.max_unavailable >= 0 &&
+        pool.max_surge + pool.max_unavailable >= 1 &&
+        can(regex("^[1-9][0-9]*m$", pool.drain_timeout)) &&
+        alltrue([
+          for key, value in pool.node_labels : (
+            # The same qualified-name and label-value grammars every other
+            # layer uses. The previous rule allowed several slashes, an
+            # underscore inside a DNS prefix, and any 63-character value
+            # including one with a space; the API rejects all of those, so a
+            # plan would succeed and the node group would fail at apply.
+            length(key) <= 317 &&
+            length(split("/", key)) <= 2 &&
+            length(split("/", key)[0]) <= (length(split("/", key)) == 2 ? 253 : 63) &&
+            (length(split("/", key)) == 1 || length(element(split("/", key), 1)) <= 63) &&
+            can(regex("^([a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?)*/)?[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", key)) &&
+            length(value) <= 63 &&
+            can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", value)) &&
+            !startswith(key, "accelerator.fs2.nebius/") &&
+            !startswith(key, "capacity.fs2.nebius/") &&
+            !startswith(key, "lifecycle.fs2.nebius/") &&
+            !startswith(key, "storage.fs2.nebius/") &&
+            !startswith(key, "workload.fs2.nebius/")
+          )
+        ])
+      )
+    ]), false)
+    error_message = "Every cpu_pools entry needs a DNS-safe ID, an open-ended platform/preset, regular or preemptible capacity, whole node bounds within 0-64 with a fixed pool pinned to one count, positive measured schedulable capacity, a whole 32-4096 GiB supported boot disk, a valid rollout/drain contract, and node labels that never reuse the reserved fs2 scheduling prefixes."
+  }
+}
+
 variable "reference_data" {
   description = "Dedicated same-region filesystem and versioned object storage for immutable scientific reference data. The portable default is disposable; retained storage is explicit opt-in."
   type = object({
@@ -522,7 +606,11 @@ variable "accelerator_pool_capacity_overrides" {
   validation {
     condition = alltrue([
       for pool_id, bounds in var.accelerator_pool_capacity_overrides : (
-        can(regex("^[a-z0-9][a-z0-9-]{1,126}[a-z0-9]$", pool_id)) &&
+        # One canonical pool-ID grammar: a lowercase Kubernetes label value of 1 to
+        # 63 characters, matching the facade, the scheduling module, and the CPU
+        # stage class schema. Pool IDs are label values, not DNS labels.
+        length(pool_id) <= 63 &&
+        can(regex("^[a-z0-9](?:[-_a-z0-9.]{0,61}[a-z0-9])?$", pool_id)) &&
         toset(keys(bounds)) == toset(["min_nodes", "max_nodes"]) &&
         try(
           floor(bounds.min_nodes) == bounds.min_nodes &&
@@ -590,9 +678,20 @@ variable "custom_accelerator_pools" {
   validation {
     condition = alltrue([
       for pool_id, pool in var.custom_accelerator_pools : (
-        can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", pool_id)) &&
+        # One canonical pool-ID grammar: a lowercase Kubernetes label value of 1 to
+        # 63 characters, matching the facade, the scheduling module, and the CPU
+        # stage class schema. Pool IDs are label values, not DNS labels.
+        length(pool_id) <= 63 &&
+        can(regex("^[a-z0-9](?:[-_a-z0-9.]{0,61}[a-z0-9])?$", pool_id)) &&
         can(regex("^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$", pool.platform)) &&
         can(regex("^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$", pool.preset)) &&
+        length(pool.accelerator_class) <= 63 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", pool.accelerator_class)) &&
+        length(split("/", pool.resource_name)) == 2 &&
+        length(split("/", pool.resource_name)[0]) <= 253 &&
+        length(split("/", pool.resource_name)[1]) <= 63 &&
+        length(pool.resource_name) <= 317 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", pool.resource_name)) &&
         floor(pool.gpus_per_node) == pool.gpus_per_node && pool.gpus_per_node >= 1 &&
         try(length(trimspace(pool.resource_name)) > 0, false) &&
         contains(["amd64", "arm64"], pool.host_architecture) &&
@@ -639,7 +738,7 @@ variable "custom_accelerator_pools" {
         ))
       )
     ])
-    error_message = "custom_accelerator_pools must satisfy sizing, driver, topology, architecture, MIG, and reservation invariants; reservations require fixed regular capacity, AUTO or STRICT policy, and unique capacity-block-group IDs; NVLink racks are fixed 18-node GB300 groups and multiple racks require a fabric; other platform/preset validity is checked live."
+    error_message = "custom_accelerator_pools must use label-safe pool and accelerator-class IDs of at most 63 characters and satisfy sizing, driver, topology, architecture, MIG, and reservation invariants; reservations require fixed regular capacity, AUTO or STRICT policy, and unique capacity-block-group IDs; NVLink racks are fixed 18-node GB300 groups and multiple racks require a fabric; other platform/preset validity is checked live."
   }
 }
 
