@@ -189,7 +189,9 @@ for id in "${requested[@]}"; do
     "$runtime_dir"
 
   smoke_rc=0
-  smoke_output="$(docker run --rm --network none --platform linux/amd64 "$local_ref" /usr/local/bin/fs2-image-smoke --build-only 2>&1)" || smoke_rc=$?
+  smoke_output="$(docker run --rm --network none --platform linux/amd64 \
+    --entrypoint /usr/local/bin/fs2-image-smoke \
+    "$local_ref" --build-only 2>&1)" || smoke_rc=$?
   printf '%s\n' "$smoke_output" > "${output_dir}/${id}.smoke.log"
   if [[ "$smoke_rc" -ne 0 ]]; then
     printf 'image smoke failed for %s (exit %s)\n' "$id" "$smoke_rc" >&2
@@ -221,6 +223,21 @@ for id in "${requested[@]}"; do
           .probe == "bounded-create-read-remove-passed" and .probe_bytes == 25)
     ' <<<"$smoke_json" >/dev/null
   printf '%s\n' "$smoke_json" > "${output_dir}/${id}.smoke.json"
+
+  case "$id" in
+    esmfold2|esmfold2-fast)
+      runtime_cli=/usr/local/bin/fs2-run-esmfold2
+      ;;
+    protenix-v2)
+      runtime_cli=/usr/local/bin/fs2-run-protenix
+      ;;
+    openfold3)
+      runtime_cli=/usr/local/bin/fs2-run-openfold3
+      ;;
+  esac
+  docker run --rm --network none --platform linux/amd64 \
+    --entrypoint "$runtime_cli" "$local_ref" --help \
+    > "${output_dir}/${id}.direct-cli.log"
 
   docker inspect "$local_ref" --format '{{.Architecture}}' | grep -Fx amd64 >/dev/null
   docker inspect "$local_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' | grep -Fx "$revision" >/dev/null

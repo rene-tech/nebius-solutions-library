@@ -91,9 +91,10 @@ RUN apt-get update \
     && chmod 0555 /opt/fs2/runtime
 COPY --from=builder /opt/protenix-venv /opt/protenix-venv
 COPY --chmod=0555 entrypoint.sh /usr/local/bin/fs2-entrypoint
-COPY --chmod=0555 image_smoke.py /usr/local/bin/fs2-image-smoke
-COPY --chmod=0555 run_protenix.py /usr/local/bin/fs2-run-protenix
-COPY --chmod=0555 run_protenix.py /opt/fs2/run_protenix.py
+COPY --chmod=0555 python-runtime-launcher.sh /usr/local/bin/fs2-image-smoke
+COPY --chmod=0555 python-runtime-launcher.sh /usr/local/bin/fs2-run-protenix
+COPY --chmod=0444 image_smoke.py /opt/fs2/image_smoke.py
+COPY --chmod=0444 run_protenix.py /opt/fs2/run_protenix.py
 COPY --chmod=0444 runtime_localization.py /usr/local/bin/runtime_localization.py
 COPY --chmod=0444 runtime_localization.py /opt/fs2/runtime_localization.py
 COPY --chmod=0444 handoff_contract.py /usr/local/bin/handoff_contract.py

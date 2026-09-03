@@ -49,9 +49,10 @@ RUN groupadd --gid 10001 fs2 \
     && chown -R 10001:10001 /models /databases /outputs /cache/openfold3 /tmp/fs2-home \
     && chmod 0555 /opt/fs2/runtime
 COPY --chmod=0555 entrypoint-openfold3.sh /usr/local/bin/fs2-entrypoint
-COPY --chmod=0555 image_smoke.py /usr/local/bin/fs2-image-smoke
-COPY --chmod=0555 run_openfold3.py /usr/local/bin/fs2-run-openfold3
-COPY --chmod=0555 run_openfold3.py /opt/fs2/run_openfold3.py
+COPY --chmod=0555 python-runtime-launcher.sh /usr/local/bin/fs2-image-smoke
+COPY --chmod=0555 python-runtime-launcher.sh /usr/local/bin/fs2-run-openfold3
+COPY --chmod=0444 image_smoke.py /opt/fs2/image_smoke.py
+COPY --chmod=0444 run_openfold3.py /opt/fs2/run_openfold3.py
 COPY --chmod=0444 openfold3-runner-base.yaml /opt/fs2/runtime/openfold3/runner-base.yaml
 COPY --chmod=0444 runtime_localization.py /usr/local/bin/runtime_localization.py
 COPY --chmod=0444 runtime_localization.py /opt/fs2/runtime_localization.py

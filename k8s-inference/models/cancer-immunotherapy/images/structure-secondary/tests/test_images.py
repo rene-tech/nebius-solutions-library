@@ -501,7 +501,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             with self.subTest(image=image["id"]):
                 revision = expected[image["id"]]
                 self.assertEqual(image["source"]["revision"], revision)
-                self.assertEqual(image["tag"], f"{revision}-h100-r3")
+                self.assertEqual(image["tag"], f"{revision}-h100-r4")
                 self.assertRegex(image["source"]["tag"], r"^v[0-9]")
                 for base in image["base_images"]:
                     self.assertRegex(base, r"@sha256:[0-9a-f]{64}$")
@@ -538,18 +538,9 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             "protenix-v2": "pending-exact-checkpoint-semantic-test",
             "openfold3": "pending-exact-artifact-semantic-test",
         }
-        expected_published_digests = {
-            "esmfold2": "sha256:24f40e67f332ecf694cb0dbb06a4a2a6cb0d49d8ee8fffd2c1d96631c7d3af14",
-            "esmfold2-fast": "sha256:ad7948c23817f61304c570077a62e3734c4afecfb18a05ea7cb08bd0551f553e",
-            "protenix-v2": "sha256:beeaa5173f102656437724376bad858de54232ef7ad1e342b8c2534428775494",
-            "openfold3": "sha256:ca05bb15341045bb2876153faccb0d029a27b0050350d6b86a83a76b4fa73bb4",
-        }
         for image in LOCK["images"]:
             with self.subTest(image=image["id"]):
-                self.assertEqual(
-                    image["published_digest"],
-                    expected_published_digests[image["id"]],
-                )
+                self.assertIsNone(image["published_digest"])
                 self.assertEqual(
                     image["accelerator_support"]["h100"]["status"],
                     expected_h100_states[image["id"]],
@@ -1620,7 +1611,10 @@ for seed in seeds:
         self.assertIn('result["package_version"] != "2.0.0"', smoke_source)
         of3 = (ROOT / "Dockerfile.openfold3").read_text(encoding="utf-8")
         self.assertNotIn("prepare_openfold3.py", of3)
-        self.assertIn("run_openfold3.py /usr/local/bin/fs2-run-openfold3", of3)
+        self.assertIn("run_openfold3.py /opt/fs2/run_openfold3.py", of3)
+        self.assertIn(
+            "python-runtime-launcher.sh /usr/local/bin/fs2-run-openfold3", of3
+        )
         self.assertIn("openfold3-runner-base.yaml /opt/fs2/runtime/openfold3/runner-base.yaml", of3)
         self.assertIn("libaio-dev zstd", of3)
 
@@ -1739,7 +1733,10 @@ for seed in seeds:
         )
         publisher = (ROOT / "build-and-publish.sh").read_text(encoding="utf-8")
         self.assertIn('"${runtime_dir}/check.sh"', publisher)
-        self.assertIn("fs2-image-smoke --build-only", publisher)
+        self.assertIn('"$local_ref" --build-only', publisher)
+        self.assertIn("--entrypoint /usr/local/bin/fs2-image-smoke", publisher)
+        self.assertIn('--entrypoint "$runtime_cli"', publisher)
+        self.assertIn(".direct-cli.log", publisher)
         self.assertIn("expected_cache_mounts", publisher)
         self.assertIn("expected_cache_environment", publisher)
         self.assertIn(".build_cache.effective_uid == 10001", publisher)
@@ -1749,7 +1746,7 @@ for seed in seeds:
         )
         self.assertIn("bounded-create-read-remove-passed", publisher)
         self.assertLess(
-            publisher.index("fs2-image-smoke --build-only"),
+            publisher.index("--entrypoint /usr/local/bin/fs2-image-smoke"),
             publisher.index('docker push "$target"'),
         )
 
@@ -1820,6 +1817,7 @@ for seed in seeds:
         for name in (
             "entrypoint.sh",
             "entrypoint-openfold3.sh",
+            "python-runtime-launcher.sh",
             "build-and-publish.sh",
             "check.sh",
         ):
@@ -1832,9 +1830,36 @@ for seed in seeds:
             )
             self.assertEqual(completed.returncode, 0, completed.stdout)
 
+    def test_advertised_python_executables_are_self_activating(self) -> None:
+        launcher = (ROOT / "python-runtime-launcher.sh").read_text(encoding="utf-8")
+        activation = "set +u\n  source /opt/fs2/activate.sh\n  set -u"
+        self.assertIn(activation, launcher)
+        self.assertIn('exec python "$script" "$@"', launcher)
+        expected = {
+            "Dockerfile.esmfold2": ("fs2-run-esmfold2", "run_esmfold2.py"),
+            "Dockerfile.protenix-v2": ("fs2-run-protenix", "run_protenix.py"),
+            "Dockerfile.openfold3": ("fs2-run-openfold3", "run_openfold3.py"),
+        }
+        for dockerfile, (executable, payload) in expected.items():
+            with self.subTest(dockerfile=dockerfile):
+                source = (ROOT / dockerfile).read_text(encoding="utf-8")
+                self.assertIn(
+                    f"COPY --chmod=0555 python-runtime-launcher.sh /usr/local/bin/{executable}",
+                    source,
+                )
+                self.assertIn(
+                    "COPY --chmod=0555 python-runtime-launcher.sh /usr/local/bin/fs2-image-smoke",
+                    source,
+                )
+                self.assertIn(f"COPY --chmod=0444 {payload} /opt/fs2/{payload}", source)
+                self.assertIn(
+                    "COPY --chmod=0444 image_smoke.py /opt/fs2/image_smoke.py",
+                    source,
+                )
+
     def test_preliminary_publications_remain_explicitly_non_deployable(self) -> None:
         superseded = LOCK["superseded_publications"]
-        self.assertEqual(len(superseded), 3)
+        self.assertEqual(len(superseded), 7)
         self.assertTrue(all(item["deployable"] is False for item in superseded))
         self.assertTrue(all(item["digest"].startswith("sha256:") for item in superseded))
 

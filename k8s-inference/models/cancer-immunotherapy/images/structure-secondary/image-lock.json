@@ -25,6 +25,34 @@
       "digest": "sha256:ad2a55f1740f49296ec730e9ff4f1d06ad391a87354f03b2921f960fe0f6d240",
       "deployable": false,
       "reason": "source checkout shadows the installed wheel and permits runtime JIT; CPU teardown also exited 139"
+    },
+    {
+      "id": "esmfold2",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2:827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r3",
+      "digest": "sha256:24f40e67f332ecf694cb0dbb06a4a2a6cb0d49d8ee8fffd2c1d96631c7d3af14",
+      "deployable": false,
+      "reason": "real H100 direct-command smoke pulled the image then exited 127 because the advertised Python executable relied on the bypassed container entrypoint"
+    },
+    {
+      "id": "esmfold2-fast",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast:827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r3",
+      "digest": "sha256:ad7948c23817f61304c570077a62e3734c4afecfb18a05ea7cb08bd0551f553e",
+      "deployable": false,
+      "reason": "real H100 direct-command smoke pulled the image then exited 127 because the advertised Python executable relied on the bypassed container entrypoint"
+    },
+    {
+      "id": "protenix-v2",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2:2475421477ab414b571149ad4a875c390ff8a35d-h100-r3",
+      "digest": "sha256:beeaa5173f102656437724376bad858de54232ef7ad1e342b8c2534428775494",
+      "deployable": false,
+      "reason": "direct H100 build smoke passed, but the generation is rolled forward with the uniform self-activating executable boundary and still has no exact-artifact semantic evidence"
+    },
+    {
+      "id": "openfold3",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream:c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r3",
+      "digest": "sha256:ca05bb15341045bb2876153faccb0d029a27b0050350d6b86a83a76b4fa73bb4",
+      "deployable": false,
+      "reason": "real H100 direct-command smoke pulled the image then exited 127 because the advertised Python executable relied on the bypassed container entrypoint"
     }
   ],
   "images": [
@@ -32,7 +60,7 @@
       "id": "esmfold2",
       "dockerfile": "Dockerfile.esmfold2",
       "repository": "cancer-immunotherapy/esmfold2",
-      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r3",
+      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r4",
       "source": {
         "repository": "https://github.com/Biohub/esm.git",
         "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
@@ -104,13 +132,13 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-only-sdpa-dispatch", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": "sha256:24f40e67f332ecf694cb0dbb06a4a2a6cb0d49d8ee8fffd2c1d96631c7d3af14"
+      "published_digest": null
     },
     {
       "id": "esmfold2-fast",
       "dockerfile": "Dockerfile.esmfold2",
       "repository": "cancer-immunotherapy/esmfold2-fast",
-      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r3",
+      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r4",
       "source": {
         "repository": "https://github.com/Biohub/esm.git",
         "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
@@ -182,13 +210,13 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-only-sdpa-dispatch", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": "sha256:ad7948c23817f61304c570077a62e3734c4afecfb18a05ea7cb08bd0551f553e"
+      "published_digest": null
     },
     {
       "id": "protenix-v2",
       "dockerfile": "Dockerfile.protenix-v2",
       "repository": "cancer-immunotherapy/protenix-v2",
-      "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r3",
+      "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r4",
       "source": {
         "repository": "https://github.com/bytedance/Protenix.git",
         "revision": "2475421477ab414b571149ad4a875c390ff8a35d",
@@ -272,13 +300,13 @@
         "blackwell": {"status": "unsupported", "scope": "pinned-pytorch-2.7.1-cu126-libtorch-has-no-blackwell-cubin-or-ptx", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": "sha256:beeaa5173f102656437724376bad858de54232ef7ad1e342b8c2534428775494"
+      "published_digest": null
     },
     {
       "id": "openfold3",
       "dockerfile": "Dockerfile.openfold3",
       "repository": "cancer-immunotherapy/openfold3-upstream",
-      "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r3",
+      "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r4",
       "source": {
         "repository": "https://github.com/aqlaboratory/openfold-3.git",
         "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
@@ -348,7 +376,7 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-not-readiness", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": "sha256:ca05bb15341045bb2876153faccb0d029a27b0050350d6b86a83a76b4fa73bb4"
+      "published_digest": null
     }
   ]
 }

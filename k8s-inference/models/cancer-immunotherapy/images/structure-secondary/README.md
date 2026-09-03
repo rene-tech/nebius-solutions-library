@@ -26,11 +26,16 @@ claims its final database/runtime readiness.
 | Protenix v2 | `2475421477ab414b571149ad4a875c390ff8a35d` (`v2.0.0`) | one composite artifact candidate `protenix-v2` at `/models/protenix-v2`, containing the required mirror-verified checkpoint candidate, four common files, `manifest.json`, and `.fs2-manifest-sha256` |
 | OpenFold3 | `c4771653c5d0a3ebb0b3af71b05efd64bc44ee86` (`v0.5.0`) | OpenBind-0 checkpoint SHA-256 `bd43301c…e29e4` and `components.bcif` SHA-256 `473d845c…fcc0c` |
 
-The scanner-free publication from clean image source
+The scanner-free `-h100-r3` publication from clean image source
 `ebed271a555488e87cd91157cd812101f0091fde`, accepted main
 `9d48fe0ef380ec736e113a89215f3730534693ad`, and exact runtime adapter
-`47ef64d479418eb823f2dc0761d8630be295b831` produced these immutable
-build-only candidates:
+`47ef64d479418eb823f2dc0761d8630be295b831` produced four immutable manifests.
+The subsequent direct-command H100 run found that the ESMFold2, Fast, and
+OpenFold executables depended on entrypoint-only environment activation. They
+pulled in 101.300 s, 100.022 s, and 198.843 s respectively, then exited 127.
+Protenix pulled in 76.405 s and passed its direct build smoke in 7 s, but that
+generation is also rolled forward to one uniform self-activating executable
+boundary. These digests are retained only as superseded evidence:
 
 | Runtime | Immutable regional image |
 |---|---|
@@ -39,9 +44,10 @@ build-only candidates:
 | Protenix v2 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:beeaa5173f102656437724376bad858de54232ef7ad1e342b8c2534428775494` |
 | OpenFold3 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:ca05bb15341045bb2876153faccb0d029a27b0050350d6b86a83a76b4fa73bb4` |
 
-Each image passed the nonroot, network-disabled build smoke. Publication does
-not qualify semantic H100 readiness, Blackwell portability, or any numbered
-fast-start level; those states remain pending exactly as recorded below.
+The corrected `-h100-r4` targets remain unpublished until their direct
+nonroot/network-disabled build smokes pass. Neither the superseded manifests nor
+the corrected build work qualify semantic H100 readiness, Blackwell
+portability, or any numbered fast-start level.
 
 OpenFold3 is an independent, non-equivalent backend; it is never reported as
 native AlphaFold3. The Protenix v2 checkpoint was recovered from the immutable
@@ -333,9 +339,10 @@ No model endpoint or shared service is deployed by this image task.
 
 ## Superseded preliminary publications
 
-Three task-owned pre-review tags were pushed before the independent findings arrived. Their
-digests and reasons are retained under `superseded_publications`; all have
-`deployable: false`. The historical AF3 image evidence is owned by the dedicated
-AF3 successor and is not repeated here. No OpenFold3 manifest was published. Corrected `-h100-r3`
-tags must not be published until the build, no-runtime-nvcc, artifact-closure, generated
-argv, offline semantic-smoke, and layer-history gates pass.
+Seven task-owned historical or rejected manifests are retained under
+`superseded_publications`; all have `deployable: false`. The final four entries
+are the `-h100-r3` manifests rejected by direct-command H100 testing. The
+historical AF3 image evidence is owned by the dedicated AF3 successor and is not
+repeated here. Corrected `-h100-r4` tags must not be published until the direct
+executable, build, no-runtime-nvcc, artifact-closure, generated-argv, offline
+semantic-smoke, and layer-history gates pass.
