@@ -331,6 +331,17 @@ output "reference_data_status" {
   } : null
 }
 
+output "scheduling_contract_ref" {
+  description = "Immutable ConfigMap handoff and revision for the controller/admin owners; this scheduling slice does not mount or consume it."
+  value = {
+    schema          = module.kueue_scheduling.contract.schema
+    config_map_name = kubernetes_config_map_v1.scientific_scheduling_contract.metadata[0].name
+    namespace       = kubernetes_config_map_v1.scientific_scheduling_contract.metadata[0].namespace
+    key             = local.scheduling_contract_key
+    sha256          = local.scheduling_contract_sha256
+  }
+}
+
 output "managed_resource_count" {
   description = "Expected concrete managed-address count for exact plan review."
   value = (
@@ -353,13 +364,21 @@ output "managed_resource_count" {
     + (var.model_express.enabled ? 1 : 0)
     + (local.modelexpress_managed ? 2 : 0)
     + (local.modelexpress_nvcr_required ? 1 : 0)
-    # The scheduling module owns one validation resource. Stable queue/WPC
-    # addresses remain in the base count; only the cohort and additive policy
-    # objects increase the concrete address total.
-    + 1
+    # Scheduling owns three validation resources (pool units, academic lane
+    # ownership, policy contract) plus the immutable policy ConfigMap. Each
+    # additive LocalQueue also has a replacement trigger for its immutable
+    # namespace/ClusterQueue binding. Stable queue/WPC addresses remain in the
+    # base count; only the cohort and additive policy objects increase the
+    # concrete address total.
+    + 4
+    + (module.kueue_scheduling.contract.core_resource_flavor == null ? 0 : 1)
     + (module.kueue_scheduling.contract.cohort == null ? 0 : 1)
     + (length(module.kueue_scheduling.contract.cluster_queues) - 1)
-    + (length(module.kueue_scheduling.contract.local_queues) - 1)
+    + (
+      length(module.kueue_scheduling.contract.local_queues)
+      -length(module.kueue_scheduling.contract.external_local_queue_names)
+      -1
+    ) * 2
     + length(setsubtract(
       toset(keys(module.kueue_scheduling.contract.workload_priority_classes)),
       toset(keys(var.model_controller.priority_classes)),

@@ -522,7 +522,7 @@ variable "accelerator_pool_capacity_overrides" {
   validation {
     condition = alltrue([
       for pool_id, bounds in var.accelerator_pool_capacity_overrides : (
-        can(regex("^[a-z0-9][a-z0-9-]{1,126}[a-z0-9]$", pool_id)) &&
+        can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", pool_id)) &&
         toset(keys(bounds)) == toset(["min_nodes", "max_nodes"]) &&
         try(
           floor(bounds.min_nodes) == bounds.min_nodes &&
@@ -593,6 +593,13 @@ variable "custom_accelerator_pools" {
         can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", pool_id)) &&
         can(regex("^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$", pool.platform)) &&
         can(regex("^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$", pool.preset)) &&
+        length(pool.accelerator_class) <= 63 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", pool.accelerator_class)) &&
+        length(split("/", pool.resource_name)) == 2 &&
+        length(split("/", pool.resource_name)[0]) <= 253 &&
+        length(split("/", pool.resource_name)[1]) <= 63 &&
+        length(pool.resource_name) <= 317 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", pool.resource_name)) &&
         floor(pool.gpus_per_node) == pool.gpus_per_node && pool.gpus_per_node >= 1 &&
         try(length(trimspace(pool.resource_name)) > 0, false) &&
         contains(["amd64", "arm64"], pool.host_architecture) &&
@@ -639,7 +646,7 @@ variable "custom_accelerator_pools" {
         ))
       )
     ])
-    error_message = "custom_accelerator_pools must satisfy sizing, driver, topology, architecture, MIG, and reservation invariants; reservations require fixed regular capacity, AUTO or STRICT policy, and unique capacity-block-group IDs; NVLink racks are fixed 18-node GB300 groups and multiple racks require a fabric; other platform/preset validity is checked live."
+    error_message = "custom_accelerator_pools must use label-safe pool and accelerator-class IDs of at most 63 characters and satisfy sizing, driver, topology, architecture, MIG, and reservation invariants; reservations require fixed regular capacity, AUTO or STRICT policy, and unique capacity-block-group IDs; NVLink racks are fixed 18-node GB300 groups and multiple racks require a fabric; other platform/preset validity is checked live."
   }
 }
 

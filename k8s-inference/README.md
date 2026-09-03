@@ -101,9 +101,12 @@ the operator instead of changing limits or broad project roles.
 
 ## Quick start
 
-Prerequisites are Terraform 1.11 or newer (but older than 2.0), `kubectl`, `jq`,
+Prerequisites are Terraform 1.11 or newer (but older than 2.0), `kubectl`,
+`helm` 3.9 or newer for the digest-pinned OCI charts, `jq`,
 [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/crane),
-Git, and authenticated Nebius CLI access to the target project. Authentication is
+Git, and authenticated Nebius CLI access to the target project. The optional
+local Kueue and JobSet server tests additionally need
+[`kind`](https://kind.sigs.k8s.io/). Authentication is
 runtime context, not desired state, so select it with `NEBIUS_PROFILE` or
 `--nebius-profile` rather than putting credentials in Terraform variables.
 
@@ -325,6 +328,7 @@ The top-level variable is `deployment`:
 | `models` | Profile or explicit selection, KEDA/static scaling, hot-model floor, and per-model scaling overrides. |
 | `dynamic_models` | Optional live controller gate, exclusive workload owner, and initial model IDs. Internal envelope and renderer JSON is derived, not customer-authored. |
 | `scheduling` | Optional GPU-neutral Kueue Cohort, queue floors, borrowing/preemption, fair-sharing weights, model lanes, and five customer service classes. |
+| `scientific_batch` | Optional staged scientific controller plus a content-addressed execution map; enabling it also installs and qualifies pinned JobSet 0.12.0 for true-gang work. |
 | `storage.shared_cache` | Optional shared model-cache size/type/block-size override. |
 | `storage.scientific_artifacts` | Optional dedicated same-region versioned result store: lifecycle, derived or explicit bucket name, capacity, application retention days, signed-handle TTL, maximum artifact size, object-storage egress CIDRs and the approved media types. Separate bucket, identity and key from `storage.reference_data`. |
 | `scientific_batch` | Staged scientific batch gates. `enabled` requires `storage.scientific_artifacts.enabled`; `writes_enabled` requires `enabled`. |

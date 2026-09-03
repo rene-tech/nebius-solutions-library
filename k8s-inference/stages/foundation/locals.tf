@@ -116,6 +116,7 @@ locals {
     "kserve",
     "keda",
     "kueue-system",
+    "jobset-system",
   ])
 
   chart_versions = {
@@ -125,6 +126,7 @@ locals {
     filesystem_csi        = "0.1.7"
     keda                  = "2.20.2"
     kueue                 = "0.17.8"
+    jobset                = "0.12.0"
     kserve_crd            = "v0.20.0"
     kserve_resources      = "v0.20.0"
     kube_prometheus_stack = "88.5.4"
@@ -132,6 +134,66 @@ locals {
     opentelemetry         = "0.171.0"
     tempo                 = "1.24.4"
   }
+
+  # Both the verifier and the Helm release resolve the chart by immutable
+  # digest, so they cannot install different bytes; a registry cannot serve
+  # different content for one digest. Terraform also needs the reference to
+  # resolve during plan, which a not-yet-materialized local archive would not.
+  kueue_chart_archive = data.external.kueue_chart.result.path
+
+  kueue_release = {
+    chart_ref            = "oci://registry.k8s.io/kueue/charts/kueue"
+    chart_digest         = "sha256:e5f000fcf0604e5dea0025e0ffdd20e6712de432bcca0ec254d71d97f012a354"
+    chart_digest_ref     = "oci://registry.k8s.io/kueue/charts/kueue@sha256:e5f000fcf0604e5dea0025e0ffdd20e6712de432bcca0ec254d71d97f012a354"
+    chart_archive_sha256 = "409de6260d2b7834fece5044502822bcb4e74ed8a03b8ea22bb78bcdfa1627db"
+    image                = "registry.k8s.io/kueue/kueue:v0.17.8@sha256:cecba825d0b0feab9bed2835efe2eb8d825512f1616c8762ab80c53f2ea6afe6"
+  }
+
+  # "registry/name:v0.17.8@sha256:hex" has three colons, so the repository and
+  # the digest-qualified tag are recovered by splitting on "@" first, exactly
+  # as the verification script does.
+  kueue_image_without_digest = split("@", local.kueue_release.image)[0]
+  kueue_image_repository = join(":", slice(
+    split(":", local.kueue_image_without_digest),
+    0,
+    length(split(":", local.kueue_image_without_digest)) - 1,
+  ))
+  kueue_image_tag = "${element(
+    split(":", local.kueue_image_without_digest),
+    length(split(":", local.kueue_image_without_digest)) - 1,
+  )}@${split("@", local.kueue_release.image)[1]}"
+
+  # values/kueue.yaml is the single source of the pinned image, node placement,
+  # feature gates, and controller configuration. Terraform only adds the
+  # operator-configured auxiliary resource prefixes, because those depend on
+  # what this deployment advertises rather than on the release.
+  kueue_values                 = yamldecode(file("${path.module}/values/kueue.yaml"))
+  kueue_manager_config         = yamldecode(local.kueue_values.managerConfig.controllerManagerConfigYaml)
+  kueue_base_excluded_prefixes = local.kueue_manager_config.resources.excludeResourcePrefixes
+  # A ClusterQueue budgets accelerators. Any other extended resource a Pod
+  # requests (an RDMA/NIXL device, for example) is not covered by a resource
+  # group, and Kueue would refuse to admit the Workload. Excluding those
+  # prefixes leaves accelerator accounting untouched.
+  kueue_core_resource_prefixes = ["cpu", "memory"]
+  kueue_excluded_resource_prefixes = sort(distinct(concat(
+    var.kueue.budget_core_resources ? tolist(setsubtract(
+      toset(local.kueue_base_excluded_prefixes),
+      toset(local.kueue_core_resource_prefixes),
+    )) : local.kueue_base_excluded_prefixes,
+    var.kueue.exclude_resource_prefixes,
+  )))
+  kueue_accelerator_resource_names = sort(distinct([
+    for pool in values(var.accelerator_pool_contract.pools) : pool.resource_api.resource_name
+  ]))
+  kueue_effective_values = merge(local.kueue_values, {
+    managerConfig = {
+      controllerManagerConfigYaml = yamlencode(merge(local.kueue_manager_config, {
+        resources = merge(local.kueue_manager_config.resources, {
+          excludeResourcePrefixes = local.kueue_excluded_resource_prefixes
+        })
+      }))
+    }
+  })
 
   kubeconfig                  = yamldecode(file(var.kubeconfig_path))
   selected_context            = try(one([for context in local.kubeconfig.contexts : context if context.name == var.kube_context]), null)

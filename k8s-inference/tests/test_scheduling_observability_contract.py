@@ -6,7 +6,6 @@ from pathlib import Path
 
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -32,6 +31,33 @@ class SchedulingObservabilityContractTests(unittest.TestCase):
             manager["admissionFairSharing"],
             {"usageHalfLifeTime": "168h", "usageSamplingInterval": "5m"},
         )
+        self.assertEqual(
+            values["controllerManager"]["featureGates"],
+            [{"name": "PartialAdmission", "enabled": True}],
+        )
+        self.assertEqual(
+            values["controllerManager"]["nodeSelector"],
+            {"workload.fs2.nebius/system": "true"},
+        )
+        self.assertEqual(
+            values["controllerManager"]["manager"]["image"],
+            {
+                "repository": "registry.k8s.io/kueue/kueue",
+                "tag": "v0.17.8@sha256:cecba825d0b0feab9bed2835efe2eb8d825512f1616c8762ab80c53f2ea6afe6",
+                "pullPolicy": "IfNotPresent",
+            },
+        )
+        self.assertEqual(
+            manager["waitForPodsReady"]["requeuingStrategy"],
+            {
+                "timestamp": "Creation",
+                "backoffLimitCount": 5,
+                "backoffBaseSeconds": 15,
+                "backoffMaxSeconds": 300,
+            },
+        )
+        self.assertEqual(manager["waitForPodsReady"]["timeout"], "2h")
+        self.assertEqual(manager["waitForPodsReady"]["recoveryTimeout"], "15m")
 
     def test_queue_renderer_is_pool_driven_and_retains_stable_addresses(self) -> None:
         module_source = "\n".join(
@@ -47,6 +73,73 @@ class SchedulingObservabilityContractTests(unittest.TestCase):
         self.assertIn('resource "kubernetes_manifest" "model_local_queue"', queue_source)
         self.assertIn('module "kueue_scheduling"', queue_source)
         self.assertIn("pool.node.gpus_per_node * pool.capacity.max_nodes", queue_source)
+        self.assertIn(
+            'resource "kubernetes_config_map_v1" "scientific_scheduling_contract"',
+            queue_source,
+        )
+        self.assertIn("create_before_destroy = true", queue_source)
+        self.assertIn("module.kueue_scheduling.contract_sha256", queue_source)
+
+    def test_raw_data_stage_capacity_gates_are_present_and_documented(self) -> None:
+        """A 16 CPU / 64 GiB stage cannot be admitted by a smaller pool or quota."""
+
+        queue_source = (ROOT / "stages/workloads/queue.tf").read_text(encoding="utf-8")
+        root_locals = (ROOT / "locals.tf").read_text(encoding="utf-8")
+        root_main = (ROOT / "main.tf").read_text(encoding="utf-8")
+        module_source = (ROOT / "modules/kueue-scheduling/main.tf").read_text(encoding="utf-8")
+
+        # The canonical request is a floor in both projections.
+        for source in (queue_source, root_locals):
+            self.assertIn("cpu_millicores = 16000", source)
+            self.assertIn("memory_mib     = 65536", source) if "memory_mib     = 65536" in source else self.assertIn("memory_mib = 65536", source)
+            self.assertIn("max(request.cpu_millicores", source)
+            self.assertIn("max(request.memory_mib", source)
+
+        # It must fit one node and the quota of the queue that admits it.
+        self.assertIn("schedulable_capacity.cpu_millicores", module_source)
+        self.assertIn("core_quota.cpu_millicores >= request.cpu_millicores", module_source)
+        self.assertIn("local.root_reference_cpu_capacity.cpu_millicores", root_main)
+        self.assertIn("local.root_reference_queue_cpu_millicores >= request.cpu_millicores", root_main)
+
+        # Raw mode is explicit and requires the data plane and core admission.
+        self.assertIn("academic_raw_data_stages", queue_source)
+        self.assertIn("academic_raw_data_stages", root_main)
+
+        # The documented acceptance configuration states the required sizes.
+        readme = (ROOT / "acceptance/scientific-scheduling/README.md").read_text(encoding="utf-8")
+        for required in ("16000", "65536", "64Gi", "32 vCPU / 128 GB", "node-group replacement"):
+            with self.subTest(required=required):
+                self.assertIn(required, readme)
+
+    def test_scientific_service_policy_is_restartable_only(self) -> None:
+        module_source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted((ROOT / "modules/kueue-scheduling").glob("*.tf"))
+        )
+        root_source = (ROOT / "variables.tf").read_text(encoding="utf-8")
+        workload_source = (ROOT / "stages/workloads/variables.tf").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('policy.preemption_mode == "restartable"', module_source)
+        self.assertIn('class.preemption_mode == "restartable"', root_source)
+        self.assertIn('preemption_mode         = optional(string, "restartable")', workload_source)
+
+    def test_staged_accelerator_handoff_rechecks_label_and_resource_names(self) -> None:
+        for relative in (
+            "stages/foundation/accelerator_pool_contract.tf",
+            "stages/workloads/accelerator_pool_contract.tf",
+        ):
+            with self.subTest(relative=relative):
+                source = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("length(pool.accelerator_class) <= 63", source)
+                # A qualified resource name is a prefix of at most 253 plus a
+                # name of at most 63, so 317 in total, and each half is bounded
+                # separately. A node label key follows its own rule.
+                self.assertIn("length(pool.resource_api.resource_name) <= 317", source)
+                self.assertIn('length(split("/", pool.resource_api.resource_name)) == 2', source)
+                self.assertIn('length(split("/", pool.resource_api.resource_name)[0]) <= 253', source)
+                self.assertIn('length(split("/", pool.resource_api.resource_name)[1]) <= 63', source)
+                self.assertIn("[-a-z0-9]{0,61}", source)
 
     def test_dynamic_model_controller_accepts_every_rendered_queue_and_priority(
         self,

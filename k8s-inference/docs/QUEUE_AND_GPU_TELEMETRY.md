@@ -8,7 +8,7 @@ floors and relative weights are operator policy in `deployment.scheduling`.
 
 ## Scheduling contract
 
-The Terraform renderer maps four independent concepts onto Kueue 0.17:
+The Terraform renderer maps four independent concepts onto Kueue 0.17.8:
 
 | Layer | Purpose | Configuration |
 | --- | --- | --- |
@@ -25,6 +25,13 @@ becomes a zero-floor member that can borrow from the Cohort. This prevents a
 new lane from double-booking the physical quota while preserving existing
 queue identity.
 
+`LocalQueue.spec.clusterQueue` is immutable in Kueue 0.17.8. The stable
+`fs2-models/inference-models` identity is permanently bound to the stable
+`inference-accelerators` ClusterQueue. Every additional LocalQueue has an
+explicit Terraform replacement trigger for namespace or ClusterQueue changes.
+That replacement briefly removes the queue, so operators must drain it first;
+an in-place binding update is never an upgrade path.
+
 For every pool:
 
 ```text
@@ -37,11 +44,27 @@ the maximum autoscaled physical capacity. A zero nominal quota remains in each
 ClusterQueue manifest because Kueue requires that `(flavor, resource)` entry
 before the queue can borrow the Cohort's shared quota.
 
+`admission_checks` is an advanced pass-through and defaults to empty. This
+repository does not create an `AdmissionCheck` or install its controller. An
+operator may reference one only after that exact AdmissionCheck and controller
+are deployed and Ready; otherwise Kueue deliberately keeps the ClusterQueue
+inactive or its workloads waiting. Nebius node-group autoscaling does not
+require this field. The checked deployable path and server fixture keep it
+empty; a separate server-side dry-run covers only the 0.17.8 CRD shape.
+
+The v2 accelerator-pool handoff reports physical GPUs per node but not the
+advertised extended-resource units per node for MIG slices. Workload planning
+therefore fails closed for active MIG modes; generic MIG quota is blocked on
+the separate MIG contract adding an exact `resource_units_per_node` fact.
+
 ClusterQueue weights control fair borrowing between tenants. LocalQueue
 weights control usage-decayed admission between lanes within one ClusterQueue.
 A weight is relative, not a fixed percentage. Kueue samples LocalQueue usage
 every five minutes with a seven-day half-life. This favors an under-served lane
 without turning a temporary idle floor into stranded capacity.
+Kueue 0.17.8 rejects nonzero weights at or below `1e-9`; the root facade,
+staged handoff, and module all require a value strictly greater than `1e-9` so
+that an accepted Terraform plan cannot fail only at the admission webhook.
 
 The public request selects only `service_class`. The scheduler/control plane
 must persist its resolved immutable snapshot rather than accepting caller
@@ -49,27 +72,197 @@ supplied queue, priority, flavor, or GPU-resource fields:
 
 | Service class | Default WorkloadPriorityClass | Value | Victim expectation |
 | --- | --- | ---: | --- |
-| `platform-critical` | `platform-critical` | 10000 | not a victim |
+| `platform-critical` | `platform-critical` | 10000 | not caller-selectable; restartable |
 | `presentation` | `presentation` | 1000 | restartable |
 | `interactive` | `interactive` | 100 | restartable |
 | `customer-batch` | `standard` | 0 | restartable |
-| `bulk-backfill` | `batch` | -100 | checkpointable |
+| `bulk-backfill` | `batch` | -100 | restartable |
 
-These are Kueue workload priorities, intentionally independent of Kubernetes
-Pod `PriorityClass`. A queue can reclaim borrowed capacity with
-`reclaim_within_cohort = "LowerPriority"`; a lane that cannot checkpoint should
-not be described as checkpointable merely to make preemption easier.
+These values are strictly ordered by Terraform; ties and inversions are
+rejected. They are Kueue workload priorities, intentionally independent of
+Kubernetes Pod `PriorityClass`.
+
+### What priority does and does not guarantee
+
+With `admissionScope.admissionMode = UsageBasedAdmissionFairSharing`, Kueue
+0.17.8 orders pending Workloads inside a ClusterQueue by each LocalQueue's
+decayed fair-share usage **before** it compares WorkloadPriorityClass. So:
+
+- Inside **one** LocalQueue, priority then creation time decides admission.
+- Across **different** LocalQueues on the same ClusterQueue, the less recently
+  served lane can be admitted first even when the other lane holds a higher
+  service class. A presentation lane does not categorically precede a bulk lane
+  in a different LocalQueue.
+- Across ClusterQueues, reclaim is additionally bounded by Fair Sharing
+  strategies and queue share, so numerical priority is not an eviction
+  guarantee either.
+
+Terraform therefore refuses to render a ClusterQueue that serves more than one
+lane under usage-based admission fair sharing unless the operator sets
+`fair_share_precedence_acknowledged = true`. The three honest options are:
+
+1. Route the classes that must outrank each other through **one** LocalQueue,
+   where priority is decisive.
+2. Set `admission_fair_sharing = false` on that ClusterQueue, which restores
+   priority-then-timestamp ordering and gives up usage-based fairness.
+3. Acknowledge fair-share ordering and give the protected lane an explicit
+   nominal floor large enough for its own work.
+
+The rendered contract publishes the ordering actually configured, per queue, in
+`priority_precedence`, so an operator explanation cannot claim a guarantee the
+scheduler does not provide.
+
+Terraform publishes the complete non-secret policy in an immutable,
+content-addressed `fs2-system` ConfigMap. The workloads output
+`scheduling_contract_ref` is the only supported handoff: it records the name,
+key, schema, and SHA-256. Changing the policy changes the ConfigMap name so a
+consumer configured by name receives a deliberate rollout instead of observing
+partly changed admission policy. The same document is the input for scientific
+API admission and the read-only admin policy view.
+
+Only `restartable` is executable in this scheduling policy. Terraform rejects
+`non_preemptible` because the current Cohort policy cannot enforce that promise,
+and rejects `checkpointable` because no checkpoint handshake or durable resume
+artifact contract exists yet. Those modes remain catalog capabilities for a
+future implementation, not selectable service-policy values or live claims.
+
+### Licensed academic lanes
+
+A PersistentVolumeClaim can only be mounted from its own namespace, so licensed
+academic work (AlphaFold 3 parameters, the BindCraft PyRosetta prerequisite)
+runs in the claim namespace rather than the default model namespace. Three
+things follow, and Terraform enforces all of them:
+
+- The ClusterQueue's `namespaceSelector` uses `matchExpressions` with an
+  explicit `In` list, because it must admit both the model namespace and the
+  claim namespace. `required_namespaces` injects the claim namespace even when
+  an operator restates the stable ClusterQueue entry.
+- Exactly one Terraform owner renders that LocalQueue. `modules/kueue-scheduling`
+  owns every ClusterQueue and LocalQueue; `modules/academic-assets` owns the
+  namespace, the claim, and the execution identity, and the additive queues
+  depend on that module so a fresh apply cannot race the namespace.
+- The lane is an **exact** tenant+model route derived from
+  `academic_assets.tenant_id`, `academic_assets.namespace`, and the declared
+  asset model IDs, and it carries every service class. `namespace_bound_models`
+  records the binding so a consumer must refuse a request that would resolve
+  such a model into any other namespace instead of silently losing the claim.
 
 An operator can add primary and secondary scientific lanes by supplying
-LocalQueues with different weights and model/tenant selector sets. The
-scientific controller resolves the unique most-specific route before operation
-admission and freezes its namespace and LocalQueue in the scheduling snapshot;
-it rejects ambiguous selectors and any execution namespace mismatch. Native
-BindCraft/PyRosetta and AlphaFold3 therefore route to the namespace-local
-`fs2-academic-poc/academic-scientific` queue rather than claiming that the
-licensed PVC can be mounted by a Job in `fs2-models`. They additionally require
-the academic access profile and immutable asset/access receipt before Job
-creation.
+LocalQueues with different weights and model/tenant/service-class selector
+sets. The contract exports these bindings separately from Kubernetes
+manifests. The scientific controller first chooses one exact
+tenant+model+service-class route, then one wildcard-tenant
+model+service-class route, then an explicitly unrestricted service-class
+default. Multiple matches at either specificity are an error, while an exact
+and wildcard route may intentionally coexist. The controller freezes the
+resolved namespace and queue before operation admission and rejects every
+execution-namespace mismatch. Native BindCraft/PyRosetta and AlphaFold3 thus
+run in their claim namespace, and require the academic access profile plus an
+immutable asset/access receipt before any Job is created.
+
+The pure scheduling resolver intersects the scientific profile's
+compatible pool IDs with `service_classes.<class>.pool_preference`, then uses
+`pools.<id>.accelerator_resource_name` instead of scanning every extended
+resource in a heterogeneous ClusterQueue. For controller consumption it freezes
+the queue, ClusterQueue, WorkloadPriorityClass/value, ordered compatible pools,
+accelerator resource/count, maximum queue/execution seconds, checkpoint mode,
+preemption mode, contract revision, and capture time. The frozen snapshot
+contains the pool-to-ResourceFlavor mapping, so a durable consumer can
+interpret historical attempts without the current mutable policy. PostgreSQL
+persistence and Kueue observation are controller-owned integration, not part
+of this scheduling successor. That integration must separately retain the
+Workload UID and full quota-reservation tuple at `QuotaReserved=True`, and must
+timestamp admission only from `Admitted=True.lastTransitionTime`.
+
+### CPU-only stages
+
+A CPU-only stage (an MSA or data pipeline) receives no accelerator
+ResourceFlavor, so it inherits neither node labels nor tolerations. The
+reference-data CPU pool is tainted so unrelated work stays off it, which would
+leave such a stage unschedulable. The contract therefore publishes
+`cpu_placement`: the pool ID, the exact node selector, the exact toleration,
+and the pool's advertised schedulable capacity. A consumer must apply the
+selector and toleration to a CPU PodSet and must refuse a stage whose request
+exceeds the advertised capacity rather than creating an unschedulable Job.
+
+### Observed Kueue Workload shape for a JobSet
+
+Verified on a pinned Kind cluster with Kueue v0.17.8 and JobSet v0.12.0:
+Kueue creates **one** PodSet per `replicatedJob` name, whose `count` is
+`replicas x parallelism`, and records the replicated-job grouping in
+`topologyRequest.subGroupCount` with
+`subGroupIndexLabel: jobset.sigs.k8s.io/job-index`. There is not one PodSet per
+replica. A consumer reading admission must use this shape; see
+`modules/jobset-controller/scripts/kind-jobset-kueue-integration.sh`.
+
+An admitted ResourceFlavor maps back to its accelerator pool through the
+canonical label `accelerator.fs2.nebius/pool-id`, published as
+`pool_node_label_key` and rendered onto both ResourceFlavor metadata and pool
+node labels. `resource_flavor_pool_ids` is the direct reverse map. No other key
+is a valid pool identity.
+
+The controller-owned Job/JobSet writer must project the resolved LocalQueue and
+WorkloadPriorityClass through Kueue's standard labels, use the
+`kueue.x-k8s.io/max-exec-time-seconds` label for execution ceilings, enforce
+queue expiry from each attempt's durable `queued_at`, and inject required pool
+affinity. The scheduling successor does not contain that lifecycle code. The
+task-owned acceptance IndexedJob alone uses
+`kueue.x-k8s.io/job-min-parallelism`; ordinary independent Jobs do not claim
+partial admission.
+
+The scheduling policy is canonical JSON in an immutable, content-addressed
+`fs2-system` ConfigMap, and `scheduling_contract_ref` publishes its name, key,
+and SHA-256. That SHA-256 is the digest of the exact applied bytes: Terraform's
+`jsonencode` escapes `<`, `>`, and `&` and preserves UTF-8, so a consumer must
+hash the raw ConfigMap value rather than a reserialization of the parsed
+document. The scientific execution map is a separate contract with a single
+owner, the control-plane chart; this scheduling path neither defines nor
+publishes it.
+
+## Supported Kubernetes minors
+
+Nothing here claims a minor that upstream does not test. Kueue v0.17.8's own
+end-to-end matrix covers Kubernetes 1.33-1.35 and JobSet v0.12.0's covers
+1.32-1.34, so a cluster must sit inside the Kueue matrix, and enabling
+scientific batch narrows it to their tested intersection, 1.33 or 1.34. Managed
+patch upgrades inside a minor are accepted. The pinned Kind evidence runs on
+1.34, which is in both matrices.
+
+## True-gang prerequisite
+
+Enabling scientific batch also enables a Terraform-owned JobSet foundation.
+It consumes the official JobSet chart directly by OCI digest (the provider
+infers version `0.12.0`) and verifies chart digest
+`sha256:02808a890a0b0e03a1d3bf5959e2f562b3b47c15e446bbba358c1d24e1f81b24`,
+and renders the controller image at
+`registry.k8s.io/jobset/jobset:v0.12.0@sha256:e75536f1135b7bb2f19f8c3b620782fbdd9091d73398e3a272f9a5fed322980d`.
+The chart's CRD is explicitly server-side applied from the same digest before
+Helm runs with `skip_crds=true`, because Helm does not upgrade `crds/` content.
+The JobSet and Kueue controllers are pinned to
+`workload.fs2.nebius/system=true`. Kueue itself uses chart digest
+`sha256:e5f000fcf0604e5dea0025e0ffdd20e6712de432bcca0ec254d71d97f012a354`
+and controller image digest
+`sha256:cecba825d0b0feab9bed2835efe2eb8d825512f1616c8762ab80c53f2ea6afe6`.
+That exact Kueue chart renders CRDs from `templates/crd/`, so they remain
+Helm-owned and upgrade with the release; a second server-side-apply owner is
+forbidden. The pinned server fixture performs a Helm upgrade, proves an
+existing LocalQueue UID survives, and confirms v1beta2 remains served and
+stored.
+Kueue installation waits for JobSet. Before foundation state can become the
+workloads input, the readiness gate requires a Kubernetes minor inside the
+tested intersection above, an Established `jobsets.jobset.x-k8s.io` CRD serving
+`v1alpha2`, an available controller, discovery, and a successful server-side
+dry-run JobSet. The root facade checks the Kueue matrix before infrastructure
+planning and applies the narrower intersection whenever scientific batch is
+enabled.
+The pinned Kind server test installs Kueue with the exact production
+`stages/foundation/values/kueue.yaml`, verifies the live v1beta2
+`Configuration` contains AdmissionFairSharing, creation-age requeue,
+wait-for-Pods-ready, integrations, and core-resource exclusions, and proves
+the controller becomes Available when the optional JobSet CRD is absent.
+Listing the JobSet integration is therefore safe in the non-scientific
+foundation path; enabling true gang work still requires the separately pinned
+JobSet CRD/controller readiness contract above.
 
 ## Correlation contract
 
@@ -125,19 +318,30 @@ phase from request latency and never double-count overlapping ranks on the same
 GPU.
 
 Tempo and Loki provide bounded raw debugging evidence; DCGM/Kueue/Prometheus
-provide time series; PostgreSQL remains the durable source for lifecycle events
-and reconciled rollups. The database ledger, Job label propagation, derived
-rules, dashboards, and live contention/retry tests are separate implementation
-steps. The Terraform in this change creates the queue and telemetry substrate
-but does not claim those application-level pieces are already complete.
+provide time series; PostgreSQL must remain the durable source for lifecycle
+events and per-attempt reservation/admission facts. Polling alone has a known
+evidence limit: Kueue can clear `status.admission` when quota is released, so a
+controller outage spanning reservation and eviction can miss the tuple unless
+a prior poll persisted it. This scheduling task does not claim event/watch-
+complete accounting. Live contention, preemptible-loss,
+scale-to-zero, and GPU accounting acceptance remain separate shared-cluster
+steps; this implementation does not claim those tests have run.
 
 ## Verification
 
 Run these before a deployment:
 
+These need `terraform`, `kubectl`, `helm`, `crane`, `kind`, `jq`, and `python3`
+on PATH. The two server scripts create and delete their own local Kind cluster
+and touch no cloud project or shared cluster.
+
 ```bash
 terraform -chdir=modules/kueue-scheduling test
-python3 -m unittest tests.test_scheduling_observability_contract
+terraform -chdir=modules/jobset-controller test
+terraform -chdir=modules/academic-assets test
+modules/kueue-scheduling/scripts/server-dry-run-v0.17.8.sh
+modules/jobset-controller/scripts/kind-jobset-kueue-integration.sh
+pytest -q tests
 terraform -chdir=stages/foundation validate
 terraform -chdir=stages/workloads validate
 ```
@@ -146,3 +350,7 @@ The pinned Kueue, OpenTelemetry, Tempo, and DCGM values must also render with
 their Helm charts. A shared-cluster deployment needs a reviewed Terraform plan
 and an explicit rollout window because changing quota policy can affect pending
 workloads. No live cluster change is implied by this document.
+
+The later live procedure and deterministic task-owned Job renderer are in
+`acceptance/scientific-scheduling/`. They deliberately create no queue policy
+and require an applied, revision-checked contract before any submission.

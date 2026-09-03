@@ -79,6 +79,10 @@ output "effective_configuration" {
       local_queue_names   = sort(keys(var.deployment.scheduling.local_queues))
       service_classes     = sort(keys(var.deployment.scheduling.service_classes))
     }
+    scientific_batch = {
+      enabled        = var.deployment.scientific_batch.enabled
+      writes_enabled = var.deployment.scientific_batch.writes_enabled
+    }
     dynamic_models = {
       enabled                                        = var.deployment.dynamic_models.enabled
       writes_enabled                                 = var.deployment.dynamic_models.writes_enabled

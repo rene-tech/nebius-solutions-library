@@ -227,3 +227,63 @@ variable "bootstrap_grafana_credentials" {
   nullable  = true
   default   = null
 }
+
+variable "kueue" {
+  description = "Kueue configuration this deployment adds to the pinned release values."
+  type = object({
+    # Extended-resource prefixes Kueue must not budget, such as an RDMA device
+    # a model runtime requests alongside its accelerator.
+    exclude_resource_prefixes = optional(list(string), [])
+    # When true, cpu and memory leave the exclusions so Kueue counts core
+    # requests. ephemeral-storage stays excluded because no ClusterQueue here
+    # budgets it.
+    budget_core_resources = optional(bool, false)
+  })
+  default = {}
+
+  validation {
+    # Kueue matches these with a literal prefix comparison against the whole
+    # ResourceName, so a qualified name such as example.com/rdma_shared_device_a
+    # is a valid entry and must not be rejected as a DNS-only string.
+    condition = alltrue([
+      for prefix in var.kueue.exclude_resource_prefixes :
+      length(prefix) >= 1 &&
+      length(prefix) <= 317 &&
+      length(split("/", prefix)) <= 2 &&
+      length(split("/", prefix)[0]) <= 253 &&
+      # An unqualified literal prefix has no name half to bound.
+      (length(split("/", prefix)) == 1 ? true : length(element(split("/", prefix), 1)) <= 63) &&
+      # A literal prefix may stop at the slash ("networking.example.com/"), be
+      # a partial name, or be a complete ResourceName.
+      can(regex("^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?(?:/(?:[A-Za-z0-9](?:[-A-Za-z0-9_.]*)?)?)?$", prefix))
+    ])
+    error_message = "Kueue excluded resource prefixes must be bounded literal ResourceName prefixes: an optional <=253 character DNS-style prefix and an optional <=63 character name after a single slash."
+  }
+}
+
+variable "jobset" {
+  description = "Pinned JobSet foundation required by enabled scientific true-gang execution."
+  type = object({
+    enabled            = optional(bool, false)
+    kubernetes_version = optional(string, "1.35")
+  })
+  default = {}
+
+  validation {
+    condition = try(
+      tonumber(split(".", trimprefix(var.jobset.kubernetes_version, "v"))[0]) == 1 &&
+      length(split(".", trimprefix(var.jobset.kubernetes_version, "v"))) >= 2 &&
+      length(split(".", trimprefix(var.jobset.kubernetes_version, "v"))) <= 3 &&
+      contains(
+        [33, 34, 35],
+        tonumber(split(".", trimprefix(var.jobset.kubernetes_version, "v"))[1]),
+      ) &&
+      (!var.jobset.enabled || contains(
+        [33, 34],
+        tonumber(split(".", trimprefix(var.jobset.kubernetes_version, "v"))[1]),
+      )),
+      false,
+    )
+    error_message = "Kueue v0.17.8's own end-to-end matrix covers Kubernetes 1.33-1.35; JobSet v0.12.0's covers 1.32-1.34. Enabling JobSet therefore requires their tested intersection, 1.33 or 1.34."
+  }
+}

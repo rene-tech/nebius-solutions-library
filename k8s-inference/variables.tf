@@ -139,17 +139,59 @@ variable "deployment" {
         name                = optional(string, "inference-shared")
         fair_sharing_weight = optional(number, 1)
       }), {})
+      # Kueue orders LocalQueues by decayed fair-share usage before it compares
+      # WorkloadPriorityClass, so a higher class in a different LocalQueue is not
+      # categorically admitted first. Set this to accept that ordering on the
+      # stable ClusterQueue once it serves more than one lane.
+      fair_share_precedence_acknowledged = optional(bool, false)
+      # Whether licensed academic models run their own raw CPU data stages.
+      # They read the shared reference databases on a tainted pool, so this
+      # requires the reference-data plane and core-resource admission. Left
+      # false, that lane is absent and those models accept enriched inputs only.
+      academic_raw_data_stages = optional(bool, false)
+      # Exact aggregate schedulable cpu/memory across the pools backing this
+      # Kueue installation. Supplying it turns core-resource admission on;
+      # leaving it null keeps cpu and memory excluded, and then no cpu/memory
+      # quota anywhere in the cluster is enforced.
+      core_capacity = optional(object({
+        flavor_name    = optional(string, "fs2-core")
+        cpu_millicores = number
+        memory_mib     = number
+      }))
+      # Largest per-Pod cpu/memory request each CPU stage class must run,
+      # checked against that class's per-node schedulable capacity.
+      cpu_stage_requests = optional(map(object({
+        cpu_millicores = number
+        memory_mib     = number
+      })), {})
+      # Count cpu and memory in Kueue admission. While they are excluded, any
+      # cpu/memory nominalQuota in the cluster is inert.
       cluster_queues = optional(map(object({
         namespace              = optional(string, "fs2-models")
+        namespaces             = optional(list(string), [])
         queueing_strategy      = optional(string, "BestEffortFIFO")
         fair_sharing_weight    = optional(number, 1)
         admission_fair_sharing = optional(bool, true)
         flavor_order           = optional(list(string), [])
+        flavor_fungibility = optional(object({
+          when_can_borrow  = optional(string, "MayStopSearch")
+          when_can_preempt = optional(string, "TryNextFlavor")
+          preference       = optional(string)
+        }), {})
+        admission_checks = optional(list(object({
+          name       = string
+          on_flavors = optional(list(string), [])
+        })), [])
         pool_quotas = optional(map(object({
           nominal_quota   = optional(number, 0)
           borrowing_limit = optional(number)
           lending_limit   = optional(number)
         })), {})
+        fair_share_precedence_acknowledged = optional(bool, false)
+        core_quota = optional(object({
+          cpu_millicores = optional(number, 0)
+          memory_mib     = optional(number, 0)
+        }), {})
         preemption = optional(object({
           reclaim_within_cohort = optional(string, "Never")
           within_cluster_queue  = optional(string, "Never")
@@ -160,6 +202,8 @@ variable "deployment" {
         cluster_queue       = string
         fair_sharing_weight = optional(number, 1)
         model_ids           = optional(set(string), [])
+        tenant_ids          = optional(set(string), [])
+        service_classes     = optional(set(string), [])
       })), {})
       service_classes = optional(map(object({
         workload_priority_class = string
@@ -167,11 +211,14 @@ variable "deployment" {
         default_local_queue     = optional(string)
         preemption_mode         = optional(string, "restartable")
         pool_preference         = optional(list(string), [])
+        max_queue_seconds       = optional(number)
+        max_execution_seconds   = optional(number)
+        description             = optional(string)
         })), {
         platform-critical = {
           workload_priority_class = "platform-critical"
           priority                = 10000
-          preemption_mode         = "non-preemptible"
+          preemption_mode         = "restartable"
         }
         presentation = {
           workload_priority_class = "presentation"
@@ -191,9 +238,17 @@ variable "deployment" {
         bulk-backfill = {
           workload_priority_class = "batch"
           priority                = -100
-          preemption_mode         = "checkpointable"
+          preemption_mode         = "restartable"
         }
       })
+    }), {})
+
+    # Feature gate for the staged scientific controller. Enabling it also
+    # installs and qualifies the pinned JobSet API for true-gang stages. The
+    # controller's own execution map is owned by the control-plane chart.
+    scientific_batch = optional(object({
+      enabled        = optional(bool, false)
+      writes_enabled = optional(bool, false)
     }), {})
 
     acceleration = optional(object({
@@ -443,36 +498,116 @@ variable "deployment" {
 
   validation {
     condition = try(
-      (!var.deployment.scheduling.cohort.enabled || can(regex("^[a-z0-9](?:[-a-z0-9]{0,251}[a-z0-9])?$", var.deployment.scheduling.cohort.name))) &&
-      var.deployment.scheduling.cohort.fair_sharing_weight > 0 &&
+      length(split(".", trimprefix(var.deployment.cluster.kubernetes_version, "v"))) >= 2 &&
+      length(split(".", trimprefix(var.deployment.cluster.kubernetes_version, "v"))) <= 3 &&
+      alltrue([
+        for component in split(".", trimprefix(var.deployment.cluster.kubernetes_version, "v")) :
+        tostring(tonumber(component)) == component
+      ]) &&
+      tonumber(split(".", trimprefix(var.deployment.cluster.kubernetes_version, "v"))[0]) == 1 &&
+      contains(
+        [33, 34, 35],
+        tonumber(split(".", trimprefix(var.deployment.cluster.kubernetes_version, "v"))[1]),
+      ) &&
+      (!var.deployment.scientific_batch.enabled || contains(
+        [33, 34],
+        tonumber(split(".", trimprefix(var.deployment.cluster.kubernetes_version, "v"))[1]),
+      )),
+      false,
+    )
+    error_message = "Kueue v0.17.8's upstream end-to-end matrix covers Kubernetes 1.33-1.35, and JobSet v0.12.0's covers 1.32-1.34. A cluster must use a numeric 1.<minor>[.<patch>] version inside the Kueue matrix, and enabling scientific batch narrows it to their tested intersection, 1.33 or 1.34. No wider minor is claimed because nothing upstream tests one."
+  }
+
+  validation {
+    condition = try(
+      (!var.deployment.scheduling.cohort.enabled || (
+        length(var.deployment.scheduling.cohort.name) <= 63 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.deployment.scheduling.cohort.name))
+      )) &&
+      var.deployment.scheduling.cohort.fair_sharing_weight > 0.000000001 &&
       alltrue([
         for queue_name, queue in var.deployment.scheduling.cluster_queues :
-        can(regex("^[a-z0-9](?:[-a-z0-9]{0,251}[a-z0-9])?$", queue_name)) &&
+        length(queue_name) <= 63 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", queue_name)) &&
         can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", queue.namespace)) &&
         contains(["BestEffortFIFO", "StrictFIFO"], queue.queueing_strategy) &&
-        queue.fair_sharing_weight > 0 &&
+        queue.fair_sharing_weight > 0.000000001 &&
         contains(["Never", "LowerPriority", "Any"], queue.preemption.reclaim_within_cohort) &&
-        contains(["Never", "LowerPriority", "LowerOrNewerEqualPriority"], queue.preemption.within_cluster_queue)
+        contains(["Never", "LowerPriority", "LowerOrNewerEqualPriority"], queue.preemption.within_cluster_queue) &&
+        contains(["MayStopSearch", "TryNextFlavor"], queue.flavor_fungibility.when_can_borrow) &&
+        contains(["MayStopSearch", "TryNextFlavor"], queue.flavor_fungibility.when_can_preempt) &&
+        (
+          try(queue.flavor_fungibility.preference, null) == null || (
+            queue.flavor_fungibility.when_can_borrow == "TryNextFlavor" &&
+            queue.flavor_fungibility.when_can_preempt == "TryNextFlavor" &&
+            contains(
+              ["BorrowingOverPreemption", "PreemptionOverBorrowing"],
+              queue.flavor_fungibility.preference,
+            )
+          )
+        ) &&
+        length(queue.admission_checks) <= 64 &&
+        length(queue.admission_checks) == length(distinct([
+          for check in queue.admission_checks : check.name
+        ])) &&
+        alltrue([
+          for check in queue.admission_checks :
+          length(check.name) <= 63 &&
+          can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", check.name)) &&
+          length(check.on_flavors) <= 64 &&
+          length(check.on_flavors) == length(distinct(check.on_flavors))
+        ])
       ]) &&
       alltrue([
         for queue_name, queue in var.deployment.scheduling.local_queues :
-        can(regex("^[a-z0-9](?:[-a-z0-9]{0,251}[a-z0-9])?$", queue_name)) &&
+        length(queue_name) <= 63 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", queue_name)) &&
         can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", queue.namespace)) &&
-        queue.fair_sharing_weight > 0
+        queue.fair_sharing_weight > 0.000000001 &&
+        alltrue([
+          for tenant_id in queue.tenant_ids :
+          length(tenant_id) <= 63 &&
+          can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", tenant_id))
+        ]) &&
+        (length(queue.model_ids) == 0 ? length(queue.service_classes) == 0 : length(queue.service_classes) > 0) &&
+        length(setsubtract(queue.service_classes, toset(keys(var.deployment.scheduling.service_classes)))) == 0
       ]) &&
       alltrue([
         for class_name, class in var.deployment.scheduling.service_classes :
         can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", class_name)) &&
-        can(regex("^[a-z0-9](?:[-a-z0-9]{0,251}[a-z0-9])?$", class.workload_priority_class)) &&
+        (class.description == null || (
+          # Kueue and Kubernetes bound the rendered description in bytes.
+          (length(base64encode(class.description)) / 4 * 3) - length(regexall("=", base64encode(class.description))) >= 1 &&
+          (length(base64encode(class.description)) / 4 * 3) - length(regexall("=", base64encode(class.description))) <= 500
+        )) &&
+        length(class.workload_priority_class) <= 63 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", class.workload_priority_class)) &&
         floor(class.priority) == class.priority &&
-        contains(["non-preemptible", "restartable", "checkpointable"], class.preemption_mode)
-        ]) && length(setsubtract(
-        toset(["platform-critical", "presentation", "interactive", "customer-batch", "bulk-backfill"]),
-        toset(keys(var.deployment.scheduling.service_classes)),
-      )) == 0,
+        class.priority >= -2147483648 && class.priority <= 2147483647 &&
+        class.preemption_mode == "restartable" &&
+        (class.max_queue_seconds == null || (
+          floor(class.max_queue_seconds) == class.max_queue_seconds &&
+          class.max_queue_seconds >= 1 && class.max_queue_seconds <= 2147483647
+        )) &&
+        (class.max_execution_seconds == null || (
+          floor(class.max_execution_seconds) == class.max_execution_seconds &&
+          class.max_execution_seconds >= 1 && class.max_execution_seconds <= 2147483647
+        ))
+        ]) && toset(keys(var.deployment.scheduling.service_classes)) == toset([
+        "platform-critical", "presentation", "interactive", "customer-batch", "bulk-backfill"
+      ]) &&
+      var.deployment.scheduling.service_classes["platform-critical"].priority > var.deployment.scheduling.service_classes["presentation"].priority &&
+      var.deployment.scheduling.service_classes["presentation"].priority > var.deployment.scheduling.service_classes["interactive"].priority &&
+      var.deployment.scheduling.service_classes["interactive"].priority > var.deployment.scheduling.service_classes["customer-batch"].priority &&
+      var.deployment.scheduling.service_classes["customer-batch"].priority > var.deployment.scheduling.service_classes["bulk-backfill"].priority,
       false,
     )
-    error_message = "scheduling must use DNS-safe queue/class names, supported Kueue queue/preemption policies, and positive fair-sharing weights; accelerator pool references and physical quota bounds are validated by the workloads stage."
+    error_message = "scheduling must use label-safe LocalQueue/priority names, strict platform-critical > presentation > interactive > customer-batch > bulk-backfill signed-int32 priorities, explicit service-class routes, restartable-only scientific execution, signed-int32 queue/execution ceilings, supported Kueue queue policies, and fair-sharing weights greater than 1e-9; non-preemptible/checkpointable execution is blocked pending separate enforcement."
+  }
+
+  validation {
+    condition     = !var.deployment.scientific_batch.writes_enabled || var.deployment.scientific_batch.enabled
+    error_message = "scientific_batch writes require enabled=true."
   }
 
   validation {
@@ -557,7 +692,11 @@ variable "deployment" {
         (
           config.transport.mode == "nixl-rdma" ? (
             config.transport.rdma_resource_name != null &&
-            can(regex("^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", config.transport.rdma_resource_name))
+            length(config.transport.rdma_resource_name) <= 317 &&
+            length(split("/", config.transport.rdma_resource_name)) == 2 &&
+            length(split("/", config.transport.rdma_resource_name)[0]) <= 253 &&
+            length(split("/", config.transport.rdma_resource_name)[1]) <= 63 &&
+            can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", config.transport.rdma_resource_name))
             ) : (
             config.transport.rdma_resource_name == null
           )
@@ -565,7 +704,7 @@ variable "deployment" {
         alltrue([
           for pool_id, transport in config.pool_transports :
           can(regex("^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$", pool_id)) &&
-          length(pool_id) <= 128 &&
+          length(pool_id) <= 63 &&
           contains(["fallback", "nixl-rdma"], transport.mode) &&
           contains(["UCX", "LIBFABRIC"], transport.nixl_backend) &&
           can(regex("^[A-Za-z0-9][A-Za-z0-9_.:,-]*$", transport.nic_pin)) &&
@@ -576,7 +715,11 @@ variable "deployment" {
           (
             transport.mode == "nixl-rdma" ? (
               transport.rdma_resource_name != null &&
-              can(regex("^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", transport.rdma_resource_name))
+              length(transport.rdma_resource_name) <= 317 &&
+              length(split("/", transport.rdma_resource_name)) == 2 &&
+              length(split("/", transport.rdma_resource_name)[0]) <= 253 &&
+              length(split("/", transport.rdma_resource_name)[1]) <= 63 &&
+              can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", transport.rdma_resource_name))
               ) : (
               transport.rdma_resource_name == null
             )
@@ -924,12 +1067,17 @@ variable "deployment" {
   }
 
   validation {
-    condition = try(alltrue([
+    condition = try(length(var.deployment.accelerator_pools) <= 32 && alltrue([
       for pool_id, pool in var.deployment.accelerator_pools : (
         can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", pool_id)) &&
         can(regex("^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$", pool.platform)) &&
         can(regex("^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$", pool.preset)) &&
-        can(regex("^[a-z0-9][a-z0-9-]{1,126}[a-z0-9]$", pool.accelerator_class)) &&
+        can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", pool.accelerator_class)) &&
+        length(split("/", pool.resource_name)) == 2 &&
+        length(split("/", pool.resource_name)[0]) <= 253 &&
+        length(split("/", pool.resource_name)[1]) <= 63 &&
+        length(pool.resource_name) <= 317 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", pool.resource_name)) &&
         floor(pool.gpus_per_node) == pool.gpus_per_node && pool.gpus_per_node >= 1 &&
         contains(["amd64", "arm64"], pool.host_architecture) &&
         contains(["regular", "preemptible"], pool.capacity_type) &&
@@ -970,7 +1118,7 @@ variable "deployment" {
         ))
       )
     ]), false)
-    error_message = "accelerator_pools must be structurally valid provider pools, including a whole 32-4096 GiB supported boot disk; reservations require fixed regular capacity, AUTO or STRICT policy, and unique capacity-block-group IDs; platform and preset stay open-ended so current and future Nebius GPUs pass through to provider validation."
+    error_message = "accelerator_pools is limited to 32 entries and must use label-safe pool and accelerator-class IDs of at most 63 characters plus structurally valid provider pools, including a whole 32-4096 GiB supported boot disk; reservations require fixed regular capacity, AUTO or STRICT policy, and unique capacity-block-group IDs; platform and preset stay open-ended so current and future Nebius GPUs pass through to provider validation."
   }
 
   validation {
@@ -1141,12 +1289,13 @@ variable "deployment" {
       contains(keys(var.deployment.dynamic_models.priority_classes), "standard") &&
       alltrue([
         for name, value in var.deployment.dynamic_models.priority_classes :
-        can(regex("^[a-z0-9](?:[-a-z0-9]{0,251}[a-z0-9])?$", name)) &&
+        length(name) <= 63 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", name)) &&
         floor(value) == value && value >= -2147483648 && value <= 2147483647
       ]),
       false,
     )
-    error_message = "dynamic_models.priority_classes must contain standard and map DNS-subdomain names to signed 32-bit integer Kueue priorities."
+    error_message = "dynamic_models.priority_classes must contain standard and map DNS label names of at most 63 characters to signed 32-bit integer Kueue priorities."
   }
 
   validation {
@@ -1284,8 +1433,13 @@ variable "academic_assets" {
   default = {}
 
   validation {
-    condition     = can(regex("^[a-z0-9][a-z0-9._-]{2,127}$", var.academic_assets.tenant_id))
-    error_message = "academic_assets.tenant_id must be a lowercase DNS-safe tenant identifier."
+    # The academic tenant is projected into a Kueue LocalQueue route and onto
+    # Kubernetes labels, both of which bound a value at 63 characters.
+    condition = (
+      length(var.academic_assets.tenant_id) <= 63 &&
+      can(regex("^[a-z0-9][a-z0-9._-]{2,62}$", var.academic_assets.tenant_id))
+    )
+    error_message = "academic_assets.tenant_id must be a lowercase DNS-safe tenant identifier of at most 63 characters, because it becomes a Kueue route tenant identity and a Kubernetes label value."
   }
 
   validation {

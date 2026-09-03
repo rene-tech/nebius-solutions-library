@@ -58,7 +58,7 @@
     }
   },
   "$defs": {
-    "id": {"type": "string", "pattern": "^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$"},
+    "id": {"type": "string", "maxLength": 63, "pattern": "^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$"},
     "manifest_path": {
       "type": "string",
       "minLength": 1,

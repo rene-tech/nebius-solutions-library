@@ -208,6 +208,7 @@ class DeploymentContractTests(unittest.TestCase):
             {"capacity": "minimal", "accelerators": "minimal", "models": "minimal"},
         )
         self.assertEqual(contract["selected_model_ids"], ["proteinmpnn"])
+
         self.assertEqual(
             contract["selected_accelerator_pool_ids"],
             ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"],
@@ -242,6 +243,7 @@ class DeploymentContractTests(unittest.TestCase):
             contract["stages"]["workloads"]["model_image_overrides"],
             {"proteinmpnn": runtime_catalog["runtime"]["image"]["reference"]},
         )
+
         self.assertEqual(
             contract["stages"]["workloads"]["model_controller"],
             {
@@ -317,6 +319,428 @@ class DeploymentContractTests(unittest.TestCase):
             outputs["effective_configuration"]["port_forward_ports"],
             contract["stages"]["infrastructure"]["port_forward_local_ports"],
         )
+
+    def test_dynamic_priority_class_label_boundary_is_rejected_at_root(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-priority-label-boundary",
+            "target": self.catalog_target(),
+            "dynamic_models": {
+                "priority_classes": {
+                    "standard": 0,
+                    "p" * 64: 1,
+                }
+            },
+        }
+        variable_file = self._write_configuration("priority-label-boundary", deployment)
+        result, _ = self._plan_file(variable_file, "priority-label-boundary")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("at most 63 characters", result.stderr)
+
+    def test_root_rejects_forbidden_kueue_flavor_preference_before_stages(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-invalid-flavor-preference",
+            "target": self.catalog_target(),
+            "scheduling": {
+                "cluster_queues": {
+                    "customer-batch": {
+                        "flavor_fungibility": {
+                            "when_can_borrow": "MayStopSearch",
+                            "when_can_preempt": "TryNextFlavor",
+                            "preference": "BorrowingOverPreemption",
+                        }
+                    }
+                }
+            },
+        }
+        variable_file = self._write_configuration("invalid-flavor-preference", deployment)
+        result, _ = self._plan_file(variable_file, "invalid-flavor-preference")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("scheduling must use", result.stderr)
+
+    def test_root_rejects_kueue_fair_sharing_weight_at_webhook_floor(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-invalid-fair-sharing-weight",
+            "target": self.catalog_target(),
+            "scheduling": {
+                "cohort": {"fair_sharing_weight": 0.000000001},
+            },
+        }
+        variable_file = self._write_configuration("invalid-fair-sharing-weight", deployment)
+        result, _ = self._plan_file(variable_file, "invalid-fair-sharing-weight")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("greater than 1e-9", result.stderr)
+
+    def test_root_rejects_duplicate_admission_checks_and_flavors(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-duplicate-admission-checks",
+            "target": self.catalog_target(),
+            "scheduling": {
+                "cluster_queues": {
+                    "customer-batch": {
+                        "admission_checks": [
+                            {"name": "capacity", "on_flavors": ["one", "one"]},
+                            {"name": "capacity", "on_flavors": []},
+                        ]
+                    }
+                }
+            },
+        }
+        variable_file = self._write_configuration("duplicate-admission-checks", deployment)
+        result, _ = self._plan_file(variable_file, "duplicate-admission-checks")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("scheduling must use", result.stderr)
+
+    def test_root_rejects_effective_scheduling_invariants_before_stages(self) -> None:
+        pool_profiles = json.loads(
+            (PROFILES_ROOT / "accelerator-pool-profiles.json").read_text(encoding="utf-8")
+        )
+        minimal = pool_profiles["profiles"]["minimal"]
+        pool_ids = list(minimal["pool_order"])
+        stable_cluster_queue = minimal["queue"]["cluster_queue_name"]
+        stable_local_queue = minimal["queue"]["local_queue_name"]
+
+        service_classes = {
+            name: {
+                "workload_priority_class": priority_name,
+                "priority": priority,
+                "preemption_mode": "restartable",
+            }
+            for name, priority_name, priority in (
+                ("platform-critical", "platform-critical", 10000),
+                ("presentation", "presentation", 1000),
+                ("interactive", "interactive", 100),
+                ("customer-batch", "standard", 0),
+                ("bulk-backfill", "batch", -100),
+            )
+        }
+        valid_queue = {
+            "namespace": "fs2-models",
+            "flavor_order": pool_ids,
+            "pool_quotas": {},
+            "preemption": {
+                "reclaim_within_cohort": "LowerPriority",
+                "within_cluster_queue": "LowerPriority",
+            },
+        }
+        cases: dict[str, tuple[dict[str, Any], str]] = {
+            "duplicate-pool-order": (
+                {"cluster_queues": {"customer": {**valid_queue, "flavor_order": [pool_ids[0], pool_ids[0]]}}},
+                "pool orders must be exact",
+            ),
+            "foreign-quota-pool": (
+                {"cluster_queues": {"customer": {**valid_queue, "pool_quotas": {"foreign": {"nominal_quota": 0}}}}},
+                "quota and AdmissionCheck pool keys",
+            ),
+            "floor-above-capacity": (
+                {"cluster_queues": {"customer": {**valid_queue, "pool_quotas": {pool_ids[0]: {"nominal_quota": 2}}}}},
+                "summed floors cannot exceed",
+            ),
+            "stable-localqueue-rebind": (
+                {
+                    "cluster_queues": {"customer": valid_queue},
+                    "local_queues": {
+                        stable_local_queue: {
+                            "cluster_queue": "customer",
+                        }
+                    },
+                },
+                "preserve the stable",
+            ),
+            "foreign-localqueue-namespace": (
+                {
+                    "local_queues": {
+                        "foreign": {
+                            "namespace": "other-models",
+                            "cluster_queue": stable_cluster_queue,
+                        }
+                    }
+                },
+                "namespace their ClusterQueue admits",
+            ),
+            "invalid-model-label": (
+                {
+                    "local_queues": {
+                        "invalid-model": {
+                            "cluster_queue": stable_cluster_queue,
+                            "model_ids": ["a.b"],
+                            "service_classes": ["customer-batch"],
+                        }
+                    }
+                },
+                "strict DNS-label model IDs",
+            ),
+            "ambiguous-route": (
+                {
+                    "local_queues": {
+                        name: {
+                            "cluster_queue": stable_cluster_queue,
+                            "model_ids": ["proteinmpnn"],
+                            "service_classes": ["customer-batch"],
+                        }
+                        for name in ("lane-a", "lane-b")
+                    }
+                },
+                "unambiguous",
+            ),
+            "high-route-without-displacement": (
+                {
+                    "cluster_queues": {
+                        "unprotected": {
+                            **valid_queue,
+                            "preemption": {
+                                "reclaim_within_cohort": "Never",
+                                "within_cluster_queue": "Never",
+                            },
+                        }
+                    },
+                    "local_queues": {
+                        "presentation-lane": {
+                            "cluster_queue": "unprotected",
+                            "model_ids": ["proteinmpnn"],
+                            "service_classes": ["presentation"],
+                        }
+                    },
+                },
+                "high-priority routes require both",
+            ),
+            "missing-service-default": (
+                {
+                    "service_classes": {
+                        **service_classes,
+                        "customer-batch": {
+                            **service_classes["customer-batch"],
+                            "default_local_queue": "missing",
+                        },
+                    }
+                },
+                "existing LocalQueue",
+            ),
+            "shared-priority-conflict": (
+                {
+                    "service_classes": {
+                        **service_classes,
+                        "customer-batch": {
+                            **service_classes["customer-batch"],
+                            "priority": 1,
+                        },
+                    }
+                },
+                "shared WorkloadPriorityClass",
+            ),
+        }
+        for index, (name, (scheduling, message)) in enumerate(cases.items()):
+            with self.subTest(name=name):
+                deployment = {
+                    "schema_version": 1,
+                    "name": f"fs2-root-scheduling-{index}",
+                    "target": self.catalog_target(),
+                    "scheduling": scheduling,
+                }
+                variable_file = self._write_configuration(f"root-scheduling-{name}", deployment)
+                result, _ = self._plan_file(variable_file, f"root-scheduling-{name}")
+                self.assertNotEqual(result.returncode, 0)
+                diagnostics = re.sub(r"\s+", " ", f"{result.stdout}\n{result.stderr}")
+                self.assertIn(message, diagnostics)
+
+    def _modelexpress_deployment(self, name: str, rdma_resource_name: str) -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "name": name,
+            "target": self.catalog_target(),
+            "profiles": {"models": "full_catalog"},
+            "models": {
+                "selection": "explicit",
+                "enabled": ["qwen3-8b"],
+                "scaling": {"mode": "keda", "hot": ["qwen3-8b"]},
+            },
+            "dynamic_models": {
+                "enabled": True,
+                "writes_enabled": True,
+                "workload_owner": "controller",
+                "bootstrap_model_ids": ["qwen3-8b"],
+                "fresh_install": True,
+            },
+            "acceleration": {
+                "model_express": {
+                    "enabled": True,
+                    "deployment_mode": "managed",
+                    "server_image": {
+                        "repository": "nvcr.io/nvidia/ai-dynamo/modelexpress-server",
+                        "digest": f"sha256:{'9' * 64}",
+                    },
+                    "cache": {"enabled": True, "size_gib": 200},
+                    "models": {
+                        "qwen3-8b": {
+                            "runtime_adapter": "vllm",
+                            "transport": {
+                                "mode": "nixl-rdma",
+                                "rdma_resource_name": rdma_resource_name,
+                                "rdma_resource_quantity": 8,
+                            },
+                            "pool_transports": {
+                                "nebius-b300-preemptible-8x": {
+                                    "mode": "nixl-rdma",
+                                    "rdma_resource_name": "networking.example.com/rdma_shared_device_b",
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+        }
+
+    def test_model_express_rdma_resources_reach_the_kueue_configuration(self) -> None:
+        """Kueue budgets accelerators only; an auxiliary device must be excluded."""
+
+        deployment = self._modelexpress_deployment(
+            "fs2-rdma-exclusions", "example.com/rdma_shared_device_a"
+        )
+        contract = self._planned_outputs(
+            self._write_configuration("rdma-exclusions", deployment), "rdma-exclusions"
+        )["deployment_contract"]
+        self.assertEqual(
+            contract["stages"]["foundation"]["kueue"]["exclude_resource_prefixes"],
+            [
+                "example.com/rdma_shared_device_a",
+                "networking.example.com/rdma_shared_device_b",
+            ],
+        )
+
+    def test_root_rejects_an_auxiliary_prefix_that_shadows_an_accelerator(self) -> None:
+        deployment = self._modelexpress_deployment("fs2-rdma-shadow", "nvidia.com/gpu")
+        variable_file = self._write_configuration("rdma-shadow", deployment)
+        result, _ = self._plan_file(variable_file, "rdma-shadow")
+        self.assertNotEqual(result.returncode, 0)
+        diagnostics = re.sub(r"\s+", " ", f"{result.stdout}\n{result.stderr}")
+        self.assertIn("would also exclude an accelerator resource", diagnostics)
+
+    def test_kueue_exclusion_grammar_accepts_a_literal_prefix(self) -> None:
+        """Kueue matches these with strings.HasPrefix, so a bare prefix is valid."""
+
+        source = (DEPLOY_ROOT / "stages/foundation/variables.tf").read_text(encoding="utf-8")
+        match = re.search(
+            r'can\(regex\("(\^\[a-z0-9\][^"]*?)", prefix\)\)',
+            source,
+        )
+        self.assertIsNotNone(match)
+        pattern = re.compile(match.group(1).replace("\\\\", "\\"))
+        for accepted in (
+            "networking.example.com/",
+            "example.com/rdma_shared_device_a",
+            "example.com/rdma",
+            "cpu",
+            "ephemeral-storage",
+        ):
+            with self.subTest(accepted=accepted):
+                self.assertIsNotNone(pattern.fullmatch(accepted))
+        for rejected in ("Example.com/gpu", "example.com//gpu", "example.com/gpu/extra", "-bad"):
+            with self.subTest(rejected=rejected):
+                self.assertIsNone(pattern.fullmatch(rejected))
+
+    def test_core_admission_gates_a_prefix_that_shadows_cpu_or_memory(self) -> None:
+        """Kueue matches prefixes literally, so "c" would exclude cpu."""
+
+        # A ModelExpress RDMA name is always qualified and so can never prefix
+        # cpu or memory. The reachable source of a bare prefix is the
+        # foundation's own operator input, which is gated there and mirrored at
+        # the root for anything the root derives.
+        foundation = (DEPLOY_ROOT / "stages/foundation/releases.tf").read_text(encoding="utf-8")
+        root = (DEPLOY_ROOT / "main.tf").read_text(encoding="utf-8")
+        self.assertIn("!startswith(core_name, prefix)", foundation)
+        self.assertIn('for core_name in ["cpu", "memory"] : !startswith(core_name, prefix)', root)
+        self.assertIn("prefix of cpu or memory", root)
+
+    def test_core_admission_accepts_a_qualified_auxiliary_prefix(self) -> None:
+        deployment = self._modelexpress_deployment(
+            "fs2-core-admission", "example.com/rdma_shared_device_a"
+        )
+        deployment["scheduling"] = {
+            "core_capacity": {"cpu_millicores": 128000, "memory_mib": 524288},
+        }
+        contract = self._planned_outputs(
+            self._write_configuration("core-admission", deployment), "core-admission"
+        )["deployment_contract"]
+        kueue = contract["stages"]["foundation"]["kueue"]
+        self.assertTrue(kueue["budget_core_resources"])
+        self.assertEqual(
+            kueue["exclude_resource_prefixes"],
+            [
+                "example.com/rdma_shared_device_a",
+                "networking.example.com/rdma_shared_device_b",
+            ],
+        )
+
+    def test_root_and_workloads_derive_one_academic_scheduling_lane(self) -> None:
+        """Both stages must derive the licensed lane from the same facts."""
+
+        root_locals = (DEPLOY_ROOT / "locals.tf").read_text(encoding="utf-8")
+        queue_source = (DEPLOY_ROOT / "stages/workloads/queue.tf").read_text(encoding="utf-8")
+        for expression in (
+            "var.academic_assets.execution.local_queue",
+            "var.academic_assets.execution.cluster_queue",
+            "var.academic_assets.namespace",
+            "var.academic_assets.tenant_id",
+        ):
+            with self.subTest(expression=expression):
+                self.assertIn(expression, root_locals)
+                self.assertIn(expression, queue_source)
+        # Both derive the model list from the declared assets rather than a
+        # separately maintained copy.
+        self.assertIn("for asset in values(var.academic_assets.assets) : asset.model_id", root_locals)
+        self.assertIn("for asset in values(var.academic_assets.assets) : asset.model_id", queue_source)
+        # Both reject an operator lane that collides with the derived one.
+        self.assertIn("root_academic_lane_queue_collisions", root_locals)
+        self.assertIn("academic_lane_queue_collisions", queue_source)
+        # Both mirror the same rank-separated route keys.
+        for source in (root_locals, queue_source + root_locals):
+            self.assertIn("jsonencode([service_class, tenant_id, model_id])", source)
+
+    def test_root_rejects_active_custom_mig_before_infrastructure(self) -> None:
+        pool = {
+            "platform": "gpu-h100-sxm",
+            "preset": "8gpu-128vcpu-1600gb",
+            "accelerator_class": "nvidia-h100-sxm5-80gb",
+            "gpus_per_node": 8,
+            "capacity_type": "preemptible",
+            "min_nodes": 0,
+            "max_nodes": 1,
+            "resource_name": "nvidia.com/mig-1g.10gb",
+            "driver": {"mode": "operator"},
+            "mig": {"strategy": "single", "config": "all-1g.10gb"},
+        }
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-root-active-mig",
+            "profiles": {"capacity": "minimal", "models": "none"},
+            "target": self.catalog_target(),
+            "accelerator_pools": {"h100-mig": pool},
+        }
+        variable_file = self._write_configuration("root-active-mig", deployment)
+        result, _ = self._plan_file(variable_file, "root-active-mig")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Active custom MIG scheduling is blocked", result.stderr)
+
+    def test_root_enforces_kueue_and_jobset_minor_compatibility(self) -> None:
+        for name, version, scientific in (
+            ("kueue-untested-minor", "1.32.9", False),
+            ("jobset-untested-minor", "1.35.0", True),
+        ):
+            deployment = {
+                "schema_version": 1,
+                "name": f"fs2-{name}",
+                "target": self.catalog_target(),
+                "cluster": {"kubernetes_version": version},
+            }
+            if scientific:
+                deployment["scientific_batch"] = {"enabled": True}
+            variable_file = self._write_configuration(name, deployment)
+            result, _ = self._plan_file(variable_file, name)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("upstream end-to-end matrix", result.stderr)
 
     def test_dynamic_model_tfvars_normalize_without_internal_json(self) -> None:
         deployment = {
@@ -759,6 +1183,11 @@ class DeploymentContractTests(unittest.TestCase):
             "schema_version": 1,
             "name": "fs2-reference-data-test",
             "target": self.catalog_target(),
+            # Its ClusterQueue budgets cpu and memory, which Kueue only
+            # counts when core admission is on.
+            "scheduling": {
+                "core_capacity": {"cpu_millicores": 128000, "memory_mib": 524288},
+            },
             "storage": {
                 "reference_data": {
                     "enabled": True,
@@ -856,6 +1285,11 @@ class DeploymentContractTests(unittest.TestCase):
             "schema_version": 1,
             "name": "fs2-reference-retained-opt-in",
             "target": self.catalog_target(),
+            # Its ClusterQueue budgets cpu and memory, which Kueue only
+            # counts when core admission is on.
+            "scheduling": {
+                "core_capacity": {"cpu_millicores": 128000, "memory_mib": 524288},
+            },
             "storage": {
                 "reference_data": {
                     "enabled": True,
@@ -1937,6 +2371,7 @@ class DeploymentContractTests(unittest.TestCase):
         successful = (
             DEPLOY_ROOT / "terraform.tfvars.example",
             DEPLOY_ROOT / "examples/b300-zero-hot.tfvars",
+            DEPLOY_ROOT / "examples/scheduling-h100-lanes.tfvars",
         )
         for index, variable_file in enumerate(successful):
             with self.subTest(example=variable_file.name):
@@ -1961,7 +2396,40 @@ class DeploymentContractTests(unittest.TestCase):
             values["managerConfig"]["controllerManagerConfigYaml"]
         )
 
-        self.assertIn('values = [file("${path.module}/values/kueue.yaml")]', releases)
+        # Helm installs the chart by immutable digest, and the same digest is
+        # what the verification provisioner resolves, so both cannot install
+        # different bytes. The archive SHA-256 is a recorded identity of that
+        # digest's tarball, not a separate thing Helm consumes.
+        foundation_locals = (DEPLOY_ROOT / "stages/foundation/locals.tf").read_text(encoding="utf-8")
+        # Helm installs the exact archive the verifier checked, materialized
+        # during plan at a content-addressed path under the run root.
+        self.assertIn("chart            = local.kueue_chart_archive", releases)
+        self.assertIn('data "external" "kueue_chart"', releases)
+        self.assertIn("FS2_KUEUE_CHART_ARCHIVE        = local.kueue_chart_archive", releases)
+        self.assertIn(
+            "kueue_chart_archive = data.external.kueue_chart.result.path",
+            foundation_locals,
+        )
+        self.assertIn("yamlencode(local.kueue_effective_values)", releases)
+        self.assertIn(
+            "oci://registry.k8s.io/kueue/charts/kueue@sha256:e5f000fcf0604e5dea0025e0ffdd20e6712de432bcca0ec254d71d97f012a354",
+            foundation_locals,
+        )
+        self.assertIn(
+            'chart_archive_sha256 = "409de6260d2b7834fece5044502822bcb4e74ed8a03b8ea22bb78bcdfa1627db"',
+            foundation_locals,
+        )
+        # The pinned controller image lives only in the values file, so the
+        # release and the verifier cannot pin two different images.
+        self.assertEqual(
+            values["controllerManager"]["manager"]["image"]["tag"],
+            "v0.17.8@sha256:cecba825d0b0feab9bed2835efe2eb8d825512f1616c8762ab80c53f2ea6afe6",
+        )
+        self.assertNotIn("cecba825d0b0feab9bed2835efe2eb8d825512f1616c8762ab80c53f2ea6afe6", releases)
+        self.assertEqual(
+            values["controllerManager"]["nodeSelector"],
+            {"workload.fs2.nebius/system": "true"},
+        )
         self.assertEqual(
             manager["resources"]["excludeResourcePrefixes"],
             ["cpu", "memory", "ephemeral-storage"],

@@ -1,4 +1,17 @@
 locals {
+  # The private plane label always admits the reference-data namespace itself.
+  # Any additional namespace is named explicitly, so the selector stays a
+  # closed list rather than an open label match.
+  queue_namespace_selector = length(var.queue.additional_namespaces) == 0 ? [{
+    key      = "reference-data.fs2.nebius.ai/plane"
+    operator = "In"
+    values   = ["private"]
+    }] : [{
+    key      = "kubernetes.io/metadata.name"
+    operator = "In"
+    values   = sort(distinct(concat([var.namespace], var.queue.additional_namespaces)))
+  }]
+
   common_labels = {
     "app.kubernetes.io/name"       = "fs2-reference-data"
     "app.kubernetes.io/part-of"    = "fs2-serve"
@@ -490,10 +503,11 @@ resource "kubernetes_manifest" "cpu_cluster_queue" {
       labels = local.common_labels
     }
     spec = {
+      # matchExpressions rather than matchLabels, because this queue must be
+      # able to admit both the private reference-data plane and any explicitly
+      # listed namespace whose CPU stages read the shared databases.
       namespaceSelector = {
-        matchLabels = {
-          "reference-data.fs2.nebius.ai/plane" = "private"
-        }
+        matchExpressions = local.queue_namespace_selector
       }
       queueingStrategy = "BestEffortFIFO"
       resourceGroups = [{

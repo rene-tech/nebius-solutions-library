@@ -1,3 +1,17 @@
+controllerManager:
+  nodeSelector:
+    workload.fs2.nebius/system: "true"
+  manager:
+    image:
+      repository: registry.k8s.io/kueue/kueue
+      tag: v0.17.8@sha256:cecba825d0b0feab9bed2835efe2eb8d825512f1616c8762ab80c53f2ea6afe6
+      pullPolicy: IfNotPresent
+  # Indexed Jobs can declare a bounded minimum parallelism while still asking
+  # for their ideal fan-out. Independent scientific shards remain separate
+  # Jobs and therefore do not require partial admission.
+  featureGates:
+    - name: PartialAdmission
+      enabled: true
 managerConfig:
   controllerManagerConfigYaml: |-
     apiVersion: config.kueue.x-k8s.io/v1beta2
@@ -33,6 +47,19 @@ managerConfig:
     admissionFairSharing:
       usageHalfLifeTime: 168h
       usageSamplingInterval: 5m
+    # Keep a quota reservation only when Pods become ready within the existing
+    # two-hour activation ceiling. A short guessed timeout would evict valid
+    # scale-from-zero model starts before their measured qualification exists.
+    # Creation-based requeue timestamps retain age after transient node loss.
+    waitForPodsReady:
+      timeout: 2h
+      recoveryTimeout: 15m
+      blockAdmission: false
+      requeuingStrategy:
+        timestamp: Creation
+        backoffLimitCount: 5
+        backoffBaseSeconds: 15
+        backoffMaxSeconds: 300
     integrations:
       frameworks:
         - batch/job

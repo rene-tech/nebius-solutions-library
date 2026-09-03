@@ -14,7 +14,12 @@ module "reference_data" {
   namespace                   = var.reference_data.namespace
   shared_filesystem_host_path = try(var.reference_data.storage_contract.filesystem.host_path, "/mnt/fs2-reference-data/data")
   cpu_pool                    = var.reference_data.storage_contract.cpu_pool
-  queue                       = var.reference_data.queue
+  # The reference CPU ClusterQueue must admit the licensed namespace when
+  # academic execution runs CPU data stages there. Its own owner renders the
+  # selector; this only passes the namespace it has to admit.
+  queue = merge(var.reference_data.queue, {
+    additional_namespaces = local.academic_cpu_lane_enabled ? [var.academic_assets.namespace] : []
+  })
 
   object_storage_egress_fqdns = [
     trimsuffix(trimprefix(try(var.reference_data.storage_contract.object_storage.endpoint, "https://storage.${local.selected_target.region}.nebius.cloud"), "https://"), "/"),

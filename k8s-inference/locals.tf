@@ -23,6 +23,27 @@ locals {
     var.deployment.target.system_update_strategy != null,
   ])
 
+  # The extended resource each selected pool advertises. A profile pool takes
+  # it from its accelerator class in the v2 contract.
+  root_accelerator_resource_names = sort(distinct(
+    local.using_custom_accelerator_pools ? [
+      for pool in values(var.deployment.accelerator_pools) : pool.resource_name
+      ] : [
+      for pool_id in keys(local.selected_pool_profile.pools) :
+      local.accelerator_contract.accelerator_classes[
+        local.accelerator_contract.pool_templates[pool_id].accelerator_class
+      ].resource_api.resource_name
+    ]
+  ))
+  # Every RDMA resource any ModelExpress model may request, from its default
+  # transport and from each per-pool override.
+  kueue_auxiliary_resource_prefixes = sort(distinct(compact(flatten([
+    for model in values(var.deployment.acceleration.model_express.models) : concat(
+      [model.transport.rdma_resource_name],
+      [for transport in values(model.pool_transports) : transport.rdma_resource_name],
+    )
+  ]))))
+
   resolved_target_binding = {
     project_id   = var.deployment.target.project_id
     project_name = try(coalesce(var.deployment.target.project_name, try(local.catalog_target.project_name, null)), null)
@@ -170,6 +191,278 @@ locals {
       )
     }
   }
+
+  # Root scheduling projection. These are the same effective pool, stable
+  # queue, and route facts consumed by the workloads module, evaluated before
+  # any staged infrastructure mutation can begin.
+  root_scheduling_pool_ids = sort(keys(local.effective_pool_capacities))
+  root_scheduling_pool_capacity = {
+    for pool_id in local.root_scheduling_pool_ids :
+    pool_id => coalesce(try(local.effective_pool_facts[pool_id].gpus_per_node, null), 0) * coalesce(try(local.effective_pool_capacities[pool_id].max_nodes, null), 0)
+  }
+  # Licensed academic work runs in the claim namespace, so the stable
+  # ClusterQueue must admit that namespace too. This mirrors the workloads
+  # stage exactly, one stage earlier.
+  root_academic_execution_enabled = var.academic_assets.enabled && var.academic_assets.execution.enabled
+  root_academic_model_ids = local.root_academic_execution_enabled ? sort(distinct([
+    for asset in values(var.academic_assets.assets) : asset.model_id
+  ])) : []
+  root_default_cluster_queue_name  = local.using_custom_accelerator_pools ? "inference-accelerators" : local.selected_pool_profile.queue.cluster_queue_name
+  root_default_local_queue_name    = local.using_custom_accelerator_pools ? "inference-models" : local.selected_pool_profile.queue.local_queue_name
+  root_academic_cluster_queue_name = var.academic_assets.execution.cluster_queue
+  root_academic_local_queue_name   = var.academic_assets.execution.local_queue
+  root_academic_local_queues = local.root_academic_execution_enabled ? {
+    (local.root_academic_local_queue_name) = {
+      namespace           = var.academic_assets.namespace
+      cluster_queue       = local.root_academic_cluster_queue_name
+      fair_sharing_weight = 1
+      model_ids           = toset(local.root_academic_model_ids)
+      tenant_ids          = toset([var.academic_assets.tenant_id])
+      service_classes = toset([
+        "platform-critical",
+        "presentation",
+        "interactive",
+        "customer-batch",
+        "bulk-backfill",
+      ])
+    }
+  } : {}
+  root_default_cluster_queue = {
+    namespace              = "fs2-models"
+    queueing_strategy      = local.using_custom_accelerator_pools ? "BestEffortFIFO" : local.selected_pool_profile.queue.queueing_strategy
+    fair_sharing_weight    = 1
+    admission_fair_sharing = true
+    flavor_order           = local.root_scheduling_pool_ids
+    flavor_fungibility = {
+      when_can_borrow  = "MayStopSearch"
+      when_can_preempt = "TryNextFlavor"
+      preference       = null
+    }
+    admission_checks                   = []
+    namespaces                         = []
+    fair_share_precedence_acknowledged = var.deployment.scheduling.fair_share_precedence_acknowledged
+    # A zero core floor: the stable queue borrows core capacity from the Cohort
+    # rather than reserving it, matching the scheduling module's default.
+    core_quota = { cpu_millicores = 0, memory_mib = 0 }
+    pool_quotas = {
+      for pool_id, capacity in local.root_scheduling_pool_capacity : pool_id => {
+        nominal_quota   = length(var.deployment.scheduling.cluster_queues) == 0 ? capacity : 0
+        borrowing_limit = null
+        lending_limit   = null
+      }
+    }
+    preemption = {
+      reclaim_within_cohort = "LowerPriority"
+      within_cluster_queue  = "LowerPriority"
+    }
+  }
+  root_default_local_queue = {
+    namespace           = "fs2-models"
+    cluster_queue       = local.root_default_cluster_queue_name
+    fair_sharing_weight = 1
+    model_ids           = toset([])
+    tenant_ids          = toset([])
+    service_classes     = toset([])
+  }
+  root_scheduling_cluster_queues = merge(
+    { (local.root_default_cluster_queue_name) = local.root_default_cluster_queue },
+    var.deployment.scheduling.cluster_queues,
+  )
+  root_academic_lane_queue_collisions = sort([
+    for queue_name in concat(
+      keys(local.root_academic_local_queues),
+      keys(local.root_academic_cpu_local_queues),
+    ) : queue_name
+    if contains(keys(var.deployment.scheduling.local_queues), queue_name)
+  ])
+  root_scheduling_local_queues = merge(
+    { (local.root_default_local_queue_name) = local.root_default_local_queue },
+    var.deployment.scheduling.local_queues,
+    local.root_academic_local_queues,
+    local.root_academic_cpu_local_queues,
+  )
+  root_referenceable_cluster_queues = sort(distinct(concat(
+    keys(local.root_scheduling_cluster_queues),
+    local.root_academic_cpu_lane_enabled ? [local.root_reference_cluster_queue_name] : [],
+  )))
+  root_scheduling_cluster_queue_namespaces = merge({
+    for queue_name, queue in local.root_scheduling_cluster_queues : queue_name => sort(distinct(concat(
+      [queue.namespace],
+      queue.namespaces,
+      try(local.root_required_namespaces[queue_name], []),
+    )))
+    },
+    local.root_academic_cpu_lane_enabled ? {
+      (local.root_reference_cluster_queue_name) = sort(distinct(concat(
+        [var.deployment.storage.reference_data.namespace],
+        [var.academic_assets.namespace],
+      )))
+    } : {},
+  )
+  root_scheduling_queue_pool_order = {
+    for queue_name, queue in local.root_scheduling_cluster_queues : queue_name => (
+      length(queue.flavor_order) == 0 ? local.root_scheduling_pool_ids : queue.flavor_order
+    )
+  }
+  root_scheduling_nominal_by_pool = {
+    for pool_id in local.root_scheduling_pool_ids : pool_id => sum([
+      for queue in values(local.root_scheduling_cluster_queues) : try(queue.pool_quotas[pool_id].nominal_quota, 0)
+    ])
+  }
+  # Rank-separated, exactly as modules/kueue-scheduling computes them. An exact
+  # tenant route deliberately overlaps a wildcard route; only two routes of the
+  # same rank are a conflict. jsonencode keeps the key free of control bytes.
+  root_exact_lane_binding_keys = flatten([
+    for queue in values(local.root_scheduling_local_queues) : flatten([
+      for service_class in queue.service_classes : [
+        for model_id in queue.model_ids : [
+          for tenant_id in sort(tolist(queue.tenant_ids)) :
+          jsonencode([service_class, tenant_id, model_id])
+        ]
+      ]
+    ])
+  ])
+  root_wildcard_lane_binding_keys = flatten([
+    for queue in values(local.root_scheduling_local_queues) : flatten([
+      for service_class in queue.service_classes : [
+        for model_id in queue.model_ids :
+        jsonencode([service_class, model_id]) if length(queue.tenant_ids) == 0
+      ]
+    ])
+  ])
+  # Only these classes are selectable by a caller; platform-critical is
+  # resolver-internal. A namespace-bound model needs a lane for each of them.
+  root_caller_selectable_service_classes = toset([
+    "presentation",
+    "interactive",
+    "customer-batch",
+    "bulk-backfill",
+  ])
+  root_namespace_bound_models = {
+    for model_id in local.root_academic_model_ids : model_id => var.academic_assets.namespace
+  }
+  root_required_namespaces = merge(
+    local.root_academic_execution_enabled ? {
+      (local.root_academic_cluster_queue_name) = [var.academic_assets.namespace]
+    } : {},
+    local.root_academic_cpu_lane_enabled ? {
+      (local.root_reference_cluster_queue_name) = [var.academic_assets.namespace]
+    } : {},
+  )
+
+  # The same route-less CPU lane the workloads stage derives, mirrored here so
+  # an invalid identity, a collision, or a request that cannot fit is refused
+  # before any stage mutates anything.
+  root_academic_cpu_lane_enabled = (
+    local.root_academic_execution_enabled &&
+    var.deployment.storage.reference_data.enabled &&
+    var.deployment.scheduling.academic_raw_data_stages
+  )
+  # Configurable, exactly as the workloads stage reads it, so a non-default
+  # queue name behaves identically in both places.
+  root_reference_cluster_queue_name = try(
+    var.deployment.storage.reference_data.queue.cluster_queue,
+    "reference-data-cpu",
+  )
+  root_academic_cpu_local_queue_name = format(
+    "%s-cpu",
+    substr(local.root_academic_local_queue_name, 0, 59),
+  )
+  root_academic_cpu_local_queues = local.root_academic_cpu_lane_enabled ? {
+    (local.root_academic_cpu_local_queue_name) = {
+      namespace           = var.academic_assets.namespace
+      cluster_queue       = local.root_reference_cluster_queue_name
+      fair_sharing_weight = 1
+      model_ids           = toset([])
+      tenant_ids          = toset([])
+      service_classes     = toset([])
+    }
+  } : {}
+  # The canonical raw AlphaFold 3 data-stage request, derived exactly as the
+  # workloads stage derives it.
+  raw_af3_cpu_request = { cpu_millicores = 16000, memory_mib = 65536 }
+  # Per field max, not merge: an override may raise the canonical raw
+  # AlphaFold 3 request but can never lower it below the measured need.
+  root_cpu_stage_requests = {
+    for class_name, request in merge(
+      local.root_academic_cpu_lane_enabled ? { reference-data = local.raw_af3_cpu_request } : {},
+      var.deployment.scheduling.cpu_stage_requests,
+      ) : class_name => class_name != "reference-data" ? request : {
+      cpu_millicores = max(request.cpu_millicores, local.raw_af3_cpu_request.cpu_millicores)
+      memory_mib     = max(request.memory_mib, local.raw_af3_cpu_request.memory_mib)
+    }
+  }
+  root_reference_cpu_capacity = try(
+    var.deployment.storage.reference_data.cpu_pool.schedulable_capacity,
+    null,
+  )
+  root_core_admission_enabled = var.deployment.scheduling.core_capacity != null
+  # The reference ClusterQueue's own quota, converted to the exact units the
+  # scheduling contract uses so a stage request can be compared with it.
+  root_reference_queue_cpu_millicores = try(
+    endswith(var.deployment.storage.reference_data.queue.nominal_cpu, "m")
+    ? tonumber(trimsuffix(var.deployment.storage.reference_data.queue.nominal_cpu, "m"))
+    : tonumber(var.deployment.storage.reference_data.queue.nominal_cpu) * 1000,
+    0,
+  )
+  # The whole Ki|Mi|Gi|Ti grammar the facade accepts, so root and workloads
+  # convert an identical value identically.
+  root_reference_memory_unit_mib = {
+    Ki = 1 / 1024
+    Mi = 1
+    Gi = 1024
+    Ti = 1048576
+  }
+  root_reference_queue_memory_mib = try(
+    tonumber(substr(
+      var.deployment.storage.reference_data.queue.nominal_memory,
+      0,
+      length(var.deployment.storage.reference_data.queue.nominal_memory) - 2,
+      )) * lookup(
+      local.root_reference_memory_unit_mib,
+      substr(
+        var.deployment.storage.reference_data.queue.nominal_memory,
+        length(var.deployment.storage.reference_data.queue.nominal_memory) - 2,
+        2,
+      ),
+      0,
+    ),
+    0,
+  )
+  root_core_floor_totals = {
+    cpu_millicores = sum(concat([0], [
+      for queue in values(local.root_scheduling_cluster_queues) : queue.core_quota.cpu_millicores
+    ]))
+    memory_mib = sum(concat([0], [
+      for queue in values(local.root_scheduling_cluster_queues) : queue.core_quota.memory_mib
+    ]))
+  }
+  root_serving_lanes = {
+    for queue_name, queue in local.root_scheduling_cluster_queues : queue_name => sort(distinct(concat(
+      [
+        for lane_name, lane in local.root_scheduling_local_queues : lane_name
+        if lane.cluster_queue == queue_name && length(lane.service_classes) > 0
+      ],
+      [
+        for service_class, policy in var.deployment.scheduling.service_classes :
+        coalesce(policy.default_local_queue, local.root_default_local_queue_name)
+        if try(
+          local.root_scheduling_local_queues[
+            coalesce(policy.default_local_queue, local.root_default_local_queue_name)
+          ].cluster_queue,
+          null,
+        ) == queue_name
+      ],
+    )))
+  }
+  root_service_priority_class_groups = {
+    for priority_name in distinct([
+      for policy in values(var.deployment.scheduling.service_classes) : policy.workload_priority_class
+      ]) : priority_name => [
+      for policy in values(var.deployment.scheduling.service_classes) : policy.priority
+      if policy.workload_priority_class == priority_name
+    ]
+  }
   effective_pool_synthetic_ephemeral_budget_gib = {
     for pool_id, pool in local.effective_pool_facts : pool_id => max(
       0,
@@ -296,6 +589,19 @@ locals {
 
   foundation_variables = {
     grafana_admin_secret_ref = var.deployment.secrets.grafana_admin_secret
+    jobset = {
+      enabled            = var.deployment.scientific_batch.enabled
+      kubernetes_version = var.deployment.cluster.kubernetes_version
+    }
+    # ModelExpress may request an RDMA device beside the accelerator. Kueue
+    # budgets only accelerators, so those auxiliary resources are excluded from
+    # quota accounting; accelerator accounting is unchanged.
+    kueue = {
+      exclude_resource_prefixes = local.kueue_auxiliary_resource_prefixes
+      # Removing cpu and memory from the exclusions is what makes a core quota
+      # real: while they are excluded Kueue drops the request before admission.
+      budget_core_resources = var.deployment.scheduling.core_capacity != null
+    }
     grafana_publication = {
       enabled           = local.grafana_external_enabled
       external_base_url = ""
@@ -375,6 +681,13 @@ locals {
       namespace      = var.deployment.scientific_batch.namespace
     }
     academic_assets = local.academic_assets_contract
+    # Feature gate only. The scientific execution map is the controller
+    # owner's contract and its ConfigMap has exactly one owner: the control-
+    # plane chart. This stage publishes only the Kueue scheduling policy.
+    scientific_batch = {
+      enabled        = var.deployment.scientific_batch.enabled
+      writes_enabled = var.deployment.scientific_batch.writes_enabled
+    }
     model_express = {
       enabled         = var.deployment.acceleration.model_express.enabled
       deployment_mode = var.deployment.acceleration.model_express.deployment_mode

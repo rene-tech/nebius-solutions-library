@@ -123,17 +123,38 @@ deployment = {
     # handoff instead; set handoff_receipt there and omit fresh_install.
   }
 
-  # Optional Kueue policy for multiple customer/model lanes. Pool keys are the
-  # accelerator_pools IDs above. Nominal quotas are operator-selected GPU
-  # floors; Terraform assigns all unreserved physical capacity to the cohort so
-  # queues can borrow it. Omit this block to retain the stable single queue.
+  # Kueue queue, priority, and fair-capacity policy.
+  #
+  # This deployment enables the licensed academic assets below, whose claim can
+  # only be mounted from its own namespace. The scheduling owner therefore adds
+  # an academic lane in that namespace on the stable ClusterQueue, which then
+  # serves two lanes. Kueue's usage-based admission fair sharing orders pending
+  # work by decayed LocalQueue usage BEFORE WorkloadPriorityClass, so a higher
+  # service class in a different lane is not categorically admitted first.
+  # Acknowledging that ordering is required and explicit.
+  scheduling = {
+    fair_share_precedence_acknowledged = true
+  }
+
+  # Additional customer/model lanes are optional. Pool keys are the
+  # accelerator_pools IDs above, and every pool_preference and flavor_order
+  # must list exactly those IDs in the order that queue should search. Nominal
+  # quotas are operator-selected accelerator floors; Terraform assigns all
+  # unreserved physical capacity to the shared Cohort so queues can borrow it.
+  # Replace every <placeholder> with an ID from this file: nothing here is
+  # specific to a GPU model.
+  #
   # scheduling = {
-  #   cohort = { enabled = true, name = "inference-shared" }
+  #   cohort                             = { enabled = true, name = "inference-shared" }
+  #   fair_share_precedence_acknowledged = true
   #   cluster_queues = {
   #     customer-batch = {
-  #       fair_sharing_weight = 4
+  #       fair_sharing_weight                = 4
+  #       flavor_order                       = ["<first-pool-id>", "<second-pool-id>"]
+  #       fair_share_precedence_acknowledged = true
   #       pool_quotas = {
-  #         "pool-id-from-accelerator-pools" = { nominal_quota = 1 }
+  #         "<first-pool-id>"  = { nominal_quota = 1 }
+  #         "<second-pool-id>" = { nominal_quota = 0 }
   #       }
   #       preemption = {
   #         reclaim_within_cohort = "LowerPriority"
@@ -145,13 +166,22 @@ deployment = {
   #     customer-primary = {
   #       cluster_queue       = "customer-batch"
   #       fair_sharing_weight = 4
-  #       model_ids           = ["one-selected-model-id"]
+  #       model_ids           = ["<one-selected-model-id>"]
+  #       service_classes     = ["presentation", "interactive", "customer-batch"]
   #     }
   #     customer-secondary = {
   #       cluster_queue       = "customer-batch"
   #       fair_sharing_weight = 1
-  #       model_ids           = ["another-selected-model-id"]
+  #       model_ids           = ["<another-selected-model-id>"]
+  #       service_classes     = ["bulk-backfill"]
   #     }
+  #   }
+  #   service_classes = {
+  #     platform-critical = { workload_priority_class = "platform-critical", priority = 10000, preemption_mode = "restartable", pool_preference = ["<first-pool-id>", "<second-pool-id>"] }
+  #     presentation      = { workload_priority_class = "presentation", priority = 1000, preemption_mode = "restartable", pool_preference = ["<first-pool-id>", "<second-pool-id>"] }
+  #     interactive       = { workload_priority_class = "interactive", priority = 100, preemption_mode = "restartable", pool_preference = ["<first-pool-id>", "<second-pool-id>"] }
+  #     customer-batch    = { workload_priority_class = "standard", priority = 0, preemption_mode = "restartable", pool_preference = ["<first-pool-id>", "<second-pool-id>"] }
+  #     bulk-backfill     = { workload_priority_class = "batch", priority = -100, preemption_mode = "restartable", pool_preference = ["<first-pool-id>", "<second-pool-id>"] }
   #   }
   # }
 
