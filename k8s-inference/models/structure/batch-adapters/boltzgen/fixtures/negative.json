@@ -1,0 +1,22 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "design-binders",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "boltz.bad.batch",
+    "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "size_bytes": 1024,
+    "media_type": "application/x-tar"
+  },
+  "parameters": {
+    "protocol": "protein-anything",
+    "batches": [
+      {
+        "shard_id": "../../escape",
+        "num_designs": 10001,
+        "budget": 1001,
+        "reuse_completed": "yes"
+      }
+    ]
+  }
+}

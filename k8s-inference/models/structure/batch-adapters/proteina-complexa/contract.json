@@ -1,0 +1,63 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-adapter-identity/v1",
+  "model_id": "proteina-complexa",
+  "variant_id": "upstream-dev-20260827",
+  "candidate_state": "unqualified",
+  "source": {
+    "repository": "NVIDIA-BioNeMo/Proteina-Complexa",
+    "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+    "revision_kind": "commit",
+    "release_tag": null,
+    "package_version_observed": "1.1.0"
+  },
+  "variants": [
+    {
+      "name": "protein-target",
+      "artifact_id": "proteina-complexa-protein-target-160m-v1",
+      "runtime_artifact_id": "complexa-protein",
+      "host": "huggingface",
+      "repository": "nvidia/NV-Proteina-Complexa-Protein-Target-160M-v1",
+      "revision": "ffed199e32612b98ffa04f4640d34d37b137fca5",
+      "files": [
+        "complexa.ckpt",
+        "complexa_ae.ckpt"
+      ],
+      "gate": "none"
+    },
+    {
+      "name": "ligand-target",
+      "artifact_id": "proteina-complexa-ligand-target-160m-v1",
+      "runtime_artifact_id": "complexa-ligand",
+      "host": "huggingface",
+      "repository": "nvidia/NV-Proteina-Complexa-Ligand-Target-160M-v1",
+      "revision": "bc90c8b2c701ceb52d5faef72600b6b5be880244",
+      "files": [
+        "complexa_ligand.ckpt",
+        "complexa_ligand_ae.ckpt"
+      ],
+      "gate": "none"
+    },
+    {
+      "name": "ame",
+      "artifact_id": "proteina-complexa-ame-160m-v1",
+      "runtime_artifact_id": "complexa-ame",
+      "host": "huggingface",
+      "repository": "nvidia/NV-Proteina-Complexa-AME-160M-v1",
+      "revision": "9743d749a8754080a32fda857d95579dfa4dabae",
+      "files": [
+        "complexa_ame.ckpt",
+        "complexa_ame_ae.ckpt"
+      ],
+      "gate": "none"
+    }
+  ],
+  "required_shared_artifacts": [
+    "alphafold2-params",
+    "rosettafold3-checkpoint"
+  ],
+  "runtime_artifact_mount_root": "/opt/fs2/artifacts",
+  "runtime_image_digest": "sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
+  "artifact_manifest_digest": null,
+  "h100_qualification_receipt": null,
+  "fast_start_qualification_receipt": null
+}

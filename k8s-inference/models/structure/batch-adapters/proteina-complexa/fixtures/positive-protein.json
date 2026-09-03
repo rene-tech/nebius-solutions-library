@@ -1,0 +1,20 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "design-binders",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "target.pdl1.bundle.01",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "size_bytes": 4096,
+    "media_type": "application/x-tar",
+    "compression": "zstd"
+  },
+  "parameters": {
+    "variant": "protein-target",
+    "target_id": "02_PDL1",
+    "run_name": "pdl1-accept",
+    "seed": 3,
+    "num_samples": 2,
+    "diffusion_steps": 25
+  }
+}

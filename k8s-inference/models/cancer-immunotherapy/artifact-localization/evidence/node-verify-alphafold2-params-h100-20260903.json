@@ -1,0 +1,34 @@
+{
+  "archive_provenance": {
+    "bytes": 5587968000,
+    "filename": "alphafold_params_2022-12-06.tar",
+    "license_id": "CC-BY-4.0",
+    "present_in_mount": false,
+    "sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+    "source_revision": "gcs-generation-1670353726160664",
+    "source_uri": "https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar"
+  },
+  "artifact_id": "alphafold2-params",
+  "mount_path": "/opt/fs2/artifacts/alphafold2-params",
+  "observation": {
+    "duration_seconds": 6.865
+  },
+  "observed_at": "2026-09-03T02:36:28Z",
+  "runtime_bindings": [
+    {
+      "binding_kind": "environment-variable",
+      "binding_name": "AF2_DIR",
+      "binding_value": "/opt/fs2/artifacts/alphafold2-params",
+      "model_id": "proteina-complexa"
+    }
+  ],
+  "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+  "state": "verified",
+  "tree_identity": {
+    "entry_count": 16,
+    "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+    "inventory_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+    "probe_entries_verified": 16,
+    "total_bytes": 5587956571
+  }
+}

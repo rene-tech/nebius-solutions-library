@@ -1,0 +1,398 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/scientific-artifact-localization/v1",
+  "title": "Scientific runtime artifact localization contract",
+  "description": "Binds one compressed upstream archive to the exact extracted directory tree a scientific runtime consumes. Archive provenance and extracted-tree identity are separate, independently verifiable digests: a runtime mount is qualified by its tree identity and never by the archive it came from.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "generated_at",
+    "artifacts"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/scientific-artifact-localization/v1"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "absolute_path": {
+      "type": "string",
+      "pattern": "^/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*$",
+      "maxLength": 256
+    },
+    "artifact_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "relative_entry": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]{0,254}$"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_id",
+        "transform",
+        "archive",
+        "tree",
+        "consumers"
+      ],
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/artifact_id"
+        },
+        "transform": {
+          "enum": [
+            "safe-extract-zip",
+            "safe-extract-tar",
+            "safe-extract-tar-gz",
+            "external-installed-tree"
+          ]
+        },
+        "archive": {
+          "$ref": "#/$defs/archive"
+        },
+        "tree": {
+          "$ref": "#/$defs/tree"
+        },
+        "consumers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/consumer"
+          }
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "visibility": {
+          "description": "Whether the published generation is a public artifact or stays tenant-private. A tenant-private tree is licensed to this tenant only and is never mirrored into a shared cache.",
+          "enum": [
+            "public",
+            "tenant-private"
+          ]
+        },
+        "artifact_kind": {
+          "description": "The kind a consuming runtime gate checks. Defaults to artifact_id.",
+          "type": "string",
+          "maxLength": 128
+        },
+        "source_sub_path": {
+          "description": "For external-installed-tree only: the exact sub-path in the claim where the owning plane installed the tree. The localizer verifies it in place and never stages or moves it.",
+          "$ref": "#/$defs/relative_path"
+        }
+      }
+    },
+    "archive": {
+      "description": "Immutable upstream provenance of the compressed object. These values identify what was fetched; they never identify a usable runtime directory.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filename",
+        "media_type",
+        "bytes",
+        "sha256",
+        "source_uri",
+        "source_revision",
+        "license_id"
+      ],
+      "properties": {
+        "filename": {
+          "$ref": "#/$defs/archive_filename"
+        },
+        "media_type": {
+          "enum": [
+            "application/zip",
+            "application/x-tar",
+            "application/gzip"
+          ]
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1099511627776
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source_uri": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "source_revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "license_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "verified_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "member_prefix": {
+          "description": "Localize only this one subtree of the archive. Used when the runtime consumes a directory that upstream ships inside a larger source or wheel archive, such as an installed package path. Members outside the prefix, and anything nested below it, are skipped rather than written.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*/$",
+          "maxLength": 256
+        }
+      }
+    },
+    "tree": {
+      "description": "Identity of the extracted directory the runtime actually mounts. inventory_sha256 is computed from the localized filesystem, not from the archive container, so it is reproducible from the mount alone.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mount_paths",
+        "entry_count",
+        "total_bytes",
+        "entry_path_pattern",
+        "inventory_algorithm",
+        "inventory_sha256"
+      ],
+      "properties": {
+        "mount_paths": {
+          "description": "Every absolute path at which this one verified tree is mounted. One identity can serve several consumers that each expect it somewhere different; the tree content is identical at every path, so the inventory digest is the same wherever it is read.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/absolute_path"
+          }
+        },
+        "entry_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1099511627776
+        },
+        "entry_path_pattern": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 256
+        },
+        "inventory_algorithm": {
+          "description": "Which algorithm produced inventory_sha256. v1 is a flat CRC-32 inventory; v2 adds recursion and directories; fs2-tree-manifest/v1 is the academic-assets plane's per-file SHA-256 and per-symlink target identity, reused unchanged so a tree that plane already named keeps exactly one identity.",
+          "enum": [
+            "fs2-flat-tree-inventory/v1",
+            "fs2-tree-inventory/v2",
+            "fs2-tree-manifest/v1"
+          ]
+        },
+        "inventory_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "probe_entries": {
+          "description": "A bounded subset of entries bound by exact content digest. The full tree identity remains inventory_sha256; these make a cheap read-time spot check possible without hashing the whole tree. Not required for fs2-tree-manifest/v1, whose digest already binds every file by SHA-256, so a subset would repeat it.",
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "bytes",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "$ref": "#/$defs/relative_path"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 68719476736
+              },
+              "sha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        },
+        "generated_entries": {
+          "description": "Entries the stager writes rather than lifting from the archive, for a runtime that requires a file upstream does not publish. Each names its generator, pins the generator's inputs, and binds the exact bytes it must produce, so the entry is as verifiable as any archive member and a drifting generator fails closed.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "bytes",
+              "sha256",
+              "generator",
+              "generator_inputs"
+            ],
+            "properties": {
+              "path": {
+                "$ref": "#/$defs/relative_entry"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16777216
+              },
+              "sha256": {
+                "$ref": "#/$defs/sha256"
+              },
+              "generator": {
+                "enum": [
+                  "external-model-artifact-manifest/v1"
+                ]
+              },
+              "generator_inputs": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "artifact_kind",
+                  "source_revision"
+                ],
+                "properties": {
+                  "artifact_kind": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "source_revision": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                }
+              }
+            }
+          }
+        },
+        "complete_entry_digests": {
+          "description": "Present only when the tree is small enough to bind every entry by content digest.",
+          "type": "boolean"
+        },
+        "directory_count": {
+          "description": "Descendant directories the tree contains, excluding the tree root. This is a count of directories, never of paths carrying a directory-like mode: an installed tree also holds executable regular files at 0550, and counting those as directories overstates it. Only a recursive algorithm describes directories; a flat tree has none.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        },
+        "symlink_count": {
+          "description": "Symbolic links the tree contains, when the producing plane measured them. Only fs2-tree-manifest/v1 describes symlinks; omit the field rather than asserting a zero nobody established, which would refuse a tree that has them.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "inventory_algorithm": {
+                "const": "fs2-tree-manifest/v1"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "mount_paths",
+              "entry_count",
+              "total_bytes",
+              "entry_path_pattern",
+              "inventory_algorithm",
+              "inventory_sha256"
+            ]
+          },
+          "else": {
+            "required": [
+              "probe_entries"
+            ],
+            "properties": {
+              "probe_entries": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "consumer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_id",
+        "binding_kind",
+        "binding_name",
+        "mount_path"
+      ],
+      "properties": {
+        "model_id": {
+          "$ref": "#/$defs/artifact_id"
+        },
+        "binding_kind": {
+          "enum": [
+            "argv-option",
+            "environment-variable",
+            "installed-package-path"
+          ]
+        },
+        "binding_name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 128
+        },
+        "mount_path": {
+          "description": "Which of the tree's mount_paths this consumer reads. It must appear in tree.mount_paths.",
+          "$ref": "#/$defs/absolute_path"
+        },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/artifact_id"
+          }
+        }
+      }
+    },
+    "relative_path": {
+      "description": "A relative POSIX path whose every segment is a safe name. A flat tree uses a single segment; an installed tree is legitimately nested.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]{0,254}(?:/[A-Za-z0-9_][A-Za-z0-9._-]{0,254})*$",
+      "maxLength": 1024
+    },
+    "archive_filename": {
+      "description": "A flat archive filename recorded as provenance. It admits the '+' a PEP 440 local version puts in a wheel name, because this is a label and never a member name written into a tree.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9._+-]{0,254}$"
+    }
+  }
+}
