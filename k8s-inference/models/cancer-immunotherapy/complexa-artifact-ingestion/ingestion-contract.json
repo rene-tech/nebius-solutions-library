@@ -1,0 +1,154 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-file-ingestion/v1",
+  "notes": [
+    "Source identities are consumed verbatim from the pinned manifests in candidate 58e84e51 (k8s-inference/model-artifacts/manifest-complexa-{protein,ligand,ame}.json and manifest-rosettafold3-checkpoint.json). Only the pinned identities were consumed; that candidate's mutable final-consumer-path contract was not.",
+    "These artifacts are published upstream as individually addressable files, not as an archive, so the archive/tree duality that governs safe-extract-tar artifacts does not apply. The downloaded set of verified files IS the tree.",
+    "tree.inventory_sha256 is deliberately absent until an ingestion run computes it from verified bytes. crc32 over real content cannot be predicted from upstream metadata, and a generation named by a guessed digest would be a lie. Runs record the computed value in their receipt; publish_identities pins it here afterwards as an interface."
+  ],
+  "artifacts": [
+    {
+      "artifact_id": "complexa-protein",
+      "transform": "fetch-files",
+      "model_id": "proteina-complexa-protein-target-160m-v1",
+      "source": {
+        "uri": "hf://nvidia/NV-Proteina-Complexa-Protein-Target-160M-v1",
+        "revision": "ffed199e32612b98ffa04f4640d34d37b137fca5",
+        "resolver": "huggingface-resolve",
+        "license_id": "NVIDIA-Open-Model-License-2024-06",
+        "entitlement_state": "not-required"
+      },
+      "files": [
+        {
+          "path": "complexa.ckpt",
+          "bytes": 2934289381,
+          "sha256": "589db1741f29838c7961386f6b873087238c72682e56189b89e0ae02610c19e9"
+        },
+        {
+          "path": "complexa_ae.ckpt",
+          "bytes": 4100101779,
+          "sha256": "35f8865efd269995eeaf1670e1c1085acfe2988c40abdeda8e09a0e15eb40816"
+        }
+      ],
+      "tree": {
+        "mount_paths": ["/opt/fs2/artifacts/complexa-protein"],
+        "entry_count": 2,
+        "total_bytes": 7034391160,
+        "entry_path_pattern": "^complexa(_ae)?\\.ckpt$",
+        "inventory_algorithm": "fs2-tree-inventory/v2"
+      },
+      "consumers": [
+        {
+          "model_id": "proteina-complexa",
+          "reads": ["/opt/fs2/artifacts/complexa-protein/complexa.ckpt", "/opt/fs2/artifacts/complexa-protein/complexa_ae.ckpt"]
+        }
+      ]
+    },
+    {
+      "artifact_id": "complexa-ligand",
+      "transform": "fetch-files",
+      "model_id": "proteina-complexa-ligand-target-160m-v1",
+      "source": {
+        "uri": "hf://nvidia/NV-Proteina-Complexa-Ligand-Target-160M-v1",
+        "revision": "bc90c8b2c701ceb52d5faef72600b6b5be880244",
+        "resolver": "huggingface-resolve",
+        "license_id": "NVIDIA-Open-Model-License-2024-06",
+        "entitlement_state": "not-required"
+      },
+      "files": [
+        {
+          "path": "complexa_ligand.ckpt",
+          "bytes": 1790554392,
+          "sha256": "8175213eac5ec6433fed1756d055ce3f867129bfdb033040e1a0560ca558bfe5"
+        },
+        {
+          "path": "complexa_ligand_ae.ckpt",
+          "bytes": 4100184649,
+          "sha256": "898da17022cdeaaaea7caace41c8b6fe7bfcb78be4876b0113127eb9bb1527e6"
+        }
+      ],
+      "tree": {
+        "mount_paths": ["/opt/fs2/artifacts/complexa-ligand"],
+        "entry_count": 2,
+        "total_bytes": 5890739041,
+        "entry_path_pattern": "^complexa_ligand(_ae)?\\.ckpt$",
+        "inventory_algorithm": "fs2-tree-inventory/v2"
+      },
+      "consumers": [
+        {
+          "model_id": "proteina-complexa",
+          "reads": ["/opt/fs2/artifacts/complexa-ligand/complexa_ligand.ckpt", "/opt/fs2/artifacts/complexa-ligand/complexa_ligand_ae.ckpt"]
+        }
+      ]
+    },
+    {
+      "artifact_id": "complexa-ame",
+      "transform": "fetch-files",
+      "model_id": "proteina-complexa-ame-160m-v1",
+      "source": {
+        "uri": "hf://nvidia/NV-Proteina-Complexa-AME-160M-v1",
+        "revision": "9743d749a8754080a32fda857d95579dfa4dabae",
+        "resolver": "huggingface-resolve",
+        "license_id": "NVIDIA-Open-Model-License-2024-06",
+        "entitlement_state": "not-required"
+      },
+      "files": [
+        {
+          "path": "complexa_ame.ckpt",
+          "bytes": 1792013880,
+          "sha256": "d11319693d024d0427abc356a86350a694a1cb7dceb8db642c8041e5a20a9f7b"
+        },
+        {
+          "path": "complexa_ame_ae.ckpt",
+          "bytes": 4100197925,
+          "sha256": "63b1358c5459e968628094fdc9a2a6a95ac003606fcf7b1a3a21174458a69734"
+        }
+      ],
+      "tree": {
+        "mount_paths": ["/opt/fs2/artifacts/complexa-ame"],
+        "entry_count": 2,
+        "total_bytes": 5892211805,
+        "entry_path_pattern": "^complexa_ame(_ae)?\\.ckpt$",
+        "inventory_algorithm": "fs2-tree-inventory/v2"
+      },
+      "consumers": [
+        {
+          "model_id": "proteina-complexa",
+          "reads": ["/opt/fs2/artifacts/complexa-ame/complexa_ame.ckpt", "/opt/fs2/artifacts/complexa-ame/complexa_ame_ae.ckpt"]
+        }
+      ]
+    },
+    {
+      "artifact_id": "rosettafold3-checkpoint",
+      "transform": "fetch-files",
+      "model_id": "rosettafold3-foundry-2024-01",
+      "source": {
+        "uri": "https://files.ipd.uw.edu/pub/rf3/",
+        "revision": "foundry-production-b02eed6a-checksum-lock",
+        "resolver": "direct-https",
+        "license_id": "BSD-3-Clause",
+        "entitlement_state": "not-required"
+      },
+      "files": [
+        {
+          "path": "rf3_foundry_01_24_latest_remapped.ckpt",
+          "bytes": 3038876446,
+          "sha256": "364ef592fd8042a9cf4176d045015190f8322f961ccca38d891b20ca578d3bb0"
+        }
+      ],
+      "tree": {
+        "mount_paths": ["/opt/fs2/artifacts/rosettafold3-checkpoint"],
+        "entry_count": 1,
+        "total_bytes": 3038876446,
+        "entry_path_pattern": "^rf3_foundry_01_24_latest_remapped\\.ckpt$",
+        "inventory_algorithm": "fs2-tree-inventory/v2"
+      },
+      "consumers": [
+        {
+          "model_id": "proteina-complexa",
+          "reads": ["/opt/fs2/artifacts/rosettafold3-checkpoint/rf3_foundry_01_24_latest_remapped.ckpt"],
+          "role": "reward-and-evaluation"
+        }
+      ]
+    }
+  ]
+}
