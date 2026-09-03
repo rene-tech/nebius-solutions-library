@@ -155,3 +155,12 @@ no Forge credential or namespace, and left zero task Pods or Jobs behind.
 Trivy 0.70.0 HIGH/CRITICAL `--ignore-unfixed` results are recorded in
 `evidence/vulnerability-scans.json`. The report is evidence, not a zero-finding
 claim or an implicit policy exception.
+
+The corrected native successor is `cuda121-r12` at digest
+`sha256:fcc5b0da20f8bee01e78ad042ba597f7596cd52322a542ff4e48c855abae0177`.
+The approved H100 private mount resolved PyRosetta dist-info release
+`2026.29+releasequarterly.80a0635615` and tree digest
+`a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d`.
+An explicit `pyrosetta.version()` check returned the PyRosetta-4 2026.29
+banner; an unsupported API is recorded as an API limitation, never as an
+installation failure.

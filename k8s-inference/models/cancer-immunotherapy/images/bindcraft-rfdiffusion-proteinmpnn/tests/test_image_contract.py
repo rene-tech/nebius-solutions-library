@@ -85,6 +85,9 @@ class ImageLockTests(unittest.TestCase):
         wrapper = (ROOT / "runtime" / "bindcraft_runtime_entrypoint.py").read_text(encoding="utf-8")
         self.assertIn("tenant-private preinstalled PyRosetta tree", wrapper)
         self.assertNotIn("FS2_PYROSETTA_WHEEL", wrapper)
+        self.assertIn("importlib.metadata.distribution(\"pyrosetta\")", wrapper)
+        self.assertIn("PYROSETTA_EXPECTED_VERSION", wrapper)
+        self.assertIn("version_api_status", wrapper)
 
     def test_rfdiffusion_is_cuda12_with_matching_dgl_wheel(self) -> None:
         lock = build_images.load_lock()
@@ -148,7 +151,7 @@ class ImageLockTests(unittest.TestCase):
         by_id = {image["id"]: image for image in lock["images"]}
         for image_id in ("bindcraft-academic", "freebindcraft-open-fallback"):
             image = by_id[image_id]
-            expected = {"bindcraft-academic": "-cuda121-r11", "freebindcraft-open-fallback": "-cuda121-r9", "rfdiffusion": "-cuda121-r6"}.get(image_id, "")
+            expected = {"bindcraft-academic": "-cuda121-r12", "freebindcraft-open-fallback": "-cuda121-r9", "rfdiffusion": "-cuda121-r6"}.get(image_id, "")
             self.assertEqual(image["build_tag_suffix"], expected)
             self.assertTrue(image["target"].endswith(image["source"]["revision"] + expected))
             self.assertIn("@sha256:", image["supersedes"])
