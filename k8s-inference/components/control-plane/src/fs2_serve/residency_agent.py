@@ -33,6 +33,7 @@ import ctypes.util
 import json
 import mmap
 import os
+import resource
 import sys
 import time
 from pathlib import Path
@@ -43,33 +44,96 @@ LOCKED_MODE = "locked-payload-residency"
 MAPPED_MODE = "mapped-payload-residency"
 SUPPORTED_MODES = (LOCKED_MODE, MAPPED_MODE)
 TOUCH_STRIDE = mmap.PAGESIZE
+CAP_IPC_LOCK_BIT = 1 << 14
 
 
 class ResidencyError(RuntimeError):
     """A residency requirement could not be met."""
 
 
+PROT_READ = 0x01
+MAP_SHARED = 0x01
+MAP_FAILED = ctypes.c_void_p(-1).value
+
+
 def _libc() -> ctypes.CDLL:
     name = ctypes.util.find_library("c")
     if name is None:  # pragma: no cover - present on every supported image
         raise ResidencyError("libc is unavailable")
-    return ctypes.CDLL(name, use_errno=True)
+    library = ctypes.CDLL(name, use_errno=True)
+    library.mmap.restype = ctypes.c_void_p
+    library.mmap.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_long,
+    ]
+    library.munmap.restype = ctypes.c_int
+    library.munmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+    library.mlock.restype = ctypes.c_int
+    library.mlock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+    return library
 
 
 class _Residency:
-    """One node's held payload."""
+    """One node's held payload.
+
+    The payload is mapped through libc rather than through Python's ``mmap``
+    because a read-only Python mapping does not expose an address that can be
+    handed to ``mlock``.  Mapping directly also keeps both residency modes on
+    one code path, so the only difference between them is the lock syscall.
+    """
 
     def __init__(self, *, root: Path, mode: str) -> None:
         if mode not in SUPPORTED_MODES:
             raise ResidencyError(f"unsupported residency mode: {mode}")
         self._root = root
         self._mode = mode
-        self._libc = _libc() if mode == LOCKED_MODE else None
-        self._held: list[tuple[Path, mmap.mmap]] = []
+        self._libc = _libc()
+        self._held: list[tuple[Path, int, int]] = []
         self.resident_bytes = 0
         self.file_count = 0
 
+    @staticmethod
+    def locking_available() -> tuple[bool, str]:
+        """Report whether this process can actually lock pages, and why not.
+
+        ``capabilities.add`` only reaches the *bounding* set for a non-root
+        container; without ambient capabilities the effective set stays empty
+        and ``mlock`` is limited by ``RLIMIT_MEMLOCK``, which is a few
+        megabytes. Checking up front turns a 16 GiB mapping that fails at the
+        end into one precise sentence.
+        """
+
+        effective = 0
+        bounding = 0
+        try:
+            for line in Path("/proc/self/status").read_text().splitlines():
+                if line.startswith("CapEff:"):
+                    effective = int(line.split()[1], 16)
+                elif line.startswith("CapBnd:"):
+                    bounding = int(line.split()[1], 16)
+        except OSError:  # pragma: no cover - /proc is always present on Linux
+            return False, "capability state is unreadable"
+        if effective & CAP_IPC_LOCK_BIT:
+            return True, "CAP_IPC_LOCK is effective"
+        soft, _hard = resource.getrlimit(resource.RLIMIT_MEMLOCK)
+        held = "bounding only" if bounding & CAP_IPC_LOCK_BIT else "absent"
+        return False, (
+            f"CAP_IPC_LOCK is {held} rather than effective and RLIMIT_MEMLOCK is {soft} bytes; "
+            "a non-root container does not receive added capabilities in its effective set"
+        )
+
     def acquire(self) -> None:
+        if self._mode == LOCKED_MODE:
+            available, detail = self.locking_available()
+            if not available:
+                raise ResidencyError(
+                    f"{LOCKED_MODE} cannot guarantee residency here: {detail}. "
+                    f"Declare {MAPPED_MODE} instead, which reports residency as best effort."
+                )
         paths = sorted(path for path in self._root.rglob("*") if path.is_file() and not path.is_symlink())
         if not paths:
             raise ResidencyError("the retained payload contains no regular files")
@@ -79,22 +143,22 @@ class _Residency:
                 continue
             handle = os.open(path, os.O_RDONLY)
             try:
-                mapping = mmap.mmap(handle, size, prot=mmap.PROT_READ, flags=mmap.MAP_SHARED)
+                address = self._libc.mmap(None, size, PROT_READ, MAP_SHARED, handle, 0)
             finally:
                 os.close(handle)
+            if not address or address == MAP_FAILED:
+                raise ResidencyError(f"mmap of {path.name} failed with errno {ctypes.get_errno()}")
             if self._mode == LOCKED_MODE:
-                assert self._libc is not None
-                address = ctypes.addressof(ctypes.c_char.from_buffer(mapping))
                 if self._libc.mlock(ctypes.c_void_p(address), ctypes.c_size_t(size)) != 0:
                     errno = ctypes.get_errno()
-                    mapping.close()
+                    self._libc.munmap(ctypes.c_void_p(address), ctypes.c_size_t(size))
                     raise ResidencyError(
-                        f"mlock of {path.name} failed with errno {errno}; "
-                        "the holder needs CAP_IPC_LOCK and a large enough memory limit"
+                        f"mlock of {path.name} failed with errno {errno}; the holder needs "
+                        "CAP_IPC_LOCK and a memory limit that covers the payload"
                     )
             else:
-                self._touch(mapping, size)
-            self._held.append((path, mapping))
+                self._touch(address, size)
+            self._held.append((path, address, size))
             self.resident_bytes += size
             self.file_count += 1
 
@@ -103,15 +167,15 @@ class _Residency:
 
         if self._mode == LOCKED_MODE:
             return
-        for _path, mapping in self._held:
-            self._touch(mapping, len(mapping))
+        for _path, address, size in self._held:
+            self._touch(address, size)
 
     @staticmethod
-    def _touch(mapping: mmap.mmap, size: int) -> None:
+    def _touch(address: int, size: int) -> None:
+        pointer = ctypes.cast(address, ctypes.POINTER(ctypes.c_ubyte))
         total = 0
         for offset in range(0, size, TOUCH_STRIDE):
-            total += mapping[offset]
-        # Keep the read result observable so the loop cannot be optimised away.
+            total += pointer[offset]
         if total < 0:  # pragma: no cover - defensive
             raise ResidencyError("payload touch failed")
 
