@@ -24,7 +24,20 @@ locals {
         mechanism           = asset.runtime_binding.mechanism
         contentIdentityKind = asset.runtime_binding.content_identity_kind
         contentDigestSha256 = asset.runtime_binding.content_digest_sha256
-        readOnly            = true
+
+        # The chart's values schema requires these three alongside the digest:
+        # a tree-manifest binding must name the algorithm that produced its
+        # manifest, and both kinds must carry the consumed size plus the exact
+        # source archive they were derived from. They are already present on the
+        # variable; not projecting them rendered values the chart rejects.
+        contentManifestAlgorithm = asset.runtime_binding.content_manifest_algorithm
+        sizeBytes                = asset.runtime_binding.size_bytes
+        sourceArtifact = asset.runtime_binding.source_artifact == null ? null : {
+          filename   = asset.runtime_binding.source_artifact.filename
+          sha256     = asset.runtime_binding.source_artifact.sha256
+          size_bytes = asset.runtime_binding.source_artifact.size_bytes
+        }
+        readOnly = true
       } if asset.runtime_binding != null
     }
 
