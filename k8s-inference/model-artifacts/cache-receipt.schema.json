@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/public-artifact-cache-receipt/v1",
+  "title": "Immutable public model artifact cache receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "artifact_id", "family", "state", "catalog_digest", "manifest_digest", "content_digest", "source", "license", "files", "expanded_bytes", "cache_uri", "storage", "consumer_bindings", "runtime_handoffs", "offline_checks", "started_at", "verified_at", "receipt_digest"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/public-artifact-cache-receipt/v1"},
+    "artifact_id": {"type": "string"},
+    "family": {"type": "string"},
+    "state": {"const": "verified"},
+    "catalog_digest": {"$ref": "#/$defs/digest"},
+    "manifest_digest": {"$ref": "#/$defs/digest"},
+    "content_digest": {"$ref": "#/$defs/digest"},
+    "source": {"type": "object"},
+    "license": {"type": "object"},
+    "files": {"type": "array", "minItems": 1},
+    "expanded_bytes": {"type": "integer", "minimum": 1},
+    "cache_uri": {"type": "string", "pattern": "^nebius-sharedfs://[a-z0-9-]+/"},
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "region", "cluster", "filesystem_id", "filesystem_size_gib", "namespace", "local_queue", "cpu_pool_id", "cpu_pool_name", "cpu_pool_label", "shared_filesystem_host_path", "cache_subpath", "reference_plane_source_commit", "source_commit"],
+      "properties": {
+        "project_id": {"type": "string"}, "region": {"type": "string"},
+        "cluster": {"type": "string"},
+        "filesystem_id": {"type": "string"},
+        "filesystem_size_gib": {"type": "integer", "minimum": 2048},
+        "namespace": {"const": "fs2-reference-data"},
+        "local_queue": {"type": "string"},
+        "cpu_pool_id": {"type": "string", "minLength": 1},
+        "cpu_pool_name": {"type": "string", "minLength": 1},
+        "cpu_pool_label": {"const": "reference-data"},
+        "shared_filesystem_host_path": {"type": "string", "pattern": "^/mnt/"},
+        "cache_subpath": {"type": "string"},
+        "reference_plane_source_commit": {"type": "string", "pattern": "^[a-f0-9]{8,64}$"},
+        "source_commit": {"type": "string", "pattern": "^[a-f0-9]{8,64}$"}
+      }
+    },
+    "consumer_bindings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["consumer_id", "mount_root", "mount_path", "read_only"],
+        "properties": {
+          "consumer_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+          "mount_root": {"enum": ["/models", "/databases", "/opt/fs2/artifacts"]},
+          "mount_path": {"type": "string", "pattern": "^/(?:models|databases|opt/fs2/artifacts)/[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+          "read_only": {"const": true}
+        }
+      }
+    },
+    "runtime_handoffs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["consumer_id", "source_path", "mount_path", "runtime_path", "localization"],
+        "properties": {
+          "consumer_id": {"type": "string", "minLength": 1},
+          "source_path": {"type": "string", "minLength": 1},
+          "mount_path": {"type": "string", "pattern": "^/models/"},
+          "runtime_path": {"type": "string", "pattern": "^/models/"},
+          "localization": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["artifact_id", "mount_path", "manifest_path", "manifest_schema", "manifest_sha256", "ready_marker_path", "source_content_digest_sha256", "content_digest_sha256", "files", "required_files"],
+            "properties": {
+              "artifact_id": {"const": "protenix-v2"},
+              "mount_path": {"const": "/models/protenix-v2"},
+              "manifest_path": {"const": "/models/protenix-v2/manifest.json"},
+              "manifest_schema": {"const": "fs2.nebius.ai/protenix-v2-composite-artifact/v1"},
+              "manifest_sha256": {"$ref": "#/$defs/digest"},
+              "ready_marker_path": {"const": "/models/protenix-v2/.fs2-manifest-sha256"},
+              "source_content_digest_sha256": {"$ref": "#/$defs/digest"},
+              "content_digest_sha256": {"$ref": "#/$defs/digest"},
+              "files": {
+                "type": "array",
+                "minItems": 7,
+                "maxItems": 7,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["path", "bytes", "sha256"],
+                  "properties": {
+                    "path": {"type": "string", "minLength": 1},
+                    "bytes": {"type": "integer", "minimum": 1},
+                    "sha256": {"$ref": "#/$defs/digest"}
+                  }
+                }
+              },
+              "required_files": {"type": "array", "minItems": 7, "maxItems": 7, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+            }
+          }
+        }
+      }
+    },
+    "offline_checks": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "started_at": {"type": "string", "format": "date-time"},
+    "verified_at": {"type": "string", "format": "date-time"},
+    "provenance": {"$ref": "#/$defs/provenance"},
+    "receipt_digest": {"$ref": "#/$defs/digest"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "canonical_source", "acquisition_source", "verification"],
+      "properties": {
+        "state": {"const": "mirror-verified-not-publisher-byte-compared"},
+        "canonical_source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["publisher", "uri", "source_revision", "publisher_bytes_reachable", "publisher_digest_available"],
+          "properties": {
+            "publisher": {"type": "string", "minLength": 1},
+            "uri": {"type": "string", "pattern": "^https://"},
+            "source_revision": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+            "publisher_bytes_reachable": {"const": false},
+            "publisher_digest_available": {"const": false}
+          }
+        },
+        "acquisition_source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["relationship", "repository", "repository_revision", "url", "lfs_oid_sha256", "bytes"],
+          "properties": {
+            "relationship": {"const": "third-party-mirror"},
+            "repository": {"type": "string", "minLength": 1},
+            "repository_revision": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+            "url": {"type": "string", "pattern": "^https://"},
+            "lfs_oid_sha256": {"$ref": "#/$defs/digest"},
+            "bytes": {"type": "integer", "minimum": 1}
+          }
+        },
+        "verification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["evidence", "evidence_sha256", "sha256", "md5", "safe_torch_load", "root_type", "top_level_key", "checkpoint_key_count", "checkpoint_tensor_count", "checkpoint_tensor_dtypes", "source_state_key_count", "checkpoint_parameter_count", "checkpoint_element_count", "source_parameter_count", "key_shape_inventory_sha256", "inspection_image_digest", "inspection_torch_version", "strict_key_shape_match", "publisher_byte_compared"],
+          "properties": {
+            "evidence": {"type": "string", "minLength": 1},
+            "evidence_sha256": {"$ref": "#/$defs/digest"},
+            "sha256": {"$ref": "#/$defs/digest"},
+            "md5": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+            "safe_torch_load": {"const": "weights-only-mmap-cpu"},
+            "root_type": {"const": "dict"},
+            "top_level_key": {"const": "model"},
+            "checkpoint_key_count": {"type": "integer", "minimum": 1},
+            "checkpoint_tensor_count": {"type": "integer", "minimum": 1},
+            "checkpoint_tensor_dtypes": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["torch.float32"],
+              "properties": {"torch.float32": {"type": "integer", "minimum": 1}}
+            },
+            "source_state_key_count": {"type": "integer", "minimum": 1},
+            "checkpoint_parameter_count": {"type": "integer", "minimum": 1},
+            "checkpoint_element_count": {"type": "integer", "minimum": 1},
+            "source_parameter_count": {"type": "integer", "minimum": 1},
+            "key_shape_inventory_sha256": {"$ref": "#/$defs/digest"},
+            "inspection_image_digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+            "inspection_torch_version": {"type": "string", "minLength": 1},
+            "strict_key_shape_match": {"const": true},
+            "publisher_byte_compared": {"const": false}
+          }
+        }
+      }
+    }
+  }
+}

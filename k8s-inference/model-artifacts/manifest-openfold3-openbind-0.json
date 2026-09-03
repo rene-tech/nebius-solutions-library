@@ -1,0 +1,27 @@
+{
+  "content": {
+    "digest": "f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
+    "expanded_bytes": 2287872989,
+    "files": [
+      {
+        "bytes": 2287872989,
+        "path": "of3-ob-2025-06-30-174k.pt",
+        "sha256": "bd43301c011d5f87580d3e8b548658869433e4488399feb03035ba248f8e29e4"
+      }
+    ]
+  },
+  "entitlement_state": "not-required",
+  "kind": "weights",
+  "license": {
+    "id": "Apache-2.0",
+    "state": "verified"
+  },
+  "model_id": "openfold3-openbind-0",
+  "owner": "cancer-immunotherapy",
+  "retention": "retained-platform",
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "source": {
+    "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+    "uri": "https://openfold3-data.s3.us-west-2.amazonaws.com/openfold3-parameters/of3-ob-2025-06-30-174k.pt"
+  }
+}
