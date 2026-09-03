@@ -111,6 +111,120 @@ three GPU-linked imports explicitly. The same command on the H100 canary must
 return an empty `gpu_required_imports_deferred` list before publication is
 accepted.
 
+## Final native successor: production filters and four external trees
+
+`cuda121-r15` is the final native image. It exists because `r14`, built from the
+same BindCraft revision, could not produce truthful production evidence:
+
+* The design metrics read `Average_InterfaceResidues` and `Average_BuriedSASA`,
+  which upstream never writes. Both were read with a `"0"` default, so every
+  accepted design reported zero interface residues and zero buried area. The
+  columns upstream actually writes, and that
+  `settings_filters/default_filters.json` thresholds, are
+  `Average_n_InterfaceResidues` and `Average_dSASA`. `r15` reads the real names
+  and rejects a run whose statistics are missing or non-numeric instead of
+  substituting a zero.
+* `hotspot_geometry_validated` was a hard-coded `true`. Upstream treats
+  `target_hotspot_residues` as a loss preference, and the interface residues it
+  records are binder-side, so no upstream column answers whether the binder
+  reached the requested target site. `r15` measures it: for every requested
+  hotspot it records the closest heavy-atom approach to the binder chain in the
+  accepted complex at upstream's own 4.0 Å contact criterion, and fails the
+  shard when no requested hotspot is in contact.
+* Design depth and MPNN breadth were overridden with literals weaker than the
+  SHA-256-pinned production template - one validation recycle instead of three,
+  and one sampled MPNN sequence instead of twenty. A run therefore looked
+  production-equivalent while searching a twentieth of the sequence space.
+  `r15` takes these from the admitted template and only departs from it when an
+  operator sets the corresponding variable explicitly.
+* `Average_Binder_Energy_Score` is the PyRosetta score `default_filters.json`
+  requires to be negative, so `r15` records it and rejects an exactly-zero
+  score. Trajectory statistics must also be non-empty, not just the final
+  design table.
+
+`r15` also closes the external-tree gap. The image removes both ColabDesign
+ProteinMPNN weight directories and contains no PyRosetta and no AlphaFold2
+parameters, so four trees arrive from outside it, and the runtime now verifies
+all four by full content before any model code runs:
+
+| Role | Mounted at | Identity algorithm |
+|---|---|---|
+| `pyrosetta-site-packages` | `/opt/fs2/academic/pyrosetta-bindcraft/site-packages` | `fs2-tree-manifest/v1` |
+| `alphafold2-params` | `/models/alphafold2` | `fs2-flat-tree-inventory/v1` |
+| `colabdesign-mpnn-weights-vanilla` | `…/colabdesign/mpnn/weights` | `fs2-flat-tree-inventory/v1` |
+| `colabdesign-mpnn-weights-soluble` | `…/colabdesign/mpnn/weights_soluble` | `fs2-flat-tree-inventory/v1` |
+
+`runtime/tree_identity.py` implements both algorithms and keeps each one
+byte-identical to the component that publishes the tree it guards:
+`fs2-tree-manifest/v1` to `academic-assets/scripts/install_tree.py`, which
+installs the licensed tree, and `fs2-flat-tree-inventory/v1` to the
+scientific-localization staging receipts, which publish the public trees. A
+digest only this runtime could reproduce would prove nothing about the tree the
+publisher actually shipped. Reading every byte is affordable and measured on the
+eu-north1 shared filesystem: 3,287,122,494 bytes of PyRosetta in 14.85 s at
+211 MiB/s, 5,587,959,437 bytes of AlphaFold2 in 5.36 s at 994 MiB/s, and each
+26 MB MPNN tree in under 0.04 s. No metadata-only shortcut is offered, because a
+size-and-shape check passes on a tree whose contents were swapped.
+
+Identity authority is split on purpose. The licensed PyRosetta tree is what the
+image is licensed around, so its `fs2-tree-manifest/v1` digest
+`a93d68e1…` is pinned in the image and a declaration naming a different one is
+refused. The three public trees are published by the platform's artifact plane,
+which is their authority, so their identities arrive in the per-run declaration
+and are then proven against the bytes actually mounted. Both MPNN roots are
+additionally required to be the directories `colabdesign.mpnn` itself imports,
+so a declared root the model would never read cannot be admitted.
+
+**Tree locations are inputs, never constants.** The shared filesystem that
+carries these trees is re-published as its handoff evolves, so neither the image
+nor the renderer holds a layout: `FS2_BINDCRAFT_EXTERNAL_TREES` points at an
+`fs2.nebius.ai/bindcraft-external-tree-admission/v1` document giving each role's
+root and expected identity. A path move that changes no bytes therefore needs no
+rebuild.
+
+`qualification/render_semantic_job.py` renders the acceptance run from an
+`fs2.nebius.ai/bindcraft-external-tree-handoff/v1` document. It replaces the
+hand-written native Pod, which pinned a superseded digest and created an *empty*
+`weights_soluble` package - so it read no soluble weights while appearing to
+test that lane. The rendered Job enters the image through its outer entrypoint,
+carries the adapter's argv with the pinned `default_4stage_multimer.json` and
+`default_filters.json` digests, and mounts all four trees read-only:
+
+```bash
+python3 qualification/render_semantic_job.py \
+  --handoff <four-tree-handoff.json> \
+  --image cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:<r15> \
+  --run-id <run> --job-name <job> | kubectl apply -f -
+```
+
+Passing `default_filters.json` is the semantic bar, not a formality: it requires
+`Average_n_InterfaceResidues` ≥ 7, `Average_dSASA` ≥ 1, `Average_dG` ≤ 0,
+`Average_Binder_Energy_Score` ≤ 0, `Average_Hotspot_RMSD` ≤ 6,
+`Average_ShapeComplementarity` ≥ 0.6, `Average_pLDDT` ≥ 0.8 and
+`Average_i_pTM` ≥ 0.5 across 54 active thresholds. The earlier `r12` evidence
+below was recorded with `no_filters` and its mean pLDDT of 0.79 would not pass
+this set.
+
+### Live acceptance is gated on the immutable four-tree handoff
+
+The `r15` semantic acceptance run has **not** been executed. The localization
+candidate that publishes the three public trees is blocked, and this task is
+instructed not to bind the mutable `scientific-localization/public/<artifact_id>`
+paths or its three-tree handoff, but to wait for the immutable
+`/sha256/<tree>` four-tree handoff with in-generation stable terminal markers and
+recursive PyRosetta identity. The image, the runtime contract, the renderer and
+their tests do not depend on those final paths and are complete; the run is the
+one remaining step. Two requirements the handoff must satisfy for this runtime:
+
+* A terminal marker written *inside* a tree root changes that tree's
+  `fs2-flat-tree-inventory/v1` digest, because the inventory enumerates every
+  regular file in the flat root. Markers must live outside the tree roots, or
+  the published identity will not match the mounted tree.
+* The AlphaFold2 root must keep a `manifest.json` declaring `artifact_kind`
+  `bindcraft-af2-params` and `source_revision` `7cd4ace1…`. The shared outer
+  entrypoint's `fs2.nebius.ai/external-model-artifact-manifest/v1` gate runs on
+  every non-smoke command and reads it.
+
 ## H100 semantic acceptance
 
 All live runs used project `project-e00rene`, region `eu-north1`, kube context

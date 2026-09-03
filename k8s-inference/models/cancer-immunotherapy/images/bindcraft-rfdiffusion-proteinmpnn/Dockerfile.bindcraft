@@ -50,8 +50,10 @@ RUN set -eux; \
 
 COPY --chown=root:root runtime/artifact_gate.py runtime/runtime_entrypoint.py /opt/fs2/
 COPY --chown=root:root runtime/bindcraft_runtime_entrypoint.py /opt/fs2/bindcraft/runtime_entrypoint.py
+COPY --chown=root:root runtime/tree_identity.py /opt/fs2/bindcraft/tree_identity.py
 COPY --from=fs2-adapters bindcraft-native/bin/bindcraft-batch /opt/fs2/bin/bindcraft-batch
-RUN chmod 0555 /opt/fs2/bin/bindcraft-batch /opt/fs2/bindcraft/runtime_entrypoint.py
+RUN chmod 0555 /opt/fs2/bin/bindcraft-batch /opt/fs2/bindcraft/runtime_entrypoint.py \
+      /opt/fs2/bindcraft/tree_identity.py
 
 LABEL org.opencontainers.image.source="https://github.com/martinpacesa/BindCraft" \
       org.opencontainers.image.revision="7cd4ace1b7407adf66a50dfefa47de2270f5e4a9" \

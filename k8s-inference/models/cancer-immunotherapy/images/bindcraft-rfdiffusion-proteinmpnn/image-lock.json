@@ -20,13 +20,14 @@
         "archive_sha256": "cada0f51f221af568ad0ee84ada2e68317501adad233008d073d66839b1afb8d"
       },
       "dockerfile": "Dockerfile.bindcraft",
-      "build_tag_suffix": "-cuda121-r14",
-      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r14",
-      "supersedes": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1",
+      "build_tag_suffix": "-cuda121-r15",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r15",
+      "supersedes": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:351f8f5fa02f3c74107efa522884301e2c4896b934f9145dfdbbd61b79e57e1f",
       "artifact_kind": "bindcraft-af2-params",
       "external_artifacts": [
         "AlphaFold2 parameters",
-        "ColabDesign soluble ProteinMPNN checkpoint from the pinned shared-source revision",
+        "vanilla ColabDesign ProteinMPNN weights from the pinned shared-source revision",
+        "soluble ColabDesign ProteinMPNN weights from the pinned shared-source revision",
         "tenant-private preinstalled PyRosetta site-packages tree"
       ]
     },
