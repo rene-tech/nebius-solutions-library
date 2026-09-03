@@ -1,0 +1,20 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "design-binders",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "../target",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "size_bytes": 4096,
+    "media_type": "application/x-tar"
+  },
+  "parameters": {
+    "variant": "protein-target",
+    "target_id": "/etc/passwd",
+    "run_name": "bad",
+    "seed": 1,
+    "num_samples": 1,
+    "diffusion_steps": 25,
+    "runtime_image": "attacker.invalid/image"
+  }
+}

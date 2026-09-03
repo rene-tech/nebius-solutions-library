@@ -1,4 +1,312 @@
 {
   "schema": "fs2-serve.nebius.ai/scientific-workload-profiles/v1",
-  "profiles": []
+  "profiles": [
+    {
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "model_id": "boltzgen",
+      "display_name": "BoltzGen v0.3.2",
+      "execution_mode": "scientific-batch",
+      "state": "candidate-unqualified",
+      "route_exposed": false,
+      "source": {
+        "kind": "git",
+        "repository": "HannesStark/boltzgen",
+        "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "review_url": "https://github.com/HannesStark/boltzgen/tree/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "classification": "candidate-input"
+      },
+      "execution_identity": {
+        "model_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "runtime_image_digest": "sha256:1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544",
+        "runtime_recipe_sha256": "da5f03511b87a39cba46530073dfc42ab5115f5249e6f1a4f55b0dc6e2f6fb14",
+      "workload_recipe_sha256": "74bc6015176c892f35c33e9122588909f4cea106b73708cb6ba1d8b8efae4d84",
+        "artifact_manifest_digest": null,
+        "execution_identity_sha256": null
+      },
+      "interface": {
+        "protocol": "scientific-batch-v1",
+        "submit_endpoint": "/v1/models/boltzgen:submit",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "parameter_schema": "fs2-serve.nebius.ai/boltzgen-parameters/v1",
+        "operations": [
+          "design-binders"
+        ],
+        "service_classes": [
+          "customer-batch",
+          "bulk-backfill"
+        ],
+        "mcp": {
+          "discoverable": true,
+          "invocable": false,
+          "tool_name": "submit_boltzgen",
+          "description": "Submit a bounded asynchronous BoltzGen design campaign."
+        }
+      },
+      "access": {
+        "profile": "standard",
+        "state": "unverified",
+        "receipt_digest": null,
+        "credentials_embedded": false
+      },
+      "resources": {
+        "gpu_count": 1,
+        "gpu_topology": "single-gpu",
+        "host_architectures": [
+          "amd64"
+        ],
+      "compatible_pool_ids": [
+        "h100-1x",
+        "h100-reserved-8x"
+      ],
+      "required_node_labels": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+        }
+      },
+      "workload": {
+        "stages": [
+          {
+          "id": "configure",
+          "needs": [],
+          "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "restart",
+          "preemption_mode": "restartable"
+        },
+        {
+          "id": "design",
+          "needs": ["configure"],
+          "resource_class": "gpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 32,
+          "checkpoint_mode": "restart",
+          "preemption_mode": "restartable"
+        },
+        {
+          "id": "inverse-folding",
+          "needs": ["design"],
+          "resource_class": "gpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 32,
+          "checkpoint_mode": "restart",
+          "preemption_mode": "restartable"
+        },
+        {
+          "id": "folding",
+          "needs": ["inverse-folding"],
+          "resource_class": "gpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 32,
+          "checkpoint_mode": "restart",
+          "preemption_mode": "restartable"
+        },
+        {
+          "id": "design-folding",
+          "needs": ["folding"],
+          "resource_class": "gpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 32,
+          "checkpoint_mode": "restart",
+          "preemption_mode": "restartable"
+        },
+        {
+          "id": "affinity",
+          "needs": ["design-folding"],
+          "resource_class": "gpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 32,
+          "checkpoint_mode": "restart",
+          "preemption_mode": "restartable"
+        },
+        {
+          "id": "analysis",
+          "needs": ["folding"],
+          "resource_class": "cpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 32,
+          "checkpoint_mode": "none",
+          "preemption_mode": "non_preemptible"
+        },
+        {
+          "id": "filtering",
+          "needs": ["analysis"],
+          "resource_class": "cpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 32,
+          "checkpoint_mode": "none",
+          "preemption_mode": "non_preemptible"
+          }
+        ],
+        "retry": {
+          "max_attempts": 2,
+          "retryable_exit_codes": [
+            137,
+            143
+          ]
+        },
+        "cancellation": {
+          "mode": "terminate-attempt",
+          "grace_seconds": 60
+        }
+      },
+      "semantic_validation": {
+        "validator_id": "boltzgen-v0-3-2",
+        "state": "candidate-unqualified"
+      },
+      "policy": {
+        "commercial_use": "allowed",
+        "non_clinical": true,
+        "limitations": [
+          "Candidate adapter only; an immutable locally smoke-tested image exists, but artifact readiness, H100 semantic receipt, route, and live readiness do not.",
+          "A preempted attempt restarts from committed inputs; BoltzGen partial attempt output is not represented as a resumable platform checkpoint.",
+          "The separately pinned inference molecule dictionary remains blocked on its terms receipt."
+        ]
+      }
+    },
+    {
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "model_id": "proteina-complexa",
+      "display_name": "Proteina-Complexa",
+      "execution_mode": "scientific-batch",
+      "state": "candidate-unqualified",
+      "route_exposed": false,
+      "source": {
+        "kind": "git",
+        "repository": "NVIDIA-BioNeMo/Proteina-Complexa",
+        "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+        "review_url": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa/tree/54058860d43444c7289873f77d3e50b5b02348cd",
+        "classification": "candidate-input"
+      },
+      "execution_identity": {
+        "model_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+        "runtime_image_digest": "sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
+        "runtime_recipe_sha256": "3af4c4c816f262354fab05451ce8a862b55b2c765d0590056c9866fec20c767b",
+        "workload_recipe_sha256": "1ea1d90228cff7efbc4c3e6f6c394be0e384e7870a2a94fa8897b81fe6bfa73b",
+        "artifact_manifest_digest": null,
+        "execution_identity_sha256": null
+      },
+      "interface": {
+        "protocol": "scientific-batch-v1",
+        "submit_endpoint": "/v1/models/proteina-complexa:submit",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "parameter_schema": "fs2-serve.nebius.ai/proteina-complexa-parameters/v1",
+        "operations": [
+          "design-binders"
+        ],
+        "service_classes": [
+          "customer-batch",
+          "bulk-backfill"
+        ],
+        "mcp": {
+          "discoverable": true,
+          "invocable": false,
+          "tool_name": "submit_proteina_complexa",
+          "description": "Submit a bounded asynchronous Proteina-Complexa binder design run."
+        }
+      },
+      "access": {
+        "profile": "standard",
+        "state": "unverified",
+        "receipt_digest": null,
+        "credentials_embedded": false
+      },
+      "resources": {
+        "gpu_count": 1,
+        "gpu_topology": "single-gpu",
+        "host_architectures": [
+          "amd64"
+        ],
+      "compatible_pool_ids": [
+        "h100-1x",
+        "h100-reserved-8x"
+      ],
+      "required_node_labels": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+        }
+      },
+      "workload": {
+        "stages": [
+          {
+            "id": "generate",
+            "needs": [],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 1,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          },
+          {
+            "id": "filter",
+            "needs": [
+              "generate"
+            ],
+            "resource_class": "cpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 1,
+            "checkpoint_mode": "none",
+            "preemption_mode": "non_preemptible"
+          },
+          {
+            "id": "evaluate",
+            "needs": [
+              "filter"
+            ],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 1,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          },
+          {
+            "id": "analyze",
+            "needs": [
+              "evaluate"
+            ],
+            "resource_class": "cpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 1,
+            "checkpoint_mode": "none",
+            "preemption_mode": "non_preemptible"
+          }
+        ],
+        "retry": {
+          "max_attempts": 2,
+          "retryable_exit_codes": [
+            137,
+            143
+          ]
+        },
+        "cancellation": {
+          "mode": "terminate-attempt",
+          "grace_seconds": 60
+        }
+      },
+      "semantic_validation": {
+        "validator_id": "proteina-complexa-v1",
+        "state": "candidate-unqualified"
+      },
+      "policy": {
+        "commercial_use": "license-dependent",
+        "non_clinical": true,
+        "limitations": [
+          "Candidate adapter only; an immutable locally smoke-tested image exists, but artifact readiness, H100 semantic receipt, route, and live readiness do not.",
+          "Core self-refolding uses a controller-mounted AlphaFold2 or RoseTTAFold3 artifact; optional ESM2, ESMFold, and MPNN metrics are disabled until their exact artifacts pass readiness."
+        ]
+      }
+    }
+  ]
 }

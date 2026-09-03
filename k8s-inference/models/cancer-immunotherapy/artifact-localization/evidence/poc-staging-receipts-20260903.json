@@ -1,0 +1,172 @@
+[
+  {
+    "archive_provenance": {
+      "bytes": 5587968000,
+      "filename": "alphafold_params_2022-12-06.tar",
+      "license_id": "CC-BY-4.0",
+      "present_in_mount": false,
+      "sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+      "source_revision": "gcs-generation-1670353726160664",
+      "source_uri": "https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar"
+    },
+    "artifact_id": "alphafold2-params-bindcraft",
+    "mount_path": "/models/alphafold2",
+    "observation": {
+      "duration_seconds": 160.533
+    },
+    "observed_at": "2026-09-03T02:58:12Z",
+    "runtime_bindings": [
+      {
+        "binding_kind": "environment-variable",
+        "binding_name": "FS2_ARTIFACT_ROOT",
+        "binding_value": "/models/alphafold2",
+        "model_id": "bindcraft"
+      }
+    ],
+    "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+    "state": "verified",
+    "tree_identity": {
+      "entry_count": 17,
+      "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+      "inventory_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+      "probe_entries_verified": 16,
+      "total_bytes": 5587959437
+    }
+  },
+  {
+    "archive_provenance": {
+      "bytes": 5587968000,
+      "filename": "alphafold_params_2022-12-06.tar",
+      "license_id": "CC-BY-4.0",
+      "present_in_mount": false,
+      "sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+      "source_revision": "gcs-generation-1670353726160664",
+      "source_uri": "https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar"
+    },
+    "artifact_id": "alphafold2-params",
+    "mount_path": "/opt/fs2/artifacts/alphafold2-params",
+    "observation": {
+      "duration_seconds": 380.166
+    },
+    "observed_at": "2026-09-03T02:55:31Z",
+    "runtime_bindings": [
+      {
+        "binding_kind": "environment-variable",
+        "binding_name": "AF2_DIR",
+        "binding_value": "/opt/fs2/artifacts/alphafold2-params",
+        "model_id": "proteina-complexa"
+      }
+    ],
+    "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+    "state": "verified",
+    "tree_identity": {
+      "entry_count": 16,
+      "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+      "inventory_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+      "probe_entries_verified": 16,
+      "total_bytes": 5587956571
+    }
+  },
+  {
+    "archive_provenance": {
+      "bytes": 391401102,
+      "filename": "mols.zip",
+      "license_id": "MIT",
+      "present_in_mount": false,
+      "sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
+      "source_revision": "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c",
+      "source_uri": "https://huggingface.co/datasets/boltzgen/inference-data/resolve/c3d36fd276e9caf098c75d4113c6d5eb320b1a4c/mols.zip"
+    },
+    "artifact_id": "boltzgen-inference-molecules",
+    "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+    "observation": {
+      "duration_seconds": 307.912
+    },
+    "observed_at": "2026-09-03T03:01:52Z",
+    "runtime_bindings": [
+      {
+        "binding_kind": "argv-option",
+        "binding_name": "--moldir",
+        "binding_value": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+        "model_id": "boltzgen"
+      }
+    ],
+    "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+    "state": "verified",
+    "tree_identity": {
+      "entry_count": 45227,
+      "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+      "inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+      "probe_entries_verified": 10,
+      "total_bytes": 1820698819
+    }
+  },
+  {
+    "archive_provenance": {
+      "bytes": 50276715,
+      "filename": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+      "license_id": "Apache-2.0",
+      "present_in_mount": false,
+      "sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+      "source_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+      "source_uri": "https://github.com/sokrypton/ColabDesign/archive/e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz"
+    },
+    "artifact_id": "colabdesign-mpnn-weights-soluble",
+    "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
+    "observation": {
+      "duration_seconds": 0.667
+    },
+    "observed_at": "2026-09-03T02:58:29Z",
+    "runtime_bindings": [
+      {
+        "binding_kind": "installed-package-path",
+        "binding_name": "colabdesign.mpnn.weights_soluble",
+        "binding_value": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
+        "model_id": "bindcraft"
+      }
+    ],
+    "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+    "state": "verified",
+    "tree_identity": {
+      "entry_count": 5,
+      "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+      "inventory_sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+      "probe_entries_verified": 5,
+      "total_bytes": 26601241
+    }
+  },
+  {
+    "archive_provenance": {
+      "bytes": 50276715,
+      "filename": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+      "license_id": "Apache-2.0",
+      "present_in_mount": false,
+      "sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+      "source_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+      "source_uri": "https://github.com/sokrypton/ColabDesign/archive/e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz"
+    },
+    "artifact_id": "colabdesign-mpnn-weights-vanilla",
+    "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+    "observation": {
+      "duration_seconds": 3.772
+    },
+    "observed_at": "2026-09-03T02:58:27Z",
+    "runtime_bindings": [
+      {
+        "binding_kind": "installed-package-path",
+        "binding_name": "colabdesign.mpnn.weights",
+        "binding_value": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+        "model_id": "bindcraft"
+      }
+    ],
+    "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+    "state": "verified",
+    "tree_identity": {
+      "entry_count": 5,
+      "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+      "inventory_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+      "probe_entries_verified": 5,
+      "total_bytes": 26602793
+    }
+  }
+]
