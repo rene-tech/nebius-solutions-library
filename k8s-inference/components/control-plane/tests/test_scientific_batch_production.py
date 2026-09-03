@@ -954,6 +954,72 @@ def test_scheduling_resolver_prefers_exact_route_and_fails_closed_for_bound_mode
         )
 
 
+def test_scheduling_route_specificity_is_explicit_and_selector_bypasses_fail_closed() -> None:
+    contract = json.loads(json.dumps(scheduling().contract))
+
+    def add_route(
+        name: str,
+        *,
+        tenant_ids: list[str] | None = None,
+        model_ids: list[str] | None = None,
+        service_classes: list[str] | None = None,
+    ) -> None:
+        contract["local_queues"][name] = {
+            "metadata": {"name": name, "namespace": "fs2-models"},
+            "spec": {"clusterQueue": "inference"},
+        }
+        contract["local_queue_routes"][name] = {
+            "namespace": "fs2-models",
+            "cluster_queue": "inference",
+            "tenant_ids": tenant_ids or [],
+            "model_ids": model_ids or [],
+            "service_classes": service_classes or [],
+        }
+
+    add_route("tenant-only", tenant_ids=["tenant-a"])
+    add_route("tenant-model", tenant_ids=["tenant-a"], model_ids=["protein-design"])
+    add_route("model-class", model_ids=["protein-design"], service_classes=["customer-batch"])
+    add_route(
+        "tenant-model-class",
+        tenant_ids=["tenant-a"],
+        model_ids=["protein-design"],
+        service_classes=["customer-batch"],
+    )
+    resolver = SchedulingContractResolver(contract)
+    args = {
+        "service_class": "customer-batch",
+        "model_id": "protein-design",
+        "tenant_id": "tenant-a",
+        "default_local_queue": "scientific",
+        "desired_local_queue": None,
+    }
+    assert resolver._resolve_route(**args)[0] == "tenant-model-class"
+
+    del contract["local_queues"]["tenant-model-class"]
+    del contract["local_queue_routes"]["tenant-model-class"]
+    resolver = SchedulingContractResolver(contract)
+    # Both remaining candidates constrain two dimensions.  The tenant-bound
+    # lane wins rather than becoming ambiguous with a cross-tenant lane.
+    assert resolver._resolve_route(**args)[0] == "tenant-model"
+
+    del contract["local_queues"]["tenant-model"]
+    del contract["local_queue_routes"]["tenant-model"]
+    resolver = SchedulingContractResolver(contract)
+    # More constrained model+class routing beats tenant-only routing.
+    assert resolver._resolve_route(**args)[0] == "model-class"
+
+    # Selectors for another class or tenant never act as wildcard bypasses.
+    bypass_args = dict(args)
+    bypass_args["tenant_id"] = "tenant-b"
+    bypass_args["service_class"] = "interactive"
+    assert resolver._resolve_route(**bypass_args)[0] == "scientific"
+
+    add_route("model-class-shadow", model_ids=["protein-design"], service_classes=["customer-batch"])
+    resolver = SchedulingContractResolver(contract)
+    with pytest.raises(SchedulingContractError, match="multiple Kueue LocalQueues"):
+        resolver._resolve_route(**args)
+
+
 def test_controller_rejects_generated_scheduling_fixture_until_cpu_and_model_eligibility_land() -> None:
     fixture = SOLUTION_ROOT / "modules/kueue-scheduling/tests/fixtures/controller-contract.json"
     encoded = fixture.read_bytes()

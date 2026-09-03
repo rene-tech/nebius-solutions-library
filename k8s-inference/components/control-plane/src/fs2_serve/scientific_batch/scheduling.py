@@ -378,7 +378,13 @@ class SchedulingContractResolver:
         default_local_queue: str,
         desired_local_queue: str | None,
     ) -> tuple[str, str, str]:
-        ranked: dict[int, list[str]] = {}
+        # Prefer the most constrained matching route.  Equal numbers of
+        # selectors are ordered by the trust boundary they narrow: tenant,
+        # then model, then service class.  This keeps a tenant-specific route
+        # ahead of a cross-tenant model lane without making a less-constrained
+        # tenant route beat a model+class route.  Only truly equal specificity
+        # is ambiguous.
+        ranked: dict[tuple[int, bool, bool, bool], list[str]] = {}
         for queue_name, raw_route in self.local_queue_routes.items():
             if not isinstance(queue_name, str):
                 raise SchedulingContractError("Kueue LocalQueue route identity is invalid")
@@ -398,8 +404,9 @@ class SchedulingContractResolver:
                 or (classes and service_class not in classes)
             ):
                 continue
-            specificity = sum(bool(values) for values in (models, tenants, classes))
-            if specificity:
+            constrained = (bool(tenants), bool(models), bool(classes))
+            specificity = (sum(constrained), *constrained)
+            if specificity[0]:
                 ranked.setdefault(specificity, []).append(queue_name)
         selected = ranked[max(ranked)] if ranked else []
         if len(selected) > 1:
