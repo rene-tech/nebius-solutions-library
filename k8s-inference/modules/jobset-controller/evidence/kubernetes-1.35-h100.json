@@ -1,0 +1,217 @@
+{
+  "schema": "fs2-serve.nebius.ai/jobset-kubernetes-1.35-live-qualification/v1",
+  "outcome": "PASS",
+  "started_at": "2026-09-03T07:01:30Z",
+  "generated_at": "2026-09-03T07:02:06Z",
+  "target": {
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "cluster_id_sha256": "5edaaf892bc9b5969ab5cd93b4b2beec36397d77991afe355085451f33cc0c18",
+    "context": "k8s-inference-h100",
+    "kubernetes_server": "v1.35.6",
+    "namespace": "fs2-models",
+    "local_queue": "inference-models",
+    "cluster_queue": "inference-accelerators",
+    "compute": "CPU-only system node; zero GPU requests",
+    "b300_touched": false
+  },
+  "releases": {
+    "jobset": {
+      "version": "0.12.0",
+      "chart_digest": "sha256:02808a890a0b0e03a1d3bf5959e2f562b3b47c15e446bbba358c1d24e1f81b24",
+      "chart_archive_sha256": "bd3503757561d93aa14f35fccab76ca417d17e14984aed9f69c9ab068d40980a",
+      "image": "registry.k8s.io/jobset/jobset:v0.12.0@sha256:e75536f1135b7bb2f19f8c3b620782fbdd9091d73398e3a272f9a5fed322980d",
+      "deployment_uid": "e7a46d5d-0316-4460-b494-c0b52868a2d0",
+      "deployment_generation": 1,
+      "pod_uid": "1c1c72a6-aea5-4eae-95fe-ad6761106854",
+      "pod_image_id": "registry.k8s.io/jobset/jobset@sha256:e75536f1135b7bb2f19f8c3b620782fbdd9091d73398e3a272f9a5fed322980d",
+      "helm_revision": 1
+    },
+    "kueue": {
+      "version": "0.17.8",
+      "image_digest": "sha256:cecba825d0b0feab9bed2835efe2eb8d825512f1616c8762ab80c53f2ea6afe6",
+      "deployment_uid": "7b2649d6-b1b1-45ac-80ac-cf2a2402c49e",
+      "deployment_generation": 3,
+      "pod_uid": "c69aa4b7-438d-479b-9b2b-62ddedeade05",
+      "pod_image_id": "registry.k8s.io/kueue/kueue@sha256:cecba825d0b0feab9bed2835efe2eb8d825512f1616c8762ab80c53f2ea6afe6",
+      "helm_revision": 3
+    },
+    "crd": {
+      "uid": "ca48d063-be55-4943-a775-c3f8d458b74a",
+      "resource_version": "2284555",
+      "api": "jobset.x-k8s.io/v1alpha2",
+      "established": true
+    },
+    "canary_image": "registry.k8s.io/e2e-test-images/busybox:1.36.1-1@sha256:a9155b13325b2abef48e71de77bb8ac015412a566829f621d06bfae5c699b1b9"
+  },
+  "terraform": {
+    "source_base_commit": "a1ecc219f5e319be87cfa20d5a79af1e3674c6f0",
+    "branch": "agent/fs2-jobset-kubernetes-135-live-qualification-r20260903",
+    "state_lineage": "cc220d75-2fd2-d997-a9a4-243139b81d2a",
+    "previous": {
+      "serial": 244,
+      "sha256": "82db8ea78f11a2aa6fff1de54921b84309530e1d6d52ce2759b87d645ed41f13",
+      "managed_instances": 30,
+      "jobset_crd": "absent",
+      "jobset_release": "absent"
+    },
+    "apply": {
+      "namespace_phase": {
+        "created": [
+          "kubernetes_namespace_v1.platform[\"jobset-system\"]"
+        ],
+        "state_only_updates": [
+          "terraform_data.cluster_contract.kueue_teardown_cleanup.script_path"
+        ],
+        "destroyed": []
+      },
+      "controller_phase": {
+        "created": [
+          "module.jobset_controller[0].helm_release.jobset[0]",
+          "module.jobset_controller[0].terraform_data.api_ready[0]",
+          "module.jobset_controller[0].terraform_data.artifacts_verified[0]",
+          "module.jobset_controller[0].terraform_data.contract",
+          "module.jobset_controller[0].terraform_data.crd_upgrade[0]"
+        ],
+        "updated": [],
+        "destroyed": []
+      }
+    },
+    "post": {
+      "serial": 278,
+      "sha256": "6bfefd6ace70e75ebad514df09837c3da61df1b1482a42caaf8bba14cd446ace",
+      "managed_instances": 36,
+      "jobset_targeted_plan": "no changes",
+      "workloads_contract_plan": "passed; no Kubernetes mutation applied"
+    },
+    "rollback": "Stop JobSet submissions, verify zero JobSet objects, disable jobset in the same foundation configuration, and apply the five module addresses plus jobset-system namespace. The CRD is intentionally retained unless a separately reviewed zero-object deletion is approved."
+  },
+  "canaries": {
+    "completion": {
+      "jobset": {
+        "name": "fs2-js135-r135a1-complete",
+        "uid": "fe895a11-a10f-44ae-84fa-027283628161",
+        "created_at": "2026-09-03T07:01:32Z",
+        "completed_at": "2026-09-03T07:01:37Z"
+      },
+      "workload": {
+        "name": "jobset-fs2-js135-r135a1-complete-8274a",
+        "uid": "e021c65d-2306-4a1b-885a-2fc0253c5459",
+        "pod_set_count": 2,
+        "cluster_queue": "inference-accelerators",
+        "quota_reserved_at": "2026-09-03T07:01:32Z",
+        "admitted_at": "2026-09-03T07:01:32Z"
+      },
+      "child_jobs": [
+        {
+          "name": "fs2-js135-r135a1-complete-workers-0",
+          "uid": "b1997d39-cf94-41bc-a083-3d64bca6664b",
+          "succeeded": 1
+        },
+        {
+          "name": "fs2-js135-r135a1-complete-workers-1",
+          "uid": "4d044380-406b-4643-a3f0-ae1bfef5e836",
+          "succeeded": 1
+        }
+      ],
+      "pods": [
+        {
+          "name": "fs2-js135-r135a1-complete-workers-0-0-bvsvq",
+          "uid": "5f6937d2-b9fd-435b-bf3f-946342926e15",
+          "phase": "Succeeded",
+          "node": "system-cpu-node",
+          "gpu_request": null
+        },
+        {
+          "name": "fs2-js135-r135a1-complete-workers-1-0-k2cql",
+          "uid": "cbd62252-186c-4755-94cb-14677a3fb7b3",
+          "phase": "Succeeded",
+          "node": "system-cpu-node",
+          "gpu_request": null
+        }
+      ],
+      "deleted_at": "2026-09-03T07:01:41Z",
+      "residual_jobsets": 0,
+      "residual_jobs": 0,
+      "residual_pods": 0,
+      "residual_workloads": 0
+    },
+    "cleanup": {
+      "jobset": {
+        "name": "fs2-js135-r135a1-cleanup",
+        "uid": "ca1d83e4-8de5-476f-bbed-ce38fd4f3add",
+        "created_at": "2026-09-03T07:01:48Z"
+      },
+      "workload": {
+        "name": "jobset-fs2-js135-r135a1-cleanup-bf994",
+        "uid": "d711ce0c-c92d-4965-a434-b66555c7ffd3",
+        "pod_set_count": 2,
+        "cluster_queue": "inference-accelerators",
+        "admitted_at": "2026-09-03T07:01:48Z"
+      },
+      "child_jobs_before_delete": [
+        {
+          "name": "fs2-js135-r135a1-cleanup-workers-0",
+          "uid": "5e20f19b-918a-4302-aee1-79f38342c31a",
+          "active": 1
+        },
+        {
+          "name": "fs2-js135-r135a1-cleanup-workers-1",
+          "uid": "d9ea722a-e23b-40ff-b6e0-8f9eab8af125",
+          "active": 1
+        }
+      ],
+      "pods_before_delete": [
+        {
+          "name": "fs2-js135-r135a1-cleanup-workers-0-0-cc9w5",
+          "uid": "0da11e80-4f4a-4130-b6e2-fe2c13d69214",
+          "phase": "Running",
+          "node": "system-cpu-node",
+          "gpu_request": null
+        },
+        {
+          "name": "fs2-js135-r135a1-cleanup-workers-1-0-lw4zj",
+          "uid": "a51446ce-d1d6-411c-b2c4-e527dc60c9f7",
+          "phase": "Running",
+          "node": "system-cpu-node",
+          "gpu_request": null
+        }
+      ],
+      "deleted_at": "2026-09-03T07:01:58Z",
+      "residual_jobsets": 0,
+      "residual_jobs": 0,
+      "residual_pods": 0,
+      "residual_workloads": 0
+    }
+  },
+  "preservation": {
+    "cluster_queue_specs_sha256_before": "1ed76b938a20d0111e776c17b1c6a27e078e8b28fe4da56d3d8b5b1c607f60ba",
+    "cluster_queue_specs_sha256_after": "1ed76b938a20d0111e776c17b1c6a27e078e8b28fe4da56d3d8b5b1c607f60ba",
+    "resource_flavor_specs_sha256_before": "e4b684fcd9edea6c4da77662a256aa9cc921a9e65f560038730f374d00591e3f",
+    "resource_flavor_specs_sha256_after": "e4b684fcd9edea6c4da77662a256aa9cc921a9e65f560038730f374d00591e3f",
+    "quota_or_flavor_mutation": false,
+    "nodegroup_mutation": false,
+    "gpu_requested": false,
+    "shared_services": {
+      "control_plane": {
+        "replicas": 2,
+        "available": 2,
+        "image_digest": "sha256:7f7e09369e84d2ae63948fffc3ce67e10654c6e5ed7f22aeebe7daddb7063d42",
+        "helm_revision": 31
+      },
+      "admin_console": {
+        "replicas": 2,
+        "available": 2,
+        "image_digest": "sha256:75bf54476e194a3a26732620b59a850e37921fa7ada3c7080b0008dfecdf8d6a"
+      },
+      "qwen_hot": {
+        "replicas": 1,
+        "available": 1,
+        "image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635"
+      },
+      "public_readyz_http": 200,
+      "public_admin_http": 200,
+      "public_models_unauthenticated_http": 401
+    }
+  }
+}

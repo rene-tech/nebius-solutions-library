@@ -1,0 +1,58 @@
+{
+  "schema": "fs2.nebius.ai/cancer-runtime-image-lock/v1",
+  "platform": "linux/amd64",
+  "registry": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models",
+  "base": {
+    "reference": "docker.io/pytorch/pytorch@sha256:0279f7aa29974bf64e61d0ff6e979b41a249b3662a46e30778dbf80b8c99c361",
+    "pytorch": "2.3.0",
+    "cuda": "12.1",
+    "python": "3.10.14"
+  },
+  "adapter_wrapper_sha256": "1c62303bb5eca99581fcd0ca9c45cb27d3a8e275875d198db57bec2edb2b7be3",
+  "images": [
+    {
+      "id": "bindcraft-academic",
+      "relationship": "canonical-native-academic",
+      "equivalent_to_requested": true,
+      "source": {
+        "repository": "https://github.com/martinpacesa/BindCraft",
+        "revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+        "archive_sha256": "cada0f51f221af568ad0ee84ada2e68317501adad233008d073d66839b1afb8d"
+      },
+      "dockerfile": "Dockerfile.bindcraft",
+      "build_tag_suffix": "-cuda121-r18",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r18",
+      "supersedes": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:aefd9b1cfd3002182b0b19a147e86cb138b39af315f1b061bf4a10c119654850",
+      "artifact_kind": "bindcraft-af2-params",
+      "external_artifacts": [
+        "AlphaFold2 parameters",
+        "vanilla ColabDesign ProteinMPNN weights from the pinned shared-source revision",
+        "soluble ColabDesign ProteinMPNN weights from the pinned shared-source revision",
+        "tenant-private preinstalled PyRosetta site-packages tree"
+      ]
+    }
+  ],
+  "shared_sources": {
+    "colabdesign": {
+      "repository": "https://github.com/sokrypton/ColabDesign",
+      "revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+      "archive_sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f"
+    },
+    "jaxlib_cuda12_cudnn89_wheel": {
+      "url": "https://storage.googleapis.com/jax-releases/cuda12/jaxlib-0.4.28%2Bcuda12.cudnn89-cp310-cp310-manylinux2014_x86_64.whl",
+      "sha256": "3d7b56bfe50470c585f0b8567ba67550691fd783c6ddd909d08a29d0b8a29a74"
+    },
+    "nvidia_cusparse_cuda121_wheel": {
+      "url": "https://files.pythonhosted.org/packages/65/5b/cfaeebf25cd9fdec14338ccb16f6b2c4c7fa9163aefcf057d86b9cc248bb/nvidia_cusparse_cu12-12.1.0.106-py3-none-manylinux1_x86_64.whl",
+      "sha256": "f3b50f42cf363f86ab21f720998517a659a48131e8d538dc02f8768237bd884c"
+    },
+    "nvidia_nvjitlink_cuda121_wheel": {
+      "url": "https://files.pythonhosted.org/packages/e2/d2/19760b2ee3bfe3b32feec7f69484ed4942d053198481c4abc7afd10f3ab0/nvidia_nvjitlink_cu12-12.1.105-py3-none-manylinux1_x86_64.whl",
+      "sha256": "015fed699b390ce3b8a8578d822d501a4194d0a341d3859554067c1ab291cb85"
+    },
+    "nvidia_cuda_nvcc_cuda121_wheel": {
+      "url": "https://files.pythonhosted.org/packages/ac/12/1d881feaf81b0b56e11ee7fdde9a688ffd4e09208136ea6cfeea7b05edb9/nvidia_cuda_nvcc_cu12-12.1.105-py3-none-manylinux1_x86_64.whl",
+      "sha256": "a0712a05ffd57d9f017580ffcc808b207f7f4ef7a5ca8ac1312318b153739a18"
+    }
+  }
+}

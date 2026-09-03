@@ -585,6 +585,11 @@ def test_contract_documents_match_code_and_the_exact_r4_handoff() -> None:
 def test_exact_published_receipts_match_the_committed_image_handoff_when_available() -> None:
     handoff = json.loads(IMAGE_HANDOFF.read_text(encoding="utf-8"))
     root = Path(handoff["evidence"]["source"])
+    if not root.is_absolute():
+        # The committed handoff intentionally records a home-relative path so the
+        # public export contains no developer username; resolve it against the
+        # operator's own home directory rather than the process cwd.
+        root = Path.home() / root
     if not root.is_dir():
         pytest.skip("operator-local r4 publication receipts are not present")
     for image in handoff["images"]:

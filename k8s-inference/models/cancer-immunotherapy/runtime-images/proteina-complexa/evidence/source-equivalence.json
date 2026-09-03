@@ -1,0 +1,28 @@
+{
+  "schema": "fs2.nebius.ai/proteina-complexa-source-equivalence/v1",
+  "owner_task": "fs2-complexa-final-h100-qualification-r20260903",
+  "question": "is the predecessor image's source tree the pinned upstream revision, byte for byte?",
+  "verdict": "equivalent",
+  "checked_at": "2026-09-03T04:46:00Z",
+  "upstream": {
+    "repository": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
+    "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+    "archive_url": "https://codeload.github.com/NVIDIA-BioNeMo/Proteina-Complexa/tar.gz/54058860d43444c7289873f77d3e50b5b02348cd",
+    "archive_bytes": 3880947,
+    "archive_sha256": "4a9448653fe9ae4e9e46c3204ef0e3c6ac9563a4cc5626c7a11d8441c485fb3b",
+    "archive_sha256_matches_lock": true,
+    "file_count": 632
+  },
+  "compared_image": {
+    "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+    "tree": "/opt/fs2/source",
+    "file_count": 632
+  },
+  "result": {
+    "identical_files": 632,
+    "differing_files": [],
+    "only_in_upstream": [],
+    "only_in_image": []
+  },
+  "conclusion": "The predecessor digest is source-equivalent to the pinned revision: 632 of 632 files match by SHA-256, with no additions, omissions or differences. The rebuild is therefore not motivated by upstream code drift. It is motivated by the three gaps the predecessor cannot close in place: it carries no in-image batch contract, it has no attached SLSA provenance (the registry reports no OCI referrer for it), and it was built from unmerged branch commit 07adbbb8 rather than a clean main commit. Its cache defaults also point HF_HOME and XDG_CACHE_HOME at the read-only external artifact root."
+}

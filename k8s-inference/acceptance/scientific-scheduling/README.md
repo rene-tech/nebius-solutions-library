@@ -13,9 +13,10 @@ replace a shared control plane, and an acceptance run must not invent quota or
 assume idle GPUs.
 
 The integrated foundation must first report its pinned JobSet v0.12.0 contract
-ready on a Kubernetes minor inside the upstream-tested Kueue/JobSet
-intersection, 1.33 or 1.34. Managed patch upgrades within that minor are
-accepted. Kueue's JobSet integration flag alone does not
+ready on Kubernetes 1.33-1.35. JobSet publishes upstream E2E coverage through
+1.34; 1.35 additionally requires the exact FS2 Kind and live qualification
+recorded in modules/jobset-controller/QUALIFICATION.md. Managed patch upgrades
+within those minors are accepted. Kueue's JobSet integration flag alone does not
 install the JobSet CRD or controller. The workloads stage fails closed when
 that readiness contract is absent, so true-gang work cannot target a
 nonexistent API.

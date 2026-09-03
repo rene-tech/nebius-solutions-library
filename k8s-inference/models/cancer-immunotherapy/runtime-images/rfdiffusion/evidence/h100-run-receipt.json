@@ -55,7 +55,7 @@
       "job": "fs2-rfd-r12-design-backbone",
       "pod": "fs2-rfd-r12-design-backbone-vhn9f",
       "pod_uid": "23ddaa6d-b4d2-4114-9c32-8e151deb1b67",
-      "node": "computeinstance-e00pwgcqf990qy867k",
+      "node": "8abdaa14-88a5-4336-88cc-fd2007d05a96",
       "node_uid": "8abdaa14-88a5-4336-88cc-fd2007d05a96",
       "accelerator": {
         "class": "nvidia-h100-sxm5-80gb",
@@ -102,7 +102,7 @@
       "job": "fs2-rfd-r12-scaffold-motif",
       "pod": "fs2-rfd-r12-scaffold-motif-6qzqm",
       "pod_uid": "d7e4f5a3-d462-4ba6-acc6-6f53ee77f37b",
-      "node": "computeinstance-e00rb3a26wtq7cjf88",
+      "node": "107cb526-94bc-48b4-95c7-496cdbcc6951",
       "node_uid": "107cb526-94bc-48b4-95c7-496cdbcc6951",
       "accelerator": {
         "class": "nvidia-h100-sxm5-80gb",

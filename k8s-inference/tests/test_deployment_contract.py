@@ -1354,7 +1354,7 @@ class DeploymentContractTests(unittest.TestCase):
     def test_root_enforces_kueue_and_jobset_minor_compatibility(self) -> None:
         for name, version, scientific in (
             ("kueue-untested-minor", "1.32.9", False),
-            ("jobset-untested-minor", "1.35.0", True),
+            ("jobset-unqualified-minor", "1.36.0", True),
         ):
             deployment = {
                 "schema_version": 1,
@@ -1367,7 +1367,29 @@ class DeploymentContractTests(unittest.TestCase):
             variable_file = self._write_configuration(name, deployment)
             result, _ = self._plan_file(variable_file, name)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("upstream end-to-end matrix", result.stderr)
+            self.assertIn("No wider minor is claimed", result.stderr)
+
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-jobset-qualified-minor",
+            "target": self.catalog_target(),
+            "cluster": {"kubernetes_version": "1.35.6"},
+            "scientific_batch": {"enabled": True},
+            "storage": {
+                "scientific_artifacts": {
+                    "enabled": True,
+                    "egress_cidrs": ["203.0.113.10/32"],
+                }
+            },
+        }
+        variable_file = self._write_configuration(
+            "jobset-qualified-minor", deployment
+        )
+        outputs = self._planned_outputs(variable_file, "jobset-qualified-minor")
+        jobset = outputs["deployment_contract"]["stages"]["foundation"]["jobset"]
+        self.assertEqual(
+            jobset, {"enabled": True, "kubernetes_version": "1.35.6"}
+        )
 
     def test_dynamic_model_tfvars_normalize_without_internal_json(self) -> None:
         deployment = {
