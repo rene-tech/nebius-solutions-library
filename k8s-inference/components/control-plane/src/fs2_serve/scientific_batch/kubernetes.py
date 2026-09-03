@@ -5,8 +5,8 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from collections.abc import Mapping
-from datetime import datetime
+from collections.abc import Callable, Mapping
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol, cast
 from urllib.parse import quote
@@ -15,6 +15,9 @@ from uuid import UUID
 import httpx
 
 from .models import (
+    COLLECTION_GRACE_SECONDS,
+    COLLECTOR_CONTAINER_NAME,
+    STAGE_CONTAINER_NAME,
     FailureKind,
     LifecyclePhase,
     ResourceClass,
@@ -149,6 +152,79 @@ def _kueue_eviction(reason: str) -> tuple[WorkloadState, FailureKind, str]:
     return WorkloadState.FAILED, FailureKind.APPLICATION, reason
 
 
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+def _container_termination(pod_status: Mapping[str, Any], name: str) -> Mapping[str, Any] | None:
+    """Return the named regular container's terminated state, if it has one."""
+
+    statuses = pod_status.get("containerStatuses", [])
+    for container in statuses if isinstance(statuses, list) else []:
+        if not isinstance(container, Mapping) or container.get("name") != name:
+            continue
+        state = container.get("state")
+        terminated = state.get("terminated") if isinstance(state, Mapping) else None
+        if isinstance(terminated, Mapping):
+            return terminated
+    return None
+
+
+def _finished_at(terminated: Mapping[str, Any]) -> datetime | None:
+    value = terminated.get("finishedAt")
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _stalled_collection(
+    pod_statuses: list[Mapping[str, Any]],
+    *,
+    now: datetime,
+) -> tuple[WorkloadState, FailureKind, str] | None:
+    """Settle a staged Pod whose model is finished but whose collector is not.
+
+    A staged Pod runs the model and the artifact collector side by side under
+    ``restartPolicy: Never``, so Kubernetes only settles the Pod once *both*
+    containers terminate.  When the model dies without publishing its output
+    the collector keeps polling for a result that can never arrive, and the Job
+    holds its admitted GPU reservation until ``activeDeadlineSeconds`` expires.
+
+    The Pod's own container statuses are the authoritative termination marker:
+    Kubernetes reports them for every exit path, including the OOM kill that
+    would take an in-container supervisor down with the model.  Reusing them
+    here keeps the verdict identical to the one the deadline would eventually
+    have produced, only hours earlier.
+    """
+
+    for pod_status in pod_statuses:
+        stage = _container_termination(pod_status, STAGE_CONTAINER_NAME)
+        if stage is None or _container_termination(pod_status, COLLECTOR_CONTAINER_NAME) is not None:
+            # The model still runs, or both containers are done and the Job
+            # status settles this attempt through the existing failure path.
+            continue
+        exit_code = stage.get("exitCode")
+        if not isinstance(exit_code, int):
+            continue
+        if exit_code != 0:
+            reasons = [
+                value for value in (stage.get("reason"), pod_status.get("reason")) if isinstance(value, str) and value
+            ]
+            # Reuse the exact taxonomy the Job-failure path applies, so an
+            # OOM-killed or preempted stage keeps its established retry class.
+            return _failure(reasons or ["workload_failed"])
+        finished_at = _finished_at(stage)
+        if finished_at is not None and now - finished_at >= timedelta(seconds=COLLECTION_GRACE_SECONDS):
+            # The model published nothing collectable. This is the stage's own
+            # result, not an infrastructure fault, so it must not be retried.
+            return WorkloadState.FAILED, FailureKind.APPLICATION, "collection_deadline_exceeded"
+    return None
+
+
 def _safe_label(value: str) -> str:
     """Keep UUID/tenant identities bounded without pretending hashes are raw IDs."""
 
@@ -251,12 +327,14 @@ class HttpScientificBatchCluster:
         writes_enabled: bool,
         timeout_seconds: float = 5,
         client: httpx.AsyncClient | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.token_file = token_file
         self.controller_id = controller_id
         self.fence = fence
         self.renderer = renderer
         self.writes_enabled = writes_enabled
+        self.clock = clock or _utcnow
         self._owns_client = client is None
         self.client = client or httpx.AsyncClient(
             base_url=base_url.rstrip("/"), verify=str(ca_file), timeout=httpx.Timeout(timeout_seconds)
@@ -456,6 +534,7 @@ class HttpScientificBatchCluster:
         waiting_reasons: list[str] = []
         failure_reasons: list[str] = []
         pod_uids: list[str] = []
+        pod_statuses: list[Mapping[str, Any]] = []
         scheduled = False
         for raw_pod in pods if isinstance(pods, list) else []:
             if not isinstance(raw_pod, Mapping):
@@ -467,6 +546,7 @@ class HttpScientificBatchCluster:
             pod_status = raw_pod.get("status")
             if not isinstance(pod_status, Mapping):
                 continue
+            pod_statuses.append(pod_status)
             pod_phases.append(str(pod_status.get("phase", "Unknown")))
             if isinstance(pod_status.get("reason"), str):
                 failure_reasons.append(cast(str, pod_status["reason"]))
@@ -518,6 +598,21 @@ class HttpScientificBatchCluster:
         elif failed:
             reason = str((failed_condition or {}).get("reason", "workload_failed"))
             workload_state, failure_kind, failure_code = _failure([reason, *failure_reasons])
+            return WorkloadObservation(
+                ref=ref,
+                attempt_id=attempt_id,
+                state=workload_state,
+                phases=tuple(dict.fromkeys(phases)),
+                scheduling_admission=scheduling_admission,
+                kueue_workload_uid=kueue_workload_uid,
+                pod_uids=tuple(dict.fromkeys(pod_uids)),
+                failure_kind=failure_kind,
+                failure_code=failure_code[:128],
+            )
+        elif (stalled := _stalled_collection(pod_statuses, now=self.clock())) is not None:
+            workload_state, failure_kind, failure_code = stalled
+            if workload_state is WorkloadState.PREEMPTED:
+                phases.append(LifecyclePhase.PREEMPTED)
             return WorkloadObservation(
                 ref=ref,
                 attempt_id=attempt_id,

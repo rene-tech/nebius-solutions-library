@@ -33,6 +33,26 @@ _RUNTIME_EXACT_MOUNT_PATHS = {
     PurePosixPath("/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble"),
 }
 
+# The staged Pod runs exactly two regular containers: the model itself and the
+# artifact collector that publishes the model's output.  Both the renderer and
+# the Kubernetes observer address them by these names, so the collection
+# handshake reads the same identities that the renderer wrote.
+STAGE_CONTAINER_NAME = "scientific-stage"
+COLLECTOR_CONTAINER_NAME = "artifact-collector"
+
+# A model container that terminated successfully has already written its
+# output, so the collector only has to publish it.  The bound is deliberately
+# generous, because expiring it kills a collection that may still be uploading
+# a large artifact; it only has to be far shorter than the multi-hour
+# ``activeDeadlineSeconds`` of a scientific stage.  A model that exited
+# non-zero gets no grace at all -- its result can never arrive.
+COLLECTION_GRACE_SECONDS = 1800
+
+# The collector fails on its own this far before the Job's active deadline, so
+# a stalled collection still yields a deterministic controller failure code
+# rather than an opaque Kubernetes ``DeadlineExceeded`` kill.
+COLLECTION_DEADLINE_MARGIN_SECONDS = 120
+
 
 class BatchStatus(StrEnum):
     QUEUED = "queued"
