@@ -1,13 +1,13 @@
 {
   "schema": "fs2.nebius.ai/cancer-runtime-final-image-qualification/v1",
-  "recorded_at": "2026-09-03T07:20:00Z",
+  "recorded_at": "2026-09-03T07:04:28Z",
   "model": "bindcraft-native-pyrosetta",
   "package_scope": {
     "path": "k8s-inference/models/cancer-immunotherapy/images/bindcraft-native",
-    "contains": "the native academic PyRosetta BindCraft image, its runtime source, the immutable r16 lock and publication receipt, this evidence, the acceptance-run renderer, and focused tests and docs",
+    "contains": "the native academic PyRosetta BindCraft image, its runtime source, the immutable r18 lock and publication receipt, this evidence, the acceptance-run renderer, and focused tests and docs",
     "excludes": "the open PyRosetta-free fallback, the RFdiffusion and ProteinMPNN images, and the mosaic, rfdiffusion, bindcraft-open and bindcraft-native batch adapters, all of which belonged to a superseded mixed package",
-    "single_adapter_dependency": "models/structure/runtime/bindcraft-native/bin/bindcraft-batch, the adapter's published wrapper and the only file the image build consumes from the adapter tree; the Dockerfile's build-context path is unchanged so the published r16 digest still matches this source",
-    "in_image_bytes_frozen": "a test pins the SHA-256 and size of all five files the build copies into the image against the values recorded here, which were verified against the pulled r16 digest. runtime_entrypoint.py still names the split-out runtimes on purpose: it is byte-identical to what produced r16, and this image only ever sets FS2_RUNTIME_NAME=bindcraft-academic"
+    "single_adapter_dependency": "models/structure/runtime/bindcraft-native/bin/bindcraft-batch, the adapter's published wrapper and the only file the image build consumes from the adapter tree",
+    "in_image_bytes_frozen": "a test pins the SHA-256 and size of all five files the build copies into the image against the values recorded here, which were verified against the pulled r18 digest. runtime_entrypoint.py still names the split-out runtimes on purpose: this image only ever sets FS2_RUNTIME_NAME=bindcraft-academic"
   },
   "academic_authorization": {
     "state": "reconfirmed by the owner for this proof of concept",
@@ -42,7 +42,7 @@
       ],
       "verified": "the publisher read the published SLSA provenance back and required the attested revision and context to be the ones it built"
     },
-    "qualification_state": "offline-qualified; live H100 production-filter semantics gated on generation publication"
+    "qualification_state": "H100 semantic-qualified by direct outer-entrypoint proof; catalog route remains gated on private generation promotion"
   },
   "non_overwriting_publication": {
     "policy": "every tag is asserted absent before publication; a tag is never overwritten",
@@ -135,7 +135,7 @@
   "controller_interface": {
     "requirement": "--runtime-localization-marker <absolute path> accepted on both subcommands",
     "requested_by": "fs2-bindcraft-scientific-batch-adapter-successor-r20260903, candidate 62d7f67e",
-    "state": "satisfied on sha256:72fe3365",
+    "state": "satisfied and live-qualified on sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
     "behaviour": "read, not ignored: the marker must be an absolute path to a readable JSON object and must agree with FS2_RUNTIME_LOCALIZATION_MARKER when that is set; its path, size and SHA-256 are recorded in the shard output, and a generation it declares is cross-checked against the mounted trees",
     "verified": [
       {
@@ -198,19 +198,13 @@
         "routed": "the runtime-onboarding owner was messaged directly; the primary-adapters task runs as Codex and is unreachable by message, so it received a task-file entry and a table of the three disagreeing bounds in the shared handoff document. Nothing is blocked on either: the adapter fails closed at 320 regardless"
       }
     },
-    "aggregate_still_needs_the_gated_trees": {
+    "aggregate_tree_scope": {
       "question_from": "fs2-bindcraft-scientific-batch-adapter-successor-r20260903",
-      "their_observation": "correct: _admit_external_trees is called from run_trajectory and never from aggregate",
-      "but": "the shared outer entrypoint, which the controller invokes, runs the AlphaFold2 artifact gate and binds PyRosetta on every non-smoke command including aggregate, so a CPU stage with no tree mounts is rejected",
-      "measured_on_r17": {
-        "through_outer_entrypoint_without_mounts": "runtime_gate_rejected: external artifact root is unavailable",
-        "inner_wrapper_only_without_mounts": "reached the shard lookup, confirming the aggregate logic itself needs no tree"
-      },
-      "consequence": "an aggregate Job must still mount at least the AlphaFold2 and PyRosetta trees today",
-      "open_improvement": "narrowing the outer gate so a non-design stage neither reads 5.59 GB of AlphaFold2 nor mounts the licensed tree is a real reduction in licensed surface, but it changes the shared outer entrypoint and would be an r18; not taken unilaterally"
+      "resolved_on_r18": "the aggregate completed in five seconds without importing PyRosetta or running the inner four-tree admission; its only model-side log was the shared outer AlphaFold2 artifact gate",
+      "remaining_improvement": "the qualification renderer still mounts the read-only trees on aggregate for one manifest shape across both stages. Removing those unused mounts is a later least-surface improvement and is not required for this qualified digest."
     },
     "observed_artifact_ownership": {
-      "correction": "an earlier version of this record presented the measured group as if it were the contract. It is not: it is damage, and the adapter task was right to push back rather than harden it.",
+      "correction": "the earlier post-chown damage was repaired before the qualifying run; the runtime now emits ownership with its own full-content admission receipt.",
       "published_contract": {
         "source": "catalog/runtime/contracts/academic-asset-readiness.json on origin/main",
         "asset_gid": 65532,
@@ -219,36 +213,33 @@
         "public_plane_gid": 1000
       },
       "measured_state": {
-        "measured_at": "2026-09-03T06:20:00Z on academic-assets-runtime-rwx",
+        "measured_at": "2026-09-03T06:49:09Z through bcr18-20260903f runtime admission",
         "licensed_tree": {
           "uid": 65532,
-          "gid": 10001,
-          "dir_mode": "0o2770",
-          "file_mode": "0o2770"
+          "gid": 65532,
+          "root_mode": "0o550"
         },
-        "public_trees_today": {
-          "uid": 65532,
-          "gid": 10001,
-          "dir_mode": "0o2775",
-          "file_mode": "0o664"
+        "public_tree_roots": {
+          "uid": 1000,
+          "gid": 1000,
+          "root_mode": "0o555"
         },
-        "verdict": "post-chown damage, not the intended delivery"
+        "verdict": "conforming delivery: private gid 65532 and public gid 1000"
       },
-      "reported_cause": "two pods mounted the claim with fsGroup 10001, whose default fsGroupChangePolicy Always makes the kubelet recursively chown the volume; reported by the AlphaFold 3 runtime task and corroborated read-only by the BindCraft adapter task. The pods are gone; the chown persists.",
-      "effect_on_a_conforming_pod": "a pod that joins 65532 as a supplemental group and sets no fsGroup, which is what the contract specifies, now gets EACCES on a mode-2770 tree owned by group 10001",
+      "historical_damage": "two earlier pods mounted the claim with fsGroup 10001 and recursively changed ownership. The academic-assets owner repaired all 9,477 paths before this run.",
+      "effect_on_a_conforming_pod": "the qualifying Pod joined 65532 as a supplemental group, set no fsGroup, and consumed the private tree read-only",
       "this_renderer": {
         "default_supplemental_group": 65532,
         "why_unchanged": "65532 is the published contract; the measurement is damage and must not be encoded",
-        "works_in_both_states": "the Pod runs runAsUser 10001 runAsGroup 10001 with supplemental group 65532, so it reaches a repaired tree through the supplemental group and the damaged tree through its primary group",
-        "hazard_to_watch": "that robustness masks the fault: an acceptance run would succeed against the damaged claim and must not be read as proving the 65532 supplemental-group access contract. Re-measure the ownership at run time and record it beside the result.",
+        "measured_result": "the Pod ran as 10001:10001 with supplemental group 65532 and the runtime measured the repaired private root as 65532:65532 mode 0550",
         "default_supplemental_groups": [
           1000,
           65532
         ]
       },
-      "shared_repair": "repairing the claim is the academic-assets owner's call, not this task's; four tasks have now hit it and none has repaired it, and this task will not chown a shared claim it does not own",
-      "latent_risk": "no pod currently mounting the claim sets fsGroup, so a repair would hold today, but seven fs2-cxq-* pods run with fsGroup 10001 against other volumes; if one ever mounts this claim the chown recurs. Confirmed read-only by the BindCraft adapter task.",
-      "receipt_requirement": "the live acceptance receipt must carry the measured ownership as a first-class field, not a log line, so a reader who sees the receipt after the claim is repaired still knows which state the run used"
+      "shared_repair": "accepted without mutation by this task; all shared model trees were mounted read-only",
+      "latent_risk": "a future Pod setting fsGroup on the academic claim could recur the damage; this renderer deliberately sets no fsGroup",
+      "receipt_requirement": "satisfied in evidence/live-h100-qualification-20260903.json and the shard output"
     }
   },
   "external_tree_contract": {
@@ -307,7 +298,7 @@
       "context": "k8s-inference-h100",
       "namespace": "fs2-academic-poc",
       "claim": "academic-assets-runtime-rwx",
-      "node": "computeinstance-e00m0hsph76ajt9sdb",
+      "node": "exact H100 node ID retained in the private Task Deck deployment record",
       "accelerator_class": "nvidia-h100-sxm5-80gb",
       "capacity_source": "capacity-block"
     },
@@ -359,7 +350,7 @@
     "conclusion": "full-content verification of all four trees costs about 20 s against trajectories that run for minutes, so no metadata-only shortcut is warranted"
   },
   "in_image_fail_closed_proofs": {
-    "image": "sha256:72fe33653b0670af707d0234be51091c53a61b43f44d25f69a4cbbaffbf0896d",
+    "image": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
     "predecessor_proofs_on": "sha256:a8ae983d26696e4858e7fbc67a581791c7b26e59544c2fb29c0b34bdcdeedbf5",
     "cases": [
       {
@@ -390,7 +381,7 @@
   "offline_test_evidence": {
     "image_contract_suite": {
       "command": "python3 -m unittest discover -s tests",
-      "tests": 76,
+      "tests": 80,
       "result": "passed"
     },
     "native_adapter_suite": {
@@ -400,79 +391,63 @@
     },
     "artifact_free_image_smoke": {
       "command": "docker run --network none <digest> --fs2-image-smoke",
-      "result": "passed on r17",
+      "result": "passed on r18",
       "embedded_model_artifacts": false,
       "embedded_pyrosetta": false
     },
     "batch_subcommand_smoke": {
       "command": "docker run --network none --entrypoint /opt/fs2/bin/bindcraft-batch <digest> {run-trajectory,aggregate} --help",
-      "result": "both subcommands accept --runtime-localization-marker on the published r17"
+      "result": "both subcommands accept --runtime-localization-marker on the published r18"
     }
   },
   "live_semantic_acceptance": {
-    "state": "not executed",
-    "blocker": "the accepted generations are rendered, not published: the handoff itself reports generations_published false, and the host plane root carries no generations directory",
-    "instruction": "do not bind the mutable scientific-localization/public/<artifact_id> paths or its three-tree handoff; wait for the immutable /sha256/<tree> four-tree handoff with in-generation stable terminal markers and recursive PyRosetta identity",
-    "observed_state_of_the_claim": {
-      "checked_at": "2026-09-03T07:00:00Z",
-      "host_plane_root_mounted_on_h100": true,
-      "generations_directory": "absent under /mnt/fs2-reference-data/data/scientific-localization/public/generations",
-      "handoff_self_report": "evidence.generations_published = false"
-    },
-    "ready_to_run": "qualification/render_semantic_job.py renders the whole run from the handoff document; nothing else is outstanding on the image side",
-    "handoff_requirements": [
-      "a terminal marker written inside a tree root changes that tree's fs2-flat-tree-inventory/v1 digest, because the inventory enumerates every regular file in the flat root; markers must live outside the tree roots",
-      "the AlphaFold2 root must keep a manifest.json declaring artifact_kind bindcraft-af2-params and source_revision 7cd4ace1b7407adf66a50dfefa47de2270f5e4a9, because the shared outer entrypoint's artifact gate reads it on every non-smoke command",
-      "the handoff must name an immutable generation token, which the renderer copies into both the localization marker and the tree admission document"
-    ],
-    "rendered_job_server_validated": {
-      "command": "kubectl --context=k8s-inference-h100 apply --dry-run=server -f <rendered list>",
-      "result": "configmap and job both accepted by the API server; nothing was created",
-      "subpaths_used": "synthetic sha256/<placeholder> roots, so the blocked mutable layout was neither named nor read",
-      "purpose": "proves the two-stage Job shape - init design container with one GPU, aggregate main container without one, four read-only subPath mounts - is API-valid, so the live run cannot be delayed by a manifest error once the generation lands"
-    },
-    "requirements_communicated": "the localization owner is not a reachable session, so the three requirements were written to data/handoffs/fs2-bindcraft-image-requirements-to-artifact-localization-20260903.md with the measured identities to compare against after re-publication",
-    "polling_stopped": "no further probes will be run. The requirement note in data/handoffs/fs2-bindcraft-image-requirements-to-artifact-localization-20260903.md asks the publisher to ping this task, which is cheaper than repeated cluster probes",
-    "required_receipt_fields": {
-      "why": "a green run cannot distinguish a repaired claim from a damaged one, because the Pod reaches a repaired tree through supplemental group 65532 and the damaged tree through its primary group 10001. The receipt has to say which it ran against or the result is unreadable later.",
-      "runtime_tree_ownership": "REQUIRED and required-to-be-present: carried as an explicit not-measured with null per-role values until a run fills it, never omitted. An absent field reads as satisfied; an explicit null reads as nobody checked, which is what stops a green run being cited as contract evidence.",
-      "how_to_collect_without_a_rebuild": "run the same read-only ownership probe used on 2026-09-03 against the mounted roots in the run's namespace immediately before or after the design Job, and copy its output into this field; the probe mounts the claims read-only and requests no accelerator",
-      "contract_conformance_claim": "may only be asserted when the measured gid is 65532 with consumer access by supplemental group; a run against gid 10001 is a valid semantic run and NOT evidence of the delivery contract"
-    },
+    "state": "passed",
+    "receipt": "evidence/live-h100-qualification-20260903.json",
+    "run_id": "bcr18-20260903f",
+    "design_job": "fs2-bcr18-20260903f-design",
+    "aggregate_job": "fs2-bcr18-20260903f-aggregate",
+    "image_digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+    "node": "exact H100 node ID retained in the private Task Deck deployment record",
+    "gpu_uuid": "GPU-56941528-f485-5237-c98a-08e1f253a9c3",
+    "result": "two accepted 67-residue binders, two relaxed target-binder complexes, non-empty statistics, one atomic aggregate and eight digest-verified manifest entries",
+    "production_filters": "upstream accepted both rows under default_filters.json sha256:4faeae2ed4a78b82ff8f9c3c763985ff0f0b97ebb9e10072d5d572424bb73206; all 48 populated values among its 54 configured thresholds were independently re-evaluated with zero violations",
     "runtime_tree_ownership": {
-      "state": "not-measured",
-      "reason": "no live acceptance run has been executed, so there is nothing to measure",
+      "state": "measured",
       "per_role": {
-        "pyrosetta-site-packages": null,
-        "alphafold2-params": null,
-        "colabdesign-mpnn-weights-vanilla": null,
-        "colabdesign-mpnn-weights-soluble": null
+        "pyrosetta-site-packages": {
+          "uid": 65532,
+          "gid": 65532,
+          "mode": "0o550"
+        },
+        "alphafold2-params": {
+          "uid": 1000,
+          "gid": 1000,
+          "mode": "0o555"
+        },
+        "colabdesign-mpnn-weights-vanilla": {
+          "uid": 1000,
+          "gid": 1000,
+          "mode": "0o555"
+        },
+        "colabdesign-mpnn-weights-soluble": {
+          "uid": 1000,
+          "gid": 1000,
+          "mode": "0o555"
+        }
       },
-      "contract_conformance": "unproven"
+      "contract_conformance": "proven"
     },
-    "renderer_refuses_unpublished": "the renderer fails closed on a handoff reporting its generations unpublished, so a run cannot be started against directories that do not exist"
+    "localization_scope": "the three public roles used immutable qualified generations; PyRosetta used the content-pinned, ownership-repaired canonical private tree because its private promotion remains pending",
+    "route_ready": false,
+    "route_ready_reason": "the direct mode intentionally emits an empty private localization generation, so this receipt is semantic H100 evidence and not a catalog localization or route-enablement receipt"
   },
   "cleanup": {
-    "task_owned_pods_deleted": [
-      "fs2-bcr14-inspect-models",
-      "fs2-bcr14-inspect-models2",
-      "fs2-bcr14-inspect-academic",
-      "fs2-bcr14-inspect-academic2",
-      "fs2-bcr14-identity-probe",
-      "fs2-bcr14-manifest-sha",
-      "fs2-bcr16-gen-probe",
-      "fs2-bindcraft-r15-claim-explore",
-      "fs2-bindcraft-r15-claim-explore2"
-    ],
-    "task_owned_configmaps_deleted": [
-      "fs2-bcr14-identity-probe",
-      "fs2-bcr14-manifest-sha",
-      "fs2-bcr16-gen-probe"
-    ],
+    "current_task_receipt": "evidence/live-h100-qualification-20260903.json",
     "task_owned_resources_remaining": 0,
-    "shared_resources_touched": "none; every probe mounted the shared claims read-only and no shared service, queue, Terraform resource or B300 node was modified",
-    "other_tenants": "qwen3-8b-b300-hot-h100-reserved-8x remained 1/1 available throughout; no probe requested an accelerator and no shared claim was mounted writable",
-    "note": "fs2-bindcraft-r15-claim-explore and -explore2 were left Succeeded by an earlier session of this task, identified by app.kubernetes.io/managed-by=fs2-bindcraft-final-image-h100-successor, and were removed in this pass"
+    "verified_at": "2026-09-03T07:04:28Z",
+    "deleted": "eight task Jobs, their Pods, two standalone probe Pods, seven ConfigMaps, the 128Gi task workspace PVC and its Delete-policy PV",
+    "shared_resources_touched": "the immutable public generations and academic claim were mounted read-only; no shared service, queue, Terraform resource or B300 node was modified",
+    "other_tenants": "qwen3-8b-b300-hot-h100-reserved-8x remained Running on the qualification node after cleanup; it was the only Running GPU consumer then visible"
   },
   "provenance_enforcement": {
     "why": "an attested revision that cannot be resolved back to source proves nothing, which is what r16 shipped",
@@ -488,24 +463,13 @@
     "correction": "the design GPU init container plus CPU main container held the accelerator for the whole Pod lifetime, so a GPU sat idle through the CPU-only aggregation",
     "now": "one stage per Job over a durable workspace claim; the GPU is released when design ends",
     "handoff": "content-addressed: the aggregate re-reads every artifact the design stage published and holds it to that shard's declared SHA-256 and size, rejecting a missing, rewritten or escaping path",
-    "server_validated": "both rendered Jobs passed kubectl apply --dry-run=server against k8s-inference-h100 using the real accepted handoff with only generations_published flipped; nothing was created"
+    "server_validated": "both current-branch rendered Jobs passed kubectl apply --dry-run=server against k8s-inference-h100; the live design and aggregate then both completed with exit code zero"
   },
-  "deferred_r18_proposal": {
-    "state": "proposed, not built; r17 remains the final digest unless this is approved",
-    "why_bundled": "both items change files that go into the image, so they should cost one rebuild, not two",
-    "items": [
-      {
-        "change": "narrow the shared outer entrypoint so a non-design stage neither verifies the 5.59 GB AlphaFold2 tree nor binds the licensed PyRosetta tree",
-        "benefit": "removes licensed surface and 5.59 GB of I/O from a CPU stage that opens neither; lets an aggregate Job mount zero of the four instead of two",
-        "raised_by": "fs2-bindcraft-scientific-batch-adapter-successor-r20260903"
-      },
-      {
-        "change": "have tree_identity record each admitted tree root's uid, gid and mode in its receipt",
-        "benefit": "makes runtime_tree_ownership a first-class field the run produces itself. This removes a hazard rather than a chore: a human-copied probe is most likely to be forgotten on the very run someone later cites as contract evidence, and once the runtime emits it the receipt cannot be silently incomplete",
-        "raised_by": "fs2-bindcraft-scientific-batch-adapter-successor-r20260903"
-      }
-    ],
-    "cost": "one non-overwriting rebuild to r18 and a re-verification pass; no behavioural change to the design stage"
+  "r18_resolution": {
+    "state": "built, published and H100-qualified",
+    "ownership_receipt": "every admitted root's uid, gid and mode are emitted by the runtime and captured in the live receipt",
+    "aggregate": "the aggregate does not import PyRosetta or execute the inner four-tree admission; it completed CPU-only in five seconds",
+    "immutable_marker": "both tree identity implementations exclude exactly the producer's reserved .fs2-runtime-tree.json terminal marker"
   },
   "accepted_localization_contract": {
     "source": "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json on origin/main",

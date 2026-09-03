@@ -16,9 +16,9 @@ qualification evidence, and the tests and docs for exactly that.
 |---|---|
 | Source | BindCraft `7cd4ace1b7407adf66a50dfefa47de2270f5e4a9`, archive `cada0f51…` |
 | Base | `pytorch/pytorch@sha256:0279f7aa…` (PyTorch 2.3.0, CUDA 12.1, Python 3.10.14) |
-| Final tag | `…/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r17` |
+| Final tag | `…/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r18` |
 | Attestations | SPDX SBOM and SLSA provenance, attesting a revision reachable from a pushed branch |
-| Qualification | offline-qualified; the live H100 semantic acceptance has **not** run |
+| Qualification | **H100 semantic-qualified** by real outer-entrypoint run `bcr18-20260903f`; catalog route remains gated on private generation promotion |
 
 ## Academic PoC authorization
 
@@ -109,7 +109,7 @@ is not checked, so both documents' on-disk formatting is free. The bytes that
 matter scientifically are still gated: the materialized target structure's size
 and SHA-256 are verified against the manifest entry before design starts.
 
-## Why r17, and what each predecessor got wrong
+## Why r18, and what each predecessor got wrong
 
 `r12` through `r16` are superseded and must not be consumed. Tags are never
 overwritten; the number advances because something in the contract changed.
@@ -130,12 +130,17 @@ overwritten; the number advances because something in the contract changed.
   reachable from nothing. Nobody could resolve either back to source. It was
   also built from a working tree holding uncommitted edits.
 
-`r17` fixes the provenance: the publisher refuses to build from a dirty tree,
+`r17` fixed the provenance: the publisher refuses to build from a dirty tree,
 refuses a revision not reachable from a pushed branch, re-checks the build
 inputs afterwards so nothing changed mid-build, and then reads the published
 SLSA provenance back and fails unless the attested revision and context are the
 ones it built. The adapter wrapper is bound by SHA-256 rather than by a commit,
 because a content digest cannot dangle.
+
+`r17` still rejected every accepted immutable generation because the artifact
+plane writes `.fs2-runtime-tree.json` inside each root. `r18` excludes exactly
+that reserved terminal marker from both identity algorithms, records root
+ownership in the admission receipt, and is the digest qualified below.
 
 From `r16` onward the runtime reads the columns upstream actually writes
 (`Average_n_InterfaceResidues`, `Average_dSASA`,
@@ -196,23 +201,35 @@ marker so this qualification cannot be mistaken for catalog localization or
 route readiness. Normal rendering stays fail-closed until every handoff
 generation is published.
 
-## Live H100 semantic acceptance — not yet run
+## Live H100 semantic acceptance — passed
 
-**No current-digest H100 success is claimed.** r16 is offline-qualified: 56
-contract tests, the artifact-free image canary, byte-for-byte source identity
-against the pulled digest, four in-image fail-closed proofs, and a server-side
-dry run of the rendered Job against `k8s-inference-h100`.
+Run `bcr18-20260903f` passed on a regular capacity-block 8x H100 node in
+`project-e00rene` / `eu-north1`; the exact cloud node ID is retained in the
+private Task Deck deployment record. The GPU main container used exact index digest
+`sha256:806760cd…f672d`, GPU
+`GPU-56941528-f485-5237-c98a-08e1f253a9c3`, and driver `580.159.04`. It started
+at `06:49:09Z`, exited zero at `06:55:09Z`, and the Job completed at
+`06:55:12Z`. The image was already present on the node.
 
-The production run is blocked on the canonical immutable four-tree localization
-generation. The mutable `scientific-localization/public/<artifact_id>` paths must
-not be bound. As of the last check the claim has no `/sha256` generation root, an
-empty `markers` directory, and only the superseded three-tree receipts.
+The run read and verified 8,928,285,965 bytes across all four trees in 17.658 s,
+bound PyRosetta in 1.469 s, spent 333.379 s in upstream design and validation,
+and spent 0.072 s producing its typed artifacts. The first AF2 result included
+62.005 s of JAX/model warmup. The two accepted 67-residue designs have mean
+pLDDT 0.94/0.91, i-pTM 0.79/0.69, shape complementarity 0.74/0.74, buried
+interface area 1,491.97/1,566.45 Å², 16/18 interface residues, nonzero
+PyRosetta binder energies -175.74/-178.81, and real A56 contacts at 2.057/3.662
+Å. Both relaxed complexes contain target chain A and binder chain B.
 
-When the generation lands, the run is one command:
+The separate CPU-only aggregate exited zero in 5 s. All eight entries in its
+output manifest were re-hashed against their declared sizes and SHA-256 values.
+The exact input, tree, Job, GPU, phase, metric, structure and artifact identities
+are in `evidence/live-h100-qualification-20260903.json`.
+
+The reproducible invocation shape is:
 
 ```bash
 R=qualification/render_semantic_job.py
-COMMON="--handoff <four-tree-handoff.json> --image <r17 digest reference>
+COMMON="--handoff <four-tree-handoff.json> --image <r18 digest reference>
         --run-id <run> --job-name <job> --workspace-claim <durable claim>"
 python3 $R $COMMON --direct-live-canonical-pyrosetta --stage design \
   | kubectl apply -f -   # GPU
@@ -251,31 +268,20 @@ active thresholds require `Average_n_InterfaceResidues` ≥ 7, `Average_dSASA` �
 `Average_i_pTM` ≥ 0.5 — so a design that passes has, by construction, non-zero
 interface residues, non-zero buried area and a non-zero PyRosetta score.
 
-### The acceptance receipt must say which claim state it ran against
+### Delivery state and route boundary
 
-The academic claim is currently **non-conforming**. Its published delivery
-contract is `asset_gid` 65532 with supplemental-group access, but the tree is
-owned by group 10001 because pods mounting it with `fsGroup: 10001` had the
-kubelet recursively chown it. Repair belongs to the academic-assets owner; four
-tasks have hit it.
+The repaired private root was measured by the runtime itself as uid/gid 65532
+mode `0550`; all three public immutable roots were uid/gid 1000 mode `0555`.
+That proves the intended supplemental-group delivery contract without a
+separate human-copied probe. No Pod `fsGroup` was set, so the run could not
+recursively rewrite either shared plane.
 
-This matters for evidence, not for whether the run works. The Pod runs as
-`10001:10001` with supplemental group 65532, so it reaches a repaired tree
-through the supplemental group and the damaged tree through its primary group —
-it passes either way. A green run therefore proves the semantics and proves
-nothing about the access contract. The acceptance receipt must record the uid,
-gid and mode of all four admitted tree roots, measured at run time, as a
-first-class field; a conformance claim may only be made when that shows gid
-65532.
-
-Two requirements the handoff must satisfy, both cheap now and expensive after
-publication:
-
-* A terminal marker written **inside** a tree root changes that tree's
-  `fs2-flat-tree-inventory/v1` digest, because the inventory enumerates every
-  regular file in the flat root. Markers must live outside the tree roots.
-* The AlphaFold2 root must keep a `manifest.json` declaring `artifact_kind`
-  `bindcraft-af2-params` and `source_revision` `7cd4ace1…`, because the shared
-  outer entrypoint's artifact gate reads it on every non-smoke command.
+All three public roles used their qualified `/generations/.../sha256/...`
+paths and in-generation terminal markers. The private PyRosetta role used the
+canonical repaired claim path under the explicit direct-live flag because its
+content identity is pinned in the image and re-hashed before import. Its private
+generation has not yet been promoted. The runtime marker therefore carries an
+empty generation for that role, and this successful semantic proof is
+deliberately **not** a catalog localization or route-readiness claim.
 
 Full detail is in `evidence/native-final-image-qualification.json`.

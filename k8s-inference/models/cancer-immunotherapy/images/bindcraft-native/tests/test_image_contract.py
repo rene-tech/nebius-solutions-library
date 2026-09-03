@@ -99,12 +99,9 @@ class ImageLockTests(unittest.TestCase):
     def test_the_receipt_never_omits_the_measured_tree_ownership(self) -> None:
         """An absent field reads as satisfied; an explicit null reads as unchecked.
 
-        Both this renderer's Pod and the adapter's reach a repaired tree through
-        supplemental group 65532 and the currently damaged tree through primary
-        group 10001, so a passing run cannot distinguish them. The receipt has to
-        state which claim state produced it, and it has to state that even when
-        nobody measured, or a later reader will take a green run for a passing
-        delivery contract.
+        A semantic pass is not by itself proof of the delivery ownership
+        contract. The runtime therefore records every root's uid, gid and mode,
+        and the checked-in receipt has to retain those measurements.
         """
 
         evidence = json.loads(
@@ -123,9 +120,60 @@ class ImageLockTests(unittest.TestCase):
         else:
             for role, value in ownership["per_role"].items():
                 self.assertEqual({"uid", "gid", "mode"}, set(value), role)
-            conformant = all(value["gid"] == renderer.ACADEMIC_ASSET_GID
-                             for value in ownership["per_role"].values())
+            expected_gids = {
+                role: (
+                    renderer.ACADEMIC_ASSET_GID
+                    if role == bindcraft_runner.PYROSETTA_ROLE
+                    else renderer.PUBLIC_PLANE_GID
+                )
+                for role in bindcraft_runner.REQUIRED_TREE_ROLES
+            }
+            conformant = all(
+                value["gid"] == expected_gids[role]
+                for role, value in ownership["per_role"].items()
+            )
             self.assertEqual(ownership["contract_conformance"], "proven" if conformant else "unproven")
+
+    def test_live_h100_receipt_is_semantic_and_not_a_route_claim(self) -> None:
+        receipt = json.loads(
+            (ROOT / "evidence" / "live-h100-qualification-20260903.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(receipt["verdict"]["state"], "passed")
+        self.assertFalse(receipt["verdict"]["route_ready"])
+        self.assertEqual(
+            receipt["image"]["index_digest"],
+            "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+        )
+        admission = receipt["external_tree_admission"]
+        self.assertEqual(set(admission["trees"]), bindcraft_runner.REQUIRED_TREE_ROLES)
+        self.assertEqual(admission["verified_bytes"], 8_928_285_965)
+        self.assertEqual(admission["ownership_contract_conformance"].split(":", 1)[0], "proven")
+        self.assertTrue(receipt["output"]["all_declared_sizes_and_sha256_reverified"])
+        self.assertEqual(receipt["semantic_results"]["accepted_design_rows"], 2)
+        for design in receipt["semantic_results"]["designs"]:
+            self.assertEqual(design["filter_violations"], 0)
+            self.assertTrue(design["hotspot_in_contact"])
+            self.assertGreaterEqual(design["interface_residue_count"], 7)
+            self.assertGreater(design["buried_interface_area"], 0)
+            self.assertLess(design["binder_energy_score"], 0)
+        phases = receipt["timings_seconds"]["gpu_phase_reconciliation"]
+        reconciled = sum(
+            phases[key]
+            for key in (
+                "outer_alphafold_artifact_gate_and_startup",
+                "external_four_tree_full_content_admission",
+                "pyrosetta_bind",
+                "first_af2_model_warmup_within_upstream",
+                "post_warmup_design_and_validation",
+                "post_processing",
+                "remaining_startup_and_teardown",
+                "restore",
+                "grace_or_drain",
+            )
+        )
+        self.assertAlmostEqual(reconciled, receipt["timings_seconds"]["gpu_allocated_main_container"])
 
     def test_the_image_declares_every_tree_it_expects_from_outside_itself(self) -> None:
         external = build_images.load_lock()["images"][0]["external_artifacts"]
