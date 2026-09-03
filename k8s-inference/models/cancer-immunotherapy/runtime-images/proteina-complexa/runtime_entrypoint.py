@@ -380,10 +380,59 @@ _LOG_LINE = re.compile(
 )
 
 
-def parse_phases(log_text: str, started_at: float) -> dict[str, Any]:
-    """Recover model-load and compute phases from upstream's own timestamps."""
+def upstream_generation_seconds(output_root: Path) -> float | None:
+    """Read upstream's own generation total from the timing CSV it writes.
+
+    This is preferred over the log: upstream emits "Total generation time"
+    through a Rich handler that wraps the line and right-aligns the source
+    location, whereas the CSV is machine-readable and written by the same code
+    path that measures it.
+    """
+    for path in sorted(output_root.glob("timing_*.csv")):
+        rows = [row for row in path.read_text(encoding="utf-8").splitlines() if row.strip()]
+        if len(rows) < 2:
+            continue
+        header = [column.strip() for column in rows[0].split(",")]
+        if "total_time" not in header:
+            continue
+        values = rows[1].split(",")
+        try:
+            return float(values[header.index("total_time")])
+        except (ValueError, IndexError):
+            continue
+    return None
+
+
+# Upstream emits loguru lines of the form
+# "2026-09-03 04:36:52.223 | INFO | __main__:validate_checkpoint_paths:117 - ..."
+_LOG_LINE = re.compile(
+    r"^(?P<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}) \| \w+\s+\| [^-]+- (?P<message>.*)$"
+)
+
+# The anchors below are the plain-format lines upstream always emits, in the
+# order it emits them. Note that "Starting generation job at" is logged *before*
+# the checkpoint is loaded, so upstream's own total spans model load plus
+# sampling -- it is not the sampling time on its own.
+_ANCHORS = (
+    ("checkpoint_validated", "Checkpoint validated:"),
+    ("generation_job_started", "Starting generation job at"),
+    ("checkpoint_load_started", "Using checkpoint "),
+    ("lora_reapplied", "Re-create LoRA layers"),
+    ("model_ready", "cfg_gen:"),
+)
+
+
+def parse_phases(
+    log_text: str, started_at: float, generation_seconds: float | None = None
+) -> dict[str, Any]:
+    """Split the upstream run into phases using its own timestamps.
+
+    ``generation_seconds`` is upstream's measured generation total. Sampling is
+    derived from it by subtracting the observed model-load span, rather than
+    timing sampling directly, because upstream logs no plain-format marker at
+    the moment sampling begins.
+    """
     marks: dict[str, float] = {}
-    order: list[tuple[str, float]] = []
     for raw in log_text.splitlines():
         match = _LOG_LINE.match(raw.strip())
         if not match:
@@ -391,27 +440,19 @@ def parse_phases(log_text: str, started_at: float) -> dict[str, Any]:
         moment = datetime.strptime(match.group("stamp"), "%Y-%m-%d %H:%M:%S.%f")
         epoch = moment.replace(tzinfo=timezone.utc).timestamp()
         message = match.group("message")
-        order.append((message, epoch))
-        for key, needle in (
-            ("checkpoint_validated", "Checkpoint validated:"),
-            ("checkpoint_load_started", "Using checkpoint "),
-            ("lora_reapplied", "Re-create LoRA layers"),
-            ("generation_started", "Starting generation job at"),
-            ("generation_finished", "Generation job finished at"),
-        ):
+        for key, needle in _ANCHORS:
             if message.startswith(needle) and key not in marks:
                 marks[key] = epoch
-
-    total = None
-    for message, _ in order:
-        found = re.search(r"Total generation time: ([0-9.]+) seconds", message)
-        if found:
-            total = float(found.group(1))
 
     def span(first: str, second: str) -> float | None:
         if first in marks and second in marks:
             return round(marks[second] - marks[first], 3)
         return None
+
+    model_load = span("checkpoint_load_started", "model_ready")
+    sampling = None
+    if generation_seconds is not None and model_load is not None:
+        sampling = round(generation_seconds - model_load, 3)
 
     phases: dict[str, Any] = {
         "interpreter_and_import_seconds": (
@@ -419,13 +460,18 @@ def parse_phases(log_text: str, started_at: float) -> dict[str, Any]:
             if "checkpoint_validated" in marks
             else None
         ),
-        "checkpoint_load_seconds": span("checkpoint_load_started", "generation_started"),
-        "compute_seconds": total,
-        "upstream_reported_total_generation_seconds": total,
+        "model_load_seconds": model_load,
+        "sampling_seconds": sampling,
+        # The canonical active-compute phase. Sampling, not the whole job:
+        # upstream's total also covers loading two multi-gigabyte checkpoints.
+        "compute_seconds": sampling,
+        "upstream_reported_generation_seconds": generation_seconds,
         "lora_reapplied": "lora_reapplied" in marks,
     }
-    if "checkpoint_load_started" in marks and "lora_reapplied" in marks:
-        phases["checkpoint_load_to_lora_seconds"] = span("checkpoint_load_started", "lora_reapplied")
+    if "lora_reapplied" in marks:
+        phases["checkpoint_load_to_lora_seconds"] = span(
+            "checkpoint_load_started", "lora_reapplied"
+        )
     return phases
 
 
@@ -837,7 +883,9 @@ def run(arguments: argparse.Namespace) -> int:
         upstream_seconds = round(time.monotonic() - upstream_started, 3)
 
         log_text = upstream_log.read_text(encoding="utf-8", errors="replace")
-        phases = parse_phases(log_text, upstream_started_wall)
+        phases = parse_phases(
+            log_text, upstream_started_wall, upstream_generation_seconds(output_root)
+        )
         phases["upstream_process_seconds"] = upstream_seconds
         result["phases"] = phases
         result["upstream_exit_code"] = exit_code

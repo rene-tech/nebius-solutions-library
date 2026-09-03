@@ -208,46 +208,73 @@ class ArtifactVerificationTests(unittest.TestCase):
 
 
 class PhaseParsingTests(unittest.TestCase):
-    """Recover phases from a real captured upstream log."""
+    """Recover phases from a real captured upstream log.
+
+    The anchor order matters and is not the obvious one: upstream logs
+    "Starting generation job at" *before* it loads the checkpoint, so its own
+    reported total spans model load plus sampling. An earlier version of this
+    parser assumed the opposite and produced a model-load span of -0.001 s.
+    """
 
     LOG = "\n".join(
         [
             "Loading Atomworks Patches",
-            "2026-09-03 04:36:52.223 | INFO     | __main__:validate_checkpoint_paths:117 - "
+            "2026-09-03 05:15:23.738 | INFO     | __main__:validate_checkpoint_paths:117 - "
             "Checkpoint validated: /opt/fs2/artifacts/complexa-ame/complexa_ame.ckpt",
-            "2026-09-03 04:36:52.224 | INFO     | __main__:validate_checkpoint_paths:119 - "
-            "Autoencoder checkpoint validated: /opt/fs2/artifacts/complexa-ame/complexa_ame_ae.ckpt",
-            "2026-09-03 04:36:52.225 | INFO     | __main__:load_ckpt_n_configure_inference:180 - "
+            "2026-09-03 05:15:23.739 | INFO     | __main__:main:578 - "
+            "Starting generation job at 2026-09-03 05:15:23",
+            "2026-09-03 05:15:23.740 | INFO     | __main__:load_ckpt_n_configure_inference:180 - "
             "Using checkpoint /opt/fs2/artifacts/complexa-ame/complexa_ame.ckpt",
-            "2026-09-03 04:36:59.557 | INFO     | __main__:load_ckpt_n_configure_inference:220 - "
+            "2026-09-03 05:15:31.075 | INFO     | __main__:load_ckpt_n_configure_inference:220 - "
             "Re-create LoRA layers and reload the weights now",
             "GPU available: True (cuda), used: True",
-            "2026-09-03 04:36:52.500 | INFO     | __main__:main:578 - "
-            "Starting generation job at 2026-09-03 04:36:52",
-            "2026-09-03 04:37:07.590 | INFO     | __main__:main:750 - "
-            "Generation job finished at 2026-09-03 04:37:07",
-            "2026-09-03 04:37:07.591 | INFO     | __main__:main:751 - "
-            "Total generation time: 15.09 seconds",
+            "2026-09-03 05:15:35.360 | INFO     | __main__:main:642 - cfg_gen: {'task_name': 'x'}",
+            "                    INFO     Total generation time: 24.16        generate.py:751",
         ]
     )
 
-    def test_phases_and_lora_marker_are_recovered(self) -> None:
+    def test_phases_are_recovered_from_the_log_and_the_timing_total(self) -> None:
         import datetime
 
-        start = (
-            datetime.datetime(2026, 9, 3, 4, 36, 40, tzinfo=datetime.timezone.utc).timestamp()
-        )
-        phases = ENTRY.parse_phases(self.LOG, start)
+        start = datetime.datetime(
+            2026, 9, 3, 5, 15, 11, 300000, tzinfo=datetime.timezone.utc
+        ).timestamp()
+        phases = ENTRY.parse_phases(self.LOG, start, 24.16)
         self.assertTrue(phases["lora_reapplied"])
-        self.assertAlmostEqual(15.09, phases["compute_seconds"], places=2)
-        self.assertAlmostEqual(12.223, phases["interpreter_and_import_seconds"], places=2)
-        self.assertAlmostEqual(7.332, phases["checkpoint_load_to_lora_seconds"], places=2)
+        self.assertAlmostEqual(12.438, phases["interpreter_and_import_seconds"], places=2)
+        self.assertAlmostEqual(11.62, phases["model_load_seconds"], places=2)
+        self.assertAlmostEqual(12.54, phases["sampling_seconds"], places=2)
+        self.assertEqual(phases["sampling_seconds"], phases["compute_seconds"])
+        self.assertAlmostEqual(7.335, phases["checkpoint_load_to_lora_seconds"], places=2)
+
+    def test_model_load_is_never_negative_for_the_real_anchor_order(self) -> None:
+        phases = ENTRY.parse_phases(self.LOG, 0.0, 24.16)
+        self.assertGreater(phases["model_load_seconds"], 0.0)
 
     def test_a_log_without_the_lora_marker_reports_it_absent(self) -> None:
         stripped = "\n".join(
             line for line in self.LOG.splitlines() if "Re-create LoRA" not in line
         )
-        self.assertFalse(ENTRY.parse_phases(stripped, 0.0)["lora_reapplied"])
+        self.assertFalse(ENTRY.parse_phases(stripped, 0.0, 24.16)["lora_reapplied"])
+
+    def test_sampling_is_unknown_without_upstream_total(self) -> None:
+        phases = ENTRY.parse_phases(self.LOG, 0.0, None)
+        self.assertIsNone(phases["sampling_seconds"])
+        self.assertIsNone(phases["compute_seconds"])
+        self.assertIsNotNone(phases["model_load_seconds"])
+
+
+class TimingCsvTests(unittest.TestCase):
+    def test_upstream_total_is_read_from_the_timing_csv(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="fs2-cxq-timing-"))
+        (root / "timing_0.csv").write_text("job_id,total_time,nsamples\n0,24.16,1\n")
+        self.assertAlmostEqual(24.16, ENTRY.upstream_generation_seconds(root))
+
+    def test_a_missing_or_malformed_csv_yields_none(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="fs2-cxq-timing-"))
+        self.assertIsNone(ENTRY.upstream_generation_seconds(root))
+        (root / "timing_0.csv").write_text("job_id,nsamples\n0,1\n")
+        self.assertIsNone(ENTRY.upstream_generation_seconds(root))
 
 
 class StructureValidationTests(unittest.TestCase):
