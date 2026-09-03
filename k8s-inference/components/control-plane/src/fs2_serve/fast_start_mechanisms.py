@@ -9,6 +9,10 @@ provide.
 Nothing here can raise a level.  A mechanism is operator detail; the level
 comes from evidence alone.
 
+Each mechanism is also projected into ModelDeployment status, where a
+``Configured`` mechanism sits next to whatever level the evidence supports,
+which is ``Off`` until a cohort is populated.
+
 ``regional-cache`` costs no reserved capacity.  ``host-memory-residency``
 trades an explicit host RAM reservation for start latency, so its price is
 scheduled and attributable rather than an incidental page-cache effect another
@@ -1096,3 +1100,164 @@ def configure_gpu_resident(
             "fast-start.fs2.nebius/residency-mode": qualification.residency_mode,
         },
     )
+
+
+class FastStartCacheMechanismPool(KubernetesModel):
+    """Per-pool projection of one mechanism.
+
+    ``mechanismConfigDigest`` is the value a benchmark receipt must carry for
+    this pool before its cohort can qualify a level.  Publishing it lets an
+    operator see why a receipt was retained instead of counted.
+    """
+
+    availability: Literal["Available", "Unavailable"]
+    reason: str = Field(min_length=1, max_length=64, pattern=REASON_PATTERN)
+    evidence_selector: dict[str, str] = Field(default_factory=dict, max_length=8)
+    mechanism_config_digest: str | None = Field(default=None, pattern=SHA256_DIGEST_PATTERN)
+
+
+class FastStartCacheMechanismStatus(KubernetesModel):
+    """Operator detail for one cold-start mechanism, never level proof.
+
+    ``state`` distinguishes a mechanism that is merely possible on these pools
+    (``Undeclared``), one that is declared and rendered but whose render has not
+    converged (``Pending``), one that is live (``Configured``), and one the
+    pools cannot provide at all (``Unavailable``).
+
+    There is deliberately no level, percentile or sample count here.  The level
+    lives in the surrounding :class:`~fs2_serve.fast_start.FastStartStatus`,
+    where it comes only from compatible benchmark evidence, and it stays ``Off``
+    while a ``Configured`` mechanism has no populated cohort.
+    """
+
+    state: Literal["Configured", "Pending", "Unavailable", "Undeclared"]
+    selected: bool
+    availability: Literal["Available", "Unavailable"]
+    reason: str = Field(min_length=1, max_length=64, pattern=REASON_PATTERN)
+    config_digest: str | None = Field(default=None, pattern=SHA256_DIGEST_PATTERN)
+    residency_mode: str | None = Field(default=None, min_length=1, max_length=64)
+    pool_refs: list[str] = Field(min_length=1, max_length=32)
+    pools: dict[str, FastStartCacheMechanismPool] = Field(min_length=1, max_length=32)
+    retained_payload_bytes: int | None = Field(default=None, ge=0)
+    retained_compile_cache_abi: str | None = Field(default=None, min_length=1, max_length=128)
+    reserved_host_memory_bytes: int | None = Field(default=None, ge=0)
+    reserved_host_memory_fraction: float | None = Field(default=None, ge=0, le=1)
+    standby_replicas: int | None = Field(default=None, ge=0, le=64)
+    reserved_accelerators: int | None = Field(default=None, ge=0, le=4096)
+    minimum_hot_replicas: int | None = Field(default=None, ge=0, le=10000)
+    configured_hot_replicas: int | None = Field(default=None, ge=0, le=10000)
+    telemetry_state: Literal["Unavailable"] = "Unavailable"
+
+    @model_validator(mode="after")
+    def consistent_projection(self) -> FastStartCacheMechanismStatus:
+        if set(self.pools) != set(self.pool_refs):
+            raise ValueError("mechanism pool projection must cover exactly the declared pools")
+        if self.state in ("Configured", "Pending") and self.config_digest is None:
+            raise ValueError("a declared mechanism must publish its reviewed configuration digest")
+        if self.state == "Undeclared" and self.config_digest is not None:
+            raise ValueError("an undeclared mechanism cannot publish a configuration digest")
+        if self.selected and self.state not in ("Configured", "Pending"):
+            raise ValueError("only a declared mechanism can be the selected one")
+        if (self.availability == "Unavailable") != (self.state == "Unavailable"):
+            raise ValueError("an unavailable mechanism must be reported in the Unavailable state")
+        return self
+
+
+def project_cache_mechanisms(
+    *,
+    selected: FastStartMechanism | None,
+    declarations: Mapping[FastStartMechanism, Any],
+    pools: Mapping[str, Mapping[str, str]],
+    storage_contract_digests: Mapping[str, str],
+    converged: bool,
+    configured_hot_replicas: int | None,
+    mechanism_config_digest: Any,
+) -> dict[str, FastStartCacheMechanismStatus]:
+    """Project every known cold-start mechanism for one deployment.
+
+    Every mechanism the platform knows about appears, including the two that
+    this cluster's H100 pool cannot provide, so ``node-local-restore`` is
+    reported ``Unavailable`` with the pool selector that proves it rather than
+    being silently missing or quietly attempted.
+
+    ``mechanism_config_digest`` is injected to keep this module independent of
+    the identity module's import graph.
+    """
+
+    if not pools:
+        return {}
+    projected: dict[str, FastStartCacheMechanismStatus] = {}
+    availability_by_pool = {
+        pool_ref: {item.mechanism: item for item in assess_pool_mechanisms(pool_id=pool_ref, node_selector=selector)}
+        for pool_ref, selector in pools.items()
+    }
+    for mechanism in FastStartMechanism:
+        if mechanism is FastStartMechanism.MODELEXPRESS:
+            # ModelExpress has its own reviewed status projection.
+            continue
+        declaration = declarations.get(mechanism)
+        pool_projection: dict[str, FastStartCacheMechanismPool] = {}
+        for pool_ref in sorted(pools):
+            availability = availability_by_pool[pool_ref][mechanism.value]
+            storage_digest = storage_contract_digests.get(pool_ref)
+            expected: str | None = None
+            if storage_digest is not None:
+                expected = mechanism_config_digest(
+                    mechanism=mechanism.value,
+                    storage_contract_digest=storage_digest,
+                    declaration_digest=None if declaration is None else declaration.config_digest,
+                )
+            pool_projection[pool_ref] = FastStartCacheMechanismPool(
+                availability=availability.state,
+                reason=availability.reason,
+                evidence_selector=availability.evidence_selector,
+                mechanism_config_digest=expected,
+            )
+        unavailable = [item for item in pool_projection.values() if item.availability == "Unavailable"]
+        if unavailable:
+            state: Literal["Configured", "Pending", "Unavailable", "Undeclared"] = "Unavailable"
+            reason = unavailable[0].reason
+        elif declaration is None:
+            state = "Undeclared"
+            reason = "NoReviewedDeclaration"
+        elif converged:
+            state = "Configured"
+            reason = "MechanismRenderConverged"
+        else:
+            state = "Pending"
+            reason = "MechanismRenderPending"
+        projected[mechanism.value] = FastStartCacheMechanismStatus(
+            state=state,
+            selected=selected is mechanism and state in ("Configured", "Pending"),
+            availability="Unavailable" if unavailable else "Available",
+            reason=reason,
+            config_digest=None if declaration is None or state == "Unavailable" else declaration.config_digest,
+            residency_mode=getattr(declaration, "residency_mode", None),
+            pool_refs=sorted(pools),
+            pools=pool_projection,
+            retained_payload_bytes=getattr(declaration, "payload_bytes", None),
+            retained_compile_cache_abi=(
+                declaration.compile_cache.abi if isinstance(declaration, RegionalCacheQualification) else None
+            ),
+            reserved_host_memory_bytes=(
+                declaration.reserved_bytes if isinstance(declaration, HostMemoryResidencyQualification) else None
+            ),
+            reserved_host_memory_fraction=(
+                round(declaration.reserved_fraction_of_node, 6)
+                if isinstance(declaration, HostMemoryResidencyQualification)
+                else None
+            ),
+            standby_replicas=(
+                declaration.standby_replicas if isinstance(declaration, GpuResidentQualification) else None
+            ),
+            reserved_accelerators=(
+                declaration.reserved_accelerators if isinstance(declaration, GpuResidentQualification) else None
+            ),
+            minimum_hot_replicas=(
+                declaration.minimum_hot_replicas if isinstance(declaration, GpuResidentQualification) else None
+            ),
+            configured_hot_replicas=(
+                configured_hot_replicas if isinstance(declaration, GpuResidentQualification) else None
+            ),
+        )
+    return projected
