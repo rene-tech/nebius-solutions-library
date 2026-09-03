@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -21,6 +22,8 @@ from .models import (
     STAGE_CONTAINER_NAME,
     FailureKind,
     LifecyclePhase,
+    PodLifecycleObservation,
+    PodPhaseInterval,
     ResourceClass,
     SchedulingAdmission,
     StageSchedulingDecision,
@@ -57,6 +60,10 @@ ACCELERATOR_RESOURCE_ANNOTATION = "fs2.nebius.ai/accelerator-resource"
 ACCELERATOR_COUNT_ANNOTATION = "fs2.nebius.ai/accelerator-count"
 WORKLOAD_NAMESPACE_ANNOTATION = "fs2.nebius.ai/workload-namespace"
 ROUTE_NAMESPACE_ANNOTATION = "fs2.nebius.ai/route-namespace"
+# A trusted kubelet/DCGM enricher may publish the immutable allocation on the
+# Pod. Workload containers cannot forge it because scientific Pods do not mount
+# a service-account token. The observer rejects partial or mismatched values.
+GPU_UUIDS_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-uuids"
 KUEUE_JOB_UID_LABEL = "kueue.x-k8s.io/job-uid"
 POOL_LABEL = "accelerator.fs2.nebius/pool-id"
 NODE_POOL_LABEL = POOL_LABEL
@@ -226,6 +233,247 @@ def _finished_at(terminated: Mapping[str, Any]) -> datetime | None:
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _optional_time(value: object, label: str) -> datetime | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise ScientificKubernetesError(f"Kubernetes {label} timestamp is invalid")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ScientificKubernetesError(f"Kubernetes {label} timestamp is invalid") from error
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ScientificKubernetesError(f"Kubernetes {label} timestamp is naive")
+    return parsed.astimezone(UTC)
+
+
+def _container_phase(name: str) -> LifecyclePhase:
+    lowered = name.casefold()
+    if "restore" in lowered or "checkpoint" in lowered:
+        return LifecyclePhase.RESTORING
+    if "warmup" in lowered or "warm-up" in lowered:
+        return LifecyclePhase.SEMANTIC_WARMUP
+    return LifecyclePhase.ARTIFACT_LOADING
+
+
+def _container_statuses(status: Mapping[str, Any], field: str) -> dict[str, Mapping[str, Any]]:
+    values = status.get(field, [])
+    return {
+        str(item["name"]): item
+        for item in values
+        if isinstance(values, list) and isinstance(item, Mapping) and isinstance(item.get("name"), str)
+    }
+
+
+def _container_intervals(
+    container: Mapping[str, Any],
+    *,
+    phase: LifecyclePhase,
+    fallback_start: datetime,
+) -> tuple[PodPhaseInterval, ...]:
+    state = container.get("state")
+    if not isinstance(state, Mapping):
+        return ()
+    running = state.get("running")
+    if isinstance(running, Mapping):
+        started_at = _optional_time(running.get("startedAt"), "container start") or fallback_start
+        preparation_start = min(fallback_start, started_at)
+        image = (
+            PodPhaseInterval(phase=LifecyclePhase.IMAGE_LOADING, started_at=preparation_start, ended_at=started_at),
+        )
+        return (*image, PodPhaseInterval(phase=phase, started_at=started_at))
+    terminated = state.get("terminated")
+    if isinstance(terminated, Mapping):
+        ended_at = _optional_time(terminated.get("finishedAt"), "container finish")
+        started_at = _optional_time(terminated.get("startedAt"), "container start") or ended_at or fallback_start
+        ended_at = ended_at or started_at
+        preparation_start = min(fallback_start, started_at)
+        image = (
+            PodPhaseInterval(phase=LifecyclePhase.IMAGE_LOADING, started_at=preparation_start, ended_at=started_at),
+        )
+        return (*image, PodPhaseInterval(phase=phase, started_at=started_at, ended_at=ended_at))
+    waiting = state.get("waiting")
+    if isinstance(waiting, Mapping):
+        reason = waiting.get("reason")
+        selected = (
+            LifecyclePhase.IMAGE_LOADING
+            if reason in {"ContainerCreating", "ErrImagePull", "ImagePullBackOff", "PodInitializing", "Pulling"}
+            else LifecyclePhase.ALLOCATED_IDLE
+        )
+        return (PodPhaseInterval(phase=selected, started_at=fallback_start),)
+    return ()
+
+
+def _pod_gpu_count(spec: Mapping[str, Any], resource_name: str | None) -> int:
+    if resource_name is None:
+        return 0
+    containers = spec.get("containers", [])
+    for container in containers if isinstance(containers, list) else []:
+        if not isinstance(container, Mapping) or container.get("name") != STAGE_CONTAINER_NAME:
+            continue
+        resources = container.get("resources")
+        requests = resources.get("requests") if isinstance(resources, Mapping) else None
+        value = requests.get(resource_name) if isinstance(requests, Mapping) else None
+        return 0 if value is None else _quantity(value, resource="accelerator")
+    return 0
+
+
+def _gpu_uuids(metadata: Mapping[str, Any], gpu_count: int) -> tuple[str, ...]:
+    annotations = metadata.get("annotations", {})
+    if not isinstance(annotations, Mapping) or GPU_UUIDS_ANNOTATION not in annotations:
+        return ()
+    raw = annotations[GPU_UUIDS_ANNOTATION]
+    if not isinstance(raw, str):
+        raise ScientificKubernetesError("trusted GPU UUID annotation is invalid")
+    try:
+        values = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise ScientificKubernetesError("trusted GPU UUID annotation is invalid JSON") from error
+    if (
+        not isinstance(values, list)
+        or not all(isinstance(value, str) for value in values)
+        or len(values) != gpu_count
+    ):
+        raise ScientificKubernetesError("trusted GPU UUID annotation differs from the Pod allocation")
+    try:
+        return PodLifecycleObservation(
+            pod_uid="validation",
+            pod_name=None,
+            node_name=None,
+            node_uid=None,
+            observed_at=datetime(1970, 1, 1, tzinfo=UTC),
+            scheduled_at=None,
+            gpu_count=gpu_count,
+            gpu_uuids=tuple(values),
+        ).gpu_uuids
+    except ValueError as error:
+        raise ScientificKubernetesError("trusted GPU UUID annotation contains an invalid device") from error
+
+
+def _pod_lifecycle(
+    raw_pod: Mapping[str, Any],
+    *,
+    accelerator_resource_name: str | None,
+    observed_at: datetime,
+) -> PodLifecycleObservation | None:
+    metadata = raw_pod.get("metadata")
+    spec = raw_pod.get("spec", {})
+    status = raw_pod.get("status", {})
+    if not isinstance(metadata, Mapping) or not isinstance(spec, Mapping) or not isinstance(status, Mapping):
+        return None
+    pod_uid = metadata.get("uid")
+    if not isinstance(pod_uid, str) or not pod_uid:
+        return None
+    pod_name = metadata.get("name")
+    pod_name = pod_name if isinstance(pod_name, str) and pod_name else None
+    node_name = spec.get("nodeName")
+    node_name = node_name if isinstance(node_name, str) and node_name else None
+    scheduled_condition = _condition(status, "PodScheduled")
+    scheduled_at = (
+        None
+        if scheduled_condition is None
+        else _optional_time(scheduled_condition.get("lastTransitionTime"), "PodScheduled")
+    )
+    created_at = _optional_time(metadata.get("creationTimestamp"), "Pod creation")
+    pod_started_at = _optional_time(status.get("startTime"), "Pod start")
+    gpu_count = _pod_gpu_count(spec, accelerator_resource_name)
+    gpu_uuids = _gpu_uuids(metadata, gpu_count)
+    if scheduled_at is None:
+        # Unscheduled Pods own no accelerator allocation. Preserve their UID
+        # for correlation, but leave GPU clocks and runtime phases empty until
+        # Kubernetes publishes the immutable PodScheduled transition.
+        return PodLifecycleObservation(
+            pod_uid=pod_uid,
+            pod_name=pod_name,
+            node_name=node_name,
+            node_uid=None,
+            observed_at=observed_at,
+            scheduled_at=None,
+            gpu_count=gpu_count,
+            gpu_uuids=gpu_uuids,
+        )
+    fallback_start = scheduled_at or pod_started_at or created_at or observed_at
+    init_specs = spec.get("initContainers", [])
+    expected_init_names = tuple(
+        str(item["name"])
+        for item in init_specs
+        if isinstance(init_specs, list) and isinstance(item, Mapping) and isinstance(item.get("name"), str)
+    )
+    init_statuses = _container_statuses(status, "initContainerStatuses")
+    phases: list[PodPhaseInterval] = []
+    init_finished: list[datetime] = []
+    init_succeeded = True
+    for name in expected_init_names:
+        container_fallback = max(init_finished, default=fallback_start)
+        init_status = init_statuses.get(name)
+        if init_status is None:
+            init_succeeded = False
+            phases.append(PodPhaseInterval(phase=LifecyclePhase.IMAGE_LOADING, started_at=container_fallback))
+            continue
+        intervals = _container_intervals(
+            init_status,
+            phase=_container_phase(name),
+            fallback_start=container_fallback,
+        )
+        phases.extend(intervals)
+        if intervals and intervals[-1].ended_at is not None:
+            init_finished.append(intervals[-1].ended_at)
+        terminated = init_status.get("state")
+        terminated = terminated.get("terminated") if isinstance(terminated, Mapping) else None
+        if not isinstance(terminated, Mapping) or terminated.get("exitCode") != 0:
+            init_succeeded = False
+
+    regular = _container_statuses(status, "containerStatuses")
+    stage = regular.get(STAGE_CONTAINER_NAME)
+    stage_interval: PodPhaseInterval | None = None
+    stage_finished: datetime | None = None
+    if init_succeeded and stage is not None:
+        stage_intervals = _container_intervals(
+            stage,
+            phase=LifecyclePhase.ACTIVE_COMPUTE,
+            fallback_start=max(init_finished, default=fallback_start),
+        )
+        phases.extend(stage_intervals)
+        stage_interval = next(
+            (value for value in stage_intervals if value.phase is LifecyclePhase.ACTIVE_COMPUTE),
+            None,
+        )
+        if stage_interval is not None:
+            stage_finished = stage_interval.ended_at
+    if init_succeeded and stage is None:
+        phases.append(
+            PodPhaseInterval(
+                phase=LifecyclePhase.ALLOCATED_IDLE,
+                started_at=max(init_finished, default=fallback_start),
+            )
+        )
+    elif stage_finished is not None:
+        collector = regular.get(COLLECTOR_CONTAINER_NAME)
+        collector_termination = _container_termination(status, COLLECTOR_CONTAINER_NAME)
+        collector_finished = _finished_at(collector_termination) if collector_termination is not None else None
+        if collector is not None and collector_finished is None:
+            phases.append(PodPhaseInterval(phase=LifecyclePhase.ALLOCATED_IDLE, started_at=stage_finished))
+        elif collector_finished is not None and collector_finished >= stage_finished:
+            phases.append(
+                PodPhaseInterval(
+                    phase=LifecyclePhase.ALLOCATED_IDLE,
+                    started_at=stage_finished,
+                    ended_at=collector_finished,
+                )
+            )
+    return PodLifecycleObservation(
+        pod_uid=pod_uid,
+        pod_name=pod_name,
+        node_name=node_name,
+        node_uid=None,
+        observed_at=observed_at,
+        scheduled_at=scheduled_at,
+        gpu_count=gpu_count,
+        gpu_uuids=gpu_uuids,
+        phases=tuple(dict.fromkeys(phases)),
+    )
 
 
 def _stalled_collection(
@@ -582,8 +830,10 @@ class HttpScientificBatchCluster:
         waiting_reasons: list[str] = []
         failure_reasons: list[str] = []
         pod_uids: list[str] = []
+        pod_lifecycle: list[PodLifecycleObservation] = []
         pod_statuses: list[Mapping[str, Any]] = []
         scheduled = False
+        observed_at = self.clock()
         for raw_pod in pods if isinstance(pods, list) else []:
             if not isinstance(raw_pod, Mapping):
                 continue
@@ -591,6 +841,13 @@ class HttpScientificBatchCluster:
             pod_uid = pod_metadata.get("uid") if isinstance(pod_metadata, Mapping) else None
             if isinstance(pod_uid, str) and pod_uid:
                 pod_uids.append(pod_uid)
+            lifecycle = _pod_lifecycle(
+                raw_pod,
+                accelerator_resource_name=scheduling.accelerator_resource_name,
+                observed_at=observed_at,
+            )
+            if lifecycle is not None:
+                pod_lifecycle.append(lifecycle)
             pod_status = raw_pod.get("status")
             if not isinstance(pod_status, Mapping):
                 continue
@@ -610,12 +867,28 @@ class HttpScientificBatchCluster:
                 terminated = state.get("terminated") if isinstance(state, Mapping) else None
                 if isinstance(terminated, Mapping) and isinstance(terminated.get("reason"), str):
                     failure_reasons.append(cast(str, terminated["reason"]))
+        node_uids: dict[str, str] = {}
+        for node_name in dict.fromkeys(
+            item.node_name for item in pod_lifecycle if item.node_name is not None
+        ):
+            node_response = await self._request("GET", f"/api/v1/nodes/{quote(node_name, safe='')}")
+            if node_response.status_code == 404:
+                continue
+            node_metadata = _metadata(cast(dict[str, Any], node_response.json()))
+            node_uid = node_metadata.get("uid")
+            if not isinstance(node_uid, str) or not node_uid:
+                raise ScientificKubernetesError("scheduled node UID is absent")
+            node_uids[node_name] = node_uid
+        pod_lifecycle = [
+            replace(item, node_uid=node_uids.get(item.node_name)) if item.node_name is not None else item
+            for item in pod_lifecycle
+        ]
         if pods and not scheduled:
             phases.append(LifecyclePhase.NODE_PENDING)
         if any(reason in {"Pulling", "ErrImagePull", "ImagePullBackOff"} for reason in waiting_reasons):
             phases.append(LifecyclePhase.IMAGE_LOADING)
-        if any(phase == "Running" for phase in pod_phases):
-            phases.append(LifecyclePhase.ACTIVE_COMPUTE)
+        phases.extend(interval.phase for item in pod_lifecycle for interval in item.phases)
+        phases = sorted(set(phases), key=lambda phase: phase.rank)
 
         succeeded = int(status.get("succeeded", 0) or 0) > 0 or _condition(status, "Completed") is not None
         failed_condition = _condition(status, "Failed")
@@ -640,6 +913,7 @@ class HttpScientificBatchCluster:
                 scheduling_admission=scheduling_admission,
                 kueue_workload_uid=kueue_workload_uid,
                 pod_uids=tuple(dict.fromkeys(pod_uids)),
+                pod_lifecycle=tuple(pod_lifecycle),
                 failure_kind=failure_kind,
                 failure_code=failure_code[:128],
             )
@@ -654,6 +928,7 @@ class HttpScientificBatchCluster:
                 scheduling_admission=scheduling_admission,
                 kueue_workload_uid=kueue_workload_uid,
                 pod_uids=tuple(dict.fromkeys(pod_uids)),
+                pod_lifecycle=tuple(pod_lifecycle),
                 failure_kind=failure_kind,
                 failure_code=failure_code[:128],
             )
@@ -669,6 +944,7 @@ class HttpScientificBatchCluster:
                 scheduling_admission=scheduling_admission,
                 kueue_workload_uid=kueue_workload_uid,
                 pod_uids=tuple(dict.fromkeys(pod_uids)),
+                pod_lifecycle=tuple(pod_lifecycle),
                 failure_kind=failure_kind,
                 failure_code=failure_code[:128],
             )
@@ -684,6 +960,7 @@ class HttpScientificBatchCluster:
             scheduling_admission=scheduling_admission,
             kueue_workload_uid=kueue_workload_uid,
             pod_uids=tuple(dict.fromkeys(pod_uids)),
+            pod_lifecycle=tuple(pod_lifecycle),
         )
 
     async def _scheduling_admission(

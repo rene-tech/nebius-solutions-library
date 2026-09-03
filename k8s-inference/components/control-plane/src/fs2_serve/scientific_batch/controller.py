@@ -46,6 +46,7 @@ from .protocols import (
     LegacyArtifactCommitReader,
     ScientificBatchArtifactLifecycle,
     ScientificBatchCluster,
+    ScientificBatchLifecycle,
     ScientificBatchRepository,
     ScientificBatchResultPublisher,
 )
@@ -75,6 +76,7 @@ class ScientificBatchController:
         namespace: str,
         result_publisher: ScientificBatchResultPublisher | None = None,
         artifact_lifecycle: ScientificBatchArtifactLifecycle | None = None,
+        lifecycle: ScientificBatchLifecycle | None = None,
         lease_seconds: float = 30,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
@@ -88,6 +90,7 @@ class ScientificBatchController:
         self.namespace = namespace
         self.result_publisher = result_publisher
         self.artifact_lifecycle = artifact_lifecycle
+        self.lifecycle = lifecycle
         self.lease_seconds = lease_seconds
         self.clock = clock or (lambda: datetime.now(UTC))
 
@@ -141,6 +144,8 @@ class ScientificBatchController:
             return None
         try:
             record = await self.repository.load(claim)
+            if self.lifecycle is not None:
+                await self.lifecycle.sync(record)
             await self._reconcile(claim, record, now=now)
             return claim.operation_id
         finally:
@@ -529,6 +534,9 @@ class ScientificBatchController:
                 continue
 
             observation = self._fence_same_workload_requeue(attempt, observation)
+            if self.lifecycle is not None:
+                await self.lifecycle.observe(record, attempt, observation)
+
             next_attempt, phase_events = self._ingest_observation(record, attempt, observation)
             events.extend(phase_events)
             if next_attempt != attempt:
@@ -1124,13 +1132,16 @@ class ScientificBatchController:
         *,
         now: datetime,
     ) -> ScientificBatchState:
-        return await self.repository.replace(
+        written = await self.repository.replace(
             claim,
             expected_revision=current.revision,
             record=replace(replacement, revision=current.revision + 1),
             events=events,
             now=now,
         )
+        if self.lifecycle is not None:
+            await self.lifecycle.sync(written)
+        return written
 
     @staticmethod
     def _replace_stage(

@@ -1754,6 +1754,86 @@ class WorkloadResource:
 
 
 @dataclass(frozen=True, slots=True)
+class PodPhaseInterval:
+    """One Kubernetes-observed phase window for an immutable Pod UID."""
+
+    phase: LifecyclePhase
+    started_at: datetime
+    ended_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if self.phase not in {
+            LifecyclePhase.IMAGE_LOADING,
+            LifecyclePhase.ARTIFACT_LOADING,
+            LifecyclePhase.RESTORING,
+            LifecyclePhase.SEMANTIC_WARMUP,
+            LifecyclePhase.ACTIVE_COMPUTE,
+            LifecyclePhase.ALLOCATED_IDLE,
+            LifecyclePhase.GRACE_DRAIN,
+            LifecyclePhase.TEARDOWN,
+        }:
+            raise ValueError("Pod phase interval is not an attributable runtime phase")
+        if self.started_at.tzinfo is None or self.started_at.utcoffset() is None:
+            raise ValueError("Pod phase interval start must be timezone-aware")
+        if self.ended_at is not None and (
+            self.ended_at.tzinfo is None
+            or self.ended_at.utcoffset() is None
+            or self.ended_at < self.started_at
+        ):
+            raise ValueError("Pod phase interval end is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class PodLifecycleObservation:
+    """Bounded Pod/node/device evidence retained outside controller state.
+
+    The canonical lifecycle ledger is the durable owner of these facts.  The
+    scientific controller carries this observation only across one reconcile
+    call; it deliberately does not grow a second display or accounting ledger.
+    """
+
+    pod_uid: str
+    pod_name: str | None
+    node_name: str | None
+    node_uid: str | None
+    observed_at: datetime
+    scheduled_at: datetime | None
+    gpu_count: int
+    gpu_uuids: tuple[str, ...] = ()
+    phases: tuple[PodPhaseInterval, ...] = ()
+
+    def __post_init__(self) -> None:
+        for value, maximum, label in (
+            (self.pod_uid, 128, "Pod UID"),
+            (self.pod_name, 253, "Pod name"),
+            (self.node_name, 253, "node name"),
+            (self.node_uid, 128, "node UID"),
+        ):
+            if value is not None and (not value or len(value) > maximum):
+                raise ValueError(f"observed {label} is invalid")
+        if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
+            raise ValueError("Pod lifecycle observation time must be timezone-aware")
+        if self.scheduled_at is not None and (
+            self.scheduled_at.tzinfo is None or self.scheduled_at.utcoffset() is None
+        ):
+            raise ValueError("Pod scheduling time must be timezone-aware")
+        if not 0 <= self.gpu_count <= 1024:
+            raise ValueError("observed Pod GPU count is outside the bound")
+        if len(self.gpu_uuids) != len(set(self.gpu_uuids)):
+            raise ValueError("observed GPU UUIDs must be unique")
+        if self.gpu_uuids and len(self.gpu_uuids) != self.gpu_count:
+            raise ValueError("observed GPU UUID count differs from the Pod allocation")
+        if any(
+            re.fullmatch(r"^(?:GPU|MIG)-[A-Za-z0-9_.:/-]{1,123}$", value) is None
+            for value in self.gpu_uuids
+        ):
+            raise ValueError("observed GPU UUID is invalid")
+        identities = [(item.phase, item.started_at) for item in self.phases]
+        if len(identities) != len(set(identities)):
+            raise ValueError("observed Pod phase starts must be unique")
+
+
+@dataclass(frozen=True, slots=True)
 class WorkloadObservation:
     ref: WorkloadRef
     attempt_id: UUID
@@ -1762,6 +1842,7 @@ class WorkloadObservation:
     scheduling_admission: SchedulingAdmission | None = None
     kueue_workload_uid: str | None = None
     pod_uids: tuple[str, ...] = ()
+    pod_lifecycle: tuple[PodLifecycleObservation, ...] = ()
     failure_kind: FailureKind | None = None
     failure_code: str | None = None
 
@@ -1777,6 +1858,9 @@ class WorkloadObservation:
             not value or len(value) > 128 for value in self.pod_uids
         ):
             raise ValueError("observed Pod UIDs must be unique bounded identities")
+        lifecycle_uids = tuple(value.pod_uid for value in self.pod_lifecycle)
+        if len(lifecycle_uids) != len(set(lifecycle_uids)) or not set(lifecycle_uids).issubset(self.pod_uids):
+            raise ValueError("Pod lifecycle evidence must uniquely bind an observed Pod UID")
         if self.kueue_workload_uid is not None and (not self.kueue_workload_uid or len(self.kueue_workload_uid) > 128):
             raise ValueError("observed Kueue Workload UID is invalid")
 

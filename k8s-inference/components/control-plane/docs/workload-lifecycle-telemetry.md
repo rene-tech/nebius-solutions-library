@@ -73,12 +73,46 @@ waits for Kubernetes/DCGM evidence before a rollup can reconcile.
 
 The scientific controller integrates through `LifecycleRepository`:
 
-- register an attempt subject after its immutable scheduling snapshot exists;
-- append Kueue admission, PodScheduled/release and lifecycle phase edges using
-  deterministic attempt/event keys;
-- append exact Workload/Job/Pod/node/GPU correlations as UIDs become known;
-- append preemption/retry events without reusing the prior attempt identity;
-- reconcile after terminal artifact and semantic-validation state is durable.
+- register one attempt subject after its immutable scheduling snapshot exists;
+- replay the durable scientific-batch event stream into queue, Kueue admission,
+  quota-reserved, cleanup, preemption and terminal edges;
+- observe PodScheduled plus init and regular-container timestamps for image
+  loading, artifact loading, restore, warmup, active compute and allocated idle;
+- append exact Workload/Job/Pod/node/GPU correlations as UIDs become known; and
+- close still-open quota, Pod, device and phase intervals only after the exact
+  attempt resource is confirmed released.
+
+This is a projection into the existing `PostgresLifecycleRepository`; it does
+not create a scientific display ledger. The scientific event table is the
+restart/replay source. Globally stable event and correlation keys make an
+identical replay a no-op, while reuse with different facts fails closed. The
+controller persists its own transition before projecting it, then replays all
+durable transitions when it next claims the run. A crash on either side is
+therefore repaired without charging an interval twice.
+
+Pod phase attribution is init-container aware. Kubernetes may report a Pod as
+`Running` while `prepare-workspace`, runtime artifact verification, restore or
+warmup init containers are still executing. The bridge does not emit active
+compute until every declared init container has terminated successfully and
+the `scientific-stage` container has an actual running/terminated timestamp.
+The collector-only window after model exit is allocated idle. Waiting and
+container-creation windows remain image loading or allocated idle rather than
+being guessed as compute.
+
+Node identity comes from the Node object's immutable UID. Exact device identity
+is accepted only from the trusted `telemetry.fs2.nebius.ai/gpu-uuids` Pod
+annotation, whose ordered JSON array must equal the stage's admitted GPU count.
+Scientific workload Pods have `automountServiceAccountToken: false`, so a model
+container cannot write this evidence. If no trusted PodResources/DCGM enricher
+has supplied the annotation, scheduler occupancy and phase accounting remain
+available but the device clock is intentionally absent and reconciliation
+reports that gap. No synthetic UUID is generated.
+
+At terminal release every inapplicable or unobserved required phase receives a
+zero-length `unavailable` interval. This makes the full accounting vocabulary
+queryable without inventing elapsed time. Restart, repeated observation,
+preemption and cancellation tests assert stable ledger cardinality and stable
+GPU-second rollups.
 
 These calls are additive and do not give the telemetry lane ownership of
 controller, artifact or scientific-admin state.
@@ -130,7 +164,8 @@ event edge leaves an incomplete interval. None is silently estimated.
 
 ```bash
 cd components/control-plane
-uv run pytest -q tests/test_lifecycle.py tests/test_lifecycle_api.py
+uv run pytest -q tests/test_lifecycle.py tests/test_lifecycle_api.py \
+  tests/test_scientific_lifecycle_bridge.py
 uv run pytest -q -m postgres tests/test_postgres_integration.py
 uv run ruff check src tests
 uv run mypy src/fs2_serve

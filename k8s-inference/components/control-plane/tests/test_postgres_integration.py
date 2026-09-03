@@ -18,6 +18,16 @@ from conftest import CONTROL_ROOT
 from fastapi import FastAPI
 from scientific_batch_fakes import FakeScientificBatchCluster
 from test_scientific_artifacts import ALLOWED_MEDIA_TYPES, FakeObjectStore, digest
+from test_scientific_lifecycle_bridge import (
+    EventSource,
+    OperationSource,
+    lifecycle_events,
+    pod_observation,
+    terminal_state,
+)
+from test_scientific_lifecycle_bridge import (
+    operation as lifecycle_operation,
+)
 
 from fs2_serve.access import AdminAccessService
 from fs2_serve.access_models import (
@@ -82,7 +92,9 @@ from fs2_serve.runtime import ActivationError, StubRuntimeClient
 from fs2_serve.scientific_artifacts import FinalizeArtifactUpload, PostgresArtifactRepository, ScientificArtifactService
 from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
 from fs2_serve.scientific_batch.controller import ScientificBatchController
+from fs2_serve.scientific_batch.lifecycle_bridge import ScientificLifecycleBridge
 from fs2_serve.scientific_batch.models import (
+    AttemptOutcome,
     CheckpointMode,
     PreemptionMode,
     ResourceClass,
@@ -407,6 +419,35 @@ async def test_real_postgres_lifecycle_ledger_is_append_only_and_reconciles_exac
         "reporting_read": True,
         "reporting_raw": False,
     }
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_scientific_bridge_replays_directly_into_postgres_lifecycle_repository(
+    postgres_store: PostgresStore,
+) -> None:
+    state, attempt = terminal_state(AttemptOutcome.CANCELLED)
+    events = lifecycle_events(state, attempt, preempted=False)
+    repository = PostgresLifecycleRepository(postgres_store.pool)
+    bridge = ScientificLifecycleBridge(
+        lifecycle=repository,
+        batches=EventSource(events),
+        operations=OperationSource(lifecycle_operation(state.operation_id, status=OperationStatus.CANCELLED)),
+        cluster="k8s-inference-h100",
+        source_resolution_seconds=5,
+    )
+
+    await bridge.observe(state, attempt, pod_observation(attempt, observed_at=state.scheduling.captured_at))
+    await bridge.sync(state)
+    await bridge.sync(state)
+
+    detail = await repository.get_workload(attempt.attempt_id, tenant_id=state.tenant_id)
+    assert detail is not None and detail.rollup is not None
+    assert detail.subject.attempt_id == attempt.attempt_id
+    assert detail.rollup.scheduler_occupied_gpu_seconds == 10
+    assert detail.rollup.device_allocated_gpu_seconds == 10
+    assert detail.rollup.active_gpu_seconds == 3
+    assert len([value for value in detail.signals if value.phase is LifecyclePhase.RELEASE]) == 1
 
 
 @pytest.mark.postgres

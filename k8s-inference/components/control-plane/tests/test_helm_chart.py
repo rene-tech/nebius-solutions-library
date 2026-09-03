@@ -1024,7 +1024,8 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         ]
     flavor_role = named[("ClusterRole", "fs2-serve-control-plane-scientific-batch-flavors")]
     assert flavor_role["rules"] == [
-        {"apiGroups": ["kueue.x-k8s.io"], "resources": ["resourceflavors"], "verbs": ["get"]}
+        {"apiGroups": ["kueue.x-k8s.io"], "resources": ["resourceflavors"], "verbs": ["get"]},
+        {"apiGroups": [""], "resources": ["nodes"], "verbs": ["get"]},
     ]
     assert named[("ClusterRoleBinding", "fs2-serve-control-plane-scientific-batch-flavors")]["subjects"] == [
         {"kind": "ServiceAccount", "name": "fs2-serve-control-plane-runtime", "namespace": "fs2-system"}
