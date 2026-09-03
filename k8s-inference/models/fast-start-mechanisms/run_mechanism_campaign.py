@@ -330,7 +330,7 @@ class Campaign:
     def cold_attempt(self, arm: str, attempt: int, *, warmup: bool = False) -> dict[str, Any]:
         """Create the arm, time capacity-available to semantic ready, tear down."""
 
-        rendered = render_arm(self._spec, arm=arm, attempt=attempt, campaign_id=self._campaign_id)
+        rendered = render_arm(self._spec, arm=arm, attempt=attempt, campaign_id=self._campaign_id, warmup=warmup)
         name = rendered["name"]
         self._cluster.apply(rendered["service"])
         self._cluster.apply(rendered["pod"])
@@ -365,6 +365,10 @@ class Campaign:
         finally:
             self._cluster.delete("pod", name)
             self._cluster.delete("service", name)
+            # Wait for the Pod to actually go before the next attempt starts, so
+            # two 16 GiB readers never share the node's page cache and the
+            # cohorts stay comparable.
+            self._await(lambda: self._cluster.get("pod", name) is None, f"{name} teardown", 300)
 
     def park(self, arm: str) -> dict[str, Any]:
         """Bring up the replica a promotion arm activates, and hold it."""
@@ -680,8 +684,10 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.teardown:
         for arm in ARMS:
             rendered = render_arm(spec, arm=arm, attempt=0, campaign_id=arguments.campaign_id)
-            cluster.delete("pod", rendered["name"])
-            cluster.delete("service", rendered["name"])
+            cluster.run(
+                "delete", "pod,service", "-l", f"fast-start.fs2.nebius/campaign={arguments.campaign_id}",
+                "--ignore-not-found", "--wait=false", check=False,
+            )
             for manifest in rendered["holders"]:
                 cluster.delete(manifest["kind"].lower(), manifest["metadata"]["name"])
         cluster.delete("pod", PROBER_NAME)

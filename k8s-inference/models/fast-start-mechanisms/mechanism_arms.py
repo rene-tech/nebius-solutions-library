@@ -329,6 +329,7 @@ def render_arm(
     arm: str,
     attempt: int,
     campaign_id: str,
+    warmup: bool = False,
 ) -> dict[str, Any]:
     """Render one attempt: its Pod, its Service, and any holder it needs.
 
@@ -339,11 +340,14 @@ def render_arm(
 
     if arm not in ARMS:
         raise ArmError(f"unknown campaign arm {arm}")
-    name = f"fsm-{campaign_id}-{arm.replace('host-memory-residency', 'hostmem')}-{attempt:03d}"[:63]
+    # A warm-up and the measured attempt of the same ordinal must not share a
+    # name, or the second apply races the first Pod's deletion.
+    ordinal = f"w{attempt:02d}" if warmup else f"{attempt:03d}"
+    name = f"fsm-{campaign_id}-{arm.replace('host-memory-residency', 'hostmem')}-{ordinal}"[:63]
     labels = {
         CAMPAIGN_LABEL: campaign_id,
         ARM_LABEL: arm,
-        ATTEMPT_LABEL: f"{attempt:03d}",
+        ATTEMPT_LABEL: ordinal,
         "app.kubernetes.io/managed-by": "fs2-fast-start-mechanism-campaign",
     }
     pod = _base_pod(spec, name=name, labels=labels)
@@ -414,7 +418,7 @@ def render_arm(
         "kind": "Service",
         "metadata": {"name": name, "namespace": spec["namespace"], "labels": dict(labels)},
         "spec": {
-            "selector": {CAMPAIGN_LABEL: campaign_id, ARM_LABEL: arm, ATTEMPT_LABEL: f"{attempt:03d}"},
+            "selector": {CAMPAIGN_LABEL: campaign_id, ARM_LABEL: arm, ATTEMPT_LABEL: ordinal},
             "ports": [{"name": "http", "port": spec["service_port"], "targetPort": "http", "protocol": "TCP"}],
         },
     }
