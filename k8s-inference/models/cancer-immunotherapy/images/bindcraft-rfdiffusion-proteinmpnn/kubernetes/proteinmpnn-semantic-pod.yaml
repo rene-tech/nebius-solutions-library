@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fs2-image-smoke-proteinmpnn
+  namespace: fs2-academic-poc
+  labels:
+    app.kubernetes.io/managed-by: fs2-cancer-runtime-image-smoke
+    app.kubernetes.io/part-of: fs2-serve
+    fs2.nebius.ai/offline-validation: "true"
+spec:
+  automountServiceAccountToken: false
+  restartPolicy: Never
+  enableServiceLinks: false
+  nodeSelector:
+    accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
+    capacity.fs2.nebius/source: capacity-block
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: fs2-inference
+      effect: NoSchedule
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: runtime
+      image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteinmpnn@sha256:d115781382fc3644616dd480f9b06312f853f73ec6c03a6de4887757e125dfbd
+      imagePullPolicy: IfNotPresent
+      command: [python, -c, "import time; print('ready', flush=True); time.sleep(86400)"]
+      resources:
+        requests:
+          cpu: "2"
+          memory: 8Gi
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: 24Gi
+          nvidia.com/gpu: "1"
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+      volumeMounts:
+        - name: work
+          mountPath: /work
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: work
+      emptyDir:
+        sizeLimit: 2Gi
+    - name: tmp
+      emptyDir:
+        sizeLimit: 2Gi

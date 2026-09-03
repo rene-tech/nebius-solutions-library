@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Model-local native BindCraft adapter with fail-closed academic admission."""
+"""Model-local native BindCraft adapter for the authorized academic runtime."""
 
 from __future__ import annotations
 
@@ -26,6 +26,21 @@ SETTINGS_SHA256 = "4124733af9dff65fb23e6a5f52b2329fc0d7a4ce5c50b6df225422f77fe46
 FILTERS_SHA256 = "4faeae2ed4a78b82ff8f9c3c763985ff0f0b97ebb9e10072d5d572424bb73206"
 BATCH_NAMESPACE = NAMESPACE_BY_KIND["batch"]
 BATCH_QUEUE = QUEUE_BY_NAMESPACE[BATCH_NAMESPACE]
+ACADEMIC_ASSET_ID = "pyrosetta-bindcraft"
+# The source wheel remains provenance; ordinary runs consume the installed tree.
+ACADEMIC_SOURCE_ARTIFACT_ID = "bindcraft-pyrosetta"
+ACADEMIC_ARTIFACT_SHA256 = "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242"
+ACADEMIC_SOURCE_ARTIFACT_BYTES = 1_667_097_173
+ACADEMIC_MATERIALIZATION_ARTIFACT_ID = "bindcraft-pyrosetta-installed-tree"
+ACADEMIC_MATERIALIZATION_SHA256 = "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+ACADEMIC_MATERIALIZATION_BYTES = 3_287_122_494
+ACADEMIC_AUTHORIZATION_RECEIPT_SHA256 = "5e3967f7f11b54c99f6a0f15c20dfdcc1c1d9e39fab4096d67781be275dba5ad"
+ACADEMIC_INSTALL_RECEIPT_SHA256 = "9807d5f3ee952621d318bca2e1b942234e90492f8e414ea4060c2607b131cae4"
+ACADEMIC_RUNTIME_ENVIRONMENT_DIGEST = "sha256:fd76ade0c607f27677bc04be3c60749f400eedc941d9e72967e19a4cedff80c2"
+ACADEMIC_PVC = "academic-assets-runtime-rwx"
+ACADEMIC_SUB_PATH = "pyrosetta-bindcraft/site-packages"
+ACADEMIC_CONSUMER_PATH = "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
+ACADEMIC_ASSET_GID = 65532
 
 AA = re.compile(r"^[ACDEFGHIKLMNPQRSTVWY]+$")
 DNS = re.compile(r"^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$")
@@ -238,7 +253,8 @@ def _label(value: str, label: str) -> str:
     return value
 
 
-def _job(*, image: str, name: str, command: list[str], gpu: bool, labels: dict[str, str], annotations: dict[str, str], config_name: str, access_receipt_digest: str) -> dict[str, Any]:
+def _job(*, image: str, name: str, command: list[str], gpu: bool, labels: dict[str, str], annotations: dict[str, str], config_name: str) -> dict[str, Any]:
+    image_digest = image.rsplit("@", 1)[1]
     resources: dict[str, dict[str, Any]] = {
         "requests": {"cpu": "16" if gpu else "2", "memory": "96Gi" if gpu else "4Gi"},
         "limits": {"cpu": "24" if gpu else "4", "memory": "128Gi" if gpu else "8Gi"},
@@ -251,33 +267,36 @@ def _job(*, image: str, name: str, command: list[str], gpu: bool, labels: dict[s
         "serviceAccountName": "fs2-batch", "automountServiceAccountToken": False,
         "enableServiceLinks": False, "restartPolicy": "Never",
         "terminationGracePeriodSeconds": 300,
-        "securityContext": {"runAsNonRoot": True, "runAsUser": 10001, "runAsGroup": 10001, "fsGroup": 10001, "seccompProfile": {"type": "RuntimeDefault"}},
+        "securityContext": {
+            "runAsNonRoot": True,
+            "runAsUser": 10001,
+            "runAsGroup": 10001,
+            "supplementalGroups": [ACADEMIC_ASSET_GID],
+            "seccompProfile": {"type": "RuntimeDefault"},
+        },
         "imagePullSecrets": [{"name": "fs2-runtime-registry"}],
-        "initContainers": [{
-            "name": "academic-access-gate", "image": image, "imagePullPolicy": "IfNotPresent",
-            "command": [
-                "/opt/fs2/bin/verify-academic-access", "--profile", "academic",
-                "--receipt", "/var/run/fs2-access/receipt.json",
-                "--expected-digest", access_receipt_digest,
-                "--required-component", "pyrosetta",
-            ],
-            "resources": {"requests": {"cpu": "100m", "memory": "128Mi"}, "limits": {"cpu": "1", "memory": "512Mi"}},
-            "securityContext": security,
-            "volumeMounts": [{"name": "access-receipt", "mountPath": "/var/run/fs2-access", "readOnly": True}],
-        }],
         "containers": [{
             "name": "batch", "image": image, "imagePullPolicy": "IfNotPresent",
             "command": command, "resources": resources, "securityContext": security,
+            "env": [
+                {"name": "PYTHONPATH", "value": f"{ACADEMIC_CONSUMER_PATH}:/opt/bindcraft"},
+                {"name": "FS2_RUNTIME_IMAGE_DIGEST", "value": image_digest},
+            ],
             "volumeMounts": [
                 {"name": "request", "mountPath": "/var/run/fs2", "readOnly": True},
-                {"name": "access-receipt", "mountPath": "/var/run/fs2-access", "readOnly": True},
+                {
+                    "name": "academic-runtime",
+                    "mountPath": ACADEMIC_CONSUMER_PATH,
+                    "subPath": ACADEMIC_SUB_PATH,
+                    "readOnly": True,
+                },
                 {"name": "workspace", "mountPath": "/workspace"},
                 {"name": "tmp", "mountPath": "/tmp"},
             ],
         }],
         "volumes": [
             {"name": "request", "configMap": {"name": config_name}},
-            {"name": "access-receipt", "configMap": {"name": f"fs2-access-{access_receipt_digest[:12]}"}},
+            {"name": "academic-runtime", "persistentVolumeClaim": {"claimName": ACADEMIC_PVC, "readOnly": True}},
             {"name": "workspace", "persistentVolumeClaim": {"claimName": "fs2-cache"}},
             {"name": "tmp", "emptyDir": {"sizeLimit": "128Gi"}},
         ],
@@ -299,7 +318,6 @@ def render_plan(
     *,
     artifact_loader: Callable[[str], bytes],
     runtime_image: str,
-    access_receipt_digest: str,
     operation_id: str,
     workload_id: str,
     attempt_id: str,
@@ -308,7 +326,6 @@ def render_plan(
 ) -> dict[str, Any]:
     request, _ = validate_request(value, input_manifest_value, artifact_loader=artifact_loader)
     image, image_digest = _image(runtime_image)
-    strong_sha256(access_receipt_digest, "native BindCraft academic access receipt")
     for item, label in ((workload_id, "workload_id"), (attempt_id, "attempt_id"), (tenant_id, "tenant_id"), (local_queue, "local_queue")):
         _label(item, label)
     if not isinstance(operation_id, str) or OPAQUE.fullmatch(operation_id) is None:
@@ -331,7 +348,10 @@ def render_plan(
         "fs2.nebius.ai/source-revision": SOURCE_REVISION,
         "fs2.nebius.ai/request-sha256": digest,
         "fs2.nebius.ai/access-profile": "academic",
-        "fs2.nebius.ai/asset-access-receipt-digest": access_receipt_digest,
+        "fs2.nebius.ai/academic-asset-id": ACADEMIC_ASSET_ID,
+        "fs2.nebius.ai/academic-source-artifact-sha256": ACADEMIC_ARTIFACT_SHA256,
+        "fs2.nebius.ai/academic-materialization-sha256": ACADEMIC_MATERIALIZATION_SHA256,
+        "fs2.nebius.ai/academic-runtime-environment-digest": ACADEMIC_RUNTIME_ENVIRONMENT_DIGEST,
     }
     config_name = f"fs2-run-{token}"
     nodes: list[dict[str, Any]] = []
@@ -353,7 +373,7 @@ def render_plan(
         ]
         nodes.append({
             "id": node_id, "stage_id": "trajectory", "depends_on": [], "seed": seed,
-            "job": _job(image=image, name=f"bindcraft-{token}-s{index:03d}", command=command, gpu=True, labels=labels, annotations=annotations, config_name=config_name, access_receipt_digest=access_receipt_digest),
+            "job": _job(image=image, name=f"bindcraft-{token}-s{index:03d}", command=command, gpu=True, labels=labels, annotations=annotations, config_name=config_name),
         })
     aggregate = [
         "/opt/fs2/bin/bindcraft-batch", "aggregate", "--backend-id", ADAPTER_ID,
@@ -365,14 +385,39 @@ def render_plan(
     ]
     nodes.append({
         "id": "aggregate", "stage_id": "aggregate", "depends_on": shard_ids, "seed": None,
-        "job": _job(image=image, name=f"bindcraft-{token}-aggregate", command=aggregate, gpu=False, labels=labels, annotations=annotations, config_name=config_name, access_receipt_digest=access_receipt_digest),
+        "job": _job(image=image, name=f"bindcraft-{token}-aggregate", command=aggregate, gpu=False, labels=labels, annotations=annotations, config_name=config_name),
     })
     return {
         "schema": "fs2-serve.nebius.ai/bindcraft-native-batch-plan/v1",
         "model_id": MODEL_ID, "backend_id": ADAPTER_ID,
         "operation_id": operation_id, "workload_id": workload_id, "attempt_id": attempt_id,
         "request_sha256": digest, "runtime_image_digest": image_digest,
-        "access_profile": "academic", "access_receipt_digest": access_receipt_digest,
+        "access_profile": "academic",
+        "academic_asset": {
+            "asset_id": ACADEMIC_ASSET_ID,
+            "materialization": {
+                "kind": "ArtifactMaterialization",
+                "artifact_id": ACADEMIC_MATERIALIZATION_ARTIFACT_ID,
+                "content_digest_sha256": ACADEMIC_MATERIALIZATION_SHA256,
+                "content_bytes": ACADEMIC_MATERIALIZATION_BYTES,
+                "content_identity_kind": "tree-manifest",
+                "content_manifest_algorithm": "fs2-tree-manifest/v1",
+                "claim": ACADEMIC_PVC,
+                "source_sub_path": ACADEMIC_SUB_PATH,
+                "consumer_path": ACADEMIC_CONSUMER_PATH,
+                "read_only": True,
+                "supplemental_group": ACADEMIC_ASSET_GID,
+            },
+            "source_artifact": {
+                "artifact_id": ACADEMIC_SOURCE_ARTIFACT_ID,
+                "artifact_sha256": ACADEMIC_ARTIFACT_SHA256,
+                "size_bytes": ACADEMIC_SOURCE_ARTIFACT_BYTES,
+            },
+            "authorization_receipt_sha256": ACADEMIC_AUTHORIZATION_RECEIPT_SHA256,
+            "install_receipt_sha256": ACADEMIC_INSTALL_RECEIPT_SHA256,
+            "runtime_environment_digest": ACADEMIC_RUNTIME_ENVIRONMENT_DIGEST,
+            "serving_admission": "AdmittedNoPerRequestLicenseReceipt",
+        },
         "nodes": nodes,
     }
 
@@ -398,11 +443,9 @@ def validate_output_manifest(
     *,
     artifact_loader: Callable[[str], bytes],
     expected_runtime_image_digest: str,
-    access_receipt_digest: str,
 ) -> dict[str, Any]:
     request, _ = validate_request(request_value, input_manifest_value, artifact_loader=artifact_loader)
     strong_sha256(expected_runtime_image_digest, "admitted native BindCraft runtime digest", image=True)
-    strong_sha256(access_receipt_digest, "native BindCraft academic access receipt")
     manifest = _manifest(output_manifest_value, None, "native BindCraft output manifest")
     entries = _entry_map(manifest)
     count = request["parameters"]["shard_count"]
@@ -413,24 +456,25 @@ def validate_output_manifest(
         entry = entries[f"shard-{index:03d}"]
         if entry["semantic_type"] != "bindcraft-native-shard-result-json/v1":
             raise CatalogError("native BindCraft shard has the wrong semantic type")
-        shard = _exact(_json_entry(entry, artifact_loader, f"native BindCraft shard {index}"), {"backend_id", "source_revision", "access_receipt_digest", "index", "seed", "status"}, f"native BindCraft shard {index}")
+        shard = _exact(_json_entry(entry, artifact_loader, f"native BindCraft shard {index}"), {"backend_id", "source_revision", "index", "seed", "status"}, f"native BindCraft shard {index}")
         if shard != {
             "backend_id": ADAPTER_ID, "source_revision": SOURCE_REVISION,
-            "access_receipt_digest": access_receipt_digest, "index": index,
-            "seed": request["parameters"]["base_seed"] + index, "status": "succeeded",
+            "index": index, "seed": request["parameters"]["base_seed"] + index,
+            "status": "succeeded",
         }:
-            raise CatalogError("native BindCraft shard identity, receipt, seed, or status is invalid")
+            raise CatalogError("native BindCraft shard identity, seed, or status is invalid")
     aggregate_entry = entries["aggregate"]
     if aggregate_entry["semantic_type"] != "bindcraft-native-aggregate-json/v1":
         raise CatalogError("native BindCraft aggregate has the wrong semantic type")
     aggregate = _exact(
         _json_entry(aggregate_entry, artifact_loader, "native BindCraft aggregate"),
-        {"backend_id", "source_revision", "access_profile", "access_receipt_digest", "request_sha256", "runtime_image_digest", "expected_shards", "succeeded_shards", "atomic_commit"},
+        {"backend_id", "source_revision", "access_profile", "academic_asset_id", "academic_artifact_sha256", "request_sha256", "runtime_image_digest", "expected_shards", "succeeded_shards", "atomic_commit"},
         "native BindCraft aggregate",
     )
     if aggregate != {
         "backend_id": ADAPTER_ID, "source_revision": SOURCE_REVISION,
-        "access_profile": "academic", "access_receipt_digest": access_receipt_digest,
+        "access_profile": "academic", "academic_asset_id": ACADEMIC_ASSET_ID,
+        "academic_artifact_sha256": ACADEMIC_ARTIFACT_SHA256,
         "request_sha256": request_digest(request),
         "runtime_image_digest": expected_runtime_image_digest,
         "expected_shards": count, "succeeded_shards": count, "atomic_commit": True,
@@ -479,7 +523,8 @@ def validate_output_manifest(
         "request_sha256": request_digest(request),
         "output_manifest_sha256": hashlib.sha256(canonical_bytes(manifest)).hexdigest(),
         "candidate_count": len(metric_names), "shard_count": count,
-        "access_receipt_digest": access_receipt_digest,
+        "academic_asset_id": ACADEMIC_ASSET_ID,
+        "academic_artifact_sha256": ACADEMIC_ARTIFACT_SHA256,
         "qualification_effect": "none-offline-validation-only",
     }
 

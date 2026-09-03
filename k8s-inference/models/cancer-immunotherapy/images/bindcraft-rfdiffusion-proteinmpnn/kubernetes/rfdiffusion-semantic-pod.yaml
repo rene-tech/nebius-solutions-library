@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fs2-image-smoke-rfdiffusion
+  namespace: fs2-academic-poc
+  labels:
+    app.kubernetes.io/managed-by: fs2-cancer-runtime-image-smoke
+    app.kubernetes.io/part-of: fs2-serve
+    fs2.nebius.ai/offline-validation: "true"
+spec:
+  automountServiceAccountToken: false
+  restartPolicy: Never
+  enableServiceLinks: false
+  nodeSelector:
+    accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
+    capacity.fs2.nebius/source: capacity-block
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: fs2-inference
+      effect: NoSchedule
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: runtime
+      image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:e502a3267793bb19d1d1ff22b2210c65d05247b24e5460cfc5ef49d9a75750d7
+      imagePullPolicy: IfNotPresent
+      command: [python, -c, "import time; print('ready', flush=True); time.sleep(86400)"]
+      env:
+        - name: FS2_REQUEST_PATH
+          value: /work/request.json
+        - name: FS2_RFDIFFUSION_CHECKPOINT
+          value: /work/Base_ckpt.pt
+      resources:
+        requests:
+          cpu: "2"
+          memory: 16Gi
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: 32Gi
+          nvidia.com/gpu: "1"
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+      volumeMounts:
+        - name: work
+          mountPath: /work
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: work
+      emptyDir:
+        sizeLimit: 4Gi
+    - name: tmp
+      emptyDir:
+        sizeLimit: 4Gi

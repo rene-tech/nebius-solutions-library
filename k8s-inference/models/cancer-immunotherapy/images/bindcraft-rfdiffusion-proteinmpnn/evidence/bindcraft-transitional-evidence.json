@@ -1,0 +1,36 @@
+{
+  "schema": "fs2.nebius.ai/bindcraft-transitional-validation/v1",
+  "acceptance_effect": "none",
+  "note": "These runs informed the corrected immutable successor but are not semantic acceptance.",
+  "runs": [
+    {
+      "condition": "legacy mount contract",
+      "pod_name": "fs2-image-smoke-bindcraft",
+      "observed_security_context": "fsGroup=10001",
+      "observed_mount_path": "/runtime",
+      "disposition": "deleted before acceptance",
+      "reason_not_accepted": "The mount contract could recursively change private-tree ownership and did not use the canonical consumer path."
+    },
+    {
+      "condition": "64Gi post-design memory limit",
+      "result": "exit 137 after design",
+      "disposition": "superseded by measured 96Gi request / 128Gi limit",
+      "reason_not_accepted": "The full post-design path did not finish."
+    },
+    {
+      "pod_uid": "e2320b45-eba5-4070-a183-6c5a5f05f4cf",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:d805b8cfae2483e446a67e535431534bd54c9c9a008328880aa1455cad6e5274",
+      "result": "upstream post-design succeeded; wrapper rejected output",
+      "disposition": "deleted",
+      "reason_not_accepted": "The wrapper expected a filename without BindCraft's ranked AF2 model suffix."
+    },
+    {
+      "pod_uid": "7e59b49a-8dc6-4926-b3ce-9966baf41b6b",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:95632a759395441d78bc1bb3ad0357fa130a18f6ded3ecbcebdb6dc5c4c2ce7c",
+      "result": "full upstream post-design and wrapper artifacts succeeded; independent validator rejected aggregate",
+      "disposition": "deleted",
+      "reason_not_accepted": "The wrapper request digest omitted the canonical trailing newline required by the shared artifact serializer."
+    }
+  ],
+  "accepted_successor": "sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1"
+}

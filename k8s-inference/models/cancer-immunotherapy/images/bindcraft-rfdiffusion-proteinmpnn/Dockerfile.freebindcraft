@@ -1,0 +1,75 @@
+# syntax=docker/dockerfile:1.7
+FROM docker.io/pytorch/pytorch@sha256:0279f7aa29974bf64e61d0ff6e979b41a249b3662a46e30778dbf80b8c99c361
+
+ARG SOURCE_REVISION=28c43fc48942eebd7918f504e9812c5c17bb3411
+ARG SOURCE_ARCHIVE_SHA256=a0e1123d4e7d65567d87bc93e7e803df57d7203e8652e38656d99ee7dd57bab6
+ARG COLABDESIGN_REVISION=e31a56fe1d9b4de25c8697f3a28b75892941cc72
+ARG COLABDESIGN_ARCHIVE_SHA256=26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f
+ARG PDBFIXER_REVISION=199f03df6c50f7cf6120de766f4ccce426fda4e9
+ARG PDBFIXER_ARCHIVE_SHA256=4d53a2a88b39b1303c92f8b75247886d4ee1fe5bd4034c27bf233ef9c1130010
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY runtime/fetch_verified.py /opt/fs2/fetch_verified.py
+COPY requirements.bindcraft.txt /tmp/requirements.bindcraft.txt
+RUN --mount=type=cache,id=fs2-cancer-bindcraft-pip,target=/root/.cache/pip,sharing=locked \
+    set -eux; \
+    python -m pip install --timeout 300 --retries 10 -r /tmp/requirements.bindcraft.txt; \
+    ln -sfn /opt/conda/lib/python3.10/site-packages/nvidia/cusparse/lib/libcusparse.so.12 /opt/conda/lib/libcusparse.so.12; \
+    rm -f /tmp/requirements.bindcraft.txt
+COPY requirements.freebindcraft.txt /tmp/requirements.freebindcraft.txt
+RUN set -eux; \
+    python -m pip install --no-cache-dir -r /tmp/requirements.freebindcraft.txt; \
+    rm -rf /tmp/requirements.freebindcraft.txt /root/.cache; \
+    python /opt/fs2/fetch_verified.py \
+      "https://github.com/cytokineking/FreeBindCraft/archive/${SOURCE_REVISION}.tar.gz" \
+      "${SOURCE_ARCHIVE_SHA256}" /tmp/freebindcraft.tar.gz; \
+    mkdir -p /opt/freebindcraft; \
+    tar -xzf /tmp/freebindcraft.tar.gz --strip-components=1 -C /opt/freebindcraft; \
+    rm -rf /opt/freebindcraft/performance_data; \
+    python /opt/fs2/fetch_verified.py \
+      "https://github.com/sokrypton/ColabDesign/archive/${COLABDESIGN_REVISION}.tar.gz" \
+      "${COLABDESIGN_ARCHIVE_SHA256}" /tmp/colabdesign.tar.gz; \
+    mkdir -p /tmp/colabdesign; \
+    tar -xzf /tmp/colabdesign.tar.gz --strip-components=1 -C /tmp/colabdesign; \
+    python -m pip install --no-cache-dir --no-deps /tmp/colabdesign; \
+    rm -rf \
+      /opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights \
+      /opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble; \
+    python /opt/fs2/fetch_verified.py \
+      "https://github.com/openmm/pdbfixer/archive/${PDBFIXER_REVISION}.tar.gz" \
+      "${PDBFIXER_ARCHIVE_SHA256}" /tmp/pdbfixer.tar.gz; \
+    mkdir -p /tmp/pdbfixer; \
+    tar -xzf /tmp/pdbfixer.tar.gz --strip-components=1 -C /tmp/pdbfixer; \
+    python -m pip install --no-cache-dir --no-deps /tmp/pdbfixer; \
+    chmod +x /opt/freebindcraft/functions/dssp /opt/freebindcraft/functions/sc /opt/freebindcraft/functions/FASPR; \
+    rm -rf /tmp/freebindcraft.tar.gz /tmp/colabdesign.tar.gz /tmp/pdbfixer.tar.gz /tmp/colabdesign /tmp/pdbfixer /root/.cache; \
+    find /opt/freebindcraft -type f \( -name '*.pt' -o -name '*.pth' -o -name '*.ckpt' -o -name '*.pkl' \) -delete; \
+    test ! -e /opt/freebindcraft/params; \
+    useradd --create-home --uid 10001 --shell /usr/sbin/nologin fs2; \
+    chown -R root:root /opt/freebindcraft; \
+    chmod -R a-w /opt/freebindcraft
+
+COPY --chown=root:root runtime/artifact_gate.py runtime/runtime_entrypoint.py /opt/fs2/
+
+LABEL org.opencontainers.image.source="https://github.com/cytokineking/FreeBindCraft" \
+      org.opencontainers.image.revision="28c43fc48942eebd7918f504e9812c5c17bb3411" \
+      org.opencontainers.image.licenses="MIT" \
+      ai.nebius.fs2.runtime.relationship="derived-open-non-equivalent-fallback" \
+      ai.nebius.fs2.runtime.weights="external" \
+      ai.nebius.fs2.runtime.pyrosetta="absent"
+
+ENV FS2_RUNTIME_NAME=freebindcraft-open-fallback \
+    FS2_SOURCE_REVISION=28c43fc48942eebd7918f504e9812c5c17bb3411 \
+    FS2_ARTIFACT_KIND=freebindcraft-af2-params \
+    FS2_ARTIFACT_ROOT=/models/alphafold2 \
+    FS2_ARTIFACT_MANIFEST=/models/alphafold2/manifest.json \
+    LD_LIBRARY_PATH=/opt/conda/lib/python3.10/site-packages/torch/lib:/opt/conda/lib/python3.10/site-packages/nvidia/cusparse/lib:/opt/conda/lib/python3.10/site-packages/nvidia/nvjitlink/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64 \
+    PYTHONPATH=/opt/freebindcraft \
+    XLA_PYTHON_CLIENT_PREALLOCATE=false \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    PYTHONUNBUFFERED=1
+
+USER 10001:10001
+WORKDIR /opt/freebindcraft
+ENTRYPOINT ["python", "/opt/fs2/runtime_entrypoint.py"]
+CMD ["python", "-u", "/opt/freebindcraft/bindcraft.py", "--no-pyrosetta"]
