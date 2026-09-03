@@ -1,0 +1,215 @@
+{
+  "artifacts": [
+    {
+      "archive_provenance": {
+        "bytes": 5587968000,
+        "filename": "alphafold_params_2022-12-06.tar",
+        "license_id": "CC-BY-4.0",
+        "sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+        "source_revision": "gcs-generation-1670353726160664"
+      },
+      "artifact_id": "alphafold2-params",
+      "consumers": [
+        {
+          "binding_kind": "environment-variable",
+          "binding_name": "AF2_DIR",
+          "model_id": "proteina-complexa",
+          "mount_path": "/opt/fs2/artifacts/alphafold2-params",
+          "stages": [
+            "generate",
+            "evaluate"
+          ]
+        }
+      ],
+      "generated_entries": [],
+      "mounts": [
+        {
+          "mount_path": "/opt/fs2/artifacts/alphafold2-params",
+          "read_only": true
+        }
+      ],
+      "tree_identity": {
+        "entry_count": 16,
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "inventory_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+        "total_bytes": 5587956571
+      },
+      "volume": {
+        "claim": "academic-assets-runtime-rwx",
+        "namespace": "fs2-academic-poc",
+        "read_only": true,
+        "sub_path": "scientific-localization/public/alphafold2-params"
+      }
+    },
+    {
+      "archive_provenance": {
+        "bytes": 5587968000,
+        "filename": "alphafold_params_2022-12-06.tar",
+        "license_id": "CC-BY-4.0",
+        "sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+        "source_revision": "gcs-generation-1670353726160664"
+      },
+      "artifact_id": "alphafold2-params-bindcraft",
+      "consumers": [
+        {
+          "binding_kind": "environment-variable",
+          "binding_name": "FS2_ARTIFACT_ROOT",
+          "model_id": "bindcraft",
+          "mount_path": "/models/alphafold2"
+        }
+      ],
+      "generated_entries": [
+        {
+          "bytes": 2866,
+          "generator": "external-model-artifact-manifest/v1",
+          "generator_inputs": {
+            "artifact_kind": "bindcraft-af2-params",
+            "source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
+          },
+          "path": "manifest.json",
+          "sha256": "9d0b7e45378ed707cfc31585f3ae960282dc76f3e2c4f60b545b02dbc728423b"
+        }
+      ],
+      "mounts": [
+        {
+          "mount_path": "/models/alphafold2",
+          "read_only": true
+        }
+      ],
+      "tree_identity": {
+        "entry_count": 17,
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "inventory_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+        "total_bytes": 5587959437
+      },
+      "volume": {
+        "claim": "academic-assets-runtime-rwx",
+        "namespace": "fs2-academic-poc",
+        "read_only": true,
+        "sub_path": "scientific-localization/public/alphafold2-params-bindcraft"
+      }
+    },
+    {
+      "archive_provenance": {
+        "bytes": 50276715,
+        "filename": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+        "license_id": "Apache-2.0",
+        "sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+        "source_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72"
+      },
+      "artifact_id": "colabdesign-mpnn-weights-vanilla",
+      "consumers": [
+        {
+          "binding_kind": "installed-package-path",
+          "binding_name": "colabdesign.mpnn.weights",
+          "model_id": "bindcraft",
+          "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights"
+        }
+      ],
+      "generated_entries": [],
+      "mounts": [
+        {
+          "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+          "read_only": true
+        }
+      ],
+      "tree_identity": {
+        "entry_count": 5,
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "inventory_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+        "total_bytes": 26602793
+      },
+      "volume": {
+        "claim": "academic-assets-runtime-rwx",
+        "namespace": "fs2-academic-poc",
+        "read_only": true,
+        "sub_path": "scientific-localization/public/colabdesign-mpnn-weights-vanilla"
+      }
+    },
+    {
+      "archive_provenance": {
+        "bytes": 50276715,
+        "filename": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+        "license_id": "Apache-2.0",
+        "sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+        "source_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72"
+      },
+      "artifact_id": "colabdesign-mpnn-weights-soluble",
+      "consumers": [
+        {
+          "binding_kind": "installed-package-path",
+          "binding_name": "colabdesign.mpnn.weights_soluble",
+          "model_id": "bindcraft",
+          "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble"
+        }
+      ],
+      "generated_entries": [],
+      "mounts": [
+        {
+          "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
+          "read_only": true
+        }
+      ],
+      "tree_identity": {
+        "entry_count": 5,
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "inventory_sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+        "total_bytes": 26601241
+      },
+      "volume": {
+        "claim": "academic-assets-runtime-rwx",
+        "namespace": "fs2-academic-poc",
+        "read_only": true,
+        "sub_path": "scientific-localization/public/colabdesign-mpnn-weights-soluble"
+      }
+    },
+    {
+      "archive_provenance": {
+        "bytes": 391401102,
+        "filename": "mols.zip",
+        "license_id": "MIT",
+        "sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
+        "source_revision": "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c"
+      },
+      "artifact_id": "boltzgen-inference-molecules",
+      "consumers": [
+        {
+          "binding_kind": "argv-option",
+          "binding_name": "--moldir",
+          "model_id": "boltzgen",
+          "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+          "stages": [
+            "configure",
+            "design",
+            "inverse-folding",
+            "folding",
+            "design-folding",
+            "affinity"
+          ]
+        }
+      ],
+      "generated_entries": [],
+      "mounts": [
+        {
+          "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+          "read_only": true
+        }
+      ],
+      "tree_identity": {
+        "entry_count": 45227,
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+        "total_bytes": 1820698819
+      },
+      "volume": {
+        "claim": "academic-assets-runtime-rwx",
+        "namespace": "fs2-academic-poc",
+        "read_only": true,
+        "sub_path": "scientific-localization/public/boltzgen-inference-molecules"
+      }
+    }
+  ],
+  "note": "These trees live under one sub-path of a claim that also holds tenant-private academic assets. The sub-path keeps them separable; it is not a global cache.",
+  "schema": "fs2-serve.nebius.ai/scientific-localization-binding-handoff/v1",
+  "scope": "poc"
+}

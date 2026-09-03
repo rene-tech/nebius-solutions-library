@@ -64,3 +64,22 @@ The runtime contract is bound to the locally smoke-tested immutable image
 digest, but the molecule dataset remains terms/readiness-blocked. The candidate
 has no complete artifact manifest, H100 semantic receipt, exposed route, or
 deployment readiness.
+
+## Molecule dictionary localization
+
+`--moldir` names a directory, never `mols.zip`. The runtime mount must hold the
+extracted canonical dictionary: 45,227 flat-root `.pkl` files, 1,820,698,819
+bytes, tree inventory SHA-256
+`8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc`. The archive
+that produced it is separate provenance: `mols.zip`, 391,401,102 bytes, SHA-256
+`3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53`.
+
+Chemical Component Dictionary codes are one to five characters, so the entry
+pattern is `[A-Z0-9]{1,5}`. A three-character-only pattern rejects 1,676 of the
+45,227 real entries and must not be used.
+
+Every stage that mounts the dictionary carries a `RuntimeTreeBinding`, and the
+preflight in `adapters.localization` fails closed on an archive-only mount, a
+partial tree, a wrong tree, or an identity mismatch before any argv runs. The
+declaration lives in `catalog/runtime/contracts/scientific-artifact-localization.json`.
+

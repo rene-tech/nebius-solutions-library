@@ -293,6 +293,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
             {
                 "boltzgen-inference-molecules",
                 "alphafold2-params",
+                "alphafold2-params-bindcraft",
                 "colabdesign-mpnn-weights-vanilla",
                 "colabdesign-mpnn-weights-soluble",
             },
@@ -347,6 +348,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
             {
                 ("boltzgen-inference-molecules", "boltzgen", "--moldir"),
                 ("alphafold2-params", "proteina-complexa", "AF2_DIR"),
+                ("alphafold2-params-bindcraft", "bindcraft", "FS2_ARTIFACT_ROOT"),
                 (
                     "colabdesign-mpnn-weights-vanilla",
                     "bindcraft",
@@ -399,6 +401,45 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                     self.assertIn(artifact["archive"]["source_revision"], prefix)
                 else:
                     self.assertIsNone(prefix)
+
+    def test_every_localized_tree_has_a_distinct_identity_and_mount(self) -> None:
+        contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
+        digests = [item["tree"]["inventory_sha256"] for item in contract["artifacts"]]
+        mounts = [path for item in contract["artifacts"] for path in item["tree"]["mount_paths"]]
+        self.assertEqual(len(set(digests)), len(digests))
+        self.assertEqual(len(set(mounts)), len(mounts))
+
+    def test_the_bindcraft_alphafold_tree_carries_its_admission_manifest(self) -> None:
+        """The published image admits /models/alphafold2 only through a manifest.
+
+        `artifact_gate.verify_manifest` reads FS2_ARTIFACT_MANIFEST and checks
+        artifact_kind and source_revision against the runtime, so the sixteen-file
+        upstream tree does not run that image on its own.
+        """
+
+        contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
+        artifacts = {item["artifact_id"]: item for item in contract["artifacts"]}
+        proteina = artifacts["alphafold2-params"]["tree"]
+        bindcraft = artifacts["alphafold2-params-bindcraft"]["tree"]
+
+        self.assertNotIn("generated_entries", proteina)
+        generated = bindcraft["generated_entries"]
+        self.assertEqual(1, len(generated))
+        self.assertEqual("manifest.json", generated[0]["path"])
+        self.assertEqual("external-model-artifact-manifest/v1", generated[0]["generator"])
+        self.assertEqual(
+            {"artifact_kind": "bindcraft-af2-params", "source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"},
+            generated[0]["generator_inputs"],
+        )
+        # The generated document is inside the tree identity, and accounts for
+        # exactly the difference between the two trees.
+        self.assertEqual(proteina["entry_count"] + 1, bindcraft["entry_count"])
+        self.assertEqual(proteina["total_bytes"] + generated[0]["bytes"], bindcraft["total_bytes"])
+        self.assertEqual(["/models/alphafold2"], bindcraft["mount_paths"])
+        self.assertEqual(
+            artifacts["alphafold2-params"]["archive"]["sha256"],
+            artifacts["alphafold2-params-bindcraft"]["archive"]["sha256"],
+        )
 
     def test_localization_receipt_example_validates_and_separates_identities(self) -> None:
         contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")

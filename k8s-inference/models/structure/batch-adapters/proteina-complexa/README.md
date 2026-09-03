@@ -50,5 +50,23 @@ PYTHONPATH=src:../../catalog/runtime uv run pytest -q \
 
 The runtime contract is bound to the locally smoke-tested immutable image
 digest, but the candidate still has no complete artifact-readiness manifest,
-H100 semantic receipt, exposed route, or deployment readiness. In particular,
-the AlphaFold2 cache still needs a declared, verified archive expansion.
+exposed route, or deployment readiness.
+
+## AlphaFold2 parameter localization
+
+`AF2_DIR` names a directory, never `alphafold_params_2022-12-06.tar`. ColabDesign
+resolves `AF2_DIR/params/params_<model>.npz` first and `AF2_DIR/params_<model>.npz`
+second, and upstream `download_startup.sh` expands the archive flat into that
+directory, so the canonical localized tree is the flat sixteen-entry parameter
+set: 5,587,956,571 bytes, tree inventory SHA-256
+`cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4`. The archive
+that produced it is separate provenance: 5,587,968,000 bytes, SHA-256
+`36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3`. The archive
+is 11,429 bytes larger than the tree it carries, because tar headers and block
+padding are not runtime content.
+
+Both stages that mount AlphaFold2, `generate` for the protein-target variant and
+`evaluate`, carry a `RuntimeTreeBinding`, and the preflight in
+`adapters.localization` fails closed on an archive-only mount, a partial tree, a
+wrong tree, or an identity mismatch before any argv runs. The declaration lives
+in `catalog/runtime/contracts/scientific-artifact-localization.json`.

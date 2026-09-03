@@ -66,6 +66,10 @@ _MEDIA_TYPES = {
 }
 _MEMBER_PREFIX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*/$")
 
+EXTERNAL_MANIFEST_SCHEMA = "fs2.nebius.ai/external-model-artifact-manifest/v1"
+EXTERNAL_MANIFEST_GENERATOR = "external-model-artifact-manifest/v1"
+_GENERATORS = frozenset({EXTERNAL_MANIFEST_GENERATOR})
+
 
 # ---------------------------------------------------------------------------
 # Canonical tree inventory
@@ -189,6 +193,61 @@ class ArchiveProvenance:
 
 
 @dataclass(frozen=True, slots=True)
+class GeneratedEntry:
+    """A tree entry the stager writes rather than lifting from the archive.
+
+    A runtime can require a file upstream does not ship. The BindCraft image
+    admits its AlphaFold2 mount only through an
+    ``external-model-artifact-manifest/v1`` document, which upstream has no
+    reason to publish. Declaring it here keeps it as verifiable as any other
+    entry: the generator is named, its inputs are pinned, and the bytes it must
+    produce are bound by their own digest, so a drifting generator fails closed
+    instead of quietly changing what the runtime admits.
+    """
+
+    path: str
+    size_bytes: int
+    sha256: str
+    generator: str
+    generator_inputs: Mapping[str, str]
+
+    @classmethod
+    def parse(cls, value: object, *, index: int) -> GeneratedEntry:
+        item = strict_object(
+            value,
+            required=frozenset({"path", "bytes", "sha256", "generator", "generator_inputs"}),
+            label=f"tree generated_entries[{index}]",
+        )
+        path = item["path"]
+        size_bytes = item["bytes"]
+        digest = item["sha256"]
+        generator = item["generator"]
+        if (
+            not isinstance(path, str)
+            or _ENTRY_NAME.fullmatch(path) is None
+            or isinstance(size_bytes, bool)
+            or not isinstance(size_bytes, int)
+            or not 1 <= size_bytes <= 16 * 1024 * 1024
+            or not isinstance(digest, str)
+            or _SHA256.fullmatch(digest) is None
+        ):
+            raise ArtifactLocalizationError("tree generated entry is invalid")
+        if generator not in _GENERATORS:
+            raise ArtifactLocalizationError(f"tree generated entry generator {generator!r} is unsupported")
+        raw_inputs = item["generator_inputs"]
+        if not isinstance(raw_inputs, Mapping) or not all(
+            isinstance(key, str) and isinstance(inner, str) and inner for key, inner in raw_inputs.items()
+        ):
+            raise ArtifactLocalizationError("tree generated entry inputs must be a string mapping")
+        inputs = {str(key): str(inner) for key, inner in raw_inputs.items()}
+        if generator == EXTERNAL_MANIFEST_GENERATOR and set(inputs) != {"artifact_kind", "source_revision"}:
+            raise ArtifactLocalizationError(
+                "an external model artifact manifest needs exactly artifact_kind and source_revision"
+            )
+        return cls(path, size_bytes, digest, cast(str, generator), inputs)
+
+
+@dataclass(frozen=True, slots=True)
 class ProbeEntry:
     path: str
     size_bytes: int
@@ -206,6 +265,7 @@ class TreeIdentity:
     inventory_sha256: str
     probe_entries: tuple[ProbeEntry, ...]
     complete_entry_digests: bool
+    generated_entries: tuple[GeneratedEntry, ...] = ()
 
     @classmethod
     def parse(cls, value: object) -> TreeIdentity:
@@ -222,7 +282,7 @@ class TreeIdentity:
                     "probe_entries",
                 }
             ),
-            optional=frozenset({"complete_entry_digests"}),
+            optional=frozenset({"complete_entry_digests", "generated_entries"}),
             label="localization tree",
         )
         if item["inventory_algorithm"] != TREE_INVENTORY_ALGORITHM:
@@ -283,6 +343,12 @@ class TreeIdentity:
             raise ArtifactLocalizationError("tree probe entry paths must be unique")
         if len(probes) > entry_count:
             raise ArtifactLocalizationError("tree probe entries cannot exceed the declared entry count")
+        raw_generated = item.get("generated_entries", [])
+        if not isinstance(raw_generated, list) or len(raw_generated) > 8:
+            raise ArtifactLocalizationError("tree generated_entries must contain at most 8 items")
+        generated = tuple(GeneratedEntry.parse(raw, index=index) for index, raw in enumerate(raw_generated))
+        if len({entry.path for entry in generated}) != len(generated):
+            raise ArtifactLocalizationError("tree generated entry paths must be unique")
         complete = item.get("complete_entry_digests", False)
         if not isinstance(complete, bool):
             raise ArtifactLocalizationError("tree complete_entry_digests must be a boolean")
@@ -296,6 +362,7 @@ class TreeIdentity:
             inventory_sha256=digest,
             probe_entries=tuple(sorted(probes, key=lambda probe: probe.path)),
             complete_entry_digests=complete,
+            generated_entries=tuple(sorted(generated, key=lambda entry: entry.path)),
         )
 
     @property
@@ -479,6 +546,11 @@ class LocalizationReceipt:
     ``archive_sha256`` and ``tree_inventory_sha256`` are deliberately separate
     fields: the first says where the bytes came from, the second says what the
     runtime will read. A caller must never substitute one for the other.
+
+    Only a verified receipt asserts a tree identity. On a rejected receipt the
+    tree fields carry what was observed where verification reached them, and
+    zeros where it did not, so a rejection can be diagnosed without ever being
+    mistaken for a qualification.
     """
 
     artifact_id: str
@@ -777,6 +849,44 @@ def verify_localized_tree(
 # ---------------------------------------------------------------------------
 
 
+def fetch_archive(destination: Path, contract: LocalizationContract, *, timeout_seconds: float = 900.0) -> Path:
+    """Download the contracted archive and prove its digest before anything reads it.
+
+    Only the URI the contract declares is fetched, so a staging job cannot be
+    pointed at a different object by its arguments.
+    """
+
+    import urllib.request
+
+    if not contract.archive.source_uri.startswith("https://"):
+        raise ArtifactLocalizationError("archive source_uri must be https")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256()
+    written = 0
+    # A partial or wrong download must never be left behind for a later step to
+    # pick up as if it were the contracted archive.
+    destination.unlink(missing_ok=True)
+    request = urllib.request.Request(  # noqa: S310 - scheme is checked above
+        contract.archive.source_uri,
+        headers={"User-Agent": "fs2-artifact-localization/1"},
+    )
+    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
+        with destination.open("wb") as handle:
+            while True:
+                chunk = response.read(_READ_CHUNK)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > contract.archive.size_bytes:
+                    raise ArtifactLocalizationError("archive download exceeded its contracted byte size")
+                digest.update(chunk)
+                handle.write(chunk)
+    if written != contract.archive.size_bytes or digest.hexdigest() != contract.archive.sha256:
+        destination.unlink(missing_ok=True)
+        raise ArtifactLocalizationError("downloaded archive does not match its declared provenance")
+    return destination
+
+
 def verify_archive(path: Path, contract: LocalizationContract) -> None:
     """Fail closed before extracting anything from an unexpected archive."""
 
@@ -834,13 +944,23 @@ def _open_for_write(destination: Path) -> int:
     return os.open(destination, flags, 0o444)
 
 
+def _archive_expectation(contract: LocalizationContract) -> tuple[int, int]:
+    """How much of the contracted tree the archive itself has to supply."""
+
+    generated = contract.tree.generated_entries
+    return (
+        contract.tree.entry_count - len(generated),
+        contract.tree.total_bytes - sum(entry.size_bytes for entry in generated),
+    )
+
+
 def _extract_zip(archive: Path, destination: Path, contract: LocalizationContract) -> None:
-    tree = contract.tree
+    expected_members, expected_bytes = _archive_expectation(contract)
     with zipfile.ZipFile(archive) as bundle:
         infos = [info for info in bundle.infolist() if not info.is_dir()]
-        if contract.archive.member_prefix is None and len(infos) != tree.entry_count:
+        if contract.archive.member_prefix is None and len(infos) != expected_members:
             raise ArtifactLocalizationError(
-                f"archive holds {len(infos)} members and the contract requires {tree.entry_count}"
+                f"archive holds {len(infos)} members and the contract requires {expected_members}"
             )
         seen: set[str] = set()
         total = 0
@@ -852,7 +972,7 @@ def _extract_zip(archive: Path, destination: Path, contract: LocalizationContrac
                 raise ArtifactLocalizationError("archive contains a duplicate member name")
             seen.add(name)
             total += info.file_size
-            if total > tree.total_bytes:
+            if total > expected_bytes:
                 raise ArtifactLocalizationError("archive expands beyond its contracted byte bound")
             written = 0
             crc = 0
@@ -867,12 +987,12 @@ def _extract_zip(archive: Path, destination: Path, contract: LocalizationContrac
                     target.write(chunk)
             if written != info.file_size or (crc & 0xFFFFFFFF) != info.CRC:
                 raise ArtifactLocalizationError(f"archive member {name} did not extract intact")
-        if len(seen) != tree.entry_count or total != tree.total_bytes:
+        if len(seen) != expected_members or total != expected_bytes:
             raise ArtifactLocalizationError("archive expanded content does not match the contracted tree")
 
 
 def _extract_tar(archive: Path, destination: Path, contract: LocalizationContract) -> None:
-    tree = contract.tree
+    expected_members, expected_bytes = _archive_expectation(contract)
     opened = (
         tarfile.open(archive, mode="r:gz")
         if contract.transform == "safe-extract-tar-gz"
@@ -881,9 +1001,9 @@ def _extract_tar(archive: Path, destination: Path, contract: LocalizationContrac
     with opened as bundle:
         members = bundle.getmembers()
         scoped = contract.archive.member_prefix is not None
-        if not scoped and len(members) != tree.entry_count:
+        if not scoped and len(members) != expected_members:
             raise ArtifactLocalizationError(
-                f"archive holds {len(members)} members and the contract requires {tree.entry_count}"
+                f"archive holds {len(members)} members and the contract requires {expected_members}"
             )
         seen: set[str] = set()
         total = 0
@@ -899,7 +1019,7 @@ def _extract_tar(archive: Path, destination: Path, contract: LocalizationContrac
                 raise ArtifactLocalizationError("archive contains a duplicate member name")
             seen.add(name)
             total += member.size
-            if member.size < 0 or total > tree.total_bytes:
+            if member.size < 0 or total > expected_bytes:
                 raise ArtifactLocalizationError("archive expands beyond its contracted byte bound")
             source = bundle.extractfile(member)
             if source is None:
@@ -915,8 +1035,67 @@ def _extract_tar(archive: Path, destination: Path, contract: LocalizationContrac
                     target.write(chunk)
             if written != member.size:
                 raise ArtifactLocalizationError(f"archive member {name} did not extract intact")
-        if len(seen) != tree.entry_count or total != tree.total_bytes:
+        if len(seen) != expected_members or total != expected_bytes:
             raise ArtifactLocalizationError("archive expanded content does not match the contracted tree")
+
+
+def render_external_model_artifact_manifest(
+    root: Path,
+    *,
+    artifact_kind: str,
+    source_revision: str,
+    exclude: frozenset[str],
+) -> bytes:
+    """Render the admission manifest a runtime image reads before it starts.
+
+    The shape is fixed by the consuming gate: every entry carries exactly
+    ``path``, ``sha256`` and ``size_bytes``, and the document is serialized
+    deterministically so the same tree always renders byte-identical bytes.
+    """
+
+    files: list[dict[str, object]] = []
+    for name in sorted(item.name for item in root.iterdir()):
+        if name in exclude:
+            continue
+        candidate = root / name
+        if candidate.is_symlink() or not candidate.is_file():
+            raise ArtifactLocalizationError("an artifact manifest can describe only contained regular files")
+        size = candidate.stat().st_size
+        if size < 1:
+            raise ArtifactLocalizationError(f"{name} is empty and the consuming gate rejects zero-length entries")
+        files.append({"path": name, "sha256": _file_sha256(candidate), "size_bytes": size})
+    if not files:
+        raise ArtifactLocalizationError("an artifact manifest cannot describe an empty tree")
+    document = {
+        "schema": EXTERNAL_MANIFEST_SCHEMA,
+        "artifact_kind": artifact_kind,
+        "source_revision": source_revision,
+        "files": files,
+    }
+    return (json.dumps(document, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _write_generated_entries(destination: Path, contract: LocalizationContract) -> None:
+    """Write each declared generated entry and prove its own digest."""
+
+    generated_names = frozenset(entry.path for entry in contract.tree.generated_entries)
+    for entry in contract.tree.generated_entries:
+        if entry.generator != EXTERNAL_MANIFEST_GENERATOR:  # pragma: no cover - parse restricts this
+            raise ArtifactLocalizationError(f"unsupported generator {entry.generator}")
+        payload = render_external_model_artifact_manifest(
+            destination,
+            artifact_kind=entry.generator_inputs["artifact_kind"],
+            source_revision=entry.generator_inputs["source_revision"],
+            exclude=generated_names,
+        )
+        if len(payload) != entry.size_bytes or hashlib.sha256(payload).hexdigest() != entry.sha256:
+            raise ArtifactLocalizationError(
+                f"generated entry {entry.path} does not match its declared identity; "
+                "the tree or the generator has drifted"
+            )
+        handle = _open_for_write(destination / entry.path)
+        with os.fdopen(handle, "wb") as target:
+            target.write(payload)
 
 
 def localize_archive(
@@ -946,6 +1125,7 @@ def localize_archive(
             _extract_zip(archive, resolved, contract)
         else:
             _extract_tar(archive, resolved, contract)
+        _write_generated_entries(resolved, contract)
     except (zipfile.BadZipFile, tarfile.TarError, OSError, EOFError) as error:
         if isinstance(error, ArtifactLocalizationError):
             raise
@@ -974,6 +1154,7 @@ __all__ = [
     "tree_inventory_bytes",
     "tree_inventory_sha256",
     "main",
+    "fetch_archive",
     "verify_archive",
     "verify_localized_tree",
 ]
@@ -1013,7 +1194,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--contract", required=True, type=Path)
     parser.add_argument("--artifact-id", required=True)
     parser.add_argument("--mount", required=True, type=Path)
-    parser.add_argument("--archive", type=Path, help="source archive, required for stage")
+    parser.add_argument("--archive", type=Path, help="local source archive, for stage")
+    parser.add_argument(
+        "--fetch-archive-to",
+        type=Path,
+        help="download the contract's declared archive URI here first, then stage from it",
+    )
     parser.add_argument("--receipt", type=Path, help="write the receipt JSON here")
     parser.add_argument("--observation", help="JSON object of non-secret cluster observation fields")
     parser.add_argument(
@@ -1032,9 +1218,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         if options.mode == "stage":
-            if options.archive is None:
-                raise SystemExit("stage requires --archive")
-            receipt = localize_archive(options.archive, options.mount, contract, observation=observation or None)
+            archive = options.archive
+            if options.fetch_archive_to is not None:
+                archive = fetch_archive(options.fetch_archive_to, contract)
+            if archive is None:
+                raise SystemExit("stage requires --archive or --fetch-archive-to")
+            receipt = localize_archive(archive, options.mount, contract, observation=observation or None)
         else:
             receipt = verify_localized_tree(
                 options.mount,

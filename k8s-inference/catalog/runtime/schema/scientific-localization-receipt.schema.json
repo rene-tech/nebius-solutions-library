@@ -41,6 +41,7 @@
     "tree_identity": {
       "type": "object",
       "additionalProperties": false,
+      "description": "What was observed in the mount. On a rejected receipt these are the observed values where verification got far enough to compute them, and zeros otherwise; only a verified receipt asserts an identity.",
       "required": ["entry_count", "total_bytes", "inventory_algorithm", "inventory_sha256"],
       "properties": {
         "entry_count": {"type": "integer", "minimum": 0},

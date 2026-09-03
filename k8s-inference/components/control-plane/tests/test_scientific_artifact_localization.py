@@ -44,6 +44,7 @@ PROFILE_PATH = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-workload-pr
 CONTRACT_PATH = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-artifact-localization.json"
 
 MOLECULES_ID = "boltzgen-inference-molecules"
+BINDCRAFT_PARAMS_ID = "alphafold2-params-bindcraft"
 PARAMS_ID = "alphafold2-params"
 VANILLA_MPNN_ID = "colabdesign-mpnn-weights-vanilla"
 SOLUBLE_MPNN_ID = "colabdesign-mpnn-weights-soluble"
@@ -58,6 +59,13 @@ SYNTHETIC_ENTRIES: dict[str, bytes] = {
     "HEM.pkl": b"three-character code" * 4,
     "A1LV8.pkl": b"five-character code" * 8,
 }
+
+
+def _contract_artifact(artifact_id: str) -> dict[str, Any]:
+    """Look one artifact up by identity; the checked-in order is not a contract."""
+
+    document = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+    return copy.deepcopy(next(item for item in document["artifacts"] if item["artifact_id"] == artifact_id))
 
 
 def _fixture(model_id: str, name: str) -> dict[str, Any]:
@@ -205,7 +213,13 @@ def boltzgen_configure() -> StageInvocation:
 
 def test_checked_in_contract_declares_both_primary_runtime_trees() -> None:
     contracts = load_localization_contracts_from_path(CONTRACT_PATH)
-    assert set(contracts) == {MOLECULES_ID, PARAMS_ID, VANILLA_MPNN_ID, SOLUBLE_MPNN_ID}
+    assert set(contracts) == {
+        MOLECULES_ID,
+        PARAMS_ID,
+        BINDCRAFT_PARAMS_ID,
+        VANILLA_MPNN_ID,
+        SOLUBLE_MPNN_ID,
+    }
 
     molecules = contracts[MOLECULES_ID]
     assert molecules.tree.mount_paths == (f"/opt/fs2/artifacts/{MOLECULES_ID}",)
@@ -247,21 +261,21 @@ def test_the_alphafold_entry_pattern_accepts_only_the_published_parameter_set() 
 
 
 def test_a_contract_reusing_one_digest_for_both_identities_is_rejected() -> None:
-    artifact = copy.deepcopy(json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))["artifacts"][0])
+    artifact = _contract_artifact(MOLECULES_ID)
     artifact["tree"]["inventory_sha256"] = artifact["archive"]["sha256"]
     with pytest.raises(ArtifactLocalizationError, match="distinct digests"):
         LocalizationContract.parse(artifact)
 
 
 def test_a_contract_whose_archive_looks_like_a_tree_entry_is_rejected() -> None:
-    artifact = copy.deepcopy(json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))["artifacts"][0])
+    artifact = _contract_artifact(MOLECULES_ID)
     artifact["archive"]["filename"] = "ABC.pkl"
     with pytest.raises(ArtifactLocalizationError, match="must not satisfy"):
         LocalizationContract.parse(artifact)
 
 
 def test_a_contract_cannot_mount_another_artifacts_directory() -> None:
-    artifact = copy.deepcopy(json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))["artifacts"][0])
+    artifact = _contract_artifact(MOLECULES_ID)
     artifact["tree"]["mount_paths"] = ["/opt/fs2/artifacts/somebody-else"]
     with pytest.raises(ArtifactLocalizationError, match="own directory"):
         LocalizationContract.parse(artifact)
@@ -269,7 +283,7 @@ def test_a_contract_cannot_mount_another_artifacts_directory() -> None:
 
 def test_duplicate_artifacts_in_one_contract_document_are_rejected() -> None:
     document = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
-    document["artifacts"].append(copy.deepcopy(document["artifacts"][0]))
+    document["artifacts"].append(_contract_artifact(MOLECULES_ID))
     with pytest.raises(ArtifactLocalizationError, match="duplicate artifact"):
         load_localization_contracts(document)
 
@@ -1009,3 +1023,151 @@ def test_an_installed_package_binding_must_name_a_dotted_package() -> None:
     )
     with pytest.raises(ArtifactLocalizationError, match="dotted package path"):
         LocalizationContract.parse(document)
+
+
+# ---------------------------------------------------------------------------
+# Generated entries a runtime gate requires but upstream never publishes
+# ---------------------------------------------------------------------------
+
+
+def test_bindcraft_alphafold_tree_is_a_separate_identity_from_the_proteina_tree() -> None:
+    """The two consumers read genuinely different trees, not one tree twice."""
+
+    contracts = load_localization_contracts_from_path(CONTRACT_PATH)
+    proteina = contracts[PARAMS_ID]
+    bindcraft = contracts[BINDCRAFT_PARAMS_ID]
+
+    # Same archive provenance, because both come from the same upstream object.
+    assert proteina.archive.sha256 == bindcraft.archive.sha256
+    # Different trees, because one carries an admission manifest and one does not.
+    assert proteina.tree.entry_count == 16
+    assert bindcraft.tree.entry_count == 17
+    assert proteina.tree.inventory_sha256 != bindcraft.tree.inventory_sha256
+    assert bindcraft.tree.total_bytes - proteina.tree.total_bytes == 2866
+    assert proteina.tree.generated_entries == ()
+    assert bindcraft.tree.mount_paths == ("/models/alphafold2",)
+    assert bindcraft.binding_for("bindcraft").binding_name == "FS2_ARTIFACT_ROOT"
+
+    generated = bindcraft.tree.generated_entries
+    assert [entry.path for entry in generated] == ["manifest.json"]
+    assert generated[0].generator == "external-model-artifact-manifest/v1"
+    assert generated[0].generator_inputs == {
+        "artifact_kind": "bindcraft-af2-params",
+        "source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+    }
+    # The manifest is not part of the Proteina contract's entry vocabulary.
+    assert proteina.tree.entry_matcher.fullmatch("manifest.json") is None
+    assert bindcraft.tree.entry_matcher.fullmatch("manifest.json") is not None
+
+
+def _manifest_document(entries: Mapping[str, bytes], *, kind: str, revision: str) -> dict[str, Any]:
+    return {
+        "schema": "fs2.nebius.ai/external-model-artifact-manifest/v1",
+        "artifact_kind": kind,
+        "source_revision": revision,
+        "files": [
+            {"path": name, "sha256": hashlib.sha256(payload).hexdigest(), "size_bytes": len(payload)}
+            for name, payload in sorted(entries.items())
+        ],
+    }
+
+
+def _generated_document(entries: Mapping[str, bytes], tmp_path: Path) -> tuple[bytes, dict[str, Any]]:
+    """Build a tar contract whose tree carries one generated admission manifest."""
+
+    from fs2_serve.scientific_batch.adapters.localization import render_external_model_artifact_manifest
+
+    staged = _materialize(tmp_path / "reference", entries)
+    manifest = render_external_model_artifact_manifest(
+        staged, artifact_kind="test-kind", source_revision="a" * 40, exclude=frozenset({"manifest.json"})
+    )
+    payload = _tar_bytes(sorted(entries.items()))
+    document = _document(
+        payload,
+        entries,
+        artifact_id="synthetic-gated-params",
+        transform="safe-extract-tar",
+        filename="params.tar",
+        media_type="application/x-tar",
+        pattern=r"^(manifest\.json|params_model_[1-5]\.npz)$",
+        model_id="bindcraft",
+        binding_kind="environment-variable",
+        binding_name="FS2_ARTIFACT_ROOT",
+    )
+    document["tree"]["entry_count"] = len(entries) + 1
+    document["tree"]["total_bytes"] = sum(map(len, entries.values())) + len(manifest)
+    document["tree"]["inventory_sha256"] = _inventory({**entries, "manifest.json": manifest})
+    document["tree"]["generated_entries"] = [
+        {
+            "path": "manifest.json",
+            "bytes": len(manifest),
+            "sha256": hashlib.sha256(manifest).hexdigest(),
+            "generator": "external-model-artifact-manifest/v1",
+            "generator_inputs": {"artifact_kind": "test-kind", "source_revision": "a" * 40},
+        }
+    ]
+    return payload, document
+
+
+def test_a_generated_manifest_is_written_and_matches_its_declared_digest(tmp_path: Path) -> None:
+    entries = {"params_model_1.npz": b"parameters" * 64, "params_model_2.npz": b"more" * 128}
+    payload, document = _generated_document(entries, tmp_path)
+    archive = tmp_path / "params.tar"
+    archive.write_bytes(payload)
+    contract = LocalizationContract.parse(document)
+
+    receipt = localize_archive(archive, tmp_path / "mount", contract)
+    assert receipt.verified
+    assert receipt.entry_count == 3
+    manifest_path = tmp_path / "mount" / "manifest.json"
+    assert manifest_path.is_file()
+
+    written = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert written == _manifest_document(entries, kind="test-kind", revision="a" * 40)
+    # The consuming gate requires exactly these three keys on every entry.
+    for entry in written["files"]:
+        assert set(entry) == {"path", "sha256", "size_bytes"}
+        assert entry["size_bytes"] >= 1
+    # The manifest never describes itself.
+    assert "manifest.json" not in {entry["path"] for entry in written["files"]}
+
+
+def test_a_generated_manifest_that_would_not_match_its_digest_fails_closed(tmp_path: Path) -> None:
+    entries = {"params_model_1.npz": b"parameters" * 64, "params_model_2.npz": b"more" * 128}
+    payload, document = _generated_document(entries, tmp_path)
+    # A drifting generator input changes the bytes, so the declared digest no
+    # longer describes what would be written.
+    document["tree"]["generated_entries"][0]["generator_inputs"]["source_revision"] = "b" * 40
+    archive = tmp_path / "params.tar"
+    archive.write_bytes(payload)
+    with pytest.raises(ArtifactLocalizationError, match="does not match its declared identity"):
+        localize_archive(archive, tmp_path / "mount", LocalizationContract.parse(document))
+
+
+def test_a_generated_entry_needs_a_registered_generator(tmp_path: Path) -> None:
+    entries = {"params_model_1.npz": b"parameters" * 64}
+    _payload, document = _generated_document(entries, tmp_path)
+    document["tree"]["generated_entries"][0]["generator"] = "handwritten/v1"
+    with pytest.raises(ArtifactLocalizationError, match="unsupported"):
+        LocalizationContract.parse(document)
+
+
+def test_a_generated_manifest_needs_its_exact_generator_inputs(tmp_path: Path) -> None:
+    entries = {"params_model_1.npz": b"parameters" * 64}
+    _payload, document = _generated_document(entries, tmp_path)
+    del document["tree"]["generated_entries"][0]["generator_inputs"]["artifact_kind"]
+    with pytest.raises(ArtifactLocalizationError, match="artifact_kind and source_revision"):
+        LocalizationContract.parse(document)
+
+
+def test_the_archive_supplies_every_entry_the_generator_does_not(tmp_path: Path) -> None:
+    """Entry accounting must not double-count the generated file."""
+
+    entries = {"params_model_1.npz": b"parameters" * 64}
+    payload, document = _generated_document(entries, tmp_path)
+    # Claiming the archive also carries the manifest leaves the tree one short.
+    document["tree"]["generated_entries"] = []
+    archive = tmp_path / "params.tar"
+    archive.write_bytes(payload)
+    with pytest.raises(ArtifactLocalizationError):
+        localize_archive(archive, tmp_path / "mount", LocalizationContract.parse(document))
