@@ -17,6 +17,8 @@ from .models import (
     ResourceClass,
     ScientificBatchPlan,
     ScientificStagePlan,
+    StagePlacementClass,
+    StageResourceEnvelope,
 )
 
 
@@ -58,6 +60,35 @@ def _string_tuple(value: object, path: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise CatalogProfileAdapterError(f"{path} must be an array of strings")
     return tuple(value)
+
+
+def _stage_contract(
+    stage: Mapping[str, object], path: str
+) -> tuple[StagePlacementClass | None, StageResourceEnvelope | None]:
+    raw_placement = stage.get("placement")
+    raw_resources = stage.get("resources")
+    if raw_placement is None and raw_resources is None:
+        return None, None
+    placement = _mapping(raw_placement, f"{path}.placement")
+    resources = _mapping(raw_resources, f"{path}.resources")
+    limits = _mapping(resources.get("limits"), f"{path}.resources.limits")
+    try:
+        placement_class = StagePlacementClass(_string(placement.get("class"), f"{path}.placement.class"))
+        envelope = StageResourceEnvelope(
+            cpu_millis=_integer(resources.get("cpu_millis"), f"{path}.resources.cpu_millis"),
+            memory_bytes=_integer(resources.get("memory_bytes"), f"{path}.resources.memory_bytes"),
+            ephemeral_storage_bytes=_integer(
+                resources.get("ephemeral_storage_bytes"), f"{path}.resources.ephemeral_storage_bytes"
+            ),
+            limit_cpu_millis=_integer(limits.get("cpu_millis"), f"{path}.resources.limits.cpu_millis"),
+            limit_memory_bytes=_integer(limits.get("memory_bytes"), f"{path}.resources.limits.memory_bytes"),
+            limit_ephemeral_storage_bytes=_integer(
+                limits.get("ephemeral_storage_bytes"), f"{path}.resources.limits.ephemeral_storage_bytes"
+            ),
+        )
+    except ValueError as error:
+        raise CatalogProfileAdapterError(f"{path} contains an unsupported placement contract") from error
+    return placement_class, envelope
 
 
 def scientific_plan_from_catalog_profile(
@@ -121,6 +152,7 @@ def scientific_plan_from_catalog_profile(
             gang_size = expansion.gang_size
 
         try:
+            placement_class, resources = _stage_contract(stage, path)
             stages.append(
                 ScientificStagePlan(
                     stage_id=stage_id,
@@ -138,6 +170,8 @@ def scientific_plan_from_catalog_profile(
                     max_parallelism=maximum,
                     checkpoint_mode=checkpoint_mode,
                     preemption_mode=preemption_mode,
+                    placement_class=placement_class,
+                    resources=resources,
                 )
             )
         except ValueError as error:

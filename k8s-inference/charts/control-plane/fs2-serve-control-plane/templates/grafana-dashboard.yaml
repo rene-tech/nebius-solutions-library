@@ -92,6 +92,69 @@ data:
           }],
           "title": "Model outcomes and conservative accounting",
           "type": "table"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "$prometheus"},
+          "fieldConfig": {"defaults": {"unit": "h"}},
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 24},
+          "id": 9,
+          "targets": [{"expr": "sum by (tenant, model, phase) (fs2_serve_lifecycle_gpu_seconds_total{tenant=~\"$tenant\",model=~\"$model\"}) / 3600", "legendFormat": "{{`{{tenant}} / {{model}} / {{phase}}`}}"}],
+          "title": "Durable GPU-hours by lifecycle phase",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "$prometheus"},
+          "fieldConfig": {"defaults": {"unit": "h"}},
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 24},
+          "id": 10,
+          "targets": [{"expr": "sum by (tenant, model, clock) (fs2_serve_lifecycle_clock_gpu_seconds_total{tenant=~\"$tenant\",model=~\"$model\"}) / 3600", "legendFormat": "{{`{{tenant}} / {{model}} / {{clock}}`}}"}],
+          "title": "Quota, scheduler-occupied and device-allocated GPU-hours",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "$prometheus"},
+          "fieldConfig": {"defaults": {"unit": "h"}},
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 33},
+          "id": 11,
+          "targets": [
+            {"expr": "sum by (tenant, model) (fs2_serve_lifecycle_gpu_seconds_total{tenant=~\"$tenant\",model=~\"$model\",phase=\"active_compute\"}) / 3600", "legendFormat": "{{`{{tenant}} / {{model}} / active`}}", "refId": "A"},
+            {"expr": "sum by (tenant, model) (fs2_serve_lifecycle_gpu_seconds_total{tenant=~\"$tenant\",model=~\"$model\",phase!=\"active_compute\"}) / 3600", "legendFormat": "{{`{{tenant}} / {{model}} / occupied idle`}}", "refId": "B"}
+          ],
+          "title": "Useful compute versus occupied idle",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "$prometheus"},
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 33},
+          "id": 12,
+          "targets": [{"expr": "sum by (tenant, model, quality, reconciled) (fs2_serve_lifecycle_workloads_total{tenant=~\"$tenant\",model=~\"$model\"})", "legendFormat": "{{`{{tenant}} / {{model}} / {{quality}} / reconciled={{reconciled}}`}}"}],
+          "title": "Terminal lifecycle reconciliation state",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "$prometheus"},
+          "fieldConfig": {"defaults": {"unit": "s"}},
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 42},
+          "id": 13,
+          "targets": [
+            {"expr": "sum by (tenant, model) (fs2_serve_lifecycle_reconciliation_delta_seconds_total{tenant=~\"$tenant\",model=~\"$model\"})", "legendFormat": "{{`{{tenant}} / {{model}} / absolute delta`}}", "refId": "A"},
+            {"expr": "sum by (tenant, model) (fs2_serve_lifecycle_unclassified_gpu_seconds_total{tenant=~\"$tenant\",model=~\"$model\"})", "legendFormat": "{{`{{tenant}} / {{model}} / unclassified`}}", "refId": "B"}
+          ],
+          "title": "Reconciliation delta and unclassified occupancy",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "postgres", "uid": {{ .Values.grafanaDashboard.reportingDatasourceUid | quote }}},
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 42},
+          "id": 14,
+          "targets": [{
+            "format": "table",
+            "rawQuery": true,
+            "rawSql": "SELECT accepted_at, tenant_id, model_id, model_revision, workload_kind, outcome, round((scheduler_occupied_gpu_seconds/3600.0)::numeric,4) AS occupied_gpu_hours, round(active_gpu_seconds::numeric,2) AS active_gpu_seconds, round(occupied_idle_gpu_seconds::numeric,2) AS occupied_idle_gpu_seconds, round(reconciliation_delta_seconds::numeric,3) AS reconciliation_delta_seconds, reconciled, quality, array_to_string(data_gaps, ', ') AS data_gaps FROM fs2_reporting_lifecycle_workloads WHERE $__timeFilter(accepted_at) ORDER BY accepted_at DESC LIMIT 500",
+            "refId": "A"
+          }],
+          "title": "Durable workload reconciliation drill-down",
+          "type": "table"
         }
       ],
       "refresh": "30s",
@@ -99,13 +162,15 @@ data:
       "tags": ["fs2-serve", "inference", "accounting"],
       "templating": {
         "list": [
-          {"name": "prometheus", "type": "datasource", "query": "prometheus", "current": {}}
+          {"name": "prometheus", "type": "datasource", "query": "prometheus", "current": {}},
+          {"name": "tenant", "type": "query", "datasource": {"type": "prometheus", "uid": "$prometheus"}, "query": {"query": "label_values(fs2_serve_lifecycle_gpu_seconds_total, tenant)", "refId": "tenant"}, "includeAll": true, "allValue": ".*", "current": {}},
+          {"name": "model", "type": "query", "datasource": {"type": "prometheus", "uid": "$prometheus"}, "query": {"query": "label_values(fs2_serve_lifecycle_gpu_seconds_total{tenant=~\"$tenant\"}, model)", "refId": "model"}, "includeAll": true, "allValue": ".*", "current": {}}
         ]
       },
       "time": {"from": "now-6h", "to": "now"},
       "timezone": "utc",
       "title": "fs2-serve inference gateway",
       "uid": "fs2-serve-gateway",
-      "version": 1
+      "version": 2
     }
 {{- end }}

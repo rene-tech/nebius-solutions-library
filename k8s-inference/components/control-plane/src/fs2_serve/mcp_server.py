@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import math
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -35,15 +37,29 @@ from .models import (
     Scope,
 )
 from .registry import OperationalModel
+from .scientific_artifacts import ArtifactNotFoundError
+from .scientific_input_uploads import ScientificInputUploadRequest
 from .store import NotFoundError
 
 CORE_TOOLS = {
     "list_models",
+    "list_scientific_models",
     "invoke_model",
     "get_operation",
     "get_operation_result",
     "cancel_operation",
     "acknowledge_operation",
+    "submit_scientific_run",
+    "get_scientific_status",
+    "cancel_scientific_run",
+    "list_scientific_events",
+    "get_scientific_artifact",
+    "get_scientific_result",
+    "begin_scientific_artifact_upload",
+    "put_scientific_artifact_bytes",
+    "finalize_scientific_artifact_upload",
+    "download_scientific_artifact",
+    "read_scientific_artifact_bytes",
 }
 MCP_HTTP_PATH = "/mcp"
 MCP_CHILD_MOUNT_PATH = "/"
@@ -322,11 +338,17 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         principal.require(Scope.CATALOG_READ)
         return {
             "object": "list",
-            "data": [
-                _model_view(model)
-                for model in runtime.registry.allowed_for_principal(principal, surface="mcp")
-            ],
+            "data": [_model_view(model) for model in runtime.registry.allowed_for_principal(principal, surface="mcp")],
         }
+
+    async def list_scientific_models() -> dict[str, Any]:
+        """List only scientific profiles this exact caller can submit."""
+
+        principal = _principal()
+        if runtime.scientific_batches is None:
+            principal.require(Scope.CATALOG_READ)
+            return {"object": "list", "data": []}
+        return runtime.scientific_batches.discover(principal, surface="mcp")
 
     async def invoke_model(
         model_id: str,
@@ -378,12 +400,16 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
     async def get_operation_result(operation_id: UUID) -> dict[str, Any]:
         principal = _principal()
         operation = await _metadata(runtime, principal, operation_id)
+        if operation.protocol == "scientific-batch-v1" and runtime.scientific_batches is not None:
+            return dict(await runtime.scientific_batches.result(operation.id, principal=principal))
         result = await runtime.store.get_operation_result(operation.id, tenant_id=principal.tenant_id)
         return result.model_dump(mode="json")
 
     async def cancel_operation(operation_id: UUID) -> dict[str, Any]:
         principal = _principal()
         operation = await _metadata(runtime, principal, operation_id)
+        if operation.protocol == "scientific-batch-v1" and runtime.scientific_batches is not None:
+            return await runtime.scientific_batches.cancel(operation.id, principal=principal)
         cancelled = await runtime.store.cancel_operation(
             operation.id, tenant_id=principal.tenant_id, actor=principal.principal_id
         )
@@ -397,13 +423,206 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         await runtime.store.purge_operation_payload(operation.id, tenant_id=principal.tenant_id)
         return (await runtime.store.get_operation(operation.id, tenant_id=principal.tenant_id)).model_dump(mode="json")
 
+    async def submit_scientific_run(
+        model_id: str,
+        request: dict[str, Any],
+        ctx: Context,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Submit a canonical scientific-run-request to a qualified profile."""
+
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific batch submission is unavailable")
+        principal = _principal()
+        if idempotency_key is not None and not (
+            MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH
+        ):
+            raise MCPError(code=INVALID_PARAMS, message="idempotency_key length is invalid")
+        try:
+            traceparent = (ctx.headers or {}).get("traceparent")
+        except ValueError:
+            traceparent = None
+        return await runtime.scientific_batches.submit(
+            principal=principal,
+            model_id=model_id,
+            request=request,
+            idempotency_key=idempotency_key or f"mcp-scientific-{uuid4()}",
+            traceparent=traceparent,
+            require_mcp_invocable=True,
+        )
+
+    async def get_scientific_status(operation_id: UUID) -> dict[str, Any]:
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific batch service is unavailable")
+        return await runtime.scientific_batches.status(operation_id, principal=_principal())
+
+    async def cancel_scientific_run(operation_id: UUID) -> dict[str, Any]:
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific batch service is unavailable")
+        return await runtime.scientific_batches.cancel(operation_id, principal=_principal())
+
+    async def list_scientific_events(operation_id: UUID, after_sequence: int = 0, limit: int = 1000) -> dict[str, Any]:
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific batch service is unavailable")
+        return await runtime.scientific_batches.events(
+            operation_id,
+            principal=_principal(),
+            after_sequence=after_sequence,
+            limit=limit,
+        )
+
+    async def get_scientific_artifact(artifact_id: UUID) -> dict[str, Any]:
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific artifact service is unavailable")
+        return dict(await runtime.scientific_batches.artifact(artifact_id, principal=_principal()))
+
+    async def get_scientific_result(operation_id: UUID) -> dict[str, Any]:
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific result service is unavailable")
+        return dict(await runtime.scientific_batches.result(operation_id, principal=_principal()))
+
+    async def begin_scientific_artifact_upload(
+        model_id: str,
+        sha256: str,
+        size_bytes: int,
+        media_type: str,
+        compression: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a write-once customer upload handle for a scientific input."""
+
+        if runtime.scientific_input_uploads is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific input upload is unavailable")
+        if idempotency_key is not None and not (
+            MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH
+        ):
+            raise MCPError(code=INVALID_PARAMS, message="idempotency_key length is invalid")
+        request = ScientificInputUploadRequest.model_validate(
+            {
+                "model_id": model_id,
+                "sha256": sha256,
+                "size_bytes": size_bytes,
+                "media_type": media_type,
+                "compression": compression,
+            }
+        )
+        result = await runtime.scientific_input_uploads.begin(
+            principal=_principal(),
+            request=request,
+            idempotency_key=idempotency_key or f"mcp-scientific-upload-{uuid4()}",
+        )
+        return result.model_dump(mode="json")
+
+    async def put_scientific_artifact_bytes(
+        operation_id: UUID,
+        upload_id: UUID,
+        content_base64: str,
+    ) -> dict[str, Any]:
+        """Write the artifact bytes for a reserved upload without leaving MCP.
+
+        This is the MCP equivalent of the gateway's inline byte PUT: the bytes
+        are matched against the reserved digest, size and media type before any
+        object exists, so an MCP client needs no object-store access at all.
+        """
+
+        if runtime.scientific_input_uploads is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific input upload is unavailable")
+        ceiling = runtime.scientific_input_uploads.max_content_bytes
+        # Reject on the encoded length first: decoding a payload beyond the
+        # ceiling would allocate memory the inline path never accepts anyway.
+        if len(content_base64) > 4 * (ceiling // 3 + 1) + 4:
+            raise MCPError(code=INVALID_PARAMS, message="artifact exceeds the inline content ceiling")
+        try:
+            content = base64.b64decode(content_base64, validate=True)
+        except (binascii.Error, ValueError):
+            raise MCPError(code=INVALID_PARAMS, message="content_base64 is not valid base64") from None
+        if len(content) > ceiling:
+            raise MCPError(code=INVALID_PARAMS, message="artifact exceeds the inline content ceiling")
+        receipt = await runtime.scientific_input_uploads.store_content(
+            principal=_principal(),
+            operation_id=operation_id,
+            upload_id=upload_id,
+            content=content,
+        )
+        return receipt.model_dump(mode="json")
+
+    async def finalize_scientific_artifact_upload(operation_id: UUID, upload_id: UUID) -> dict[str, Any]:
+        """Verify uploaded bytes and publish their immutable artifact pointer."""
+
+        if runtime.scientific_input_uploads is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific input upload is unavailable")
+        result = await runtime.scientific_input_uploads.finalize(
+            principal=_principal(),
+            operation_id=operation_id,
+            upload_id=upload_id,
+        )
+        return result.model_dump(mode="json", exclude_none=True)
+
+    async def download_scientific_artifact(artifact_id: UUID) -> dict[str, Any]:
+        """Issue a short-lived tenant-authorized result or input download handle."""
+
+        principal = _principal()
+        principal.require(Scope.OPERATIONS_RESULT)
+        if runtime.artifact_service is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific artifact service is unavailable")
+        result = await runtime.artifact_service.download(artifact_id, tenant_id=principal.tenant_id)
+        return {
+            "artifact": result.artifact.to_public_ref().model_dump(mode="json", exclude_none=True),
+            "handle": {
+                "method": result.handle.method,
+                "url": result.handle.url,
+                "expires_at": result.handle.expires_at.isoformat(),
+                "write_once": result.handle.write_once,
+                "headers": dict(result.handle.headers),
+            },
+        }
+
+    async def read_scientific_artifact_bytes(artifact_id: UUID) -> dict[str, Any]:
+        """Return one authorized artifact's exact bytes, base64 encoded.
+
+        The pointer travels with the bytes so the caller can verify the
+        SHA-256 it computes itself against the digest the platform published.
+        """
+
+        principal = _principal()
+        principal.require(Scope.OPERATIONS_RESULT)
+        if runtime.artifact_service is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific artifact service is unavailable")
+        ceiling = runtime.artifact_service.max_inline_content_bytes
+        stream = await runtime.artifact_service.open_content(artifact_id, tenant_id=principal.tenant_id)
+        if stream.artifact.size_bytes > ceiling:
+            raise MCPError(code=INVALID_PARAMS, message="artifact exceeds the inline content ceiling")
+        content = bytearray()
+        async for chunk in stream.chunks:
+            content.extend(chunk)
+            if len(content) > ceiling:
+                raise MCPError(code=INVALID_PARAMS, message="artifact exceeds the inline content ceiling")
+        if len(content) != stream.artifact.size_bytes:
+            raise ArtifactNotFoundError("stored object size differs from verified metadata")
+        return {
+            "artifact": stream.artifact.to_public_ref().model_dump(mode="json", exclude_none=True),
+            "content_base64": base64.b64encode(bytes(content)).decode("ascii"),
+        }
+
     for function in (
         list_models,
+        list_scientific_models,
         invoke_model,
         get_operation,
         get_operation_result,
         cancel_operation,
         acknowledge_operation,
+        submit_scientific_run,
+        get_scientific_status,
+        cancel_scientific_run,
+        list_scientific_events,
+        get_scientific_artifact,
+        get_scientific_result,
+        begin_scientific_artifact_upload,
+        put_scientific_artifact_bytes,
+        finalize_scientific_artifact_upload,
+        download_scientific_artifact,
+        read_scientific_artifact_bytes,
     ):
         server.add_tool(function, name=function.__name__, meta={"fs2_core": True})
 

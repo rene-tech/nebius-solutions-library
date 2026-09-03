@@ -178,7 +178,7 @@ def test_real_catalog_profiles_project_to_canonical_controller_types() -> None:
 
 
 @pytest.mark.asyncio
-async def test_controller_admission_persists_adapter_identity_and_renders_exact_invocation() -> None:
+async def test_controller_rejects_adapter_plan_before_operator_execution_binding() -> None:
     request = fixture("proteina-complexa", "positive-protein.json")
     operation_id = uuid4()
     execution = compile_adapter_run(
@@ -195,9 +195,12 @@ async def test_controller_admission_persists_adapter_identity_and_renders_exact_
         service_class=ServiceClass.CUSTOMER_BATCH,
         tenant_queue="cancer-immunotherapy",
         model_lane="protein-design",
+        workload_namespace="fs2-scientific",
+        route_namespace="fs2-scientific",
         stages=tuple(
             StageSchedulingDecision(
                 stage_id=stage.stage_id,
+                resource_class=stage.resource_class,
                 resolved_cluster_queue="inference-accelerators",
                 resolved_local_queue="scientific-batch",
                 workload_priority_class="fs2-customer-batch",
@@ -225,27 +228,18 @@ async def test_controller_admission_persists_adapter_identity_and_renders_exact_
         namespace="fs2-scientific",
         clock=lambda: captured_at,
     )
-    admitted = await controller.admit_adapter_run(
-        operation_id=operation_id,
-        tenant_id="cancer-immunotherapy",
-        model_id="proteina-complexa",
-        variant_id=proteina_complexa.VARIANT_ID,
-        profile=profile("proteina-complexa"),
-        request=request,
-        scheduling=scheduling,
-    )
-    assert admitted.execution_plan == execution
-    assert (admitted.model_id, admitted.variant_id) == ("proteina-complexa", proteina_complexa.VARIANT_ID)
-    await controller.reconcile_once()
-    workload = cluster.apply_history[0]
-    assert workload.invocation == execution.invocation("generate", "main")
-    assert workload.invocation.argv[:2] == ("complexa", "generate")
-    assert workload.invocation.runtime_artifacts == execution.invocation("generate", "main").runtime_artifacts
-    assert workload.model_id == admitted.model_id
-    assert workload.variant_id == admitted.variant_id
-    assert repository.events[operation_id]
-    assert all(event.draft.model_id == admitted.model_id for event in repository.events[operation_id])
-    assert all(event.draft.variant_id == admitted.variant_id for event in repository.events[operation_id])
+    with pytest.raises(ValueError, match="not bound"):
+        await controller.admit(
+            operation_id=operation_id,
+            tenant_id="cancer-immunotherapy",
+            model_id="proteina-complexa",
+            variant_id=proteina_complexa.VARIANT_ID,
+            plan=execution.controller_plan,
+            scheduling=scheduling,
+            execution_plan=execution,
+        )
+    assert cluster.apply_history == []
+    assert repository.records == {}
 
 
 def test_adapter_identities_match_the_checked_in_source_qualification() -> None:

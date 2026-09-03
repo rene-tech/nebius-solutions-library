@@ -41,6 +41,7 @@ class Scope(StrEnum):
     MCP_INVOKE = "mcp.invoke"
     OPERATIONS_READ = "operations.read"
     OPERATIONS_RESULT = "operations.result"
+    ARTIFACTS_WRITE = "artifacts.write"
     OPERATIONS_CANCEL = "operations.cancel"
     OPERATIONS_ACKNOWLEDGE = "operations.acknowledge"
     TOKENS_MANAGE = "tokens.manage"
@@ -246,6 +247,14 @@ class AdmissionRequest(StrictModel):
     request_content_type: str = "application/json"
     traceparent: str | None = Field(default=None, max_length=128)
     deadline_at: AwareDatetime | None = None
+
+
+class PendingScientificAdmission(StrictModel):
+    """One complete frozen batch admission committed with its Operation."""
+
+    operation_id: UUID
+    payload: dict[str, Any]
+    created_at: AwareDatetime
 
 
 class RuntimeIdentity(StrictModel):

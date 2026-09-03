@@ -45,6 +45,34 @@ EXPECTED_MIGRATIONS: Final = (
         "0013_durable_dynamic_dispatch.sql",
         "4daf1a47abd864c04f30dc48149a0c74b46aac1332c12ef40df518b2dea8b9ad",
     ),
+    (
+        "0014_scientific_artifact_results.sql",
+        "97be6f57c64944418fa9719a58bacd8040402d21fa874f7af3a773c02b68b675",
+    ),
+    (
+        "0015_scientific_batch_controller.sql",
+        "48b41100f3c9b25595ee6e9835ad4d44d964161bf05fa3227d6697bf7f085578",
+    ),
+    (
+        "0016_scientific_batch_state_v7.sql",
+        "fa25cc0b11f388e91e1eff7778da882dd5e2df8e8dac8392db7342c82d625207",
+    ),
+    (
+        "0017_scientific_batch_state_v8.sql",
+        "402af8eb08057ae564798af3880c14a62c5f13873787f2aa25745990eaa9b5aa",
+    ),
+    (
+        "0018_workload_lifecycle_telemetry.sql",
+        "7d7b770d30db7ce465cc92a747de560c574a167554c6834c07f7c3e24acd48f8",
+    ),
+    (
+        "0019_scientific_deployment_authorization.sql",
+        "d28352edc490390f663a1db546080bc17865305d10551cfddbd464c5a544ee1a",
+    ),
+    (
+        "0020_scientific_atomic_admission.sql",
+        "622a05f5387dca685733de2459ffbe19d058119571753d62dfad0b1cd91e411c",
+    ),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {

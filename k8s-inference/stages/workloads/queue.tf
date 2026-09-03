@@ -474,6 +474,13 @@ locals {
   # mounts this ConfigMap by name. It also prevents a running controller from
   # observing a partly updated policy while creating an immutable admission.
   scheduling_contract_config_map_name = "fs2-${var.run_id}-scientific-scheduling-${substr(local.scheduling_contract_sha256, 0, 12)}"
+  scheduling_contract_ref = {
+    schema          = module.kueue_scheduling.contract.schema
+    config_map_name = local.scheduling_contract_config_map_name
+    namespace       = "fs2-system"
+    key             = local.scheduling_contract_key
+    sha256          = local.scheduling_contract_sha256
+  }
 }
 
 resource "kubernetes_config_map_v1" "scientific_scheduling_contract" {

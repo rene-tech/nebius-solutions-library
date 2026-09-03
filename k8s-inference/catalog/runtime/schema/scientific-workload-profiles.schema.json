@@ -32,12 +32,41 @@
             "maxLength": 63
           },
           "state": {
-            "const": "candidate-unqualified"
+            "enum": [
+              "candidate-unqualified",
+              "qualified",
+              "active"
+            ]
           },
           "route_exposed": {
-            "const": false
+            "type": "boolean"
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "candidate-unqualified"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "route_exposed": {
+                  "const": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "route_exposed": {
+                  "const": true
+                }
+              }
+            }
+          }
+        ]
       }
     }
   }

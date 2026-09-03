@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://fs2-serve.nebius.ai/schema/scientific-workload-profile/v1",
   "title": "Scientific workload profile",
-  "description": "Candidate model-to-scientific-batch adapter contract. A profile is not a serving binding and cannot make a model invocable without independent access, build, semantic, hardware, and live-controller qualification.",
+  "description": "Model-to-scientific-batch adapter contract. Candidate profiles remain unrouted; qualified profiles require complete immutable identity, access, semantic, scheduler, and live-route evidence.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -40,10 +40,14 @@
       ]
     },
     "state": {
-      "const": "candidate-unqualified"
+      "enum": [
+        "candidate-unqualified",
+        "qualified",
+        "active"
+      ]
     },
     "route_exposed": {
-      "const": false
+      "type": "boolean"
     },
     "source": {
       "type": "object",
@@ -77,7 +81,10 @@
           "maxLength": 2048
         },
         "classification": {
-          "const": "candidate-input"
+          "enum": [
+            "candidate-input",
+            "qualified-input"
+          ]
         }
       }
     },
@@ -112,10 +119,18 @@
           "$ref": "#/$defs/sha256"
         },
         "artifact_manifest_digest": {
-          "type": "null"
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
         },
         "execution_identity_sha256": {
-          "type": "null"
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
         }
       }
     },
@@ -186,10 +201,10 @@
           ],
           "properties": {
             "discoverable": {
-              "const": true
+              "type": "boolean"
             },
             "invocable": {
-              "const": false
+              "type": "boolean"
             },
             "tool_name": {
               "type": "string",
@@ -230,7 +245,11 @@
           ]
         },
         "receipt_digest": {
-          "type": "null"
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
         },
         "credentials_embedded": {
           "const": false
@@ -309,7 +328,40 @@
           "maxLength": 128
         },
         "state": {
-          "const": "candidate-unqualified"
+          "enum": [
+            "candidate-unqualified",
+            "qualified",
+            "active"
+          ]
+        }
+      }
+    },
+    "qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "h100_semantic_receipt_sha256",
+        "public_completion_receipt_sha256",
+        "scheduler_eligibility_receipt_sha256",
+        "execution_map_sha256",
+        "qualified_at"
+      ],
+      "properties": {
+        "h100_semantic_receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "public_completion_receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "scheduler_eligibility_receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "execution_map_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "qualified_at": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },
@@ -346,6 +398,166 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "candidate-unqualified"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "route_exposed": {
+            "const": false
+          },
+          "source": {
+            "properties": {
+              "classification": {
+                "const": "candidate-input"
+              }
+            }
+          },
+          "execution_identity": {
+            "properties": {
+              "artifact_manifest_digest": {
+                "type": "null"
+              },
+              "execution_identity_sha256": {
+                "type": "null"
+              }
+            }
+          },
+          "interface": {
+            "properties": {
+              "mcp": {
+                "properties": {
+                  "discoverable": {
+                    "const": true
+                  },
+                  "invocable": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          },
+          "semantic_validation": {
+            "properties": {
+              "state": {
+                "const": "candidate-unqualified"
+              }
+            }
+          },
+          "qualification": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "enum": [
+              "qualified",
+              "active"
+            ]
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "required": [
+          "qualification"
+        ],
+        "properties": {
+          "route_exposed": {
+            "const": true
+          },
+          "source": {
+            "properties": {
+              "classification": {
+                "const": "qualified-input"
+              }
+            }
+          },
+          "execution_identity": {
+            "properties": {
+              "runtime_image_digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "artifact_manifest_digest": {
+                "$ref": "#/$defs/sha256"
+              },
+              "execution_identity_sha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          },
+          "interface": {
+            "properties": {
+              "mcp": {
+                "properties": {
+                  "discoverable": {
+                    "const": true
+                  },
+                  "invocable": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "access": {
+            "oneOf": [
+              {
+                "properties": {
+                  "profile": {
+                    "const": "standard"
+                  },
+                  "state": {
+                    "const": "not-required"
+                  },
+                  "receipt_digest": {
+                    "type": "null"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "profile": {
+                    "const": "academic"
+                  },
+                  "state": {
+                    "const": "verified"
+                  },
+                  "receipt_digest": {
+                    "$ref": "#/$defs/sha256"
+                  }
+                }
+              }
+            ]
+          },
+          "semantic_validation": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "qualified",
+                  "active"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "model_id": {
       "type": "string",

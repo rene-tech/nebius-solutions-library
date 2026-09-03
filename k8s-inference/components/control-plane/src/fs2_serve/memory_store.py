@@ -6,7 +6,7 @@ import asyncio
 import base64
 import json
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -73,6 +73,7 @@ from .models import (
     OperationResult,
     OperationStatus,
     OperationView,
+    PendingScientificAdmission,
     Principal,
     ReportedUsage,
     RuntimeIdentity,
@@ -150,6 +151,8 @@ class MemoryStore:
         self._activation_mutation_locks: dict[str, asyncio.Lock] = {}
         self.tokens: dict[UUID, _Token] = {}
         self.operations: dict[UUID, _Operation] = {}
+        self.scientific_admission_outbox: dict[UUID, PendingScientificAdmission] = {}
+        self.scientific_admissions_completed: set[UUID] = set()
         self.activation_intents: dict[UUID, _Activation] = {}
         self.activation_events: list[_ActivationEvent] = []
         self.activation_targets: dict[str, ActivationTargetState] = {}
@@ -1375,6 +1378,7 @@ class MemoryStore:
         max_attempts: int,
         dispatch_snapshot: str | None = None,
         dynamic_fence: DynamicAdmissionFence | None = None,
+        scientific_admission_factory: Callable[[OperationView], dict[str, object]] | None = None,
     ) -> OperationView:
         async with self._activation_mutation_lock(admission.model_id):
             return await self._append_operation(
@@ -1385,6 +1389,7 @@ class MemoryStore:
                 max_attempts=max_attempts,
                 dispatch_snapshot=dispatch_snapshot,
                 dynamic_fence=dynamic_fence,
+                scientific_admission_factory=scientific_admission_factory,
             )
 
     async def _append_operation(
@@ -1397,6 +1402,7 @@ class MemoryStore:
         max_attempts: int,
         dispatch_snapshot: str | None,
         dynamic_fence: DynamicAdmissionFence | None,
+        scientific_admission_factory: Callable[[OperationView], dict[str, object]] | None,
     ) -> OperationView:
         async with self._lock:
             token = self.tokens.get(principal.token_id)
@@ -1427,7 +1433,9 @@ class MemoryStore:
                     or existing_row.content_type != admission.request_content_type
                 ):
                     raise ConflictError("idempotency key is already bound to a different request")
-                return self._metadata(existing_row, reused=True)
+                operation = self._metadata(existing_row, reused=True)
+                self._stage_scientific_admission(operation, scientific_admission_factory)
+                return operation
             if (dynamic_fence is None) != (dispatch_snapshot is None):
                 raise ConflictError("dynamic admission fence and dispatch snapshot must be supplied together")
             if dynamic_fence is not None:
@@ -1499,6 +1507,7 @@ class MemoryStore:
                 traceparent=admission.traceparent,
                 dispatch_snapshot=dispatch_snapshot,
             )
+            self._stage_scientific_admission(view, scientific_admission_factory)
             self.operations[operation_id] = row
             self.idempotency[key] = operation_id
             token.view = token.view.model_copy(
@@ -1521,6 +1530,46 @@ class MemoryStore:
                 detail={"model_id": admission.model_id, "protocol": admission.protocol},
             )
             return self._metadata(row)
+
+    def _stage_scientific_admission(
+        self,
+        operation: OperationView,
+        factory: Callable[[OperationView], dict[str, object]] | None,
+    ) -> None:
+        if factory is None:
+            return
+        if operation.protocol != "scientific-batch-v1":
+            raise ConflictError("scientific admission outbox requires a scientific batch Operation")
+        if operation.id in self.scientific_admissions_completed:
+            return
+        payload = factory(operation)
+        pending = PendingScientificAdmission(
+            operation_id=operation.id,
+            payload=payload,
+            created_at=operation.accepted_at,
+        )
+        current = self.scientific_admission_outbox.get(operation.id)
+        if current is not None and current.payload != pending.payload:
+            raise ConflictError("scientific admission outbox already contains another frozen request")
+        self.scientific_admission_outbox[operation.id] = pending
+
+    async def get_scientific_admission(self, operation_id: UUID) -> PendingScientificAdmission | None:
+        async with self._lock:
+            return self.scientific_admission_outbox.get(operation_id)
+
+    async def list_scientific_admissions(self, *, limit: int = 100) -> list[PendingScientificAdmission]:
+        if not 1 <= limit <= 1000:
+            raise ValueError("scientific admission page is outside the bound")
+        async with self._lock:
+            return sorted(
+                self.scientific_admission_outbox.values(),
+                key=lambda item: (item.created_at, item.operation_id),
+            )[:limit]
+
+    async def complete_scientific_admission(self, operation_id: UUID) -> None:
+        async with self._lock:
+            if self.scientific_admission_outbox.pop(operation_id, None) is not None:
+                self.scientific_admissions_completed.add(operation_id)
 
     async def get_operation(self, operation_id: UUID, *, tenant_id: str | None = None) -> OperationView:
         async with self._lock:
@@ -1555,6 +1604,7 @@ class MemoryStore:
             ):
                 if (
                     row.view.status != OperationStatus.QUEUED
+                    or row.view.protocol in {"scientific-batch-v1", "scientific-artifact-upload-v1"}
                     or row.view.available_at > now
                     or row.view.attempt >= row.view.max_attempts
                 ):
@@ -1602,6 +1652,50 @@ class MemoryStore:
                     worker_id=worker_id,
                 )
             return None
+
+    async def complete_scientific_artifact_upload(
+        self,
+        operation_id: UUID,
+        *,
+        tenant_id: str,
+        principal_id: str,
+    ) -> OperationView:
+        """Close one verified customer upload without exposing a worker lease."""
+
+        async with self._lock:
+            row = self.operations.get(operation_id)
+            if (
+                row is None
+                or row.view.tenant_id != tenant_id
+                or row.view.principal_id != principal_id
+                or row.view.protocol != "scientific-artifact-upload-v1"
+            ):
+                raise NotFoundError("scientific artifact upload operation not found")
+            if row.view.status is OperationStatus.SUCCEEDED:
+                return self._metadata(row, reused=True)
+            if row.view.status is not OperationStatus.QUEUED:
+                raise ConflictError("scientific artifact upload operation is not writable")
+            now = datetime.now(UTC)
+            row.view = row.view.model_copy(
+                update={
+                    "status": OperationStatus.SUCCEEDED,
+                    "completed_at": now,
+                    "outcome": "artifact_uploaded",
+                    "semantic_outcome": "verified",
+                    "http_status": 201,
+                    "reserved_gpu_seconds": 0,
+                }
+            )
+            self._audit(
+                actor=principal_id,
+                tenant_id=tenant_id,
+                token_id=row.view.token_id,
+                action="scientific_artifact.upload.complete",
+                target_type="operation",
+                target_id=str(operation_id),
+                outcome="succeeded",
+            )
+            return self._metadata(row)
 
     def _require_activation_claim(
         self,
@@ -2386,6 +2480,8 @@ class MemoryStore:
             ]
             for operation_id in deleted_operations:
                 row = self.operations.pop(operation_id)
+                self.scientific_admission_outbox.pop(operation_id, None)
+                self.scientific_admissions_completed.discard(operation_id)
                 self.idempotency.pop(
                     (row.view.tenant_id, row.view.principal_id, row.view.token_id, row.view.idempotency_key),
                     None,

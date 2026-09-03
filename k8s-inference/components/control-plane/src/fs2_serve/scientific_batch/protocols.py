@@ -7,13 +7,19 @@ from typing import Protocol
 from uuid import UUID
 
 from .models import (
+    PUBLIC_ARTIFACT_ACCESS_CONTEXT,
     AdapterExecutionPlan,
-    ArtifactCommit,
+    ArtifactAccessContext,
+    AttemptArtifactCommit,
     BatchClaim,
     BatchEventDraft,
+    RuntimeArtifactLocalization,
     SchedulingSnapshot,
+    ScientificAttemptState,
     ScientificBatchPlan,
     ScientificBatchState,
+    StageSchedulingDecision,
+    VerifiedInputManifest,
     WorkloadObservation,
     WorkloadRef,
     WorkloadResource,
@@ -42,9 +48,15 @@ class ScientificBatchRepository(Protocol):
         *,
         operation_id: UUID,
         tenant_id: str,
+        model_id: str,
+        variant_id: str,
+        input_artifact_id: UUID,
         plan: ScientificBatchPlan,
         scheduling: SchedulingSnapshot,
         execution_plan: AdapterExecutionPlan | None = None,
+        access_context: ArtifactAccessContext = PUBLIC_ARTIFACT_ACCESS_CONTEXT,
+        input_manifest: VerifiedInputManifest | None = None,
+        runtime_artifacts: tuple[RuntimeArtifactLocalization, ...] = (),
     ) -> ScientificBatchState: ...
 
     async def claim_next(
@@ -67,9 +79,40 @@ class ScientificBatchRepository(Protocol):
         now: datetime,
     ) -> ScientificBatchState: ...
 
-    async def artifact_commit(self, claim: BatchClaim, *, stage_id: str) -> ArtifactCommit | None: ...
-
     async def release(self, claim: BatchClaim) -> None: ...
+
+
+class ScientificBatchArtifactLifecycle(Protocol):
+    """Canonical artifact-service integration; it owns all artifact persistence."""
+
+    async def open_attempt(self, resource: WorkloadResource, *, started_at: datetime) -> None: ...
+
+    async def close_attempt(self, state: ScientificBatchState, attempt: ScientificAttemptState) -> None: ...
+
+    async def ensure_stage_commit(self, state: ScientificBatchState, *, stage_id: str) -> None: ...
+
+    async def artifact_commits(
+        self, state: ScientificBatchState, *, stage_id: str
+    ) -> tuple[AttemptArtifactCommit, ...]: ...
+
+
+class ScientificBatchLifecycle(Protocol):
+    """Idempotent projection into the canonical workload lifecycle ledger."""
+
+    async def sync(self, state: ScientificBatchState) -> None: ...
+
+    async def observe(
+        self,
+        state: ScientificBatchState,
+        attempt: ScientificAttemptState,
+        observation: WorkloadObservation,
+    ) -> None: ...
+
+
+class LegacyArtifactCommitReader(Protocol):
+    """In-memory core-test seam retained without a second production table."""
+
+    async def artifact_commits(self, claim: BatchClaim, *, stage_id: str) -> tuple[AttemptArtifactCommit, ...]: ...
 
 
 class ScientificBatchCluster(Protocol):
@@ -84,6 +127,19 @@ class ScientificBatchCluster(Protocol):
 
     async def apply(self, resource: WorkloadResource, *, controller_fence: int) -> WorkloadRef: ...
 
-    async def observe(self, ref: WorkloadRef) -> WorkloadObservation: ...
+    async def observe(
+        self,
+        ref: WorkloadRef,
+        *,
+        scheduling: StageSchedulingDecision,
+    ) -> WorkloadObservation: ...
 
     async def delete(self, ref: WorkloadRef, *, controller_fence: int) -> None: ...
+
+    async def absent(self, ref: WorkloadRef) -> bool: ...
+
+
+class ScientificBatchResultPublisher(Protocol):
+    """Idempotently commit the artifact-service-owned terminal result."""
+
+    async def publish_terminal(self, state: ScientificBatchState) -> None: ...

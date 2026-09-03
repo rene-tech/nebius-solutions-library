@@ -540,6 +540,15 @@ variable "deployment" {
       enabled        = optional(bool, false)
       writes_enabled = optional(bool, false)
       namespace      = optional(string, "fs2-models")
+      execution_map = optional(any, {
+        schema = "fs2-serve.nebius.ai/scientific-execution-map/v3"
+        models = []
+      })
+      workers                  = optional(number, 2)
+      poll_seconds             = optional(string, "0.25")
+      lease_seconds            = optional(string, "30")
+      api_timeout_seconds      = optional(string, "5")
+      token_expiration_seconds = optional(number, 600)
     }), {})
 
     artifacts = optional(object({

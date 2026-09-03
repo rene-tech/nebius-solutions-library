@@ -351,17 +351,22 @@ variable "scientific_artifacts" {
 }
 
 variable "scientific_batch" {
-  description = "Staged scientific batch gates. Batch execution requires the artifact store; Kubernetes writes require batch."
+  description = "Staged scientific batch gates and immutable execution map. Batch execution requires the artifact store; Kubernetes writes require batch."
   type = object({
-    enabled        = bool
-    writes_enabled = bool
-    namespace      = string
+    enabled        = optional(bool, false)
+    writes_enabled = optional(bool, false)
+    namespace      = optional(string, "fs2-models")
+    execution_map = optional(any, {
+      schema = "fs2-serve.nebius.ai/scientific-execution-map/v3"
+      models = []
+    })
+    workers                  = optional(number, 2)
+    poll_seconds             = optional(string, "0.25")
+    lease_seconds            = optional(string, "30")
+    api_timeout_seconds      = optional(string, "5")
+    token_expiration_seconds = optional(number, 600)
   })
-  default = {
-    enabled        = false
-    writes_enabled = false
-    namespace      = "fs2-models"
-  }
+  default = {}
 
   validation {
     condition = (
@@ -369,6 +374,19 @@ variable "scientific_batch" {
       can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.scientific_batch.namespace))
     )
     error_message = "scientific_batch.writes_enabled requires scientific_batch.enabled and a DNS-label namespace."
+  }
+
+  validation {
+    condition = !var.scientific_batch.enabled || try(
+      var.scientific_batch.execution_map.schema == "fs2-serve.nebius.ai/scientific-execution-map/v3" &&
+      length(var.scientific_batch.execution_map.models) > 0 &&
+      var.scientific_artifacts.enabled &&
+      var.scientific_batch.workers >= 1 && var.scientific_batch.workers <= 32 &&
+      var.scientific_batch.token_expiration_seconds >= 600 &&
+      var.scientific_batch.token_expiration_seconds <= 3600,
+      false,
+    )
+    error_message = "scientific_batch.enabled requires a non-empty schema-v3 execution map, bounded worker/token settings, and the accepted scientific artifact-store contract."
   }
 }
 

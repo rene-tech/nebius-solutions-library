@@ -7,14 +7,15 @@ import secrets
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from opentelemetry import trace
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import ASGIApp, Message, Receive, Send
@@ -68,6 +69,11 @@ from .auth import (
 )
 from .configuration import ConfigurationService
 from .configuration_routes import configuration_router
+from .lifecycle import (
+    LifecycleRepository,
+    NullLifecycleRepository,
+    api_key_id_hash,
+)
 from .model_deployment_admin import ModelDeploymentReadService, model_deployment_read_router
 from .model_deployment_bridge import ModelDeploymentRuntimeBridge
 from .model_deployment_mutation import ModelDeploymentMutationService, model_deployment_mutation_router
@@ -87,6 +93,42 @@ from .models import (
 )
 from .registry import OperationalModel, Registry, RegistryError
 from .route_revalidation import RouteRevalidator
+from .scientific_admin import ScientificAdminReadService, ScientificRunQuery
+from .scientific_admin_models import (
+    ScientificModelReadinessList,
+    ScientificRunDetail,
+    ScientificRunList,
+    ScientificServiceClass,
+)
+from .scientific_artifact_routes import scientific_artifact_router
+from .scientific_artifacts import (
+    ArtifactConflictError,
+    ArtifactContentTooLargeError,
+    ArtifactNotFoundError,
+    ArtifactPolicyError,
+    ArtifactVerificationError,
+    ScientificArtifactControllerPort,
+)
+from .scientific_batch.artifact_bridge import SignedArtifactContentReader
+from .scientific_batch.capability import ScientificWorkloadCapabilityAuthority
+from .scientific_batch.kubernetes import HttpScientificBatchCluster
+from .scientific_batch.postgres_repository import ScientificBatchNotFoundError
+from .scientific_batch.profile_catalog import ScientificProfileError, ScientificRequestError
+from .scientific_batch.service import (
+    ScientificBatchService,
+    ScientificBatchStatusResponse,
+    ScientificEventPage,
+)
+from .scientific_batch.worker import ScientificBatchWorker
+from .scientific_batch.workload_routes import WorkloadBatchRepository, scientific_workload_artifact_router
+from .scientific_input_uploads import (
+    ScientificInputUpload,
+    ScientificInputUploadFinalizeRequest,
+    ScientificInputUploadReceipt,
+    ScientificInputUploadRequest,
+    ScientificInputUploadService,
+)
+from .scientific_run_result import ArtifactRef
 from .settings import Settings
 from .store import (
     BudgetExceededError,
@@ -164,6 +206,7 @@ class AppRuntime:
     metrics: Metrics
     admin_token: bytes
     operator_sessions: OperatorSessionService
+    lifecycle: LifecycleRepository = field(default_factory=NullLifecycleRepository)
     owns_store: bool = True
     route_revalidator: RouteRevalidator | None = None
     admin_read: AdminReadService | None = None
@@ -172,6 +215,15 @@ class AppRuntime:
     model_deployment_read: ModelDeploymentReadService | None = None
     model_deployment_mutation: ModelDeploymentMutationService | None = None
     model_deployment_bridge: ModelDeploymentRuntimeBridge | None = None
+    scientific_admin: ScientificAdminReadService | None = None
+    scientific_batches: ScientificBatchService | None = None
+    scientific_batch_worker: ScientificBatchWorker | None = None
+    scientific_batch_cluster: HttpScientificBatchCluster | None = None
+    artifact_service: ScientificArtifactControllerPort | None = None
+    scientific_workload_capabilities: ScientificWorkloadCapabilityAuthority | None = None
+    scientific_workload_batches: WorkloadBatchRepository | None = None
+    scientific_artifact_content_reader: SignedArtifactContentReader | None = None
+    scientific_input_uploads: ScientificInputUploadService | None = None
 
     async def revalidate_routes(self) -> bool:
         if self.route_revalidator is not None and not await self.route_revalidator.refresh():
@@ -376,11 +428,19 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             await runtime.route_revalidator.start()
         if runtime.model_deployment_bridge is not None:
             await runtime.model_deployment_bridge.start()
+        if runtime.scientific_batch_worker is not None:
+            await runtime.scientific_batch_worker.start()
         if runtime.settings.run_workers:
             await runtime.admission.start()
         try:
             yield
         finally:
+            if runtime.scientific_batch_worker is not None:
+                await runtime.scientific_batch_worker.close()
+            if runtime.scientific_batch_cluster is not None:
+                await runtime.scientific_batch_cluster.close()
+            if runtime.scientific_artifact_content_reader is not None:
+                await runtime.scientific_artifact_content_reader.close()
             if runtime.model_deployment_bridge is not None:
                 await runtime.model_deployment_bridge.close()
             if runtime.route_revalidator is not None:
@@ -623,6 +683,42 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     async def registry_error(_: Request, __: RegistryError) -> JSONResponse:
         return _error(503, "route_unavailable", "model route is unavailable")
 
+    @app.exception_handler(ScientificRequestError)
+    async def scientific_request_error(_: Request, __: ScientificRequestError) -> JSONResponse:
+        return _error(422, "scientific_request_invalid", "request violates the canonical scientific contract")
+
+    @app.exception_handler(ScientificBatchNotFoundError)
+    async def scientific_not_found(_: Request, __: ScientificBatchNotFoundError) -> JSONResponse:
+        return _error(404, "scientific_batch_not_found", "scientific batch was not found")
+
+    @app.exception_handler(ScientificProfileError)
+    async def scientific_profile_error(_: Request, __: ScientificProfileError) -> JSONResponse:
+        return _error(503, "scientific_profile_unavailable", "scientific workload profile is unavailable")
+
+    @app.exception_handler(ArtifactNotFoundError)
+    async def artifact_not_found(_: Request, __: ArtifactNotFoundError) -> JSONResponse:
+        return _error(404, "artifact_not_found", "scientific artifact was not found")
+
+    @app.exception_handler(ArtifactConflictError)
+    async def artifact_conflict(_: Request, __: ArtifactConflictError) -> JSONResponse:
+        return _error(409, "artifact_conflict", "scientific artifact state conflicts")
+
+    @app.exception_handler(ArtifactPolicyError)
+    async def artifact_policy(_: Request, __: ArtifactPolicyError) -> JSONResponse:
+        return _error(422, "artifact_policy_rejected", "scientific artifact policy rejected the request")
+
+    @app.exception_handler(ArtifactVerificationError)
+    async def artifact_verification(_: Request, __: ArtifactVerificationError) -> JSONResponse:
+        return _error(
+            422,
+            "artifact_verification_failed",
+            "scientific artifact bytes differ from the declared identity",
+        )
+
+    @app.exception_handler(ArtifactContentTooLargeError)
+    async def artifact_content_too_large(_: Request, __: ArtifactContentTooLargeError) -> JSONResponse:
+        return _error(413, "artifact_content_too_large", "scientific artifact exceeds the inline gateway ceiling")
+
     @app.exception_handler(KeyError)
     async def key_error(_: Request, __: KeyError) -> JSONResponse:
         return _error(404, "not_found", "model or operation was not found")
@@ -692,6 +788,11 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             worker_health = runtime.admission.health()
             if not worker_health["ready"]:
                 return _error(503, "worker_unavailable", "admission worker or janitor is unavailable")
+        scientific_health = (
+            runtime.scientific_batch_worker.health() if runtime.scientific_batch_worker is not None else None
+        )
+        if scientific_health is not None and not scientific_health["ready"]:
+            return _error(503, "scientific_batch_worker_unavailable", "scientific batch worker is unavailable")
         federation_health = (
             await runtime.admission.runtime.federation_health()
             if routable_models
@@ -709,6 +810,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 "route_evidence": route_health,
                 "activation": {"required": activation_required, "ready": activation_ready},
                 "admission": worker_health,
+                **({"scientific_batch": scientific_health} if scientific_health is not None else {}),
                 "federation": federation_health,
                 **({"dynamic_models": dynamic_model_health} if dynamic_model_health is not None else {}),
             }
@@ -720,6 +822,8 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         runtime.metrics.set_terminal_accounting(await runtime.store.terminal_accounting())
         runtime.metrics.set_queue(await runtime.store.queue_counts())
         runtime.metrics.set_queue_age(await runtime.store.oldest_queue_age())
+        runtime.metrics.set_lifecycle_accounting(await runtime.lifecycle.metric_rows())
+        runtime.metrics.set_lifecycle_rollups(await runtime.lifecycle.rollup_metric_rows())
         return Response(runtime.metrics.render(), media_type="text/plain; version=0.0.4; charset=utf-8")
 
     @app.get("/v1/models")
@@ -774,6 +878,17 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 deadline_at=deadline_at,
             ),
         )
+        span = trace.get_current_span()
+        span.set_attribute("fs2.operation.id", str(admitted.id))
+        span.set_attribute("fs2.request.id", str(admitted.id))
+        span.set_attribute("fs2.workload.id", str(admitted.id))
+        span.set_attribute("fs2.tenant.id", identity.tenant_id)
+        span.set_attribute("fs2.principal.id", identity.principal_id)
+        span.set_attribute("fs2.api_key.id_hash", api_key_id_hash(identity.token_id))
+        span.set_attribute("fs2.model.id", admitted.model_id)
+        span.set_attribute("fs2.model.revision", admitted.model_revision)
+        span.set_attribute("fs2.protocol", protocol)
+        span.set_attribute("fs2.input.bytes", len(body))
         current = (
             await runtime.admission.wait(admitted.id, tenant_id=identity.tenant_id, seconds=wait) if wait else admitted
         )
@@ -865,16 +980,151 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             wait_seconds=wait_seconds,
         )
 
-    @app.get("/v1/operations/{operation_id}")
+    @app.post(
+        "/v1/models/{model_id}:submit",
+        response_model=ScientificBatchStatusResponse,
+        status_code=202,
+    )
+    async def scientific_submit(
+        model_id: str,
+        request: Request,
+        identity: Annotated[Principal, Depends(principal)],
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ) -> Response:
+        if runtime.scientific_batches is None:
+            return _error(503, "scientific_batch_unavailable", "scientific batch submission is disabled")
+        model_id = _validate_model_id(model_id)
+        if idempotency_key is None:
+            raise HTTPException(status_code=400, detail="Idempotency-Key is required")
+        if not MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH:
+            raise HTTPException(status_code=400, detail="Idempotency-Key length is invalid")
+        try:
+            payload = json.loads(await request.body())
+        except (RecursionError, ValueError):
+            raise HTTPException(status_code=400, detail="request body must be JSON") from None
+        result = await runtime.scientific_batches.submit(
+            principal=identity,
+            model_id=model_id,
+            request=payload,
+            idempotency_key=idempotency_key,
+            traceparent=request.headers.get("traceparent"),
+        )
+        operation = result["operation"]
+        return JSONResponse(
+            result,
+            status_code=202,
+            headers={
+                "cache-control": "no-store",
+                "location": f"/v1/operations/{operation['id']}",
+                "x-fs2-operation-id": operation["id"],
+                "x-fs2-idempotent-replay": str(operation["reused"]).lower(),
+            },
+        )
+
+    @app.post(
+        "/v1/scientific-artifacts/uploads",
+        response_model=ScientificInputUpload,
+        status_code=201,
+    )
+    async def scientific_input_upload(
+        request: ScientificInputUploadRequest,
+        identity: Annotated[Principal, Depends(principal)],
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ) -> Response:
+        if runtime.scientific_input_uploads is None:
+            return _error(503, "scientific_artifact_upload_unavailable", "scientific input upload is disabled")
+        if idempotency_key is None:
+            raise HTTPException(status_code=400, detail="Idempotency-Key is required")
+        if not MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH:
+            raise HTTPException(status_code=400, detail="Idempotency-Key length is invalid")
+        result = await runtime.scientific_input_uploads.begin(
+            principal=identity,
+            request=request,
+            idempotency_key=idempotency_key,
+        )
+        return JSONResponse(
+            result.model_dump(mode="json"),
+            status_code=201,
+            headers={
+                "cache-control": "no-store",
+                "location": f"/v1/operations/{result.operation_id}",
+                "x-fs2-operation-id": str(result.operation_id),
+            },
+        )
+
+    @app.put(
+        "/v1/scientific-artifacts/uploads/{upload_id}/content",
+        response_model=ScientificInputUploadReceipt,
+    )
+    async def scientific_input_upload_content(
+        upload_id: UUID,
+        request: Request,
+        identity: Annotated[Principal, Depends(principal)],
+        operation_id: Annotated[UUID, Query()],
+        content_type: Annotated[str | None, Header()] = None,
+        content_length: Annotated[int | None, Header(ge=0)] = None,
+    ) -> Response:
+        """Accept the artifact bytes themselves, so no object store is needed.
+
+        The edge already bounds the body, and the artifact service matches the
+        bytes against the reserved digest, size and media type before any
+        object is written. A body that disagrees is rejected and stores nothing.
+        """
+
+        if runtime.scientific_input_uploads is None:
+            return _error(503, "scientific_artifact_upload_unavailable", "scientific input upload is disabled")
+        receipt = await runtime.scientific_input_uploads.store_content(
+            principal=identity,
+            operation_id=operation_id,
+            upload_id=upload_id,
+            content=await request.body(),
+            declared_media_type=content_type,
+            declared_size_bytes=content_length,
+        )
+        return JSONResponse(
+            receipt.model_dump(mode="json"),
+            headers={
+                "cache-control": "no-store",
+                "location": f"/v1/scientific-artifacts/uploads/{upload_id}:finalize",
+                "x-fs2-artifact-sha256": receipt.sha256,
+            },
+        )
+
+    @app.post("/v1/scientific-artifacts/uploads/{upload_id}:finalize", response_model=ArtifactRef)
+    async def scientific_input_upload_finalize(
+        upload_id: UUID,
+        request: ScientificInputUploadFinalizeRequest,
+        identity: Annotated[Principal, Depends(principal)],
+    ) -> Response:
+        if runtime.scientific_input_uploads is None:
+            return _error(503, "scientific_artifact_upload_unavailable", "scientific input upload is disabled")
+        result = await runtime.scientific_input_uploads.finalize(
+            principal=identity,
+            operation_id=request.operation_id,
+            upload_id=upload_id,
+        )
+        return JSONResponse(result.model_dump(mode="json", exclude_none=True), headers={"cache-control": "no-store"})
+
+    @app.get("/v1/operations/{operation_id}", response_model=OperationView | ScientificBatchStatusResponse)
     async def operation_status(operation_id: UUID, identity: Annotated[Principal, Depends(principal)]) -> Response:
         operation = await runtime.store.get_operation(operation_id, tenant_id=identity.tenant_id)
         require_operation_access(identity, operation)
+        if operation.protocol == "scientific-batch-v1" and runtime.scientific_batches is not None:
+            return JSONResponse(
+                await runtime.scientific_batches.status(operation_id, principal=identity),
+                headers=_operation_headers(operation),
+            )
         return JSONResponse(operation.model_dump(mode="json"), headers=_operation_headers(operation))
 
     @app.get("/v1/operations/{operation_id}/result")
     async def operation_result(operation_id: UUID, identity: Annotated[Principal, Depends(principal)]) -> Response:
         operation = await runtime.store.get_operation(operation_id, tenant_id=identity.tenant_id)
         require_operation_access(identity, operation)
+        if operation.protocol == "scientific-batch-v1" and runtime.scientific_batches is not None:
+            return JSONResponse(
+                await runtime.scientific_batches.result(operation_id, principal=identity),
+                headers=_operation_headers(operation),
+            )
         result = await runtime.store.get_operation_result(operation_id, tenant_id=identity.tenant_id)
         return JSONResponse(result.result, headers=_operation_headers(result.operation))
 
@@ -882,11 +1132,108 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     async def operation_cancel(operation_id: UUID, identity: Annotated[Principal, Depends(principal)]) -> OperationView:
         operation = await runtime.store.get_operation(operation_id, tenant_id=identity.tenant_id)
         require_operation_access(identity, operation)
+        if operation.protocol == "scientific-batch-v1" and runtime.scientific_batches is not None:
+            result = await runtime.scientific_batches.cancel(operation_id, principal=identity)
+            return OperationView.model_validate(result["operation"])
         return await runtime.store.cancel_operation(
             operation_id,
             tenant_id=identity.tenant_id,
             actor=identity.principal_id,
         )
+
+    @app.delete(
+        "/v1/operations/{operation_id}",
+        response_model=ScientificBatchStatusResponse,
+        status_code=202,
+    )
+    async def scientific_operation_cancel(
+        operation_id: UUID, identity: Annotated[Principal, Depends(principal)]
+    ) -> Response:
+        if runtime.scientific_batches is None:
+            return _error(404, "scientific_batch_not_found", "scientific batch was not found")
+        return JSONResponse(
+            await runtime.scientific_batches.cancel(operation_id, principal=identity),
+            status_code=202,
+            headers={"cache-control": "no-store"},
+        )
+
+    @app.get("/v1/operations/{operation_id}/events", response_model=ScientificEventPage)
+    async def scientific_operation_events(
+        operation_id: UUID,
+        identity: Annotated[Principal, Depends(principal)],
+        after_sequence: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=1000)] = 1000,
+    ) -> Response:
+        if runtime.scientific_batches is None:
+            return _error(404, "scientific_batch_not_found", "scientific batch was not found")
+        return JSONResponse(
+            await runtime.scientific_batches.events(
+                operation_id, principal=identity, after_sequence=after_sequence, limit=limit
+            ),
+            headers={"cache-control": "no-store"},
+        )
+
+    @app.get("/v1/artifacts/{artifact_id}", response_model=ArtifactRef)
+    async def scientific_artifact(artifact_id: UUID, identity: Annotated[Principal, Depends(principal)]) -> Response:
+        if runtime.scientific_batches is None:
+            return _error(404, "artifact_not_found", "scientific artifact was not found")
+        return JSONResponse(
+            await runtime.scientific_batches.artifact(artifact_id, principal=identity),
+            headers={"cache-control": "no-store"},
+        )
+
+    @app.get("/v1/artifacts/{artifact_id}/download")
+    async def scientific_artifact_download(
+        artifact_id: UUID,
+        identity: Annotated[Principal, Depends(principal)],
+    ) -> Response:
+        identity.require(Scope.OPERATIONS_RESULT)
+        if runtime.artifact_service is None:
+            return _error(404, "artifact_not_found", "scientific artifact was not found")
+        result = await runtime.artifact_service.download(artifact_id, tenant_id=identity.tenant_id)
+        return JSONResponse(
+            {
+                "artifact": result.artifact.to_public_ref().model_dump(mode="json", exclude_none=True),
+                "handle": {
+                    "method": result.handle.method,
+                    "url": result.handle.url,
+                    "expires_at": result.handle.expires_at.isoformat(),
+                    "write_once": result.handle.write_once,
+                    "headers": dict(result.handle.headers),
+                },
+            },
+            headers={"cache-control": "no-store"},
+        )
+
+    @app.get("/v1/artifacts/{artifact_id}/content")
+    async def scientific_artifact_content(
+        artifact_id: UUID,
+        identity: Annotated[Principal, Depends(principal)],
+    ) -> Response:
+        """Stream one artifact's exact bytes to the tenant that owns them.
+
+        ``content-encoding`` is deliberately not set for a compressed artifact.
+        The response body is the addressed object itself, so the client's own
+        SHA-256 of what it received must equal ``x-fs2-artifact-sha256``; an
+        encoding header would invite transparent decompression and break that.
+        """
+
+        identity.require(Scope.OPERATIONS_RESULT)
+        if runtime.artifact_service is None:
+            return _error(404, "artifact_not_found", "scientific artifact was not found")
+        stream = await runtime.artifact_service.open_content(artifact_id, tenant_id=identity.tenant_id)
+        artifact = stream.artifact
+        headers = {
+            "cache-control": "no-store",
+            "content-length": str(artifact.size_bytes),
+            "content-disposition": f'attachment; filename="{artifact.artifact_id}"',
+            "x-fs2-artifact-id": str(artifact.artifact_id),
+            "x-fs2-artifact-sha256": artifact.digest.removeprefix("sha256:"),
+            "x-fs2-artifact-size-bytes": str(artifact.size_bytes),
+        }
+        if artifact.compression is not None:
+            headers["x-fs2-artifact-compression"] = artifact.compression.value
+        return StreamingResponse(stream.chunks, media_type=artifact.media_type, headers=headers)
 
     @app.post("/v1/operations/{operation_id}:acknowledge")
     async def operation_acknowledge(
@@ -1237,6 +1584,101 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             tenant_id=authorized_tenant,
         )
 
+    if runtime.scientific_admin is not None:
+        scientific_admin = runtime.scientific_admin
+
+        @app.get(
+            "/admin/api/v1/scientific-runs",
+            response_model=AdminEnvelope[ScientificRunList],
+            responses=admin_problem_responses,
+        )
+        async def admin_scientific_runs(
+            identity: Annotated[OperatorPrincipal, Depends(operator)],
+            params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+            limit: Annotated[int, Query(ge=1, le=200)] = 100,
+            cursor: Annotated[str | None, Query(min_length=1, max_length=512)] = None,
+            tenant_id: Annotated[str | None, Query(min_length=1, max_length=120)] = None,
+            model_id: Annotated[str | None, Query(min_length=1, max_length=MAX_MODEL_ID_LENGTH)] = None,
+            service_class: ScientificServiceClass | None = None,
+            access_state: Annotated[
+                str | None,
+                Query(pattern=r"^(not-required|unverified|verified|blocked)$"),
+            ] = None,
+            admission_state: Annotated[
+                str | None,
+                Query(pattern=r"^(pending|inadmissible|admitted|evicted|finished)$"),
+            ] = None,
+            run_status: Annotated[
+                str | None,
+                Query(pattern=r"^(waiting-for-access|queued|admitted|running|succeeded|failed|cancelling|cancelled)$"),
+            ] = None,
+        ) -> AdminEnvelope[ScientificRunList]:
+            authorized_tenant = await admin_access.authorize(
+                identity,
+                OperatorRole.VIEWER,
+                action="scientific_run.list",
+                tenant_id=tenant_id,
+            )
+            context = selected_context(params)
+            return await scientific_admin.run_list(
+                context,
+                ScientificRunQuery(
+                    from_at=context.from_at,
+                    to_at=context.to_at,
+                    limit=limit,
+                    cursor=cursor,
+                    tenant_id=authorized_tenant,
+                    model_id=model_id,
+                    service_class=service_class,
+                    access_state=access_state,
+                    admission_state=admission_state,
+                    run_status=run_status,
+                ),
+            )
+
+        @app.get(
+            "/admin/api/v1/scientific-runs/{run_id}",
+            response_model=AdminEnvelope[ScientificRunDetail],
+            responses=admin_problem_responses,
+        )
+        async def admin_scientific_run_detail(
+            run_id: UUID,
+            identity: Annotated[OperatorPrincipal, Depends(operator)],
+            params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+        ) -> AdminEnvelope[ScientificRunDetail]:
+            authorized_tenant = await admin_access.authorize(
+                identity,
+                OperatorRole.VIEWER,
+                action="scientific_run.read",
+                tenant_id=identity.tenant_id,
+            )
+            return await scientific_admin.run_detail(
+                selected_context(params),
+                run_id,
+                tenant_id=authorized_tenant,
+            )
+
+        @app.get(
+            "/admin/api/v1/scientific-models",
+            response_model=AdminEnvelope[ScientificModelReadinessList],
+            responses=admin_problem_responses,
+        )
+        async def admin_scientific_models(
+            identity: Annotated[OperatorPrincipal, Depends(operator)],
+            params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+            tenant_id: Annotated[str | None, Query(min_length=1, max_length=120)] = None,
+        ) -> AdminEnvelope[ScientificModelReadinessList]:
+            authorized_tenant = await admin_access.authorize(
+                identity,
+                OperatorRole.VIEWER,
+                action="scientific_model.list",
+                tenant_id=tenant_id,
+            )
+            return await scientific_admin.model_list(
+                selected_context(params),
+                tenant_id=authorized_tenant,
+            )
+
     @app.get(
         "/admin/api/v1/capacity",
         response_model=AdminEnvelope[AdminCapacity],
@@ -1339,6 +1781,27 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 operator_dependency=operator,
                 envelope=access_envelope,
                 problem_responses=admin_problem_responses,
+            )
+        )
+
+    if runtime.artifact_service is not None:
+        app.include_router(
+            scientific_artifact_router(
+                service=runtime.artifact_service,
+                principal_dependency=principal,
+            )
+        )
+
+    if (
+        runtime.scientific_workload_capabilities is not None
+        and runtime.artifact_service is not None
+        and runtime.scientific_workload_batches is not None
+    ):
+        app.include_router(
+            scientific_workload_artifact_router(
+                authority=runtime.scientific_workload_capabilities,
+                artifacts=runtime.artifact_service,
+                batches=runtime.scientific_workload_batches,
             )
         )
 

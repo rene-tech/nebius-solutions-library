@@ -261,6 +261,56 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                     profile["execution_identity"]["execution_identity_sha256"]
                 )
 
+    def test_qualified_profile_requires_complete_runnable_identity(self) -> None:
+        profile = copy.deepcopy(
+            self.load(CONTRACT_ROOT / "scientific-workload-profiles.json")["profiles"][0]
+        )
+        profile["state"] = "qualified"
+        profile["route_exposed"] = True
+        profile["source"]["classification"] = "qualified-input"
+        profile["execution_identity"]["artifact_manifest_digest"] = "a" * 64
+        profile["execution_identity"]["execution_identity_sha256"] = "b" * 64
+        profile["interface"]["mcp"]["invocable"] = True
+        profile["access"]["state"] = "not-required"
+        profile["semantic_validation"]["state"] = "qualified"
+        profile["qualification"] = {
+            "h100_semantic_receipt_sha256": "c" * 64,
+            "public_completion_receipt_sha256": "d" * 64,
+            "scheduler_eligibility_receipt_sha256": "e" * 64,
+            "execution_map_sha256": "f" * 64,
+            "qualified_at": "2026-09-03T08:00:00Z",
+        }
+
+        validator = self.validator("scientific-workload-profile.schema.json")
+        self.assertEqual([], list(validator.iter_errors(profile)))
+        self.assert_valid(
+            "scientific-workload-profiles.schema.json",
+            {
+                "schema": "fs2-serve.nebius.ai/scientific-workload-profiles/v1",
+                "profiles": [profile],
+            },
+        )
+
+        for path, value in (
+            (("route_exposed",), False),
+            (("source", "classification"), "candidate-input"),
+            (("execution_identity", "artifact_manifest_digest"), None),
+            (("execution_identity", "execution_identity_sha256"), None),
+            (("interface", "mcp", "invocable"), False),
+            (("access", "state"), "unverified"),
+            (("semantic_validation", "state"), "candidate-unqualified"),
+        ):
+            with self.subTest(path=path):
+                candidate = copy.deepcopy(profile)
+                target = candidate
+                for key in path[:-1]:
+                    target = target[key]
+                target[path[-1]] = value
+                self.assertTrue(list(validator.iter_errors(candidate)))
+        missing_receipt = copy.deepcopy(profile)
+        del missing_receipt["qualification"]["public_completion_receipt_sha256"]
+        self.assertTrue(list(validator.iter_errors(missing_receipt)))
+
     def test_primary_parameter_schemas_validate_only_canonical_request_parameters(
         self,
     ) -> None:

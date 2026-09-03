@@ -14,6 +14,13 @@ metadata. See
 [`docs/operations.md`](docs/operations.md) for deployment, retention, and key
 rotation procedures.
 
+The optional scientific-batch consumer adds durable staged Operations,
+canonical scientific request/result validation, fenced Kueue Job/JobSet
+reconciliation, and shared artifact-result projection. It is disabled by
+default and fails closed unless qualified catalog profiles plus immutable
+scheduling and execution maps are mounted. See
+[`docs/scientific-batch-controller.md`](docs/scientific-batch-controller.md).
+
 Chart `0.3.0` owns the concrete direct-IP edge as one bound
 `EnvoyProxy`/`GatewayClass`/`Gateway`, an HTTPS-only application `HTTPRoute`,
 an exact-IP 160-hour `Certificate`, and an optional namespaced Let's Encrypt
@@ -137,7 +144,7 @@ environment into its final stage before repeating those checks.
 
 The migration default resolves inside the installed `fs2_serve` package (and
 to the same source migration tree during development). The immutable-image
-gate proves all ten monotonically numbered migrations are available from the
+gate proves every declared migration is available from the
 installed wheel. Gateway terminal accounting remains the immutable migration
 `0005_terminal_accounting.sql` (SHA-256
 `fedb6789a4839d42645c5ffb6905ce46525c213d81f15d9d987eacc109614197`).
@@ -179,11 +186,20 @@ reviewed activation child and are merged only by the later integration lane.
 
 `fs2-serve postgresql-release-contract` emits the non-secret cross-lane receipt
 inputs. The committed contract under `contracts/` hash-binds the exact ordered
-`0001`-`0012` set (including the immutable activation lineage, additive
-maintenance boundary, admin configuration, and ModelDeployment ledger), the `fs2-data`
+set through additive `0020_scientific_atomic_admission.sql` (including
+the immutable activation lineage, additive maintenance boundary, admin
+configuration, ModelDeployment ledger, scientific artifact/controller state,
+append-only GPU lifecycle accounting, deployment-bound scientific access, and
+the recoverable scientific-admission outbox), the `fs2-data`
 database-resource versus `fs2-system` credential-Secret namespace split, and
 the sole migration/group-role owner. Migration and schema-wait paths reject
 missing, extra, reordered, or changed source and applied-ledger entries.
+Migrations `0014` through `0020` are the integrated additive scientific
+artifact, controller, state-compatibility, lifecycle, and deployment-access
+lineage; their recorded bytes must be preserved by later rollouts.
+The lifecycle schema, exact correlation model, reconciliation tolerance, safe
+application spans, and operator projections are documented in
+[`docs/workload-lifecycle-telemetry.md`](docs/workload-lifecycle-telemetry.md).
 
 The image uses
 digest-pinned Python and `uv` stages. Runtime dependencies come only from

@@ -37,6 +37,7 @@ locals {
     } : {})
     networkPolicy = {
       kubernetesApiCidrs = sort(tolist(local.kubernetes_api_egress_cidrs))
+      artifactStoreCidrs = sort(tolist(var.scientific_artifacts.egress_cidrs))
       dns                = { podLabels = { "k8s-app" = "coredns" } }
       prometheus = {
         namespaceLabels = { "kubernetes.io/metadata.name" = "fs2-observability" }
@@ -209,6 +210,7 @@ resource "helm_release" "control_plane" {
     kubernetes_config_map_v1.admin_configuration,
     kubernetes_config_map_v1.model_controller_envelope,
     kubernetes_config_map_v1.model_controller_bundles,
+    kubernetes_config_map_v1.scientific_scheduling_contract,
     kubernetes_manifest.model,
   ]
 }

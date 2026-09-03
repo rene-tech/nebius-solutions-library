@@ -172,12 +172,81 @@ class Settings(BaseSettings):
     model_controller_workers: int = Field(default=2, ge=1, le=16)
     model_controller_api_timeout_seconds: float = Field(default=5, ge=0.5, le=30)
     model_controller_health_port: int = Field(default=8081, ge=1024, le=65535)
+    scientific_batch_enabled: bool = False
+    scientific_batch_writes_enabled: bool = False
+    scientific_batch_namespace: str = Field(
+        default="fs2-models",
+        min_length=1,
+        max_length=63,
+        pattern=r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
+    )
+    scientific_batch_controller_id: str | None = Field(default=None, min_length=1, max_length=253)
+    scientific_batch_kubernetes_api_url: str = Field(
+        default="https://kubernetes.default.svc", min_length=1, max_length=2048
+    )
+    scientific_batch_kubernetes_token_file: Path = Path("/var/run/secrets/fs2-scientific-batch/token")
+    scientific_batch_kubernetes_ca_file: Path = Path("/var/run/secrets/fs2-scientific-batch/ca.crt")
+    scientific_batch_scheduling_contract_file: Path = Path("/etc/fs2-scientific-batch/kueue-scheduling.json")
+    scientific_batch_scheduling_contract_schema: Literal["fs2-serve.nebius.ai/kueue-scheduling/v1"] = (
+        "fs2-serve.nebius.ai/kueue-scheduling/v1"
+    )
+    scientific_batch_scheduling_contract_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    scientific_batch_execution_map_file: Path = Path("/etc/fs2-scientific-batch/execution-map.json")
+    scientific_batch_academic_tenant_id: str | None = Field(default=None, min_length=1, max_length=120)
+    scientific_batch_academic_authorization_receipt_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    scientific_batch_tools_image: str | None = Field(default=None, max_length=1024)
+    scientific_batch_internal_api_url: str = Field(
+        default="http://fs2-serve-control-plane.default.svc:8080", min_length=1, max_length=2048
+    )
+    scientific_batch_workers: int = Field(default=2, ge=1, le=32)
+    scientific_batch_poll_seconds: float = Field(default=0.25, ge=0.05, le=60)
+    scientific_batch_lease_seconds: float = Field(default=30, ge=5, le=300)
+    scientific_batch_api_timeout_seconds: float = Field(default=5, ge=0.5, le=30)
     public_base_url: str = Field(default="https://inference.example.invalid", min_length=1, max_length=2048)
     public_authority_mode: Literal["dns", "ip"] = "dns"
     authorization_server_url: str = "https://identity.example.invalid"
     max_request_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=256 * 1024 * 1024)
     max_response_bytes: int = Field(default=128 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
     payload_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
+    scientific_artifacts_enabled: bool = False
+    artifact_store_endpoint: str = Field(
+        default="https://storage.eu-north1.nebius.cloud", min_length=8, max_length=2048
+    )
+    artifact_store_bucket: str = Field(
+        default="fs2-scientific-artifacts",
+        min_length=3,
+        max_length=63,
+        pattern=r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+    )
+    artifact_store_region: str = Field(
+        default="eu-north1", min_length=2, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]*$"
+    )
+    artifact_store_addressing_style: Literal["path", "virtual"] = "path"
+    artifact_store_verify_tls: bool = True
+    artifact_store_credentials_file: Path = Path("/var/run/secrets/fs2-serve/artifact-store/credentials.json")
+    artifact_handle_ttl_seconds: int = Field(default=600, ge=30, le=900)
+    artifact_max_bytes: int = Field(default=1 << 40, ge=1024, le=1 << 40)
+    # The exact ceiling for artifact bytes carried through the public gateway
+    # itself. A larger object remains reachable only through a presigned
+    # handle, so this bound must never exceed what the edge will accept.
+    artifact_inline_content_max_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=256 * 1024 * 1024)
+    artifact_retention_seconds: int = Field(default=7776000, ge=86400, le=315360000)
+    artifact_media_types: str = Field(
+        default=(
+            "application/octet-stream,application/json,application/gzip,"
+            "application/vnd.fs2.scientific-manifest+json,"
+            "application/vnd.fs2.scientific-validation+json,"
+            "chemical/x-pdb,chemical/x-cif,text/plain"
+        ),
+        min_length=3,
+        max_length=2048,
+    )
     operation_retention_seconds: int = Field(default=604800, ge=3600, le=2592000)
     pat_retention_seconds: int = Field(default=604800, ge=3600, le=2592000)
     audit_retention_seconds: int = Field(default=2592000, ge=3600, le=31536000)
@@ -245,6 +314,19 @@ class Settings(BaseSettings):
             raise ValueError("max_sync_waiters cannot be lower than worker_concurrency")
         if self.federation_routes_file.parent != self.federation_secret_dir:
             raise ValueError("federation_routes_file must be directly inside federation_secret_dir")
+        if self.scientific_artifacts_enabled:
+            if not self.artifact_store_endpoint.startswith(("https://", "http://")):
+                raise ValueError("artifact_store_endpoint must be an absolute HTTP(S) URL")
+            if self.artifact_store_verify_tls and not self.artifact_store_endpoint.startswith("https://"):
+                raise ValueError("artifact store TLS verification requires an https endpoint")
+            if not self.allow_non_cluster_urls and not self.artifact_store_endpoint.startswith("https://"):
+                raise ValueError("artifact_store_endpoint must use HTTPS")
+            if not self.artifact_media_types_set():
+                raise ValueError("artifact_media_types must list at least one exact media type")
+            if self.artifact_inline_content_max_bytes > self.max_request_bytes:
+                raise ValueError("artifact_inline_content_max_bytes cannot exceed max_request_bytes")
+            if self.artifact_inline_content_max_bytes > self.artifact_max_bytes:
+                raise ValueError("artifact_inline_content_max_bytes cannot exceed artifact_max_bytes")
         database_roles = {
             self.reporting_database_role,
             self.runtime_database_role,
@@ -270,6 +352,31 @@ class Settings(BaseSettings):
             raise ValueError("model controller Kubernetes API URL must use HTTPS")
         if self.model_controller_workers > self.model_controller_queue_capacity:
             raise ValueError("model controller workers cannot exceed queue capacity")
+        if self.scientific_batch_writes_enabled and not self.scientific_batch_enabled:
+            raise ValueError("scientific batch writes require the controller feature gate")
+        if self.scientific_batch_enabled and not self.scientific_batch_writes_enabled:
+            raise ValueError("scientific batch API requires the independent Kubernetes write gate")
+        if self.scientific_batch_enabled and self.scientific_batch_controller_id is None:
+            raise ValueError("scientific batch controller identity is required when enabled")
+        if self.scientific_batch_enabled and (
+            self.scientific_batch_tools_image is None
+            or re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", self.scientific_batch_tools_image) is None
+        ):
+            raise ValueError("scientific batch requires an immutable artifact companion image")
+        internal_api = urlsplit(self.scientific_batch_internal_api_url)
+        if self.scientific_batch_enabled and (
+            internal_api.scheme != "http"
+            or internal_api.hostname is None
+            or (not internal_api.hostname.endswith(".svc") and not self.allow_non_cluster_urls)
+            or internal_api.path not in {"", "/"}
+            or internal_api.query
+            or internal_api.fragment
+        ):
+            raise ValueError("scientific batch internal API URL must be an in-cluster HTTP origin")
+        if not self.scientific_batch_kubernetes_api_url.startswith("https://"):
+            raise ValueError("scientific batch Kubernetes API URL must use HTTPS")
+        if self.scientific_batch_enabled and not self.scientific_artifacts_enabled:
+            raise ValueError("scientific batch requires the canonical artifact service")
         required_bootstrap_scopes = {Scope.CATALOG_READ, Scope.INFERENCE_INVOKE, Scope.MCP_INVOKE}
         if not required_bootstrap_scopes.issubset(self.bootstrap_access_scopes):
             raise ValueError("bootstrap access requires catalog.read, inference.invoke, and mcp.invoke")
@@ -309,6 +416,29 @@ class Settings(BaseSettings):
 
     def admin_token(self) -> bytes:
         return self._read_secret(self.admin_token_file, minimum=32)
+
+    def artifact_media_types_set(self) -> frozenset[str]:
+        """Return the exact media-type allowlist accepted for scientific bytes."""
+
+        return frozenset(item.strip().lower() for item in self.artifact_media_types.split(",") if item.strip())
+
+    def artifact_store_credentials(self) -> tuple[str, str]:
+        """Read the object-store key pair from its mounted secret, not from env."""
+
+        raw = self._read_secret(self.artifact_store_credentials_file, minimum=8)
+        try:
+            document = json.loads(raw)
+        except ValueError as exc:
+            raise ValueError("artifact store credentials must be a JSON object") from exc
+        if not isinstance(document, dict):
+            raise ValueError("artifact store credentials must be a JSON object")
+        access_key = document.get("access_key_id")
+        secret_key = document.get("secret_access_key")
+        if not isinstance(access_key, str) or not isinstance(secret_key, str):
+            raise ValueError("artifact store credentials must name access_key_id and secret_access_key")
+        if not access_key or not secret_key:
+            raise ValueError("artifact store credentials must be non-empty")
+        return access_key, secret_key
 
     def bootstrap_access_token(self) -> str:
         raw = self._read_secret(self.bootstrap_access_token_file, minimum=64)

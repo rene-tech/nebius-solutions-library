@@ -6,6 +6,8 @@
     "adminConsole",
     "adminConfiguration",
     "modelController",
+    "scientificBatch",
+    "artifactService",
     "bootstrapAccess",
     "serviceAccounts",
     "catalog",
@@ -20,7 +22,8 @@
     "grafanaDashboard",
     "publicGateway",
     "publicLoadBalancer",
-    "publicTls"
+    "publicTls",
+    "scientificArtifacts"
   ],
   "properties": {
     "replicaCount": {
@@ -650,6 +653,111 @@
       },
       "additionalProperties": false
     },
+    "scientificBatch": {
+      "type": "object",
+      "required": [
+        "enabled", "writesEnabled", "namespace", "kubernetesApiUrl",
+        "schedulingContractConfigMapName", "schedulingContractNamespace", "schedulingContractKey",
+        "schedulingContractSchema", "schedulingContractSha256",
+        "executionMapConfigMapName", "executionMapKey", "executionMap", "workers",
+        "pollSeconds", "leaseSeconds", "apiTimeoutSeconds", "tokenExpirationSeconds"
+      ],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "writesEnabled": {"type": "boolean"},
+        "namespace": {
+          "type": "string", "maxLength": 63,
+          "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$"
+        },
+        "kubernetesApiUrl": {
+          "type": "string",
+          "pattern": "^https://[a-z0-9.-]+(?::[0-9]+)?$",
+          "maxLength": 2048
+        },
+        "schedulingContractConfigMapName": {
+          "type": "string", "maxLength": 253,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
+        },
+        "schedulingContractNamespace": {
+          "type": "string", "maxLength": 63,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$"
+        },
+        "schedulingContractKey": {"const": "kueue-scheduling.json"},
+        "schedulingContractSchema": {"const": "fs2-serve.nebius.ai/kueue-scheduling/v1"},
+        "schedulingContractSha256": {
+          "type": "string",
+          "pattern": "^$|^[a-f0-9]{64}$"
+        },
+        "executionMapConfigMapName": {
+          "type": "string", "maxLength": 253,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
+        },
+        "executionMapKey": {"const": "execution-map.json"},
+        "executionMap": {
+          "type": "object",
+          "required": ["schema", "models"],
+          "properties": {
+            "schema": {"const": "fs2-serve.nebius.ai/scientific-execution-map/v3"},
+            "models": {
+              "type": "array",
+              "maxItems": 256,
+              "items": {
+                "type": "object",
+                "required": ["model_id", "workload_namespace", "access_profile"],
+                "properties": {
+                  "model_id": {"type": "string", "minLength": 1, "maxLength": 63},
+                  "workload_namespace": {"type": "string", "minLength": 1, "maxLength": 63},
+                  "access_profile": {"enum": ["public", "academic"]}
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "workers": {"type": "integer", "minimum": 1, "maximum": 32},
+        "pollSeconds": {"type": "string", "pattern": "^(?:0\\.(?:0[5-9]|[1-9][0-9]*)|[1-9](?:\\.[0-9]+)?|[1-5][0-9](?:\\.[0-9]+)?|60(?:\\.0+)?)$"},
+        "leaseSeconds": {"type": "string", "pattern": "^(?:[5-9]|[1-9][0-9]|[12][0-9]{2}|300)$"},
+        "apiTimeoutSeconds": {"type": "string", "pattern": "^(?:0\\.[5-9][0-9]*|[1-9](?:\\.[0-9]+)?|[12][0-9](?:\\.[0-9]+)?|30(?:\\.0+)?)$"},
+        "tokenExpirationSeconds": {"type": "integer", "minimum": 600, "maximum": 3600}
+      },
+      "additionalProperties": false
+    },
+    "artifactService": {
+      "type": "object",
+      "required": [
+        "enabled", "endpoint", "bucket", "region", "credentialsSecretName",
+        "accessKeyKey", "secretKeyKey"
+      ],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "endpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^https://[a-z0-9.-]+(?::[0-9]+)?/?$"
+        },
+        "bucket": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9][a-z0-9.-]+[a-z0-9]$"
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "credentialsSecretName": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
+        },
+        "accessKeyKey": {"type": "string", "minLength": 1, "maxLength": 253},
+        "secretKeyKey": {"type": "string", "minLength": 1, "maxLength": 253}
+      },
+      "additionalProperties": false
+    },
     "serviceAccounts": {
       "type": "object",
       "required": [
@@ -825,7 +933,8 @@
         "ledgerHmacKeyring",
         "tokenPepper",
         "routeAttestors",
-        "admin"
+        "admin",
+        "artifactStore"
       ],
       "properties": {
         "database": {
@@ -851,6 +960,26 @@
         },
         "admin": {
           "$ref": "#/$defs/secretKeyReference"
+        },
+        "artifactStore": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "key"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253
+            }
+          }
         }
       },
       "additionalProperties": false
@@ -1193,27 +1322,13 @@
             "namespaceRoleOwnershipSha256"
           ],
           "properties": {
-            "schema": {
-              "const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"
-            },
-            "contractPayloadSha256": {
-              "const": "3a977a1c29f338233eb017454ee3d07bf505c31db909bccc05a2524388ad3da2"
-            },
-            "migrationSetSha256": {
-              "const": "081ae3ea6ddc3a0efd8b86151352d7b2f2ebc8de4d07a1e078bcb24b1c0f66cf"
-            },
-            "migrationCount": {
-              "const": 13
-            },
-            "firstMigrationVersion": {
-              "const": "0001_initial.sql"
-            },
-            "lastMigrationVersion": {
-              "const": "0013_durable_dynamic_dispatch.sql"
-            },
-            "namespaceRoleOwnershipSha256": {
-              "const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"
-            }
+            "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
+            "contractPayloadSha256": {"const": "9fc6dec908e6c0c4a238d5c96a3612c5f3f1cac1698f39f7cc7c323294e9b43b"},
+            "migrationSetSha256": {"const": "e421f609ef10fe5c486f36d6f25a8cb803ce02d1fbb7b0e3ed660f9e1757eefa"},
+            "migrationCount": {"const": 20},
+            "firstMigrationVersion": {"const": "0001_initial.sql"},
+            "lastMigrationVersion": {"const": "0020_scientific_atomic_admission.sql"},
+            "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false
         },
@@ -1644,7 +1759,11 @@
         "prometheus",
         "database",
         "runtime",
-        "otlp"
+        "otlp",
+        "federationCidrs",
+        "federationPorts",
+        "kubernetesApiCidrs",
+        "artifactStoreCidrs"
       ],
       "properties": {
         "enabled": {
@@ -1872,6 +1991,12 @@
             "type": "string",
             "pattern": "^(([0-9]{1,3}\\.){3}[0-9]{1,3}/([1-9]|[12][0-9]|3[0-2])|[0-9A-Fa-f:]+/([1-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$"
           }
+        },
+        "artifactStoreCidrs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^(([0-9]{1,3}\\.){3}[0-9]{1,3}/32|[0-9A-Fa-f:]+/128)$"}
         }
       },
       "additionalProperties": false
@@ -1886,6 +2011,7 @@
         "mountRoot",
         "assetGid",
         "readOnly",
+        "tenantId",
         "runtimeBindings",
         "execution"
       ],
@@ -1913,6 +2039,15 @@
         "readOnly": {
           "const": true
         },
+        "tenantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63
+        },
+        "readinessManifestSha256": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{64}$"
+        },
         "runtimeBindings": {
           "type": "object",
           "description": "Exact localizers keyed by asset. Each states the source subPath on the claim and the consumer path the runtime reads.",
@@ -1926,6 +2061,10 @@
               "consumerPath",
               "mechanism",
               "contentIdentityKind",
+              "contentManifestAlgorithm",
+              "contentDigestSha256",
+              "sizeBytes",
+              "sourceArtifact",
               "readOnly"
             ],
             "properties": {
@@ -1964,6 +2103,25 @@
                 ],
                 "pattern": "^[0-9a-f]{64}$"
               },
+              "contentManifestAlgorithm": {
+                "type": ["string", "null"],
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "sizeBytes": {
+                "type": ["integer", "null"],
+                "minimum": 1
+              },
+              "sourceArtifact": {
+                "type": ["object", "null"],
+                "additionalProperties": false,
+                "required": ["filename", "sha256", "size_bytes"],
+                "properties": {
+                  "filename": {"type": "string", "minLength": 1, "maxLength": 512},
+                  "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                  "size_bytes": {"type": "integer", "minimum": 1}
+                }
+              },
               "readOnly": {
                 "const": true
               }
@@ -1977,6 +2135,9 @@
             "enabled",
             "namespace",
             "localQueue",
+            "clusterQueue",
+            "referenceDataLocalQueue",
+            "referenceDataClusterQueue",
             "serviceAccount"
           ],
           "properties": {
@@ -1991,10 +2152,104 @@
               "type": "string",
               "minLength": 1
             },
+            "clusterQueue": {
+              "type": "string",
+              "minLength": 1
+            },
+            "referenceDataLocalQueue": {
+              "type": "string"
+            },
+            "referenceDataClusterQueue": {
+              "type": "string"
+            },
             "serviceAccount": {
               "type": "string",
               "minLength": 1
             }
+          }
+        }
+      }
+    },
+    "scientificArtifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "endpoint",
+        "bucket",
+        "region",
+        "addressingStyle",
+        "verifyTls",
+        "handleTtlSeconds",
+        "maxBytes",
+        "inlineContentMaxBytes",
+        "retentionSeconds",
+        "mediaTypes",
+        "egressCidrs"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "endpoint": {
+          "type": "string",
+          "pattern": "^https?://[^ ]+$",
+          "maxLength": 2048
+        },
+        "bucket": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+        },
+        "region": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "maxLength": 63
+        },
+        "addressingStyle": {
+          "enum": [
+            "path",
+            "virtual"
+          ]
+        },
+        "verifyTls": {
+          "type": "boolean"
+        },
+        "handleTtlSeconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 900
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 1099511627776
+        },
+        "inlineContentMaxBytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 268435456
+        },
+        "retentionSeconds": {
+          "type": "integer",
+          "minimum": 86400,
+          "maximum": 315360000
+        },
+        "mediaTypes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9.+-]*/[A-Za-z0-9][A-Za-z0-9.+_-]*$"
+          }
+        },
+        "egressCidrs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
           }
         }
       }
