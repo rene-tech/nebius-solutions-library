@@ -335,7 +335,14 @@
       "a terminal marker written inside a tree root changes that tree's fs2-flat-tree-inventory/v1 digest, because the inventory enumerates every regular file in the flat root; markers must live outside the tree roots",
       "the AlphaFold2 root must keep a manifest.json declaring artifact_kind bindcraft-af2-params and source_revision 7cd4ace1b7407adf66a50dfefa47de2270f5e4a9, because the shared outer entrypoint's artifact gate reads it on every non-smoke command",
       "the handoff must name an immutable generation token, which the renderer copies into both the localization marker and the tree admission document"
-    ]
+    ],
+    "rendered_job_server_validated": {
+      "command": "kubectl --context=k8s-inference-h100 apply --dry-run=server -f <rendered list>",
+      "result": "configmap and job both accepted by the API server; nothing was created",
+      "subpaths_used": "synthetic sha256/<placeholder> roots, so the blocked mutable layout was neither named nor read",
+      "purpose": "proves the two-stage Job shape - init design container with one GPU, aggregate main container without one, four read-only subPath mounts - is API-valid, so the live run cannot be delayed by a manifest error once the generation lands"
+    },
+    "requirements_communicated": "the localization owner is not a reachable session, so the three requirements were written to data/handoffs/fs2-bindcraft-image-requirements-to-artifact-localization-20260903.md with the measured identities to compare against after re-publication"
   },
   "cleanup": {
     "task_owned_pods_deleted": [
