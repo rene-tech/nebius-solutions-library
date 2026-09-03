@@ -38,6 +38,8 @@ EXPECTED = {
     "ame": {"lora": True, "ligand": True},
 }
 CA_MIN_A, CA_MAX_A = 2.5, 4.6
+MIN_CHAIN_FOR_DIVERSITY = 20
+MIN_DISTINCT_RESIDUES = 5
 STANDARD = frozenset(
     """ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE PRO SER THR TRP
     TYR VAL""".split()
@@ -60,6 +62,7 @@ def _summarise(path: Path) -> dict[str, Any]:
     trace: dict[str, list[tuple[float, float, float]]] = {}
     names: set[str] = set()
     chain_standard: dict[str, int] = {}
+    chain_kinds: dict[str, set[str]] = {}
     for line in path.read_text(encoding="utf-8", errors="strict").splitlines():
         if not line.startswith(("ATOM", "HETATM")) or len(line) < 54:
             continue
@@ -70,6 +73,7 @@ def _summarise(path: Path) -> dict[str, Any]:
             chain_standard.setdefault(chain, 0)
             if name in STANDARD:
                 chain_standard[chain] += 1
+                chain_kinds.setdefault(chain, set()).add(name)
         residues[key] = name
         names.add(name)
         point = (float(line[30:38]), float(line[38:46]), float(line[46:54]))
@@ -86,6 +90,7 @@ def _summarise(path: Path) -> dict[str, Any]:
         "residues": len(residues),
         "standard": sum(1 for value in residues.values() if value in STANDARD),
         "chain_standard": chain_standard,
+        "chain_distinct": {key: len(value) for key, value in chain_kinds.items()},
         "residue_names": names,
         "mean_ca_step": steps,
         "chains": sorted(trace),
@@ -152,8 +157,10 @@ def validate(variant: str, root: Path) -> dict[str, Any]:
         key: phases.get(key)
         for key in (
             "interpreter_and_import_seconds",
-            "checkpoint_load_seconds",
+            "model_load_seconds",
+            "sampling_seconds",
             "compute_seconds",
+            "upstream_reported_generation_seconds",
             "upstream_process_seconds",
             "lora_reapplied",
         )
@@ -173,10 +180,20 @@ def validate(variant: str, root: Path) -> dict[str, Any]:
     protein_like = 0
     observed_ligands: set[str] = set()
     chain_lengths: dict[str, dict[str, int]] = {}
+    chain_diversity: dict[str, dict[str, int]] = {}
     for path in structures:
         summary = _summarise(path)
         observed_ligands.update(summary["residue_names"] - STANDARD)
         chain_lengths[path.name] = summary["chain_standard"]
+        for chain, count in summary["chain_standard"].items():
+            if count >= MIN_CHAIN_FOR_DIVERSITY:
+                distinct = summary["chain_distinct"].get(chain, 0)
+                if distinct < MIN_DISTINCT_RESIDUES:
+                    failures.append(
+                        f"{path.name} chain {chain} has {count} residues but only "
+                        f"{distinct} distinct amino-acid type(s)"
+                    )
+        chain_diversity[path.name] = summary["chain_distinct"]
         if summary["standard"] < 1:
             continue
         bad = {
@@ -190,6 +207,7 @@ def validate(variant: str, root: Path) -> dict[str, Any]:
             protein_like += 1
     checks["protein_like_structures"] = protein_like
     checks["chain_lengths"] = chain_lengths
+    checks["chain_distinct_residues"] = chain_diversity
     if protein_like < 1:
         failures.append("no produced structure has a protein-like backbone")
 

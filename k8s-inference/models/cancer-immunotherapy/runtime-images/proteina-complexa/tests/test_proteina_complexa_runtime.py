@@ -41,15 +41,25 @@ def _load_entrypoint():
 ENTRY = _load_entrypoint()
 
 
+_ROTATION = ["ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE"]
+
+
 def _pdb(residues: int, *, chain: str = "A", step: float = 3.8,
-         name: str = "ALA", extra: list[tuple[str, str, str]] | None = None) -> str:
-    """Render a minimal PDB with a straight C-alpha trace of a given spacing."""
+         name: str | None = None, extra: list[tuple[str, str, str]] | None = None) -> str:
+    """Render a minimal PDB with a straight C-alpha trace of a given spacing.
+
+    Residue identities cycle through ten amino acids so the fixture resembles a
+    real designed chain; the sequence-diversity gate rejects a chain that
+    collapsed onto one type, and a poly-alanine fixture would trip it.  Pass
+    ``name`` to force a single residue type on purpose.
+    """
     lines = []
     serial = 1
     for index in range(residues):
         x = index * step
+        residue = name or _ROTATION[index % len(_ROTATION)]
         lines.append(
-            f"ATOM  {serial:5d}  CA  {name:>3} {chain}{index + 1:4d}    "
+            f"ATOM  {serial:5d}  CA  {residue:>3} {chain}{index + 1:4d}    "
             f"{x:8.3f}{0.0:8.3f}{0.0:8.3f}  1.00  0.00           C"
         )
         serial += 1
@@ -669,6 +679,56 @@ class DefectRegistryTests(unittest.TestCase):
         ids = {item["id"] for item in LOCK["upstream_contract_defects"]}
         self.assertIn("relative-target-path", ids)
         self.assertIn("cli-requires-writable-dotenv", ids)
+
+
+class SequenceDiversityTests(unittest.TestCase):
+    """A design model must not pass by emitting one residue type."""
+
+    RESIDUES = ["ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE"]
+
+    def _mixed(self, count: int, kinds: int) -> str:
+        lines = []
+        for index in range(count):
+            name = self.RESIDUES[index % kinds]
+            lines.append(
+                f"ATOM  {index + 1:5d}  CA  {name:>3} B{index + 1:4d}    "
+                f"{index * 3.8:8.3f}{0.0:8.3f}{0.0:8.3f}  1.00  0.00           C"
+            )
+        return "\n".join(lines) + "\nEND\n"
+
+    def test_a_diverse_chain_is_accepted(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="fs2-cxq-div-"))
+        path = root / "s.pdb"
+        path.write_text(self._mixed(100, 10))
+        summary = ENTRY.inspect_structure(path)
+        self.assertEqual(10, summary["chain_residues"]["B"]["distinct_standard"])
+        self.assertEqual([], ENTRY.validate_sequence_diversity([summary]))
+
+    def test_a_poly_alanine_chain_is_rejected(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="fs2-cxq-div-"))
+        path = root / "s.pdb"
+        path.write_text(self._mixed(100, 1))
+        summary = ENTRY.inspect_structure(path)
+        findings = ENTRY.validate_sequence_diversity([summary])
+        self.assertTrue(findings)
+        self.assertIn("distinct amino-acid", findings[0])
+
+    def test_a_short_chain_is_not_judged_on_diversity(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="fs2-cxq-div-"))
+        path = root / "s.pdb"
+        path.write_text(self._mixed(10, 1))
+        summary = ENTRY.inspect_structure(path)
+        self.assertEqual([], ENTRY.validate_sequence_diversity([summary]))
+
+    def test_a_degenerate_binder_fails_even_beside_a_diverse_target(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="fs2-cxq-div-"))
+        path = root / "s.pdb"
+        target = self._mixed(115, 10).replace(" B", " A").replace("END\n", "")
+        path.write_text(target + self._mixed(90, 1))
+        summary = ENTRY.inspect_structure(path)
+        findings = ENTRY.validate_sequence_diversity([summary])
+        self.assertTrue(findings, "a poly-residue binder must be caught beside a real target")
+        self.assertIn("chain B", findings[0])
 
 
 class OutputDiscoveryTests(unittest.TestCase):

@@ -167,6 +167,10 @@ STANDARD_RESIDUES = frozenset(
 CA_MIN_A = 2.5
 CA_MAX_A = 4.6
 
+# A designed chain of this length or more must show real sequence variety.
+MIN_CHAIN_FOR_DIVERSITY = 20
+MIN_DISTINCT_RESIDUES = 5
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -518,11 +522,15 @@ def inspect_structure(path: Path) -> dict[str, Any]:
     # binder into one file: a whole-file residue count is the sum of both and
     # says nothing about the binder's length.
     per_chain: dict[str, dict[str, int]] = {}
+    kinds: dict[str, set[str]] = {}
     for (chain, _number), name in residues.items():
         bucket = per_chain.setdefault(chain, {"residues": 0, "standard": 0})
         bucket["residues"] += 1
         if name in STANDARD_RESIDUES:
             bucket["standard"] += 1
+            kinds.setdefault(chain, set()).add(name)
+    for chain, bucket in per_chain.items():
+        bucket["distinct_standard"] = len(kinds.get(chain, ()))
 
     spans: dict[str, Any] = {}
     for chain, trace in ca_by_chain.items():
@@ -574,6 +582,29 @@ def validate_backbone(structures: list[dict[str, Any]]) -> list[str]:
     return notes
 
 
+def validate_sequence_diversity(structures: list[dict[str, Any]]) -> list[str]:
+    """Reject a designed chain that collapsed onto one or two residue types.
+
+    Complexa is a design model: a chain of plausible geometry but near-uniform
+    composition (poly-alanine, poly-glycine) is a real failure mode that every
+    geometry check passes.  Only substantial chains are judged, so a short
+    peptide or a ligand-only chain is not penalised.
+    """
+    notes: list[str] = []
+    for structure in structures:
+        for chain, counts in structure["chain_residues"].items():
+            if counts["standard"] < MIN_CHAIN_FOR_DIVERSITY:
+                continue
+            distinct = counts["distinct_standard"]
+            if distinct < MIN_DISTINCT_RESIDUES:
+                notes.append(
+                    f"{Path(structure['path']).name} chain {chain} has "
+                    f"{counts['standard']} residues but only {distinct} distinct "
+                    f"amino-acid type(s), below the minimum of {MIN_DISTINCT_RESIDUES}"
+                )
+    return notes
+
+
 def discover_structures(output_root: Path) -> list[Path]:
     """Find produced PDBs without ever following a symlink out of the tree."""
     found: list[Path] = []
@@ -606,6 +637,7 @@ def validate_outputs(
     complexes = [item for item in structures if item not in binder_pdbs]
 
     findings: list[str] = validate_backbone(structures)
+    findings += validate_sequence_diversity(structures)
 
     ligand_hits: list[str] = []
     if variant["expects_ligand"]:
@@ -673,7 +705,7 @@ def validate_outputs(
         if "pdb_path" not in header:
             raise _fail(f"rewards CSV has no pdb_path column: {rewards[0]}")
 
-    if variant["lora"] is False and variant_name == "protein" and not envelope:
+    if variant_name == "protein" and not envelope:
         raise _fail("the protein target declares no binder length envelope")
 
     return {
