@@ -44,6 +44,7 @@ from fs2_serve.scientific_batch.models import (
     RuntimeArtifactFile,
     RuntimeArtifactLocalization,
     RuntimeArtifactMount,
+    SchedulingAdmission,
     SchedulingSnapshot,
     ScientificBatchPlan,
     ScientificInputArtifact,
@@ -477,13 +478,13 @@ def scheduling(plan: ScientificBatchPlan) -> SchedulingSnapshot:
         stages=tuple(
             StageSchedulingDecision(
                 stage_id=stage.stage_id,
+                resource_class=stage.resource_class,
                 resolved_cluster_queue="inference",
                 resolved_local_queue="scientific",
                 workload_priority_class="customer-batch",
                 workload_priority_value=10,
-                resolved_pool_preference=("h100",),
-                admitted_resource_flavor=None,
-                accelerator_resource_name="nvidia.com/gpu",
+                resolved_pool_preference=(() if stage.resource_class is ResourceClass.CPU else ("h100",)),
+                accelerator_resource_name=(None if stage.resource_class is ResourceClass.CPU else "nvidia.com/gpu"),
                 accelerator_count=0 if stage.resource_class is ResourceClass.CPU else 1,
                 max_queue_seconds=600,
                 max_execution_seconds=3600,
@@ -691,6 +692,13 @@ async def test_af3_gpu_stage_materializes_only_validated_cpu_handoff() -> None:
             attempt_id=cpu_attempt.attempt_id,
             state=WorkloadState.SUCCEEDED,
             phases=(LifecyclePhase.ADMITTED, LifecyclePhase.ACTIVE_COMPUTE),
+            scheduling_admission=SchedulingAdmission(
+                resolved_pool_id=None,
+                admitted_resource_flavor=None,
+                accelerator_resource_name=None,
+                accelerator_count=0,
+                admitted_at=NOW,
+            ),
         ),
     )
     processed_id = uuid4()

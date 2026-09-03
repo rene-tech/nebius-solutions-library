@@ -22,6 +22,7 @@ from .models import (
     FailureKind,
     LifecyclePhase,
     ResolvedArtifactMaterialization,
+    ResourceClass,
     RuntimeArtifactLocalization,
     SchedulingSnapshot,
     ScientificAttemptState,
@@ -608,6 +609,26 @@ class ScientificBatchController:
             attempt.scheduling_admission,
         }:
             raise RuntimeError("Kueue scheduling admission changed for an immutable attempt")
+        if LifecyclePhase.ADMITTED in observation.phases and admission is None:
+            raise RuntimeError("Kueue admitted lifecycle phase has no resolved scheduling admission")
+        if (
+            observation.state is WorkloadState.SUCCEEDED
+            or observation.state is WorkloadState.PREEMPTED
+            or LifecyclePhase.ACTIVE_COMPUTE in observation.phases
+        ) and admission is None:
+            raise RuntimeError("Kueue-backed workload progressed without a resolved scheduling admission")
+        if admission is not None:
+            decision = record.scheduling.stage(attempt.stage_id)
+            if (
+                admission.accelerator_count != decision.accelerator_count
+                or admission.accelerator_resource_name != decision.accelerator_resource_name
+                or (
+                    decision.resource_class is ResourceClass.GPU
+                    and admission.resolved_pool_id not in decision.resolved_pool_preference
+                )
+                or admission.admitted_at < record.scheduling.captured_at
+            ):
+                raise RuntimeError("Kueue scheduling admission differs from the frozen stage request")
         kueue_uid = observation.kueue_workload_uid or attempt.kueue_workload_uid
         if attempt.kueue_workload_uid is not None and observation.kueue_workload_uid not in {
             None,

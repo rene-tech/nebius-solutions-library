@@ -15,6 +15,7 @@ from fs2_serve.scientific_batch import (
     ExecutionMode,
     FailureKind,
     LifecyclePhase,
+    SchedulingAdmission,
     SchedulingSnapshot,
     ScientificBatchController,
     ScientificBatchPlan,
@@ -78,12 +79,12 @@ def snapshot(
         stages=tuple(
             StageSchedulingDecision(
                 stage_id=stage.stage_id,
+                resource_class=stage.resource_class,
                 resolved_cluster_queue="inference-accelerators",
                 resolved_local_queue="scientific-batch",
                 workload_priority_class=f"fs2-{service_class}",
                 workload_priority_value=100,
                 resolved_pool_preference=("h100-preemptible", "h100-capacity-block"),
-                admitted_resource_flavor="inference-h100-1x",
                 accelerator_resource_name="nvidia.com/gpu",
                 accelerator_count=stage.gang_size or 1,
                 max_queue_seconds=600,
@@ -129,6 +130,8 @@ def commit(operation_id: UUID, stage_id: str, attempt_id: UUID, *, valid: bool =
 
 
 def observe_success(cluster: FakeScientificBatchCluster, attempt) -> None:
+    resource = cluster.resources[cluster.key(attempt.workload)]
+    decision = resource.scheduling
     cluster.set_observation(
         attempt.workload,
         WorkloadObservation(
@@ -136,6 +139,13 @@ def observe_success(cluster: FakeScientificBatchCluster, attempt) -> None:
             attempt_id=attempt.attempt_id,
             state=WorkloadState.SUCCEEDED,
             phases=PHASES,
+            scheduling_admission=SchedulingAdmission(
+                resolved_pool_id=decision.resolved_pool_preference[0],
+                admitted_resource_flavor="inference-h100-1x",
+                accelerator_resource_name=decision.accelerator_resource_name,
+                accelerator_count=decision.accelerator_count,
+                admitted_at=NOW,
+            ),
         ),
     )
 
@@ -356,6 +366,13 @@ async def test_preemption_retries_with_new_attempt_and_stale_observation_is_fenc
             attempt_id=first.attempt_id,
             state=WorkloadState.PREEMPTED,
             phases=(LifecyclePhase.ADMITTED, LifecyclePhase.ACTIVE_COMPUTE),
+            scheduling_admission=SchedulingAdmission(
+                resolved_pool_id="h100-preemptible",
+                admitted_resource_flavor="inference-h100-1x",
+                accelerator_resource_name="nvidia.com/gpu",
+                accelerator_count=1,
+                admitted_at=NOW,
+            ),
             failure_kind=FailureKind.PREEMPTION,
             failure_code="node_preempted",
         ),
@@ -457,6 +474,13 @@ async def test_infrastructure_failure_is_retried_but_phase_replay_is_idempotent(
         attempt_id=first.attempt_id,
         state=WorkloadState.RUNNING,
         phases=(LifecyclePhase.ADMITTED, LifecyclePhase.NODE_PENDING, LifecyclePhase.IMAGE_LOADING),
+        scheduling_admission=SchedulingAdmission(
+            resolved_pool_id="h100-preemptible",
+            admitted_resource_flavor="inference-h100-1x",
+            accelerator_resource_name="nvidia.com/gpu",
+            accelerator_count=1,
+            admitted_at=NOW,
+        ),
     )
     cluster.set_observation(first.workload, running)
     await reconciler.reconcile_once()
@@ -473,6 +497,7 @@ async def test_infrastructure_failure_is_retried_but_phase_replay_is_idempotent(
             attempt_id=first.attempt_id,
             state=WorkloadState.FAILED,
             phases=running.phases,
+            scheduling_admission=running.scheduling_admission,
             failure_kind=FailureKind.INFRASTRUCTURE,
             failure_code="node_lost",
         ),
@@ -626,6 +651,13 @@ async def test_only_infrastructure_failures_are_retried(failure_kind: FailureKin
             attempt_id=attempt.attempt_id,
             state=WorkloadState.FAILED,
             phases=(LifecyclePhase.ADMITTED, LifecyclePhase.ACTIVE_COMPUTE),
+            scheduling_admission=SchedulingAdmission(
+                resolved_pool_id="h100-preemptible",
+                admitted_resource_flavor="inference-h100-1x",
+                accelerator_resource_name="nvidia.com/gpu",
+                accelerator_count=1,
+                admitted_at=NOW,
+            ),
             failure_kind=failure_kind,
             failure_code=failure_code,
         ),

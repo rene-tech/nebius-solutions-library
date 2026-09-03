@@ -237,12 +237,12 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
             "stages": [
                 {
                     "stage_id": stage.stage_id,
+                    "resource_class": stage.resource_class.value,
                     "resolved_cluster_queue": stage.resolved_cluster_queue,
                     "resolved_local_queue": stage.resolved_local_queue,
                     "workload_priority_class": stage.workload_priority_class,
                     "workload_priority_value": stage.workload_priority_value,
                     "resolved_pool_preference": list(stage.resolved_pool_preference),
-                    "admitted_resource_flavor": stage.admitted_resource_flavor,
                     "accelerator_resource_name": stage.accelerator_resource_name,
                     "accelerator_count": stage.accelerator_count,
                     "max_queue_seconds": stage.max_queue_seconds,
@@ -602,12 +602,12 @@ def state_from_value(raw: object) -> ScientificBatchState:
     )
     scheduling_keys = {
         "stage_id",
+        "resource_class",
         "resolved_cluster_queue",
         "resolved_local_queue",
         "workload_priority_class",
         "workload_priority_value",
         "resolved_pool_preference",
-        "admitted_resource_flavor",
         "accelerator_resource_name",
         "accelerator_count",
         "max_queue_seconds",
@@ -621,6 +621,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
         decisions.append(
             StageSchedulingDecision(
                 stage_id=_string(decision["stage_id"], "scheduling stage ID"),
+                resource_class=ResourceClass(_string(decision["resource_class"], "scheduling resource class")),
                 resolved_cluster_queue=_string(decision["resolved_cluster_queue"], "cluster queue"),
                 resolved_local_queue=_string(decision["resolved_local_queue"], "local queue"),
                 workload_priority_class=_string(decision["workload_priority_class"], "priority class"),
@@ -628,10 +629,9 @@ def state_from_value(raw: object) -> ScientificBatchState:
                 resolved_pool_preference=_string_items(
                     decision["resolved_pool_preference"], "pool preference", maximum=256
                 ),
-                admitted_resource_flavor=_optional_string(
-                    decision["admitted_resource_flavor"], "admitted resource flavor"
+                accelerator_resource_name=_optional_string(
+                    decision["accelerator_resource_name"], "accelerator resource"
                 ),
-                accelerator_resource_name=_string(decision["accelerator_resource_name"], "accelerator resource"),
                 accelerator_count=_integer(decision["accelerator_count"], "accelerator count"),
                 max_queue_seconds=(
                     None

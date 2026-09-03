@@ -22,7 +22,7 @@ scientific API identities.
 Admission writes an immutable internal `ScientificBatchPlan` and
 `SchedulingSnapshot` once. The snapshot uses the Kueue scheduling contract's
 terminology for resolved LocalQueue/ClusterQueue, priority class/value, ordered
-pool preference, admitted ResourceFlavor, accelerator resource/count,
+pool preference, resource class, accelerator resource/count,
 queue/execution ceilings, checkpoint mode, and preemption mode. It also freezes
 one of `presentation`, `interactive`, `customer-batch`, or `bulk-backfill`, plus
 the logical tenant queue, model lane, policy revision, and capture time. The
@@ -41,8 +41,12 @@ value, ordered compatible pools, each pool's ResourceFlavor and extended
 resource, queue deadline, execution deadline, and preemption mode. Queue expiry
 is enforced from the frozen attempt start without retry; the execution deadline
 is projected to both Kueue's max-exec label and the Job or JobSet Job template.
-The exact Kueue admission, Workload UID, admitted flavor, pool, and accelerator
-quantity are then persisted from live status rather than guessed at submission.
+The frozen snapshot has no admitted ResourceFlavor field. The exact Kueue
+admission—Workload UID plus actual pool, ResourceFlavor, accelerator resource,
+quantity, and admission time—is stored only on the attempt after the live
+Kueue Workload reports `Admitted`. A started, successful, or preempted workload
+without that evidence cannot advance, and its actual resource/count must match
+the frozen stage request.
 
 ## Catalog profile adapter boundary
 
@@ -165,12 +169,15 @@ artifact-pointer JSON schemas.
   `scientific-run-request/v1`, authorizes the profile/model, freezes the
   scheduling decision at the durable Operation `accepted_at`, and returns 202.
 - `GET /v1/operations/{operation_id}` returns the durable Operation and internal
-  batch-status projection. `GET .../events` returns ordered stable lifecycle
-  identities. `DELETE ...` and the existing `:cancel` route request the same
-  idempotent cascade.
-- `GET /v1/operations/{operation_id}/result` is assembled by
-  `ArtifactServiceBridge` from the artifact service's immutable terminal
-  manifest and validated against `scientific-run-result/v1`.
+  batch-status projection, including an optional canonical
+  `scheduling_admission` on every attempt. It remains null before Kueue resolves
+  admission. The status and event projections are bounded closed objects;
+  `GET .../events` returns ordered stable lifecycle identities. `DELETE ...`
+  and the existing `:cancel` route request the same idempotent cascade.
+- `GET /v1/operations/{operation_id}/result` is reopened through the narrow
+  artifact result port and validated against the existing
+  `scientific-run-result/v1`. The controller does not define a second terminal
+  result transport.
 - `GET /v1/artifacts/{artifact_id}` returns only the canonical pointer
   projection. Storage keys, signed handles, access credentials, payload bytes,
   and internal artifact records are never returned.
@@ -179,12 +186,17 @@ artifact-pointer JSON schemas.
   gate; all tools reuse the HTTP service and never create Kubernetes objects
   directly.
 
-The artifact service remains the sole owner of uploads, immutable artifact
-records, per-attempt lifecycle, stage commits, terminal result manifests, and
-their public projection. Its stage-commit rows bind the exact successful
-attempt set to an atomically synthesized aggregate manifest and validation
-digest. A successful Job cannot unlock a successor until this commit has been
-committed and reopened.
+The controller core depends only on `ScientificBatchArtifactLifecycle` and
+`ScientificBatchResultPublisher`; the replaceable `ArtifactServiceBridge`
+adapts those ports to the artifact service. The artifact service remains the
+sole owner of uploads, immutable artifact records, per-attempt lifecycle,
+stage commits, terminal result manifests, and their public projection. A
+canonical terminal result must retain every terminal stage/shard attempt,
+including preempted and retried attempts, under the existing
+`scientific-run-result/v1` attempt list. Its stage-commit rows bind the exact
+successful attempt set to an atomically synthesized aggregate manifest and
+validation digest. A successful Job cannot unlock a successor until this
+commit has been committed and reopened.
 
 ## Kubernetes and Helm wiring
 
@@ -193,8 +205,9 @@ operator-owned execution map to POST suspended Kueue-managed Jobs or JobSets.
 It verifies deterministic name, attempt ownership, immutable manifest digest,
 and live UID before adoption or UID-preconditioned deletion. The Kueue contract
 is authoritative for LocalQueue, ClusterQueue, workload priority, accelerator,
-pool order, and preemption. ResourceFlavor remains null at submission because
-only Kueue may choose it.
+pool order, and preemption. ResourceFlavor is absent from the submission
+snapshot because only Kueue may choose it; it appears later only in the attempt
+admission record.
 
 The execution map is a closed operator configuration, not a public request or
 catalog schema extension. Version 2 binds each public `model_id` to one exact
@@ -368,7 +381,8 @@ handoff (including an injected crash after external deletion), canonical
 scheduling routing/deadlines, complete phase ingestion, infrastructure
 preemption/retry, stale-attempt observations, non-retryable taxonomy,
 cancellation races and cascade, public HTTP/MCP lifecycle dispatch, Kubernetes
-REST creation, durable PostgreSQL fencing, and invalid DAGs/snapshots.
+REST creation, unresolved-versus-actual Kueue admission, closed API transports,
+durable PostgreSQL fencing, and invalid DAGs/snapshots.
 
 Run them with:
 

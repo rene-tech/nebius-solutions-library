@@ -99,9 +99,14 @@ from .scientific_batch.capability import ScientificWorkloadCapabilityAuthority
 from .scientific_batch.kubernetes import HttpScientificBatchCluster
 from .scientific_batch.postgres_repository import ScientificBatchNotFoundError
 from .scientific_batch.profile_catalog import ScientificProfileError, ScientificRequestError
-from .scientific_batch.service import ScientificBatchService
+from .scientific_batch.service import (
+    ScientificBatchService,
+    ScientificBatchStatusResponse,
+    ScientificEventPage,
+)
 from .scientific_batch.worker import ScientificBatchWorker
 from .scientific_batch.workload_routes import WorkloadBatchRepository, scientific_workload_artifact_router
+from .scientific_run_result import ArtifactRef
 from .settings import Settings
 from .store import (
     BudgetExceededError,
@@ -925,7 +930,11 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             wait_seconds=wait_seconds,
         )
 
-    @app.post("/v1/models/{model_id}:submit")
+    @app.post(
+        "/v1/models/{model_id}:submit",
+        response_model=ScientificBatchStatusResponse,
+        status_code=202,
+    )
     async def scientific_submit(
         model_id: str,
         request: Request,
@@ -962,7 +971,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             },
         )
 
-    @app.get("/v1/operations/{operation_id}")
+    @app.get("/v1/operations/{operation_id}", response_model=OperationView | ScientificBatchStatusResponse)
     async def operation_status(operation_id: UUID, identity: Annotated[Principal, Depends(principal)]) -> Response:
         operation = await runtime.store.get_operation(operation_id, tenant_id=identity.tenant_id)
         require_operation_access(identity, operation)
@@ -998,7 +1007,11 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             actor=identity.principal_id,
         )
 
-    @app.delete("/v1/operations/{operation_id}")
+    @app.delete(
+        "/v1/operations/{operation_id}",
+        response_model=ScientificBatchStatusResponse,
+        status_code=202,
+    )
     async def scientific_operation_cancel(
         operation_id: UUID, identity: Annotated[Principal, Depends(principal)]
     ) -> Response:
@@ -1010,7 +1023,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             headers={"cache-control": "no-store"},
         )
 
-    @app.get("/v1/operations/{operation_id}/events")
+    @app.get("/v1/operations/{operation_id}/events", response_model=ScientificEventPage)
     async def scientific_operation_events(
         operation_id: UUID,
         identity: Annotated[Principal, Depends(principal)],
@@ -1026,7 +1039,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             headers={"cache-control": "no-store"},
         )
 
-    @app.get("/v1/artifacts/{artifact_id}")
+    @app.get("/v1/artifacts/{artifact_id}", response_model=ArtifactRef)
     async def scientific_artifact(artifact_id: UUID, identity: Annotated[Principal, Depends(principal)]) -> Response:
         if runtime.scientific_batches is None:
             return _error(404, "artifact_not_found", "scientific artifact was not found")
