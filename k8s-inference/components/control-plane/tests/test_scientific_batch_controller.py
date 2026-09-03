@@ -458,6 +458,62 @@ async def test_preemption_retries_with_new_attempt_and_stale_observation_is_fenc
 
 
 @pytest.mark.asyncio
+async def test_quota_reservation_then_admission_updates_one_immutable_tuple_without_requeue() -> None:
+    repository = FakeScientificBatchRepository()
+    cluster = FakeScientificBatchCluster()
+    reconciler = controller(repository, cluster)
+    operation_id = uuid4()
+    batch_plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="fold", max_attempts=2),))
+    await reconciler.admit(
+        operation_id=operation_id,
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        plan=batch_plan,
+        scheduling=snapshot(batch_plan),
+    )
+    await reconciler.reconcile_once()
+    attempt = repository.records[operation_id].stage("fold").attempts[0]
+    reserved = SchedulingAdmission(
+        resolved_pool_id="h100-preemptible",
+        admitted_resource_flavor="inference-h100-1x",
+        accelerator_resource_name="nvidia.com/gpu",
+        accelerator_count=1,
+        quota_reserved_at=NOW,
+        admitted_at=None,
+    )
+    cluster.set_observation(
+        attempt.workload,
+        WorkloadObservation(
+            ref=attempt.workload,
+            attempt_id=attempt.attempt_id,
+            state=WorkloadState.PENDING,
+            phases=(),
+            scheduling_admission=reserved,
+            kueue_workload_uid="stable-kueue-uid",
+        ),
+    )
+    await reconciler.reconcile_once()
+    admitted = replace(reserved, admitted_at=NOW + timedelta(seconds=2))
+    cluster.set_observation(
+        attempt.workload,
+        WorkloadObservation(
+            ref=attempt.workload,
+            attempt_id=attempt.attempt_id,
+            state=WorkloadState.RUNNING,
+            phases=(LifecyclePhase.ADMITTED, LifecyclePhase.ACTIVE_COMPUTE),
+            scheduling_admission=admitted,
+            kueue_workload_uid="stable-kueue-uid",
+        ),
+    )
+    await reconciler.reconcile_once()
+    current = repository.records[operation_id].stage("fold").attempts[0]
+    assert current.scheduling_admission == admitted
+    assert current.outcome is AttemptOutcome.ACTIVE
+    assert len(repository.records[operation_id].stage("fold").attempts) == 1
+    assert not cluster.delete_history
+
+
+@pytest.mark.asyncio
 async def test_same_workload_rereservation_is_deleted_and_retry_gets_fresh_queue_clock() -> None:
     repository = FakeScientificBatchRepository()
     cluster = FakeScientificBatchCluster()

@@ -25,6 +25,7 @@ from .models import (
     ResolvedArtifactMaterialization,
     ResourceClass,
     RuntimeArtifactLocalization,
+    SchedulingAdmission,
     SchedulingSnapshot,
     ScientificAttemptState,
     ScientificBatchPlan,
@@ -598,7 +599,9 @@ class ScientificBatchController:
             attempt.kueue_workload_uid,
         }:
             failure_code = "kueue_workload_recreated"
-        elif observation.scheduling_admission not in {None, attempt.scheduling_admission}:
+        elif observation.scheduling_admission is not None and not ScientificBatchController._same_reservation(
+            attempt.scheduling_admission, observation.scheduling_admission
+        ):
             failure_code = "kueue_same_workload_rereserved"
         elif observation.state is WorkloadState.PENDING and observation.scheduling_admission is None:
             failure_code = "kueue_reservation_lost"
@@ -614,6 +617,35 @@ class ScientificBatchController:
             failure_kind=FailureKind.PREEMPTION,
             failure_code=failure_code,
         )
+
+    @staticmethod
+    def _same_reservation(first: SchedulingAdmission, second: SchedulingAdmission) -> bool:
+        return all(
+            getattr(first, field) == getattr(second, field)
+            for field in (
+                "resolved_pool_id",
+                "admitted_resource_flavor",
+                "accelerator_resource_name",
+                "accelerator_count",
+                "quota_reserved_at",
+                "cpu_millis",
+                "memory_bytes",
+            )
+        )
+
+    @classmethod
+    def _merge_reservation(
+        cls,
+        current: SchedulingAdmission,
+        observed: SchedulingAdmission,
+    ) -> SchedulingAdmission:
+        if not cls._same_reservation(current, observed):
+            raise RuntimeError("Kueue scheduling admission changed for an immutable attempt")
+        current_admitted = current.admitted_at
+        observed_admitted = observed.admitted_at
+        if current_admitted is not None and observed_admitted not in {None, current_admitted}:
+            raise RuntimeError("Kueue admitted timestamp changed for an immutable attempt")
+        return replace(current, admitted_at=current_admitted or observed_admitted)
 
     def _ingest_observation(
         self,
@@ -632,11 +664,8 @@ class ScientificBatchController:
             events.append(self._lifecycle(record, attempt, LifecyclePhase.PREEMPTED))
             last = LifecyclePhase.PREEMPTED
         admission = observation.scheduling_admission or attempt.scheduling_admission
-        if attempt.scheduling_admission is not None and observation.scheduling_admission not in {
-            None,
-            attempt.scheduling_admission,
-        }:
-            raise RuntimeError("Kueue scheduling admission changed for an immutable attempt")
+        if attempt.scheduling_admission is not None and observation.scheduling_admission is not None:
+            admission = self._merge_reservation(attempt.scheduling_admission, observation.scheduling_admission)
         if LifecyclePhase.ADMITTED in observation.phases and admission is None:
             raise RuntimeError("Kueue admitted lifecycle phase has no resolved scheduling admission")
         if (
@@ -654,7 +683,18 @@ class ScientificBatchController:
                     decision.resource_class is ResourceClass.GPU
                     and admission.resolved_pool_id not in decision.resolved_pool_preference
                 )
-                or admission.admitted_at < record.scheduling.captured_at
+                or (
+                    decision.resource_class is ResourceClass.CPU
+                    and decision.requested_resource_flavor is not None
+                    and (
+                        admission.admitted_resource_flavor != decision.requested_resource_flavor
+                        or admission.resolved_pool_id not in decision.resolved_pool_preference
+                        or admission.cpu_millis < 1
+                        or admission.memory_bytes < 1
+                    )
+                )
+                or (admission.quota_reserved_at or admission.admitted_at) is None
+                or cast(datetime, admission.quota_reserved_at or admission.admitted_at) < record.scheduling.captured_at
             ):
                 raise RuntimeError("Kueue scheduling admission differs from the frozen stage request")
         kueue_uid = observation.kueue_workload_uid or attempt.kueue_workload_uid

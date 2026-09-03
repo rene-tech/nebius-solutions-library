@@ -419,7 +419,26 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                                 "admitted_resource_flavor": attempt.scheduling_admission.admitted_resource_flavor,
                                 "accelerator_resource_name": attempt.scheduling_admission.accelerator_resource_name,
                                 "accelerator_count": attempt.scheduling_admission.accelerator_count,
-                                "admitted_at": attempt.scheduling_admission.admitted_at.isoformat(),
+                                "admitted_at": (
+                                    None
+                                    if attempt.scheduling_admission.admitted_at is None
+                                    else attempt.scheduling_admission.admitted_at.isoformat()
+                                ),
+                                **(
+                                    {}
+                                    if attempt.scheduling_admission.quota_reserved_at is None
+                                    and attempt.scheduling_admission.cpu_millis == 0
+                                    and attempt.scheduling_admission.memory_bytes == 0
+                                    else {
+                                        "quota_reserved_at": (
+                                            None
+                                            if attempt.scheduling_admission.quota_reserved_at is None
+                                            else attempt.scheduling_admission.quota_reserved_at.isoformat()
+                                        ),
+                                        "cpu_millis": attempt.scheduling_admission.cpu_millis,
+                                        "memory_bytes": attempt.scheduling_admission.memory_bytes,
+                                    }
+                                ),
                             }
                         ),
                         "kueue_workload_uid": attempt.kueue_workload_uid,
@@ -1171,15 +1190,23 @@ def state_from_value(raw: object) -> ScientificBatchState:
             workload = _object(attempt["workload"], workload_keys, "scientific attempt workload")
             admission = None
             if attempt["scheduling_admission"] is not None:
+                admission_fields = {
+                    "resolved_pool_id",
+                    "admitted_resource_flavor",
+                    "accelerator_resource_name",
+                    "accelerator_count",
+                    "admitted_at",
+                }
+                raw_admission = attempt["scheduling_admission"]
+                if isinstance(raw_admission, Mapping) and {
+                    "quota_reserved_at",
+                    "cpu_millis",
+                    "memory_bytes",
+                } & set(raw_admission):
+                    admission_fields.update({"quota_reserved_at", "cpu_millis", "memory_bytes"})
                 admission_value = _object(
-                    attempt["scheduling_admission"],
-                    {
-                        "resolved_pool_id",
-                        "admitted_resource_flavor",
-                        "accelerator_resource_name",
-                        "accelerator_count",
-                        "admitted_at",
-                    },
+                    raw_admission,
+                    admission_fields,
                     "scientific attempt scheduling admission",
                 )
                 admission = SchedulingAdmission(
@@ -1191,7 +1218,26 @@ def state_from_value(raw: object) -> ScientificBatchState:
                         admission_value["accelerator_resource_name"], "admitted accelerator resource"
                     ),
                     accelerator_count=_integer(admission_value["accelerator_count"], "admitted accelerator count"),
-                    admitted_at=_datetime(admission_value["admitted_at"], "Kueue admission time"),
+                    admitted_at=(
+                        None
+                        if admission_value["admitted_at"] is None
+                        else _datetime(admission_value["admitted_at"], "Kueue admission time")
+                    ),
+                    quota_reserved_at=(
+                        None
+                        if "quota_reserved_at" not in admission_value or admission_value["quota_reserved_at"] is None
+                        else _datetime(admission_value["quota_reserved_at"], "Kueue quota reservation time")
+                    ),
+                    cpu_millis=(
+                        0
+                        if "cpu_millis" not in admission_value
+                        else _integer(admission_value["cpu_millis"], "admitted CPU millis")
+                    ),
+                    memory_bytes=(
+                        0
+                        if "memory_bytes" not in admission_value
+                        else _integer(admission_value["memory_bytes"], "admitted memory bytes")
+                    ),
                 )
             attempts.append(
                 ScientificAttemptState(

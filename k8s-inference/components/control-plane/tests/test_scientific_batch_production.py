@@ -88,8 +88,6 @@ from fs2_serve.scientific_batch.models import (
     ServiceClass,
     StageExecutionBinding,
     StageInvocation,
-    StagePlacementClass,
-    StageResourceEnvelope,
     StageSchedulingDecision,
     StageVolumeBinding,
     VerifiedInputManifest,
@@ -229,6 +227,7 @@ def scheduling() -> SchedulingContractResolver:
                     "service_classes": [],
                 }
             },
+            "model_eligible_pool_ids": {"protein-design": ["h100-preemptible"]},
             "cpu_classes": {},
             "cpu_stage_requests": {},
             "namespace_bound_models": {},
@@ -276,6 +275,12 @@ def scheduling_with_academic_route(*, shadow: bool = False) -> dict[str, object]
         "alphafold3": namespace,
         "bindcraft": namespace,
     }
+    contract["model_eligible_pool_ids"].update(
+        {
+            "alphafold3": ["h100-hot", "h100-preemptible"],
+            "bindcraft": ["h100-hot", "h100-preemptible"],
+        }
+    )
     if shadow:
         contract["local_queues"]["academic-shadow"] = {
             "metadata": {"name": "academic-shadow", "namespace": "fs2-academic-shadow"},
@@ -949,112 +954,18 @@ def test_scheduling_resolver_prefers_exact_route_and_fails_closed_for_bound_mode
         )
 
 
-def test_controller_consumes_exact_terraform_scheduling_fixture_with_per_stage_routes() -> None:
+def test_controller_rejects_generated_scheduling_fixture_until_cpu_and_model_eligibility_land() -> None:
     fixture = SOLUTION_ROOT / "modules/kueue-scheduling/tests/fixtures/controller-contract.json"
     encoded = fixture.read_bytes()
-    resolver = SchedulingContractResolver.load(fixture)
-    assert resolver.raw_contract_sha256 == f"sha256:{hashlib.sha256(encoded).hexdigest()}"
-    profile = profile_value()
-    profile["model_id"] = "example-licensed-model"
-    profile["resources"] = {"gpu_count": 1, "compatible_pool_ids": ["reserved", "burst"]}
-    profile["workload"] = {
-        "retry": {"max_attempts": 2},
-        "stages": [
-            {
-                "id": "data-pipeline",
-                "needs": [],
-                "resource_class": "cpu",
-                "admission_mode": "independent-jobs",
-                "min_parallelism": 1,
-                "max_parallelism": 1,
-                "checkpoint_mode": "restart",
-                "preemption_mode": "restartable",
-            },
-            {
-                "id": "inference",
-                "needs": ["data-pipeline"],
-                "resource_class": "gpu",
-                "admission_mode": "independent-jobs",
-                "min_parallelism": 1,
-                "max_parallelism": 1,
-                "checkpoint_mode": "restart",
-                "preemption_mode": "restartable",
-            },
-        ],
-    }
-    plan = ScientificBatchPlan(
-        (
-            ScientificStagePlan(
-                stage_id="data-pipeline",
-                resource_class=ResourceClass.CPU,
-                placement_class=StagePlacementClass.REFERENCE_DATA_CPU,
-                resources=StageResourceEnvelope(
-                    cpu_millis=6000,
-                    memory_bytes=24 * 1024**3,
-                    ephemeral_storage_bytes=50 * 1024**3,
-                    limit_cpu_millis=6000,
-                    limit_memory_bytes=24 * 1024**3,
-                    limit_ephemeral_storage_bytes=50 * 1024**3,
-                ),
-            ),
-            ScientificStagePlan(stage_id="inference", depends_on=("data-pipeline",)),
-        )
-    )
-    frozen = resolver.freeze(
-        service_class="customer-batch",
-        model_id="example-licensed-model",
-        tenant_id="tenant-academic",
-        profile=profile,
-        plan=plan,
-        workload_namespace="fs2-academic-poc",
-    )
-    cpu, gpu = frozen.stages
-    assert (cpu.resolved_local_queue, cpu.resolved_cluster_queue) == (
-        "academic-scientific-cpu",
-        "reference-data-cpu",
-    )
-    assert cpu.placement_class is StagePlacementClass.REFERENCE_DATA_CPU
-    assert dict(cpu.node_selector) == {"workload.fs2.nebius/reference-data": "true"}
-    assert (gpu.resolved_local_queue, gpu.resolved_cluster_queue) == (
-        "academic-scientific",
-        "inference-accelerators",
-    )
-    assert gpu.resolved_pool_preference == ("reserved", "burst")
+    assert hashlib.sha256(encoded).hexdigest()
+    with pytest.raises(SchedulingContractError, match="CPU placement class schema"):
+        SchedulingContractResolver.load(fixture)
 
 
 def test_controller_rejects_cpu_stage_larger_than_terraform_capacity() -> None:
     fixture = SOLUTION_ROOT / "modules/kueue-scheduling/tests/fixtures/controller-contract.json"
-    profile = profile_value()
-    profile["model_id"] = "example-licensed-model"
-    profile["resources"] = {"gpu_count": 1, "compatible_pool_ids": ["reserved"]}
-    profile["workload"]["stages"][0]["id"] = "data-pipeline"
-    profile["workload"]["stages"][0]["resource_class"] = "cpu"
-    plan = ScientificBatchPlan(
-        (
-            ScientificStagePlan(
-                stage_id="data-pipeline",
-                resource_class=ResourceClass.CPU,
-                placement_class=StagePlacementClass.REFERENCE_DATA_CPU,
-                resources=StageResourceEnvelope(
-                    cpu_millis=16001,
-                    memory_bytes=24 * 1024**3,
-                    ephemeral_storage_bytes=100 * 1024**3,
-                    limit_cpu_millis=16001,
-                    limit_memory_bytes=24 * 1024**3,
-                    limit_ephemeral_storage_bytes=100 * 1024**3,
-                ),
-            ),
-        )
-    )
-    with pytest.raises(SchedulingContractError, match="exceeds its placement class"):
-        SchedulingContractResolver.load(fixture).freeze(
-            service_class="customer-batch",
-            model_id="example-licensed-model",
-            tenant_id="tenant-academic",
-            profile=profile,
-            plan=plan,
-            workload_namespace="fs2-academic-poc",
-        )
+    with pytest.raises(SchedulingContractError, match="CPU placement class schema"):
+        SchedulingContractResolver.load(fixture)
 
 
 class Fence:
@@ -1227,7 +1138,8 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
         admitted_resource_flavor="inference-h100-1x",
         accelerator_resource_name="nvidia.com/gpu",
         accelerator_count=1,
-        admitted_at=datetime(2026, 9, 2, 19, 59, tzinfo=UTC),
+        quota_reserved_at=datetime(2026, 9, 2, 19, 59, tzinfo=UTC),
+        admitted_at=datetime(2026, 9, 2, 20, 0, tzinfo=UTC),
     )
     assert observation.kueue_workload_uid == "kueue-workload-uid"
     assert fence.calls == [(operation_id, "controller-a", 7)]
@@ -1302,7 +1214,93 @@ async def test_kueue_admission_rejects_resource_flavor_with_only_retired_pool_la
             expected_pool_preference=("h100-preemptible",),
             expected_accelerator_resource="nvidia.com/gpu",
             expected_accelerator_count=1,
+            expected_resource_flavor=None,
         )
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_kueue_cpu_admission_captures_exact_flavor_pool_quantities_and_two_clocks(tmp_path: Path) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/workloads"):
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "metadata": {"uid": "cpu-kueue-workload-uid"},
+                            "status": {
+                                "conditions": [
+                                    {
+                                        "type": "QuotaReserved",
+                                        "status": "True",
+                                        "lastTransitionTime": "2026-09-03T09:00:00Z",
+                                    },
+                                    {
+                                        "type": "Admitted",
+                                        "status": "True",
+                                        "lastTransitionTime": "2026-09-03T09:00:02Z",
+                                    },
+                                ],
+                                "admission": {
+                                    "clusterQueue": "reference-data-cpu",
+                                    "podSetAssignments": [
+                                        {
+                                            "name": "main",
+                                            "flavors": {
+                                                "cpu": "reference-data-cpu",
+                                                "memory": "reference-data-cpu",
+                                            },
+                                            "resourceUsage": {"cpu": "16100m", "memory": "65792Mi"},
+                                        }
+                                    ],
+                                },
+                            },
+                        }
+                    ]
+                },
+            )
+        raise AssertionError(f"unexpected Kubernetes request: {request.method} {request.url}")
+
+    token = tmp_path / "cpu-token"
+    token.write_text("x" * 32)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.test")
+    cluster = HttpScientificBatchCluster(
+        base_url="https://kubernetes.test",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        controller_id="controller-a",
+        fence=Fence(),
+        renderer=JobRenderer(),
+        writes_enabled=True,
+        client=client,
+    )
+    admission, uid, admitted, reason = await cluster._scheduling_admission(
+        WorkloadRef(
+            namespace="fs2-academic-poc",
+            route_namespace="fs2-academic-poc",
+            name="af3-data-pipeline",
+            kind=WorkloadKind.JOB,
+            uid="cpu-job-uid",
+        ),
+        "cpu-job-uid",
+        expected_cluster_queue="reference-data-cpu",
+        expected_pool_preference=("reference-cpu",),
+        expected_accelerator_resource=None,
+        expected_accelerator_count=0,
+        expected_resource_flavor="reference-data-cpu",
+    )
+    assert uid == "cpu-kueue-workload-uid" and admitted and reason is None
+    assert admission == SchedulingAdmission(
+        resolved_pool_id="reference-cpu",
+        admitted_resource_flavor="reference-data-cpu",
+        accelerator_resource_name=None,
+        accelerator_count=0,
+        quota_reserved_at=datetime(2026, 9, 3, 9, 0, tzinfo=UTC),
+        admitted_at=datetime(2026, 9, 3, 9, 0, 2, tzinfo=UTC),
+        cpu_millis=16_100,
+        memory_bytes=65_792 * 1024**2,
+    )
     await client.aclose()
 
 
@@ -1562,7 +1560,8 @@ async def test_kubernetes_observer_persists_quota_reservation_without_claiming_a
         admitted_resource_flavor="inference-h100-1x",
         accelerator_resource_name="nvidia.com/gpu",
         accelerator_count=1,
-        admitted_at=datetime(2026, 9, 2, 20, 0, tzinfo=UTC),
+        quota_reserved_at=datetime(2026, 9, 2, 20, 0, tzinfo=UTC),
+        admitted_at=None,
     )
     assert LifecyclePhase.ADMITTED not in observation.phases
     assert observation.kueue_workload_uid == "pending-kueue-uid"
@@ -1913,11 +1912,7 @@ def _collection_cluster(
         if request.url.path.endswith("/resourceflavors/inference-h100-1x"):
             return httpx.Response(
                 200,
-                json={
-                    "metadata": {
-                        "labels": {"accelerator.fs2.nebius/pool-id": "h100-preemptible"}
-                    }
-                },
+                json={"metadata": {"labels": {"accelerator.fs2.nebius/pool-id": "h100-preemptible"}}},
             )
         return httpx.Response(200, json={"items": []})
 
@@ -2195,7 +2190,8 @@ async def test_kubernetes_observer_counts_only_exact_gpu_podsets_in_mixed_jobset
         admitted_resource_flavor="inference-h100-1x",
         accelerator_resource_name="nvidia.com/gpu",
         accelerator_count=4,
-        admitted_at=datetime(2026, 9, 3, 8, 0, tzinfo=UTC),
+        quota_reserved_at=datetime(2026, 9, 3, 8, 0, tzinfo=UTC),
+        admitted_at=None,
     )
     assert observation.kueue_workload_uid == "mixed-kueue-uid"
     assert LifecyclePhase.ADMITTED not in observation.phases

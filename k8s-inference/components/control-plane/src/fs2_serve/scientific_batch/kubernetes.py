@@ -7,6 +7,7 @@ import hashlib
 import json
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Protocol, cast
 from urllib.parse import quote
@@ -112,6 +113,52 @@ def _condition(status: Mapping[str, Any], kind: str, expected: str = "True") -> 
         ),
         None,
     )
+
+
+def _timestamp(condition: Mapping[str, Any], label: str) -> datetime:
+    value = condition.get("lastTransitionTime")
+    if not isinstance(value, str):
+        raise ScientificKubernetesError(f"Kueue {label} timestamp is absent")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ScientificKubernetesError(f"Kueue {label} timestamp is invalid") from error
+    if parsed.tzinfo is None:
+        raise ScientificKubernetesError(f"Kueue {label} timestamp is naive")
+    return parsed
+
+
+def _quantity(value: object, *, resource: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, str | int):
+        raise ScientificKubernetesError(f"Kueue {resource} admission quantity is invalid")
+    raw = str(value)
+    suffixes = {
+        "Ki": 1024,
+        "Mi": 1024**2,
+        "Gi": 1024**3,
+        "Ti": 1024**4,
+        "K": 1000,
+        "M": 1000**2,
+        "G": 1000**3,
+        "T": 1000**4,
+    }
+    multiplier = Decimal(1000 if resource == "cpu" else 1)
+    if resource == "cpu" and raw.endswith("m"):
+        raw = raw[:-1]
+        multiplier = Decimal(1)
+    elif resource == "memory":
+        for suffix, factor in suffixes.items():
+            if raw.endswith(suffix):
+                raw = raw[: -len(suffix)]
+                multiplier = Decimal(factor)
+                break
+    try:
+        normalized = Decimal(raw) * multiplier
+    except InvalidOperation as error:
+        raise ScientificKubernetesError(f"Kueue {resource} admission quantity is invalid") from error
+    if normalized != normalized.to_integral_value() or normalized <= 0:
+        raise ScientificKubernetesError(f"Kueue {resource} admission quantity is not positive and exact")
+    return int(normalized)
 
 
 def _failure(reasons: list[str]) -> tuple[WorkloadState, FailureKind, str]:
@@ -521,6 +568,7 @@ class HttpScientificBatchCluster:
             expected_pool_preference=scheduling.resolved_pool_preference,
             expected_accelerator_resource=scheduling.accelerator_resource_name,
             expected_accelerator_count=scheduling.accelerator_count,
+            expected_resource_flavor=scheduling.requested_resource_flavor,
         )
         if admitted:
             phases.append(LifecyclePhase.ADMITTED)
@@ -647,6 +695,7 @@ class HttpScientificBatchCluster:
         expected_pool_preference: tuple[str, ...],
         expected_accelerator_resource: str | None,
         expected_accelerator_count: int,
+        expected_resource_flavor: str | None,
     ) -> tuple[SchedulingAdmission | None, str | None, bool, str | None]:
         """Reopen the exact frozen-resource Kueue reservation.
 
@@ -709,26 +758,23 @@ class HttpScientificBatchCluster:
                     eviction_reason = condition_reason
                     break
         admission = workload_status.get("admission")
-        # QuotaReserved is the assignment boundary. Keep its first transition
-        # time after Admitted becomes true so a normal condition progression
-        # does not look like a different immutable reservation.
-        admission_condition = quota_reserved or admitted
-        if admission_condition is None or not isinstance(admission, Mapping):
+        # QuotaReserved is the immutable assignment boundary. Admitted is a
+        # later, distinct lifecycle transition and must never replace its
+        # timestamp or make the tuple appear to drift.
+        if quota_reserved is None or not isinstance(admission, Mapping):
             return None, workload_uid, False, eviction_reason
         if admission.get("clusterQueue") != expected_cluster_queue:
             raise ScientificKubernetesError("Kueue admitted a different ClusterQueue than the frozen route")
-        timestamp = admission_condition.get("lastTransitionTime")
-        if not isinstance(timestamp, str):
-            raise ScientificKubernetesError("Kueue admission timestamp is absent")
-        try:
-            admitted_at = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-        except ValueError as error:
-            raise ScientificKubernetesError("Kueue admission timestamp is invalid") from error
+        quota_reserved_at = _timestamp(quota_reserved, "quota reservation")
+        admitted_at = None if admitted is None else _timestamp(admitted, "admission")
         assignments = admission.get("podSetAssignments")
         if not isinstance(assignments, list) or not assignments:
             raise ScientificKubernetesError("Kueue admission has no PodSet assignment")
         accelerator_count = 0
         accelerator_flavor: str | None = None
+        cpu_millis = 0
+        memory_bytes = 0
+        cpu_flavor: str | None = None
         for raw_assignment in assignments:
             if not isinstance(raw_assignment, Mapping):
                 raise ScientificKubernetesError("Kueue PodSet assignment is invalid")
@@ -736,7 +782,24 @@ class HttpScientificBatchCluster:
             usage = raw_assignment.get("resourceUsage", {})
             if not isinstance(flavors, Mapping) or not isinstance(usage, Mapping):
                 raise ScientificKubernetesError("Kueue PodSet assignment resources are invalid")
-            if expected_accelerator_resource is None or expected_accelerator_resource not in usage:
+            if expected_accelerator_resource is None:
+                if "cpu" not in usage or "memory" not in usage:
+                    raise ScientificKubernetesError("Kueue CPU PodSet admission omits cpu or memory")
+                assignment_cpu_flavor = flavors.get("cpu")
+                assignment_memory_flavor = flavors.get("memory")
+                if (
+                    not isinstance(assignment_cpu_flavor, str)
+                    or assignment_cpu_flavor != assignment_memory_flavor
+                    or assignment_cpu_flavor != expected_resource_flavor
+                ):
+                    raise ScientificKubernetesError("Kueue CPU admission differs from the frozen ResourceFlavor")
+                if cpu_flavor is not None and cpu_flavor != assignment_cpu_flavor:
+                    raise ScientificKubernetesError("Kueue admitted multiple CPU ResourceFlavors")
+                cpu_flavor = assignment_cpu_flavor
+                cpu_millis += _quantity(usage["cpu"], resource="cpu")
+                memory_bytes += _quantity(usage["memory"], resource="memory")
+                continue
+            if expected_accelerator_resource not in usage:
                 continue
             try:
                 count = int(usage[expected_accelerator_resource])
@@ -752,13 +815,24 @@ class HttpScientificBatchCluster:
         if expected_accelerator_resource is None:
             if expected_accelerator_count != 0:
                 raise ScientificKubernetesError("frozen accelerator count has no exact resource")
+            if (
+                expected_resource_flavor is None
+                or cpu_flavor is None
+                or len(expected_pool_preference) != 1
+                or cpu_millis < 1
+                or memory_bytes < 1
+            ):
+                raise ScientificKubernetesError("Kueue CPU admission has no exact frozen class identity")
             return (
                 SchedulingAdmission(
-                    resolved_pool_id=None,
-                    admitted_resource_flavor=None,
+                    resolved_pool_id=expected_pool_preference[0],
+                    admitted_resource_flavor=cpu_flavor,
                     accelerator_resource_name=None,
                     accelerator_count=0,
                     admitted_at=admitted_at,
+                    quota_reserved_at=quota_reserved_at,
+                    cpu_millis=cpu_millis,
+                    memory_bytes=memory_bytes,
                 ),
                 workload_uid,
                 admitted is not None,
@@ -788,6 +862,7 @@ class HttpScientificBatchCluster:
                 accelerator_resource_name=expected_accelerator_resource,
                 accelerator_count=accelerator_count,
                 admitted_at=admitted_at,
+                quota_reserved_at=quota_reserved_at,
             ),
             workload_uid,
             admitted is not None,

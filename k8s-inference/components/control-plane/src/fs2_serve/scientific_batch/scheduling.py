@@ -66,7 +66,21 @@ class SchedulingContractResolver:
         self.local_queue_routes = _object(self.contract.get("local_queue_routes"), "Kueue local queue routes")
         self.pools = _object(self.contract.get("pools"), "Kueue accelerator pools")
         self.cpu_classes = _object(self.contract.get("cpu_classes"), "Kueue CPU placement classes")
+        if self.cpu_classes and self.contract.get("cpu_classes_schema") != ("fs2-serve.nebius.ai/cpu-stage-classes/v1"):
+            raise SchedulingContractError("Kueue CPU placement class schema is absent or unsupported")
         self.cpu_stage_requests = _object(self.contract.get("cpu_stage_requests"), "Kueue CPU stage requests")
+        self.model_eligible_pool_ids = _object(
+            self.contract.get("model_eligible_pool_ids"), "Kueue model eligible pools"
+        )
+        if not all(
+            isinstance(model_id, str)
+            and isinstance(pool_ids, list)
+            and bool(pool_ids)
+            and len(pool_ids) == len(set(pool_ids))
+            and all(isinstance(pool_id, str) and pool_id in self.pools for pool_id in pool_ids)
+            for model_id, pool_ids in self.model_eligible_pool_ids.items()
+        ):
+            raise SchedulingContractError("Kueue model eligible pool mapping is invalid")
         self.namespace_bound_models = _object(
             self.contract.get("namespace_bound_models"), "Kueue namespace-bound models"
         )
@@ -139,15 +153,13 @@ class SchedulingContractResolver:
             item.get("id"): item for item in raw_stages if isinstance(item, Mapping) and isinstance(item.get("id"), str)
         }
         profile_resources = _object(profile.get("resources"), "scientific profile resources")
-        compatible_pools = profile_resources.get("compatible_pool_ids")
         gpu_count = profile_resources.get("gpu_count")
-        if (
-            not isinstance(compatible_pools, list)
-            or not all(isinstance(item, str) for item in compatible_pools)
-            or not isinstance(gpu_count, int)
-            or isinstance(gpu_count, bool)
-        ):
+        if not isinstance(gpu_count, int) or isinstance(gpu_count, bool):
             raise SchedulingContractError("scientific profile resource contract is incomplete")
+        raw_model_pools = self.model_eligible_pool_ids.get(model_id)
+        if not isinstance(raw_model_pools, list) or not raw_model_pools:
+            raise SchedulingContractError("model has no explicit eligible pools in the Kueue contract")
+        model_pools = cast(list[str], raw_model_pools)
 
         decisions: list[StageSchedulingDecision] = []
         for stage in plan.stages:
@@ -202,6 +214,29 @@ class SchedulingContractResolver:
                     or cpu_class.get("namespace") != route_namespace
                 ):
                     raise SchedulingContractError("CPU stage placement differs from the Kueue CPU class")
+                cpu_flavor = cpu_class.get("resource_flavor")
+                if not isinstance(cpu_flavor, str):
+                    raise SchedulingContractError("Kueue CPU placement class has no ResourceFlavor")
+                if requested_flavor is not None and requested_flavor != cpu_flavor:
+                    raise SchedulingContractError("profile stage ResourceFlavor differs from the Kueue CPU class")
+                requested_flavor = cpu_flavor
+                direct_pool = cpu_class.get("pool_id")
+                eligible_cpu_pools = cpu_class.get("eligible_pool_ids")
+                pool_resolution = cpu_class.get("pool_resolution")
+                if isinstance(direct_pool, str):
+                    resolved_pools = (direct_pool,)
+                elif isinstance(eligible_cpu_pools, list) and isinstance(pool_resolution, Mapping):
+                    resolved_pools = tuple(cast(str, item) for item in eligible_cpu_pools if isinstance(item, str))
+                    if (
+                        not resolved_pools
+                        or len(resolved_pools) != len(eligible_cpu_pools)
+                        or pool_resolution.get("mode") != "per-pool-flavor"
+                        or pool_resolution.get("pool_id") not in resolved_pools
+                        or len(resolved_pools) != 1
+                    ):
+                        raise SchedulingContractError("Kueue CPU pool resolution is not exact")
+                else:
+                    raise SchedulingContractError("Kueue CPU placement class has no exact pool identity")
                 raw_selector = _object(cpu_class.get("node_selector"), "CPU class node selector")
                 if not all(isinstance(key, str) and isinstance(value, str) for key, value in raw_selector.items()):
                     raise SchedulingContractError("CPU class node selector is invalid")
@@ -264,17 +299,15 @@ class SchedulingContractResolver:
                 stage_accelerator = (
                     None if placement is None else _object(placement.get("accelerator"), "scientific stage accelerator")
                 )
-                stage_pools = compatible_pools if stage_accelerator is None else stage_accelerator.get("pool_ids")
+                stage_pools = model_pools if stage_accelerator is None else stage_accelerator.get("pool_ids")
                 stage_gpu_count = gpu_count if stage_accelerator is None else stage_accelerator.get("count")
                 if not isinstance(stage_pools, list) or not all(isinstance(item, str) for item in stage_pools):
                     raise SchedulingContractError("scientific stage accelerator pools are invalid")
                 if not isinstance(stage_gpu_count, int) or isinstance(stage_gpu_count, bool) or stage_gpu_count < 1:
                     raise SchedulingContractError("scientific stage accelerator count is invalid")
-                resolved_pools = tuple(
-                    item for item in pool_preference if item in stage_pools and item in compatible_pools
-                )
+                resolved_pools = tuple(item for item in pool_preference if item in stage_pools and item in model_pools)
                 if not resolved_pools:
-                    raise SchedulingContractError("profile stage has no compatible pool in the Kueue service class")
+                    raise SchedulingContractError("model stage has no eligible pool in the Kueue service class")
                 accelerator_resources: set[str] = set()
                 flavors: set[str] = set()
                 for pool_id in resolved_pools:

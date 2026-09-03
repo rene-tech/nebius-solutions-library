@@ -1157,8 +1157,10 @@ class StageSchedulingDecision:
                 or _RESOURCE_NAME_RE.fullmatch(self.accelerator_resource_name) is None
             ):
                 raise ValueError("GPU scheduling requires an exact accelerator request and pool preference")
-        elif self.resolved_pool_preference or self.accelerator_resource_name is not None or self.accelerator_count != 0:
-            raise ValueError("CPU scheduling cannot retain accelerator resource or pool preferences")
+        elif self.accelerator_resource_name is not None or self.accelerator_count != 0:
+            raise ValueError("CPU scheduling cannot retain an accelerator resource")
+        elif bool(self.resolved_pool_preference) != (self.requested_resource_flavor is not None):
+            raise ValueError("CPU scheduling must retain its placement pools and ResourceFlavor together")
         if self.placement_class is not None:
             if self.resource_class is ResourceClass.GPU and self.placement_class is not StagePlacementClass.ACCELERATOR:
                 raise ValueError("GPU scheduling requires accelerator placement")
@@ -1287,11 +1289,23 @@ class SchedulingAdmission:
     admitted_resource_flavor: str | None
     accelerator_resource_name: str | None
     accelerator_count: int
-    admitted_at: datetime
+    admitted_at: datetime | None
+    quota_reserved_at: datetime | None = None
+    cpu_millis: int = 0
+    memory_bytes: int = 0
 
     def __post_init__(self) -> None:
-        if self.admitted_at.tzinfo is None:
-            raise ValueError("Kueue admission time must be timezone-aware")
+        for value, label in (
+            (self.quota_reserved_at, "Kueue quota reservation time"),
+            (self.admitted_at, "Kueue admission time"),
+        ):
+            if value is not None and value.tzinfo is None:
+                raise ValueError(f"{label} must be timezone-aware")
+        if self.quota_reserved_at is not None and self.admitted_at is not None:
+            if self.admitted_at < self.quota_reserved_at:
+                raise ValueError("Kueue admission cannot precede quota reservation")
+        if not 0 <= self.cpu_millis <= 10**9 or not 0 <= self.memory_bytes <= 1024**6:
+            raise ValueError("Kueue admitted core resource quantities are invalid")
         if not 0 <= self.accelerator_count <= 1024:
             raise ValueError("Kueue admitted accelerator count is invalid")
         if self.accelerator_count:
@@ -1303,11 +1317,12 @@ class SchedulingAdmission:
                 or _RESOURCE_NAME_RE.fullmatch(self.accelerator_resource_name) is None
             ):
                 raise ValueError("GPU admission requires an exact accelerator resource")
-        elif any(
-            value is not None
-            for value in (self.resolved_pool_id, self.admitted_resource_flavor, self.accelerator_resource_name)
-        ):
-            raise ValueError("CPU admission cannot claim accelerator placement")
+        elif self.accelerator_resource_name is not None:
+            raise ValueError("CPU admission cannot claim an accelerator resource")
+        elif (self.resolved_pool_id is None) != (self.admitted_resource_flavor is None):
+            raise ValueError("CPU admission must retain both its pool and ResourceFlavor or neither")
+        elif self.resolved_pool_id is not None and (self.cpu_millis < 1 or self.memory_bytes < 1):
+            raise ValueError("CPU admission requires positive core resource quantities")
         for value, label in (
             (self.resolved_pool_id, "resolved_pool_id"),
             (self.admitted_resource_flavor, "admitted_resource_flavor"),
