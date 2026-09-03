@@ -41,6 +41,9 @@ ACADEMIC_PVC = "academic-assets-runtime-rwx"
 ACADEMIC_SUB_PATH = "pyrosetta-bindcraft/site-packages"
 ACADEMIC_CONSUMER_PATH = "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
 ACADEMIC_ASSET_GID = 65532
+AF2_ARTIFACT_PVC = "fs2-runtime-qualification-artifacts-r20260902"
+AF2_ARTIFACT_ROOT = "/models/alphafold2"
+MPNN_ARTIFACT_ROOT = "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble"
 
 AA = re.compile(r"^[ACDEFGHIKLMNPQRSTVWY]+$")
 DNS = re.compile(r"^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$")
@@ -277,10 +280,16 @@ def _job(*, image: str, name: str, command: list[str], gpu: bool, labels: dict[s
         "imagePullSecrets": [{"name": "fs2-runtime-registry"}],
         "containers": [{
             "name": "batch", "image": image, "imagePullPolicy": "IfNotPresent",
-            "command": command, "resources": resources, "securityContext": security,
+            "command": ["python", "/opt/fs2/runtime_entrypoint.py", *command], "resources": resources, "securityContext": security,
             "env": [
                 {"name": "PYTHONPATH", "value": f"{ACADEMIC_CONSUMER_PATH}:/opt/bindcraft"},
                 {"name": "FS2_RUNTIME_IMAGE_DIGEST", "value": image_digest},
+                {"name": "FS2_ARTIFACT_ROOT", "value": "/workspace/artifacts"},
+                {"name": "FS2_ARTIFACT_MANIFEST", "value": "/workspace/artifacts/manifest.json"},
+                {"name": "FS2_ARTIFACT_KIND", "value": "bindcraft-external-models"},
+                {"name": "FS2_SOURCE_REVISION", "value": SOURCE_REVISION},
+                {"name": "FS2_BINDCRAFT_AF2_PARAMS", "value": AF2_ARTIFACT_ROOT},
+                {"name": "FS2_BINDCRAFT_MPNN_WEIGHTS", "value": "soluble"},
             ],
             "volumeMounts": [
                 {"name": "request", "mountPath": "/var/run/fs2", "readOnly": True},
@@ -291,6 +300,9 @@ def _job(*, image: str, name: str, command: list[str], gpu: bool, labels: dict[s
                     "readOnly": True,
                 },
                 {"name": "workspace", "mountPath": "/workspace"},
+                {"name": "external-artifacts", "mountPath": "/workspace/artifacts", "readOnly": True},
+                {"name": "external-artifacts", "mountPath": AF2_ARTIFACT_ROOT, "subPath": "alphafold2", "readOnly": True},
+                {"name": "external-artifacts", "mountPath": MPNN_ARTIFACT_ROOT, "subPath": "weights_soluble", "readOnly": True},
                 {"name": "tmp", "mountPath": "/tmp"},
             ],
         }],
@@ -298,6 +310,7 @@ def _job(*, image: str, name: str, command: list[str], gpu: bool, labels: dict[s
             {"name": "request", "configMap": {"name": config_name}},
             {"name": "academic-runtime", "persistentVolumeClaim": {"claimName": ACADEMIC_PVC, "readOnly": True}},
             {"name": "workspace", "persistentVolumeClaim": {"claimName": "fs2-cache"}},
+            {"name": "external-artifacts", "persistentVolumeClaim": {"claimName": AF2_ARTIFACT_PVC, "readOnly": True}},
             {"name": "tmp", "emptyDir": {"sizeLimit": "128Gi"}},
         ],
     }
