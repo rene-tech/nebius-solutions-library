@@ -24,6 +24,7 @@ from fs2_serve.fast_start_mechanisms import (
     RetainedCompileCache,
     WarmPageCacheReadAhead,
     assess_pool_mechanisms,
+    configure_gpu_resident,
     configure_host_memory_residency,
     configure_regional_cache,
     parse_memory_quantity,
@@ -586,3 +587,72 @@ def test_the_residency_agent_refuses_to_understate_what_it_holds(tmp_path: Path)
     with mock.patch.dict(os.environ, environment, clear=False):
         with pytest.raises(residency_agent.ResidencyError, match="of the declared"):
             residency_agent.hold()
+
+
+def test_gpu_resident_parks_a_standby_engine_behind_a_readiness_gate() -> None:
+    pod_spec, metadata = _conventional()
+    pod_spec["containers"][0]["readinessProbe"] = {
+        "httpGet": {"path": "/health", "port": "http"},
+        "periodSeconds": 5,
+    }
+    declaration = _gpu_resident()
+    configure_gpu_resident(
+        pod_spec=pod_spec,
+        pod_metadata=metadata,
+        qualification=declaration,
+        configured_hot_replicas=1,
+        role="standby",
+        runtime_container_name="vllm",
+    )
+    # The engine loads and keeps its weights in GPU memory, but the gate holds
+    # it out of the Service until it is promoted, so activation is a promotion.
+    assert pod_spec["readinessGates"] == [{"conditionType": "fast-start.fs2.nebius/promoted"}]
+    assert pod_spec["containers"][0]["readinessProbe"]["periodSeconds"] == 1
+    assert metadata["labels"]["fast-start.fs2.nebius/gpu-resident-role"] == "standby"
+    annotations = metadata["annotations"]
+    assert annotations["fast-start.fs2.nebius/gpu-resident-standby-replicas"] == "1"
+    assert annotations["fast-start.fs2.nebius/gpu-resident-minimum-hot-replicas"] == "1"
+    assert annotations["fast-start.fs2.nebius/gpu-resident-reserved-accelerators"] == "1"
+
+
+def test_a_promoted_serving_replica_carries_no_gate() -> None:
+    pod_spec, metadata = _conventional()
+    configure_gpu_resident(
+        pod_spec=pod_spec,
+        pod_metadata=metadata,
+        qualification=_gpu_resident(),
+        configured_hot_replicas=1,
+        role="serving",
+        runtime_container_name="vllm",
+    )
+    assert "readinessGates" not in pod_spec
+    assert metadata["labels"]["fast-start.fs2.nebius/gpu-resident-role"] == "serving"
+
+
+def test_gpu_resident_refuses_a_hot_floor_that_cannot_afford_it() -> None:
+    """The relationship to min hot replicas is explicit, never implicit."""
+
+    pod_spec, metadata = _conventional()
+    with pytest.raises(FastStartMechanismError, match="hot floor"):
+        configure_gpu_resident(
+            pod_spec=pod_spec,
+            pod_metadata=metadata,
+            qualification=_gpu_resident(minimum_hot_replicas=2),
+            configured_hot_replicas=1,
+            role="standby",
+            runtime_container_name="vllm",
+        )
+
+
+def test_gpu_resident_is_idempotent() -> None:
+    pod_spec, metadata = _conventional()
+    for _ in range(2):
+        configure_gpu_resident(
+            pod_spec=pod_spec,
+            pod_metadata=metadata,
+            qualification=_gpu_resident(),
+            configured_hot_replicas=1,
+            role="standby",
+            runtime_container_name="vllm",
+        )
+    assert pod_spec["readinessGates"] == [{"conditionType": "fast-start.fs2.nebius/promoted"}]
