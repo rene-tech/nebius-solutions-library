@@ -7,6 +7,7 @@ rendering.
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +39,7 @@ StageCollector = Callable[[StageInvocation, Path], CollectedStageOutput]
 
 _COMPILERS: dict[str, AdapterCompiler] = {}
 _COLLECTORS: dict[str, StageCollector] = {}
+_COLLECTORS_BY_MODEL: dict[str, frozenset[str]] = {}
 
 
 def register_adapter(
@@ -46,10 +48,43 @@ def register_adapter(
     compiler: AdapterCompiler,
     collectors: Mapping[str, StageCollector],
 ) -> None:
-    if model_id in _COMPILERS or not collectors or any(key in _COLLECTORS for key in collectors):
+    existing_collectors = _COLLECTORS_BY_MODEL.get(model_id, frozenset())
+    if existing_collectors or not collectors or any(key in _COLLECTORS for key in collectors):
         raise RuntimeError("scientific adapter or collector is already registered")
     _COMPILERS[model_id] = compiler
     _COLLECTORS.update(collectors)
+    _COLLECTORS_BY_MODEL[model_id] = frozenset(collectors)
+
+
+def _register_legacy_primary(module_name: str) -> None:
+    """Retain compiler discovery for primary modules carried by adapter branches."""
+
+    try:
+        module = importlib.import_module(f"{__name__}.{module_name}")
+    except ModuleNotFoundError as error:
+        if error.name == f"{__name__}.{module_name}":
+            return
+        raise
+    model_id = getattr(module, "MODEL_ID")
+    variant = getattr(module, "VARIANT_ID")
+    compile_run = getattr(module, "compile_run")
+
+    def compiler(
+        profile: Mapping[str, object],
+        request: object,
+        *,
+        operation_id: str,
+        variant_id: str,
+        access_context: ArtifactAccessContext,
+        input_artifacts: tuple[ScientificInputArtifact, ...],
+    ) -> AdapterExecutionPlan:
+        del access_context, input_artifacts
+        if variant_id != variant:
+            raise ValueError(f"route variant_id does not match the {model_id} adapter")
+        return compile_run(profile, request, operation_id=operation_id)
+
+    _COMPILERS.setdefault(model_id, compiler)
+    globals()[module_name] = module
 
 
 def compile_adapter_run(
@@ -89,6 +124,10 @@ def collect_stage_output(invocation: StageInvocation, workspace: Path) -> Collec
     return output
 
 
+for _module_name in ("proteina_complexa", "boltzgen"):
+    _register_legacy_primary(_module_name)
+
+
 __all__ = [
     "AdapterCompiler",
     "CollectedArtifactFile",
@@ -99,3 +138,7 @@ __all__ = [
     "compile_adapter_run",
     "register_adapter",
 ]
+
+for _module_name in ("proteina_complexa", "boltzgen"):
+    if _module_name in globals():
+        __all__.append(_module_name)

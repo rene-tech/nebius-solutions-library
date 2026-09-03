@@ -354,7 +354,7 @@ def runtime_plan() -> AdapterExecutionPlan:
         mount_path="/models/protenix-v2/common",
         sub_path="protenix-v2/common",
         expected_content_sha256="c" * 64,
-        readiness_receipt_sha256=sha("localized-protenix-common").removeprefix("sha256:"),
+        readiness_receipt_sha256=None,
         supplemental_groups=(10001,),
     )
     prepare = StageInvocation(
@@ -501,6 +501,7 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
     renderer = runtime_execution_map(tmp_path)
     access = ArtifactAccessContext(profile="public", receipt_digest=None, tenant_id="tenant-a")
     localized = renderer.verify_runtime_artifacts(runtime_profile(), plan, access)
+    plan = renderer.bind_runtime_artifacts(runtime_profile(), plan, access, localized)
     snapshot = scheduling(plan.controller_plan)
     invocation = plan.invocation("prepare", "main")
     resource = WorkloadResource(
