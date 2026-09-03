@@ -73,6 +73,15 @@ class ScientificBatchResultRepository(Protocol):
         self, operation_id: UUID, *, tenant_id: str, after_sequence: int = 0, limit: int = 1000
     ) -> list[BatchEvent]: ...
 
+    async def list_events_by_kind(
+        self,
+        operation_id: UUID,
+        *,
+        tenant_id: str,
+        kind: BatchEventKind,
+        limit: int = 2,
+    ) -> list[BatchEvent]: ...
+
 
 class ArtifactContentReader(Protocol):
     async def read(self, artifact_id: UUID, *, tenant_id: str, maximum_bytes: int) -> bytes: ...
@@ -438,6 +447,22 @@ class ArtifactServiceBridge:
             ],
         }
 
+    async def _terminal_event(self, state: ScientificBatchState) -> BatchEvent:
+        terminal_kind = {
+            BatchStatus.SUCCEEDED: BatchEventKind.BATCH_SUCCEEDED,
+            BatchStatus.FAILED: BatchEventKind.BATCH_FAILED,
+            BatchStatus.CANCELLED: BatchEventKind.BATCH_CANCELLED,
+        }[state.status]
+        terminal = await self.batches.list_events_by_kind(
+            state.operation_id,
+            tenant_id=state.tenant_id,
+            kind=terminal_kind,
+            limit=2,
+        )
+        if len(terminal) != 1:
+            raise ScientificProfileError("scientific batch terminal event is absent or ambiguous")
+        return terminal[0]
+
     async def publish_terminal(self, state: ScientificBatchState) -> None:
         """Idempotently publish the artifact-service-owned terminal result."""
 
@@ -449,15 +474,7 @@ class ArtifactServiceBridge:
         semantic = profile.value.get("semantic_validation")
         if not isinstance(identity, Mapping) or not isinstance(semantic, Mapping):
             raise ScientificProfileError("scientific profile terminal identity is invalid")
-        events = await self.batches.list_events(state.operation_id, tenant_id=state.tenant_id, limit=1000)
-        terminal_kind = {
-            BatchStatus.SUCCEEDED: BatchEventKind.BATCH_SUCCEEDED,
-            BatchStatus.FAILED: BatchEventKind.BATCH_FAILED,
-            BatchStatus.CANCELLED: BatchEventKind.BATCH_CANCELLED,
-        }[state.status]
-        terminal = [event for event in events if event.draft.kind is terminal_kind]
-        if len(terminal) != 1:
-            raise ScientificProfileError("scientific batch terminal event is absent or ambiguous")
+        terminal = await self._terminal_event(state)
         output_manifest_id: UUID | None = None
         validator_id = semantic.get("validator_id")
         validation_receipt: str | None = None
@@ -487,7 +504,7 @@ class ArtifactServiceBridge:
                 tenant_id=state.tenant_id,
                 terminal_status=cast(Any, state.status.value),
                 submitted_at=operation.accepted_at,
-                completed_at=terminal[0].occurred_at,
+                completed_at=terminal.occurred_at,
                 execution_identity={
                     "model_id": state.model_id,
                     "variant_id": state.variant_id,

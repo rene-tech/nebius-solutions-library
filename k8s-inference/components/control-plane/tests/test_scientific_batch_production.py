@@ -72,6 +72,9 @@ from fs2_serve.scientific_batch.models import (
     ArtifactAccessContext,
     ArtifactMaterialization,
     AttemptArtifactCommit,
+    BatchEvent,
+    BatchEventDraft,
+    BatchEventKind,
     BatchStatus,
     CheckpointMode,
     ExecutionMode,
@@ -850,6 +853,138 @@ async def test_submit_freezes_public_profile_and_never_enters_generic_worker(cip
     await controller.reconcile_once()
     assert cluster.apply_history[0].kind is WorkloadKind.JOB
     assert cluster.apply_history[0].scheduling == state.scheduling.stages[0]
+
+
+@pytest.mark.asyncio
+async def test_crash_after_operation_insert_recovers_frozen_admission_without_client_resubmission(
+    cipher,
+    hasher,
+) -> None:
+    class CrashAfterInsertStore(MemoryStore):
+        crashed = False
+
+        async def append_operation(self, **kwargs):
+            operation = await super().append_operation(**kwargs)
+            if not self.crashed:
+                self.crashed = True
+                raise RuntimeError("injected crash after Operation insert")
+            return operation
+
+    store = CrashAfterInsertStore(cipher, hasher)
+    identity = await principal(store)
+    repository = FakeScientificBatchRepository()
+    controller = ScientificBatchController(
+        repository=repository,
+        cluster=FakeScientificBatchCluster(),
+        controller_id="controller-a",
+        namespace="fs2-models",
+    )
+    pointer = {
+        "artifact_id": str(uuid4()),
+        "sha256": "1" * 64,
+        "size_bytes": 100,
+        "media_type": "application/json",
+    }
+
+    def make_service() -> ScientificBatchService:
+        return ScientificBatchService(
+            store=store,
+            repository=repository,  # type: ignore[arg-type]
+            controller=controller,
+            profiles=profile_catalog(),
+            scheduling=scheduling(),
+            artifacts=FakeArtifactAccess(pointer),
+            execution_binding=FakeExecutionBinding(),
+        )
+
+    request = {
+        "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "operation": "design",
+        "service_class": "customer-batch",
+        "input_manifest": pointer,
+        "parameters": {},
+    }
+    with pytest.raises(RuntimeError, match="injected crash after Operation insert"):
+        await make_service().submit(
+            principal=identity,
+            model_id="protein-design",
+            request=request,
+            idempotency_key="scientific-crash-recovery-0001",
+        )
+
+    operation_id = next(iter(store.operations))
+    pending = await store.get_scientific_admission(operation_id)
+    assert pending is not None
+    frozen = state_from_value(pending.payload)
+    assert frozen.operation_id == operation_id
+    assert frozen.input_manifest is not None
+    assert frozen.input_manifest.manifest_artifact_id == UUID(pointer["artifact_id"])
+    assert repository.records == {}
+
+    # A newly started worker uses only the committed outbox. The client does
+    # not repeat submit or provide the request again.
+    assert await make_service().recover_pending_admissions() == 1
+    assert repository.records[operation_id] == frozen
+    assert await store.get_scientific_admission(operation_id) is None
+    assert await store.claim_operation("generic-worker", lease_seconds=30) is None
+
+
+@pytest.mark.asyncio
+async def test_terminal_event_lookup_reaches_past_one_thousand_earlier_events() -> None:
+    repository = FakeScientificBatchRepository()
+    operation_id = uuid4()
+    batch_plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="design"),))
+    state = ScientificBatchState.admit(
+        operation_id=operation_id,
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        variant_id="protein-design-h100",
+        input_artifact_id=uuid4(),
+        plan=batch_plan,
+        scheduling=scheduling().freeze(
+            service_class="customer-batch",
+            model_id="protein-design",
+            tenant_id="tenant-a",
+            profile=profile_value(),
+            plan=batch_plan,
+            workload_namespace="fs2-models",
+        ),
+    )
+    state = replace(state, status=BatchStatus.FAILED, failure_code="injected_terminal_failure")
+    repository.records[operation_id] = state
+    repository.events[operation_id] = [
+        BatchEvent(
+            sequence=sequence,
+            occurred_at=datetime.now(UTC),
+            draft=BatchEventDraft.build(
+                operation_id=state.operation_id,
+                batch_id=state.batch_id,
+                workload_id=state.workload_id,
+                kind=BatchEventKind.RETRY_SCHEDULED,
+                code=f"earlier-{sequence}",
+            ),
+        )
+        for sequence in range(1, 1001)
+    ]
+    terminal = BatchEvent(
+        sequence=1001,
+        occurred_at=datetime.now(UTC),
+        draft=BatchEventDraft.build(
+            operation_id=state.operation_id,
+            batch_id=state.batch_id,
+            workload_id=state.workload_id,
+            kind=BatchEventKind.BATCH_FAILED,
+            code=state.failure_code,
+        ),
+    )
+    repository.events[operation_id].append(terminal)
+    first_page = await repository.list_events(operation_id, tenant_id="tenant-a", limit=1000)
+    assert len(first_page) == 1000
+    assert all(event.draft.kind is not BatchEventKind.BATCH_FAILED for event in first_page)
+
+    bridge = ArtifactServiceBridge.__new__(ArtifactServiceBridge)
+    bridge.batches = repository
+    assert await bridge._terminal_event(state) == terminal
 
 
 @pytest.mark.asyncio

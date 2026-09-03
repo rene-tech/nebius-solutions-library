@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Protocol
 
 from .controller import ScientificBatchController
 
 LOGGER = logging.getLogger(__name__)
+
+
+class ScientificAdmissionRecovery(Protocol):
+    async def recover_pending_admissions(self, *, limit: int = 100) -> int: ...
 
 
 class ScientificBatchWorker:
@@ -17,12 +22,14 @@ class ScientificBatchWorker:
         *,
         workers: int = 1,
         poll_seconds: float = 0.25,
+        admission_recovery: ScientificAdmissionRecovery | None = None,
     ) -> None:
         if not 1 <= workers <= 32 or not 0.05 <= poll_seconds <= 60:
             raise ValueError("scientific worker concurrency or poll interval is outside the bound")
         self.controller = controller
         self.workers = workers
         self.poll_seconds = poll_seconds
+        self.admission_recovery = admission_recovery
         self._tasks: list[asyncio.Task[None]] = []
         self._closing = asyncio.Event()
         self._failures: list[int] = []
@@ -39,6 +46,8 @@ class ScientificBatchWorker:
     async def _run(self, index: int) -> None:
         while not self._closing.is_set():
             try:
+                if self.admission_recovery is not None:
+                    await self.admission_recovery.recover_pending_admissions()
                 await self.controller.reconcile_once()
                 self._failures[index] = 0
             except asyncio.CancelledError:

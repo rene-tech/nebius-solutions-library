@@ -249,6 +249,14 @@ class AdmissionRequest(StrictModel):
     deadline_at: AwareDatetime | None = None
 
 
+class PendingScientificAdmission(StrictModel):
+    """One complete frozen batch admission committed with its Operation."""
+
+    operation_id: UUID
+    payload: dict[str, Any]
+    created_at: AwareDatetime
+
+
 class RuntimeIdentity(StrictModel):
     pod_uid: str | None = Field(default=None, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$")
     node_uid: str | None = Field(default=None, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$")

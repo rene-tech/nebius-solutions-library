@@ -405,6 +405,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             scientific_controller,
             workers=settings.scientific_batch_workers,
             poll_seconds=settings.scientific_batch_poll_seconds,
+            admission_recovery=scientific_batches,
         )
         scientific_input_uploads = ScientificInputUploadService(store=store, artifacts=artifact_service)
     # Canonical catalog metadata remains observable when promotion deliberately

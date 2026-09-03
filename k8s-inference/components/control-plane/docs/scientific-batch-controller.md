@@ -49,6 +49,19 @@ idempotent replay may return the existing batch only when tenant, internal
 plan, and snapshot are byte-for-byte equivalent. A later policy or capacity
 change never changes an admitted batch.
 
+Migration `0020_scientific_atomic_admission.sql` closes the Operation-to-batch
+crash window. The API computes the complete initial `ScientificBatchState`
+only after PostgreSQL has assigned the Operation ID and authoritative
+`accepted_at`, then inserts that state into `fs2_scientific_admission_outbox`
+inside the same transaction as `fs2_operations`. The API normally materializes
+the outbox immediately. Every supervised batch worker also drains pending rows
+before claiming runnable batches, so a process exit after the transaction
+commits needs neither a client resubmission nor a regenerated policy decision.
+Materialization is idempotent: it verifies the outbox against its parent
+Operation, creates or compares the immutable batch admission, and deletes the
+outbox row only after the batch row is durable. A crash before that deletion
+simply repeats the same comparison.
+
 The scheduling types are an internal frozen consumption model, not a competing
 Kueue policy authority. Integration must project the reviewed Kueue scheduling
 contract into these fields; this controller does not choose queues, priorities,
@@ -244,6 +257,12 @@ an unrelated later poll. Each step is still its own fenced compare-and-swap, so
 a controller that dies mid-cascade resumes from what was committed; a cascade
 that a slow cluster leaves unfinished is picked up by the next poll rather than
 holding the lease.
+
+Terminal result publication queries the ledger by the exact expected terminal
+kind and reads at most two matches. It therefore detects both absence and
+ambiguity without depending on the public 1,000-event page size. The supporting
+`(operation_id, kind, sequence)` index keeps publication bounded even when a
+large fan-out has emitted thousands of earlier lifecycle events.
 
 ## Legacy state rows
 
