@@ -1,0 +1,193 @@
+{
+  "schema": "fs2.nebius.ai/rfdiffusion-runtime-image-lock/v1",
+  "model_id": "rfdiffusion",
+  "owner_task": "fs2-rfdiffusion-final-image-h100-successor-r20260903",
+  "publication_policy": "explicit-non-overwriting-provenance-attested-tags",
+  "source": {
+    "repository": "https://github.com/RosettaCommons/RFdiffusion",
+    "revision": "9273ef67335acaf91df0150473a274759229cdf6",
+    "tag": "v1.1.0",
+    "revision_label": "stable release tag v1.1.0, committed 2023-04-03. Resolved from the GitHub tags API, not inherited from a prior lock.",
+    "observed_head_revision": "86507b6538f51fce57b5a72477165f03999ed7ae",
+    "observed_head_note": "Upstream main at retrieval, a 2026-07-15 CI fix. It is not a release, and the superseded main-branch runtime at models/structure/runtime/rfdiffusion pinned it instead of the tag. This runtime pins the tag the ticket requires.",
+    "archive_url": "https://github.com/RosettaCommons/RFdiffusion/archive/9273ef67335acaf91df0150473a274759229cdf6.tar.gz",
+    "archive_sha256": "b8a29d4d5bd7b60eba40d49da4dbb324685eb409bdbdc7d088c187514ef3f7b9",
+    "archive_bytes": 8107250,
+    "license": "BSD-3-Clause",
+    "license_state": "verified",
+    "license_covers_weights": true,
+    "build_commit": null,
+    "attestation_vcs_revision": null
+  },
+  "image": {
+    "id": "rfdiffusion",
+    "platform": "linux/amd64",
+    "registry": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models",
+    "repository": "rfdiffusion",
+    "tag_suffix": "-cuda121-r8",
+    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion:9273ef67335acaf91df0150473a274759229cdf6-cuda121-r8",
+    "dockerfile": "Dockerfile",
+    "build_context": ".",
+    "python": "3.10.14",
+    "base": {
+      "runtime": "pytorch/pytorch@sha256:0279f7aa29974bf64e61d0ff6e979b41a249b3662a46e30778dbf80b8c99c361",
+      "runtime_label": "pytorch/pytorch 2.3.0-cuda12.1-cudnn8-devel, linux/amd64",
+      "tag_drift_note": "The 2.3.0-cuda12.1-cudnn8-devel tag now resolves to sha256:1bb28822b361bdb2d8cde5a58f08337490bf6e73fc96b0aa1035268c295f3d00. The digest above is pinned deliberately and is what this runtime was qualified against; the drift is why the tag is never used as a build input."
+    },
+    "dgl_wheel": {
+      "url": "https://data.dgl.ai/wheels/torch-2.3/cu121/dgl-2.3.0%2Bcu121-cp310-cp310-manylinux1_x86_64.whl",
+      "version": "2.3.0+cu121",
+      "sha256": "0423c4e819482077aee0c8c70dec2bfc160ada86ea473313d03bf61045d6ae17",
+      "bytes": 309277501
+    },
+    "runtime_inputs": {
+      "Dockerfile": "5fd7f054889233fa21f66dea0d2b61d84f07c08d4b841f65a43a39b3b9ced0ac",
+      "requirements.lock": "11c21670e7d55838dda6eb41ed18deb325e8f996938cf8b03959ecda10307ff6",
+      "runtime_entrypoint.py": "170192e379ca1d7f05c58b0276147fa37a9098ac67132a7514ee4272fb81d83f",
+      "fetch_verified.py": "a13a92f56907bf8d6f3b2301f2aea420a3a82c1a7eacaab5a0b4a40ce7a0ee96"
+    },
+    "runtime_input_policy": "Every file that enters the image is sha256-pinned here and re-verified by build_rfdiffusion.py before the build starts, so the published layers can be tied back to the checked-in runtime.",
+    "accelerator_runtime": {
+      "framework": "pytorch",
+      "framework_version": "2.3.0",
+      "cuda_abi": "12.1",
+      "dgl_version": "2.3.0+cu121",
+      "architecture_policy": "GPU-family agnostic. No kernel is compiled for an architecture, no TORCH_CUDA_ARCH_LIST is pinned, and nothing admits or rejects on a device name. torch and the prebuilt DGL wheel discover whatever CUDA device is present. H100 is the current validation target, not a build or admission input."
+    },
+    "published_digest": null,
+    "published_reference": null,
+    "attestation_predicate_types": null,
+    "supersedes": [
+      {
+        "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r7",
+        "digest": "sha256:df6cb154363036ca5f1c424fd3d94fe0ea045e369e92d41c263dc5bbdabb4445",
+        "deployable": false,
+        "reason": "Published 2026-09-03T04:07Z by the mixed BindCraft/RFdiffusion branch as an explicit H100 candidate. Its SLSA provenance records no VCS revision at all, only local build contexts, so the image cannot be tied to any source commit. It also carries no H100 semantic evidence: the branch's semantic-validation, post-roll and scan records all still name r6."
+      },
+      {
+        "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r6",
+        "digest": "sha256:e502a3267793bb19d1d1ff22b2210c65d05247b24e5460cfc5ef49d9a75750d7",
+        "deployable": false,
+        "reason": "The only prior generation with a real H100 diffusion run (76-residue backbone, 50 steps). Still refused as a source of truth: its OCI adapter label names commit 3475ce0ee8efdf2d3ccbcc65651ab11fe7cb34fe, which is a dangling object reachable from no branch or remote ref, so the identity it asserts cannot be resolved by anyone checking it out."
+      },
+      {
+        "tag": null,
+        "digest": "sha256:56a5ed22e39f41284658c1a5840cb0286cba419f22cd7f4c2f7905ea5f803396",
+        "deployable": false,
+        "reason": "Pre-r6 predecessor recorded only in the superseded chain of the mixed branch's lock. No tag, no evidence and no reachable source is recorded for it anywhere in the repository."
+      }
+    ]
+  },
+  "adapter": {
+    "adapter_id": "rfdiffusion-v1-1-0-base-v1",
+    "entrypoint": "runtime_entrypoint.py",
+    "container_path": "/opt/fs2/runtime_entrypoint.py",
+    "parameters_schema": "fs2-serve.nebius.ai/rfdiffusion-parameters/v1",
+    "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+    "operations": [
+      "design-backbone",
+      "scaffold-motif"
+    ],
+    "argv_contract": [
+      "python /opt/fs2/runtime_entrypoint.py run --request <request.json> --input-manifest <input-manifest.json> --output <dir> [--artifact-root <dir>] [--checkpoint-artifact-id <id>] [--cache-level <level>] [--timeout-seconds <int>]",
+      "python /opt/fs2/runtime_entrypoint.py probe [--upstream-home <dir>] [--allow-cpu]"
+    ],
+    "shell_free": true,
+    "required_environment": {
+      "FS2_ARTIFACT_ROOT": "root of the mounted artifact plane; defaults to /opt/fs2/artifacts",
+      "FS2_RFDIFFUSION_HOME": "upstream tree; defaults to /opt/rfdiffusion"
+    },
+    "bounds": {
+      "max_contig_groups": 4,
+      "max_segments_per_group": 32,
+      "max_total_residues": 512,
+      "max_num_designs": 64,
+      "max_seed": 1000000,
+      "diffuser_T_range": [
+        1,
+        200
+      ],
+      "max_hotspot_residues": 64
+    },
+    "seed_contract": {
+      "upstream_lever": "inference.design_startnum with inference.deterministic=True",
+      "detail": "RFdiffusion v1.1.0 has no inference.seed. run_inference.py calls make_deterministic(i_des) per design, so the per-design seed is the design index. The adapter maps its seed onto design_startnum and records the design index that seeded each design, rather than reporting a seed it did not control.",
+      "verified_by": "tests/test_rfdiffusion_runtime.py::SeedContractTests"
+    },
+    "artifact_markers": {
+      "required_per_design": [
+        "<prefix>_<index>.pdb",
+        "<prefix>_<index>.trb"
+      ],
+      "optional_per_design": [
+        "traj/<prefix>_<index>_Xt-1_traj.pdb",
+        "traj/<prefix>_<index>_pX0_traj.pdb"
+      ],
+      "cuda_evidence": "the .trb run metadata carries torch.cuda.get_device_name(); a recorded device of CPU is a failed run, not a degraded one"
+    }
+  },
+  "weight_policy": {
+    "embedded": false,
+    "external_root": "/opt/fs2/artifacts",
+    "detail": "The image carries no model weights. The upstream v1.1.0 archive ships none either, so nothing has to be deleted; the checkpoint is mounted from the artifact plane and verified by sha256 at run time."
+  },
+  "external_artifacts": [
+    {
+      "id": "rfdiffusion-base-checkpoint",
+      "artifact_id": "artifact.rfdiffusion.base-ckpt",
+      "file": "Base_ckpt.pt",
+      "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+      "bytes": 483616107,
+      "source": "https://files.ipd.uw.edu/pub/RFdiffusion/6f5902ac237024bdd0c176cb93063dc4/Base_ckpt.pt",
+      "catalog_artifact": "rfdiffusion-checkpoints",
+      "catalog_manifest_content_digest": "a6f25ea4df457270825f01fd0477bf2b9dcc17f817b59ab06ad9d640de8e1540",
+      "baked_into_image": false,
+      "note": "ActiveSite_ckpt.pt has the identical byte size, so this artifact is always matched on sha256 and never on size."
+    }
+  ],
+  "artifact_delivery": {
+    "state": "transitional-task-scoped",
+    "canonical_plane": "unavailable",
+    "detail": "The canonical regional artifact plane (model-artifacts/) and the scientific-localization generations plane are both still on sibling branches and publish no RFdiffusion root on main. Qualification therefore reads an explicitly transitional copy on the shared qualification claim. The copy is evidence, not artifact delivery: the runtime resolves the checkpoint by sha256, so it binds to the canonical plane unchanged once that plane publishes.",
+    "transitional_claim": "fs2-runtime-qualification-artifacts-r20260902",
+    "generation": {
+      "artifact_id": "rfdiffusion-base-checkpoint",
+      "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+      "generation": "5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab",
+      "sub_path": "rfdiffusion/generations/rfdiffusion-base-checkpoint/sha256/5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab",
+      "marker": ".fs2-runtime-tree.json",
+      "marker_sha256": "e4f89f03b140d2e3a66c77926bb3e1bd7fb320cfeaeaadc3261a050995e2078a",
+      "staged_by": "qualification/stage_checkpoint.py",
+      "note": "The generation digest and marker follow the localization plane's published algorithm and marker schema so the tree is portable to it without restaging."
+    }
+  },
+  "mount_contract": {
+    "canonical_consumer_path": "/models/rfdiffusion-checkpoints",
+    "qualification_mount": "/opt/fs2/artifacts",
+    "conflict": "The artifact catalog's consumer layout binds rfdiffusion-checkpoints at /models/rfdiffusion-checkpoints, while the superseded r6/r7 images hard-coded FS2_ARTIFACT_ROOT=/models/rfdiffusion. This runtime resolves the conflict by not hard-coding either: the checkpoint is located through the input manifest's relative path under --artifact-root, so the same image works at any mount point the plane chooses."
+  },
+  "qualification": {
+    "state": "pending-live-h100-run",
+    "evidence": [],
+    "route_exposed": false,
+    "scope": "one bounded unconditional monomer design plus one motif-scaffolding design; no throughput, snapshot, elasticity or contention measurement"
+  },
+  "upstream_contract_defects": [
+    {
+      "id": "no-inference-seed-in-v1-1-0",
+      "severity": "contract-shaping",
+      "location": "upstream 9273ef67 scripts/run_inference.py",
+      "observed": "config/inference/base.yaml declares no inference.seed key, and make_deterministic(i_des) is called with the design index",
+      "impact": "any adapter that emits inference.seed=<n> is emitting an override Hydra will reject or silently ignore, and the seed it reports is not the seed that ran",
+      "resolution": "the adapter maps seed onto inference.design_startnum with inference.deterministic=True and reports the design index as the seed, which is what actually seeded the design"
+    },
+    {
+      "id": "cautious-mode-silently-skips-existing-designs",
+      "severity": "correctness",
+      "location": "upstream 9273ef67 scripts/run_inference.py, inference.cautious defaults to True",
+      "observed": "a design whose .pdb already exists is skipped with a log line and no error",
+      "impact": "a re-run over a dirty output directory can exit 0 having produced nothing, and a stale file would be verified as if it were fresh",
+      "resolution": "the adapter refuses to start unless the output directory is empty"
+    }
+  ]
+}

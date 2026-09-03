@@ -1,0 +1,170 @@
+# RFdiffusion scientific runtime
+
+A source-attested, digest-pinned RFdiffusion v1.1.0 runtime for the shared H100
+cluster, with a production adapter contract and real H100 semantic evidence.
+
+This is an independent successor. It starts from `main` and inherits no image, no
+lock and no evidence from the mixed BindCraft/RFdiffusion branch. Where that work
+was technically sound the same conclusions were re-derived here from primary
+sources; where it was not, the reasons are recorded in `image-lock.json` under
+`image.supersedes`.
+
+## Identity
+
+| What | Value |
+| --- | --- |
+| Upstream | `RosettaCommons/RFdiffusion` tag **v1.1.0** = `9273ef67335acaf91df0150473a274759229cdf6` |
+| Source archive | `sha256:b8a29d4d5bd7b60eba40d49da4dbb324685eb409bdbdc7d088c187514ef3f7b9`, 8,107,250 bytes |
+| Base image | `pytorch/pytorch@sha256:0279f7aa…` — PyTorch 2.3.0, CUDA 12.1, Python 3.10.14, linux/amd64 |
+| DGL | `2.3.0+cu121`, wheel `sha256:0423c4e8…` |
+| Checkpoint | `Base_ckpt.pt`, `sha256:0fcf7d7c…`, 483,616,107 bytes, BSD-3-Clause |
+| Registry | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion` |
+| Tag | `9273ef67…-cuda121-r8` |
+
+`v1.1.0` was resolved from the GitHub tags API rather than copied forward. The
+superseded runtime at `models/structure/runtime/rfdiffusion` pins `86507b65`, which
+is upstream main as of 2026-07-15 and not a release at all.
+
+`ActiveSite_ckpt.pt` is byte-for-byte the same *size* as `Base_ckpt.pt`. The
+checkpoint is therefore always matched on sha256 and never on size.
+
+## Why r8 and not r6 or r7
+
+Both prior images are refused as a basis, for provenance rather than for behaviour:
+
+- **r7** (`sha256:df6cb154…`) is the newest and the weakest. Its SLSA provenance
+  records no VCS revision at all — only local build contexts — so nothing ties the
+  image to a source commit. It also carries no H100 semantic evidence; the branch's
+  semantic-validation, post-roll and scan records all still name r6.
+- **r6** (`sha256:e502a326…`) is the only prior image with a real diffusion run. It
+  is still refused as a source of truth because its OCI adapter label names commit
+  `3475ce0e…`, which is a dangling object reachable from no branch or remote ref.
+  An identity nobody can check out is not provenance.
+
+`build_rfdiffusion.py` makes both failures structurally impossible: it refuses a
+dirty tree, and after pushing it reads the SLSA provenance back out of the registry
+and fails unless the recorded VCS revision equals the commit the build ran from.
+
+## Layout
+
+```
+Dockerfile                          digest-pinned, weights-free, non-root
+requirements.lock                   hash-pinned additions, installed --require-hashes
+fetch_verified.py                   sha256-verified build-time downloader
+runtime_entrypoint.py               the production adapter
+build_rfdiffusion.py                build, publish, verify attestations
+image-lock.json                     the immutable identity and the superseded chain
+qualification/stage_checkpoint.py   stage the checkpoint as a content-addressed generation
+qualification/render_job.py         render the semantic Job for a published digest
+qualification/validate_result.py    independent acceptance gate over an exported run
+evidence/                           live H100 receipts
+tests/                              offline contract tests
+run_checks.sh                       every offline check
+```
+
+## The adapter contract
+
+```
+python /opt/fs2/runtime_entrypoint.py run \
+  --request <request.json> --input-manifest <input-manifest.json> \
+  --output <dir> [--artifact-root <dir>] [--checkpoint-artifact-id <id>] \
+  [--cache-level <level>] [--timeout-seconds <int>]
+
+python /opt/fs2/runtime_entrypoint.py probe [--allow-cpu]
+```
+
+Parameters are `fs2-serve.nebius.ai/rfdiffusion-parameters/v1`; the result envelope
+is `fs2-serve.nebius.ai/scientific-run-result/v1`. Operations are `design-backbone`
+and `scaffold-motif`.
+
+The order is: bound the request, resolve and verify the checkpoint, run upstream as
+a shell-free argv vector, verify the artifact markers, and only then report success.
+Success is never inferred from an exit code.
+
+### Bounded contigs
+
+A contig is `/`-separated. Each segment is a diffused span `N-M`, a motif span
+`<chain><start>-<end>`, or `0` for a chain break. Nothing else parses. This is not
+cosmetic: the contig list is concatenated into the Hydra override
+`contigmap.contigs=[...]`, so the grammar is the only thing between a caller and
+arbitrary upstream configuration. `ContigInjectionTests` covers fifteen escape
+attempts, including `76-76] inference.deterministic=False [`.
+
+Ceilings: 4 contig groups, 32 segments each, 512 residues total, 64 designs,
+`diffuser_T` in 1..200, 64 hotspots.
+
+### Deterministic seed
+
+RFdiffusion v1.1.0 **has no `inference.seed`**. `run_inference.py` calls
+`make_deterministic(i_des)` once per design, so the per-design seed is the design
+index. A seed therefore maps onto `inference.design_startnum` with
+`inference.deterministic=True`, and the envelope reports the design index that
+actually seeded each design. Emitting `inference.seed=<n>` — as the superseded
+wrapper did — sets a key Hydra does not have.
+
+### Artifact markers
+
+Per design, upstream must have written `<prefix>_<i>.pdb` and `<prefix>_<i>.trb`;
+trajectories are optional and recorded when present. The `.trb` is upstream's own
+run metadata and carries `torch.cuda.get_device_name()`, which is what proves the
+diffusion ran on a GPU. A recorded device of `CPU` is a **failed** run, not a
+degraded one.
+
+`inference.cautious` defaults to `True` upstream, which silently skips a design whose
+`.pdb` already exists. The adapter refuses to start unless the output directory is
+empty, so a stale file can never be verified as a fresh design.
+
+## GPU-family agnostic
+
+Nothing compiles for an architecture, no `TORCH_CUDA_ARCH_LIST` is pinned, and no
+code admits or rejects on a device name — torch and the prebuilt DGL wheel discover
+whatever CUDA device is present. `render_job.py` selects hardware through one
+parameterised label, `accelerator.fs2.nebius/class`, with no pool id and no
+capacity-source pin. H100 is the default value of `--accelerator-class`, not a
+requirement of the runtime.
+
+## Weights and the artifact plane
+
+The image carries no model weights. The upstream v1.1.0 archive ships none either,
+so nothing has to be deleted after extraction.
+
+The checkpoint is mounted from the artifact plane and located through the input
+manifest's *relative* path under `--artifact-root`. That is how the mount-path
+conflict is resolved rather than papered over: the artifact catalog binds
+`rfdiffusion-checkpoints` at `/models/rfdiffusion-checkpoints`, while the superseded
+images hard-coded `FS2_ARTIFACT_ROOT=/models/rfdiffusion`. This image hard-codes
+neither and works at whatever mount point the plane chooses.
+
+`qualification/stage_checkpoint.py` promotes the checkpoint into
+
+```
+<root>/generations/rfdiffusion-base-checkpoint/sha256/<generation>/
+```
+
+using the `fs2-flat-tree-inventory/v1` digest and the localization plane's
+`.fs2-runtime-tree.json` marker schema, so the tree moves to that plane without
+restaging. Promotion is atomic and never overwrites an existing generation.
+
+Artifact delivery is `transitional-task-scoped`: neither the regional artifact plane
+nor the generations plane is on `main` yet, so qualification reads a task-owned copy
+on the shared qualification claim. Because the runtime resolves the checkpoint by
+sha256, it binds to the canonical plane unchanged once that plane publishes.
+
+## Cache level
+
+The envelope records a submitter-declared cache level from
+`cold-registry-pull`, `image-local`, `artifact-local`, `image-and-artifact-local`,
+`warm-process`, and always states `gpu_snapshot_used: false`. These are image and
+filesystem cache levels. This runtime uses no GPU memory snapshot and no CRIU
+restore, and nothing here is described as one.
+
+## Checks
+
+```bash
+./run_checks.sh                                   # offline: compile, lock, 49 contract tests
+python3 build_rfdiffusion.py --check              # lock and runtime inputs agree
+python3 build_rfdiffusion.py --no-push            # build locally, no attestations
+python3 build_rfdiffusion.py --record             # publish and record the digest
+```
+
+Live evidence is in `evidence/`.

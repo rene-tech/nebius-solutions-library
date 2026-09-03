@@ -1,0 +1,13 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "design-backbone",
+  "service_class": "customer-batch",
+  "parameters": {
+    "schema": "fs2-serve.nebius.ai/rfdiffusion-parameters/v1",
+    "operation": "design-backbone",
+    "contigs": ["76-76"],
+    "num_designs": 1,
+    "seed": 8100,
+    "diffuser_T": 50
+  }
+}
