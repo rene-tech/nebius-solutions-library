@@ -293,6 +293,23 @@
         ],
         "why_some_survived": "The recursive chown moved every tree to group 10001, but only the two gated trees were mode 2770. The localization trees kept their world-traverse and world-read bits at 2775, so a pod outside the new group can still reach them. The damage tracks the mode the tree already had, not what it holds.",
         "not_a_full_outage": "Work that depends only on the public localization trees is not blocked. Only the two licensed trees are."
+      },
+      "repair_scope": {
+        "verified_by": "this task, by API query only; no additional pod was created",
+        "raised_by": "the BindCraft scientific-batch-adapter task",
+        "observed_at": "2026-09-03T04:58:00Z",
+        "damage_is_historical": true,
+        "live_pods_that_both_set_fsgroup_and_mount_the_claim": [],
+        "detail": "The two pods that caused the rewrite, fs2-cxq-p-fsg and fs2-cxq-perm2, no longer exist. Seven other fs2-cxq-* pods in the namespace do set fsGroup 10001, but none of them mounts this claim, and all seven are in terminal phases. The only pod that mounts the claim, fs2-complexa-af2-loader-canonical-20260903-x75dl, sets no fsGroup and has completed.",
+        "consequence": "A repair would hold. This is a one-time ownership and mode restoration, not a recurring fight, so it can be done safely as soon as an owner picks it up.",
+        "residual_risk": "The fs2-cxq-* family sets fsGroup 10001 as a habit. If any future pod in that family mounts this claim, the rewrite recurs. That argues for a guard on the claim, such as an admission rule rejecting an fsGroup on it, rather than a one-time chown alone.",
+        "recommended_repair": [
+          "restore group 65532 and mode 0440 on the licensed objects, and 0550 on the two gated directories",
+          "keep consumers on supplementalGroups 65532 with no fsGroup, which is what the parameter binding contract already requires",
+          "where an fsGroup is genuinely needed on any large shared claim, set fsGroupChangePolicy OnRootMismatch to bound both the startup cost and the blast radius",
+          "consider an admission guard so a pod carrying an fsGroup cannot mount this claim at all"
+        ],
+        "asked_for_by": "three tasks independently: this AlphaFold 3 runtime, the fast-start live campaign, and the BindCraft scientific-batch adapter"
       }
     },
     {
