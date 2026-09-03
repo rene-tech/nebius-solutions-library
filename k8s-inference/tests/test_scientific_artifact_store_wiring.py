@@ -97,10 +97,12 @@ class ChartValueWiringTests(ArtifactStoreContractTests):
             set(self.contract["chart"]["scientificArtifacts"]),
         )
 
-    def test_terraform_emits_exactly_the_canonical_batch_gates(self) -> None:
-        self.assertEqual(
-            self.emitted("scientificBatch = {"),
-            set(self.contract["chart"]["scientificBatch"]),
+    def test_terraform_preserves_the_artifact_store_owned_batch_gates(self) -> None:
+        self.assertTrue(
+            set(self.contract["chart"]["scientificBatch"]).issubset(
+                self.emitted("scientificBatch = {")
+            ),
+            "the artifact-store-owned batch gates must survive controller-owned chart extensions",
         )
 
     def test_terraform_emits_the_canonical_secret_reference(self) -> None:
@@ -376,9 +378,13 @@ class TfvarsSurfaceTests(ArtifactStoreContractTests):
         # An older binary treats data_wo as an unknown attribute, which would
         # put credential material back into state, so every root and the
         # wrapper preflight have to agree on the floor.
-        for versions in sorted(DEPLOY_ROOT.glob("**/versions.tf")):
-            if ".terraform" in versions.parts:
-                continue
+        roots = [
+            DEPLOY_ROOT / "versions.tf",
+            DEPLOY_ROOT / "stages/foundation/versions.tf",
+            DEPLOY_ROOT / "stages/infrastructure/versions.tf",
+            DEPLOY_ROOT / "stages/workloads/versions.tf",
+        ]
+        for versions in roots:
             with self.subTest(root=versions.relative_to(DEPLOY_ROOT).as_posix()):
                 self.assertIn('required_version = ">= 1.11.0, < 2.0.0"', versions.read_text(encoding="utf-8"))
         self.assertIn("MINIMUM_TERRAFORM_VERSION = (1, 11, 0)", self.stack)

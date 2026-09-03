@@ -2058,25 +2058,33 @@ class DeploymentContractTests(unittest.TestCase):
         control_plane_source = (
             DEPLOY_ROOT / "stages/workloads/control_plane.tf"
         ).read_text(encoding="utf-8")
+        scientific_source = (
+            DEPLOY_ROOT / "stages/workloads/scientific_artifacts.tf"
+        ).read_text(encoding="utf-8")
+        queue_source = (DEPLOY_ROOT / "stages/workloads/queue.tf").read_text(encoding="utf-8")
+        consumer_source = "\n".join((control_plane_source, scientific_source, queue_source))
         execution_map_template = (
             DEPLOY_ROOT
             / "charts/control-plane/fs2-serve-control-plane/templates/scientific-execution-map.yaml"
         ).read_text(encoding="utf-8")
 
         for expression in (
-            "module.kueue_scheduling.contract.scientific_workload_namespace",
-            "kubernetes_config_map_v1.scientific_scheduling_contract.metadata[0].name",
+            "local.scheduling_contract_ref.config_map_name",
+            "local.scheduling_contract_ref.namespace",
+            "local.scheduling_contract_ref.key",
+            "local.scheduling_contract_ref.schema",
+            "local.scheduling_contract_ref.sha256",
             "var.scientific_batch.execution_map",
             "scientificArtifacts = {",
-            "credentials_secret_name",
+            'scientific_artifacts_secret_name = "fs2-serve-artifact-store"',
             "artifactStoreCidrs",
         ):
             with self.subTest(expression=expression):
-                self.assertIn(expression, control_plane_source)
+                self.assertIn(expression, consumer_source)
         self.assertIn('.Values.scientificBatch.executionMap.schema', execution_map_template)
         self.assertIn('resource-owner: helm/fs2-serve-control-plane', execution_map_template)
         self.assertIn('immutable: true', execution_map_template)
-        self.assertNotIn('resource "kubernetes_config_map_v1" "scientific_execution', control_plane_source)
+        self.assertNotIn('resource "kubernetes_config_map_v1" "scientific_execution', consumer_source)
 
     def test_h100_cosmos_and_qwen_open_the_exact_distinct_runtime_ports(self) -> None:
         inventory = json.loads(

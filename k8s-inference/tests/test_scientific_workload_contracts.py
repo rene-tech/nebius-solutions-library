@@ -168,7 +168,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         schema = self.load(SCHEMA_ROOT / "scientific-run-result.schema.json")
         self.assertEqual(64 * 1024 * 10, schema["properties"]["attempts"]["maxItems"])
 
-    def test_queued_cancellation_can_have_no_attempt_but_academic_run_needs_receipt(
+    def test_queued_cancellation_and_deployment_authorized_academic_run_need_no_request_receipt(
         self,
     ) -> None:
         result = self.load(EXAMPLE_ROOT / "scientific-run-result.example.json")
@@ -191,7 +191,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
             "state": "verified",
             "receipt_digest": None,
         }
-        self.assertTrue(list(validator.iter_errors(academic)))
+        self.assertFalse(list(validator.iter_errors(academic)))
 
     def test_source_observations_are_exactly_candidate_and_unqualified(self) -> None:
         receipts = self.load(

@@ -463,7 +463,9 @@ academic_assets = {
   # run in the namespace above rather than the default model namespace, with their
   # queue and permissions provisioned there.
   execution = {
-    enabled         = true
+    # A fresh example has no verified licensed payload or deployment readiness
+    # receipt. Enable only after staging publishes readiness_manifest_sha256.
+    enabled         = false
     local_queue     = "academic-scientific"
     cluster_queue   = "inference-accelerators"
     service_account            = "fs2-academic-runner"

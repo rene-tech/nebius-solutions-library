@@ -11,7 +11,7 @@ from types import MappingProxyType
 from uuid import UUID, uuid4
 
 import pytest
-from conftest import CATALOG_ROOT
+from conftest import CATALOG_ROOT, SOLUTION_ROOT
 from scientific_batch_fakes import FakeScientificBatchCluster, FakeScientificBatchRepository
 
 from fs2_serve.crypto import KeyedHasher
@@ -1891,7 +1891,7 @@ def test_companion_verifies_reference_plane_and_materializes_exact_terminal_rece
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture_root = Path("models/cancer-immunotherapy/images/alphafold3/fixtures")
+    fixture_root = SOLUTION_ROOT / "models/cancer-immunotherapy/images/alphafold3/fixtures"
     receipt = json.loads((fixture_root / "reference-terminal-receipt.json").read_bytes())
     manifest = json.loads((fixture_root / "reference-published-manifest.json").read_bytes())
     receipt_bytes = json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
