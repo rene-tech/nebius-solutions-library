@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type {
   ModelDeploymentAdoptionMode,
   ModelDeploymentCacheTier,
+  ModelDeploymentFastStartMechanism,
   ModelDeploymentConfigurationOption,
   ModelDeploymentDesiredState,
   ModelDeploymentFastStartFallbackPolicy,
@@ -247,6 +248,7 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
           <summary>Operator mechanism details</summary>
           <p>These implementation controls remain visible for diagnosis and backwards compatibility. A cache or snapshot setting alone does not prove a fast-start level.</p>
           <div className="model-deployment-form-grid">
+            <SelectField<ModelDeploymentFastStartMechanism | ""> disabled={presetLocked} label="Cold-start mechanism" onChange={(value) => update((next) => { next.cache.mechanism = value === "" ? null : value; })} value={spec.cache.mechanism ?? ""} values={["", "conventional", "regional-cache", "host-memory-residency", "gpu-resident"]} />
             <SelectField<ModelDeploymentCacheTier> disabled={presetLocked} label="Cache tier" onChange={(value) => update((next) => { next.cache.tier = value; })} value={spec.cache.tier} values={["Disabled", "ObjectStore", "SharedFilesystem", "NodeLocal"]} />
             <SelectField<ModelDeploymentSnapshotPreference> disabled={presetLocked} label="Snapshot preference" onChange={(value) => update((next) => { next.cache.snapshotPreference = value; next.cache.snapshotRef = value === "Never" ? null : next.cache.snapshotRef ?? { name: "", digest: "", strategy: "Weights" }; })} value={spec.cache.snapshotPreference} values={["Never", "Prefer", "Require"]} />
             <TextField disabled={presetLocked || !spec.cache.snapshotRef} label="Snapshot name" onChange={(value) => update((next) => { if (next.cache.snapshotRef) next.cache.snapshotRef.name = value; })} placeholder={spec.cache.snapshotRef ? "Qualified snapshot" : "Not used"} value={spec.cache.snapshotRef?.name ?? ""} />
