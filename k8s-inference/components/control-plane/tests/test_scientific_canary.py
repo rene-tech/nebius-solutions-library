@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-import pytest
 from pathlib import Path
 
+import pytest
 from conftest import CATALOG_ROOT
 
 from fs2_serve.scientific_batch.canary import CANARY_ID, run_internal_cpu_canary
