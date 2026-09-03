@@ -220,7 +220,7 @@
       "interface": {
         "wrapper_path": "/opt/fs2/bin/freebindcraft-batch",
         "wrapper_sha256": "badbefc649d9cb785be99eaf5cbcaed3efd74a9e3d308fa0f3620172cd06f14d",
-        "runtime_runner_path": "/opt/fs2/runtime/freebindcraft_runtime_entrypoint.py",
+        "runtime_runner_path": "/opt/fs2/freebindcraft/runtime_entrypoint.py",
         "runtime_runner_sha256": "f2f8fac74219b26df5813513889e3c5e027d89344ce660b2639bb82c5dcacaa3",
         "operations": [
           "run-trajectory",

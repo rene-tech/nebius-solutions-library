@@ -294,6 +294,10 @@ class ImageLockTests(unittest.TestCase):
         fallback = runs["freebindcraft-open-fallback"]
         self.assertEqual(fallback["relationship"], "derived-open-non-equivalent-fallback")
         self.assertEqual(fallback["interface"]["wrapper_path"], "/opt/fs2/bin/freebindcraft-batch")
+        self.assertEqual(
+            fallback["interface"]["runtime_runner_path"],
+            "/opt/fs2/freebindcraft/runtime_entrypoint.py",
+        )
         self.assertEqual(fallback["semantic_workflow"]["result"], "passed")
         self.assertFalse(fallback["semantic_workflow"]["pyrosetta_relaxation_and_scoring"])
         self.assertTrue(fallback["semantic_workflow"]["openmm_cuda_scoring"])
