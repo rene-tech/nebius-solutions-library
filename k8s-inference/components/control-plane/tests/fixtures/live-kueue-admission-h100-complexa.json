@@ -1,0 +1,70 @@
+{
+  "job": {
+    "apiVersion": "batch/v1",
+    "kind": "Job",
+    "spec": {
+      "completions": 1,
+      "parallelism": 1,
+      "template": {
+        "spec": {
+          "containers": [
+            {
+              "name": "complexa",
+              "resources": {
+                "limits": {
+                  "cpu": "8",
+                  "memory": "64Gi",
+                  "nvidia.com/gpu": "1"
+                },
+                "requests": {
+                  "cpu": "8",
+                  "memory": "64Gi",
+                  "nvidia.com/gpu": "1"
+                }
+              }
+            }
+          ],
+          "restartPolicy": "Never"
+        }
+      }
+    }
+  },
+  "kueue_admission": {
+    "clusterQueue": "inference-accelerators",
+    "podSetAssignments": [
+      {
+        "count": 1,
+        "flavors": {
+          "nvidia.com/gpu": "inference-h100-1x"
+        },
+        "name": "main",
+        "resourceUsage": {
+          "nvidia.com/gpu": "1"
+        }
+      }
+    ]
+  },
+  "kueue_spec_pod_sets": [
+    {
+      "count": 1,
+      "name": "main"
+    }
+  ],
+  "provenance": {
+    "job": "fs2-complexa-forward-ptxas-v1-20260903d",
+    "kube_context": "k8s-inference-h100",
+    "kueue_exclude_resource_prefixes": [
+      "cpu",
+      "memory",
+      "ephemeral-storage"
+    ],
+    "kueue_version": "v0.17.8",
+    "kueue_workload": "job-fs2-complexa-forward-ptxas-v1-20260903d-f430b",
+    "namespace": "fs2-models",
+    "note": "Recorded read-only from the live shared H100 cluster; no object was mutated.",
+    "project": "project-e00rene",
+    "recorded_at": "2026-09-03",
+    "region": "eu-north1",
+    "tenant": "tenant-e00f3wdfzwfjgbcyfv"
+  }
+}
