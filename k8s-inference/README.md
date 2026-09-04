@@ -167,25 +167,30 @@ credentials, cluster/project/region identity, and the kubeconfig command:
   "schema": "fs2-serve.nebius.ai/access-bundle/v1",
   "cluster": {"project_id": "project-...", "region": "...", "cluster_id": "mk8scluster-..."},
   "endpoints": {"admin_portal_url": "https://.../admin/", "mcp_url": "https://.../mcp", "inference_base_url": "https://.../v1", "grafana_url": "https://.../admin/observability/grafana"},
-  "credentials": {"admin_bootstrap_token": "<redacted>", "mcp_inference_token": "<redacted>", "inference_access_token": "<same scoped PAT>", "grafana": {"username": "<redacted>", "password": "<redacted>"}},
+  "credentials": {"admin_bootstrap_token": "<redacted>", "mcp_inference_token": "<redacted>", "inference_access_token": "<same scoped PAT>", "scientific_access_token": "<separate academic PAT or null>", "grafana": {"username": "<redacted>", "password": "<redacted>"}},
+  "mcp_access": {"tenant_id": "<cluster tenant>", "models": ["*"]},
+  "scientific_access": {"tenant_id": "<academic tenant>", "models": ["*"]},
   "reference_data": {"filesystem_id": "computefilesystem-...", "bucket_id": "storagebucket-...", "bucket_name": "...", "cpu_pool_id": "mk8snodegroup-...", "status_service": "...", "pipeline": {"job_name": "..."}},
   "reference_data_contract": {"storage": {"schema": "fs2-serve.nebius.ai/reference-data-storage/v1"}, "plane": {"schema": "fs2-serve.nebius.ai/reference-data-configuration/v1"}}
 }
 ```
 
 `mcp_inference_token` remains for compatibility. `inference_access_token` is a
-clear alias of that same scoped PAT for OpenAI-compatible `/v1` clients. When
-`academic_assets.enabled` is true, Terraform binds this one fleet PAT to the
-configured academic tenant; it can still call public profiles and also passes
-the exact tenant handoff required by academic scientific submissions. Other
+clear alias of that same scoped PAT for OpenAI-compatible `/v1` clients. It
+always remains bound to the cluster tenant used by general serving. When
+`academic_assets.enabled` is true, Terraform additionally emits
+`scientific_access_token`, a distinct PAT bound to the configured academic
+tenant. Use that credential for academic scientific submissions; tenant
+enforcement is not weakened or shared between the two credentials. Other
 tenant credentials remain a live admin-console operation.
 
 Open the emitted `admin_portal_url` and paste
 `credentials.admin_bootstrap_token` into the operator sign-in form. MCP clients
 use `credentials.mcp_inference_token` as a Bearer token, OpenAI-compatible
-clients use `credentials.inference_access_token`, and Grafana uses the emitted
-`credentials.grafana.username` and `credentials.grafana.password`. To print one
-value directly from the bundle:
+clients use `credentials.inference_access_token`, academic scientific clients
+use `credentials.scientific_access_token`, and Grafana uses the emitted
+`credentials.grafana.username` and `credentials.grafana.password`. To print
+one value directly from the bundle:
 
 ```bash
 NEBIUS_PROFILE=sandbox ./inference-stack output --var-file terraform.tfvars \
@@ -283,6 +288,9 @@ post-upgrade job idempotently provisions its digest and policy in the durable
 control-plane token store. It has a wildcard model policy so later live-catalog
 additions work without credential rotation, but remains bounded to one tenant
 and the MCP, inference, catalog, operation-lifecycle, and declared-use scopes.
+When academic assets are enabled, a second Terraform-owned Secret and hook job
+provision the distinct academic scientific PAT; its tenant and principal never
+replace the general serving credential.
 The admin token is deliberately not valid for `/mcp` or `/v1`.
 An intentionally revoked or expired Terraform bootstrap PAT stays inactive:
 the next Helm upgrade fails closed instead of silently reactivating it. Rotate
@@ -290,6 +298,9 @@ the Terraform-owned token material before that upgrade by applying with both
 `-replace=random_id.bootstrap_access_token_id` and
 `-replace=random_password.bootstrap_access_token_secret` through the same
 protected workloads-stage workflow.
+Rotate the optional academic credential independently with
+`-replace=random_id.scientific_access_token_id[0]` and
+`-replace=random_password.scientific_access_token_secret[0]`.
 
 For ongoing users, use the admin interface's **Access / API keys** area to issue
 revocable PATs with only the required models, scopes, concurrency, request, and

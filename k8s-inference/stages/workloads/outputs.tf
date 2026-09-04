@@ -47,6 +47,12 @@ output "inference_access_token" {
   sensitive   = true
 }
 
+output "scientific_access_token" {
+  description = "Terraform-owned scoped PAT for the academic scientific tenant, or null when academic assets are disabled."
+  value       = local.scientific_access_token
+  sensitive   = true
+}
+
 output "grafana_url" {
   description = "Published native-login Grafana URL, or null when publication is disabled."
   value       = local.grafana_publication.enabled ? local.grafana_publication.external_url : null
@@ -131,9 +137,10 @@ output "access_bundle" {
       tempo_explore_url  = local.tempo_grafana_explore_url
     }
     credentials = {
-      admin_bootstrap_token  = random_password.admin_token.result
-      mcp_inference_token    = local.bootstrap_access_token
-      inference_access_token = local.bootstrap_access_token
+      admin_bootstrap_token   = random_password.admin_token.result
+      mcp_inference_token     = local.bootstrap_access_token
+      inference_access_token  = local.bootstrap_access_token
+      scientific_access_token = local.scientific_access_token
       grafana = {
         username = data.kubernetes_secret_v1.grafana_admin.data[data.terraform_remote_state.foundation.outputs.grafana_admin_secret_ref.user_key]
         password = data.kubernetes_secret_v1.grafana_admin.data[data.terraform_remote_state.foundation.outputs.grafana_admin_secret_ref.password_key]
@@ -146,6 +153,13 @@ output "access_bundle" {
       models          = local.bootstrap_access_models
       max_concurrency = 32
     }
+    scientific_access = local.scientific_access_enabled ? {
+      principal_id    = local.scientific_access_principal
+      tenant_id       = local.scientific_access_tenant_id
+      scopes          = local.scientific_access_scopes
+      models          = local.scientific_access_models
+      max_concurrency = 32
+    } : null
     reference_data = var.reference_data.enabled ? {
       lifecycle      = var.reference_data.storage_contract.lifecycle
       filesystem_id  = var.reference_data.storage_contract.filesystem.id

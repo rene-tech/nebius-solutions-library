@@ -84,3 +84,63 @@ def test_bootstrap_access_hook_uses_only_the_terraform_secret_reference() -> Non
 def test_bootstrap_access_resources_are_absent_when_disabled() -> None:
     _, documents = render()
     assert not any(document["metadata"]["name"].endswith("-bootstrap-access") for document in documents)
+    assert not any(
+        document["metadata"]["name"].endswith("-bootstrap-scientific-access")
+        for document in documents
+    )
+
+
+def test_academic_scientific_access_is_a_distinct_tenant_bound_pat() -> None:
+    raw, documents = render(
+        "--set",
+        "bootstrapAccess.enabled=true",
+        "--set",
+        "bootstrapAccess.secretName=fs2-serve-bootstrap-access",
+        "--set",
+        "bootstrapAccess.tenantId=tenant-general",
+        "--set",
+        "scientificAccess.enabled=true",
+        "--set",
+        "scientificAccess.secretName=fs2-serve-scientific-access",
+        "--set",
+        "scientificAccess.tenantId=tenant-academic",
+    )
+
+    jobs = {
+        document["metadata"]["name"]: document
+        for document in documents
+        if document["kind"] == "Job"
+        and "bootstrap" in document["metadata"]["name"]
+    }
+    general = next(job for name, job in jobs.items() if name.endswith("-bootstrap-access"))
+    scientific = next(
+        job
+        for name, job in jobs.items()
+        if name.endswith("-bootstrap-scientific-access")
+    )
+    general_env = {
+        item["name"]: item
+        for item in general["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    scientific_pod = scientific["spec"]["template"]["spec"]
+    scientific_env = {
+        item["name"]: item for item in scientific_pod["containers"][0]["env"]
+    }
+
+    assert general_env["FS2_BOOTSTRAP_ACCESS_TENANT_ID"]["value"] == "tenant-general"
+    assert scientific_env["FS2_BOOTSTRAP_ACCESS_TENANT_ID"]["value"] == "tenant-academic"
+    assert scientific_env["FS2_BOOTSTRAP_ACCESS_TOKEN_FILE"]["value"].endswith(
+        "/scientific-access-token"
+    )
+    assert {item["secret"]["secretName"] for item in scientific_pod["volumes"] if "secret" in item} >= {
+        "fs2-serve-scientific-access"
+    }
+    assert scientific["metadata"]["annotations"]["helm.sh/hook-weight"] == "6"
+    assert all(document["kind"] != "Secret" for document in documents)
+    assert "fs2_pat_" not in raw
+    assert any(
+        document["kind"] == "NetworkPolicy"
+        and document["metadata"]["name"].endswith("-bootstrap-scientific-access")
+        and document["spec"]["ingress"] == []
+        for document in documents
+    )

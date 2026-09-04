@@ -85,8 +85,11 @@
 {{- if .Values.bootstrapAccess.enabled }}
 {{- $secretNames = append $secretNames .Values.bootstrapAccess.secretName }}
 {{- end }}
+{{- if .Values.scientificAccess.enabled }}
+{{- $secretNames = append $secretNames .Values.scientificAccess.secretName }}
+{{- end }}
 {{- if ne (len $secretNames) (len (uniq $secretNames)) }}
-{{- fail "runtime, migration, maintenance, cryptographic, admin, federation, and bootstrap credentials must use distinct Secret objects" }}
+{{- fail "runtime, migration, maintenance, cryptographic, admin, federation, bootstrap, and scientific credentials must use distinct Secret objects" }}
 {{- end }}
 {{- $runtimeServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "runtime") }}
 {{- $maintenanceServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "maintenance") }}
@@ -94,13 +97,13 @@
 {{- if or (eq $runtimeServiceAccount $maintenanceServiceAccount) (eq $runtimeServiceAccount $migrationServiceAccount) (eq $maintenanceServiceAccount $migrationServiceAccount) }}
 {{- fail "runtime, maintenance, and migration must use distinct service accounts" }}
 {{- end }}
-{{- if .Values.bootstrapAccess.enabled }}
+{{- if or .Values.bootstrapAccess.enabled .Values.scientificAccess.enabled }}
 {{- $bootstrapServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "bootstrap") }}
 {{- if has $bootstrapServiceAccount (list $runtimeServiceAccount $maintenanceServiceAccount $migrationServiceAccount) }}
 {{- fail "bootstrap access must use a distinct service account" }}
 {{- end }}
 {{- if not .Values.networkPolicy.enabled }}
-{{- fail "bootstrapAccess requires networkPolicy.enabled=true" }}
+{{- fail "bootstrapAccess and scientificAccess require networkPolicy.enabled=true" }}
 {{- end }}
 {{- end }}
 {{- range .Values.networkPolicy.federationCidrs }}

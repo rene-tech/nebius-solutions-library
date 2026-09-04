@@ -1980,6 +1980,7 @@ def workload_access_bundle(
     endpoints = bundle.get("endpoints")
     credentials = bundle.get("credentials")
     mcp_access = bundle.get("mcp_access")
+    scientific_access = bundle.get("scientific_access")
     reference_data = bundle.get("reference_data")
     reference_data_contract = bundle.get("reference_data_contract")
     if not all(
@@ -2027,6 +2028,8 @@ def workload_access_bundle(
             ("admin_bootstrap_token", "mcp_inference_token", "inference_access_token"),
         )
         or credentials.get("inference_access_token") != shared_token
+        or "scientific_access_token" not in credentials
+        or "scientific_access" not in bundle
     ):
         raise DeploymentError("the workloads access bundle is missing or malformed")
     grafana = credentials.get("grafana")
@@ -2051,13 +2054,57 @@ def workload_access_bundle(
     )
     if academic_fleet_enabled:
         academic_tenant_id = academic_assets.get("tenant_id")
+        scientific_token = credentials.get("scientific_access_token")
+        scientific_scopes = (
+            scientific_access.get("scopes")
+            if isinstance(scientific_access, dict)
+            else None
+        )
+        scientific_models = (
+            scientific_access.get("models")
+            if isinstance(scientific_access, dict)
+            else None
+        )
+        scientific_max_concurrency = (
+            scientific_access.get("max_concurrency")
+            if isinstance(scientific_access, dict)
+            else None
+        )
         if (
             not isinstance(academic_tenant_id, str)
             or not academic_tenant_id.strip()
-            or mcp_access.get("tenant_id") != academic_tenant_id
-            or not {"use.nonclinical", "use.noncommercial"}.issubset(scopes)
+            or not isinstance(scientific_token, str)
+            or not scientific_token.strip()
+            or scientific_token == shared_token
+            or not isinstance(scientific_access, dict)
+            or not has_non_empty_strings(
+                scientific_access, ("principal_id", "tenant_id")
+            )
+            or scientific_access.get("tenant_id") != academic_tenant_id
+            or scientific_access.get("principal_id") == mcp_access.get("principal_id")
+            or not isinstance(scientific_scopes, list)
+            or not {
+                "mcp.invoke",
+                "inference.invoke",
+                "use.nonclinical",
+                "use.noncommercial",
+            }.issubset(scientific_scopes)
+            or not isinstance(scientific_models, list)
+            or not scientific_models
+            or not all(
+                isinstance(model_id, str) and model_id.strip()
+                for model_id in scientific_models
+            )
+            or not isinstance(scientific_max_concurrency, int)
+            or isinstance(scientific_max_concurrency, bool)
+            or not 1 <= scientific_max_concurrency <= 100
         ):
             raise DeploymentError("the workloads access bundle is missing or malformed")
+    elif (
+        credentials.get("scientific_access_token") is not None
+        or scientific_access is not None
+    ):
+        raise DeploymentError("the workloads access bundle is missing or malformed")
     if reference_data is not None:
         if not isinstance(reference_data, dict) or not has_non_empty_strings(
             reference_data,

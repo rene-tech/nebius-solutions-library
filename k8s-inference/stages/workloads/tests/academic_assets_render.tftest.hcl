@@ -263,7 +263,7 @@ run "enabled_academic_config_reaches_the_chart" {
   }
 
   plan_options {
-    target = [terraform_data.academic_assets_contract, random_id.bootstrap_access_token_id]
+    target = [terraform_data.academic_assets_contract, random_id.bootstrap_access_token_id, random_id.scientific_access_token_id]
   }
 
   assert {
@@ -288,8 +288,13 @@ run "enabled_academic_config_reaches_the_chart" {
   }
 
   assert {
-    condition     = random_id.bootstrap_access_token_id.keepers.tenant_id == "tenant-academic"
-    error_message = "The user-facing MCP/inference PAT must use the academic tenant so one credential can access the whole configured fleet."
+    condition     = random_id.bootstrap_access_token_id.keepers.tenant_id == "tenant-modelexpresstest"
+    error_message = "The user-facing MCP/inference PAT must remain bound to the general cluster tenant."
+  }
+
+  assert {
+    condition     = random_id.scientific_access_token_id[0].keepers.tenant_id == "tenant-academic"
+    error_message = "Academic scientific access must use a separate PAT bound to the academic-assets tenant."
   }
 }
 

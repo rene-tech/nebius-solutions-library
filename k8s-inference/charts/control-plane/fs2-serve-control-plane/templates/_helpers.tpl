@@ -60,6 +60,11 @@ app.kubernetes.io/component: migration
 app.kubernetes.io/component: bootstrap-access
 {{- end -}}
 
+{{- define "fs2-serve.scientificAccessSelectorLabels" -}}
+{{ include "fs2-serve.selectorLabels" . }}
+app.kubernetes.io/component: bootstrap-scientific-access
+{{- end -}}
+
 {{- define "fs2-serve.modelControllerSelectorLabels" -}}
 {{ include "fs2-serve.selectorLabels" . }}
 app.kubernetes.io/component: model-controller

@@ -164,6 +164,37 @@ bootstrapAccess:
       cpu: 500m
       memory: 512Mi
 
+# A separate PAT for private academic scientific workloads. Keeping this
+# credential distinct preserves the tenant boundary of general MCP/inference
+# serving while allowing licensed academic profiles to use their own tenant.
+scientificAccess:
+  enabled: false
+  secretName: ""
+  tokenKey: token
+  principalId: terraform-academic-scientific-client
+  tenantId: ""
+  name: Terraform academic scientific access
+  scopes:
+    - catalog.read
+    - inference.invoke
+    - mcp.invoke
+    - operations.read
+    - operations.result
+    - operations.cancel
+    - operations.acknowledge
+    - use.nonclinical
+    - use.noncommercial
+  models: ["*"]
+  maxConcurrency: 32
+  activeDeadlineSeconds: 300
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
 serviceAccounts:
   runtime:
     create: true

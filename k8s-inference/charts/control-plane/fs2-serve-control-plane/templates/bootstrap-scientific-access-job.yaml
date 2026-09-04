@@ -1,0 +1,126 @@
+{{- if .Values.scientificAccess.enabled }}
+{{- $secretName := required "scientificAccess.secretName is required when enabled" .Values.scientificAccess.secretName }}
+{{- $tenantId := required "scientificAccess.tenantId is required when enabled" .Values.scientificAccess.tenantId }}
+{{- if not (regexMatch "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$" $secretName) }}
+{{- fail "scientificAccess.secretName must be a DNS label" }}
+{{- end }}
+{{- if not (has "catalog.read" .Values.scientificAccess.scopes) }}
+{{- fail "scientificAccess.scopes must contain catalog.read" }}
+{{- end }}
+{{- if not (has "inference.invoke" .Values.scientificAccess.scopes) }}
+{{- fail "scientificAccess.scopes must contain inference.invoke" }}
+{{- end }}
+{{- if not (has "mcp.invoke" .Values.scientificAccess.scopes) }}
+{{- fail "scientificAccess.scopes must contain mcp.invoke" }}
+{{- end }}
+{{- if not (has "use.nonclinical" .Values.scientificAccess.scopes) }}
+{{- fail "scientificAccess.scopes must contain use.nonclinical" }}
+{{- end }}
+{{- if not (has "use.noncommercial" .Values.scientificAccess.scopes) }}
+{{- fail "scientificAccess.scopes must contain use.noncommercial" }}
+{{- end }}
+{{- if lt (len .Values.scientificAccess.models) 1 }}
+{{- fail "scientificAccess.models must contain at least one model" }}
+{{- end }}
+{{- if or (lt (int .Values.scientificAccess.maxConcurrency) 1) (gt (int .Values.scientificAccess.maxConcurrency) 100) }}
+{{- fail "scientificAccess.maxConcurrency must be between 1 and 100" }}
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-bootstrap-scientific-access
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bootstrap-scientific-access
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "6"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: {{ .Values.scientificAccess.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-serve.scientificAccessSelectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "bootstrap") }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: bootstrap-scientific-access
+          image: {{ include "fs2-serve.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["bootstrap-access"]
+          env:
+            {{- include "fs2-serve.databaseEnv" . | nindent 12 }}
+            {{- include "fs2-serve.cryptoEnv" . | nindent 12 }}
+            - name: FS2_SCHEMA_WAIT_SECONDS
+              value: {{ .Values.config.schemaWaitSeconds | quote }}
+            - name: FS2_TOKEN_PEPPER_FILE
+              value: /var/run/secrets/fs2-serve/token-pepper
+            - name: FS2_BOOTSTRAP_ACCESS_TOKEN_FILE
+              value: /var/run/secrets/fs2-serve/scientific-access-token
+            - name: FS2_BOOTSTRAP_ACCESS_PRINCIPAL_ID
+              value: {{ .Values.scientificAccess.principalId | quote }}
+            - name: FS2_BOOTSTRAP_ACCESS_TENANT_ID
+              value: {{ $tenantId | quote }}
+            - name: FS2_BOOTSTRAP_ACCESS_NAME
+              value: {{ .Values.scientificAccess.name | quote }}
+            - name: FS2_BOOTSTRAP_ACCESS_SCOPES
+              value: {{ .Values.scientificAccess.scopes | toJson | quote }}
+            - name: FS2_BOOTSTRAP_ACCESS_MODELS
+              value: {{ .Values.scientificAccess.models | toJson | quote }}
+            - name: FS2_BOOTSTRAP_ACCESS_MAX_CONCURRENCY
+              value: {{ .Values.scientificAccess.maxConcurrency | quote }}
+          volumeMounts:
+            {{- include "fs2-serve.cryptoVolumeMounts" . | nindent 12 }}
+            {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 12 }}
+            - name: token-pepper
+              mountPath: /var/run/secrets/fs2-serve/token-pepper
+              subPath: token-pepper.json
+              readOnly: true
+            - name: scientific-access-token
+              mountPath: /var/run/secrets/fs2-serve/scientific-access-token
+              subPath: {{ .Values.scientificAccess.tokenKey }}
+              readOnly: true
+          resources:
+            {{- toYaml .Values.scientificAccess.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        {{- include "fs2-serve.cryptoVolumes" . | nindent 8 }}
+        {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) | nindent 8 }}
+        - name: token-pepper
+          secret:
+            secretName: {{ .Values.secrets.tokenPepper.name }}
+            defaultMode: 0400
+            items:
+              - key: {{ .Values.secrets.tokenPepper.key }}
+                path: token-pepper.json
+        - name: scientific-access-token
+          secret:
+            secretName: {{ $secretName }}
+            defaultMode: 0400
+            items:
+              - key: {{ .Values.scientificAccess.tokenKey }}
+                path: {{ .Values.scientificAccess.tokenKey }}
+{{- end }}

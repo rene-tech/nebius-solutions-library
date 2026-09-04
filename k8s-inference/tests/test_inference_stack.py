@@ -151,6 +151,7 @@ def complete_access_bundle() -> dict:
             "admin_bootstrap_token": "test-only-admin-token",
             "mcp_inference_token": "test-only-client-token",
             "inference_access_token": "test-only-client-token",
+            "scientific_access_token": None,
             "grafana": {
                 "username": "test-only-grafana-user",
                 "password": "test-only-grafana-password",
@@ -161,6 +162,7 @@ def complete_access_bundle() -> dict:
             "tenant_id": "tenant-test",
             "scopes": ["mcp.invoke", "inference.invoke"],
         },
+        "scientific_access": None,
         "reference_data": None,
         "reference_data_contract": None,
     }
@@ -1381,6 +1383,7 @@ class InferenceStackTests(unittest.TestCase):
             ("credentials", "admin_bootstrap_token"),
             ("credentials", "mcp_inference_token"),
             ("credentials", "inference_access_token"),
+            ("credentials", "scientific_access_token"),
             ("credentials", "grafana", "username"),
             ("credentials", "grafana", "password"),
             ("mcp_access", "scopes"),
@@ -1423,17 +1426,28 @@ class InferenceStackTests(unittest.TestCase):
                 "terraform-test", Path("/private/test-run"), contract()
             )
 
-    def test_access_bundle_binds_the_fleet_token_to_the_academic_tenant(self) -> None:
+    def test_access_bundle_separates_general_and_academic_tenant_tokens(self) -> None:
         deployment_contract = contract()
         deployment_contract["academic_assets"] = {
             "enabled": True,
             "tenant_id": "tenant-academic",
         }
         bundle = complete_access_bundle()
-        bundle["mcp_access"]["tenant_id"] = "tenant-academic"
-        bundle["mcp_access"]["scopes"].extend(
-            ["use.nonclinical", "use.noncommercial"]
+        bundle["credentials"]["scientific_access_token"] = (
+            "test-only-scientific-token"
         )
+        bundle["scientific_access"] = {
+            "principal_id": "terraform-academic-scientific-client",
+            "tenant_id": "tenant-academic",
+            "scopes": [
+                "mcp.invoke",
+                "inference.invoke",
+                "use.nonclinical",
+                "use.noncommercial",
+            ],
+            "models": ["*"],
+            "max_concurrency": 32,
+        }
 
         with (
             mock.patch.object(STACK, "stage_environment", return_value={}),
@@ -1446,20 +1460,58 @@ class InferenceStackTests(unittest.TestCase):
                 bundle,
             )
 
-        for field, value in (
-            ("tenant_id", "project-tenant"),
-            ("scopes", ["mcp.invoke", "inference.invoke"]),
-        ):
-            with self.subTest(field=field):
+        mutations = (
+            (
+                "tenant",
+                lambda item: item["scientific_access"].update(tenant_id="wrong"),
+            ),
+            (
+                "scopes",
+                lambda item: item["scientific_access"].update(
+                    scopes=["mcp.invoke", "inference.invoke"]
+                ),
+            ),
+            (
+                "shared_token",
+                lambda item: item["credentials"].update(
+                    scientific_access_token="test-only-client-token"
+                ),
+            ),
+            (
+                "shared_principal",
+                lambda item: item["scientific_access"].update(
+                    principal_id="terraform-bootstrap-client"
+                ),
+            ),
+            (
+                "empty_models",
+                lambda item: item["scientific_access"].update(models=[]),
+            ),
+            (
+                "invalid_concurrency",
+                lambda item: item["scientific_access"].update(max_concurrency=0),
+            ),
+            ("missing_metadata", lambda item: item.update(scientific_access=None)),
+        )
+        for name, mutate in mutations:
+            with self.subTest(name=name):
                 malformed = complete_access_bundle()
-                malformed["mcp_access"]["tenant_id"] = "tenant-academic"
-                malformed["mcp_access"]["scopes"] = [
-                    "mcp.invoke",
-                    "inference.invoke",
-                    "use.nonclinical",
-                    "use.noncommercial",
-                ]
-                malformed["mcp_access"][field] = value
+                malformed["credentials"]["scientific_access_token"] = (
+                    "test-only-scientific-token"
+                )
+                malformed["scientific_access"] = {
+                    "principal_id": "terraform-academic-scientific-client",
+                    "tenant_id": "tenant-academic",
+                    "scopes": [
+                        "mcp.invoke",
+                        "inference.invoke",
+                        "use.nonclinical",
+                        "use.noncommercial",
+                    ],
+                    "models": ["*"],
+                    "max_concurrency": 32,
+                }
+                mutate(malformed)
                 with (
                     mock.patch.object(STACK, "stage_environment", return_value={}),
                     mock.patch.object(
@@ -1474,6 +1526,34 @@ class InferenceStackTests(unittest.TestCase):
                         Path("/private/test-run"),
                         deployment_contract,
                     )
+
+    def test_access_bundle_rejects_scientific_access_when_academic_assets_are_disabled(
+        self,
+    ) -> None:
+        bundle = complete_access_bundle()
+        bundle["credentials"]["scientific_access_token"] = (
+            "test-only-scientific-token"
+        )
+        bundle["scientific_access"] = {
+            "principal_id": "terraform-academic-scientific-client",
+            "tenant_id": "tenant-academic",
+            "scopes": [
+                "mcp.invoke",
+                "inference.invoke",
+                "use.nonclinical",
+                "use.noncommercial",
+            ],
+            "models": ["*"],
+            "max_concurrency": 32,
+        }
+        with (
+            mock.patch.object(STACK, "stage_environment", return_value={}),
+            mock.patch.object(STACK, "terraform_json_output", return_value=bundle),
+            self.assertRaisesRegex(STACK.DeploymentError, "missing or malformed"),
+        ):
+            STACK.workload_access_bundle(
+                "terraform-test", Path("/private/test-run"), contract()
+            )
 
     def test_output_rejects_an_incomplete_workloads_stage(self) -> None:
         with (
