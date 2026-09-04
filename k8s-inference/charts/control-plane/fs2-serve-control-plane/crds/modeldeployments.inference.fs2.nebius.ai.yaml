@@ -287,7 +287,7 @@ spec:
                         which benchmark cohort may qualify a level; it never grants
                         a level by itself.
                       type: string
-                      enum: [conventional, regional-cache, host-memory-residency, gpu-resident]
+                      enum: [conventional, regional-cache, host-memory-residency]
                     snapshotRef:
                       type: object
                       required: [name, digest, strategy]
@@ -644,7 +644,7 @@ spec:
                         properties:
                           state:
                             type: string
-                            enum: [Configured, Pending, Unavailable, Undeclared]
+                            enum: [Available, Configured, Pending, Unavailable, Undeclared]
                           selected:
                             type: boolean
                           availability:
@@ -703,10 +703,20 @@ spec:
                             minLength: 1
                             maxLength: 128
                           reservedHostMemoryBytes:
+                            description: Host memory reserved per holder node or serving replica, as identified by hostMemoryReservationScope.
+                            type: integer
+                            format: int64
+                            minimum: 0
+                          hostMemoryReservationScope:
+                            type: string
+                            enum: [per-node, per-replica]
+                          maximumReservedHostMemoryBytes:
+                            description: Maximum host memory reservation for the selected render; zero when this declaration is not selected.
                             type: integer
                             format: int64
                             minimum: 0
                           reservedHostMemoryFraction:
+                            description: Declared fraction of node allocatable memory; omitted for heterogeneous multi-pool placements.
                             type: number
                             minimum: 0
                             maximum: 1

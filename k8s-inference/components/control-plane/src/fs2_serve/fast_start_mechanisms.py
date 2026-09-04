@@ -57,14 +57,10 @@ MECHANISM_RESERVED_MEMORY_ANNOTATION = "fast-start.fs2.nebius/reserved-host-memo
 MECHANISM_STANDBY_ANNOTATION = "fast-start.fs2.nebius/gpu-resident-standby-replicas"
 MECHANISM_HOT_FLOOR_ANNOTATION = "fast-start.fs2.nebius/gpu-resident-minimum-hot-replicas"
 HOST_MEMORY_RESIDENCY_LABEL = "fast-start.fs2.nebius/host-memory-residency"
+HOST_MEMORY_RESIDENCY_HOLDER_LABEL = "fast-start.fs2.nebius/host-memory-holder"
 GPU_RESIDENT_ROLE_LABEL = "fast-start.fs2.nebius/gpu-resident-role"
 GPU_RESIDENT_READINESS_GATE = "fast-start.fs2.nebius/promoted"
 
-HOSTNAME_TOPOLOGY_KEY = "kubernetes.io/hostname"
-
-# A residency holder trades host RAM for start latency.  Refuse a declaration
-# that would quietly consume a large share of a shared node.
-MAX_RESERVED_MEMORY_FRACTION = 0.25
 MINIMUM_RESIDENCY_HEADROOM_BYTES = 256 * 1024 * 1024
 
 
@@ -101,7 +97,6 @@ SELECTABLE_MECHANISMS: tuple[FastStartMechanism, ...] = (
     FastStartMechanism.CONVENTIONAL,
     FastStartMechanism.REGIONAL_CACHE,
     FastStartMechanism.HOST_MEMORY_RESIDENCY,
-    FastStartMechanism.GPU_RESIDENT,
 )
 
 #: Mechanisms that need a declared per-model configuration before they render.
@@ -145,9 +140,11 @@ def assess_pool_mechanisms(
     restore are reported unavailable with that exact selector attached.  They
     are never attempted and never silently downgraded to another path.
 
-    The three implemented mechanisms need retained regional storage rather than
-    a node capability, which is a per-model storage contract; pool-level
-    availability therefore says only that the pool can host them.
+    The production cache and host-memory mechanisms need retained regional
+    storage rather than a node capability, which is a per-model storage
+    contract; pool-level availability therefore says only that the pool can
+    host them. GPU residency remains unavailable until a production controller
+    owns the promotion readiness condition.
     """
 
     if not pool_id:
@@ -172,8 +169,8 @@ def assess_pool_mechanisms(
         ),
         MechanismAvailability(
             mechanism=FastStartMechanism.GPU_RESIDENT.value,
-            state="Available",
-            reason="StandbyAcceleratorPromotionSupported",
+            state="Unavailable",
+            reason="PromotionControllerNotInstalled",
         ),
         MechanismAvailability(
             mechanism=FastStartMechanism.SHARED_RESTORE.value,
@@ -335,8 +332,6 @@ class HostMemoryResidencyQualification(_SelfDigestModel):
         else:
             if self.reserved_bytes < self.payload_bytes + MINIMUM_RESIDENCY_HEADROOM_BYTES:
                 raise ValueError("a residency reservation must cover the payload plus holder headroom")
-        if self.reserved_bytes > int(self.node_allocatable_bytes * MAX_RESERVED_MEMORY_FRACTION):
-            raise ValueError("a residency reservation cannot exceed a quarter of the node's allocatable memory")
         return self
 
     @property
@@ -654,11 +649,13 @@ import os
 import sys
 import time
 
-path = os.environ["FS2_RESIDENCY_RECEIPT"]
+root = os.environ["FS2_RESIDENCY_RECEIPT_ROOT"]
+holder_id = os.environ["FS2_RESIDENCY_HOLDER_ID"]
 expected_digest = os.environ["FS2_RESIDENCY_CONFIG_DIGEST"]
 expected_payload = os.environ["FS2_RESIDENCY_PAYLOAD_DIGEST"]
 expected_bytes = int(os.environ["FS2_RESIDENCY_BYTES"])
 node = os.environ["FS2_NODE_NAME"]
+path = os.path.join(root, holder_id, node, "receipt.json")
 max_age = float(os.environ["FS2_RESIDENCY_MAX_AGE_SECONDS"])
 deadline = time.monotonic() + float(os.environ.get("FS2_RESIDENCY_WAIT_SECONDS", "120"))
 
@@ -673,6 +670,8 @@ while True:
     if reason is None:
         if receipt.get("schema") != "fs2-serve.nebius.ai/fast-start-host-memory-residency-receipt/v1":
             reason = "receipt_schema_mismatch"
+        elif receipt.get("holder_id") != holder_id:
+            reason = "receipt_holder_mismatch"
         elif receipt.get("node_name") != node:
             reason = "receipt_node_mismatch"
         elif receipt.get("config_digest") != expected_digest:
@@ -711,16 +710,16 @@ def configure_host_memory_residency(
     qualification: HostMemoryResidencyQualification,
     runtime_image: str,
     model_ref: str,
+    holder_identity: str,
     runtime_container_name: str | None = None,
 ) -> None:
-    """Bind the runtime to a node that already holds the payload in host RAM.
+    """Require a node-local receipt from the pool's per-node residency holder.
 
-    Placement is explicit: required Pod affinity co-locates the runtime with the
-    residency holder on one node, and an init container refuses to start the
-    runtime unless the holder's receipt proves the exact configuration, payload
-    digest and reserved byte count are resident on *this* node.  The reserved
-    bytes are annotated on the Pod so the node RAM cost travels with the
-    workload.
+    The holder is a DaemonSet on every eligible node. Avoiding required
+    inter-Pod affinity lets a serving Pod trigger scale-up from a zero-node
+    pool; its init container then waits until the holder on that exact node has
+    published a matching receipt. The reserved bytes are annotated on the Pod
+    so the node RAM cost travels with the workload.
     """
 
     if re.fullmatch(IMAGE_DIGEST_PATTERN, runtime_image) is None:
@@ -738,7 +737,7 @@ def configure_host_memory_residency(
             if not isinstance(quantities, dict):
                 raise FastStartMechanismError("rendered container resource quantities must be an object")
             current = quantities.get("memory")
-            quantities["memory"] = _max_memory_quantity(current, qualification.reserved_bytes)
+            quantities["memory"] = _add_memory_quantity(current, qualification.reserved_bytes)
         _set_env(
             container,
             {
@@ -748,23 +747,6 @@ def configure_host_memory_residency(
             },
         )
     else:
-        affinity = pod_spec.setdefault("affinity", {})
-        if not isinstance(affinity, dict):
-            raise FastStartMechanismError("rendered Pod affinity must be an object")
-        pod_affinity = affinity.setdefault("podAffinity", {})
-        if not isinstance(pod_affinity, dict):
-            raise FastStartMechanismError("rendered Pod podAffinity must be an object")
-        required = pod_affinity.setdefault("requiredDuringSchedulingIgnoredDuringExecution", [])
-        if not isinstance(required, list):
-            raise FastStartMechanismError("rendered Pod affinity terms must be a list")
-        term = {
-            "labelSelector": {"matchLabels": {HOST_MEMORY_RESIDENCY_LABEL: model_ref}},
-            "namespaces": [holder.namespace],
-            "topologyKey": HOSTNAME_TOPOLOGY_KEY,
-        }
-        if term not in required:
-            required.append(term)
-
         _replace_volume(
             pod_spec,
             {
@@ -787,9 +769,10 @@ def configure_host_memory_residency(
                 "command": ["python3", "-c", RESIDENCY_VERIFY_SCRIPT],
                 "env": [
                     {
-                        "name": "FS2_RESIDENCY_RECEIPT",
-                        "value": f"{holder.receipt_mount_path.rstrip('/')}/{model_ref}/receipt.json",
+                        "name": "FS2_RESIDENCY_RECEIPT_ROOT",
+                        "value": holder.receipt_mount_path,
                     },
+                    {"name": "FS2_RESIDENCY_HOLDER_ID", "value": holder_identity},
                     {"name": "FS2_RESIDENCY_CONFIG_DIGEST", "value": qualification.config_digest},
                     {"name": "FS2_RESIDENCY_PAYLOAD_DIGEST", "value": qualification.payload_digest},
                     {"name": "FS2_RESIDENCY_BYTES", "value": str(qualification.payload_bytes)},
@@ -832,14 +815,12 @@ def configure_host_memory_residency(
     )
 
 
-def _max_memory_quantity(current: object, reserved_bytes: int) -> str:
-    """Return a memory quantity at least ``reserved_bytes`` large."""
+def _add_memory_quantity(current: object, reserved_bytes: int) -> str:
+    """Add the offloaded weights to the runtime's existing RAM envelope."""
 
-    reserved = f"{reserved_bytes}"
     if not isinstance(current, str) or not current:
-        return reserved
-    parsed = parse_memory_quantity(current)
-    return current if parsed >= reserved_bytes else reserved
+        return str(reserved_bytes)
+    return str(parse_memory_quantity(current) + reserved_bytes)
 
 
 _MEMORY_SUFFIXES: dict[str, int] = {
@@ -886,6 +867,7 @@ def residency_holder_manifests(
     namespace: str,
     name: str,
     model_ref: str,
+    holder_identity: str,
     qualification: HostMemoryResidencyQualification,
     image: str,
     node_selector: Mapping[str, str],
@@ -894,7 +876,6 @@ def residency_holder_manifests(
     annotations: Mapping[str, str],
     pod_security_context: Mapping[str, Any] | None = None,
     owner_references: Sequence[Mapping[str, Any]] = (),
-    replicas: int = 1,
 ) -> list[dict[str, Any]]:
     """Render the node-scoped host-memory residency holder.
 
@@ -914,7 +895,11 @@ def residency_holder_manifests(
     if re.fullmatch(IMAGE_DIGEST_PATTERN, image) is None:
         raise FastStartMechanismError("the residency holder requires a digest-pinned image")
     reserved = str(qualification.reserved_bytes)
-    holder_labels = {**dict(labels), HOST_MEMORY_RESIDENCY_LABEL: model_ref}
+    holder_labels = {
+        **dict(labels),
+        HOST_MEMORY_RESIDENCY_LABEL: model_ref,
+        HOST_MEMORY_RESIDENCY_HOLDER_LABEL: holder_identity,
+    }
     holder_annotations = {
         **dict(annotations),
         MECHANISM_ANNOTATION: FastStartMechanism.HOST_MEMORY_RESIDENCY.value,
@@ -938,9 +923,9 @@ def residency_holder_manifests(
         "allowPrivilegeEscalation": False,
         "capabilities": {"drop": ["ALL"], "add": ["IPC_LOCK"]} if locked else {"drop": ["ALL"]},
     }
-    deployment: dict[str, Any] = {
+    daemon_set: dict[str, Any] = {
         "apiVersion": "apps/v1",
-        "kind": "Deployment",
+        "kind": "DaemonSet",
         "metadata": {
             "name": name,
             "namespace": namespace,
@@ -948,9 +933,8 @@ def residency_holder_manifests(
             "annotations": dict(holder_annotations),
         },
         "spec": {
-            "replicas": replicas,
-            "selector": {"matchLabels": {HOST_MEMORY_RESIDENCY_LABEL: model_ref}},
-            "strategy": {"type": "Recreate"},
+            "selector": {"matchLabels": {HOST_MEMORY_RESIDENCY_HOLDER_LABEL: holder_identity}},
+            "updateStrategy": {"type": "RollingUpdate"},
             "template": {
                 "metadata": {
                     "labels": dict(holder_labels),
@@ -967,6 +951,7 @@ def residency_holder_manifests(
                             "command": ["python3", f"/agent/{RESIDENCY_AGENT_SCRIPT_NAME}"],
                             "env": [
                                 {"name": "FS2_RESIDENCY_MODEL_REF", "value": model_ref},
+                                {"name": "FS2_RESIDENCY_HOLDER_ID", "value": holder_identity},
                                 {"name": "FS2_RESIDENCY_MODE", "value": qualification.residency_mode},
                                 {
                                     "name": "FS2_RESIDENCY_PAYLOAD_ROOT",
@@ -1036,8 +1021,8 @@ def residency_holder_manifests(
     if owner_references:
         references = [dict(item) for item in owner_references]
         config_map["metadata"]["ownerReferences"] = references
-        deployment["metadata"]["ownerReferences"] = [dict(item) for item in references]
-    return [config_map, deployment]
+        daemon_set["metadata"]["ownerReferences"] = [dict(item) for item in references]
+    return [config_map, daemon_set]
 
 
 def _payload_mount_root(content_path: str) -> str:
@@ -1126,8 +1111,8 @@ class FastStartCacheMechanismPool(KubernetesModel):
 class FastStartCacheMechanismStatus(KubernetesModel):
     """Operator detail for one cold-start mechanism, never level proof.
 
-    ``state`` distinguishes a mechanism that is merely possible on these pools
-    (``Undeclared``), one that is declared and rendered but whose render has not
+    ``state`` distinguishes a mechanism that is available but not selected
+    (``Available``), one that is declared and rendered but whose render has not
     converged (``Pending``), one that is live (``Configured``), and one the
     pools cannot provide at all (``Unavailable``).
 
@@ -1137,7 +1122,7 @@ class FastStartCacheMechanismStatus(KubernetesModel):
     while a ``Configured`` mechanism has no populated cohort.
     """
 
-    state: Literal["Configured", "Pending", "Unavailable", "Undeclared"]
+    state: Literal["Available", "Configured", "Pending", "Unavailable", "Undeclared"]
     selected: bool
     availability: Literal["Available", "Unavailable"]
     reason: str = Field(min_length=1, max_length=64, pattern=REASON_PATTERN)
@@ -1148,6 +1133,8 @@ class FastStartCacheMechanismStatus(KubernetesModel):
     retained_payload_bytes: int | None = Field(default=None, ge=0)
     retained_compile_cache_abi: str | None = Field(default=None, min_length=1, max_length=128)
     reserved_host_memory_bytes: int | None = Field(default=None, ge=0)
+    host_memory_reservation_scope: Literal["per-node", "per-replica"] | None = None
+    maximum_reserved_host_memory_bytes: int | None = Field(default=None, ge=0)
     reserved_host_memory_fraction: float | None = Field(default=None, ge=0, le=1)
     standby_replicas: int | None = Field(default=None, ge=0, le=64)
     reserved_accelerators: int | None = Field(default=None, ge=0, le=4096)
@@ -1163,8 +1150,8 @@ class FastStartCacheMechanismStatus(KubernetesModel):
             raise ValueError("a declared mechanism must publish its reviewed configuration digest")
         if self.state == "Undeclared" and self.config_digest is not None:
             raise ValueError("an undeclared mechanism cannot publish a configuration digest")
-        if self.selected and self.state not in ("Configured", "Pending"):
-            raise ValueError("only a declared mechanism can be the selected one")
+        if self.selected and self.state not in ("Available", "Configured", "Pending"):
+            raise ValueError("only an available mechanism can be the selected one")
         if (self.availability == "Unavailable") != (self.state == "Unavailable"):
             raise ValueError("an unavailable mechanism must be reported in the Unavailable state")
         return self
@@ -1175,9 +1162,12 @@ def project_cache_mechanisms(
     selected: FastStartMechanism | None,
     declarations: Mapping[FastStartMechanism, Any],
     pools: Mapping[str, Mapping[str, str]],
+    pool_max_nodes: Mapping[str, int] | None = None,
+    host_residency_pool_refs: set[str] | None = None,
     storage_contract_digests: Mapping[str, str],
     converged: bool,
     configured_hot_replicas: int | None,
+    configured_max_replicas: int | None = None,
     mechanism_config_digest: Any,
 ) -> dict[str, FastStartCacheMechanismStatus]:
     """Project every known cold-start mechanism for one deployment.
@@ -1221,24 +1211,44 @@ def project_cache_mechanisms(
                 mechanism_config_digest=expected,
             )
         unavailable = [item for item in pool_projection.values() if item.availability == "Unavailable"]
+        is_selected = selected is mechanism
         if unavailable:
-            state: Literal["Configured", "Pending", "Unavailable", "Undeclared"] = "Unavailable"
+            state: Literal["Available", "Configured", "Pending", "Unavailable", "Undeclared"] = "Unavailable"
             reason = unavailable[0].reason
+        elif mechanism is FastStartMechanism.CONVENTIONAL:
+            state = "Available"
+            reason = "ConventionalLoaderSelected" if is_selected else "ConventionalLoaderAvailable"
         elif declaration is None:
             state = "Undeclared"
             reason = "NoReviewedDeclaration"
+        elif not is_selected:
+            state = "Available"
+            reason = "ReviewedDeclarationAvailable"
         elif converged:
             state = "Configured"
             reason = "MechanismRenderConverged"
         else:
             state = "Pending"
             reason = "MechanismRenderPending"
+        host_memory_scope: Literal["per-node", "per-replica"] | None = None
+        maximum_reserved_host_memory_bytes: int | None = None
+        if isinstance(declaration, HostMemoryResidencyQualification):
+            host_memory_scope = "per-replica" if declaration.residency_mode == "runtime-sleep-offload" else "per-node"
+            if not is_selected:
+                maximum_reserved_host_memory_bytes = 0
+            elif host_memory_scope == "per-replica" and configured_max_replicas is not None:
+                maximum_reserved_host_memory_bytes = declaration.reserved_bytes * configured_max_replicas
+            elif host_memory_scope == "per-node" and pool_max_nodes is not None:
+                reservation_pools = set(pools) if host_residency_pool_refs is None else host_residency_pool_refs
+                maximum_reserved_host_memory_bytes = declaration.reserved_bytes * sum(
+                    pool_max_nodes.get(pool_ref, 0) for pool_ref in reservation_pools
+                )
         projected[mechanism.value] = FastStartCacheMechanismStatus(
             state=state,
-            selected=selected is mechanism and state in ("Configured", "Pending"),
+            selected=is_selected and state in ("Available", "Configured", "Pending"),
             availability="Unavailable" if unavailable else "Available",
             reason=reason,
-            config_digest=None if declaration is None or state == "Unavailable" else declaration.config_digest,
+            config_digest=None if declaration is None else declaration.config_digest,
             residency_mode=getattr(declaration, "residency_mode", None),
             pool_refs=sorted(pools),
             pools=pool_projection,
@@ -1249,9 +1259,11 @@ def project_cache_mechanisms(
             reserved_host_memory_bytes=(
                 declaration.reserved_bytes if isinstance(declaration, HostMemoryResidencyQualification) else None
             ),
+            host_memory_reservation_scope=host_memory_scope,
+            maximum_reserved_host_memory_bytes=maximum_reserved_host_memory_bytes,
             reserved_host_memory_fraction=(
                 round(declaration.reserved_fraction_of_node, 6)
-                if isinstance(declaration, HostMemoryResidencyQualification)
+                if isinstance(declaration, HostMemoryResidencyQualification) and len(pools) == 1
                 else None
             ),
             standby_replicas=(

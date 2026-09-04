@@ -96,14 +96,9 @@ describe("ModelDeployment workspace", () => {
       "conventional",
       "regional-cache",
       "host-memory-residency",
-      "gpu-resident",
     ]);
     fireEvent.change(mechanism, { target: { value: "regional-cache" } });
     expect(screen.getByLabelText("Cache tier")).toHaveValue("SharedFilesystem");
-    fireEvent.change(mechanism, { target: { value: "gpu-resident" } });
-    expect(screen.getByRole("checkbox", { name: "Use reserved-h100" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "Use preemptible-h100" })).not.toBeChecked();
-    expect(screen.getByLabelText("Hot floor")).toHaveValue(1);
     expect(screen.getByRole("button", { name: "Validate draft" })).toBeEnabled();
     expect(screen.getByText(/No observed state or history yet/)).toBeInTheDocument();
   });
@@ -459,29 +454,31 @@ describe("ModelDeployment workspace", () => {
         pools: { "reserved-h100": { availability: "Available", reason: "RegionalRetainedCacheSupported" } },
       },
       "host-memory-residency": {
-        state: "Configured",
+        state: "Available",
         selected: false,
         availability: "Available",
-        reason: "MechanismRenderConverged",
+        reason: "ReviewedDeclarationAvailable",
         configDigest: `sha256:${"b".repeat(64)}`,
         residencyMode: "mapped-payload-residency",
         reservedHostMemoryBytes: 19327352832,
+        hostMemoryReservationScope: "per-node",
+        maximumReservedHostMemoryBytes: 0,
         reservedHostMemoryFraction: 0.0117,
         poolRefs: ["reserved-h100"],
         pools: { "reserved-h100": { availability: "Available", reason: "HostMemoryResidencySupported" } },
       },
       "gpu-resident": {
-        state: "Configured",
+        state: "Unavailable",
         selected: false,
-        availability: "Available",
-        reason: "MechanismRenderConverged",
+        availability: "Unavailable",
+        reason: "PromotionControllerNotInstalled",
         configDigest: `sha256:${"c".repeat(64)}`,
         standbyReplicas: 1,
         reservedAccelerators: 1,
         minimumHotReplicas: 1,
         configuredHotReplicas: 1,
         poolRefs: ["reserved-h100"],
-        pools: { "reserved-h100": { availability: "Available", reason: "StandbyAcceleratorPromotionSupported" } },
+        pools: { "reserved-h100": { availability: "Unavailable", reason: "PromotionControllerNotInstalled" } },
       },
       "node-local-restore": {
         state: "Unavailable",
@@ -507,7 +504,9 @@ describe("ModelDeployment workspace", () => {
     // The selected mechanism is named, with the price it charges while idle.
     expect(screen.getByText(/regional-cache: Configured · selected/)).toBeInTheDocument();
     expect(screen.getByText(/compile cache driver-580.159.04-sm90/)).toBeInTheDocument();
-    expect(screen.getByText(/host RAM 18.0 GiB \(19327352832 bytes\) · 1.17% of node/)).toBeInTheDocument();
+    expect(screen.getByText(/host RAM per node 18.0 GiB \(19327352832 bytes\) · 1.17% of node/)).toBeInTheDocument();
+    expect(screen.getByText(/configured maximum 0 bytes/)).toBeInTheDocument();
+    expect(screen.getByText(/gpu-resident: Unavailable · PromotionControllerNotInstalled/)).toBeInTheDocument();
     expect(screen.getByText(/1 standby replica\(s\) holding 1 accelerator\(s\)/)).toBeInTheDocument();
     expect(screen.getByText(/hot floor 1 of minimum 1/)).toBeInTheDocument();
 

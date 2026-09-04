@@ -172,7 +172,7 @@ a one-to-one level mapping:
 
 ### Which mechanisms are implemented, and what each costs
 
-Three are implemented as selectable adapters in
+Two accelerated mechanisms plus the conventional loader are implemented as selectable adapters in
 `components/control-plane/src/fs2_serve/fast_start_mechanisms.py`. A model pins
 one with `spec.cache.mechanism`; leaving it unset keeps the historical
 behaviour, where the fastest qualified path is selected from evidence.
@@ -180,8 +180,8 @@ behaviour, where the fastest qualified path is selected from evidence.
 | Mechanism | What it retains | What it costs |
 | --- | --- | --- |
 | `regional-cache` | In-region image mirror, retained payload, and the JIT/compile cache under an ABI-scoped sub-path instead of a discarded `emptyDir`; a bounded pre-read leaves the payload pages warm | Nothing reserved |
-| `host-memory-residency` | A node-scoped holder keeps the exact payload in host RAM, or `runtime-sleep-offload` keeps a live engine's weights there | A scheduled host-memory reservation, requested and limited, capped at a quarter of the node |
-| `gpu-resident` | A standby replica holds its warm engine in GPU memory behind a readiness gate | An accelerator, for as long as the replica is parked |
+| `host-memory-residency` | One node-scoped holder per active pool node keeps the exact payload in host RAM, or `runtime-sleep-offload` keeps a live engine's weights there | The explicitly declared, scheduled reservation per node or per replica; status identifies the scope and reports the selected render's maximum bytes |
+| `gpu-resident` | Experimental campaign arm only: a standby replica holds its warm engine in GPU memory behind a readiness gate | An accelerator, for as long as the replica is parked; production selection is unavailable until a controller owns promotion conditions |
 
 Each declaration's configuration is bound into the mechanism identity that
 benchmark evidence must match, so retuning a mechanism starts a new cohort

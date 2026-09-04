@@ -184,8 +184,10 @@ class _Residency:
         return self._mode == LOCKED_MODE
 
 
-def _receipt_path(receipt_root: Path, model_ref: str) -> Path:
-    return receipt_root / model_ref / "receipt.json"
+def _receipt_path(receipt_root: Path, holder_id: str, node_name: str) -> Path:
+    """Keep one receipt per holder and node on the shared RWX claim."""
+
+    return receipt_root / holder_id / node_name / "receipt.json"
 
 
 def _write_receipt(path: Path, payload: dict[str, Any]) -> None:
@@ -206,6 +208,7 @@ def check(argv_max_age: float | None = None) -> int:
     """Readiness probe: the published receipt must be current and complete."""
 
     model_ref = _environment("FS2_RESIDENCY_MODEL_REF")
+    holder_id = _environment("FS2_RESIDENCY_HOLDER_ID")
     receipt_root = Path(_environment("FS2_RESIDENCY_RECEIPT_ROOT"))
     expected_bytes = int(_environment("FS2_RESIDENCY_PAYLOAD_BYTES"))
     expected_digest = _environment("FS2_RESIDENCY_PAYLOAD_DIGEST")
@@ -214,13 +217,17 @@ def check(argv_max_age: float | None = None) -> int:
     refresh_seconds = float(os.environ.get("FS2_RESIDENCY_REFRESH_SECONDS", "30"))
     max_age = argv_max_age if argv_max_age is not None else refresh_seconds * 4
     try:
-        receipt = json.loads(_receipt_path(receipt_root, model_ref).read_text(encoding="ascii"))
+        receipt = json.loads(_receipt_path(receipt_root, holder_id, node_name).read_text(encoding="ascii"))
     except (OSError, ValueError):
         sys.stderr.write("residency receipt is unavailable\n")
         return 1
     problems = []
     if receipt.get("schema") != RECEIPT_SCHEMA:
         problems.append("schema")
+    if receipt.get("model_ref") != model_ref:
+        problems.append("model_ref")
+    if receipt.get("holder_id") != holder_id:
+        problems.append("holder_id")
     if receipt.get("node_name") != node_name:
         problems.append("node")
     if receipt.get("config_digest") != config_digest:
@@ -241,6 +248,7 @@ def hold() -> int:
     """Acquire residency, publish the receipt, and keep refreshing it."""
 
     model_ref = _environment("FS2_RESIDENCY_MODEL_REF")
+    holder_id = _environment("FS2_RESIDENCY_HOLDER_ID")
     mode = _environment("FS2_RESIDENCY_MODE")
     payload_root = Path(_environment("FS2_RESIDENCY_PAYLOAD_ROOT"))
     payload_digest = _environment("FS2_RESIDENCY_PAYLOAD_DIGEST")
@@ -257,7 +265,7 @@ def hold() -> int:
     acquire_seconds = time.monotonic() - started
     if residency.resident_bytes < payload_bytes:
         raise ResidencyError(f"held {residency.resident_bytes} of the declared {payload_bytes} payload bytes")
-    receipt_path = _receipt_path(receipt_root, model_ref)
+    receipt_path = _receipt_path(receipt_root, holder_id, node_name)
     while True:
         residency.refresh()
         _write_receipt(
@@ -265,6 +273,7 @@ def hold() -> int:
             {
                 "schema": RECEIPT_SCHEMA,
                 "model_ref": model_ref,
+                "holder_id": holder_id,
                 "node_name": node_name,
                 "config_digest": config_digest,
                 "payload_digest": payload_digest,

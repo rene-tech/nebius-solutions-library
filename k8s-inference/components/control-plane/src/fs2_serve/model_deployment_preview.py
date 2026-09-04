@@ -272,6 +272,10 @@ class ModelDeploymentPreviewService:
                         ],
                         prometheus_server_address=self.prometheus_server_address,
                         model_express=qualification.model_express,
+                        regional_cache=qualification.regional_cache,
+                        host_memory_residency=qualification.host_memory_residency,
+                        gpu_resident=qualification.gpu_resident,
+                        residency_holder_image=self.envelope.residency_holder_image,
                         preview=True,
                     ),
                 )

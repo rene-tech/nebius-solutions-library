@@ -948,10 +948,9 @@ def test_a_pinned_mechanism_must_be_declared_for_every_placement_pool() -> None:
     assert "fast_start_mechanism_pool_unqualified" in _codes(spec, infrastructure)
 
 
-def test_gpu_resident_is_refused_when_the_hot_floor_cannot_afford_it() -> None:
-    spec, infrastructure = _declared_envelope(mechanism="gpu-resident", minimum_hot_replicas=2)
-    codes = _codes(spec, infrastructure)
-    assert "gpu_resident_hot_floor_required" in codes
+def test_gpu_resident_is_refused_until_the_promotion_controller_exists() -> None:
+    with pytest.raises(ValueError, match="not selectable"):
+        _declared_envelope(mechanism="gpu-resident", minimum_hot_replicas=2)
 
 
 def _mechanism_envelope(declaration: Any, *, mechanism: str) -> InfrastructureEnvelope:

@@ -264,9 +264,9 @@ class Campaign:
             return None
         for manifest in rendered["holders"]:
             self._cluster.apply(manifest)
-        deployment = rendered["holders"][-1]["metadata"]["name"]
+        daemon_set = rendered["holders"][-1]["metadata"]["name"]
         self._await(
-            lambda: (self._cluster.get("deployment", deployment) or {}).get("status", {}).get("readyReplicas", 0) >= 1,
+            lambda: (self._cluster.get("daemonset", daemon_set) or {}).get("status", {}).get("numberReady", 0) >= 1,
             f"{arm} residency holder",
             1800,
         )
@@ -282,12 +282,14 @@ class Campaign:
         )
         receipt = None
         if pods["items"]:
-            receipt = self._holder_receipt(pods["items"][0]["metadata"]["name"])
-        return {"deployment": deployment, "receipt": receipt}
+            receipt = self._holder_receipt(pods["items"][0], rendered["holder_identity"])
+        return {"daemon_set": daemon_set, "receipt": receipt}
 
-    def _holder_receipt(self, pod: str) -> dict[str, Any] | None:
-        path = f"{self._spec['residency_receipt_mount']}/{self._spec['model_ref']}/receipt.json"
-        output = self._cluster.run("exec", pod, "--", "cat", path, check=False)
+    def _holder_receipt(self, pod: dict[str, Any], holder_identity: str) -> dict[str, Any] | None:
+        pod_name = pod["metadata"]["name"]
+        node_name = pod["spec"]["nodeName"]
+        path = f"{self._spec['residency_receipt_mount']}/{holder_identity}/{node_name}/receipt.json"
+        output = self._cluster.run("exec", pod_name, "--", "cat", path, check=False)
         try:
             parsed: dict[str, Any] = json.loads(output)
         except ValueError:
@@ -406,8 +408,16 @@ class Campaign:
             "sys.exit(0 if urllib.request.urlopen(sys.argv[1], timeout=5).status == 200 else 1)\n"
         )
         completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
-            [*self._cluster.base, "exec", PROBER_NAME, "--", "python3", "-c", script,
-             f"http://{host}:{self._spec['service_port']}/health"],
+            [
+                *self._cluster.base,
+                "exec",
+                PROBER_NAME,
+                "--",
+                "python3",
+                "-c",
+                script,
+                f"http://{host}:{self._spec['service_port']}/health",
+            ],
             capture_output=True,
             text=True,
             timeout=60,
@@ -470,8 +480,16 @@ class Campaign:
             "urllib.request.urlopen(urllib.request.Request(sys.argv[1], data=b''), timeout=120).read()\n"
         )
         subprocess.run(  # noqa: S603 - fixed argv, no shell
-            [*self._cluster.base, "exec", PROBER_NAME, "--", "python3", "-c", script,
-             f"http://{host}:{self._spec['service_port']}/sleep?level=1"],
+            [
+                *self._cluster.base,
+                "exec",
+                PROBER_NAME,
+                "--",
+                "python3",
+                "-c",
+                script,
+                f"http://{host}:{self._spec['service_port']}/sleep?level=1",
+            ],
             capture_output=True,
             text=True,
             timeout=300,
@@ -589,9 +607,7 @@ def summarise(receipts: list[dict[str, Any]]) -> dict[str, Any]:
         by_arm.setdefault(receipt["arm"], []).append(receipt)
 
     def statistics(cohort: list[dict[str, Any]]) -> dict[str, Any]:
-        durations: list[float | None] = [
-            item["model_start_seconds"] if item["succeeded"] else None for item in cohort
-        ]
+        durations: list[float | None] = [item["model_start_seconds"] if item["succeeded"] else None for item in cohort]
         ordered = sorted(value for value in durations if value is not None)
         failed = sum(1 for value in durations if value is None)
 
@@ -685,8 +701,13 @@ def main(argv: list[str] | None = None) -> int:
         for arm in ARMS:
             rendered = render_arm(spec, arm=arm, attempt=0, campaign_id=arguments.campaign_id)
             cluster.run(
-                "delete", "pod,service", "-l", f"fast-start.fs2.nebius/campaign={arguments.campaign_id}",
-                "--ignore-not-found", "--wait=false", check=False,
+                "delete",
+                "pod,service",
+                "-l",
+                f"fast-start.fs2.nebius/campaign={arguments.campaign_id}",
+                "--ignore-not-found",
+                "--wait=false",
+                check=False,
             )
             for manifest in rendered["holders"]:
                 cluster.delete(manifest["kind"].lower(), manifest["metadata"]["name"])

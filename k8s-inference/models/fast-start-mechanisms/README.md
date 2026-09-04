@@ -4,10 +4,12 @@ This directory measures each cold-start mechanism against the conventional
 loader on live H100, so every model can be given more than one startup path and
 tuned against real workloads later.
 
-The mechanisms themselves are **not** here. They live in
+The production mechanisms and experimental GPU-resident adapter are **not** here. They live in
 `components/control-plane/src/fs2_serve/fast_start_mechanisms.py` and are
-rendered by the model controller. This directory only sequences attempts,
-times them, and writes receipts.
+rendered by the model controller or this campaign harness. Production
+`gpu-resident` selection stays disabled until a controller owns its promotion
+readiness condition. This directory only sequences attempts, times them, and
+writes receipts.
 
 ## Why this is Python and not a chart, a template, or model onboarding
 
@@ -21,7 +23,7 @@ system.
 | The CRD change | `charts/control-plane/.../crds` | Helm already owns the CRD, so the new `spec.cache.mechanism` and `status.fastStart.cacheMechanisms` went there. |
 | Per-model configuration | One reviewed JSON document read by Terraform | This reuses the existing `fast_start_evidence_file` / `fast_start_environment_qualifications_file` / `fast_start_measurement_contracts_file` pattern. Onboarding the two hundredth model is another entry in that document, not new Terraform and not new code. |
 | The residency agent | Inside the control-plane package | Shipping it with the code means onboarding a model needs a declaration and nothing else. It is not a chart asset because no chart renders the holder; the controller does. |
-| This campaign | Python here | There is no existing harness that can cycle a task-owned Pod per mechanism arm. Crucially, it renders its arms by calling the **production** adapter functions, so a measured improvement is attributable to the shipped mechanism rather than to a benchmark fixture. A chart would have to restate the Pod shape and would then be measuring itself. |
+| This campaign | Python here | There is no existing harness that can cycle a task-owned Pod per mechanism arm. Crucially, it renders its arms by calling the same adapter functions as the production renderer (including the explicitly experimental GPU arm), so a measured improvement is attributable to the shipped implementation rather than to a duplicate benchmark fixture. A chart would have to restate the Pod shape and would then be measuring itself. |
 
 `model-onboarding/compile_model.py` is the natural place to *generate* the
 reviewed mechanism document once a model's declaration is settled; it is the

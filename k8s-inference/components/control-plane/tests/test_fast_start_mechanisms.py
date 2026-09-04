@@ -71,26 +71,27 @@ def test_node_local_restore_is_reported_unavailable_on_the_h100_pool() -> None:
     assert assessed["shared-restore"] == ("Unavailable", "NoQualifiedSnapshotCapability")
 
     blocked = unavailable_mechanisms(pool_id="h100-reserved-8x", node_selector=H100_RESERVED_SELECTOR)
-    assert set(blocked) == {"node-local-restore", "shared-restore"}
+    assert set(blocked) == {"gpu-resident", "node-local-restore", "shared-restore"}
     # The report carries the exact selector the scheduler uses, so the claim is
     # checkable against the live pool rather than a separate capability list.
     assert blocked["node-local-restore"].evidence_selector == {"local-nvme.fs2.nebius/eligible": "false"}
     assert blocked["shared-restore"].evidence_selector == {"snapshot.fs2.nebius/eligible": "false"}
 
 
-def test_the_three_implemented_mechanisms_are_available_on_the_h100_pool() -> None:
+def test_only_production_implemented_mechanisms_are_available_on_the_h100_pool() -> None:
     assessed = _by_name("h100-reserved-8x", H100_RESERVED_SELECTOR)
     assert assessed["conventional"][0] == "Available"
     assert assessed["regional-cache"][0] == "Available"
     assert assessed["host-memory-residency"][0] == "Available"
-    assert assessed["gpu-resident"][0] == "Available"
+    assert assessed["gpu-resident"] == ("Unavailable", "PromotionControllerNotInstalled")
 
 
 def test_a_pool_with_local_nvme_unlocks_the_restore_paths() -> None:
     assessed = _by_name("hypothetical-nvme-8x", NVME_POOL_SELECTOR)
     assert assessed["node-local-restore"] == ("Available", "NodeLocalNvmePresent")
     assert assessed["shared-restore"] == ("Available", "SnapshotCapabilityPresent")
-    assert not unavailable_mechanisms(pool_id="hypothetical-nvme-8x", node_selector=NVME_POOL_SELECTOR)
+    blocked = unavailable_mechanisms(pool_id="hypothetical-nvme-8x", node_selector=NVME_POOL_SELECTOR)
+    assert set(blocked) == {"gpu-resident"}
 
 
 def test_a_pool_that_does_not_state_a_capability_is_treated_as_lacking_it() -> None:
@@ -115,8 +116,8 @@ def test_only_the_implemented_mechanisms_are_selectable() -> None:
         FastStartMechanism.CONVENTIONAL,
         FastStartMechanism.REGIONAL_CACHE,
         FastStartMechanism.HOST_MEMORY_RESIDENCY,
-        FastStartMechanism.GPU_RESIDENT,
     )
+    assert FastStartMechanism.GPU_RESIDENT not in SELECTABLE_MECHANISMS
     assert FastStartMechanism.NODE_LOCAL_RESTORE not in SELECTABLE_MECHANISMS
     assert FastStartMechanism.SHARED_RESTORE not in SELECTABLE_MECHANISMS
 
@@ -260,8 +261,8 @@ def test_host_memory_residency_states_its_ram_price_explicitly() -> None:
 
     with pytest.raises(ValueError, match="payload plus holder headroom"):
         _host_memory(reserved_bytes=16397461266)
-    with pytest.raises(ValueError, match="quarter of the node"):
-        _host_memory(reserved_bytes=1648745732096 // 2)
+    explicitly_large = _host_memory(reserved_bytes=1648745732096 // 2)
+    assert explicitly_large.reserved_fraction_of_node == pytest.approx(0.5)
 
 
 def test_sleep_offload_residency_is_held_by_the_runtime() -> None:
@@ -398,7 +399,7 @@ def test_regional_cache_refuses_an_image_that_is_not_the_in_region_mirror() -> N
         )
 
 
-def test_host_memory_residency_binds_the_runtime_to_a_node_that_already_holds_the_payload() -> None:
+def test_host_memory_residency_waits_for_the_holder_receipt_on_its_exact_node() -> None:
     pod_spec, metadata = _conventional()
     declaration = _host_memory()
     configure_host_memory_residency(
@@ -407,13 +408,13 @@ def test_host_memory_residency_binds_the_runtime_to_a_node_that_already_holds_th
         qualification=declaration,
         runtime_image=QWEN_IMAGE,
         model_ref="qwen3-8b",
+        holder_identity="fsm-hostmem-qwen3-8b",
         runtime_container_name="vllm",
     )
-    # Placement is explicit: the runtime may only land on the holder's node.
-    term = pod_spec["affinity"]["podAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"][0]
-    assert term["labelSelector"]["matchLabels"] == {"fast-start.fs2.nebius/host-memory-residency": "qwen3-8b"}
-    assert term["topologyKey"] == "kubernetes.io/hostname"
-    assert term["namespaces"] == ["fs2-models"]
+    # Avoiding required inter-Pod affinity lets the serving Pod trigger a
+    # scale-up from zero. The DaemonSet follows it and this node-scoped receipt
+    # remains the admission barrier.
+    assert "podAffinity" not in pod_spec.get("affinity", {})
 
     # And it refuses to start unless this node's receipt proves the exact
     # configuration, payload digest and byte count are resident.
@@ -422,7 +423,8 @@ def test_host_memory_residency_binds_the_runtime_to_a_node_that_already_holds_th
     assert environment["FS2_RESIDENCY_CONFIG_DIGEST"] == declaration.config_digest
     assert environment["FS2_RESIDENCY_PAYLOAD_DIGEST"] == declaration.payload_digest
     assert environment["FS2_RESIDENCY_BYTES"] == str(declaration.payload_bytes)
-    assert environment["FS2_RESIDENCY_RECEIPT"] == "/residency/qwen3-8b/receipt.json"
+    assert environment["FS2_RESIDENCY_RECEIPT_ROOT"] == "/residency"
+    assert environment["FS2_RESIDENCY_HOLDER_ID"] == "fsm-hostmem-qwen3-8b"
     node_ref = next(item for item in verify["env"] if item["name"] == "FS2_NODE_NAME")
     assert node_ref["valueFrom"]["fieldRef"]["fieldPath"] == "spec.nodeName"
     compile(verify["command"][2], "residency-verify", "exec")
@@ -435,6 +437,7 @@ def test_the_residency_holder_schedules_the_ram_it_costs() -> None:
         namespace="fs2-models",
         name="fsm-hostmem-qwen3-8b",
         model_ref="qwen3-8b",
+        holder_identity="fsm-hostmem-qwen3-8b",
         qualification=declaration,
         image=QWEN_IMAGE,
         node_selector={"kubernetes.io/hostname": "h100-node-a"},
@@ -443,7 +446,7 @@ def test_the_residency_holder_schedules_the_ram_it_costs() -> None:
         annotations={},
     )
     kinds = [item["kind"] for item in manifests]
-    assert kinds == ["ConfigMap", "Deployment"]
+    assert kinds == ["ConfigMap", "DaemonSet"]
     agent = manifests[0]["data"]["residency_agent.py"]
     compile(agent, "residency-agent", "exec")
 
@@ -466,6 +469,7 @@ def test_a_mapped_residency_holder_does_not_ask_for_the_lock_capability() -> Non
         namespace="fs2-models",
         name="fsm-hostmem-qwen3-8b",
         model_ref="qwen3-8b",
+        holder_identity="fsm-hostmem-qwen3-8b",
         qualification=_host_memory(mode="mapped-payload-residency"),
         image=QWEN_IMAGE,
         node_selector={"kubernetes.io/hostname": "node"},
@@ -486,6 +490,7 @@ def test_sleep_offload_reserves_on_the_runtime_and_needs_no_holder() -> None:
         qualification=declaration,
         runtime_image=QWEN_IMAGE,
         model_ref="qwen3-8b",
+        holder_identity="fsm-hostmem-qwen3-8b",
         runtime_container_name="vllm",
     )
     # The engine holds its own offloaded weights, so there is no holder
@@ -502,6 +507,7 @@ def test_sleep_offload_reserves_on_the_runtime_and_needs_no_holder() -> None:
             namespace="fs2-models",
             name="fsm-hostmem-qwen3-8b",
             model_ref="qwen3-8b",
+            holder_identity="fsm-hostmem-qwen3-8b",
             qualification=declaration,
             image=QWEN_IMAGE,
             node_selector={},
@@ -511,7 +517,7 @@ def test_sleep_offload_reserves_on_the_runtime_and_needs_no_holder() -> None:
         )
 
 
-def test_an_existing_larger_runtime_memory_request_is_not_reduced() -> None:
+def test_sleep_offload_adds_its_reservation_to_existing_runtime_memory() -> None:
     pod_spec, metadata = _conventional()
     pod_spec["containers"][0]["resources"] = {"requests": {"memory": "64Gi"}, "limits": {"memory": "160Gi"}}
     configure_host_memory_residency(
@@ -520,9 +526,10 @@ def test_an_existing_larger_runtime_memory_request_is_not_reduced() -> None:
         qualification=_host_memory(mode="runtime-sleep-offload"),
         runtime_image=QWEN_IMAGE,
         model_ref="qwen3-8b",
+        holder_identity="fsm-hostmem-qwen3-8b",
         runtime_container_name="vllm",
     )
-    assert pod_spec["containers"][0]["resources"]["requests"]["memory"] == "64Gi"
+    assert pod_spec["containers"][0]["resources"]["requests"]["memory"] == "88046829568"
     assert parse_memory_quantity("64Gi") == 68719476736
     assert parse_memory_quantity("1000M") == 1000000000
 
@@ -537,6 +544,7 @@ def test_the_residency_agent_holds_real_bytes_and_publishes_a_verifiable_receipt
     receipt_root = tmp_path / "residency"
     environment = {
         "FS2_RESIDENCY_MODEL_REF": "qwen3-8b",
+        "FS2_RESIDENCY_HOLDER_ID": "fsm-hostmem-qwen3-8b",
         # Locking needs CAP_IPC_LOCK, which a test process does not have; the
         # mapped mode is the same code path minus the lock syscall.
         "FS2_RESIDENCY_MODE": "mapped-payload-residency",
@@ -553,7 +561,8 @@ def test_the_residency_agent_holds_real_bytes_and_publishes_a_verifiable_receipt
         with mock.patch.object(residency_agent.time, "sleep", side_effect=StopIteration):
             with pytest.raises(StopIteration):
                 residency_agent.hold()
-        receipt = json.loads((receipt_root / "qwen3-8b" / "receipt.json").read_text())
+        receipt_path = receipt_root / "fsm-hostmem-qwen3-8b" / "h100-node-a" / "receipt.json"
+        receipt = json.loads(receipt_path.read_text())
         assert receipt["resident_bytes"] == 12288
         assert receipt["resident_files"] == 2
         assert receipt["residency_guaranteed"] is False
@@ -562,9 +571,9 @@ def test_the_residency_agent_holds_real_bytes_and_publishes_a_verifiable_receipt
         # container check, so the handshake is proved by one artefact.
         assert residency_agent.check() == 0
 
-        stale = json.loads((receipt_root / "qwen3-8b" / "receipt.json").read_text())
+        stale = json.loads(receipt_path.read_text())
         stale["refreshed_at_epoch"] = 0.0
-        (receipt_root / "qwen3-8b" / "receipt.json").write_text(json.dumps(stale))
+        receipt_path.write_text(json.dumps(stale))
         assert residency_agent.check() == 1
 
 
@@ -574,6 +583,7 @@ def test_the_residency_agent_refuses_to_understate_what_it_holds(tmp_path: Path)
     (payload_root / "shard-0.bin").write_bytes(b"a" * 1024)
     environment = {
         "FS2_RESIDENCY_MODEL_REF": "qwen3-8b",
+        "FS2_RESIDENCY_HOLDER_ID": "fsm-hostmem-qwen3-8b",
         "FS2_RESIDENCY_MODE": "mapped-payload-residency",
         "FS2_RESIDENCY_PAYLOAD_ROOT": str(payload_root),
         "FS2_RESIDENCY_PAYLOAD_DIGEST": "sha256:" + "5b" * 32,
@@ -681,6 +691,7 @@ def test_the_holder_reads_the_payload_as_the_runtime_does() -> None:
         namespace="fs2-models",
         name="fsm-hostmem-qwen3-8b",
         model_ref="qwen3-8b",
+        holder_identity="fsm-hostmem-qwen3-8b",
         qualification=_host_memory(),
         image=QWEN_IMAGE,
         node_selector={"kubernetes.io/hostname": "node"},
@@ -700,6 +711,7 @@ def test_a_holder_without_a_runtime_identity_declares_none() -> None:
         namespace="fs2-models",
         name="fsm-hostmem-qwen3-8b",
         model_ref="qwen3-8b",
+        holder_identity="fsm-hostmem-qwen3-8b",
         qualification=_host_memory(),
         image=QWEN_IMAGE,
         node_selector={"kubernetes.io/hostname": "node"},

@@ -29,13 +29,13 @@ if str(CONTROL_PLANE_SOURCE) not in sys.path:
 from fs2_serve.fast_start_identity import mechanism_config_digest  # noqa: E402
 from fs2_serve.fast_start_mechanisms import (  # noqa: E402
     GPU_RESIDENT_READINESS_GATE,
-    HOST_MEMORY_RESIDENCY_LABEL,
+    HOST_MEMORY_RESIDENCY_HOLDER_LABEL,
     FastStartMechanism,
     GpuResidentQualification,
     HostMemoryResidencyQualification,
     RegionalCacheQualification,
-    RetainedCompileCache,
     ResidencyHolder,
+    RetainedCompileCache,
     WarmPageCacheReadAhead,
     canonical_digest,
     configure_gpu_resident,
@@ -367,18 +367,21 @@ def render_arm(
         )
     elif arm == "host-memory-residency":
         assert isinstance(declaration, HostMemoryResidencyQualification)
+        holder_identity = declaration.holder.name
         configure_host_memory_residency(
             pod_spec=pod_spec,
             pod_metadata=pod_metadata,
             qualification=declaration,
             runtime_image=spec["runtime_image"],
             model_ref=spec["model_ref"],
+            holder_identity=holder_identity,
             runtime_container_name=spec["runtime_container_name"],
         )
         holders = residency_holder_manifests(
             namespace=spec["namespace"],
             name=declaration.holder.name,
             model_ref=spec["model_ref"],
+            holder_identity=holder_identity,
             qualification=declaration,
             image=spec["runtime_image"],
             node_selector={"kubernetes.io/hostname": spec["node_name"]},
@@ -395,6 +398,7 @@ def render_arm(
             qualification=declaration,
             runtime_image=spec["runtime_image"],
             model_ref=spec["model_ref"],
+            holder_identity=declaration.holder.name,
             runtime_container_name=spec["runtime_container_name"],
         )
         container = pod_spec["containers"][0]
@@ -444,7 +448,8 @@ def render_arm(
         "pod": pod,
         "service": service,
         "holders": holders,
-        "holder_selector": {HOST_MEMORY_RESIDENCY_LABEL: spec["model_ref"]} if holders else None,
+        "holder_selector": {HOST_MEMORY_RESIDENCY_HOLDER_LABEL: declaration.holder.name} if holders else None,
+        "holder_identity": declaration.holder.name if holders else None,
     }
 
 
@@ -465,7 +470,9 @@ def main(argv: list[str] | None = None) -> int:
     spec = target(load_contract(), arguments.target)
     spec["node_name"] = arguments.node
     if arguments.arm:
-        rendered: Any = render_arm(spec, arm=arguments.arm, attempt=arguments.attempt, campaign_id=arguments.campaign_id)
+        rendered: Any = render_arm(
+            spec, arm=arguments.arm, attempt=arguments.attempt, campaign_id=arguments.campaign_id
+        )
     else:
         rendered = render_all(spec, campaign_id=arguments.campaign_id)
     json.dump(copy.deepcopy(rendered), sys.stdout, indent=2, sort_keys=True)
