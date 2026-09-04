@@ -166,6 +166,63 @@ Prometheus exposes the fleet-level equivalents as
 active time and non-active phases for occupied-idle analysis). These metrics
 are cumulative by tenant/model, so use pre/post deltas for one fleet run.
 
+## Ten-model cold-start and cache benchmark
+
+`run_coldstart_benchmark.py` composes, rather than replaces, the fleet runner.
+It runs at least three complete fleet repetitions, joins each operation to the
+authenticated scientific run-detail and lifecycle projections, and groups
+statistics only when execution image, execution identity, placement pool,
+capacity type, environment cache tier, and observed fast-start tier match.
+
+The benchmark records queue and admission/capacity wait, image pull, artifact
+localization, restore, compile/warmup, active compute, accepted-to-terminal
+semantic response, and operation runtime. A dedicated runtime/model-load value
+remains unavailable until the controller exposes that boundary; the script
+does not relabel total cold-start or artifact-load time. The asynchronous API
+returns one terminal validated result, so the customer clock is named
+`time_to_first_semantic_result_seconds`, never TTFT.
+
+Exact GPU accounting is joined from
+`/admin/api/v1/telemetry/workloads?operation_id=...`. Scheduler-occupied,
+device-allocated, active, occupied-idle, and phase GPU seconds retain the
+ledger's quality and reconciliation state. If that endpoint or an exact clock
+is unavailable, the receipt says so and preserves no inferred zero.
+
+Use the reviewed environment qualification set from the existing cold-start
+tooling to pin H100, driver/CUDA, storage, pool, capacity, and eligible cache
+state. An environment cache tier is capability evidence; it is not proof that
+the attempt used that mechanism. The per-run admin `fast_start` observation is
+recorded separately. Likewise, this scientific-batch receipt does not assign a
+customer L1-L4 level because it has no model-endpoint-ready boundary.
+
+Run only after all ten routes are deployed and the admin model preflight lists
+all ten as published batch profiles:
+
+```bash
+export FS2_INFERENCE_TOKEN='...'
+export FS2_ADMIN_TOKEN='...'
+python3 acceptance/scientific-fleet/run_coldstart_benchmark.py \
+  --endpoint https://inference.example \
+  --repository-root "$PWD" \
+  --receipt-root /secure/fs2-scientific-coldstart \
+  --run-id scientific-coldstart-20260904-01 \
+  --environment-qualifications /reviewed/environment-qualifications.json \
+  --project-id project-e00rene \
+  --region eu-north1 \
+  --cluster-context k8s-inference-h100 \
+  --reserved-pool-id h100-reserved-8x \
+  --repetitions 3 \
+  --max-parallel 8
+```
+
+Bearer values and the short-lived operator cookie remain memory-only. The run
+directory is mode `0700`; fleet and benchmark receipts are mode `0600`. The
+runner makes no model-configuration or capacity mutation, revokes its admin
+session, verifies the before/after scientific-model snapshot digest, and exits
+nonzero if any model fails or the snapshot changes. Public scientific Jobs are
+already terminal when a fleet repetition returns, so there is no model floor
+or scaling override to restore.
+
 ## Secondary structure fleet inputs
 
 The five secondary/academic structure lanes have model-owned public acceptance
