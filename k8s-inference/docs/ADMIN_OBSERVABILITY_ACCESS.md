@@ -39,13 +39,16 @@ chart adds the corresponding v2 Alertmanager target to Prometheus. The default
 receiver is intentionally local and sends no notifications outside the
 cluster; notification destinations are a separate operator configuration.
 
-When enabled, Terraform provisions an Alertmanager datasource with
-`implementation: prometheus` in Grafana. That gives operators supported alert,
-silence, contact-point, and notification-policy views through Grafana's native
-login. The admin launch opens Grafana's Silences surface with the provisioned
-Alertmanager identity selected. The Prometheus implementation permits silence
-management while contact points and notification policy remain read-only in
-Grafana, as documented by
+When enabled, the pinned kube-prometheus-stack chart provisions its built-in
+Alertmanager datasource with the stable UID `alertmanager` and
+`implementation: prometheus`. Foundation state reuses that identity rather than
+creating a second sidecar ConfigMap with the same `datasource.yaml` filename.
+That gives operators supported alert, silence, contact-point, and
+notification-policy views through Grafana's native login. The admin launch
+opens Grafana's Silences surface with the chart-owned Alertmanager identity
+selected. The Prometheus implementation permits silence management while
+contact points and notification policy remain read-only in Grafana, as
+documented by
 [Grafana's Alertmanager datasource guide](https://grafana.com/docs/grafana/latest/datasources/alertmanager/).
 
 Tempo already has a provisioned, run-qualified datasource. The admin API emits
@@ -82,7 +85,12 @@ target cluster verify all of the following without port forwarding:
    class and size;
 2. Prometheus reports the Alertmanager and Tempo targets healthy and their
    build-info series present;
-3. Grafana lists both provisioned datasources;
+3. Grafana lists both provisioned datasources, and
+   `/api/datasources/proxy/uid/alertmanager/api/v2/status` returns Alertmanager's
+   v2 status document. Do not use `/api/datasources/uid/alertmanager/health` for
+   this check: the built-in Alertmanager datasource is frontend-only, so that
+   generic backend-plugin health route returns `Plugin unavailable` even when
+   the supported proxy is healthy;
 4. the admin Observability page enables Alertmanager and Tempo launch actions;
 5. Alertmanager opens Grafana Alerting and Tempo opens Explore with the exact
    Tempo datasource selected;

@@ -155,6 +155,14 @@ resource "kubernetes_job_v1" "reporting_datasource_acceptance" {
           }
 
           env {
+            name = "FS2_GRAFANA_ALERTMANAGER_DATASOURCE_UID"
+            value = (
+              local.observability_operator.alertmanager.enabled ?
+              local.observability_operator.alertmanager.grafana_datasource_uid : ""
+            )
+          }
+
+          env {
             name  = "FS2_RUN_ID"
             value = var.run_id
           }

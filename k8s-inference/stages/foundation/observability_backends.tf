@@ -1,6 +1,9 @@
 locals {
-  alertmanager_service_name       = "fs2-${var.run_id}-monitoring-alertmanager"
-  alertmanager_grafana_datasource = "fs2-${var.run_id}-alertmanager"
+  alertmanager_service_name = "fs2-${var.run_id}-monitoring-alertmanager"
+  # kube-prometheus-stack owns this stable datasource and its provisioning
+  # file. A second sidecar ConfigMap with the same datasource.yaml key races
+  # the chart-owned file and can leave the run-scoped UID absent in Grafana.
+  alertmanager_grafana_datasource = "alertmanager"
   tempo_service_name              = "fs2-tempo"
   tempo_grafana_datasource        = "fs2-${var.run_id}-tempo"
 }
@@ -98,47 +101,6 @@ resource "kubernetes_config_map_v1" "grafana_tempo_datasource" {
     helm_release.monitoring,
     helm_release.tempo,
   ]
-}
-
-# Alertmanager itself remains cluster-private. Grafana proxies this provisioned
-# datasource behind its existing authenticated same-origin publication and
-# gives operators the supported Alerting UI instead of a second raw endpoint.
-resource "kubernetes_config_map_v1" "grafana_alertmanager_datasource" {
-  count = var.alertmanager.enabled ? 1 : 0
-
-  metadata {
-    name      = "fs2-alertmanager-grafana-datasource"
-    namespace = kubernetes_namespace_v1.platform["fs2-observability"].metadata[0].name
-    labels = merge(local.common_labels, {
-      grafana_datasource = "1"
-    })
-  }
-
-  data = {
-    "datasource.yaml" = yamlencode({
-      apiVersion = 1
-      # Removing this optional Terraform-owned provisioning file also removes
-      # its datasource; it does not leave a disabled Alertmanager looking live.
-      prune = true
-      datasources = [{
-        name      = local.alertmanager_grafana_datasource
-        uid       = local.alertmanager_grafana_datasource
-        type      = "alertmanager"
-        access    = "proxy"
-        orgId     = 1
-        url       = "http://${local.alertmanager_service_name}.fs2-observability.svc.cluster.local:9093"
-        isDefault = false
-        editable  = false
-        version   = 1
-        jsonData = {
-          implementation             = "prometheus"
-          handleGrafanaManagedAlerts = false
-        }
-      }]
-    })
-  }
-
-  depends_on = [helm_release.monitoring]
 }
 
 output "observability_operator_contract" {

@@ -322,6 +322,18 @@ class SchedulingObservabilityContractTests(unittest.TestCase):
         workloads = (ROOT / "stages/workloads/observability.tf").read_text(
             encoding="utf-8"
         )
+        admin_links = (ROOT / "stages/workloads/admin_grafana.tf").read_text(
+            encoding="utf-8"
+        )
+        control_plane = (ROOT / "stages/workloads/control_plane.tf").read_text(
+            encoding="utf-8"
+        )
+        acceptance = (ROOT / "stages/workloads/acceptance.tf").read_text(
+            encoding="utf-8"
+        )
+        acceptance_probe = (
+            ROOT / "stages/workloads/scripts/reporting_acceptance.py"
+        ).read_text(encoding="utf-8")
 
         for expected in (
             "enabled = var.alertmanager.enabled",
@@ -333,11 +345,32 @@ class SchedulingObservabilityContractTests(unittest.TestCase):
         ):
             self.assertIn(expected, releases)
         self.assertIn(
-            'resource "kubernetes_config_map_v1" "grafana_alertmanager_datasource"',
-            backends,
+            'alertmanager_grafana_datasource = "alertmanager"', backends
         )
-        self.assertIn('type      = "alertmanager"', backends)
-        self.assertIn('implementation             = "prometheus"', backends)
+        self.assertNotIn("grafana_alertmanager_datasource", backends)
+        self.assertIn("alertmanager = {", releases)
+        self.assertIn(
+            "uid                        = local.alertmanager_grafana_datasource",
+            releases,
+        )
+        self.assertIn('implementation             = "prometheus"', releases)
+        self.assertIn(
+            "alertmanager=${local.observability_operator.alertmanager.grafana_datasource_uid}",
+            admin_links,
+        )
+        self.assertIn(
+            "alertmanager = coalesce(local.observability_operator.alertmanager.grafana_datasource_uid, \"\")",
+            control_plane,
+        )
+        self.assertIn("FS2_GRAFANA_ALERTMANAGER_DATASOURCE_UID", acceptance)
+        self.assertIn(
+            'datasource_proxy_path(alertmanager_uid, "/api/v2/status")',
+            acceptance_probe,
+        )
+        self.assertNotIn(
+            'f"/api/datasources/uid/{alertmanager_uid}/health"',
+            acceptance_probe,
+        )
         self.assertIn("raw_backends_public = false", backends)
         self.assertIn('port     = "9093"', workloads)
 
@@ -373,6 +406,16 @@ class SchedulingObservabilityContractTests(unittest.TestCase):
                 "alertmanager.alertmanagerSpec.persistentVolumeClaimRetentionPolicy.whenDeleted=Retain",
                 "--set",
                 "alertmanager.alertmanagerSpec.persistentVolumeClaimRetentionPolicy.whenScaled=Retain",
+                "--set",
+                "grafana.sidecar.datasources.alertmanager.enabled=true",
+                "--set-string",
+                "grafana.sidecar.datasources.alertmanager.name=Alertmanager",
+                "--set-string",
+                "grafana.sidecar.datasources.alertmanager.uid=alertmanager",
+                "--set",
+                "grafana.sidecar.datasources.alertmanager.handleGrafanaManagedAlerts=false",
+                "--set-string",
+                "grafana.sidecar.datasources.alertmanager.implementation=prometheus",
             ],
             check=False,
             capture_output=True,
@@ -411,6 +454,37 @@ class SchedulingObservabilityContractTests(unittest.TestCase):
                     "port": "http-web",
                     "pathPrefix": "/",
                     "apiVersion": "v2",
+                }
+            ],
+        )
+        datasource_configmaps = [
+            item
+            for item in documents
+            if item.get("kind") == "ConfigMap"
+            and "datasource.yaml" in item.get("data", {})
+        ]
+        self.assertEqual(len(datasource_configmaps), 1)
+        provisioned = yaml.safe_load(
+            datasource_configmaps[0]["data"]["datasource.yaml"]
+        )["datasources"]
+        alertmanager_datasources = [
+            datasource
+            for datasource in provisioned
+            if datasource.get("type") == "alertmanager"
+        ]
+        self.assertEqual(
+            alertmanager_datasources,
+            [
+                {
+                    "name": "Alertmanager",
+                    "type": "alertmanager",
+                    "uid": "alertmanager",
+                    "url": "http://fs2-r0123456789-monitoring-alertmanager.fs2-observability:9093/",
+                    "access": "proxy",
+                    "jsonData": {
+                        "handleGrafanaManagedAlerts": False,
+                        "implementation": "prometheus",
+                    },
                 }
             ],
         )

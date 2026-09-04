@@ -250,6 +250,9 @@ spec:
       annotations:
         fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
         fs2.nebius.ai/catalog-rollout-digest: {{ .Values.catalog.rolloutDigest | quote }}
+        {{- if .Values.adminReadAdapters.observability.enabled }}
+        fs2.nebius.ai/admin-observability-config-sha256: {{ .Values.adminReadAdapters.observability | toJson | sha256sum | quote }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
