@@ -19,6 +19,20 @@
       "type": "object",
       "required": ["staging", "raw-input", "inference"],
       "propertyNames": {"pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+      "properties": {
+        "raw-input": {
+          "allOf": [
+            {"$ref": "#/$defs/stage"},
+            {"properties": {"defaults": {"properties": {"active_deadline_seconds": {"maximum": 604800}}}}}
+          ]
+        },
+        "inference": {
+          "allOf": [
+            {"$ref": "#/$defs/stage"},
+            {"properties": {"defaults": {"properties": {"active_deadline_seconds": {"maximum": 604800}}}}}
+          ]
+        }
+      },
       "additionalProperties": {"$ref": "#/$defs/stage"}
     }
   },
@@ -109,7 +123,7 @@
             "cpu": {"$ref": "#/$defs/quantity_cpu"},
             "memory": {"$ref": "#/$defs/quantity_memory"},
             "ephemeral_storage": {"$ref": "#/$defs/quantity_memory"},
-            "active_deadline_seconds": {"type": "integer", "minimum": 60, "maximum": 604800},
+            "active_deadline_seconds": {"type": "integer", "minimum": 60, "maximum": 1209600},
             "backoff_limit": {"type": "integer", "minimum": 0, "maximum": 10},
             "threads": {"type": "integer", "minimum": 1, "maximum": 128}
           }

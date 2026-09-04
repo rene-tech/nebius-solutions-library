@@ -469,10 +469,16 @@ def validate_placement_contract(document: Any) -> dict[str, Any]:
             raise ContractError(f"{context} default CPU request is invalid")
         for field in ("memory", "ephemeral_storage"):
             parse_memory_mib(defaults[field], f"{context} default {field}")
+        # Bulk reference-data staging is allowed to run for up to fourteen
+        # days by the root and module Terraform contracts. Raw-input and
+        # inference requests retain the seven-day ceiling because those are
+        # request-scoped execution lanes rather than the one-time database
+        # publication job.
+        maximum_deadline_seconds = 1209600 if stage_id == "staging" else 604800
         if (
             not isinstance(defaults["active_deadline_seconds"], int)
             or isinstance(defaults["active_deadline_seconds"], bool)
-            or not 60 <= defaults["active_deadline_seconds"] <= 604800
+            or not 60 <= defaults["active_deadline_seconds"] <= maximum_deadline_seconds
         ):
             raise ContractError(f"{context} default deadline is invalid")
         if (
