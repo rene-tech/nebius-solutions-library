@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import re
 import subprocess
@@ -15,9 +16,17 @@ from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).resolve().parent
+ACCEPTANCE_RUNNER_PATH = ROOT / "acceptance/scientific-fleet/run_acceptance.py"
+ACCEPTANCE_SPEC = importlib.util.spec_from_file_location(
+    "fs2_primary_activation_acceptance_runner", ACCEPTANCE_RUNNER_PATH
+)
+if ACCEPTANCE_SPEC is None or ACCEPTANCE_SPEC.loader is None:
+    raise RuntimeError("scientific fleet acceptance runner cannot be loaded")
+ACCEPTANCE_RUNNER = importlib.util.module_from_spec(ACCEPTANCE_SPEC)
+sys.modules[ACCEPTANCE_SPEC.name] = ACCEPTANCE_RUNNER
+ACCEPTANCE_SPEC.loader.exec_module(ACCEPTANCE_RUNNER)
 PROFILE_SCHEMA = ROOT / "catalog/runtime/schema/scientific-workload-profile.schema.json"
 REQUEST_SCHEMA = ROOT / "catalog/runtime/schema/scientific-run-request.schema.json"
 RESULT_SCHEMA = ROOT / "catalog/runtime/schema/scientific-run-result.schema.json"
@@ -432,6 +441,16 @@ def validate_fragment_document(fragment: dict[str, Any], path: Path) -> list[str
                     + b"\n"
                 )
                 input_manifests.append(supporting_value)
+            elif supporting["encoding"] == "deterministic-tar-gzip-v1":
+                try:
+                    content = ACCEPTANCE_RUNNER.deterministic_tar_gzip(
+                        content, supporting.get("archive_path")
+                    )
+                except ACCEPTANCE_RUNNER.AcceptanceError as error:
+                    errors.append(
+                        f"{model_id}: supporting input materialization failed: {error.code}"
+                    )
+                    continue
             content_identity = (hashlib.sha256(content).hexdigest(), len(content))
             if supporting["role"] == "request-input-manifest":
                 pointer = request["input_manifest"]

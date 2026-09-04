@@ -39,6 +39,18 @@ The runner uploads every exact artifact, replaces template pointers with the
 returned immutable public pointers, canonicalizes and uploads the resulting
 manifest, then replaces the request pointer before submission.
 
+`deterministic-tar-gzip-v1` is available for small, source-controlled public
+fixtures that a runtime consumes as a tar workspace. The declaration's `path`
+is the source file and `archive_path` is its fixed relative path in the tar.
+The materializer fixes tar ownership, mode and timestamp plus every gzip header
+field and emits byte-stable stored DEFLATE blocks, so the request can bind one
+stable digest without checking in generated binary data. It is accepted only
+for named `manifest-artifact` declarations.
+Proteina-Complexa uses it to package the Apache-2.0 PD-L1 structure from the
+pinned upstream source at
+`assets/target_data/bindcraft_targets/PD-L1.pdb`; no checkpoint, credential, or
+licensed PyRosetta package is part of the fixture.
+
 Use a token that can upload and invoke the selected model and read its
 operation result. The token is accepted only through an environment variable:
 

@@ -97,11 +97,11 @@
     ]
   },
   "input_manifest": {
-    "artifact_id": "target.pdl1.bundle.01",
-    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "size_bytes": 4096,
-    "media_type": "application/x-tar",
-    "compression": "zstd"
+    "artifact_id": "manifest.proteina-complexa.pdl1.01",
+    "sha256": "9e918d1d57d8e0d35ed078fdbd2e22b18ecd58e61b1c7a9ab773d671a5b8d218",
+    "size_bytes": 426,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
   },
   "output_manifest": null,
   "attempts": [],

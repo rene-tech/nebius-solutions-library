@@ -365,7 +365,21 @@
   "public_fixtures": {
     "request": "models/cancer-immunotherapy/runtime-images/proteina-complexa/activation/public-request.json",
     "result": "models/cancer-immunotherapy/runtime-images/proteina-complexa/activation/public-result.example.json",
-    "semantic_validator": "models/cancer-immunotherapy/runtime-images/proteina-complexa/qualification/validate_result.py"
+    "semantic_validator": "models/cancer-immunotherapy/runtime-images/proteina-complexa/qualification/validate_result.py",
+    "supporting_inputs": [
+      {
+        "role": "request-input-manifest",
+        "path": "models/cancer-immunotherapy/runtime-images/proteina-complexa/activation/input-manifest.json",
+        "encoding": "canonical-json-newline"
+      },
+      {
+        "role": "manifest-artifact",
+        "name": "target-bundle",
+        "path": "models/cancer-immunotherapy/runtime-images/proteina-complexa/tests/fixtures/PD-L1.pdb",
+        "encoding": "deterministic-tar-gzip-v1",
+        "archive_path": "assets/target_data/bindcraft_targets/PD-L1.pdb"
+      }
+    ]
   },
   "activation_gate": {
     "route_exposed": false,
