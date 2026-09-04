@@ -9,15 +9,15 @@
     "repository_note": "The concrete registry account path is a deployment binding supplied at deploy time and is deliberately not committed. The immutable digest is the authoritative identity.",
     "region": "eu-north1",
     "platform": "linux/amd64",
-    "tag": "3.0.4-85c4d205-r6",
-    "digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
-    "production_protocol_compatible": false,
-    "successor_required": "The published r6 digest predates atomic terminal receipts and the bounded 256 MiB handoff protocol; build and qualify a new immutable successor digest before activation.",
+    "tag": "3.0.4-85c4d205-r7",
+    "digest": "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
+    "production_protocol_compatible": true,
+    "qualification_required": "The repaired r7 successor is published and protocol-compatible, but it requires exact-digest H100 parameter-load and inference qualification before activation.",
     "digest_state": "published",
     "digest_note": "This is the authoritative identity; consume the image by digest. Do not substitute sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887 or sha256:bead2e68627c1aa7d5fa80243b1164a18160f48cf3a1867090d72ff2b9270e37, which are stock upstream images retained only as historical semantic evidence and are not this runtime.",
     "gpu_family": "agnostic",
     "gpu_requirement": "Any NVIDIA GPU of compute capability 8.0 or later. Compute capability 8.0+ is required by the default Triton and cuDNN flash-attention kernels; --flash-attention xla removes that requirement. No node name, GPU model or H100-specific selector is baked into the image or into any reusable contract.",
-    "published_at": "2026-09-03T04:21:00Z",
+    "published_at": "2026-09-04T15:24:07Z",
     "superseded": [
       {
         "tag": "3.0.4-85c4d205",
@@ -38,10 +38,15 @@
         "tag": "3.0.4-85c4d205-r5",
         "digest": "sha256:d8cf266e972e4eea9ef63723be834550b669431ef618a8975354100146fa0440",
         "reason": "Runtime semantics were accepted, but its SLSA attestation named commit 2ddba5fe, which was amended away, so its provenance pointed at source that no longer matched the image. Must not be deployed."
+      },
+      {
+        "tag": "3.0.4-85c4d205-r6",
+        "digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
+        "reason": "Its retained H100 semantics predate the repaired atomic terminal receipt, bounded handoff, frozen invocation identity, and shared workspace identity protocol. Must not be deployed."
       }
     ],
-    "source_revision": "12d40c8f0dac03bceb8d795ad769a2f0bb73140e",
-    "provenance_note": "The SLSA attestation records vcs:revision 12d40c8f0dac03bceb8d795ad769a2f0bb73140e, the commit this image was built from. The build fails if those ever disagree."
+    "source_revision": "a1b5b6b24b2dae54a1f7caeba9981a7aaa60cc8f",
+    "provenance_note": "The SLSA attestation records vcs:revision a1b5b6b24b2dae54a1f7caeba9981a7aaa60cc8f, the exact clean pushed commit this image was built from. The build fails if those ever disagree."
   },
   "entrypoint": {
     "command": [
@@ -227,7 +232,8 @@
   "pod_security": {
     "runAsNonRoot": true,
     "image_default_user": "1001:1001",
-    "runAsUser": "operator chosen; the image does not require its own default",
+    "runAsUser": 1001,
+    "runAsGroup": 1001,
     "supplementalGroups": [
       65532
     ],
@@ -282,14 +288,14 @@
   "readiness": {
     "state": "not-ready",
     "blocking": [
-      "a new immutable runtime image is built from the atomic-receipt and bounded-handoff source and qualified on H100",
+      "the exact published r7 digest passes H100 parameter-load and inference semantic qualification",
       "reference-data worker publishes the AlphaFold 3 bundle and generates its terminal receipt for a real CPU data stage",
       "controller route and submission wiring landed by their owning tasks"
     ],
-    "rule": "The historical r6 runtime has H100 evidence but is not production-protocol compatible. AlphaFold 3 is not servable until its immutable successor, reference bundle, and controller route land.",
+    "rule": "The r7 runtime is published and production-protocol compatible, but AlphaFold 3 is not servable until r7 semantic H100 qualification, the reference bundle, and the controller route land.",
     "completed": [
       "runtime image built from a clean committed source revision, with SPDX and SLSA provenance whose vcs:revision equals that commit, proven free of licensed and reference-database payload by a layer walk, and published to the project registry by immutable digest",
-      "real H100 semantic acceptance on the exact published digest: parameter identity verified, 405 parameter arrays loaded on cuda:0, and three no-data-pipeline inferences completed with exit code 0, two of them driven from a relocated packaged handoff"
+      "historical r6 H100 semantic evidence is retained only as a cross-check; it is not qualification evidence for the r7 digest"
     ]
   },
   "command_io_contract": {

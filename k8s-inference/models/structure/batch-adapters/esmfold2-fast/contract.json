@@ -9,8 +9,8 @@
   },
   "runtime_image": {
     "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast",
-    "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r4",
-    "digest": "sha256:ba55b9bb418d9714b21634c9fd6281f678529042bc3d0b8f06f184fa314a2577",
+    "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r5",
+    "digest": "sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
     "workspace_uid": 10001,
     "workspace_gid": 10001,
     "state": "build-only-not-semantic-qualified"

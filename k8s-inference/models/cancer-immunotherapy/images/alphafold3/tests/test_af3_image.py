@@ -286,6 +286,8 @@ class HandoffContractTests(unittest.TestCase):
     def test_pod_security_requires_the_supplemental_group_and_forbids_fs_group(self) -> None:
         security = self.handoff["pod_security"]
         self.assertTrue(security["runAsNonRoot"])
+        self.assertEqual(1001, security["runAsUser"])
+        self.assertEqual(1001, security["runAsGroup"])
         self.assertEqual([65532], security["supplementalGroups"])
         self.assertEqual("must not be set", security["fsGroup"])
 
@@ -361,8 +363,8 @@ class ImageLockTests(unittest.TestCase):
         self.assertGreater(hygiene["layer_inspection"]["layers_inspected"], 0)
         self.assertGreater(hygiene["layer_inspection"]["entries_inspected"], 0)
 
-    def test_lock_is_historical_when_a_protocol_successor_is_required(self) -> None:
-        """Never relabel the published r6 lock as evidence for repaired source."""
+    def test_lock_binds_the_repaired_protocol_source(self) -> None:
+        """The current publication must carry the exact repaired runtime bytes."""
         import hashlib
 
         def digest(path: Path) -> str:
@@ -373,15 +375,11 @@ class ImageLockTests(unittest.TestCase):
         handoff = json.loads(
             (ROOT / "contracts" / "af3-runtime-handoff.json").read_text(encoding="utf-8")
         )
-        if handoff["image"]["production_protocol_compatible"]:
-            self.assertEqual(
-                digest(ROOT / "runtime" / "af3_runtime.py"), source["entrypoint_sha256"]
-            )
-        else:
-            self.assertNotEqual(
-                digest(ROOT / "runtime" / "af3_runtime.py"), source["entrypoint_sha256"]
-            )
-            self.assertIn("successor", handoff["image"]["successor_required"].lower())
+        self.assertIs(handoff["image"]["production_protocol_compatible"], True)
+        self.assertIn("h100", handoff["image"]["qualification_required"].lower())
+        self.assertEqual(
+            digest(ROOT / "runtime" / "af3_runtime.py"), source["entrypoint_sha256"]
+        )
         self.assertEqual(
             digest(ROOT / "contracts" / "af3-parameter-binding.json"),
             source["parameter_binding_sha256"],
