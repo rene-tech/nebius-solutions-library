@@ -972,6 +972,7 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
     )
     assert environment["FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_SHA256"]["value"] == "c" * 64
     assert environment["FS2_SCIENTIFIC_BATCH_EXECUTION_MAP_FILE"]["value"].endswith("/execution-map.json")
+    assert environment["FS2_SCIENTIFIC_BATCH_TOOLS_IMAGE"]["value"] == container["image"]
     assert environment["FS2_SCIENTIFIC_ARTIFACTS_ENABLED"]["value"] == "true"
     assert environment["FS2_ARTIFACT_STORE_CREDENTIALS_FILE"]["value"] == (
         "/var/run/secrets/fs2-serve/artifact-store/credentials.json"
@@ -1077,9 +1078,7 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
     }
     gateway_env = {
         item["name"]: item
-        for item in named[("Deployment", "fs2-serve-control-plane")]["spec"]["template"]["spec"]["containers"][0][
-            "env"
-        ]
+        for item in named[("Deployment", "fs2-serve-control-plane")]["spec"]["template"]["spec"]["containers"][0]["env"]
     }
     assert gateway_env["FS2_SCIENTIFIC_BATCH_INTERNAL_API_URL"]["value"] == (
         "http://fs2-serve-control-plane-scientific-artifacts.fs2-system.svc:8080"
@@ -3014,7 +3013,7 @@ def test_capacity_adapter_has_short_lived_token_and_exact_list_only_rbac() -> No
         if namespace == "kube-system" and name.endswith("-cluster-autoscaler-status")
     )
     assert model_role["rules"] == [
-            {"apiGroups": [""], "resources": ["pods", "services", "events"], "verbs": ["list"]},
+        {"apiGroups": [""], "resources": ["pods", "services", "events"], "verbs": ["list"]},
         {"apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["list"]},
         {
             "apiGroups": ["autoscaling"],

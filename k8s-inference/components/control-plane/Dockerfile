@@ -79,7 +79,8 @@ ARG FS2_SOURCE_TREE
 ARG FS2_UV_LOCK_SHA256
 ARG FS2_DOCKERFILE_SHA256
 ARG FS2_CONTEXT_POLICY_SHA256
-RUN test -n "$FS2_SOURCE_COMMIT" \
+RUN test -f /opt/fs2/catalog/schema/scientific-artifact-manifest.schema.json \
+    && test -n "$FS2_SOURCE_COMMIT" \
     && test -n "$FS2_SOURCE_TREE" \
     && test -n "$FS2_UV_LOCK_SHA256" \
     && test -n "$FS2_DOCKERFILE_SHA256" \

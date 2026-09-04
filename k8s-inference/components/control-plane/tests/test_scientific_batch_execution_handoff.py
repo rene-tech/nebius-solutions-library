@@ -377,9 +377,7 @@ def runtime_execution_map(
                         "active_deadline_seconds": 3600,
                         "termination_grace_seconds": 60,
                         "environment": (
-                            {"JAX_COMPILATION_CACHE_DIR": "/cache/protenix-v2/jax"}
-                            if runtime_cache
-                            else {}
+                            {"JAX_COMPILATION_CACHE_DIR": "/cache/protenix-v2/jax"} if runtime_cache else {}
                         ),
                         "required_node_labels": {},
                     },
@@ -669,6 +667,9 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
         "/mnt/fs2-scientific",
         "/models/protenix-v2/common",
     }
+    collector = next(item for item in pod["containers"] if item["name"] == "artifact-collector")
+    collector_environment = {item["name"]: item["value"] for item in collector["env"]}
+    assert collector_environment["FS2_CATALOG_DIR"] == "/opt/fs2/catalog"
 
     tampered = replace(resource, runtime_artifacts=(replace(localized[0], mount_path="/models/changed"),))
     with pytest.raises(ScientificExecutionMapError, match="lost its verified localization"):

@@ -63,6 +63,7 @@ def test_container_imports_installed_packages_without_pythonpath_or_source_shado
     assert "repo_root=Path('/workspace/runtime-catalog/packaged-repository')" in dockerfile
     assert "COPY --from=builder --chown=65532:65532 /workspace/runtime-catalog /opt/fs2/catalog" in dockerfile
     assert "load_catalog(Path('/workspace/runtime-catalog')" in dockerfile
+    assert "test -f /opt/fs2/catalog/schema/scientific-artifact-manifest.schema.json" in dockerfile
     assert not (CONTROL_ROOT / ".dockerignore").exists()
     dockerignore_path = CONTROL_ROOT / f"{(CONTROL_ROOT / 'Dockerfile').name}.dockerignore"
     dockerignore = dockerignore_path.read_text(encoding="utf-8")
