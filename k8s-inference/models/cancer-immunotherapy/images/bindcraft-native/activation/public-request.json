@@ -2,7 +2,7 @@
   "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
   "operation": "design-binder",
   "service_class": "customer-batch",
-  "input_manifest": {"artifact_id": "bindcraft.pdl1.target.01", "sha256": "5e949950d8255ec3bf390b8bf24f5c71c6ac8fc65bc553d7e477563c9599b93e", "size_bytes": 74614, "media_type": "chemical/x-pdb", "compression": "none"},
+  "input_manifest": {"artifact_id": "manifest.bindcraft.pdl1.01", "sha256": "9b652d670a286044c42556183906be45ca2fb1ee5af36919f724d642b7e22e00", "size_bytes": 391, "media_type": "application/vnd.fs2.scientific-manifest+json", "compression": "none"},
   "parameters": {"target": {"chain": "A", "hotspot_residues": [56, 66, 115]}, "binder_length": {"minimum": 55, "maximum": 90}, "designs": 4},
   "client_context": {"batch_id": "batch.primary-activation.bindcraft.01", "correlation_id": "primary-activation.bindcraft.01", "display_name": "BindCraft PD-L1 activation canary"}
 }

@@ -30,7 +30,7 @@
       "evidence_directory": "openfold3",
       "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream",
       "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r6",
-      "digest": null
+      "digest": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5"
     }
   ],
   "evidence": {

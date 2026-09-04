@@ -10,11 +10,11 @@
     "model_id": "mosaic",
     "variant_id": "mosaic-boltz2-proteinmpnn-v1",
     "model_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
-    "runtime_image_digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
-    "runtime_recipe_sha256": "15fc35e486f39b4132029568ef0cbee0a9d345dac6f3f286517c96ffe9ce71c5",
-    "workload_recipe_sha256": "601fa6b79b49ab517fa0d9c260733550e09f6fed25968046c88efe2a9c0b9d42",
+    "runtime_image_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
+    "runtime_recipe_sha256": "48bbb0d58257b86e95d6db1668f2715df796100479717adc58716b8485a7627a",
+    "workload_recipe_sha256": "4d2f21deaafd20c839ee3a81490bbaae2f3d1857294d8a3593916e77b4b06083",
     "model_artifact_manifest_digest": "607bbc8876228a058d3d072c9ee400d4a422a36de077eb9ae03c60176ee07fdd",
-    "execution_identity_sha256": "41e4d796fb1d7c03179aee6bd7aaef4d55d2be304a26c03a052c097eb61e7e63"
+    "execution_identity_sha256": "b35787d6b60e07064a1317af3017b01451474cec192c934d541632ba5df29c0c"
   },
   "access_admission": {
     "profile": "standard",
@@ -36,8 +36,8 @@
         "workload_priority_class": "customer-batch",
         "workload_priority_value": 500,
         "resolved_pool_preference": [
-          "h100-1x",
-          "h100-reserved-8x"
+          "h100-reserved-8x",
+          "h100-1x"
         ],
         "accelerator_resource_name": "nvidia.com/gpu",
         "accelerator_count": 1,
@@ -78,8 +78,8 @@
     "receipt_digest": null
   },
   "error": {
-    "code": "ACTIVATION_NOT_ENABLED",
-    "message": "Canonical Mosaic artifact generations are not published; the route remains disabled.",
+    "code": "PUBLIC_ACCEPTANCE_PENDING",
+    "message": "The profile is active and dispatchable; this fixture remains non-success until a public controller run supplies completion and scheduler receipts.",
     "retryable": false
   }
 }

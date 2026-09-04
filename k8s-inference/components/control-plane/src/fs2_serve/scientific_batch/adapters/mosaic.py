@@ -261,9 +261,10 @@ def compile_run(
                 argv=wrap_stage_argv(workspace, command),
                 environment=(
                     ("FS2_ARTIFACT_ROOT", "/opt/fs2/artifacts"),
-                    # The fragment-pinned image ignores this split root. It is
-                    # frozen for the published successor; the route remains
-                    # disabled until that image is integrated and qualified.
+                    # The pinned v6 runtime consumes model material and request
+                    # inputs through independent roots.  Keep this explicit in
+                    # the recipe identity while the public controller route is
+                    # still closed pending platform qualification.
                     ("FS2_INPUT_ARTIFACT_ROOT", workspace),
                     ("HF_HUB_OFFLINE", "1"),
                     ("TRANSFORMERS_OFFLINE", "1"),

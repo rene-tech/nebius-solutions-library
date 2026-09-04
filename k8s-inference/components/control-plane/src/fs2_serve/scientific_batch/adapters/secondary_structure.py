@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
 CONFIDENCE_SCHEMA = "fs2.nebius.ai/structure-confidence/v1"
 ESMFOLD_HANDOFF_SCHEMA = "fs2.nebius.ai/esmfold2-prepared-handoff/v2"
+PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP = 1000
 _METRIC_BOUNDS = {
     "plddt": (0.0, 100.0),
     # The production runners emit this aggregate as a normalized fraction.

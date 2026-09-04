@@ -8,13 +8,13 @@
       "license": "BSD-3-Clause"
     },
     "runtime_image": {
-      "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
-      "digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+      "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+      "digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
       "lock_path": "models/cancer-immunotherapy/runtime-images/rfdiffusion/image-lock.json",
-      "digest_evidence_path": "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-run-receipt.json"
+      "digest_evidence_path": "models/cancer-immunotherapy/runtime-images/rfdiffusion/image-lock.json"
     },
     "runtime_recipe": {
-      "source_revision": "003064c440c4ab198bf96957e435a7aac8da6800",
+      "source_revision": "cd3cb554404847c829ba01c25b0db5c23ad5f535",
       "algorithm": "fs2-path-set-sha256-v1",
       "paths": [
         "catalog/runtime/contracts/scientific-artifact-localization.json",
@@ -27,8 +27,14 @@
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/localization.py",
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/materialization.py",
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/primitives.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/production_registry.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/rfdiffusion.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/staged_workspace.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/verified_input.py",
         "components/control-plane/src/fs2_serve/scientific_batch/catalog_adapter.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/companion.py",
         "components/control-plane/src/fs2_serve/scientific_batch/controller.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/execution.py",
         "components/control-plane/src/fs2_serve/scientific_batch/models.py",
         "components/control-plane/src/fs2_serve/scientific_batch/protocols.py",
         "models/cancer-immunotherapy/runtime-images/rfdiffusion/image-lock.json",
@@ -38,9 +44,10 @@
       ]
     },
     "h100": {
-      "state": "semantic-qualified-route-disabled",
+      "state": "semantic-qualified-active-awaiting-public-acceptance",
       "accelerator_class": "nvidia-h100-sxm5-80gb",
       "evidence_paths": [
+        "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-r13-split-root-qualification-20260904.json",
         "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-canonical-generation-run-20260904.json",
         "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-run-receipt.json",
         "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-semantic-qualification-design-backbone.json",
@@ -59,22 +66,22 @@
       "model_id": "rfdiffusion",
       "display_name": "RFdiffusion v1.1.0",
       "execution_mode": "scientific-batch",
-      "state": "candidate-unqualified",
-      "route_exposed": false,
+      "state": "active",
+      "route_exposed": true,
       "source": {
         "kind": "git",
         "repository": "RosettaCommons/RFdiffusion",
         "revision": "9273ef67335acaf91df0150473a274759229cdf6",
         "review_url": "https://github.com/RosettaCommons/RFdiffusion/tree/9273ef67335acaf91df0150473a274759229cdf6",
-        "classification": "candidate-input"
+        "classification": "qualified-input"
       },
       "execution_identity": {
         "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
-        "runtime_image_digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
-        "runtime_recipe_sha256": "a43cb088e08278e089433bdd8816b14ac94d7cc490dfb7ec9a771498da0941dc",
-        "workload_recipe_sha256": "548da3b7c5dd5868d7e8adaf64b4dcc0bb2e89b3611f324eb6701478bb76cb5e",
-        "artifact_manifest_digest": null,
-        "execution_identity_sha256": null
+        "runtime_image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+        "runtime_recipe_sha256": "8b89855058e29f6771aca7645a8ad581c644c7812c89e27c505ac4ddacb34a77",
+        "workload_recipe_sha256": "625ac765fe08415199b937a1ddb8b6289ed7924e0b88b9f5f342391076891bde",
+        "artifact_manifest_digest": "931ae8f26343abe60d3fd4efb71da9ca2822899bde61357044eea09ca85bfc2d",
+        "execution_identity_sha256": "d15d6e41cfdade09e501b9da7c9db050bc8125da36ef02b78725b35f863d957b"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -92,7 +99,7 @@
         ],
         "mcp": {
           "discoverable": true,
-          "invocable": false,
+          "invocable": true,
           "tool_name": "submit_rfdiffusion",
           "description": "Submit a bounded RFdiffusion backbone or motif-scaffolding run."
         }
@@ -110,8 +117,8 @@
           "amd64"
         ],
         "compatible_pool_ids": [
-          "h100-1x",
-          "h100-reserved-8x"
+          "h100-reserved-8x",
+          "h100-1x"
         ],
         "required_node_labels": {
           "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
@@ -140,7 +147,20 @@
             "min_parallelism": 1,
             "max_parallelism": 1,
             "checkpoint_mode": "none",
-            "preemption_mode": "non_preemptible"
+            "preemption_mode": "non_preemptible",
+            "placement": {
+              "class": "general-cpu"
+            },
+            "resources": {
+              "cpu_millis": 2000,
+              "memory_bytes": 4294967296,
+              "ephemeral_storage_bytes": 8589934592,
+              "limits": {
+                "cpu_millis": 4000,
+                "memory_bytes": 8589934592,
+                "ephemeral_storage_bytes": 17179869184
+              }
+            }
           }
         ],
         "retry": {
@@ -157,16 +177,35 @@
       },
       "semantic_validation": {
         "validator_id": "rfdiffusion-v1-1-0",
-        "state": "candidate-unqualified"
+        "state": "active"
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "1f392018020143dbc81695632cdfef02b9582f49e0187f72e6a172c0e8b80765",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
+        "qualified_at": "2026-09-04T15:21:42Z"
       },
       "policy": {
         "commercial_use": "allowed",
         "non_clinical": true,
         "limitations": [
-          "The accepted digest passed design-backbone and scaffold-motif semantic tests on H100 against the canonical rfdiffusion-base-checkpoint generation, reproducing both committed structures byte for byte.",
-          "Route activation remains disabled until the serialized platform controller run succeeds; this fragment claims localization and semantics only."
+          "The exact r13 successor digest passed both operations on real H100 nodes with independent request and checkpoint roots; historical r12 evidence remains only a separately reproduced baseline.",
+          "Route activation remains disabled until this serialized platform controller workflow completes public submission, collection, and scheduling qualification."
         ]
-      }
+      },
+      "runtime_artifacts": [
+        {
+          "artifact_id": "rfdiffusion-base-checkpoint",
+          "content_identity": {
+            "digest_sha256": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+            "size_bytes": 483616107
+          },
+          "file_manifest": [],
+          "required_files": [],
+          "readiness_manifest_sha256": "abd2a8127d0bd1b3cbd51d5ffc14a3351f805e15f593c8224ee94de57e3e4599"
+        }
+      ]
     }
   },
   "execution_projection": {
@@ -200,7 +239,7 @@
       {
         "id": "inference",
         "resource_class": "gpu",
-        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
         "runtime_artifacts": [
           "rfdiffusion-base-checkpoint"
         ],
@@ -209,8 +248,8 @@
             "nvidia-h100-sxm5-80gb"
           ],
           "eligible_pool_ids": [
-            "h100-1x",
-            "h100-reserved-8x"
+            "h100-reserved-8x",
+            "h100-1x"
           ],
           "required_node_labels": {
             "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
@@ -221,7 +260,7 @@
       {
         "id": "collect",
         "resource_class": "cpu",
-        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
         "runtime_artifacts": [],
         "placement": {
           "accelerator_classes": [],
@@ -250,8 +289,8 @@
     ]
   },
   "activation_gate": {
-    "route_exposed": false,
-    "ready_for_route": false,
+    "route_exposed": true,
+    "ready_for_route": true,
     "public_platform_run_required": true
   }
 }

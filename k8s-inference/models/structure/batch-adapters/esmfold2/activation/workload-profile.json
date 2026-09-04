@@ -6,22 +6,22 @@
     "model_id": "esmfold2",
     "display_name": "ESMFold2 v3.4.0 (Biohub esm)",
     "execution_mode": "scientific-batch",
-    "state": "candidate-unqualified",
-    "route_exposed": false,
+    "state": "active",
+    "route_exposed": true,
     "source": {
       "kind": "git",
       "repository": "Biohub/esm",
       "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
       "review_url": "https://github.com/Biohub/esm/tree/827ec128e4cdaf80f7d6f95fb367a08980b34918",
-      "classification": "candidate-input"
+      "classification": "qualified-input"
     },
     "execution_identity": {
       "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
-      "runtime_image_digest": "sha256:e8fb269ff17e752ed8dd8f6c4689eaa55c0efc7adaffc156ccd9357bd075463d",
-      "runtime_recipe_sha256": null,
-      "workload_recipe_sha256": null,
-      "artifact_manifest_digest": null,
-      "execution_identity_sha256": null
+      "runtime_image_digest": "sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
+      "runtime_recipe_sha256": "5060058ebb04d37499f45428b59db2221c83740058dc94b3ed873f6d4c1d5bb8",
+      "workload_recipe_sha256": "d9122390e171ccc173acff9b77b48fbc49f138c6f321ffcb8131d71157b3b2ee",
+      "artifact_manifest_digest": "ea6c0f0211aecb53c4fa9a3c4033de650ef13995cb41ed8f7c3c90f150b78a3a",
+      "execution_identity_sha256": "8fa8302c1634c579bbe03ee968604d0321661c5689f69d4c80c561488c727f58"
     },
     "interface": {
       "protocol": "scientific-batch-v1",
@@ -38,7 +38,7 @@
       ],
       "mcp": {
         "discoverable": true,
-        "invocable": false,
+        "invocable": true,
         "tool_name": "submit_esmfold2",
         "description": "Submit an ESMFold2 single-sequence or precomputed-MSA protein structure prediction."
       }
@@ -56,8 +56,8 @@
         "amd64"
       ],
       "compatible_pool_ids": [
-        "h100-1x",
-        "h100-reserved-8x"
+        "h100-reserved-8x",
+        "h100-1x"
       ],
       "required_node_labels": {
         "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
@@ -128,16 +128,145 @@
     },
     "semantic_validation": {
       "validator_id": "esmfold2-biohub-v3-4-0",
-      "state": "candidate-unqualified"
+      "state": "active"
     },
     "policy": {
       "commercial_use": "allowed",
       "non_clinical": true,
       "limitations": [
-        "Image sha256:e8fb269f...5463d is a build-only -h100-r4 candidate; it has no exact-artifact semantic H100 evidence.",
-        "The trunk, ESMC-6B and CCD artifacts are catalog manifests without a localization generation or node admission receipt.",
+        "Image sha256:870b9f647f41...762a4a completed exact-digest semantic H100 inference with the checksum-verified trunk, ESMC-6B and CCD objects; public completion and scheduler eligibility receipts remain pending.",
+        "The shared ESMC-6B object is bound by terminal localization receipt 14599935...0962 and mounted read-only with storage supplemental group 1000.",
         "precomputed-msa consumes MSA rows carried in the input manifest only; no online MSA server is ever contacted."
       ]
+    },
+    "runtime_artifacts": [
+      {
+        "artifact_id": "esmfold2-trunk",
+        "content_identity": {
+          "digest_sha256": "136a3580c01cc055ae5a1278bae056e5150a5441ddb89dfbafb9f4e88d763a0c",
+          "size_bytes": 939507565
+        },
+        "file_manifest": [
+          {
+            "path": "config.json",
+            "sha256": "e9ec2496ec433a1dce18627ed4bf3785b4ce0c1d69e4bb4663dad1ab895da012",
+            "size_bytes": 2337
+          },
+          {
+            "path": "model.safetensors",
+            "sha256": "138fd4350d6892b81ce6be7ff9bf5a93ae9d4d3751f46a27438a3f9f0dcefa0e",
+            "size_bytes": 939505228
+          }
+        ],
+        "required_files": [
+          "config.json",
+          "model.safetensors"
+        ],
+        "readiness_manifest_sha256": "103423fd907155f868b85cc303f236a6c56a342cd3aa94187ce19ab8ed818b12"
+      },
+      {
+        "artifact_id": "esmc-6b",
+        "content_identity": {
+          "digest_sha256": "8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+          "size_bytes": 25408251020
+        },
+        "file_manifest": [
+          {
+            "path": "config.json",
+            "sha256": "c5566fab6a17fd674141331fe75de917b7904d99fb7a410d2b1593c21e576913",
+            "size_bytes": 341
+          },
+          {
+            "path": "model-00001-of-00006.safetensors",
+            "sha256": "bd90149ff223e6ac1a0cac6147a5ae0df20d3a21df4f65356a1f19cd14f4aa8a",
+            "size_bytes": 4864457920
+          },
+          {
+            "path": "model-00002-of-00006.safetensors",
+            "sha256": "f75e2144d8269fe2eb4b3e0823fb089b94f176d8024153e85b8fb573a42294fa",
+            "size_bytes": 4971211344
+          },
+          {
+            "path": "model-00003-of-00006.safetensors",
+            "sha256": "f699f01ecc9691d9c6470492765fe54b8b5d2e9f277c139e89427433ffdfe0b2",
+            "size_bytes": 4863752992
+          },
+          {
+            "path": "model-00004-of-00006.safetensors",
+            "sha256": "46add1b7be098bbfdc3073884851ba3057f1b33ea23a158b650a37007dabd13d",
+            "size_bytes": 4971211344
+          },
+          {
+            "path": "model-00005-of-00006.safetensors",
+            "sha256": "1e1cb62f060a34e18f54a31a76683ef888b8cec59e73315f5b31d25d45a1f88c",
+            "size_bytes": 4863752992
+          },
+          {
+            "path": "model-00006-of-00006.safetensors",
+            "sha256": "56c73e13ae96e777ce65eee99364056069ef93b646470f352f83c5f1037b1b18",
+            "size_bytes": 873762296
+          },
+          {
+            "path": "model.safetensors.index.json",
+            "sha256": "6846456e20e6ee2c37461f7bfc21d316d69bdaf165b925691afcb39e583244da",
+            "size_bytes": 97349
+          },
+          {
+            "path": "special_tokens_map.json",
+            "sha256": "0b7245ec86c8c3aeaf61523ba70dfa79be137e6283f127bd651adc30b4f15c74",
+            "size_bytes": 171
+          },
+          {
+            "path": "tokenizer.json",
+            "sha256": "8d3447b278176e65fb3ef0224472927bf5fee3be46ea2bd77fad0111423cee1f",
+            "size_bytes": 2879
+          },
+          {
+            "path": "tokenizer_config.json",
+            "sha256": "e8d8e40c9f92b334f0272e80bb65ed4043cb9836523cbae899e9859e8cbb8833",
+            "size_bytes": 1392
+          }
+        ],
+        "required_files": [
+          "config.json",
+          "model-00001-of-00006.safetensors",
+          "model-00002-of-00006.safetensors",
+          "model-00003-of-00006.safetensors",
+          "model-00004-of-00006.safetensors",
+          "model-00005-of-00006.safetensors",
+          "model-00006-of-00006.safetensors",
+          "model.safetensors.index.json",
+          "special_tokens_map.json",
+          "tokenizer.json",
+          "tokenizer_config.json"
+        ],
+        "readiness_manifest_sha256": "b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454a"
+      },
+      {
+        "artifact_id": "esmfold2-ccd",
+        "content_identity": {
+          "digest_sha256": "b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+          "size_bytes": 417306584
+        },
+        "file_manifest": [
+          {
+            "path": "ccd.pkl",
+            "sha256": "9ff44b1927c6b9198e38ffe0928706827a09a350c15530beeeabebfa88038fc5",
+            "size_bytes": 417306584
+          }
+        ],
+        "required_files": [
+          "ccd.pkl"
+        ],
+        "readiness_manifest_sha256": "4b701f8db3ca2d75353db710e0f6624fec6e1cb48f86cf435ec1bfa191b5bf4c"
+      }
+    ],
+    "qualification": {
+      "h100_semantic_receipt_sha256": "82b38d4a9d7c9aaa006b4b8e6dd40ffa701a9f5220e1d0314fc8fc4edec9d129",
+      "public_completion_receipt_sha256": null,
+      "scheduler_eligibility_receipt_sha256": null,
+      "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
+      "qualified_at": "2026-09-04T17:28:47Z"
     }
   }
 }

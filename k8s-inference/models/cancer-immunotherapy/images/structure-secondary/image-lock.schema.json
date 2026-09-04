@@ -175,6 +175,7 @@
         "qualification_state": {
           "enum": [
             "evidence-collected-pending-independent-acceptance",
+            "published-build-only-not-semantic-qualified",
             "qualified-exact-artifact-h100-semantic"
           ]
         },
@@ -186,6 +187,7 @@
             "L1": {
               "enum": [
                 "candidate-evidence-collected-pending-independent-acceptance",
+                "candidate-published-build-only-not-semantic-qualified",
                 "qualified-regional-image-and-exact-artifact-h100-semantic"
               ]
             },

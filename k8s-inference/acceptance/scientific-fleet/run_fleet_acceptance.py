@@ -44,7 +44,7 @@ SENSITIVE_TEXT_RE = re.compile(
 )
 
 EXPECTED_PRIMARY = frozenset(
-    {"bindcraft", "mosaic", "proteina-complexa", "rfdiffusion"}
+    {"bindcraft", "boltzgen", "mosaic", "proteina-complexa", "rfdiffusion"}
 )
 EXPECTED_SECONDARY = frozenset(
     {
@@ -172,7 +172,9 @@ def _discover_group(
         if model_id not in expected:
             continue
         fixtures = document.get("public_fixtures")
-        if not isinstance(fixtures, dict) or not isinstance(fixtures.get("request"), str):
+        if not isinstance(fixtures, dict) or not isinstance(
+            fixtures.get("request"), str
+        ):
             raise FleetAcceptanceError("acceptance_input_fixtures_invalid")
         if model_id in discovered:
             raise FleetAcceptanceError("acceptance_input_duplicate")
@@ -189,7 +191,7 @@ def _discover_group(
 
 
 def discover_inputs(repository_root: Path) -> tuple[FleetInput, ...]:
-    """Discover the four primary and five secondary model-owned records."""
+    """Discover the five primary and five secondary model-owned records."""
 
     try:
         root = repository_root.resolve(strict=True)
@@ -564,8 +566,12 @@ def run_fleet(config: FleetConfig) -> FleetRun:
         "endpoint": endpoint,
         "summary": {
             "discovered": len(inputs),
-            "primary": sum(item.kind == "primary-activation-fragment" for item in inputs),
-            "secondary": sum(item.kind == "secondary-public-acceptance" for item in inputs),
+            "primary": sum(
+                item.kind == "primary-activation-fragment" for item in inputs
+            ),
+            "secondary": sum(
+                item.kind == "secondary-public-acceptance" for item in inputs
+            ),
             "succeeded": succeeded,
             "failed": failed,
             "max_parallel": config.max_parallel,

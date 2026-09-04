@@ -8,13 +8,13 @@
   "completed_at": "2026-09-04T00:00:00Z",
   "execution_identity": {
     "model_id": "bindcraft",
-    "variant_id": "bindcraft-v1-5-3-pyrosetta-academic",
+    "variant_id": "v1-5-3-pyrosetta-academic",
     "model_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
     "runtime_image_digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
-    "runtime_recipe_sha256": "87242bab8728227eb1ff67ee14da22fdfb0b89f5a4a267efa37a00074edc917e",
-    "workload_recipe_sha256": "e3ca7d4fc41ea5b7cda1b2b92b8a6c8534fd33e7869126e9c09036ee6d068255",
+    "runtime_recipe_sha256": "d2f7ea0d4bd8a7ad64f664a2c936cc8eeb85b101a346b3cf49dca540cb390334",
+    "workload_recipe_sha256": "a4e59c0c5bd51067511b5f65f6288e8f7e38164146496ec9337765e795563da2",
     "model_artifact_manifest_digest": "115ba5116f04aa4798facdf15ba334cd8f9e5821481dafe29949299246a56a48",
-    "execution_identity_sha256": "95febd35c3e2863fce66d60652a751f0f2ffbb716fe3eafd7e36e95bf3e7fa65"
+    "execution_identity_sha256": "256ba331e59e8c75afcff5eba90374c7bd067e6459ef88b3c3b559198f726fc7"
   },
   "access_admission": {
     "profile": "academic",
@@ -36,8 +36,8 @@
         "workload_priority_class": "customer-batch",
         "workload_priority_value": 500,
         "resolved_pool_preference": [
-          "h100-1x",
-          "h100-reserved-8x"
+          "h100-reserved-8x",
+          "h100-1x"
         ],
         "accelerator_resource_name": "nvidia.com/gpu",
         "accelerator_count": 1,
@@ -64,10 +64,10 @@
     ]
   },
   "input_manifest": {
-    "artifact_id": "bindcraft.pdl1.target.01",
-    "sha256": "5e949950d8255ec3bf390b8bf24f5c71c6ac8fc65bc553d7e477563c9599b93e",
-    "size_bytes": 74614,
-    "media_type": "chemical/x-pdb",
+    "artifact_id": "manifest.bindcraft.pdl1.01",
+    "sha256": "9b652d670a286044c42556183906be45ca2fb1ee5af36919f724d642b7e22e00",
+    "size_bytes": 391,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
     "compression": "none"
   },
   "output_manifest": null,
@@ -78,8 +78,8 @@
     "receipt_digest": null
   },
   "error": {
-    "code": "ACTIVATION_NOT_ENABLED",
-    "message": "The academic BindCraft route remains disabled until serialized integration and a public platform run complete.",
+    "code": "PUBLIC_ACCEPTANCE_PENDING",
+    "message": "The profile is active and dispatchable; this fixture remains non-success until a public controller run supplies completion and scheduler receipts.",
     "retryable": false
   }
 }

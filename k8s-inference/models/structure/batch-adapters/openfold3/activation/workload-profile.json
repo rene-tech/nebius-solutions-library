@@ -6,22 +6,22 @@
     "model_id": "openfold3-openbind",
     "display_name": "OpenFold3 OpenBind v0.5.0",
     "execution_mode": "scientific-batch",
-    "state": "candidate-unqualified",
-    "route_exposed": false,
+    "state": "active",
+    "route_exposed": true,
     "source": {
       "kind": "git",
       "repository": "aqlaboratory/openfold-3",
       "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
       "review_url": "https://github.com/aqlaboratory/openfold-3/tree/c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
-      "classification": "candidate-input"
+      "classification": "qualified-input"
     },
     "execution_identity": {
       "model_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
       "runtime_image_digest": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
-      "runtime_recipe_sha256": null,
-      "workload_recipe_sha256": null,
-      "artifact_manifest_digest": null,
-      "execution_identity_sha256": null
+      "runtime_recipe_sha256": "0b5ad5519c07a28f97d8f4b287ae352c0ca2c5b3a6ff43904dc2567cb29d6743",
+      "workload_recipe_sha256": "73a463f3d28d658780d6a52c10b7826301d9a510e6899e7d117ffaa1d800fcbe",
+      "artifact_manifest_digest": "c4cc2c59313470ee7498f37d377485328785e09080ccb2136edfeef754a573bb",
+      "execution_identity_sha256": "73e9e2401e626d445f0dfb80fef84ff2698396577815b42ebe395d04840aab94"
     },
     "interface": {
       "protocol": "scientific-batch-v1",
@@ -37,7 +37,7 @@
       ],
       "mcp": {
         "discoverable": true,
-        "invocable": false,
+        "invocable": true,
         "tool_name": "submit_openfold3_openbind",
         "description": "Submit an OpenFold3 complex structure prediction; an independent backend that never satisfies an alphafold3 request."
       }
@@ -55,8 +55,8 @@
         "amd64"
       ],
       "compatible_pool_ids": [
-        "h100-1x",
-        "h100-reserved-8x"
+        "h100-reserved-8x",
+        "h100-1x"
       ],
       "required_node_labels": {
         "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
@@ -127,7 +127,14 @@
     },
     "semantic_validation": {
       "validator_id": "openfold3-upstream-openbind-v0-5-0",
-      "state": "candidate-unqualified"
+      "state": "active"
+    },
+    "qualification": {
+      "h100_semantic_receipt_sha256": "120aa9c48ab7108e23fd09e47943f9203aedd7d39e405727033a94bb986bdbef",
+      "public_completion_receipt_sha256": null,
+      "scheduler_eligibility_receipt_sha256": null,
+      "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
+      "qualified_at": "2026-09-04T17:53:27Z"
     },
     "policy": {
       "commercial_use": "allowed",
@@ -136,8 +143,46 @@
         "The r5 image is superseded because its 0444 runner parent directory was not traversable by UID 10001; r6 bakes the exact 102-byte runner below a 0555 parent and passed exact-artifact H100 semantics without a runtime ConfigMap projection.",
         "OpenFold3 is an independent, non-equivalent backend to AlphaFold 3: distinct code, weights, license and results; it is never reported as AlphaFold 3.",
         "The public scientific identity is openfold3-openbind so it cannot collide with the existing openfold3 HTTP catalog record; the legacy runtime-emitted openfold3 label is accepted only inside this adapter's output-validation boundary.",
-        "The OpenBind-0 checkpoint and components.bcif are bound to immutable localization receipts; route exposure remains closed until aggregate profile publication."
+        "The OpenBind-0 checkpoint and components.bcif are bound to immutable localization receipts; public completion and scheduler-eligibility receipts remain pending."
       ]
-    }
+    },
+    "runtime_artifacts": [
+      {
+        "artifact_id": "openfold3-openbind-0",
+        "content_identity": {
+          "digest_sha256": "f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
+          "size_bytes": 2287872989
+        },
+        "file_manifest": [
+          {
+            "path": "of3-ob-2025-06-30-174k.pt",
+            "sha256": "bd43301c011d5f87580d3e8b548658869433e4488399feb03035ba248f8e29e4",
+            "size_bytes": 2287872989
+          }
+        ],
+        "required_files": [
+          "of3-ob-2025-06-30-174k.pt"
+        ],
+        "readiness_manifest_sha256": "8afc057f877ae42aecbaeb56c0be74987e920dcf016c3d7a12dc7ea2370df806"
+      },
+      {
+        "artifact_id": "openfold3-components-bcif",
+        "content_identity": {
+          "digest_sha256": "ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
+          "size_bytes": 63393643
+        },
+        "file_manifest": [
+          {
+            "path": "components.bcif",
+            "sha256": "473d845c8b250b188dbed9bf505ae206692a178a2a7c4869bf8f9de707ffcc0c",
+            "size_bytes": 63393643
+          }
+        ],
+        "required_files": [
+          "components.bcif"
+        ],
+        "readiness_manifest_sha256": "1b5e78ab84e9cf8c3807554cd7cf6af15668046bc5031b7d234cd1330c7ba055"
+      }
+    ]
   }
 }

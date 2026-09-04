@@ -24,7 +24,7 @@ scheduler:
    receipt, exact private parameter identity, top-ranked mmCIF, and confidence
    summary before either result is committed.
 
-The adapter invokes the immutable r6 runtime by its published command/IO
+The adapter invokes the immutable r7 runtime by its published command/IO
 contract. It does not emit the retired `fs2-run-alphafold3`, `/databases`,
 `--input-json`, `--processed-json`, or `--handoff-tar` surface.
 
@@ -33,12 +33,12 @@ receipt, token, credential, path, or URI. The profile must project the live
 `Granted` / `Authorized` state as `academic` + `verified`; removing that
 operator-owned state makes compilation fail closed.
 
-The route remains closed. The r6 image has real H100 semantic evidence, but it
-predates atomic receipt publication and the aligned 256 MiB handoff contract;
-it is historical evidence, not a production-protocol-compatible image. A new
-immutable successor must be built, inspected, and H100-qualified from this
-source before activation. The
-candidate profile intentionally contains no invented public-reference digest;
-promotion must add the producer-generated terminal receipt and its exact tree,
-manifest, and inventory identities to the trusted execution map. The exact
-mount, scheduler, image, and gate identities are in `contract.json`.
+The r7 image completed exact-digest H100 parameter loading and semantic
+inference. Its active dispatch bridge binds the private parameter localization
+receipt, the canonical public-reference terminal receipt and tree identities,
+and the exact H100 qualification evidence. Public-completion and scheduler
+eligibility receipts remain null until those controller-path acceptance runs
+finish; that is the boundary between `active` and `qualified`. The historical
+candidate gate in `contract.json` documents the fail-closed handoff before this
+promotion, while `activation/workload-profile.json` is the current model-owned
+projection used by the aggregate catalog.

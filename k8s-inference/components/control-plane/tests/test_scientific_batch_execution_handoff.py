@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from conftest import CATALOG_ROOT, SOLUTION_ROOT
+from jsonschema import Draft202012Validator
 from scientific_batch_fakes import FakeScientificBatchCluster, FakeScientificBatchRepository
 
 from fs2_serve.crypto import KeyedHasher
@@ -68,7 +69,12 @@ from fs2_serve.scientific_batch.models import (
     WorkloadResource,
     WorkloadState,
 )
-from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog, ScientificWorkloadProfile
+from fs2_serve.scientific_batch.profile_catalog import (
+    SCIENTIFIC_REQUEST_SCHEMA,
+    SCIENTIFIC_RESULT_SCHEMA,
+    ScientificProfileCatalog,
+    ScientificWorkloadProfile,
+)
 
 NOW = datetime(2026, 9, 2, 21, tzinfo=UTC)
 
@@ -1353,9 +1359,16 @@ def _academic_af3_renderer(
     }
     path = tmp_path / f"af3-{hashlib.sha256(database_sub_path.encode()).hexdigest()[:12]}.json"
     path.write_text(json.dumps(value))
+
+    def validator(name: str) -> Draft202012Validator:
+        return Draft202012Validator(json.loads((CATALOG_ROOT / "schema" / name).read_text(encoding="utf-8")))
+
     catalog = ScientificProfileCatalog(
         profiles={profile.model_id: profile},
-        validators=ScientificProfileCatalog.load(CATALOG_ROOT)._validators,  # type: ignore[attr-defined]
+        validators={
+            SCIENTIFIC_REQUEST_SCHEMA: validator("scientific-run-request.schema.json"),
+            SCIENTIFIC_RESULT_SCHEMA: validator("scientific-run-result.schema.json"),
+        },
     )
     renderer = FileScientificManifestRenderer(
         path=path,
@@ -1611,6 +1624,8 @@ def test_af3_academic_v3_map_binds_exact_params_and_content_addressed_database(t
     assert command[command.index("--cpu-request") + 1] == "16"
 
     gpu_pod = renderer.render(gpu_resource)["spec"]["template"]["spec"]  # type: ignore[index]
+    assert gpu_pod["securityContext"]["supplementalGroups"] == [65532]
+    assert "fsGroup" not in gpu_pod["securityContext"]
     for container in (*gpu_pod["initContainers"], *gpu_pod["containers"]):
         assert container["securityContext"]["runAsUser"] == 1001
         assert container["securityContext"]["runAsGroup"] == 1001

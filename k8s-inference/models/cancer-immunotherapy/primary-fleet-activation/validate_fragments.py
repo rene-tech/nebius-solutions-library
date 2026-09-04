@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import re
 import subprocess
@@ -15,9 +16,17 @@ from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).resolve().parent
+ACCEPTANCE_RUNNER_PATH = ROOT / "acceptance/scientific-fleet/run_acceptance.py"
+ACCEPTANCE_SPEC = importlib.util.spec_from_file_location(
+    "fs2_primary_activation_acceptance_runner", ACCEPTANCE_RUNNER_PATH
+)
+if ACCEPTANCE_SPEC is None or ACCEPTANCE_SPEC.loader is None:
+    raise RuntimeError("scientific fleet acceptance runner cannot be loaded")
+ACCEPTANCE_RUNNER = importlib.util.module_from_spec(ACCEPTANCE_SPEC)
+sys.modules[ACCEPTANCE_SPEC.name] = ACCEPTANCE_RUNNER
+ACCEPTANCE_SPEC.loader.exec_module(ACCEPTANCE_RUNNER)
 PROFILE_SCHEMA = ROOT / "catalog/runtime/schema/scientific-workload-profile.schema.json"
 REQUEST_SCHEMA = ROOT / "catalog/runtime/schema/scientific-run-request.schema.json"
 RESULT_SCHEMA = ROOT / "catalog/runtime/schema/scientific-run-result.schema.json"
@@ -25,6 +34,8 @@ ARTIFACT_MANIFEST_SCHEMA = (
     ROOT / "catalog/runtime/schema/scientific-artifact-manifest.schema.json"
 )
 FRAGMENTS = {
+    "boltzgen": ROOT
+    / "models/cancer-immunotherapy/runtime-images/boltzgen/activation/fragment.json",
     "proteina-complexa": ROOT
     / "models/cancer-immunotherapy/runtime-images/proteina-complexa/activation/fragment.json",
     "mosaic": ROOT
@@ -67,7 +78,7 @@ BOLTZGEN_LEGACY_BROAD_MOUNT = {
     "sub_path": None,
     "read_only": True,
 }
-INTEGRATION_SOURCE_REVISION = "003064c440c4ab198bf96957e435a7aac8da6800"
+INTEGRATION_SOURCE_REVISION = "cd3cb554404847c829ba01c25b0db5c23ad5f535"
 SHARED_RUNTIME_RECIPE_PATHS = frozenset(
     {
         "components/control-plane/src/fs2_serve/scientific_batch/__init__.py",
@@ -92,6 +103,14 @@ SHARED_RUNTIME_RECIPE_PATHS = frozenset(
     }
 )
 MODEL_RUNTIME_RECIPE_PATHS = {
+    "boltzgen": frozenset(
+        {
+            "components/control-plane/src/fs2_serve/scientific_batch/adapters/boltzgen.py",
+            "catalog/runtime/schema/boltzgen-parameters.schema.json",
+            "models/structure/batch-adapters/boltzgen/adapter.py",
+            "models/structure/batch-adapters/boltzgen/contract.json",
+        }
+    ),
     "proteina-complexa": frozenset(
         {
             "components/control-plane/src/fs2_serve/scientific_batch/adapters/proteina_complexa.py",
@@ -211,10 +230,14 @@ def validate_fragment_document(fragment: dict[str, Any], path: Path) -> list[str
     errors.extend(validate_schema(profile, PROFILE_SCHEMA, f"{model_id}.profile"))
     if profile["model_id"] != model_id:
         errors.append(f"{model_id}: profile model_id differs")
-    if profile["state"] != "candidate-unqualified" or profile["route_exposed"]:
-        errors.append(f"{model_id}: profile must remain an unrouted candidate")
-    if profile["source"]["classification"] != "candidate-input":
-        errors.append(f"{model_id}: profile source must remain candidate-input")
+    if profile["state"] != "active" or not profile["route_exposed"]:
+        errors.append(f"{model_id}: profile must be the active pre-acceptance bridge")
+    if profile["source"]["classification"] != "qualified-input":
+        errors.append(f"{model_id}: active profile source must be qualified-input")
+    if accepted["h100"]["state"] != (
+        "semantic-qualified-active-awaiting-public-acceptance"
+    ):
+        errors.append(f"{model_id}: accepted H100 state is not the active bridge")
     if profile["source"]["revision"] != source["revision"]:
         errors.append(f"{model_id}: accepted and profile source revisions differ")
     identity = profile["execution_identity"]
@@ -246,17 +269,47 @@ def validate_fragment_document(fragment: dict[str, Any], path: Path) -> list[str
     ).hexdigest()
     if identity["workload_recipe_sha256"] != expected_workload_recipe:
         errors.append(f"{model_id}: workload recipe digest is stale")
-    if (
-        identity["artifact_manifest_digest"] is not None
-        or identity["execution_identity_sha256"] is not None
-    ):
-        errors.append(f"{model_id}: candidate identity must remain incomplete")
-    if profile["interface"]["mcp"]["invocable"]:
-        errors.append(f"{model_id}: candidate MCP tool must not be invocable")
-    if profile["semantic_validation"]["state"] != "candidate-unqualified":
-        errors.append(
-            f"{model_id}: public semantic state must remain candidate-unqualified"
+    identity_payload = {
+        key: value
+        for key, value in identity.items()
+        if key != "execution_identity_sha256"
+    }
+    if not all(
+        isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
+        for value in (
+            identity["artifact_manifest_digest"],
+            identity["execution_identity_sha256"],
         )
+    ):
+        errors.append(f"{model_id}: active execution identity is incomplete")
+    else:
+        expected_identity = hashlib.sha256(
+            json.dumps(identity_payload, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest()
+        if identity["execution_identity_sha256"] != expected_identity:
+            errors.append(f"{model_id}: active execution identity is stale")
+    if not profile["interface"]["mcp"]["invocable"]:
+        errors.append(f"{model_id}: active MCP tool must be invocable")
+    if profile["semantic_validation"]["state"] != "active":
+        errors.append(f"{model_id}: semantic state must be active")
+    qualification = profile.get("qualification")
+    if not isinstance(qualification, dict):
+        errors.append(f"{model_id}: active profile has no qualification bridge")
+    else:
+        if any(
+            qualification.get(key) is not None
+            for key in (
+                "public_completion_receipt_sha256",
+                "scheduler_eligibility_receipt_sha256",
+            )
+        ):
+            errors.append(f"{model_id}: pre-acceptance receipts must remain null")
+        if not re.fullmatch(
+            r"[0-9a-f]{64}", str(qualification.get("execution_map_sha256", ""))
+        ):
+            errors.append(f"{model_id}: execution-map bridge digest is incomplete")
 
     lock_path = repository_path(image["lock_path"])
     digest_evidence_path = repository_path(image["digest_evidence_path"])
@@ -284,6 +337,18 @@ def validate_fragment_document(fragment: dict[str, Any], path: Path) -> list[str
     for evidence_path in accepted["h100"]["evidence_paths"]:
         if not repository_path(evidence_path).is_file():
             errors.append(f"{model_id}: H100 evidence is missing: {evidence_path}")
+    evidence_digests = {
+        hashlib.sha256(repository_path(path).read_bytes()).hexdigest()
+        for path in accepted["h100"]["evidence_paths"]
+        if repository_path(path).is_file()
+    }
+    if (
+        isinstance(qualification, dict)
+        and qualification.get("h100_semantic_receipt_sha256") not in evidence_digests
+    ):
+        errors.append(
+            f"{model_id}: active H100 receipt is not an accepted evidence file"
+        )
     for revision in accepted["main_commits"]:
         if not git_is_ancestor(revision):
             errors.append(
@@ -432,6 +497,26 @@ def validate_fragment_document(fragment: dict[str, Any], path: Path) -> list[str
                     + b"\n"
                 )
                 input_manifests.append(supporting_value)
+            elif supporting["encoding"] == "deterministic-tar-gzip-v1":
+                try:
+                    content = ACCEPTANCE_RUNNER.deterministic_tar_gzip(
+                        content, supporting.get("archive_path")
+                    )
+                except ACCEPTANCE_RUNNER.AcceptanceError as error:
+                    errors.append(
+                        f"{model_id}: supporting input materialization failed: {error.code}"
+                    )
+                    continue
+            elif supporting["encoding"] == "deterministic-tar-gzip-manifest-v1":
+                try:
+                    content = ACCEPTANCE_RUNNER.deterministic_tar_gzip_manifest(
+                        ROOT, content
+                    )
+                except ACCEPTANCE_RUNNER.AcceptanceError as error:
+                    errors.append(
+                        f"{model_id}: supporting input materialization failed: {error.code}"
+                    )
+                    continue
             content_identity = (hashlib.sha256(content).hexdigest(), len(content))
             if supporting["role"] == "request-input-manifest":
                 pointer = request["input_manifest"]
@@ -459,10 +544,10 @@ def validate_fragment_document(fragment: dict[str, Any], path: Path) -> list[str
             or result.get("semantic_validation", {}).get("status") != "not-run"
         ):
             errors.append(
-                f"{model_id}: pre-activation result fixture must fail before semantic execution"
+                f"{model_id}: pre-acceptance result fixture must not claim execution"
             )
-        if result.get("error", {}).get("code") != "ACTIVATION_NOT_ENABLED":
-            errors.append(f"{model_id}: result fixture must name the activation gate")
+        if result.get("error", {}).get("code") != "PUBLIC_ACCEPTANCE_PENDING":
+            errors.append(f"{model_id}: result fixture must name the acceptance gate")
         result_identity = result.get("execution_identity", {})
         for label, expected in (
             ("model_id", model_id),

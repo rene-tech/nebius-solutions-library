@@ -39,6 +39,25 @@ The runner uploads every exact artifact, replaces template pointers with the
 returned immutable public pointers, canonicalizes and uploads the resulting
 manifest, then replaces the request pointer before submission.
 
+`deterministic-tar-gzip-v1` is available for small, source-controlled public
+fixtures that a runtime consumes as a tar workspace. The declaration's `path`
+is the source file and `archive_path` is its fixed relative path in the tar.
+The materializer fixes tar ownership, mode and timestamp plus every gzip header
+field and emits byte-stable stored DEFLATE blocks, so the request can bind one
+stable digest without checking in generated binary data. It is accepted only
+for named `manifest-artifact` declarations.
+Proteina-Complexa uses it to package the Apache-2.0 PD-L1 structure from the
+pinned upstream source at
+`assets/target_data/bindcraft_targets/PD-L1.pdb`; no checkpoint, credential, or
+licensed PyRosetta package is part of the fixture.
+
+`deterministic-tar-gzip-manifest-v1` covers the same boundary when one runtime
+input needs several source-controlled files. Its JSON document lists a bounded
+set of `source_path` and `archive_path` pairs; both paths stay inside their
+respective repository/archive roots, duplicate archive members are rejected,
+and the same byte-stable tar/gzip encoding is used. BoltzGen uses this form for
+the exact projected public PD-L1 mmCIF plus its one-design campaign YAML.
+
 Use a token that can upload and invoke the selected model and read its
 operation result. The token is accepted only through an environment variable:
 
@@ -72,7 +91,7 @@ acceptance/scientific-fleet/run_checks.sh
 
 ## Complete fleet acceptance and benchmark receipt
 
-`run_fleet_acceptance.py` discovers the four primary activation fragments and
+`run_fleet_acceptance.py` discovers the five primary activation fragments and
 the five secondary public-acceptance records committed under `models/`, then
 runs the single-model client above in separate child processes. `--max-parallel`
 bounds concurrent customer submissions; the default is four and the accepted

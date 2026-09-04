@@ -1,0 +1,190 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+  "operation_id": "operation.primary-activation.boltzgen.01",
+  "batch_id": "batch.primary-activation.boltzgen.01",
+  "workload_id": "workload.primary-activation.boltzgen.01",
+  "terminal_status": "failed",
+  "submitted_at": "2026-09-04T00:00:00Z",
+  "completed_at": "2026-09-04T00:00:00Z",
+  "execution_identity": {
+    "model_id": "boltzgen",
+    "variant_id": "upstream-v0-3-2",
+    "model_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+    "runtime_image_digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+    "runtime_recipe_sha256": "0643e1968e08c4bdd527165eeca3305c9e90d01bab054751c5f467fc1a080872",
+    "workload_recipe_sha256": "223b796e10fbf933d591817163086bc2830d0e54212b6a7d8e27624aae24d336",
+    "model_artifact_manifest_digest": "11675abe2450d38b2b8033bef278c8152271de6453c002e23beda4cd19780cf2",
+    "execution_identity_sha256": "2f936dddf26a44a1e77faafa3dfffd4218370715bd495e998690534e7d7a08a8"
+  },
+  "access_admission": {
+    "profile": "standard",
+    "state": "not-required",
+    "receipt_digest": null
+  },
+  "scheduling_snapshot": {
+    "policy_revision": "primary-activation-fragment-v1",
+    "captured_at": "2026-09-04T00:00:00Z",
+    "service_class": "customer-batch",
+    "tenant_queue": "fs2-models-async",
+    "model_lane": "boltzgen",
+    "stages": [
+      {
+        "stage_id": "configure",
+        "resource_class": "gpu",
+        "resolved_cluster_queue": "scientific-gpu",
+        "resolved_local_queue": "fs2-models-async",
+        "workload_priority_class": "customer-batch",
+        "workload_priority_value": 500,
+        "resolved_pool_preference": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "accelerator_count": 1,
+        "max_queue_seconds": 3600,
+        "max_execution_seconds": 43200,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "stage_id": "design",
+        "resource_class": "gpu",
+        "resolved_cluster_queue": "scientific-gpu",
+        "resolved_local_queue": "fs2-models-async",
+        "workload_priority_class": "customer-batch",
+        "workload_priority_value": 500,
+        "resolved_pool_preference": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "accelerator_count": 1,
+        "max_queue_seconds": 3600,
+        "max_execution_seconds": 43200,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "stage_id": "inverse-folding",
+        "resource_class": "gpu",
+        "resolved_cluster_queue": "scientific-gpu",
+        "resolved_local_queue": "fs2-models-async",
+        "workload_priority_class": "customer-batch",
+        "workload_priority_value": 500,
+        "resolved_pool_preference": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "accelerator_count": 1,
+        "max_queue_seconds": 3600,
+        "max_execution_seconds": 43200,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "stage_id": "folding",
+        "resource_class": "gpu",
+        "resolved_cluster_queue": "scientific-gpu",
+        "resolved_local_queue": "fs2-models-async",
+        "workload_priority_class": "customer-batch",
+        "workload_priority_value": 500,
+        "resolved_pool_preference": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "accelerator_count": 1,
+        "max_queue_seconds": 3600,
+        "max_execution_seconds": 43200,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "stage_id": "design-folding",
+        "resource_class": "gpu",
+        "resolved_cluster_queue": "scientific-gpu",
+        "resolved_local_queue": "fs2-models-async",
+        "workload_priority_class": "customer-batch",
+        "workload_priority_value": 500,
+        "resolved_pool_preference": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "accelerator_count": 1,
+        "max_queue_seconds": 3600,
+        "max_execution_seconds": 43200,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "stage_id": "affinity",
+        "resource_class": "gpu",
+        "resolved_cluster_queue": "scientific-gpu",
+        "resolved_local_queue": "fs2-models-async",
+        "workload_priority_class": "customer-batch",
+        "workload_priority_value": 500,
+        "resolved_pool_preference": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "accelerator_count": 1,
+        "max_queue_seconds": 3600,
+        "max_execution_seconds": 43200,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "stage_id": "analysis",
+        "resource_class": "cpu",
+        "resolved_cluster_queue": "scientific-cpu",
+        "resolved_local_queue": "fs2-models-async",
+        "workload_priority_class": "customer-batch",
+        "workload_priority_value": 500,
+        "resolved_pool_preference": [],
+        "accelerator_resource_name": null,
+        "accelerator_count": 0,
+        "max_queue_seconds": 3600,
+        "max_execution_seconds": 3600,
+        "checkpoint_mode": "none",
+        "preemption_mode": "non_preemptible"
+      },
+      {
+        "stage_id": "filtering",
+        "resource_class": "cpu",
+        "resolved_cluster_queue": "scientific-cpu",
+        "resolved_local_queue": "fs2-models-async",
+        "workload_priority_class": "customer-batch",
+        "workload_priority_value": 500,
+        "resolved_pool_preference": [],
+        "accelerator_resource_name": null,
+        "accelerator_count": 0,
+        "max_queue_seconds": 3600,
+        "max_execution_seconds": 3600,
+        "checkpoint_mode": "none",
+        "preemption_mode": "non_preemptible"
+      }
+    ]
+  },
+  "input_manifest": {
+    "artifact_id": "manifest.boltzgen.pdl1.01",
+    "sha256": "d3fc05a26579932874e3f4ffb9babe63468bc85d6c475d172e7fa2b68370253a",
+    "size_bytes": 403,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
+  },
+  "output_manifest": null,
+  "attempts": [],
+  "semantic_validation": {
+    "validator_id": "boltzgen-v0-3-2",
+    "status": "not-run",
+    "receipt_digest": null
+  },
+  "error": {
+    "code": "PUBLIC_ACCEPTANCE_PENDING",
+    "message": "The profile is active and dispatchable; this fixture remains non-success until a public controller run supplies completion and scheduler receipts.",
+    "retryable": false
+  }
+}

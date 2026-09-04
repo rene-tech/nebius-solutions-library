@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "artifact": {
+        "artifact_id": "artifact.proteina-complexa.pdl1.bundle.01",
+        "compression": "gzip",
+        "media_type": "application/x-tar",
+        "sha256": "a9582cbc7583eaf9280cc7395f6a4af8b11efda803fe791e89c76fedc871d72a",
+        "size_bytes": 81948
+      },
+      "name": "target-bundle",
+      "semantic_type": "proteina-complexa-target-bundle/v1"
+    }
+  ],
+  "manifest_id": "manifest.proteina-complexa.pdl1.01",
+  "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1"
+}

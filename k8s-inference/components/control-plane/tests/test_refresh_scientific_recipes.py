@@ -11,6 +11,18 @@ import pytest
 from conftest import CONTROL_ROOT
 
 SCRIPT = CONTROL_ROOT / "scripts/refresh_scientific_recipes.py"
+SCIENTIFIC_FLEET = (
+    "alphafold3",
+    "bindcraft",
+    "boltzgen",
+    "esmfold2",
+    "esmfold2-fast",
+    "mosaic",
+    "openfold3-openbind",
+    "proteina-complexa",
+    "protenix-v2",
+    "rfdiffusion",
+)
 
 
 def load_script() -> ModuleType:
@@ -84,6 +96,14 @@ def test_helm_to_json_bytes_match_go_html_and_unicode_rules() -> None:
     )
 
 
+@pytest.mark.parametrize("model_id", SCIENTIFIC_FLEET)
+def test_every_scientific_fleet_recipe_has_an_exact_source_closure(model_id: str) -> None:
+    module = load_script()
+    digest = module.runtime_recipe_sha256(CONTROL_ROOT.parents[1], model_id)
+    assert len(digest) == 64
+    int(digest, 16)
+
+
 def test_write_mode_refreshes_the_complete_digest_chain(tmp_path: Path, monkeypatch, capsys) -> None:
     module = load_script()
     profile_path, execution_map_path = write_fixture(tmp_path)
@@ -132,6 +152,38 @@ def test_derivation_failure_writes_neither_contract(tmp_path: Path, monkeypatch)
 
     assert profile_path.read_bytes() == original_profiles
     assert execution_map_path.read_bytes() == original_map
+
+
+def test_mapped_candidate_refreshes_recipes_but_retains_null_promotion_identity(
+    tmp_path: Path, monkeypatch
+) -> None:
+    module = load_script()
+    profile_path, execution_map_path = write_fixture(tmp_path, qualification=False)
+    profiles = json.loads(profile_path.read_text(encoding="utf-8"))
+    candidate = profiles["profiles"][0]
+    candidate["state"] = "candidate-unqualified"
+    identity = candidate["execution_identity"]
+    identity["artifact_manifest_digest"] = None
+    identity["execution_identity_sha256"] = None
+    profile_path.write_text(json.dumps(profiles, indent=2) + "\n", encoding="utf-8")
+    execution_map = json.loads(execution_map_path.read_text(encoding="utf-8"))
+    execution_map["models"][0]["execution_identity_sha256"] = None
+    execution_map_path.write_text(json.dumps(execution_map, indent=2) + "\n", encoding="utf-8")
+    configure(module, monkeypatch, tmp_path, profile_path, execution_map_path)
+
+    assert module.main([]) == 0
+    refreshed_profile = json.loads(profile_path.read_text(encoding="utf-8"))["profiles"][0]
+    refreshed_map = json.loads(execution_map_path.read_text(encoding="utf-8"))
+    refreshed_identity = refreshed_profile["execution_identity"]
+    assert refreshed_identity["runtime_recipe_sha256"] == "9" * 64
+    assert refreshed_identity["workload_recipe_sha256"] == hashlib.sha256(
+        module._canonical_bytes(refreshed_profile["workload"])
+    ).hexdigest()
+    assert refreshed_identity["artifact_manifest_digest"] is None
+    assert refreshed_identity["execution_identity_sha256"] is None
+    assert "qualification" not in refreshed_profile
+    assert refreshed_map["models"][0]["execution_identity_sha256"] is None
+    assert module.main(["--check"]) == 0
 
 
 def test_second_replace_failure_rolls_back_the_first_contract(tmp_path: Path, monkeypatch) -> None:
