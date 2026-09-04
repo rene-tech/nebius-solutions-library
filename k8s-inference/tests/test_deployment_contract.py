@@ -818,20 +818,22 @@ class DeploymentContractTests(unittest.TestCase):
                 }
             },
         }
-        outputs = self._planned_outputs(
-            self._write_configuration("scientific-batch-shape", deployment),
-            "scientific-batch-shape",
-        )
+        variable_file = self._write_configuration("scientific-batch-shape", deployment)
+        # This is the complete customer-authored scientific batch surface. The
+        # generated map belongs to the repository, not terraform.tfvars.
+        customer_batch = json.loads(variable_file.read_text(encoding="utf-8"))["deployment"]["scientific_batch"]
+        self.assertNotIn("execution_map", customer_batch)
+
+        outputs = self._planned_outputs(variable_file, "scientific-batch-shape")
         stage = outputs["deployment_contract"]["stages"]["workloads"]["scientific_batch"]
+        committed_map_path = DEPLOY_ROOT / "catalog/runtime/contracts/scientific-execution-map.json"
+        committed_map = json.loads(committed_map_path.read_text(encoding="utf-8"))
         self.assertEqual(
             stage,
             {
                 "api_timeout_seconds": "5",
                 "enabled": True,
-                "execution_map": {
-                    "models": [],
-                    "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
-                },
+                "execution_map": committed_map,
                 "lease_seconds": "30",
                 "writes_enabled": False,
                 "namespace": "fs2-scientific",
@@ -843,11 +845,114 @@ class DeploymentContractTests(unittest.TestCase):
         effective = outputs["effective_configuration"]["scientific_batch"]
         self.assertEqual(effective["namespace"], "fs2-scientific")
         self.assertTrue(effective["artifact_store_required"])
+        self.assertEqual(
+            effective["execution_map_source"],
+            "catalog/runtime/contracts/scientific-execution-map.json",
+        )
+        helm_bytes = json.dumps(committed_map, separators=(",", ":"), sort_keys=True).encode()
+        self.assertEqual(effective["execution_map_sha256"], hashlib.sha256(helm_bytes).hexdigest())
+        profiles = json.loads(
+            (DEPLOY_ROOT / "catalog/runtime/contracts/scientific-workload-profiles.json").read_text(
+                encoding="utf-8"
+            )
+        )["profiles"]
+        profiles_by_id = {profile["model_id"]: profile for profile in profiles}
+        for model in committed_map["models"]:
+            self.assertEqual(
+                profiles_by_id[model["model_id"]]["qualification"]["execution_map_sha256"],
+                effective["execution_map_sha256"],
+            )
 
         for relative in ("locals.tf", "outputs.tf"):
             with self.subTest(source=relative):
                 source = (DEPLOY_ROOT / relative).read_text(encoding="utf-8")
                 self.assertEqual(source.count("    scientific_batch = {"), 1)
+
+    def test_scientific_execution_map_advanced_override_preserves_exact_object(self) -> None:
+        committed_map = json.loads(
+            (DEPLOY_ROOT / "catalog/runtime/contracts/scientific-execution-map.json").read_text(encoding="utf-8")
+        )
+        deployment = {
+            "schema_version": 1,
+            "name": "scientific-map-override",
+            "target": self.catalog_target(),
+            "cluster": {"kubernetes_version": "1.34"},
+            "scientific_batch": {
+                "enabled": True,
+                "execution_map": committed_map,
+            },
+            "storage": {
+                "scientific_artifacts": {
+                    "enabled": True,
+                    "egress_cidrs": ["203.0.113.10/32"],
+                }
+            },
+        }
+        outputs = self._planned_outputs(
+            self._write_configuration("scientific-map-override", deployment),
+            "scientific-map-override",
+        )
+        stage = outputs["deployment_contract"]["stages"]["workloads"]
+        self.assertEqual(stage["scientific_batch"]["execution_map"], committed_map)
+        self.assertEqual(
+            outputs["effective_configuration"]["scientific_batch"]["execution_map_source"],
+            "deployment.scientific_batch.execution_map",
+        )
+
+    def test_invalid_or_tampered_scientific_execution_map_is_refused(self) -> None:
+        committed_map = json.loads(
+            (DEPLOY_ROOT / "catalog/runtime/contracts/scientific-execution-map.json").read_text(encoding="utf-8")
+        )
+        invalid_schema = json.loads(json.dumps(committed_map))
+        invalid_schema["schema"] = "fs2-serve.nebius.ai/scientific-execution-map/v2"
+        empty_map = {
+            "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
+            "models": [],
+        }
+        tampered_map = json.loads(json.dumps(committed_map))
+        tampered_map["models"][0]["workload_namespace"] = "fs2-tampered"
+
+        for label, execution_map, diagnostic in (
+            ("schema", invalid_schema, "non-empty schema-v3 execution map"),
+            ("empty", empty_map, "non-empty schema-v3 execution map"),
+            (
+                "tampered",
+                tampered_map,
+                "does not match the committed workload-profile qualification digest",
+            ),
+        ):
+            with self.subTest(rejected=label):
+                deployment = {
+                    "schema_version": 1,
+                    "name": f"scientific-map-{label}",
+                    "target": self.catalog_target(),
+                    "cluster": {"kubernetes_version": "1.34"},
+                    "scientific_batch": {
+                        "enabled": True,
+                        "execution_map": execution_map,
+                    },
+                    "storage": {
+                        "scientific_artifacts": {
+                            "enabled": True,
+                            "egress_cidrs": ["203.0.113.10/32"],
+                        }
+                    },
+                }
+                variable_file = self._write_configuration(f"scientific-map-{label}", deployment)
+                result, _ = self._plan_file(variable_file, f"scientific-map-{label}")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(
+                    diagnostic,
+                    re.sub(r"\s+", " ", f"{result.stdout}\n{result.stderr}"),
+                )
+
+    def test_customer_tfvars_documents_the_automatic_scientific_map(self) -> None:
+        example = (DEPLOY_ROOT / "terraform.tfvars.example").read_text(encoding="utf-8")
+        start = example.index("  # Staged scientific batch execution.")
+        end = example.index("  # By default the wrapper copies", start)
+        scientific_example = example[start:end]
+        self.assertNotIn("execution_map =", scientific_example)
+        self.assertIn("catalog/runtime/contracts/scientific-execution-map.json", scientific_example)
 
     def test_measured_capacity_without_a_verifiable_origin_is_refused(self) -> None:
         """A pair of integers with no origin is a claim, not a measurement."""

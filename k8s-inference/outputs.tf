@@ -72,6 +72,8 @@ output "effective_configuration" {
       writes_enabled          = var.deployment.scientific_batch.writes_enabled
       namespace               = var.deployment.scientific_batch.namespace
       artifact_store_required = true
+      execution_map_source    = local.scientific_execution_map_source
+      execution_map_sha256    = local.scientific_execution_map_sha256
     }
     scheduling = {
       cohort_name         = var.deployment.scheduling.cohort.enabled ? var.deployment.scheduling.cohort.name : null
