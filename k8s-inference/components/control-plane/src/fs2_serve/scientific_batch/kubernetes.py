@@ -363,11 +363,7 @@ def _gpu_uuids(metadata: Mapping[str, Any], gpu_count: int) -> tuple[str, ...]:
         values = json.loads(raw)
     except json.JSONDecodeError as error:
         raise ScientificKubernetesError("trusted GPU UUID annotation is invalid JSON") from error
-    if (
-        not isinstance(values, list)
-        or not all(isinstance(value, str) for value in values)
-        or len(values) != gpu_count
-    ):
+    if not isinstance(values, list) or not all(isinstance(value, str) for value in values) or len(values) != gpu_count:
         raise ScientificKubernetesError("trusted GPU UUID annotation differs from the Pod allocation")
     try:
         return PodLifecycleObservation(
@@ -375,6 +371,7 @@ def _gpu_uuids(metadata: Mapping[str, Any], gpu_count: int) -> tuple[str, ...]:
             pod_name=None,
             node_name=None,
             node_uid=None,
+            created_at=datetime(1970, 1, 1, tzinfo=UTC),
             observed_at=datetime(1970, 1, 1, tzinfo=UTC),
             scheduled_at=None,
             gpu_count=gpu_count,
@@ -409,6 +406,8 @@ def _pod_lifecycle(
         else _optional_time(scheduled_condition.get("lastTransitionTime"), "PodScheduled")
     )
     created_at = _optional_time(metadata.get("creationTimestamp"), "Pod creation")
+    if created_at is None:
+        raise ScientificKubernetesError("Kubernetes Pod creation timestamp is absent")
     pod_started_at = _optional_time(status.get("startTime"), "Pod start")
     gpu_count = _pod_gpu_count(spec, accelerator_resource_name)
     gpu_uuids = _gpu_uuids(metadata, gpu_count)
@@ -421,6 +420,7 @@ def _pod_lifecycle(
             pod_name=pod_name,
             node_name=node_name,
             node_uid=None,
+            created_at=created_at,
             observed_at=observed_at,
             scheduled_at=None,
             gpu_count=gpu_count,
@@ -504,6 +504,7 @@ def _pod_lifecycle(
         pod_name=pod_name,
         node_name=node_name,
         node_uid=None,
+        created_at=created_at,
         observed_at=observed_at,
         scheduled_at=scheduled_at,
         gpu_count=gpu_count,
@@ -991,9 +992,7 @@ class HttpScientificBatchCluster:
                 if isinstance(terminated, Mapping) and isinstance(terminated.get("reason"), str):
                     failure_reasons.append(cast(str, terminated["reason"]))
         node_uids: dict[str, str] = {}
-        for node_name in dict.fromkeys(
-            item.node_name for item in pod_lifecycle if item.node_name is not None
-        ):
+        for node_name in dict.fromkeys(item.node_name for item in pod_lifecycle if item.node_name is not None):
             node_response = await self._request("GET", f"/api/v1/nodes/{quote(node_name, safe='')}")
             if node_response.status_code == 404:
                 continue
