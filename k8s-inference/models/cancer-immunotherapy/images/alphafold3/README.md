@@ -65,9 +65,12 @@ written to a same-directory temporary file, flushed and fsynced, then atomically
 renamed and followed by a directory fsync. A collector can therefore interpret
 an absent final receipt as in-progress without ever accepting partial JSON.
 
-The published r6 digest predates this protocol repair. It remains useful H100
-semantic evidence but must not be activated with the repaired adapter. Publish
-and qualify a new immutable successor before opening the route.
+The repaired r7 digest is published from source
+`a1b5b6b24b2dae54a1f7caeba9981a7aaa60cc8f`. Its SPDX and SLSA attestations,
+offline smoke, non-root `1001:1001` identity, and immutable digest are recorded
+in the image lock. Publication is not semantic qualification: the historical
+r6 H100 run is only a cross-check, and the r7 digest must pass its own H100
+parameter-load and inference gate before the route can open.
 
 ## Parameter binding
 
@@ -272,17 +275,18 @@ than pretending to have checked it.
 
 ## Readiness
 
-AlphaFold 3 is **not** ready, deployed or qualified.
+AlphaFold 3 is **not** deployed, semantically qualified, or ready to serve.
 
 - [x] runtime image built with SPDX and SLSA provenance, proven free of licensed
       and database payload by a layer walk, and published to the project
       registry by immutable digest
 - [ ] reference-data worker publishes the bundle and its terminal receipt
 - [ ] controller route and submission wiring landed by their owning tasks
-- [ ] real H100 parameter-load and inference semantic acceptance recorded
+- [ ] real H100 parameter-load and inference semantic acceptance recorded for
+      the exact published r7 digest
 
-Consume the image by the digest in `contracts/af3-image-lock.json`. The tag
-`3.0.4-85c4d205` in the same repository is a **superseded** publication from an
-earlier iteration and must not be deployed; the tag named after the upstream
+Consume the image by the digest in `contracts/af3-image-lock.json` only after
+the remaining qualification gates pass. All r6 and earlier publications are
+**superseded** and must not be deployed; the tag named after the upstream
 commit belongs to another task's retained evidence image and is not this
 runtime. `contracts/af3-runtime-handoff.json` records all of them.

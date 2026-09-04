@@ -718,7 +718,36 @@ def main() -> None:
         or handoff.get("route_activation_allowed") is not False
         or set(handoff_images) != set(modules)
     ):
-        failures.append("secondary r4 handoff overstates or differs from build-only scope")
+        failures.append("secondary successor handoff overstates or differs from closed scope")
+    if all_pending:
+        if (
+            handoff.get("state") != "publication-pending-not-activated"
+            or image_source_revision is not None
+            or handoff.get("production_protocol_compatible") is not False
+        ):
+            failures.append("pending successor handoff claims a publication source")
+        image_source_revision = task_revision
+    elif all_published:
+        if (
+            handoff.get("state") != "published-build-only-not-activated"
+            or not isinstance(image_source_revision, str)
+            or len(image_source_revision) != 40
+            or handoff.get("production_protocol_compatible") is not True
+        ):
+            failures.append("published successor handoff lacks its exact image source")
+            image_source_revision = task_revision
+        elif _git(
+            task_repo,
+            "merge-base",
+            "--is-ancestor",
+            image_source_revision,
+            task_revision,
+            check=False,
+        ).returncode != 0:
+            failures.append("published image source is not an ancestor of current evidence")
+    else:
+        failures.append("successor image lock mixes pending and published identities")
+        image_source_revision = task_revision
     if set(images) != set(modules):
         failures.append("image lock does not contain exactly the four task-owned models")
 

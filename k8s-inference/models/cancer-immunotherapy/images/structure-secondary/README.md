@@ -44,7 +44,7 @@ boundary. These digests are retained only as superseded evidence:
 | Protenix v2 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:beeaa5173f102656437724376bad858de54232ef7ad1e342b8c2534428775494` |
 | OpenFold3 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:ca05bb15341045bb2876153faccb0d029a27b0050350d6b86a83a76b4fa73bb4` |
 
-The corrected `-h100-r4` build candidates were published from clean source
+The historical corrected `-h100-r4` build candidates were published from clean source
 `e6d20c7cb3abf5e172852f17a20c7e100daa1245` after each passed its direct
 nonroot/network-disabled build smoke and direct CLI invocation:
 
@@ -54,6 +54,25 @@ nonroot/network-disabled build smoke and direct CLI invocation:
 | ESMFold2-Fast | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:ba55b9bb418d9714b21634c9fd6281f678529042bc3d0b8f06f184fa314a2577` |
 | Protenix v2 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:27d816dc518b5dda205f9916205fbc4e2053a8109d9380b85628d9f0d968a644` |
 | OpenFold3 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:d1d249fcd8aca464ff0ee0b6e78e0f9c1fe243e0ebd18acc3c4223070fcf203b` |
+
+The repaired `-h100-r5` successors were then built from exact clean pushed
+source `a1b5b6b24b2dae54a1f7caeba9981a7aaa60cc8f`. Each image passed the
+repository-owned offline, network-disabled, non-root `10001:10001` smoke and
+direct CLI check. SPDX documents were generated and hashed; the secondary
+publisher did not produce a SLSA or signed provenance attestation, so none is
+claimed. The immutable publication evidence is recorded under `evidence/`.
+
+| Runtime | Immutable regional successor |
+|---|---|
+| ESMFold2 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a` |
+| ESMFold2-Fast | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0` |
+| Protenix v2 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8` |
+| OpenFold3 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de` |
+
+The r5 images carry the repaired atomic handoff, frozen input/invocation
+identity, bounded collectors, and shared workspace protocol. Their adapter
+contracts remain `build-only-not-semantic-qualified` and every route remains
+closed pending exact-artifact H100 inference.
 
 Publication alone does not qualify semantic H100 readiness, Blackwell
 portability, or any numbered fast-start level. Those states remain pending

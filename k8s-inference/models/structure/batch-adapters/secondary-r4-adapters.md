@@ -1,4 +1,4 @@
-# Secondary structure r4 adapters
+# Secondary structure successor adapters
 
 This slice registers four non-AlphaFold3 scientific adapters against the existing
 controller contract. Each adapter consumes one artifact-service-verified logical
@@ -8,39 +8,35 @@ type. The companion installs the four collector sets once in its process-global
 allow-list. Renderer, Kueue, Terraform, runtime localization, and route activation
 remain owned elsewhere.
 
-| Model | CPU stage | GPU stage | Immutable r4 digest |
+| Model | CPU stage | GPU stage | Immutable r5 digest |
 | --- | --- | --- | --- |
-| `esmfold2` | `prepare-input` | `fold` | `sha256:e8fb269ff17e752ed8dd8f6c4689eaa55c0efc7adaffc156ccd9357bd075463d` |
-| `esmfold2-fast` | `prepare-input` | `fold` | `sha256:ba55b9bb418d9714b21634c9fd6281f678529042bc3d0b8f06f184fa314a2577` |
-| `protenix-v2` | `prepare-data` | `sample-structure` | `sha256:27d816dc518b5dda205f9916205fbc4e2053a8109d9380b85628d9f0d968a644` |
-| `openfold3-openbind` | `data-pipeline` | `inference` | `sha256:d1d249fcd8aca464ff0ee0b6e78e0f9c1fe243e0ebd18acc3c4223070fcf203b` |
+| `esmfold2` | `prepare-input` | `fold` | `sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a` |
+| `esmfold2-fast` | `prepare-input` | `fold` | `sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0` |
+| `protenix-v2` | `prepare-data` | `sample-structure` | `sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8` |
+| `openfold3-openbind` | `data-pipeline` | `inference` | `sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de` |
 
-The generated argv is shell-free and is parser-tested directly from Git object
-`e6d20c7cb3abf5e172852f17a20c7e100daa1245`. ESMFold2-Fast rejects every MSA
+The generated argv is shell-free and is parser-tested directly from image
+source Git object `a1b5b6b24b2dae54a1f7caeba9981a7aaa60cc8f`. ESMFold2-Fast rejects every MSA
 mode before GPU admission. Protenix prepares an immutable compressed handoff before
 sampling. OpenFold3 is an independent, non-equivalent backend and never satisfies
 an `alphafold3` request.
 
-All four r4 image bindings remain historical
-`build-only-not-semantic-qualified` evidence. They predate the repaired atomic
-publication protocol: ESM prepared JSON, shared confidence JSON, and zstd
-handoffs were written directly to their final names. None of the r4 digests may
-be activated. New immutable successor images must be built from this source,
-then semantically qualified. Their candidate
+All four r5 successors passed offline image and protocol checks and remain
+`build-only-not-semantic-qualified`. Their candidate
 profiles are deliberately `route_exposed: false` and omit runtime image and execution
 identity digests until exact artifact localization, declared runtime-cache delivery,
 and semantic inference on H100 have all produced promotion evidence. In particular,
-the OpenFold r4 image is additionally not runnable as runtime UID 10001 and
-uses the legacy localization model id `openfold3`; its successor validates the
-public `openfold3-openbind` identity. The canonical machine-readable
-activation gate and historical image tuples are in `secondary-r4-image-handoff.json`.
+the successor OpenFold image runs as runtime UID/GID `10001:10001` and validates
+the public `openfold3-openbind` identity. The canonical machine-readable
+activation gate and current image tuples remain in the historically named
+`secondary-r4-image-handoff.json`.
 
 Protenix keeps three identities separate: the acquired source payload, the
 localization manifest/recipe, and the content digest of the tree mounted by the model
 Pod. None is accepted as a substitute for another in an activation receipt.
 
 Run the focused contracts from `k8s-inference/components/control-plane`; the
-test materializes the exact r4 wrapper source from the pinned Git object:
+test materializes the exact successor wrapper source from the pinned Git object:
 
 ```bash
 PYTHONPATH=src:../../catalog/runtime \

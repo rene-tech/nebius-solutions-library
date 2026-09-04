@@ -7,16 +7,16 @@
       "zlib1g": "1:1.3.dfsg-3.1ubuntu2.2",
       "zstd": "1.5.5+dfsg2-2build1.1"
     },
-    "attestation_manifest_digest": "sha256:298cf3e98182e0cab67b544cdf4b833a7e5cab50b244c9795b493922b08dec3f",
+    "attestation_manifest_digest": "sha256:1c93b63a7c4838a6c9733eac23035e2a1d451c48bc8da749477ef21fc8626805",
     "attestation_predicates": [
       "https://slsa.dev/provenance/v1",
       "https://spdx.dev/Document"
     ],
     "base_image_digest": "sha256:c87e78933f4c16e3272123bf2f75537306596d0fbaa395a29696a22786e5ee0e",
     "builder": "fs2-cancer-runtime-publisher",
-    "created": "2026-09-03T04:22:49Z",
-    "image_manifest_digest": "sha256:7449f797ec87e5d3ef2ee508420311ee6782beaed3fcf72fe25e611a67173743",
-    "oci_archive_sha256": "5c59a6c772bc8c25ef1b3dec45c8e7b7b68485bc5be048a0eb2f4f292876cd68",
+    "created": "2026-09-04T15:22:18Z",
+    "image_manifest_digest": "sha256:05ad541b8eb0a26747274022146598b978bd72c78a6f57aec8f9d59d60058fd4",
+    "oci_archive_sha256": "4017c8859f9934b9eecb4c534b19bd54bed12f27aba9b9793e50c8d7613dba24",
     "platform": "linux/amd64"
   },
   "hygiene": {
@@ -60,13 +60,13 @@
     "reference_databases_embedded": false
   },
   "publication": {
-    "digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
+    "digest": "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
     "overwrote_existing_tag": false,
-    "published_at": "2026-09-03T04:24:18Z",
+    "published_at": "2026-09-04T15:24:07Z",
     "region": "eu-north1",
     "repository": "withheld",
     "state": "published",
-    "tag": "3.0.4-85c4d205-r6"
+    "tag": "3.0.4-85c4d205-r7"
   },
   "runtime_id": "alphafold3",
   "schema": "fs2-serve.nebius.ai/alphafold3-image-lock/v1",
@@ -78,7 +78,7 @@
     "note": "Offline probes only. No GPU and no licensed parameters were present, so the parameter load and inference checks are recorded separately as live H100 evidence."
   },
   "source": {
-    "attestation_vcs_revision": "12d40c8f0dac03bceb8d795ad769a2f0bb73140e",
+    "attestation_vcs_revision": "a1b5b6b24b2dae54a1f7caeba9981a7aaa60cc8f",
     "context_files": [
       {
         "path": "Dockerfile",
@@ -86,7 +86,7 @@
       },
       {
         "path": "runtime/af3_runtime.py",
-        "sha256": "9bee976e904fa2f2f2324e1191119f6b92c75991b9451043277eb46e4bb09893"
+        "sha256": "571cbe3d4d82ff184f4c9356df52e7faf6e3bfdf59b06538d222b2dddcb50460"
       },
       {
         "path": "contracts/af3-runtime-source-lock.json",
@@ -97,13 +97,13 @@
         "sha256": "0d7e41c06799706f27dd5aec99c57a4e60a9a377f3c0a88df2d0cbe7d65e9ea9"
       }
     ],
-    "context_sha256": "803b88cd74610771626905491f7060486a8dc0daebbb60a92eadaa38bb9e8780",
+    "context_sha256": "6febd7299bd74954cea15dc23fe97f595054de819b34ec4d0c790dc6f2e9dea6",
     "dockerfile_sha256": "9d038079520770f78c80610686379bc904be0fa5e87718ac98e35e8c545ee857",
-    "entrypoint_sha256": "9bee976e904fa2f2f2324e1191119f6b92c75991b9451043277eb46e4bb09893",
+    "entrypoint_sha256": "571cbe3d4d82ff184f4c9356df52e7faf6e3bfdf59b06538d222b2dddcb50460",
     "parameter_binding_sha256": "0d7e41c06799706f27dd5aec99c57a4e60a9a377f3c0a88df2d0cbe7d65e9ea9",
     "source_lock_sha256": "3cb4a133b00ae252846159a67016732da3c63bc7151f3fb4058d9882c699e0c6",
-    "source_revision": "12d40c8f0dac03bceb8d795ad769a2f0bb73140e",
-    "source_tree": "22481026bf703f46de0db6e0f6b4a2d1717ffcea",
+    "source_revision": "a1b5b6b24b2dae54a1f7caeba9981a7aaa60cc8f",
+    "source_tree": "dac832935cd2db82f3c1685f051ece0e902ea4cc",
     "upstream_commit": "85c4d20505fd5cef05eac22b534d4e793971ae69",
     "upstream_tree": "efa1a376c9cf94d517d70e68425bc1ed3b17a570",
     "upstream_version": "3.0.4"
