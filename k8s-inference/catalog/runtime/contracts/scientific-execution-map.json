@@ -1302,6 +1302,153 @@
         }
       ],
       "access_profile": "public"
+    },
+    {
+      "model_id": "openfold3-openbind",
+      "variant_id": "upstream-openbind-v0-5-0",
+      "workload_namespace": "fs2-models",
+      "execution_identity_sha256": null,
+      "plan_adapter": {
+        "module": "fs2_serve.scientific_batch.adapters",
+        "function": "compile_adapter_run"
+      },
+      "runtime_artifacts": [
+        {
+          "artifact_id": "openfold3-openbind-0",
+          "mount_path": "/models/openfold3",
+          "content_digest": "sha256:f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
+          "localization_receipt_digest": "sha256:fd39c6ef471c575f0b797e5e7777c948d04151d59b31c5c32f4f0ede728a780c",
+          "file_manifest": [
+            {
+              "path": "of3-ob-2025-06-30-174k.pt",
+              "sha256": "bd43301c011d5f87580d3e8b548658869433e4488399feb03035ba248f8e29e4",
+              "size_bytes": 2287872989
+            }
+          ]
+        },
+        {
+          "artifact_id": "openfold3-components-bcif",
+          "mount_path": "/databases/openfold3",
+          "content_digest": "sha256:ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
+          "localization_receipt_digest": "sha256:c8195ee346b3bffad1940c0ff600e52bb2e1ba3046e579627f3ad0329ee0fcc6",
+          "file_manifest": [
+            {
+              "path": "components.bcif",
+              "sha256": "473d845c8b250b188dbed9bf505ae206692a178a2a7c4869bf8f9de707ffcc0c",
+              "size_bytes": 63393643
+            }
+          ]
+        }
+      ],
+      "stages": [
+        {
+          "stage_id": "data-pipeline",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de",
+          "collector_id": "openfold3-data-collector-v1",
+          "validator_id": "openfold3-data-validator-v1",
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            }
+          ],
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
+          "resources": {
+            "requests": {
+              "cpu": "4000m",
+              "memory": "16Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "8000m",
+              "memory": "32Gi",
+              "ephemeral_storage": "64Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {}
+        },
+        {
+          "stage_id": "inference",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de",
+          "collector_id": "openfold3-result-collector-v1",
+          "validator_id": "openfold3-upstream-openbind-v0-5-0",
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            },
+            {
+              "name": "openfold3-checkpoint",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/models/openfold3",
+              "sub_path": "model-artifacts/public/v1/objects/openfold3-openbind-0/sha256/f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
+              "read_only": true
+            },
+            {
+              "name": "openfold3-components",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/databases/openfold3",
+              "sub_path": "model-artifacts/public/v1/objects/openfold3-components-bcif/sha256/ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
+              "read_only": true
+            },
+            {
+              "name": "runtime-cache",
+              "kind": "runtime-cache",
+              "claim_name": "fs2-scientific-runtime-cache",
+              "host_path": null,
+              "mount_path": "/cache",
+              "sub_path": null,
+              "read_only": false
+            }
+          ],
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {
+            "TRITON_CACHE_DIR": "/cache/openfold3/triton",
+            "TORCH_EXTENSIONS_DIR": "/cache/openfold3/torch-extensions",
+            "XDG_CACHE_HOME": "/cache/openfold3/xdg"
+          },
+          "required_node_labels": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        }
+      ],
+      "access_profile": "public"
     }
   ]
 }

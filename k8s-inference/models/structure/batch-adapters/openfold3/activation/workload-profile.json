@@ -133,11 +133,49 @@
       "commercial_use": "allowed",
       "non_clinical": true,
       "limitations": [
-        "Image sha256:3686e530...93b1de is the published, protocol-compatible -h100-r5 successor and runs as UID/GID 10001:10001; it remains build-only and has no exact-artifact semantic H100 evidence.",
+        "Image sha256:3686e530...93b1de is the published, protocol-compatible -h100-r5 successor and runs as UID/GID 10001:10001; it remains candidate-unqualified until a live semantic H100 run completes through the public controller path.",
         "OpenFold3 is an independent, non-equivalent backend to AlphaFold 3: distinct code, weights, license and results; it is never reported as AlphaFold 3.",
         "The public scientific identity is openfold3-openbind so it cannot collide with the existing openfold3 HTTP catalog record; the legacy runtime-emitted openfold3 label is accepted only inside this adapter's output-validation boundary.",
-        "The OpenBind-0 checkpoint and components.bcif are catalog manifests without a localization generation or node admission receipt."
+        "The exact OpenBind-0 checkpoint and components.bcif objects have immutable manifests and successful shared-filesystem localization receipts; route exposure still requires end-to-end scheduler, renderer, and semantic qualification."
       ]
-    }
+    },
+    "runtime_artifacts": [
+      {
+        "artifact_id": "openfold3-openbind-0",
+        "content_identity": {
+          "digest_sha256": "f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
+          "size_bytes": 2287872989
+        },
+        "file_manifest": [
+          {
+            "path": "of3-ob-2025-06-30-174k.pt",
+            "sha256": "bd43301c011d5f87580d3e8b548658869433e4488399feb03035ba248f8e29e4",
+            "size_bytes": 2287872989
+          }
+        ],
+        "required_files": [
+          "of3-ob-2025-06-30-174k.pt"
+        ],
+        "readiness_manifest_sha256": "8afc057f877ae42aecbaeb56c0be74987e920dcf016c3d7a12dc7ea2370df806"
+      },
+      {
+        "artifact_id": "openfold3-components-bcif",
+        "content_identity": {
+          "digest_sha256": "ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
+          "size_bytes": 63393643
+        },
+        "file_manifest": [
+          {
+            "path": "components.bcif",
+            "sha256": "473d845c8b250b188dbed9bf505ae206692a178a2a7c4869bf8f9de707ffcc0c",
+            "size_bytes": 63393643
+          }
+        ],
+        "required_files": [
+          "components.bcif"
+        ],
+        "readiness_manifest_sha256": "1b5e78ab84e9cf8c3807554cd7cf6af15668046bc5031b7d234cd1330c7ba055"
+      }
+    ]
   }
 }
