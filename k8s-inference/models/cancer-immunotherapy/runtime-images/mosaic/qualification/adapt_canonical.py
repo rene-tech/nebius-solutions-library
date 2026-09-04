@@ -35,6 +35,7 @@ HERE = Path(__file__).resolve().parent
 LOCK = json.loads((HERE.parent / "image-lock.json").read_text(encoding="utf-8"))
 
 ARTIFACT_ROOT = "/opt/fs2/artifacts"
+INPUT_ARTIFACT_ROOT = "/opt/fs2/inputs"
 ADMISSION_ROOT = "/opt/fs2/admission"
 PUBLIC_TREE_PREFIX = "scientific-localization/public"
 REFERENCE_DATA_HOST_ROOT = "/mnt/fs2-reference-data/data"
@@ -202,7 +203,11 @@ def adapt(
         {"name": "inputs", "configMap": {"name": target_config_map}}
     )
     mounts.append(
-        {"name": "inputs", "mountPath": f"{ARTIFACT_ROOT}/inputs", "readOnly": True}
+        {
+            "name": "inputs",
+            "mountPath": f"{INPUT_ARTIFACT_ROOT}/inputs",
+            "readOnly": True,
+        }
     )
 
     if gpu:
@@ -248,7 +253,10 @@ def adapt(
             },
         ]
 
-    environment = [{"name": "FS2_ARTIFACT_ROOT", "value": ARTIFACT_ROOT}]
+    environment = [
+        {"name": "FS2_ARTIFACT_ROOT", "value": ARTIFACT_ROOT},
+        {"name": "FS2_INPUT_ARTIFACT_ROOT", "value": INPUT_ARTIFACT_ROOT},
+    ]
     if not gpu:
         # validate_output_manifest binds the committed manifest to the admitted
         # image digest, and the canonical Job carries no env that could supply it.
