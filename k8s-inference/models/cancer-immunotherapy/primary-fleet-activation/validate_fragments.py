@@ -72,6 +72,8 @@ SHARED_RUNTIME_RECIPE_PATHS = frozenset(
     {
         "components/control-plane/src/fs2_serve/scientific_batch/__init__.py",
         "components/control-plane/src/fs2_serve/scientific_batch/controller.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/companion.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/execution.py",
         "components/control-plane/src/fs2_serve/scientific_batch/models.py",
         "components/control-plane/src/fs2_serve/scientific_batch/catalog_adapter.py",
         "components/control-plane/src/fs2_serve/scientific_batch/protocols.py",
@@ -80,6 +82,9 @@ SHARED_RUNTIME_RECIPE_PATHS = frozenset(
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/primitives.py",
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/materialization.py",
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/localization.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/production_registry.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/staged_workspace.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/verified_input.py",
         "catalog/runtime/schema/scientific-run-request.schema.json",
         "catalog/runtime/schema/scientific-run-result.schema.json",
         "catalog/runtime/schema/scientific-artifact-localization.schema.json",
@@ -105,6 +110,7 @@ MODEL_RUNTIME_RECIPE_PATHS = {
     ),
     "mosaic": frozenset(
         {
+            "components/control-plane/src/fs2_serve/scientific_batch/adapters/mosaic.py",
             "models/cancer-immunotherapy/runtime-images/mosaic/image-lock.json",
             "models/cancer-immunotherapy/runtime-images/mosaic/runtime_entrypoint.py",
             "models/cancer-immunotherapy/runtime-images/mosaic/qualification/render_plan.py",
@@ -113,6 +119,7 @@ MODEL_RUNTIME_RECIPE_PATHS = {
     ),
     "rfdiffusion": frozenset(
         {
+            "components/control-plane/src/fs2_serve/scientific_batch/adapters/rfdiffusion.py",
             "models/cancer-immunotherapy/runtime-images/rfdiffusion/image-lock.json",
             "models/cancer-immunotherapy/runtime-images/rfdiffusion/runtime_entrypoint.py",
             "models/cancer-immunotherapy/runtime-images/rfdiffusion/qualification/render_job.py",

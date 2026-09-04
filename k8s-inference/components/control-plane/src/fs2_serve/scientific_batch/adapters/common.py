@@ -41,6 +41,8 @@ _RUNTIME_ARTIFACT_ROOT = PurePosixPath("/opt/fs2/artifacts")
 _RECIPE_SHARED_PATHS = (
     "components/control-plane/src/fs2_serve/scientific_batch/__init__.py",
     "components/control-plane/src/fs2_serve/scientific_batch/controller.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/companion.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/execution.py",
     "components/control-plane/src/fs2_serve/scientific_batch/models.py",
     "components/control-plane/src/fs2_serve/scientific_batch/catalog_adapter.py",
     "components/control-plane/src/fs2_serve/scientific_batch/protocols.py",
@@ -49,6 +51,9 @@ _RECIPE_SHARED_PATHS = (
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/primitives.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/materialization.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/localization.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/adapters/production_registry.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/adapters/staged_workspace.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/adapters/verified_input.py",
     "catalog/runtime/schema/scientific-run-request.schema.json",
     "catalog/runtime/schema/scientific-run-result.schema.json",
     "catalog/runtime/schema/scientific-artifact-localization.schema.json",
@@ -66,6 +71,26 @@ _RECIPE_MODEL_PATHS = {
         "catalog/runtime/schema/proteina-complexa-parameters.schema.json",
         "models/structure/batch-adapters/proteina-complexa/adapter.py",
         "models/structure/batch-adapters/proteina-complexa/contract.json",
+    ),
+    "bindcraft": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/bindcraft.py",
+        "models/structure/batch-adapters/bindcraft/contract.json",
+        "models/cancer-immunotherapy/images/bindcraft-native/image-lock.json",
+        "models/cancer-immunotherapy/images/bindcraft-native/runtime/runtime_entrypoint.py",
+    ),
+    "mosaic": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/mosaic.py",
+        "models/cancer-immunotherapy/runtime-images/mosaic/image-lock.json",
+        "models/cancer-immunotherapy/runtime-images/mosaic/runtime_entrypoint.py",
+        "models/cancer-immunotherapy/runtime-images/mosaic/qualification/render_plan.py",
+        "models/cancer-immunotherapy/runtime-images/mosaic/qualification/validate_result.py",
+    ),
+    "rfdiffusion": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/rfdiffusion.py",
+        "models/cancer-immunotherapy/runtime-images/rfdiffusion/image-lock.json",
+        "models/cancer-immunotherapy/runtime-images/rfdiffusion/runtime_entrypoint.py",
+        "models/cancer-immunotherapy/runtime-images/rfdiffusion/qualification/render_job.py",
+        "models/cancer-immunotherapy/runtime-images/rfdiffusion/qualification/validate_result.py",
     ),
 }
 
