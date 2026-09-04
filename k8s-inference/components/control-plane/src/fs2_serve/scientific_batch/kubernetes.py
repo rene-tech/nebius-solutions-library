@@ -304,6 +304,40 @@ def _container_intervals(
     return ()
 
 
+def _canonical_phase_intervals(
+    intervals: list[PodPhaseInterval],
+) -> tuple[PodPhaseInterval, ...]:
+    """Project one Pod's container evidence onto the lifecycle key space.
+
+    Lifecycle interval keys identify a phase by Pod UID and recorded start
+    time; Kubernetes can publish two sequential containers with the same
+    timestamp at its source resolution.  Such evidence describes one
+    continuous phase window in that key space.  Merge only those same-Pod,
+    same-phase, same-start windows, retaining an open end when either source
+    remains open and otherwise the latest observed end.  Callers invoke this
+    independently for every immutable Pod UID, so retries remain distinct.
+    """
+
+    canonical: dict[tuple[LifecyclePhase, datetime], PodPhaseInterval] = {}
+    for interval in intervals:
+        identity = (interval.phase, interval.started_at)
+        existing = canonical.get(identity)
+        if existing is None:
+            canonical[identity] = interval
+            continue
+        ended_at = (
+            None
+            if existing.ended_at is None or interval.ended_at is None
+            else max(existing.ended_at, interval.ended_at)
+        )
+        canonical[identity] = PodPhaseInterval(
+            phase=interval.phase,
+            started_at=interval.started_at,
+            ended_at=ended_at,
+        )
+    return tuple(canonical.values())
+
+
 def _pod_gpu_count(spec: Mapping[str, Any], resource_name: str | None) -> int:
     if resource_name is None:
         return 0
@@ -409,7 +443,10 @@ def _pod_lifecycle(
         if init_status is None:
             init_succeeded = False
             phases.append(PodPhaseInterval(phase=LifecyclePhase.IMAGE_LOADING, started_at=container_fallback))
-            continue
+            # Scientific workload init containers are sequential.  Once the
+            # next status is absent, later containers have not started and do
+            # not own independent phase evidence yet.
+            break
         intervals = _container_intervals(
             init_status,
             phase=_container_phase(name),
@@ -422,6 +459,7 @@ def _pod_lifecycle(
         terminated = terminated.get("terminated") if isinstance(terminated, Mapping) else None
         if not isinstance(terminated, Mapping) or terminated.get("exitCode") != 0:
             init_succeeded = False
+            break
 
     regular = _container_statuses(status, "containerStatuses")
     stage = regular.get(STAGE_CONTAINER_NAME)
@@ -470,7 +508,7 @@ def _pod_lifecycle(
         scheduled_at=scheduled_at,
         gpu_count=gpu_count,
         gpu_uuids=gpu_uuids,
-        phases=tuple(dict.fromkeys(phases)),
+        phases=_canonical_phase_intervals(phases),
     )
 
 

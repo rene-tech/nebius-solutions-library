@@ -389,6 +389,66 @@ def test_running_pod_is_not_active_compute_until_every_init_container_succeeds()
     )
 
 
+def test_running_init_does_not_synthesize_future_init_phase_evidence() -> None:
+    baseline_raw = raw_pod(init_finished=False)
+    future_raw = raw_pod(init_finished=False)
+    init_specs = future_raw["spec"]["initContainers"]
+    assert isinstance(init_specs, list)
+    init_specs.append({"name": "prepare-future-input"})
+
+    baseline = _pod_lifecycle(
+        baseline_raw,
+        accelerator_resource_name="nvidia.com/gpu",
+        observed_at=at(4),
+    )
+    with_future_init = _pod_lifecycle(
+        future_raw,
+        accelerator_resource_name="nvidia.com/gpu",
+        observed_at=at(4),
+    )
+
+    assert baseline is not None and with_future_init is not None
+    assert with_future_init == baseline
+    identities = [(value.phase, value.started_at) for value in with_future_init.phases]
+    assert len(identities) == len(set(identities))
+
+
+@pytest.mark.asyncio
+async def test_same_phase_times_from_retry_pods_keep_distinct_pod_identity() -> None:
+    state, attempt = terminal_state(AttemptOutcome.SUCCEEDED)
+    first_observation = pod_observation(attempt, observed_at=at(10))
+    first = first_observation.pod_lifecycle[0]
+    second = replace(first, pod_uid="pod-uid-2", pod_name="fs2-design-target-a1-retry")
+    observation = replace(
+        first_observation,
+        pod_uids=(first.pod_uid, second.pod_uid),
+        pod_lifecycle=(first, second),
+    )
+    repository = MemoryLifecycleRepository()
+    bridge = ScientificLifecycleBridge(
+        lifecycle=repository,
+        batches=EventSource(lifecycle_events(state, attempt, preempted=False)),
+        operations=OperationSource(operation(state.operation_id, status=OperationStatus.SUCCEEDED)),
+        cluster="k8s-inference-h100",
+    )
+
+    await bridge.observe(state, attempt, observation)
+    await bridge.observe(state, attempt, observation)
+
+    detail = await repository.get_workload(attempt.attempt_id, tenant_id=state.tenant_id)
+    assert detail is not None
+    assert {value.pod_uid for value in detail.correlations if value.pod_uid is not None} == {
+        "pod-uid-1",
+        "pod-uid-2",
+    }
+    phase_start_pods = {
+        value.pod_uid
+        for value in detail.signals
+        if value.clock is LifecycleClock.PHASE and value.edge is LifecycleEdge.START
+    }
+    assert phase_start_pods == {"pod-uid-1", "pod-uid-2"}
+
+
 @pytest.mark.asyncio
 async def test_resumed_sync_keeps_pre_apply_events_stable_when_job_uid_is_enriched() -> None:
     terminal, terminal_attempt = terminal_state(AttemptOutcome.SUCCEEDED)
