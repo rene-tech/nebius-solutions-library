@@ -6,22 +6,22 @@
     "model_id": "protenix-v2",
     "display_name": "Protenix v2.0.0",
     "execution_mode": "scientific-batch",
-    "state": "candidate-unqualified",
-    "route_exposed": false,
+    "state": "active",
+    "route_exposed": true,
     "source": {
       "kind": "git",
       "repository": "bytedance/Protenix",
       "revision": "2475421477ab414b571149ad4a875c390ff8a35d",
       "review_url": "https://github.com/bytedance/Protenix/tree/2475421477ab414b571149ad4a875c390ff8a35d",
-      "classification": "candidate-input"
+      "classification": "qualified-input"
     },
     "execution_identity": {
       "model_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
       "runtime_image_digest": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
-      "runtime_recipe_sha256": null,
-      "workload_recipe_sha256": null,
-      "artifact_manifest_digest": null,
-      "execution_identity_sha256": null
+      "runtime_recipe_sha256": "49fafd4a5f88d84ec1c71de04ea61443d8566946eed919a0cb1344a27f869afd",
+      "workload_recipe_sha256": "5313859b371d6feda38f7cdb20c8be079a63b40b999a57fb87cb9a204404b26a",
+      "artifact_manifest_digest": "e4396ce5ab67717f3bd608aa76f33c0c0f40afcd966d0426b05e18e19e490f2f",
+      "execution_identity_sha256": "8100a67d18fd394b4c284371bf04c020a151e15e1d6e1e331e0f1afb210767fb"
     },
     "interface": {
       "protocol": "scientific-batch-v1",
@@ -37,7 +37,7 @@
       ],
       "mcp": {
         "discoverable": true,
-        "invocable": false,
+        "invocable": true,
         "tool_name": "submit_protenix_v2",
         "description": "Submit a Protenix v2 biomolecular complex structure prediction on the offline no-MSA lane."
       }
@@ -127,13 +127,20 @@
     },
     "semantic_validation": {
       "validator_id": "protenix-v2-upstream-v2-0-0",
-      "state": "candidate-unqualified"
+      "state": "active"
+    },
+    "qualification": {
+      "h100_semantic_receipt_sha256": "33a54067af682bef43b282e12a46067b6891115a9e198eb214c9df46e1437f0a",
+      "public_completion_receipt_sha256": null,
+      "scheduler_eligibility_receipt_sha256": null,
+      "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+      "qualified_at": "2026-09-04T16:49:30Z"
     },
     "policy": {
       "commercial_use": "allowed",
       "non_clinical": true,
       "limitations": [
-        "Image sha256:b90a02bd...426af8 is the published, protocol-compatible -h100-r5 successor; it remains candidate-unqualified until a live semantic H100 run completes through the public controller path.",
+        "Image sha256:b90a02bd...426af8 completed exact-digest semantic H100 inference against the localized composite runtime tree; public completion and scheduler eligibility receipts remain pending.",
         "The v2 checkpoint was recovered from the immutable third-party mirror TMF001/protenix-v2-weights@653edab2 and is not yet byte-compared with the publisher CDN object.",
         "The source payload 8e14bb80...12eca is transformed by localization manifest a093d28e...cc6b7 into the exact shared-filesystem runtime tree 5e1c3b54...74d48 with localization receipt ea301407...04b4; all identities remain distinct.",
         "Only msa_mode none is admitted; precomputed MSA waits for a validated relocation contract and no mode contacts an MSA server."

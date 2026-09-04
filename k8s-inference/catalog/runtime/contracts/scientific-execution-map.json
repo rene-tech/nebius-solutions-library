@@ -464,7 +464,7 @@
       "model_id": "proteina-complexa",
       "variant_id": "upstream-dev-20260827",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": null,
+      "execution_identity_sha256": "62071777496576eff4549f48da5c78db47ca4aedb8f8d2e454c143ecd825ddd1",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -782,7 +782,7 @@
       "model_id": "bindcraft",
       "variant_id": "v1-5-3-pyrosetta-academic",
       "workload_namespace": "fs2-academic-poc",
-      "execution_identity_sha256": null,
+      "execution_identity_sha256": "2520997f613fa629af136860488cedb66c8e1f6390a83a5224f96cde5b03a2c4",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1007,7 +1007,7 @@
       "model_id": "mosaic",
       "variant_id": "mosaic-boltz2-proteinmpnn-v1",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": null,
+      "execution_identity_sha256": "74596ef23ea34112e6b319d1a6f8859c030c2d61e61980b258aa974c7dd73bba",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1190,7 +1190,7 @@
       "model_id": "rfdiffusion",
       "variant_id": "rfdiffusion-v1-1-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": null,
+      "execution_identity_sha256": "ba33a17f3867344af9f02c7050f0784f628784b995e102a01d5f717c8fec4844",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1307,7 +1307,7 @@
       "model_id": "openfold3-openbind",
       "variant_id": "upstream-openbind-v0-5-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": null,
+      "execution_identity_sha256": "62017b9dccdf06464ed7e749343170ed599964c32a06d4578c25215e9345e60f",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1454,7 +1454,7 @@
       "model_id": "protenix-v2",
       "variant_id": "upstream-v2-0-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": null,
+      "execution_identity_sha256": "8100a67d18fd394b4c284371bf04c020a151e15e1d6e1e331e0f1afb210767fb",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1635,7 +1635,7 @@
       "model_id": "alphafold3",
       "variant_id": "upstream-v3-0-4",
       "workload_namespace": "fs2-academic-poc",
-      "execution_identity_sha256": null,
+      "execution_identity_sha256": "a9bc5265365e8e6df0ce9d70991f1fb5af58363d9f959e90c417b87ebe543f56",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"

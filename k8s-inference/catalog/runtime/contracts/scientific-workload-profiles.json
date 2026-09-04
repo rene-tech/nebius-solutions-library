@@ -961,22 +961,22 @@
       "model_id": "openfold3-openbind",
       "display_name": "OpenFold3 OpenBind v0.5.0",
       "execution_mode": "scientific-batch",
-      "state": "candidate-unqualified",
-      "route_exposed": false,
+      "state": "active",
+      "route_exposed": true,
       "source": {
         "kind": "git",
         "repository": "aqlaboratory/openfold-3",
         "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
         "review_url": "https://github.com/aqlaboratory/openfold-3/tree/c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
-        "classification": "candidate-input"
+        "classification": "qualified-input"
       },
       "execution_identity": {
         "model_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
         "runtime_image_digest": "sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de",
-        "runtime_recipe_sha256": null,
-        "workload_recipe_sha256": null,
-        "artifact_manifest_digest": null,
-        "execution_identity_sha256": null
+        "runtime_recipe_sha256": "11f0123107851f5c3d4c3aebb0fdb540924d12d0213f6393f5eaea03878e4403",
+        "workload_recipe_sha256": "73a463f3d28d658780d6a52c10b7826301d9a510e6899e7d117ffaa1d800fcbe",
+        "artifact_manifest_digest": "c4cc2c59313470ee7498f37d377485328785e09080ccb2136edfeef754a573bb",
+        "execution_identity_sha256": "62017b9dccdf06464ed7e749343170ed599964c32a06d4578c25215e9345e60f"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -992,7 +992,7 @@
         ],
         "mcp": {
           "discoverable": true,
-          "invocable": false,
+          "invocable": true,
           "tool_name": "submit_openfold3_openbind",
           "description": "Submit an OpenFold3 complex structure prediction; an independent backend that never satisfies an alphafold3 request."
         }
@@ -1082,16 +1082,23 @@
       },
       "semantic_validation": {
         "validator_id": "openfold3-upstream-openbind-v0-5-0",
-        "state": "candidate-unqualified"
+        "state": "active"
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "695428c786ce9555d69095a074764d5312596ed30610c353a5988ca7e2777784",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "qualified_at": "2026-09-04T16:32:24Z"
       },
       "policy": {
         "commercial_use": "allowed",
         "non_clinical": true,
         "limitations": [
-          "Image sha256:3686e530...93b1de is the published, protocol-compatible -h100-r5 successor and runs as UID/GID 10001:10001; it remains candidate-unqualified until a live semantic H100 run completes through the public controller path.",
+          "Image sha256:3686e530...93b1de completed exact-digest semantic H100 inference as UID/GID 10001:10001 with its immutable localized artifacts; public completion and scheduler eligibility receipts remain pending.",
           "OpenFold3 is an independent, non-equivalent backend to AlphaFold 3: distinct code, weights, license and results; it is never reported as AlphaFold 3.",
           "The public scientific identity is openfold3-openbind so it cannot collide with the existing openfold3 HTTP catalog record; the legacy runtime-emitted openfold3 label is accepted only inside this adapter's output-validation boundary.",
-          "The exact OpenBind-0 checkpoint and components.bcif objects have immutable manifests and successful shared-filesystem localization receipts; route exposure still requires end-to-end scheduler, renderer, and semantic qualification."
+          "The exact OpenBind-0 checkpoint and components.bcif objects have immutable manifests and successful shared-filesystem localization receipts; the H100 qualifier projected the canonical runner-base file explicitly, so a future image should bake that file to remove the projection."
         ]
       },
       "runtime_artifacts": [
@@ -1138,22 +1145,22 @@
       "model_id": "protenix-v2",
       "display_name": "Protenix v2.0.0",
       "execution_mode": "scientific-batch",
-      "state": "candidate-unqualified",
-      "route_exposed": false,
+      "state": "active",
+      "route_exposed": true,
       "source": {
         "kind": "git",
         "repository": "bytedance/Protenix",
         "revision": "2475421477ab414b571149ad4a875c390ff8a35d",
         "review_url": "https://github.com/bytedance/Protenix/tree/2475421477ab414b571149ad4a875c390ff8a35d",
-        "classification": "candidate-input"
+        "classification": "qualified-input"
       },
       "execution_identity": {
         "model_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
         "runtime_image_digest": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
-        "runtime_recipe_sha256": null,
-        "workload_recipe_sha256": null,
-        "artifact_manifest_digest": null,
-        "execution_identity_sha256": null
+        "runtime_recipe_sha256": "49fafd4a5f88d84ec1c71de04ea61443d8566946eed919a0cb1344a27f869afd",
+        "workload_recipe_sha256": "5313859b371d6feda38f7cdb20c8be079a63b40b999a57fb87cb9a204404b26a",
+        "artifact_manifest_digest": "e4396ce5ab67717f3bd608aa76f33c0c0f40afcd966d0426b05e18e19e490f2f",
+        "execution_identity_sha256": "8100a67d18fd394b4c284371bf04c020a151e15e1d6e1e331e0f1afb210767fb"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -1169,7 +1176,7 @@
         ],
         "mcp": {
           "discoverable": true,
-          "invocable": false,
+          "invocable": true,
           "tool_name": "submit_protenix_v2",
           "description": "Submit a Protenix v2 biomolecular complex structure prediction on the offline no-MSA lane."
         }
@@ -1259,13 +1266,20 @@
       },
       "semantic_validation": {
         "validator_id": "protenix-v2-upstream-v2-0-0",
-        "state": "candidate-unqualified"
+        "state": "active"
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "33a54067af682bef43b282e12a46067b6891115a9e198eb214c9df46e1437f0a",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "qualified_at": "2026-09-04T16:49:30Z"
       },
       "policy": {
         "commercial_use": "allowed",
         "non_clinical": true,
         "limitations": [
-          "Image sha256:b90a02bd...426af8 is the published, protocol-compatible -h100-r5 successor; it remains candidate-unqualified until a live semantic H100 run completes through the public controller path.",
+          "Image sha256:b90a02bd...426af8 completed exact-digest semantic H100 inference against the localized composite runtime tree; public completion and scheduler eligibility receipts remain pending.",
           "The v2 checkpoint was recovered from the immutable third-party mirror TMF001/protenix-v2-weights@653edab2 and is not yet byte-compared with the publisher CDN object.",
           "The source payload 8e14bb80...12eca is transformed by localization manifest a093d28e...cc6b7 into the exact shared-filesystem runtime tree 5e1c3b54...74d48 with localization receipt ea301407...04b4; all identities remain distinct.",
           "Only msa_mode none is admitted; precomputed MSA waits for a validated relocation contract and no mode contacts an MSA server."
@@ -1333,22 +1347,22 @@
       "model_id": "alphafold3",
       "display_name": "AlphaFold 3 v3.0.4",
       "execution_mode": "scientific-batch",
-      "state": "candidate-unqualified",
-      "route_exposed": false,
+      "state": "active",
+      "route_exposed": true,
       "source": {
         "kind": "git",
         "repository": "google-deepmind/alphafold3",
         "revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
         "review_url": "https://github.com/google-deepmind/alphafold3/tree/85c4d20505fd5cef05eac22b534d4e793971ae69",
-        "classification": "candidate-input"
+        "classification": "qualified-input"
       },
       "execution_identity": {
         "model_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
         "runtime_image_digest": "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
-        "runtime_recipe_sha256": null,
-        "workload_recipe_sha256": null,
-        "artifact_manifest_digest": null,
-        "execution_identity_sha256": null
+        "runtime_recipe_sha256": "db1f6db25560f5be089bbe532fdcb7131124f4a57c93afb2ff807630b89fc3ed",
+        "workload_recipe_sha256": "26bb46f3fb56503d798eeb939e64f97a24d1bb19a7ac249b25a8edf55423bb8d",
+        "artifact_manifest_digest": "f0a5202f7f035ca014feff1bb16c1b342483a09bd67781cb934564c0630a7cc2",
+        "execution_identity_sha256": "a9bc5265365e8e6df0ce9d70991f1fb5af58363d9f959e90c417b87ebe543f56"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -1364,7 +1378,7 @@
         ],
         "mcp": {
           "discoverable": true,
-          "invocable": false,
+          "invocable": true,
           "tool_name": "submit_alphafold3",
           "description": "Submit a deployment-authorized AlphaFold 3 structure prediction from a raw fold input."
         }
@@ -1454,15 +1468,22 @@
       },
       "semantic_validation": {
         "validator_id": "alphafold3-upstream-v3-0-4",
-        "state": "candidate-unqualified"
+        "state": "active"
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "095e4d8da54621329d65a1bdae0e9f5b70d9bb305165d7d3f8e26315fe604b75",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "qualified_at": "2026-09-04T16:57:43Z"
       },
       "policy": {
         "commercial_use": "prohibited",
         "non_clinical": true,
         "limitations": [
-          "Image sha256:ecc3e735...a85e7 is the published, production-protocol-compatible r7 successor; it remains unqualified until exact-digest H100 parameter-load and inference evidence, a raw-input run through the public path, and a live-qualified renderer exist.",
+          "Image sha256:ecc3e735...a85e7 completed exact-digest H100 parameter load and semantic inference with the authorized private parameters and localized public reference data; public completion and scheduler eligibility receipts remain pending.",
           "The licensed parameter file remains tenant-private and is authorized once by the deployment; exact in-place PVC localization receipt 9c89f122...38bd4 is distinct from the deployment authorization document, and callers do not provide a per-request license receipt.",
-          "The public database tree d27b8956...dfaea has terminal localization receipt 3c7d4176...28874 on the reference-data plane; inference never mounts that public host root.",
+          "The public database tree d27b8956...dfaea has canonical terminal localization receipt b049e698...f6a6 on the reference-data plane; inference never mounts that public host root.",
           "Raw-input preprocessing runs only in the 16 CPU, 64 GiB reference-data class; the live reference pool nodes are 8 vCPU / 32 GiB and cannot admit it until a larger reference class exists.",
           "OpenFold3 is an independent operational alternative and never satisfies an alphafold3 request."
         ]
