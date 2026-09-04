@@ -888,13 +888,18 @@ def _native_manifest_target(value: object) -> ArtifactPointer:
     entries = manifest["entries"]
     if not isinstance(entries, list) or len(entries) != 1:
         raise ScientificAdapterError("BindCraft native input manifest must contain exactly one target")
-    name, semantic_type, pointer = _entry(
+    entry = strict_object(
         entries[0],
+        required=frozenset({"name", "semantic_type", "artifact"}),
         label="BindCraft native target entry",
+    )
+    if entry["name"] != TARGET_INPUT_ID or entry["semantic_type"] != TARGET_SEMANTIC_TYPE:
+        raise ScientificAdapterError("BindCraft native target entry identity is unsupported")
+    pointer = ArtifactPointer.parse(
+        entry["artifact"],
+        label="BindCraft native target entry.artifact",
         maximum_bytes=MAX_INPUT_BYTES,
     )
-    if name != TARGET_INPUT_ID or semantic_type != TARGET_SEMANTIC_TYPE:
-        raise ScientificAdapterError("BindCraft native target entry identity is unsupported")
     if pointer.media_type != TARGET_MEDIA_TYPE or pointer.compression not in {None, "none"}:
         raise ScientificAdapterError("BindCraft native target entry must be one uncompressed PDB")
     return pointer

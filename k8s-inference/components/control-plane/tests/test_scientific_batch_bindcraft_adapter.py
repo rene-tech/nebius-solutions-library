@@ -824,9 +824,9 @@ def test_design_companion_binds_completion_request_and_exact_handoff(tmp_path: P
         request,
         operation_id="op-bindcraft-companion",
         input_artifacts=(verified_target(),),
-    ).invocation("design", "design-000")
-    workspace = tmp_path / "design-000"
-    publish_shard(workspace, index=0, request=request)
+    ).invocation("design", "design-001")
+    workspace = tmp_path / "design-001"
+    publish_shard(workspace, index=1, request=request)
     completion_sha256 = publish_stage_completion(invocation, workspace)
 
     collected = bindcraft.collect_companion_output(invocation, workspace)
@@ -835,7 +835,7 @@ def test_design_companion_binds_completion_request_and_exact_handoff(tmp_path: P
     assert collected.artifacts[0].semantic_type == "bindcraft-native-shard-bundle-tar/v1"
     assert collected.artifacts[0].compression == "zstd"
     assert collected.validation["completion_marker_sha256"] == completion_sha256
-    assert collected.validation["shard_id"] == "design-000"
+    assert collected.validation["shard_id"] == "design-001"
     assert collected.validation["status"] == "passed"
 
 

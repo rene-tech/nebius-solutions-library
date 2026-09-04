@@ -168,3 +168,30 @@ def test_bindcraft_private_runtime_tree_is_exact_and_read_only() -> None:
         "alphafold2-params",
         "pyrosetta",
     }
+
+
+def test_mosaic_design_uses_the_shared_persistent_jax_cache() -> None:
+    execution_document = json.loads(
+        (CATALOG_ROOT / "contracts/scientific-execution-map.json").read_text(encoding="utf-8")
+    )
+    mosaic = next(item for item in execution_document["models"] if item["model_id"] == "mosaic")
+    stages = {item["stage_id"]: item for item in mosaic["stages"]}
+    design = stages["design"]
+    cache_mounts = [item for item in design["mounts"] if item["kind"] == "runtime-cache"]
+
+    assert cache_mounts == [
+        {
+            "name": "runtime-cache",
+            "kind": "runtime-cache",
+            "claim_name": "fs2-scientific-runtime-cache",
+            "host_path": None,
+            "mount_path": "/cache",
+            "sub_path": None,
+            "read_only": False,
+        }
+    ]
+    assert design["environment"] == {
+        "JAX_COMPILATION_CACHE_DIR": "/cache/mosaic/jax",
+        "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS": "0",
+    }
+    assert all(item["kind"] != "runtime-cache" for item in stages["aggregate"]["mounts"])
