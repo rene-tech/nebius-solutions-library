@@ -407,6 +407,15 @@ def test_crd_is_structural_versioned_and_has_explicit_terraform_upgrade_owner() 
     assert "Automatic mode selects" in mechanism_description
     fast_start = spec_properties["fastStart"]
     assert fast_start["default"] == {"mode": "Fixed", "level": "Off", "fallbackPolicy": "AllowLowerLevel"}
+    assert fast_start["properties"]["level"]["description"] == "Fixed-mode target; defaults to Off when omitted."
+    assert (
+        fast_start["properties"]["minimumLevel"]["description"]
+        == "Automatic-mode lower bound; defaults to Off when omitted."
+    )
+    assert (
+        fast_start["properties"]["maximumLevel"]["description"]
+        == "Automatic-mode upper bound; defaults to L4 when omitted."
+    )
     levels = ["Off", "L1", "L2", "L3", "L4"]
     for field in ("level", "minimumLevel", "maximumLevel"):
         assert fast_start["properties"][field]["enum"] == levels

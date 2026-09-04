@@ -340,9 +340,7 @@ async def test_regional_cache_mirror_mismatch_is_neither_advertised_nor_persiste
     )
 
     option = service.configuration_options()[0]
-    assert [choice.mechanism for choice in option.fast_start_mechanism_choices] == [
-        FastStartMechanism.CONVENTIONAL
-    ]
+    assert [choice.mechanism for choice in option.fast_start_mechanism_choices] == [FastStartMechanism.CONVENTIONAL]
     regional = option.default_spec.model_copy(
         update={
             "cache": option.default_spec.cache.model_copy(
@@ -366,11 +364,14 @@ async def test_regional_cache_mirror_mismatch_is_neither_advertised_nor_persiste
 
     assert rejected.value.status_code == 422
     assert rejected.value.code == "model_deployment_render_failed"
-    assert await service.repository.current(
-        namespace="fs2-models",
-        name="qwen-live",
-        tenant_id=None,
-    ) is None
+    assert (
+        await service.repository.current(
+            namespace="fs2-models",
+            name="qwen-live",
+            tenant_id=None,
+        )
+        is None
+    )
     assert writer.writes == []
 
     automatic = regional.model_copy(
@@ -395,11 +396,14 @@ async def test_regional_cache_mirror_mismatch_is_neither_advertised_nor_persiste
             _actor(),
         )
     assert automatic_rejected.value.code == "model_deployment_render_failed"
-    assert await service.repository.current(
-        namespace="fs2-models",
-        name="qwen-auto",
-        tenant_id=None,
-    ) is None
+    assert (
+        await service.repository.current(
+            namespace="fs2-models",
+            name="qwen-auto",
+            tenant_id=None,
+        )
+        is None
+    )
     assert writer.writes == []
 
 
@@ -427,11 +431,14 @@ async def test_apply_requires_authoritative_render_proof_before_persisting() -> 
 
     assert rejected.value.status_code == 422
     assert rejected.value.code == "model_deployment_render_failed"
-    assert await service.repository.current(
-        namespace="fs2-models",
-        name="qwen-live",
-        tenant_id=None,
-    ) is None
+    assert (
+        await service.repository.current(
+            namespace="fs2-models",
+            name="qwen-live",
+            tenant_id=None,
+        )
+        is None
+    )
     assert writer.writes == []
 
 
@@ -502,6 +509,89 @@ def test_configuration_default_selects_every_compatible_pool_and_invariant_allow
             **option.model_dump(exclude={"default_spec"}),
             default_spec=unknown_pool_default,
         )
+
+
+@pytest.mark.asyncio
+async def test_advertised_mechanism_uses_the_same_capacity_ceiling_as_the_ui_candidate() -> None:
+    installed = reserved_and_preemptible_envelope()
+    base_qualification = installed.qualifications["qwen.3-8b"]
+    qualification = base_qualification.model_copy(
+        update={
+            "max_accelerators_per_replica": 1,
+            "regional_cache": render_regional_cache(pool_refs=("preemptible-h100",)),
+            "template_cache_tiers": {
+                digest: CacheTier.SHARED_FILESYSTEM for digest in base_qualification.template_digests
+            },
+        }
+    )
+    installed = installed.model_copy(update={"qualifications": {qualification.model_ref: qualification}})
+    repository = StoreModelDeploymentRepository(
+        MemoryStore(
+            PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+            KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+        )
+    )
+    writer = FakeWriter()
+    service = ModelDeploymentMutationService(
+        repository=repository,
+        writer=writer,
+        envelope=installed,
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
+    )
+
+    option = service.configuration_options()[0]
+    choice = next(
+        item for item in option.fast_start_mechanism_choices if item.mechanism is FastStartMechanism.REGIONAL_CACHE
+    )
+    assert option.default_spec.availability.max_replicas == 4
+    assert choice.pool_refs == ["preemptible-h100"]
+    maximum_by_pool = {item.pool_ref: item.maximum_replicas for item in option.pool_choices}
+    advertised_maximum = sum(maximum_by_pool[pool_ref] for pool_ref in choice.pool_refs)
+    assert advertised_maximum == 2
+
+    # Mirror the form's mechanism-selection transform exactly. The resulting
+    # desired spec, rather than a proof-only lower ceiling, must be accepted by
+    # both live validation and the authoritative renderer before persistence.
+    candidate = option.default_spec.model_copy(
+        update={
+            "placement": option.default_spec.placement.model_copy(update={"pool_refs": choice.pool_refs}),
+            "cache": option.default_spec.cache.model_copy(
+                update={
+                    "mechanism": choice.mechanism,
+                    "tier": choice.required_cache_tier,
+                }
+            ),
+            "availability": option.default_spec.availability.model_copy(
+                update={
+                    "min_replicas": max(
+                        option.default_spec.availability.min_replicas,
+                        choice.minimum_hot_replicas,
+                    ),
+                    "max_replicas": min(
+                        max(
+                            option.default_spec.availability.max_replicas,
+                            choice.minimum_max_replicas,
+                        ),
+                        advertised_maximum,
+                    ),
+                }
+            ),
+        }
+    )
+    assert candidate.availability.max_replicas == 2
+    assert validate_model_deployment(candidate, installed).disposition is ValidationDisposition.ACCEPTED
+
+    applied = await service.apply(
+        _apply_request(
+            key="regional-capacity-exact-candidate-0001",
+            proposal=ModelDeploymentPreviewProposal(name="qwen-live", spec=candidate),
+        ),
+        _actor(),
+    )
+    assert applied.projection == "applied"
+    assert applied.revision.spec == candidate
+    assert len(writer.writes) == 1
 
 
 @pytest.mark.asyncio
@@ -734,6 +824,79 @@ async def test_apply_drain_rollback_reconcile_and_pending_projection() -> None:
     assert pending.projection == "pending"
     assert pending.receipt is None
     assert "private failure" not in (pending.reason or "")
+
+
+@pytest.mark.asyncio
+async def test_rollback_refuses_an_old_unrenderable_revision_before_append_or_projection() -> None:
+    store = MemoryStore(
+        PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+        KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+    )
+    repository = StoreModelDeploymentRepository(store)
+    service = ModelDeploymentMutationService(
+        repository=repository,
+        writer=FakeWriter(),
+        envelope=envelope(),
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
+    )
+    created = await service.apply(
+        _apply_request(
+            key="rollback-render-create-0001",
+            proposal=ModelDeploymentPreviewProposal(name="qwen-live", spec=model_spec()),
+        ),
+        _actor(),
+    )
+    updated_spec = created.revision.spec.model_copy(
+        update={
+            "availability": created.revision.spec.availability.model_copy(
+                update={"idle_seconds": created.revision.spec.availability.idle_seconds + 1}
+            )
+        }
+    )
+    updated = await service.apply(
+        _apply_request(
+            key="rollback-render-update-0002",
+            proposal=ModelDeploymentPreviewProposal(
+                name="qwen-live",
+                base_etag=created.revision.etag,
+                spec=updated_spec,
+            ),
+        ),
+        _actor(),
+    )
+
+    class RejectingRenderer:
+        name = "rejecting-renderer"
+
+        def render(self, *_args: object, **_kwargs: object) -> object:
+            raise ValueError("old template is no longer renderable")
+
+    rejecting_writer = FakeWriter()
+    rejecting_service = ModelDeploymentMutationService(
+        repository=repository,
+        writer=rejecting_writer,
+        envelope=envelope(),
+        renderer=RejectingRenderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
+    )
+
+    with pytest.raises(ModelDeploymentMutationProblemError) as rejected:
+        await rejecting_service.rollback(
+            name="qwen-live",
+            request=ModelDeploymentRollbackRequest(
+                target_revision=created.revision.revision,
+                base_etag=updated.revision.etag,
+                idempotency_key="rollback-render-rejected-0003",
+            ),
+            actor=_actor(),
+        )
+
+    assert rejected.value.status_code == 422
+    assert rejected.value.code == "model_deployment_render_failed"
+    current = await repository.current(namespace="fs2-models", name="qwen-live", tenant_id=None)
+    assert current == updated.revision
+    assert rejecting_writer.writes == []
 
 
 @pytest.mark.asyncio

@@ -514,35 +514,11 @@ class ModelDeploymentMutationService:
         default_spec: ModelDeploymentSpec,
         choice: ModelDeploymentFastStartMechanismChoice,
         pool_refs: list[str],
-        prove_full_node_pool: bool = False,
+        maximum_replicas: int,
     ) -> bool:
-        """Prove an advertised mechanism and pool set with the real renderer.
-
-        A host-memory single-pool proof fills every accelerator slot on one
-        node so holder plus runtime RAM is checked at worst-case Pod density.
-        The subsequent full-set proof catches multi-pool render interactions.
-        """
+        """Prove the exact mechanism, pools and advertised replica ceiling."""
 
         minimum_replicas = max(default_spec.availability.min_replicas, choice.minimum_hot_replicas)
-        available_replicas = sum(
-            (self.envelope.pools[pool_ref].accelerators_per_node // default_spec.placement.accelerators_per_replica)
-            * self.envelope.pools[pool_ref].max_nodes
-            for pool_ref in pool_refs
-        )
-        maximum_replicas = max(default_spec.availability.max_replicas, choice.minimum_max_replicas)
-        if len(pool_refs) == 1:
-            # This artificial subset proves that the pool may be offered; it
-            # must not inherit a multi-pool replica ceiling the pool cannot
-            # satisfy on its own.
-            maximum_replicas = min(maximum_replicas, available_replicas)
-        if prove_full_node_pool:
-            if len(pool_refs) != 1:
-                return False
-            pool = self.envelope.pools[pool_refs[0]]
-            runtime_pods_per_node = pool.accelerators_per_node // default_spec.placement.accelerators_per_replica
-            if runtime_pods_per_node < 1:
-                return False
-            maximum_replicas = runtime_pods_per_node
         if maximum_replicas < max(minimum_replicas, choice.minimum_max_replicas):
             return False
         candidate = default_spec.model_copy(
@@ -571,6 +547,26 @@ class ModelDeploymentMutationService:
             admitted_pool_ref=decision.admitted_pool_ref,
             name=_dns_safe_name(candidate.model_ref),
             generation=1,
+        )
+
+    def _host_memory_pool_density_is_renderable(
+        self,
+        *,
+        default_spec: ModelDeploymentSpec,
+        choice: ModelDeploymentFastStartMechanismChoice,
+        pool_ref: str,
+    ) -> bool:
+        """Additionally prove the worst schedulable host-memory Pod density."""
+
+        pool = self.envelope.pools[pool_ref]
+        runtime_pods_per_node = pool.accelerators_per_node // default_spec.placement.accelerators_per_replica
+        if runtime_pods_per_node < 1:
+            return False
+        return self._mechanism_choice_is_renderable(
+            default_spec=default_spec,
+            choice=choice,
+            pool_refs=[pool_ref],
+            maximum_replicas=runtime_pods_per_node,
         )
 
     def configuration_options(self) -> list[ModelDeploymentConfigurationOption]:
@@ -772,24 +768,45 @@ class ModelDeploymentMutationService:
                     }
                 )
                 renderable_mechanism_choices: list[ModelDeploymentFastStartMechanismChoice] = []
+                pool_maximum_replicas = {choice.pool_ref: choice.maximum_replicas for choice in pool_choices}
                 for choice in mechanism_choices:
-                    renderable_pool_refs = [
-                        pool_ref
-                        for pool_ref in choice.pool_refs
-                        if self._mechanism_choice_is_renderable(
+                    renderable_pool_refs: list[str] = []
+                    for pool_ref in choice.pool_refs:
+                        # This is the exact ceiling the admin UI derives from
+                        # the already advertised per-pool capacity metadata.
+                        candidate_maximum = min(
+                            max(default_spec.availability.max_replicas, choice.minimum_max_replicas),
+                            pool_maximum_replicas[pool_ref],
+                        )
+                        if not self._mechanism_choice_is_renderable(
                             default_spec=default_spec,
                             choice=choice,
                             pool_refs=[pool_ref],
-                            prove_full_node_pool=choice.mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY,
-                        )
-                    ]
+                            maximum_replicas=candidate_maximum,
+                        ):
+                            continue
+                        if (
+                            choice.mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY
+                            and not self._host_memory_pool_density_is_renderable(
+                                default_spec=default_spec,
+                                choice=choice,
+                                pool_ref=pool_ref,
+                            )
+                        ):
+                            continue
+                        renderable_pool_refs.append(pool_ref)
                     if not renderable_pool_refs:
                         continue
                     choice = choice.model_copy(update={"pool_refs": renderable_pool_refs})
+                    candidate_maximum = min(
+                        max(default_spec.availability.max_replicas, choice.minimum_max_replicas),
+                        sum(pool_maximum_replicas[pool_ref] for pool_ref in renderable_pool_refs),
+                    )
                     if not self._mechanism_choice_is_renderable(
                         default_spec=default_spec,
                         choice=choice,
                         pool_refs=renderable_pool_refs,
+                        maximum_replicas=candidate_maximum,
                     ):
                         continue
                     renderable_mechanism_choices.append(choice)

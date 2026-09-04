@@ -28,9 +28,9 @@ export interface ModelDeploymentNamedDigest {
 
 export interface ModelDeploymentFastStartPolicy {
   mode: ModelDeploymentFastStartMode;
-  level?: ModelDeploymentFastStartLevel;
-  minimumLevel?: ModelDeploymentFastStartLevel;
-  maximumLevel?: ModelDeploymentFastStartLevel;
+  level?: ModelDeploymentFastStartLevel | null;
+  minimumLevel?: ModelDeploymentFastStartLevel | null;
+  maximumLevel?: ModelDeploymentFastStartLevel | null;
   fallbackPolicy?: ModelDeploymentFastStartFallbackPolicy;
 }
 

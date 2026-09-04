@@ -307,6 +307,7 @@ def test_fixed_and_automatic_combinations_are_validated_with_defaults() -> None:
     assert default.mode is FastStartMode.FIXED
     assert default.level is FastStartLevel.OFF
     assert default.fallback_policy is FastStartFallbackPolicy.ALLOW_LOWER_LEVEL
+    assert default == FastStartSpec.model_validate({"mode": "Fixed"})
     assert default == FastStartSpec.model_validate({"mode": "Fixed", "level": "Off"})
     assert default.requested_level is FastStartLevel.OFF
 

@@ -116,6 +116,12 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
     return modelDeploymentFastStartLevels.indexOf(level);
   }
 
+  function maximumReplicasForPools(poolRefs: string[]) {
+    return configurationOption?.pool_choices
+      .filter((choice) => poolRefs.includes(choice.pool_ref))
+      .reduce((total, choice) => total + choice.maximum_replicas, 0) ?? 0;
+  }
+
   return (
     <form className="model-deployment-form" onSubmit={(event) => event.preventDefault()}>
       <FormSection disabled={disabled} title="Identity and lifecycle" detail="Identity and runtime profile become immutable after creation. Lifecycle changes are planned against the current ETag.">
@@ -164,6 +170,13 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
                       next.placement.poolRefs = configurationOption.pool_choices
                         .map((candidate) => candidate.pool_ref)
                         .filter((poolRef) => selected.has(poolRef));
+                      const maximumSupportedReplicas = maximumReplicasForPools(next.placement.poolRefs);
+                      if (maximumSupportedReplicas > 0) {
+                        next.availability.maxReplicas = Math.min(
+                          next.availability.maxReplicas,
+                          maximumSupportedReplicas,
+                        );
+                      }
                     })}
                     type="checkbox"
                   />
@@ -289,7 +302,15 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
                 next.placement.poolRefs = compatiblePools.length > 0 ? compatiblePools : [choice.pool_refs[0]!];
                 if (choice.required_cache_tier) next.cache.tier = choice.required_cache_tier;
                 next.availability.minReplicas = Math.max(next.availability.minReplicas, choice.minimum_hot_replicas);
-                next.availability.maxReplicas = Math.max(next.availability.maxReplicas, choice.minimum_max_replicas);
+                const maximumSupportedReplicas = maximumReplicasForPools(next.placement.poolRefs);
+                next.availability.maxReplicas = Math.min(
+                  Math.max(
+                    next.availability.maxReplicas,
+                    next.availability.minReplicas,
+                    choice.minimum_max_replicas,
+                  ),
+                  maximumSupportedReplicas,
+                );
               })}
               value={spec.cache.mechanism ?? ""}
               values={selectableMechanisms}

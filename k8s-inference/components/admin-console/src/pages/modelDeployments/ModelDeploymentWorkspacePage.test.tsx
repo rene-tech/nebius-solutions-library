@@ -133,14 +133,16 @@ describe("ModelDeployment workspace", () => {
     })));
   });
 
-  it("enforces the server-authoritative pool set for an explicit cold-start mechanism", async () => {
+  it("enforces the exact server-authoritative pool set and capacity for an explicit mechanism", async () => {
     const capabilities = structuredClone(modelDeploymentMutationCapabilitiesFixture);
     const option = capabilities.configuration_options[0]!;
+    option.pool_choices.forEach((choice) => { choice.maximum_replicas = 2; });
     const hostMemory = option.fast_start_mechanism_choices.find(
       (choice) => choice.mechanism === "host-memory-residency",
     )!;
     hostMemory.pool_refs = ["reserved-h100"];
     vi.spyOn(adminApi, "modelDeploymentCapabilities").mockResolvedValue(testEnvelope(capabilities));
+    const plan = vi.spyOn(adminApi, "planModelDeployment").mockResolvedValue(testEnvelope(modelDeploymentPlanFixture));
     renderCreatePage();
 
     const model = await screen.findByRole("combobox", { name: "Qualified model" });
@@ -155,6 +157,16 @@ describe("ModelDeployment workspace", () => {
     const incompatiblePool = screen.getByRole("checkbox", { name: "Use preemptible-h100" });
     expect(incompatiblePool).not.toBeChecked();
     expect(incompatiblePool).toBeDisabled();
+    expect(screen.getByLabelText("Replica ceiling")).toHaveValue(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview render plan" }));
+    await waitFor(() => expect(plan).toHaveBeenCalledWith(expect.objectContaining({
+      spec: expect.objectContaining({
+        placement: expect.objectContaining({ poolRefs: ["reserved-h100"] }),
+        availability: expect.objectContaining({ maxReplicas: 2 }),
+        cache: expect.objectContaining({ mechanism: "host-memory-residency" }),
+      }),
+    })));
   });
 
   it("preserves operator policy while replacing qualified model material on an explicit switch", async () => {

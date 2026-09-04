@@ -78,7 +78,7 @@ export function normalizeFastStartPolicy(policy: ModelDeploymentFastStartPolicy 
   const mode = policy?.mode === "Automatic" ? "Automatic" : "Fixed";
   const level = policy?.level ?? "Off";
   const minimumLevel = policy?.minimumLevel ?? "Off";
-  const maximumLevel = policy?.maximumLevel ?? (policy?.level ?? "L1");
+  const maximumLevel = policy?.maximumLevel ?? "L4";
   return {
     configured: Boolean(policy),
     mode,
@@ -316,10 +316,14 @@ export function localModelDeploymentProblem(
     && spec.cache.tier !== "SharedFilesystem"
   ) return "A retained regional payload needs the SharedFilesystem cache tier.";
   if (spec.fastStart) {
-    if (spec.fastStart.mode === "Fixed" && !spec.fastStart.level) return "A fixed fast-start policy needs a level.";
+    if (
+      spec.fastStart.mode === "Fixed"
+      && (spec.fastStart.minimumLevel != null || spec.fastStart.maximumLevel != null)
+    ) return "Fixed fast-start uses level; minimum and maximum levels belong to Automatic mode.";
     if (spec.fastStart.mode === "Automatic") {
-      if (!spec.fastStart.minimumLevel || !spec.fastStart.maximumLevel) return "An automatic fast-start policy needs minimum and maximum levels.";
-      if ((fastStartLevelOrder.get(spec.fastStart.minimumLevel) ?? -1) > (fastStartLevelOrder.get(spec.fastStart.maximumLevel) ?? -1)) return "Automatic fast-start minimum cannot exceed its maximum.";
+      if (spec.fastStart.level != null) return "Automatic fast-start uses minimum and maximum levels; level belongs to Fixed mode.";
+      const normalized = normalizeFastStartPolicy(spec.fastStart);
+      if ((fastStartLevelOrder.get(normalized.minimumLevel) ?? -1) > (fastStartLevelOrder.get(normalized.maximumLevel) ?? -1)) return "Automatic fast-start minimum cannot exceed its maximum.";
     }
   }
   if (!dnsSubdomain.test(spec.queue.localQueue) || !dnsSubdomain.test(spec.queue.priorityClass)) return "Queue and priority-class references must be Kubernetes DNS subdomains.";

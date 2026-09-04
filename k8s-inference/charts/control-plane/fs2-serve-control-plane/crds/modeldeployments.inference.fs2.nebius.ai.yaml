@@ -445,15 +445,19 @@ spec:
                       type: string
                       enum: [Fixed, Automatic]
                     level:
+                      description: Fixed-mode target; defaults to Off when omitted.
                       type: string
                       enum: ["Off", L1, L2, L3, L4]
                     minimumLevel:
+                      description: Automatic-mode lower bound; defaults to Off when omitted.
                       type: string
                       enum: ["Off", L1, L2, L3, L4]
                     maximumLevel:
+                      description: Automatic-mode upper bound; defaults to L4 when omitted.
                       type: string
                       enum: ["Off", L1, L2, L3, L4]
                     fallbackPolicy:
+                      description: Defaults to AllowLowerLevel when omitted.
                       type: string
                       enum: [AllowLowerLevel, RequireTarget]
             status:
