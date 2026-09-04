@@ -498,7 +498,12 @@ def _extract_tar(
         raise ValueError("scientific input archive exceeds its compressed bound")
     destination = _contained(destination)
     destination.mkdir(parents=True, exist_ok=True)
-    if not overlay and any(destination.iterdir()):
+    # ``prepare_workspace`` installs the trusted runner and frozen documents
+    # before initial inputs are materialized.  Archives cannot address this
+    # namespace below, so it is the only pre-existing entry accepted here.
+    if not overlay and any(
+        item.name != ".fs2" or item.is_symlink() or not item.is_dir() for item in destination.iterdir()
+    ):
         raise ValueError("scientific input archive requires an empty destination")
     if compression == "zstd":
         try:
@@ -538,7 +543,7 @@ def _extract_tar(
                 if len(content) != member.size:
                     raise ValueError("scientific input archive member size differs")
                 target.parent.mkdir(parents=True, exist_ok=True)
-                flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+                flags = os.O_WRONLY | os.O_CREAT | (os.O_TRUNC if overlay else os.O_EXCL)
                 if hasattr(os, "O_NOFOLLOW"):
                     flags |= os.O_NOFOLLOW
                 descriptor = os.open(target, flags, 0o400)
@@ -681,18 +686,19 @@ def materialize_artifact(
         with os.fdopen(descriptor, "wb") as output:
             output.write(payload)
         return
+    archive_root = destination / "inputs" if mode is MaterializationMode.BOLTZGEN_INPUT else destination
     _extract_tar(
         payload,
-        destination,
+        archive_root,
         compression=compression,
-        overlay=mode in {MaterializationMode.OVERLAY_TAR, MaterializationMode.BOLTZGEN_INPUT},
+        overlay=mode is MaterializationMode.OVERLAY_TAR,
         max_files=_BOLTZGEN_INPUT_MAX_FILES if mode is MaterializationMode.BOLTZGEN_INPUT else _MAX_ARCHIVE_FILES,
         max_bytes=_BOLTZGEN_INPUT_MAX_BYTES if mode is MaterializationMode.BOLTZGEN_INPUT else _MAX_ARCHIVE_BYTES,
     )
     if mode is MaterializationMode.BOLTZGEN_INPUT:
         if yaml_name is None:
             raise ValueError("BoltzGen input has no design YAML")
-        root = (destination / "inputs").resolve(strict=True)
+        root = archive_root.resolve(strict=True)
         yaml_path = _contained(root.joinpath(*_safe_relative(yaml_name).parts), root=root)
         raw = yaml_path.read_bytes()
         if len(raw) > 1024 * 1024:

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import io
 import json
 import os
 import subprocess
 import sys
+import tarfile
 from dataclasses import replace
 from pathlib import Path
 from uuid import UUID
@@ -24,7 +26,7 @@ from fs2_serve.scientific_batch.adapters.staged_workspace import (
     wrap_stage_argv,
 )
 from fs2_serve.scientific_batch.execution import _invocation_json
-from fs2_serve.scientific_batch.models import MaterializationMode, StageInvocation
+from fs2_serve.scientific_batch.models import MaterializationMode, StageInvocation, StageWorkspaceDocument
 
 
 def _invocation(command: tuple[str, ...]) -> StageInvocation:
@@ -72,8 +74,9 @@ def _runner_environment(invocation: StageInvocation) -> dict[str, str]:
 
 
 class _ArtifactClient:
-    def __init__(self, content: bytes) -> None:
+    def __init__(self, content: bytes, *, media_type: str = "application/octet-stream") -> None:
         self.content = content
+        self.media_type = media_type
 
     def download(
         self,
@@ -85,7 +88,7 @@ class _ArtifactClient:
     ) -> bytes:
         assert expected_digest == "sha256:" + hashlib.sha256(self.content).hexdigest()
         assert expected_size_bytes == len(self.content)
-        assert expected_media_type == "application/octet-stream"
+        assert expected_media_type == self.media_type
         return self.content
 
 
@@ -167,6 +170,68 @@ def test_workload_download_rejects_raw_bytes_beyond_the_frozen_size() -> None:
             expected_digest=f"sha256:{hashlib.sha256(expected).hexdigest()}",
             expected_size_bytes=len(expected),
             expected_media_type="application/octet-stream",
+        )
+
+
+def test_proteina_initial_archive_materializes_beside_trusted_prepared_workspace_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "scientific"
+    root.mkdir()
+    monkeypatch.setattr(companion, "_ROOT", root)
+    invocation = replace(
+        _invocation(("complexa", "generate")),
+        workspace_documents=(StageWorkspaceDocument(".fs2/public-request.json", '{"operation":"design-binders"}'),),
+    )
+    workspace = root / "work/proteina-complexa/main"
+    companion.prepare_workspace(
+        workspace,
+        runtime_localization_json=_runtime_marker(invocation),
+        stage_invocation_json=_invocation_json(invocation),
+    )
+    runner = workspace / companion.STAGE_RUNNER_RELATIVE_PATH
+    request = workspace / ".fs2/public-request.json"
+    trusted_files = {runner: runner.read_bytes(), request: request.read_bytes()}
+
+    target_content = b"ATOM      1  CA  ALA A   1\n"
+    archive_bytes = io.BytesIO()
+    archive_path = "assets/target_data/bindcraft_targets/PD-L1.pdb"
+    with tarfile.open(fileobj=archive_bytes, mode="w:gz", format=tarfile.USTAR_FORMAT) as archive:
+        member = tarfile.TarInfo(archive_path)
+        member.size = len(target_content)
+        member.mode = 0o444
+        archive.addfile(member, io.BytesIO(target_content))
+    content = archive_bytes.getvalue()
+    artifact_id = UUID("00000000-0000-4000-8000-000000000005")
+    client = _ArtifactClient(content, media_type="application/x-tar")
+
+    companion.materialize_artifact(
+        client=client,  # type: ignore[arg-type]
+        artifact_id=artifact_id,
+        destination=workspace,
+        mode=MaterializationMode.EXTRACT_TAR,
+        compression="gzip",
+        yaml_name=None,
+        reuse_prefix=None,
+        expected_digest="sha256:" + hashlib.sha256(content).hexdigest(),
+        expected_size_bytes=len(content),
+        expected_media_type="application/x-tar",
+    )
+
+    assert (workspace / archive_path).read_bytes() == target_content
+    assert {path: path.read_bytes() for path in trusted_files} == trusted_files
+    with pytest.raises(ValueError, match="requires an empty destination"):
+        companion.materialize_artifact(
+            client=client,  # type: ignore[arg-type]
+            artifact_id=artifact_id,
+            destination=workspace,
+            mode=MaterializationMode.EXTRACT_TAR,
+            compression="gzip",
+            yaml_name=None,
+            reuse_prefix=None,
+            expected_digest="sha256:" + hashlib.sha256(content).hexdigest(),
+            expected_size_bytes=len(content),
+            expected_media_type="application/x-tar",
         )
 
 
