@@ -77,6 +77,10 @@ EXPECTED_MIGRATIONS: Final = (
         "0021_scientific_admission_outbox_runtime_grant.sql",
         "2bc9d48c2b522cb774afc25776ced080224f6e0c991ad9a3076510c8e5174681",
     ),
+    (
+        "0022_scientific_admission_outbox_lock_privilege.sql",
+        "aec26e743bcdb829d13f4d20690573011154a7a7b0c4db96902a246e87414f75",
+    ),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {

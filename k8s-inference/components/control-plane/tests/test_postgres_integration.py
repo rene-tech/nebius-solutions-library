@@ -901,13 +901,25 @@ async def test_outbox_grant_migration_repairs_drift_and_runtime_wait_checks_effe
                     version,
                     digest,
                 )
-            await before.execute(
-                "REVOKE ALL ON fs2_scientific_admission_outbox FROM fs2_serve_runtime"
-            )
+            for privilege in ("SELECT", "INSERT", "DELETE"):
+                assert await before.fetchval(
+                    "SELECT has_table_privilege('fs2_serve_runtime',"
+                    "'fs2_scientific_admission_outbox',$1)",
+                    privilege,
+                )
             assert not await before.fetchval(
                 "SELECT has_table_privilege('fs2_serve_runtime',"
-                "'fs2_scientific_admission_outbox','SELECT,INSERT,DELETE')"
+                "'fs2_scientific_admission_outbox','UPDATE')"
             )
+            await before.execute("SET ROLE fs2_serve_runtime")
+            await before.fetch(
+                "SELECT payload FROM fs2_scientific_admission_outbox WHERE false"
+            )
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await before.fetch(
+                    "SELECT payload FROM fs2_scientific_admission_outbox WHERE false FOR SHARE"
+                )
+            await before.execute("RESET ROLE")
         finally:
             await before.close()
 
@@ -916,19 +928,25 @@ async def test_outbox_grant_migration_repairs_drift_and_runtime_wait_checks_effe
         try:
             assert await migrated.fetchval(
                 "SELECT version FROM fs2_schema_migrations ORDER BY applied_at DESC LIMIT 1"
-            ) == "0021_scientific_admission_outbox_runtime_grant.sql"
+            ) == "0022_scientific_admission_outbox_lock_privilege.sql"
             for role in ("fs2_serve_runtime", runtime_login):
-                assert await migrated.fetchval(
-                    "SELECT has_table_privilege($1,'fs2_scientific_admission_outbox',"
-                    "'SELECT,INSERT,DELETE')",
-                    role,
-                )
+                for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                    assert await migrated.fetchval(
+                        "SELECT has_table_privilege($1,'fs2_scientific_admission_outbox',$2)",
+                        role,
+                        privilege,
+                    )
                 assert not await migrated.fetchval(
-                    "SELECT has_table_privilege($1,'fs2_scientific_admission_outbox','UPDATE,TRUNCATE')",
+                    "SELECT has_table_privilege($1,'fs2_scientific_admission_outbox','TRUNCATE')",
                     role,
                 )
+            await migrated.execute("SET ROLE fs2_serve_runtime")
+            await migrated.fetch(
+                "SELECT payload FROM fs2_scientific_admission_outbox WHERE false FOR SHARE"
+            )
+            await migrated.execute("RESET ROLE")
             await migrated.execute(
-                "REVOKE ALL ON fs2_scientific_admission_outbox FROM fs2_serve_runtime"
+                "REVOKE UPDATE ON fs2_scientific_admission_outbox FROM fs2_serve_runtime"
             )
         finally:
             await migrated.close()
@@ -3460,10 +3478,12 @@ async def test_scientific_admission_outbox_recovers_after_committed_operation_wi
             f"scientific/v1/tenants/{principal.tenant_id}/operations/{frozen.operation_id}/stages/input/"
             f"shards/-/attempts/{input_attempt_id}/input/sha256/{input_digest.removeprefix('sha256:')}",
         )
-        assert await connection.fetchval(
-            "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_admission_outbox',"
-            "'SELECT,INSERT,DELETE')"
-        )
+        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+            assert await connection.fetchval(
+                "SELECT has_table_privilege('fs2_serve_runtime',"
+                "'fs2_scientific_admission_outbox',$1)",
+                privilege,
+            )
 
     batches = PostgresScientificBatchRepository(postgres_store.pool)
     recovered = await batches.create(
