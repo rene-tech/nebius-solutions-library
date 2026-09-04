@@ -265,6 +265,78 @@ class RuntimeIdentity(StrictModel):
     preemptible: bool | None = None
 
 
+class RuntimeObservationSource(StrEnum):
+    """Trusted source of one runtime lifecycle observation."""
+
+    KUBERNETES = "kubernetes"
+    KUBELET = "kubelet"
+    CONTROLLER = "controller"
+
+
+class RuntimeObservedPhase(StrEnum):
+    """Accounting phases a runtime may publish with exact start/end times."""
+
+    IMAGE_PULL = "image_pull"
+    ARTIFACT_LOAD = "artifact_load"
+    RESTORE = "restore"
+    COMPILE = "compile"
+    WARMUP = "warmup"
+    COOLDOWN_GRACE = "cooldown_grace"
+    TEARDOWN = "teardown"
+
+
+class RuntimePhaseObservation(StrictModel):
+    phase: RuntimeObservedPhase
+    started_at: AwareDatetime
+    completed_at: AwareDatetime
+    source: RuntimeObservationSource
+    source_resolution_seconds: float = Field(default=0.001, ge=0, le=300)
+    start_event_uid: str | None = Field(default=None, min_length=1, max_length=128)
+    end_event_uid: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def interval_is_ordered(self) -> RuntimePhaseObservation:
+        if self.completed_at < self.started_at:
+            raise ValueError("runtime phase observation ends before it starts")
+        return self
+
+
+class RuntimeLifecycleObservation(StrictModel):
+    """Payload-free Kubernetes/kubelet facts resolved for one runtime call."""
+
+    runtime: RuntimeIdentity
+    namespace: str = Field(min_length=1, max_length=63)
+    pod_name: str = Field(min_length=1, max_length=253)
+    node_name: str = Field(min_length=1, max_length=253)
+    pod_created_at: AwareDatetime
+    pod_scheduled_at: AwareDatetime
+    container_started_at: AwareDatetime | None = None
+    ready_at: AwareDatetime | None = None
+    device_allocation_observed_at: AwareDatetime | None = None
+    device_observation_resolution_seconds: float = Field(default=0, ge=0, le=300)
+    phases: list[RuntimePhaseObservation] = Field(default_factory=list, max_length=64)
+
+    @model_validator(mode="after")
+    def timestamps_and_device_identity_agree(self) -> RuntimeLifecycleObservation:
+        ordered = (
+            ("Pod schedule", self.pod_created_at, self.pod_scheduled_at),
+            ("container start", self.pod_scheduled_at, self.container_started_at),
+            ("readiness", self.pod_scheduled_at, self.ready_at),
+            ("device observation", self.pod_scheduled_at, self.device_allocation_observed_at),
+        )
+        for label, lower, value in ordered:
+            if value is not None and value < lower:
+                raise ValueError(f"runtime {label} timestamp is out of order")
+        has_device_time = self.device_allocation_observed_at is not None
+        if has_device_time != bool(self.runtime.gpu_uuids):
+            raise ValueError("device observation requires exact GPU UUIDs and a timestamp")
+        if self.runtime.pod_uid is None or self.runtime.node_uid is None or self.runtime.gpu_count < 1:
+            raise ValueError("runtime lifecycle observation requires exact Pod/node identity and GPU count")
+        if self.runtime.gpu_uuids and len(self.runtime.gpu_uuids) != self.runtime.gpu_count:
+            raise ValueError("runtime GPU UUID count differs from the allocated GPU count")
+        return self
+
+
 class OperationView(StrictModel):
     id: UUID
     tenant_id: str
@@ -357,6 +429,13 @@ class RuntimeResult(StrictModel):
     semantic_outcome: str
     failure_code: str | None = Field(default=None, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
     usage: ReportedUsage | None = None
+    lifecycle: RuntimeLifecycleObservation | None = None
+
+    @model_validator(mode="after")
+    def lifecycle_identity_matches_runtime(self) -> RuntimeResult:
+        if self.lifecycle is not None and self.lifecycle.runtime != self.runtime:
+            raise ValueError("runtime result lifecycle identity does not match runtime identity")
+        return self
 
 
 class AuditEvent(StrictModel):

@@ -21,6 +21,7 @@ from fs2_serve.api import ADMIN_SESSION_COOKIE, AppRuntime, create_app
 from fs2_serve.auth import AuthenticationError, OperatorSessionService, PepperRing, TokenService
 from fs2_serve.configuration import ConfigurationService, InMemoryConfigurationRepository, configuration_etag
 from fs2_serve.configuration_models import ConfigurationProposal
+from fs2_serve.lifecycle import LifecycleSubject, MemoryLifecycleRepository, WorkloadTelemetryKind
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.models import AdmissionRequest, Scope, TokenCreate
 from fs2_serve.runtime import StubRuntimeClient
@@ -76,6 +77,48 @@ def _cookie_from(response: Any) -> str:
     value = response.cookies.get(ADMIN_SESSION_COOKIE)
     assert value is not None
     return value
+
+
+def test_admin_lifecycle_routes_expose_persisted_payload_free_workloads(
+    registry: Any,
+    cipher: Any,
+    hasher: Any,
+) -> None:
+    runtime = _runtime(registry, cipher, hasher)
+    lifecycle = MemoryLifecycleRepository()
+    operation_id = uuid4()
+    asyncio.run(
+        lifecycle.register_subject(
+            LifecycleSubject(
+                subject_id=operation_id,
+                workload_kind=WorkloadTelemetryKind.ONLINE,
+                operation_id=operation_id,
+                request_id=operation_id,
+                workload_id=operation_id,
+                tenant_id="tenant-a",
+                principal_id="principal-a",
+                model_id="qwen3-8b",
+                model_revision="dynamic:sha256:" + "a" * 64,
+                protocol="openai-chat",
+                trace_id="1" * 32,
+                parent_span_id="2" * 16,
+                accepted_at=datetime.now(UTC),
+            )
+        )
+    )
+    runtime.lifecycle = lifecycle
+
+    with _client(runtime) as client:
+        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+        listing = client.get(f"/admin/api/v1/telemetry/workloads?operation_id={operation_id}")
+        detail = client.get(f"/admin/api/v1/telemetry/workloads/{operation_id}")
+
+    assert listing.status_code == 200
+    assert listing.json()["data"]["total"] == 1
+    assert listing.json()["data"]["items"][0]["subject"]["model_id"] == "qwen3-8b"
+    assert detail.status_code == 200
+    assert detail.json()["data"]["subject"]["subject_id"] == str(operation_id)
+    assert detail.json()["data"]["payloads_exposed"] is False
 
 
 def test_authenticated_configuration_routes_plan_and_stop_at_terraform(

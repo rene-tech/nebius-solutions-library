@@ -67,9 +67,37 @@ same device-allocated interval.
 Inbound W3C trace context is persisted as bounded IDs and continued by the
 background `fs2.operation` consumer span. Admission emits receive/enqueue facts;
 worker attempts emit admit/retry facts and a child `fs2.runtime.invoke` span.
-When a trusted runtime metadata provider returns Pod/node/GPU identity, the
-control plane records the correlation and active-compute interval. It still
-waits for Kubernetes/DCGM evidence before a rollup can reconcile.
+For local dynamic serving, the trusted metadata provider lists the model
+namespace after the response and accepts only one non-terminating Ready Pod
+with the exact `fs2-serve.nebius.ai/model-id` label. It reads immutable Pod and
+Node UIDs, requested accelerator count, PodScheduled/container/Ready times and
+retained `Pulling`/`Pulled` Events. Zero or multiple matching Pods is ambiguous
+and produces no attribution. Response headers are never used as authority.
+
+For a cold activation whose Pod was scheduled after operation admission,
+`scheduler_occupied` begins at PodScheduled and ends at the application-observed
+request completion. A request against an older shared Pod is clipped to its
+invocation window; whole-service residency still belongs to a separate
+workload subject. `active_compute` is the invocation interval and
+`resident_idle` is the observed Ready-to-invoke gap. The reconciler partitions
+every remaining occupied second as `unclassified`, so occupied-idle is measured
+without pretending that unknown startup work was artifact load or compilation.
+
+The optional `runtimeAttribution` DaemonSet reads the node-local, read-only
+`kubelet_internal_checkpoint`. It publishes only an exact Pod UID to GPU/MIG
+UUID array plus the time it first observed that mapping. This is a measured
+lower boundary for device residency, not an inferred allocation start. It
+never overwrites a partial or conflicting annotation, and the API reader
+requires UUID count to equal the Pod's requested accelerator count. The
+observer is vendor-neutral at the ledger boundary; its current checkpoint
+parser supports NVIDIA full-GPU and MIG resources.
+
+Runtimes/controllers may additionally publish exact paired timestamps using
+`telemetry.fs2.nebius.ai/phase-<phase>-started-at` and
+`telemetry.fs2.nebius.ai/phase-<phase>-completed-at` for `artifact_load`,
+`restore`, `compile`, `warmup`, `cooldown_grace`, or `teardown`. Missing or
+half-paired annotations are ignored. Kubernetes Events are the only image-pull
+authority; event messages are neither parsed nor persisted.
 
 The scientific controller integrates through `LifecycleRepository`:
 

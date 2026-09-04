@@ -185,6 +185,33 @@ serviceAccounts:
     create: true
     name: ""
     annotations: {}
+  gpu-observer:
+    create: true
+    name: ""
+    annotations: {}
+
+# Optional node-local attribution source. It reads only kubelet's device-plugin
+# checkpoint and publishes a bounded Pod UID -> GPU UUID observation onto model
+# Pods. Terraform enables it alongside the Kubernetes lifecycle reader.
+runtimeAttribution:
+  enabled: false
+  modelNamespace: fs2-models
+  kubernetesApiUrl: https://kubernetes.default.svc
+  tokenExpirationSeconds: 600
+  pollSeconds: "1"
+  checkpointHostPath: /var/lib/kubelet/device-plugins/kubelet_internal_checkpoint
+  nodeSelector:
+    nebius.com/gpu: "true"
+  tolerations:
+    - operator: Exists
+      effect: NoSchedule
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
 
 service:
   port: 8080

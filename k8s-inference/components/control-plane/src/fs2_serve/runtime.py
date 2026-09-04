@@ -7,14 +7,14 @@ import json
 import re
 import time
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
 import httpx
 from pydantic import ValidationError
 
 from .federation import FederationRouter, FederationTransportError
-from .models import ClaimedOperation, ReportedUsage, RuntimeIdentity, RuntimeResult
+from .models import ClaimedOperation, ReportedUsage, RuntimeIdentity, RuntimeLifecycleObservation, RuntimeResult
 from .registry import OperationalModel, ProbeSpec
 
 
@@ -82,6 +82,18 @@ class RuntimeMetadataProvider(Protocol):
     """
 
     async def resolve(self, *, operation_id: UUID, model_id: str) -> RuntimeIdentity: ...
+
+
+@runtime_checkable
+class RuntimeLifecycleMetadataProvider(RuntimeMetadataProvider, Protocol):
+    """Richer provider for exact Kubernetes/kubelet lifecycle observations."""
+
+    async def resolve_lifecycle(
+        self,
+        *,
+        operation_id: UUID,
+        model_id: str,
+    ) -> RuntimeLifecycleObservation | None: ...
 
 
 class NullRuntimeMetadataProvider:
@@ -254,13 +266,26 @@ class RuntimeClient:
             raise RuntimeProtocolError("runtime response header is invalid")
         return value.strip()
 
-    async def _trusted_runtime_identity(self, operation: ClaimedOperation, model: OperationalModel) -> RuntimeIdentity:
+    async def _trusted_runtime_observation(
+        self,
+        operation: ClaimedOperation,
+        model: OperationalModel,
+    ) -> tuple[RuntimeIdentity, RuntimeLifecycleObservation | None]:
         try:
+            if isinstance(self.metadata_provider, RuntimeLifecycleMetadataProvider):
+                observation = await self.metadata_provider.resolve_lifecycle(
+                    operation_id=operation.id,
+                    model_id=model.id,
+                )
+                if observation is None:
+                    return RuntimeIdentity(), None
+                validated = RuntimeLifecycleObservation.model_validate(observation)
+                return validated.runtime, validated
             identity = await self.metadata_provider.resolve(
                 operation_id=operation.id,
                 model_id=model.id,
             )
-            return RuntimeIdentity.model_validate(identity)
+            return RuntimeIdentity.model_validate(identity), None
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -370,7 +395,7 @@ class RuntimeClient:
                     raise PreemptedError("runtime reported preemption")
                 if not response.is_success:
                     # Failure bodies are deliberately never buffered or persisted.
-                    runtime = await self._trusted_runtime_identity(operation, model)
+                    runtime, lifecycle = await self._trusted_runtime_observation(operation, model)
                     return RuntimeResult(
                         status_code=response.status_code,
                         body=b"",
@@ -379,6 +404,7 @@ class RuntimeClient:
                         runtime=runtime,
                         semantic_outcome="not_evaluated",
                         failure_code="upstream_http_error",
+                        lifecycle=lifecycle,
                     )
                 content = bytearray()
                 async for chunk in response.aiter_bytes():
@@ -386,7 +412,7 @@ class RuntimeClient:
                     if len(content) > self.max_response_bytes:
                         raise RuntimeProtocolError("runtime response exceeded configured maximum")
                 semantic = self._semantic_outcome(operation.protocol, bytes(content))
-                runtime = await self._trusted_runtime_identity(operation, model)
+                runtime, lifecycle = await self._trusted_runtime_observation(operation, model)
                 return RuntimeResult(
                     status_code=response.status_code,
                     body=bytes(content),
@@ -395,6 +421,7 @@ class RuntimeClient:
                     runtime=runtime,
                     semantic_outcome=semantic,
                     usage=self._reported_usage(operation.protocol, bytes(content)),
+                    lifecycle=lifecycle,
                 )
         except asyncio.CancelledError:
             raise
