@@ -1,3 +1,4 @@
 __pycache__/
 *.pyc
-evidence/
+evidence/*
+!evidence/successor-publication-20260904.json

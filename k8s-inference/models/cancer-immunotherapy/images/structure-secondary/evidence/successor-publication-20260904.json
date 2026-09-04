@@ -1,0 +1,94 @@
+{
+  "schema": "fs2.nebius.ai/structure-secondary-successor-publication-evidence/v1",
+  "scope": "registry-publication-and-offline-build-smoke-only",
+  "image_source_revision": "a1b5b6b24b2dae54a1f7caeba9981a7aaa60cc8f",
+  "accepted_repair_revision": "cd4069927a447f21bee2b538bb9edb5c4c38266c",
+  "source_time_origin_main_revision": "7e70cf82c3c7eb73edbb7a8ba64e49221fee2225",
+  "platform": "linux/amd64",
+  "publisher_receipt": {
+    "schema": "fs2.nebius.ai/structure-secondary-image-build-receipt/v2",
+    "sha256": "e1818621d7a82b676489d12befc35b0c83e2321778534c017ba31bd5709ea12f",
+    "mode": "publish"
+  },
+  "provenance": {
+    "source_binding": "Every image was built from the exact clean pushed image_source_revision and its pinned upstream revision and base-image digests in image-lock.json.",
+    "attestation_state": "not-generated",
+    "note": "The secondary publisher generated SPDX documents and a source-bound receipt, but did not generate or publish a SLSA or signed provenance attestation."
+  },
+  "qualification": {
+    "offline_smoke": "passed",
+    "semantic_h100": "not-run",
+    "route_activation_allowed": false
+  },
+  "images": [
+    {
+      "model_id": "esmfold2",
+      "upstream_source_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2:827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r5",
+      "digest": "sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
+      "runtime_source": "run_esmfold2.py",
+      "runtime_source_sha256": "5a40e48ff5c0e4e7a0363e7c9428419c71cc6ded63716991681b0c5c229450f3",
+      "image_default_uid": 10001,
+      "image_default_gid": 10001,
+      "smoke_receipt_sha256": "22fc1a9f8ddd55546fd435a7c7bdf4967683a9c3a344ad1bafcd37228c9b8b5f",
+      "smoke_mode": "build-only-not-semantic-readiness",
+      "sbom": {
+        "format": "spdx-json",
+        "state": "generated",
+        "sha256": "65f11b9d05726d42fef4a07c19ca4bafff4303b0c014861acc59b91f376c5eb5"
+      }
+    },
+    {
+      "model_id": "esmfold2-fast",
+      "upstream_source_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast:827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r5",
+      "digest": "sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
+      "runtime_source": "run_esmfold2.py",
+      "runtime_source_sha256": "5a40e48ff5c0e4e7a0363e7c9428419c71cc6ded63716991681b0c5c229450f3",
+      "image_default_uid": 10001,
+      "image_default_gid": 10001,
+      "smoke_receipt_sha256": "1f19df9226e1c0714961cb902e27570aa9f821311d11f8aeefa1a583114cb183",
+      "smoke_mode": "build-only-not-semantic-readiness",
+      "sbom": {
+        "format": "spdx-json",
+        "state": "generated",
+        "sha256": "16f08e99928f00e0cf56d281e1d79e4103a5361f3af29316fcedbc2ccc919fe4"
+      }
+    },
+    {
+      "model_id": "protenix-v2",
+      "upstream_source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2:2475421477ab414b571149ad4a875c390ff8a35d-h100-r5",
+      "digest": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
+      "runtime_source": "run_protenix.py",
+      "runtime_source_sha256": "13c2d6772d64682f71b334fe43bf57668f97ebeb612ea3d797b5f5893df04936",
+      "image_default_uid": 10001,
+      "image_default_gid": 10001,
+      "smoke_receipt_sha256": "e310163e400074438221ac91e5e237f422714e0953b27d6a9337501a0ece8e07",
+      "smoke_mode": "build-only-not-semantic-readiness",
+      "sbom": {
+        "format": "spdx-json",
+        "state": "generated",
+        "sha256": "6f1a58aa6ed316d4e8e6a20db95e34274b3eb0b90bd9adf2d53454ace4e9efa0"
+      }
+    },
+    {
+      "model_id": "openfold3-openbind",
+      "image_runtime_id": "openfold3",
+      "upstream_source_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream:c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r5",
+      "digest": "sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de",
+      "runtime_source": "run_openfold3.py",
+      "runtime_source_sha256": "7c31c112e28b9dfa705e9d804b542880d8ee4528ed881c048b73f989ae375083",
+      "image_default_uid": 10001,
+      "image_default_gid": 10001,
+      "smoke_receipt_sha256": "dc24eb6b5f8348f53187f3fcaded1fe60e64001071159fe004499687c7752a12",
+      "smoke_mode": "build-only-not-semantic-readiness",
+      "sbom": {
+        "format": "spdx-json",
+        "state": "generated",
+        "sha256": "6142dd401c6a47c9afe231aaab8d56391f31f089c5c5c4a29b4a3e039689f7c3"
+      }
+    }
+  ]
+}

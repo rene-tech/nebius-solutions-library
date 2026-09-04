@@ -772,6 +772,7 @@ def main() -> None:
         if (
             handoff.get("state") != "publication-pending-not-activated"
             or image_source_revision is not None
+            or handoff.get("production_protocol_compatible") is not False
         ):
             failures.append("pending successor handoff claims a publication source")
         image_source_revision = task_revision
@@ -780,6 +781,7 @@ def main() -> None:
             handoff.get("state") != "published-build-only-not-activated"
             or not isinstance(image_source_revision, str)
             or len(image_source_revision) != 40
+            or handoff.get("production_protocol_compatible") is not True
         ):
             failures.append("published successor handoff lacks its exact image source")
             image_source_revision = task_revision

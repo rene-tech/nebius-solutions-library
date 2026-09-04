@@ -9,6 +9,7 @@ import inspect
 import io
 import json
 import os
+import re
 import sys
 import tarfile
 from collections.abc import Mapping
@@ -1318,9 +1319,10 @@ def test_production_companion_publishes_result_manifest_and_validation(model_id:
     assert validation["logical_output_id"] == result.produces
 
 
-def test_contract_documents_match_code_and_the_exact_r4_handoff() -> None:
+def test_contract_documents_match_code_and_the_published_successor_handoff() -> None:
     handoff = json.loads(IMAGE_HANDOFF.read_text(encoding="utf-8"))
-    assert handoff["state"] == "build-only-not-activated"
+    assert handoff["state"] == "published-build-only-not-activated"
+    assert handoff["production_protocol_compatible"] is True
     assert handoff["semantic_h100_qualification"] is False
     assert handoff["route_activation_allowed"] is False
     assert "alphafold3" not in {item["model_id"] for item in handoff["images"]}
@@ -1353,21 +1355,22 @@ def test_contract_documents_match_code_and_the_exact_r4_handoff() -> None:
         } == dict(module.STAGE_EXECUTION_CONTRACTS)
 
 
-def test_exact_published_receipts_match_the_committed_image_handoff_when_available() -> None:
+def test_committed_publication_evidence_matches_the_exact_image_handoff() -> None:
     handoff = json.loads(IMAGE_HANDOFF.read_text(encoding="utf-8"))
-    root = Path(handoff["evidence"]["source"])
-    if not root.is_absolute():
-        # The committed handoff intentionally records a home-relative path so the
-        # public export contains no developer username; resolve it against the
-        # operator's own home directory rather than the process cwd.
-        root = Path.home() / root
-    if not root.is_dir():
-        pytest.skip("operator-local r4 publication receipts are not present")
+    evidence_path = SOLUTION_ROOT / handoff["evidence"]["source"]
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    assert evidence["image_source_revision"] == handoff["image_source_commit"]
+    assert evidence["qualification"] == {
+        "offline_smoke": "passed",
+        "semantic_h100": "not-run",
+        "route_activation_allowed": False,
+    }
+    evidence_images = {item["model_id"]: item for item in evidence["images"]}
     for image in handoff["images"]:
-        evidence_directory = image.get("evidence_directory", image["model_id"])
-        receipt = json.loads((root / evidence_directory / "build-receipt.json").read_text(encoding="utf-8"))
-        entries = receipt["images"]
-        assert len(entries) == 1
-        assert entries[0]["target"] == f"{image['repository']}:{image['tag']}"
-        assert entries[0]["published_digest"] == image["digest"]
-        assert receipt["image_source_revision"] == handoff["image_source_commit"]
+        item = evidence_images[image["model_id"]]
+        assert item["target"] == f"{image['repository']}:{image['tag']}"
+        assert item["digest"] == image["digest"]
+        assert item["image_default_uid"] == 10001
+        assert item["image_default_gid"] == 10001
+        assert item["smoke_mode"] == "build-only-not-semantic-readiness"
+        assert re.fullmatch(r"[0-9a-f]{64}", item["sbom"]["sha256"])

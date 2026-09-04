@@ -35,17 +35,17 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
             for model_id in MODEL_IDS
         }
 
-    def test_handoff_is_exactly_four_non_af3_build_only_r4_images(self) -> None:
+    def test_handoff_is_exactly_four_non_af3_published_repaired_images(self) -> None:
         self.assertEqual(set(self.images), set(MODEL_IDS))
         self.assertNotIn("alphafold3", self.images)
-        self.assertEqual(self.handoff["state"], "build-only-not-activated")
+        self.assertEqual(self.handoff["state"], "published-build-only-not-activated")
         self.assertIs(self.handoff["semantic_h100_qualification"], False)
         self.assertIs(self.handoff["route_activation_allowed"], False)
-        self.assertIs(self.handoff["production_protocol_compatible"], False)
-        self.assertIn("atomic", str(self.handoff["successor_requirement"]))
+        self.assertIs(self.handoff["production_protocol_compatible"], True)
+        self.assertIn("qualification", str(self.handoff["successor_requirement"]))
         self.assertRegex(str(self.handoff["image_source_commit"]), r"^[0-9a-f]{40}$")
         for image in self.images.values():
-            self.assertTrue(str(image["tag"]).endswith("-h100-r4"))
+            self.assertTrue(str(image["tag"]).endswith("-h100-r5"))
             self.assertRegex(str(image["digest"]), SHA256_PATTERN)
 
     def test_contracts_bind_the_exact_handoff_and_fail_closed(self) -> None:
@@ -59,6 +59,8 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
                         "repository": image["repository"],
                         "tag": image["tag"],
                         "digest": image["digest"],
+                        "workspace_uid": 10001,
+                        "workspace_gid": 10001,
                         "state": "build-only-not-semantic-qualified",
                     },
                 )
