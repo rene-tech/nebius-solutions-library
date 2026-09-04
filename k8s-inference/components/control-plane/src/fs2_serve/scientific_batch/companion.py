@@ -603,12 +603,21 @@ class WorkloadArtifactHttpClient:
             raise ValueError("artifact service pointer differs from the frozen materialization")
         if handle.get("method") != "GET":
             raise ValueError("artifact service returned a non-download handle")
-        stored = self.client.get(handle["url"], headers=handle.get("headers", {}))
-        stored.raise_for_status()
-        content = stored.content
+        # Artifact digests cover the exact bytes persisted in object storage.
+        # A compressed artifact also carries ``Content-Encoding`` metadata and
+        # httpx decodes such responses when ``Response.content`` is read.  Read
+        # the raw stream instead so a gzip/zstd transport header cannot change
+        # the bytes being verified or handed to the materializer.
+        content = bytearray()
+        with self.client.stream("GET", handle["url"], headers=handle.get("headers", {})) as stored:
+            stored.raise_for_status()
+            for chunk in stored.iter_raw():
+                if len(content) + len(chunk) > artifact["size_bytes"]:
+                    raise ValueError("downloaded artifact exceeds its immutable pointer")
+                content.extend(chunk)
         if len(content) != artifact["size_bytes"] or hashlib.sha256(content).hexdigest() != artifact["sha256"]:
             raise ValueError("downloaded artifact differs from its immutable pointer")
-        return content
+        return bytes(content)
 
     def upload(
         self,
