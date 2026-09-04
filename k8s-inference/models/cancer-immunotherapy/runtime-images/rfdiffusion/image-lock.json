@@ -16,8 +16,8 @@
     "license": "BSD-3-Clause",
     "license_state": "verified",
     "license_covers_weights": true,
-    "build_commit": "bfdeee8ceb964c978e4b72e8c5a65bfe44daaee9",
-    "attestation_vcs_revision": "bfdeee8ceb964c978e4b72e8c5a65bfe44daaee9"
+    "build_commit": "a14b0adbe4b370508b7923cba3ec057c577266df",
+    "attestation_vcs_revision": "a14b0adbe4b370508b7923cba3ec057c577266df"
   },
   "image": {
     "id": "rfdiffusion",
@@ -58,8 +58,8 @@
       "other_families": "unqualified-pending-per-family-evidence",
       "architecture_policy": "Qualified on H100 (sm90) only. torch 2.3.0/cu121 and the prebuilt DGL cu121 wheel ship a fixed set of compiled kernels and this runtime has audited neither the cubin nor the PTX they carry, so no portability claim is made for any other GPU family. Nothing in the image hard-codes a device selector, so another family needs per-family evidence rather than a code change; until that evidence exists it is unqualified. Accelerator breadth belongs in the Terraform resource profiles, not in a binary property of this image."
     },
-    "published_digest": null,
-    "published_reference": null,
+    "published_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+    "published_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
     "attestation_predicate_types": [
       "https://slsa.dev/provenance/v1",
       "https://spdx.dev/Document"
@@ -273,7 +273,7 @@
     "conflict": "The artifact catalog's consumer layout binds rfdiffusion-checkpoints at /models/rfdiffusion-checkpoints, while the superseded r6/r7 images hard-coded FS2_ARTIFACT_ROOT=/models/rfdiffusion. This runtime resolves the conflict by not hard-coding either: the checkpoint is located through the input manifest's relative path under --artifact-root, so the same image works at any mount point the plane chooses."
   },
   "qualification": {
-    "state": "successor-awaiting-h100-controller-qualification",
+    "state": "published-successor-awaiting-h100-controller-qualification",
     "qualified_digest": null,
     "historical_predecessor_digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
     "qualified_operations": [

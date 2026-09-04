@@ -76,7 +76,8 @@
         "--help"
       ]
     ],
-    "published_digest": null,
+    "published_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
+    "publication_source_commit": "a14b0adbe4b370508b7923cba3ec057c577266df",
     "supersedes": [
       {
         "tag_suffix": "adapter-v5",
@@ -121,7 +122,7 @@
       }
     },
     "qualification": {
-      "state": "successor-awaiting-h100-controller-qualification",
+      "state": "published-successor-awaiting-h100-controller-qualification",
       "evidence": [
         "evidence/h100-run-receipt.json",
         "evidence/h100-semantic-qualification.json"
