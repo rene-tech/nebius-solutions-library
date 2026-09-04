@@ -44,6 +44,8 @@ from .models import (
     OperationView,
     Principal,
     RuntimeIdentity,
+    RuntimeLifecycleObservation,
+    RuntimeObservationSource,
 )
 from .registry import OperationalModel, Registry
 from .runtime import ActivationError, PreemptedError, RouteUnavailableError, RuntimeClient, RuntimeOperationError
@@ -666,6 +668,7 @@ class AdmissionService:
                 await self._record_runtime_observation(
                     claimed,
                     result.runtime,
+                    observation=result.lifecycle,
                     started_at=invocation_started,
                     completed_at=invocation_finished,
                 )
@@ -706,6 +709,7 @@ class AdmissionService:
             final = await self._terminal_failure(claimed, failure)
         except StaleLeaseError:
             return
+        await self._record_release(claimed, final.completed_at or datetime.now(UTC))
         await self._try_lifecycle(
             claimed.id,
             self.lifecycle.reconcile(
@@ -744,6 +748,7 @@ class AdmissionService:
         claimed: ClaimedOperation,
         runtime: RuntimeIdentity,
         *,
+        observation: RuntimeLifecycleObservation | None = None,
         started_at: datetime,
         completed_at: datetime,
     ) -> None:
@@ -762,9 +767,12 @@ class AdmissionService:
                         correlation_key=f"online:{claimed.id}:attempt:{claimed.attempt}:runtime{suffix}",
                         subject_id=claimed.id,
                         observed_at=completed_at,
-                        source=LifecycleSource.APPLICATION,
+                        source=(LifecycleSource.KUBERNETES if observation is not None else LifecycleSource.APPLICATION),
                         attempt=claimed.attempt,
+                        namespace=observation.namespace if observation is not None else None,
+                        pod_name=observation.pod_name if observation is not None else None,
                         pod_uid=runtime.pod_uid,
+                        node_name=observation.node_name if observation is not None else None,
                         node_uid=runtime.node_uid,
                         gpu_uuid=gpu_uuid,
                         gpu_rank=rank,
@@ -798,17 +806,215 @@ class AdmissionService:
                             clock=LifecycleClock.PHASE,
                             interval_key=interval_key,
                             attempt=claimed.attempt,
-                            gpu_count=1 if gpu_uuid is not None else 0,
+                            gpu_count=1 if gpu_uuid is not None else runtime.gpu_count,
                             pod_uid=runtime.pod_uid,
                             node_uid=runtime.node_uid,
                             gpu_uuid=gpu_uuid,
                             gpu_rank=rank,
                         )
                     )
+        scheduler_start: datetime | None = None
+        if observation is not None and runtime.pod_uid is not None and runtime.gpu_count > 0:
+            # A newly scheduled Pod belongs to this cold activation window.  A
+            # pre-existing shared Pod is clipped to the invocation itself; its
+            # residency must be accounted by a separate workload subject.
+            if claimed.accepted_at <= observation.pod_scheduled_at <= completed_at:
+                scheduler_start = observation.pod_scheduled_at
+            else:
+                scheduler_start = started_at
+            scheduler_start = max(scheduler_start, claimed.accepted_at)
+            scheduler_end = max(scheduler_start, completed_at)
+            scheduler_key = f"online:{claimed.id}:attempt:{claimed.attempt}:scheduler"
+            for edge, occurred_at, source, quality in (
+                (
+                    LifecycleEdge.START,
+                    scheduler_start,
+                    LifecycleSource.KUBERNETES,
+                    MeasurementQuality.MEASURED,
+                ),
+                (
+                    LifecycleEdge.END,
+                    scheduler_end,
+                    LifecycleSource.APPLICATION,
+                    MeasurementQuality.APPLICATION_OBSERVED,
+                ),
+            ):
+                signals.append(
+                    LifecycleSignal(
+                        event_key=f"{scheduler_key}:{edge.value}",
+                        subject_id=claimed.id,
+                        occurred_at=occurred_at,
+                        observed_at=max(completed_at, occurred_at),
+                        source=source,
+                        source_resolution_seconds=0.001,
+                        quality=quality,
+                        phase=LifecyclePhase.GPU_ALLOCATION,
+                        edge=edge,
+                        clock=LifecycleClock.SCHEDULER_OCCUPIED,
+                        interval_key=scheduler_key,
+                        attempt=claimed.attempt,
+                        gpu_count=runtime.gpu_count,
+                        namespace=observation.namespace,
+                        pod_name=observation.pod_name,
+                        pod_uid=runtime.pod_uid,
+                        node_name=observation.node_name,
+                        node_uid=runtime.node_uid,
+                    )
+                )
+
+            if observation.device_allocation_observed_at is not None:
+                device_start = max(scheduler_start, observation.device_allocation_observed_at)
+                if device_start <= scheduler_end:
+                    for rank, gpu_uuid in enumerate(runtime.gpu_uuids):
+                        device_key = f"online:{claimed.id}:attempt:{claimed.attempt}:device:{rank}"
+                        for edge, occurred_at, source, quality in (
+                            (
+                                LifecycleEdge.START,
+                                device_start,
+                                LifecycleSource.KUBELET,
+                                MeasurementQuality.MEASURED,
+                            ),
+                            (
+                                LifecycleEdge.END,
+                                scheduler_end,
+                                LifecycleSource.APPLICATION,
+                                MeasurementQuality.APPLICATION_OBSERVED,
+                            ),
+                        ):
+                            signals.append(
+                                LifecycleSignal(
+                                    event_key=f"{device_key}:{edge.value}",
+                                    subject_id=claimed.id,
+                                    occurred_at=occurred_at,
+                                    observed_at=max(completed_at, occurred_at),
+                                    source=source,
+                                    source_resolution_seconds=(
+                                        observation.device_observation_resolution_seconds
+                                        if edge is LifecycleEdge.START
+                                        else 0.001
+                                    ),
+                                    quality=quality,
+                                    phase=LifecyclePhase.GPU_ALLOCATION,
+                                    edge=edge,
+                                    clock=LifecycleClock.DEVICE_ALLOCATED,
+                                    interval_key=device_key,
+                                    attempt=claimed.attempt,
+                                    gpu_count=1,
+                                    namespace=observation.namespace,
+                                    pod_name=observation.pod_name,
+                                    pod_uid=runtime.pod_uid,
+                                    node_name=observation.node_name,
+                                    node_uid=runtime.node_uid,
+                                    gpu_uuid=gpu_uuid,
+                                    gpu_rank=rank,
+                                )
+                            )
+
+            phase_source = {
+                RuntimeObservationSource.KUBERNETES: LifecycleSource.KUBERNETES,
+                RuntimeObservationSource.KUBELET: LifecycleSource.KUBELET,
+                RuntimeObservationSource.CONTROLLER: LifecycleSource.CONTROLLER,
+            }
+            for index, phase in enumerate(observation.phases):
+                phase_start = max(scheduler_start, phase.started_at)
+                phase_end = min(scheduler_end, phase.completed_at)
+                if phase_end < phase_start:
+                    continue
+                phase_key = f"online:{claimed.id}:attempt:{claimed.attempt}:phase:{phase.phase.value}:{index}"
+                for edge, occurred_at, event_uid in (
+                    (LifecycleEdge.START, phase_start, phase.start_event_uid),
+                    (LifecycleEdge.END, phase_end, phase.end_event_uid),
+                ):
+                    signals.append(
+                        LifecycleSignal(
+                            event_key=f"{phase_key}:{edge.value}",
+                            subject_id=claimed.id,
+                            occurred_at=occurred_at,
+                            observed_at=max(completed_at, occurred_at),
+                            source=phase_source[phase.source],
+                            source_resolution_seconds=phase.source_resolution_seconds,
+                            quality=MeasurementQuality.MEASURED,
+                            phase=LifecyclePhase(phase.phase.value),
+                            edge=edge,
+                            clock=LifecycleClock.PHASE,
+                            interval_key=phase_key,
+                            attempt=claimed.attempt,
+                            gpu_count=runtime.gpu_count,
+                            namespace=observation.namespace,
+                            pod_name=observation.pod_name,
+                            pod_uid=runtime.pod_uid,
+                            node_name=observation.node_name,
+                            node_uid=runtime.node_uid,
+                            detail={"source_event_uid": event_uid} if event_uid is not None else {},
+                        )
+                    )
+
+            if observation.ready_at is not None:
+                idle_start = max(scheduler_start, observation.ready_at)
+                idle_end = min(scheduler_end, started_at)
+                if idle_end > idle_start:
+                    idle_key = f"online:{claimed.id}:attempt:{claimed.attempt}:resident-idle"
+                    for edge, occurred_at, source, quality in (
+                        (
+                            LifecycleEdge.START,
+                            idle_start,
+                            LifecycleSource.KUBERNETES,
+                            MeasurementQuality.MEASURED,
+                        ),
+                        (
+                            LifecycleEdge.END,
+                            idle_end,
+                            LifecycleSource.APPLICATION,
+                            MeasurementQuality.APPLICATION_OBSERVED,
+                        ),
+                    ):
+                        signals.append(
+                            LifecycleSignal(
+                                event_key=f"{idle_key}:{edge.value}",
+                                subject_id=claimed.id,
+                                occurred_at=occurred_at,
+                                observed_at=max(completed_at, occurred_at),
+                                source=source,
+                                source_resolution_seconds=0.001,
+                                quality=quality,
+                                phase=LifecyclePhase.RESIDENT_IDLE,
+                                edge=edge,
+                                clock=LifecycleClock.PHASE,
+                                interval_key=idle_key,
+                                attempt=claimed.attempt,
+                                gpu_count=runtime.gpu_count,
+                                namespace=observation.namespace,
+                                pod_name=observation.pod_name,
+                                pod_uid=runtime.pod_uid,
+                                node_name=observation.node_name,
+                                node_uid=runtime.node_uid,
+                            )
+                        )
         if correlations:
             await self._try_lifecycle(claimed.id, self.lifecycle.append_correlations(correlations))
         if signals:
             await self._try_lifecycle(claimed.id, self.lifecycle.append_signals(signals))
+
+    async def _record_release(self, claimed: ClaimedOperation, occurred_at: datetime) -> None:
+        await self._try_lifecycle(
+            claimed.id,
+            self.lifecycle.append_signals(
+                [
+                    LifecycleSignal(
+                        event_key=f"online:{claimed.id}:attempt:{claimed.attempt}:release",
+                        subject_id=claimed.id,
+                        occurred_at=occurred_at,
+                        observed_at=occurred_at,
+                        source=LifecycleSource.APPLICATION,
+                        quality=MeasurementQuality.APPLICATION_OBSERVED,
+                        phase=LifecyclePhase.RELEASE,
+                        edge=LifecycleEdge.INSTANT,
+                        clock=LifecycleClock.LIFECYCLE,
+                        attempt=claimed.attempt,
+                    )
+                ]
+            ),
+        )
 
     @staticmethod
     async def _try_lifecycle(operation_id: UUID, operation: Awaitable[Any]) -> Any:

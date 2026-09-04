@@ -128,6 +128,25 @@ class Settings(BaseSettings):
     )
     admin_kueue_api_version: Literal["v1beta1", "v1beta2"] = "v1beta2"
     admin_kubernetes_cache_ttl_seconds: float = Field(default=15, ge=1, le=60)
+    gpu_allocation_observer_node_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=253,
+        pattern=r"^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?$",
+    )
+    gpu_allocation_observer_namespace: str = Field(
+        default="fs2-models",
+        min_length=1,
+        max_length=63,
+        pattern=r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
+    )
+    gpu_allocation_observer_api_url: str = Field(default="https://kubernetes.default.svc", max_length=2048)
+    gpu_allocation_observer_token_file: Path = Path("/var/run/secrets/fs2-serve/gpu-observer/token")
+    gpu_allocation_observer_ca_file: Path = Path("/var/run/secrets/fs2-serve/gpu-observer/ca.crt")
+    gpu_allocation_observer_checkpoint_file: Path = Path(
+        "/var/lib/kubelet/device-plugins/kubelet_internal_checkpoint"
+    )
+    gpu_allocation_observer_poll_seconds: float = Field(default=1, ge=0.1, le=30)
     admin_node_scaler_provider: Literal["nebius-managed-node-group-autoscaler"] | None = None
     admin_prometheus_url: str | None = Field(default=None, max_length=2048)
     admin_observability_config_file: Path | None = None

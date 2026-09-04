@@ -237,6 +237,18 @@
     },
     {
       "method": "GET",
+      "path": "/admin/api/v1/telemetry/workloads",
+      "success_status": 200,
+      "data_schema": "LifecycleAdminList"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/telemetry/workloads/{subject_id}",
+      "success_status": 200,
+      "data_schema": "LifecycleWorkloadDetail"
+    },
+    {
+      "method": "GET",
       "path": "/admin/api/v1/capacity",
       "success_status": 200,
       "data_schema": "AdminCapacity"

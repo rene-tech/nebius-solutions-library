@@ -150,6 +150,12 @@ locals {
         }
       }
     }
+    # Publish exact kubelet Pod -> GPU UUID observations for the lifecycle
+    # ledger. This is GPU-model agnostic and schedules only on Nebius GPU nodes.
+    runtimeAttribution = {
+      enabled        = true
+      modelNamespace = local.admin_model_namespace
+    }
     modelController = {
       enabled                             = var.model_controller.enabled
       writesEnabled                       = var.model_controller.writes_enabled

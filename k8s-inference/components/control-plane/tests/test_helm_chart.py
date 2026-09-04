@@ -263,6 +263,33 @@ def test_admin_console_is_disabled_by_default() -> None:
     assert not any(document["metadata"]["name"] == "fs2-serve-control-plane-admin-console" for document in documents)
 
 
+def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -> None:
+    assert not any(document["kind"] == "DaemonSet" for document in render())
+
+    documents = render("--set", "runtimeAttribution.enabled=true")
+    daemonset = next(document for document in documents if document["kind"] == "DaemonSet")
+    pod_spec = daemonset["spec"]["template"]["spec"]
+    container = pod_spec["containers"][0]
+    assert daemonset["metadata"]["name"] == "fs2-serve-control-plane-gpu-observer"
+    assert pod_spec["nodeSelector"] == {"nebius.com/gpu": "true"}
+    assert container["args"] == ["gpu-allocation-observer"]
+    assert container["volumeMounts"][0] == {
+        "name": "kubelet-device-plugins",
+        "mountPath": "/var/lib/kubelet/device-plugins",
+        "readOnly": True,
+    }
+    assert pod_spec["volumes"][0]["hostPath"] == {
+        "path": "/var/lib/kubelet/device-plugins",
+        "type": "Directory",
+    }
+    role = next(
+        document
+        for document in documents
+        if document["kind"] == "Role" and document["metadata"]["name"] == daemonset["metadata"]["name"]
+    )
+    assert role["rules"] == [{"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list", "patch"]}]
+
+
 def test_admin_console_renders_digest_bound_workload_route_and_network_boundary() -> None:
     documents = render(*admin_console_values())
     named = [
@@ -2902,7 +2929,7 @@ def test_capacity_adapter_has_short_lived_token_and_exact_list_only_rbac() -> No
         if namespace == "kube-system" and name.endswith("-cluster-autoscaler-status")
     )
     assert model_role["rules"] == [
-        {"apiGroups": [""], "resources": ["pods", "services"], "verbs": ["list"]},
+            {"apiGroups": [""], "resources": ["pods", "services", "events"], "verbs": ["list"]},
         {"apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["list"]},
         {
             "apiGroups": ["autoscaling"],

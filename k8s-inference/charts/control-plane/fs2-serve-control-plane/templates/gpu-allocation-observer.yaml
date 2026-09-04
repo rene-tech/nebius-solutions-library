@@ -1,0 +1,129 @@
+{{- if .Values.runtimeAttribution.enabled }}
+{{- $name := printf "%s-gpu-observer" (include "fs2-serve.fullname" .) }}
+{{- $serviceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "gpu-observer") }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Values.runtimeAttribution.modelNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gpu-allocation-observer
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Values.runtimeAttribution.modelNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gpu-allocation-observer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $serviceAccount }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gpu-allocation-observer
+spec:
+  selector:
+    matchLabels:
+      {{- include "fs2-serve.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: gpu-allocation-observer
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-serve.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: gpu-allocation-observer
+      annotations:
+        fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
+    spec:
+      serviceAccountName: {{ $serviceAccount }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 5
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: observer
+          image: {{ include "fs2-serve.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["gpu-allocation-observer"]
+          env:
+            - name: FS2_GPU_ALLOCATION_OBSERVER_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: FS2_GPU_ALLOCATION_OBSERVER_NAMESPACE
+              value: {{ .Values.runtimeAttribution.modelNamespace | quote }}
+            - name: FS2_GPU_ALLOCATION_OBSERVER_API_URL
+              value: {{ .Values.runtimeAttribution.kubernetesApiUrl | quote }}
+            - name: FS2_GPU_ALLOCATION_OBSERVER_TOKEN_FILE
+              value: /var/run/secrets/fs2-serve/gpu-observer/token
+            - name: FS2_GPU_ALLOCATION_OBSERVER_CA_FILE
+              value: /var/run/secrets/fs2-serve/gpu-observer/ca.crt
+            - name: FS2_GPU_ALLOCATION_OBSERVER_CHECKPOINT_FILE
+              value: {{ .Values.runtimeAttribution.checkpointHostPath | quote }}
+            - name: FS2_GPU_ALLOCATION_OBSERVER_POLL_SECONDS
+              value: {{ .Values.runtimeAttribution.pollSeconds | quote }}
+          volumeMounts:
+            - name: kubelet-device-plugins
+              mountPath: /var/lib/kubelet/device-plugins
+              readOnly: true
+            - name: kubernetes-token
+              mountPath: /var/run/secrets/fs2-serve/gpu-observer
+              readOnly: true
+          resources:
+            {{- toYaml .Values.runtimeAttribution.resources | nindent 12 }}
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+      volumes:
+        - name: kubelet-device-plugins
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+            type: Directory
+        - name: kubernetes-token
+          projected:
+            defaultMode: 0400
+            sources:
+              - serviceAccountToken:
+                  expirationSeconds: {{ .Values.runtimeAttribution.tokenExpirationSeconds }}
+                  path: token
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+      {{- with .Values.runtimeAttribution.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.runtimeAttribution.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

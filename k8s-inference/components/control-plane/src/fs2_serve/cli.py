@@ -54,6 +54,7 @@ from .configuration import (
 from .configuration_models import ConfigurationRevision, PlatformConfiguration
 from .crypto import KeyedHasher, PayloadCipher
 from .federation import FederationRouter
+from .gpu_allocation_observer import KubernetesGpuAllocationPublisher, run_gpu_allocation_observer
 from .lifecycle import PostgresLifecycleRepository
 from .mcp_server import mount_mcp
 from .model_deployment_admin import ModelDeploymentReadService, StoreModelDeploymentRepository
@@ -67,6 +68,7 @@ from .postgresql_release import render_postgresql_release_contract
 from .registry import Registry
 from .route_revalidation import RouteRevalidator
 from .runtime import RuntimeClient
+from .runtime_kubernetes import KubernetesRuntimeMetadataProvider
 from .scientific_admin_postgres import postgres_scientific_admin_read_service
 from .scientific_artifacts import (
     PostgresArtifactRepository,
@@ -114,6 +116,22 @@ async def _store(settings: Settings) -> PostgresStore:
         cipher,
         hasher,
         settings.payload_ttl_seconds,
+    )
+
+
+async def observe_gpu_allocations(settings: Settings) -> None:
+    if settings.gpu_allocation_observer_node_name is None:
+        raise RuntimeError("GPU allocation observer requires its Kubernetes node name")
+    await run_gpu_allocation_observer(
+        publisher=KubernetesGpuAllocationPublisher(
+            base_url=settings.gpu_allocation_observer_api_url,
+            token_file=settings.gpu_allocation_observer_token_file,
+            ca_file=settings.gpu_allocation_observer_ca_file,
+            namespace=settings.gpu_allocation_observer_namespace,
+            node_name=settings.gpu_allocation_observer_node_name,
+            poll_seconds=settings.gpu_allocation_observer_poll_seconds,
+        ),
+        checkpoint_file=settings.gpu_allocation_observer_checkpoint_file,
     )
 
 
@@ -436,10 +454,24 @@ async def build_runtime(settings: Settings) -> AppRuntime:
     # leaves zero routable models. Request and queue series are still populated
     # only from durable admitted operations.
     metrics = Metrics(registry.list())
+    runtime_metadata_provider = (
+        KubernetesRuntimeMetadataProvider(
+            HttpKubernetesListReader(
+                base_url=settings.admin_kubernetes_api_url,
+                token_file=settings.admin_kubernetes_token_file,
+                ca_file=settings.admin_kubernetes_ca_file,
+                timeout_seconds=settings.admin_adapter_timeout_seconds,
+            ),
+            namespace=settings.admin_kubernetes_model_namespace,
+        )
+        if settings.admin_capacity_enabled
+        else None
+    )
     runtime_client = RuntimeClient(
         activation_timeout_seconds=settings.activation_timeout_seconds,
         runtime_timeout_seconds=settings.runtime_timeout_seconds,
         max_response_bytes=settings.max_response_bytes,
+        metadata_provider=runtime_metadata_provider,
         federation=federation,
     )
 
@@ -671,6 +703,7 @@ def main() -> None:
             "validate",
             "postgresql-release-contract",
             "model-controller",
+            "gpu-allocation-observer",
             "scientific-materialize",
             "scientific-collect",
             "scientific-prepare-workspace",
@@ -784,6 +817,7 @@ def main() -> None:
             "wait-schema": wait_schema,
             "bootstrap-access": bootstrap_access,
             "model-controller": run_model_controller,
+            "gpu-allocation-observer": observe_gpu_allocations,
         }[args.command]
         asyncio.run(action(settings))
 

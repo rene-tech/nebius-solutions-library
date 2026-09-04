@@ -44,7 +44,9 @@ metadata:
     app.kubernetes.io/component: admin-capacity-reader
 rules:
   - apiGroups: [""]
-    resources: ["pods", "services"]
+    # Pod status supplies exact scheduling/readiness boundaries. Events add
+    # image-pull boundaries while retained; no event message is persisted.
+    resources: ["pods", "services", "events"]
     verbs: ["list"]
   - apiGroups: ["apps"]
     resources: ["deployments"]

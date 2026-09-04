@@ -70,7 +70,9 @@ from .auth import (
 from .configuration import ConfigurationService
 from .configuration_routes import configuration_router
 from .lifecycle import (
+    LifecycleAdminList,
     LifecycleRepository,
+    LifecycleWorkloadDetail,
     NullLifecycleRepository,
     api_key_id_hash,
 )
@@ -1592,6 +1594,54 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             operation_id,
             tenant_id=authorized_tenant,
         )
+
+    @app.get(
+        "/admin/api/v1/telemetry/workloads",
+        response_model=AdminEnvelope[LifecycleAdminList],
+        responses=admin_problem_responses,
+    )
+    async def admin_lifecycle_workloads(
+        identity: Annotated[OperatorPrincipal, Depends(operator)],
+        params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+        tenant_id: Annotated[str | None, Query(min_length=1, max_length=120)] = None,
+        model_id: Annotated[str | None, Query(min_length=1, max_length=MAX_MODEL_ID_LENGTH)] = None,
+        operation_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    ) -> AdminEnvelope[LifecycleAdminList]:
+        authorized_tenant = await admin_access.authorize(
+            identity,
+            OperatorRole.VIEWER,
+            action="lifecycle.list",
+            tenant_id=tenant_id,
+        )
+        result = await runtime.lifecycle.list_workloads(
+            tenant_id=authorized_tenant,
+            model_id=model_id,
+            operation_id=operation_id,
+            limit=limit,
+        )
+        return access_envelope(result, params)
+
+    @app.get(
+        "/admin/api/v1/telemetry/workloads/{subject_id}",
+        response_model=AdminEnvelope[LifecycleWorkloadDetail],
+        responses=admin_problem_responses,
+    )
+    async def admin_lifecycle_workload_detail(
+        subject_id: UUID,
+        identity: Annotated[OperatorPrincipal, Depends(operator)],
+        params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+    ) -> AdminEnvelope[LifecycleWorkloadDetail]:
+        authorized_tenant = await admin_access.authorize(
+            identity,
+            OperatorRole.VIEWER,
+            action="lifecycle.read",
+            tenant_id=identity.tenant_id,
+        )
+        result = await runtime.lifecycle.get_workload(subject_id, tenant_id=authorized_tenant)
+        if result is None:
+            raise NotFoundError("lifecycle workload was not found")
+        return access_envelope(result, params)
 
     if runtime.scientific_admin is not None:
         scientific_admin = runtime.scientific_admin
