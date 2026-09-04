@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import shutil
 import stat
 import subprocess
+import tarfile
 import tempfile
 from pathlib import Path
 
@@ -122,12 +124,17 @@ def test_jobset_chart_materializer_remains_plan_time_during_namespace_changes() 
 def _run_kueue_release_verifier(
     tmp_path: Path,
     crane_mode: str,
+    render_mode: str = "exact",
 ) -> tuple[subprocess.CompletedProcess[str], list[str], list[str]]:
     run_root = tmp_path / "run"
     charts = run_root / "charts"
     charts.mkdir(parents=True)
     chart = charts / "kueue-test.tgz"
-    chart.write_bytes(b"exact verified Kueue chart bytes")
+    chart_metadata = b"name: kueue\nversion: 0.17.8\n"
+    with tarfile.open(chart, "w:gz") as archive:
+        member = tarfile.TarInfo("kueue/Chart.yaml")
+        member.size = len(chart_metadata)
+        archive.addfile(member, io.BytesIO(chart_metadata))
     chart_sha256 = hashlib.sha256(chart.read_bytes()).hexdigest()
     chart_digest = f"sha256:{'a' * 64}"
     image_digest = f"sha256:{'b' * 64}"
@@ -167,16 +174,57 @@ esac
 
     helm = fake_bin / "helm"
     helm.write_text(
-        f"""#!/usr/bin/env bash
+        """#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1" == "template" ]]; then
-  cat <<'EOF'
-image: {image}
-name: clusterqueues.kueue.x-k8s.io
-workload.fs2.nebius/system: "true"
+  output_dir=""
+  while (($#)); do
+    if [[ "$1" == "--output-dir" ]]; then
+      output_dir="$2"
+      shift 2
+    else
+      shift
+    fi
+  done
+  [[ -n "${output_dir}" ]] || exit 0
+
+  manager="${output_dir}/kueue/templates/manager/manager.yaml"
+  clusterqueue="${output_dir}/kueue/templates/crd/kueue.x-k8s.io_clusterqueues.yaml"
+  mkdir -p "$(dirname "${manager}")" "$(dirname "${clusterqueue}")"
+  if [[ "${FS2_TEST_RENDER_MODE}" == "empty-manager" ]]; then
+    : >"${manager}"
+  else
+    rendered_image="${FS2_KUEUE_IMAGE}"
+    if [[ "${FS2_TEST_RENDER_MODE}" == "wrong-manager-image" ]]; then
+      rendered_image="registry.k8s.io/kueue/kueue:v0.17.8@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      printf 'decoy: %s\n' "${FS2_KUEUE_IMAGE}" >"${output_dir}/kueue/expected-image-decoy.yaml"
+    fi
+    cat >"${manager}" <<EOF
+---
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - args:
+        - --config=/controller_manager_config.yaml
+        image: "${rendered_image}"
+        name: manager
+      nodeSelector:
+        workload.fs2.nebius/system: "true"
 EOF
-elif [[ "$1 $2" == "show crds" ]]; then
-  exit 0
+  fi
+  cat >"${clusterqueue}" <<'EOF'
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: clusterqueues.kueue.x-k8s.io
+EOF
+  printf 'wrote %s\n' "${manager}"
+elif [[ "$1" == "version" ]]; then
+  printf 'v4.2.4+g3900f43\n'
 else
   echo "unexpected helm invocation: $*" >&2
   exit 2
@@ -208,13 +256,20 @@ printf '%s\n' "$1" >>"${FS2_TEST_SLEEP_LOG}"
             "FS2_KUEUE_CHART_ARCHIVE": str(chart),
             "FS2_TEST_CRANE_ATTEMPTS": str(attempts),
             "FS2_TEST_CRANE_MODE": crane_mode,
+            "FS2_TEST_RENDER_MODE": render_mode,
             "FS2_TEST_SLEEP_LOG": str(sleeps),
+            # Match the environment inherited from snap-packaged Terraform's
+            # local-exec provisioner in the production failure.
+            "SNAP": "/snap/terraform/current",
+            "SNAP_CONTEXT": "test-terraform-snap-context",
+            "SNAP_NAME": "terraform",
         }
     )
     result = subprocess.run(
-        [str(ROOT / "stages/foundation/scripts/materialize-kueue-release.sh")],
+        ["/bin/sh", "-c", '"./scripts/materialize-kueue-release.sh"'],
         check=False,
         capture_output=True,
+        cwd=ROOT / "stages/foundation",
         text=True,
         timeout=10,
         env=environment,
@@ -252,6 +307,28 @@ def test_kueue_release_verifier_never_retries_digest_drift(tmp_path: Path) -> No
     assert len(attempts) == 1
     assert sleeps == []
     assert "chart digest drifted: expected" in result.stderr
+
+
+def test_kueue_release_verifier_rejects_an_empty_manager_render(tmp_path: Path) -> None:
+    result, _, _ = _run_kueue_release_verifier(
+        tmp_path, "retry-once", "empty-manager"
+    )
+
+    assert result.returncode != 0
+    assert "reason=manager-manifest-empty" in result.stderr
+    assert "manager_bytes=0" in result.stderr
+    assert "rendered manager workload manifest is empty" in result.stderr
+
+
+def test_kueue_release_verifier_reads_only_the_manager_workload_image(tmp_path: Path) -> None:
+    result, _, _ = _run_kueue_release_verifier(
+        tmp_path, "retry-once", "wrong-manager-image"
+    )
+
+    assert result.returncode != 0
+    assert "reason=manager-image-mismatch" in result.stderr
+    assert "sha256:cccccccccccccccccccccccccccccccc" in result.stderr
+    assert "manager workload image does not match" in result.stderr
 
 
 def test_chart_materializer_is_content_addressed_and_idempotent() -> None:
