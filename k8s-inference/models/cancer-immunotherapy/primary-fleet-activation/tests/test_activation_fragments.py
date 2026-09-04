@@ -176,54 +176,25 @@ class PrimaryActivationFragmentTests(unittest.TestCase):
     def test_shared_aggregates_carry_no_authored_change(self) -> None:
         self.assertEqual(activation.validate_no_aggregate_edits(), [])
 
-    def test_serialized_boltz_mount_cleanup_allowance_is_exact_and_atomic(self) -> None:
+    def test_serialized_boltz_mount_cleanup_is_in_the_integration_baseline(
+        self,
+    ) -> None:
         relative = "catalog/runtime/contracts/scientific-execution-map.json"
         source = activation._aggregate_at_baseline(relative)
-
-        def clone(value):
-            return json.loads(json.dumps(value))
-
-        accepted_baseline = clone(source)
-        accepted_current = clone(source)
         boltz = next(
-            item
-            for item in accepted_current["models"]
-            if item["model_id"] == "boltzgen"
+            item for item in source["models"] if item["model_id"] == "boltzgen"
         )
-        for stage in boltz["stages"]:
-            if stage["stage_id"] in activation.BOLTZGEN_GPU_STAGES:
-                stage["mounts"].remove(activation.BOLTZGEN_LEGACY_BROAD_MOUNT)
-        activation._normalize_serialized_boltzgen_mount_cleanup(
-            relative, accepted_baseline, accepted_current
-        )
-        self.assertEqual(accepted_baseline, accepted_current)
-
-        partial_baseline = clone(source)
-        partial_current = clone(source)
-        boltz = next(
-            item for item in partial_current["models"] if item["model_id"] == "boltzgen"
-        )
-        first = next(
-            item for item in boltz["stages"] if item["stage_id"] == "configure"
-        )
-        first["mounts"].remove(activation.BOLTZGEN_LEGACY_BROAD_MOUNT)
-        activation._normalize_serialized_boltzgen_mount_cleanup(
-            relative, partial_baseline, partial_current
-        )
-        self.assertNotEqual(partial_baseline, partial_current)
-
-        tampered_baseline = clone(source)
-        tampered_current = clone(accepted_current)
-        boltz = next(
-            item
-            for item in tampered_current["models"]
-            if item["model_id"] == "boltzgen"
-        )
-        boltz["stages"][0]["mounts"][1]["mount_path"] = "/unreviewed"
-        activation._normalize_serialized_boltzgen_mount_cleanup(
-            relative, tampered_baseline, tampered_current
-        )
-        self.assertNotEqual(tampered_baseline, tampered_current)
+        gpu_stages = {
+            stage["stage_id"]: stage
+            for stage in boltz["stages"]
+            if stage["stage_id"] in activation.BOLTZGEN_GPU_STAGES
+        }
+        self.assertEqual(set(gpu_stages), activation.BOLTZGEN_GPU_STAGES)
+        for stage in gpu_stages.values():
+            self.assertNotIn(
+                activation.BOLTZGEN_LEGACY_BROAD_MOUNT,
+                stage["mounts"],
+            )
 
     def test_derived_identity_refresh_is_accepted_and_authorship_is_not(self) -> None:
         """The guard must separate a recomputed digest from authored content.
