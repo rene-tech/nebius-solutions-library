@@ -264,7 +264,13 @@ def runtime_profile() -> ScientificWorkloadProfile:
     )
 
 
-def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileScientificManifestRenderer:
+def runtime_execution_map(
+    tmp_path: Path,
+    *,
+    omit_file: bool = False,
+    runtime_cache: bool = False,
+    runtime_cache_claim: str = "fs2-scientific-runtime-cache",
+) -> FileScientificManifestRenderer:
     profile = runtime_profile()
     file_names = (
         "components.cif",
@@ -322,6 +328,21 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
                                 "sub_path": None,
                                 "read_only": True,
                             },
+                            *(
+                                [
+                                    {
+                                        "name": "runtime-cache",
+                                        "kind": "runtime-cache",
+                                        "claim_name": runtime_cache_claim,
+                                        "host_path": None,
+                                        "mount_path": "/cache",
+                                        "sub_path": None,
+                                        "read_only": False,
+                                    }
+                                ]
+                                if runtime_cache
+                                else []
+                            ),
                         ],
                         "service_account_name": "scientific-runner",
                         "workspace_uid": 10001,
@@ -332,7 +353,11 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
                         },
                         "active_deadline_seconds": 3600,
                         "termination_grace_seconds": 60,
-                        "environment": {},
+                        "environment": (
+                            {"JAX_COMPILATION_CACHE_DIR": "/cache/protenix-v2/jax"}
+                            if runtime_cache
+                            else {}
+                        ),
                         "required_node_labels": {},
                     },
                     {
@@ -625,6 +650,63 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
     tampered = replace(resource, runtime_artifacts=(replace(localized[0], mount_path="/models/changed"),))
     with pytest.raises(ScientificExecutionMapError, match="lost its verified localization"):
         renderer.render(tampered)
+
+
+def test_runtime_cache_is_terraform_owned_model_only_and_never_triggers_recursive_chown(tmp_path: Path) -> None:
+    plan = runtime_plan()
+    renderer = runtime_execution_map(tmp_path, runtime_cache=True)
+    access = ArtifactAccessContext(profile="public", receipt_digest=None, tenant_id="tenant-a")
+    localized = renderer.verify_runtime_artifacts(runtime_profile(), plan, access)
+    bound = renderer.bind_runtime_artifacts(runtime_profile(), plan, access, localized)
+    snapshot = scheduling(bound.controller_plan)
+    resource = WorkloadResource(
+        operation_id=uuid4(),
+        batch_id=uuid4(),
+        workload_id=uuid4(),
+        attempt_id=uuid4(),
+        stage_id="prepare",
+        shard_id="main",
+        attempt_number=1,
+        tenant_id="tenant-a",
+        model_id="protenix-v2",
+        variant_id="upstream-v2-0-0",
+        input_artifact_id=uuid4(),
+        service_class=ServiceClass.CUSTOMER_BATCH,
+        scheduling_snapshot_digest=snapshot.digest,
+        namespace="fs2-models",
+        name="protenix-prepare-cache",
+        kind=WorkloadKind.JOB,
+        scheduling=snapshot.stage("prepare"),
+        invocation=bound.invocation("prepare", "main"),
+        access_context=access,
+        runtime_artifacts=localized,
+        execution_map_sha256=bound.execution_map_sha256,
+        execution_binding=bound.execution_binding("prepare"),
+    )
+    pod = renderer.render(resource)["spec"]["template"]["spec"]  # type: ignore[index]
+    model = pod["containers"][0]
+    mounts = {item["name"]: item for item in model["volumeMounts"]}
+    assert mounts["runtime-cache"] == {
+        "name": "runtime-cache",
+        "mountPath": "/cache",
+        "readOnly": False,
+    }
+    volumes = {item["name"]: item for item in pod["volumes"]}
+    assert volumes["runtime-cache"]["persistentVolumeClaim"] == {
+        "claimName": "fs2-scientific-runtime-cache",
+        "readOnly": False,
+    }
+    assert all(
+        "runtime-cache" not in {item["name"] for item in container["volumeMounts"]}
+        for container in (*pod["initContainers"], pod["containers"][1])
+    )
+    assert "fsGroup" not in pod["securityContext"]
+    assert "fsGroupChangePolicy" not in pod["securityContext"]
+
+
+def test_runtime_cache_refuses_a_non_terraform_claim(tmp_path: Path) -> None:
+    with pytest.raises(ScientificExecutionMapError, match="Terraform-owned writable claim"):
+        runtime_execution_map(tmp_path, runtime_cache=True, runtime_cache_claim="tenant-supplied-cache")
 
 
 def test_mounted_runtime_verifier_supports_real_size_aggregate_tree_without_enumeration(tmp_path: Path) -> None:

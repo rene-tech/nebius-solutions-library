@@ -351,6 +351,13 @@ output "scientific_artifacts_status" {
       enabled        = var.scientific_batch.enabled
       writes_enabled = var.scientific_batch.writes_enabled
       namespace      = var.scientific_batch.namespace
+      runtime_cache = {
+        enabled            = var.scientific_batch.runtime_cache.enabled
+        claim_name         = var.scientific_batch.runtime_cache.enabled ? local.scientific_runtime_cache_claim_name : null
+        mount_path         = var.scientific_batch.runtime_cache.enabled ? local.scientific_runtime_cache_mount_path : null
+        storage_class_name = var.scientific_batch.runtime_cache.storage_class_name
+        size_gib           = var.scientific_batch.runtime_cache.size_gib
+      }
     }
   } : null
 }

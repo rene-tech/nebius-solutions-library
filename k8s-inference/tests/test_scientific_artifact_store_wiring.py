@@ -109,8 +109,14 @@ class ChartValueWiringTests(ArtifactStoreContractTests):
             set(self.contract["chart"]["secrets.artifactStore"]),
         )
         credential = self.contract["credential"]
-        self.assertIn(f'scientific_artifacts_secret_name = "{credential["secret_name"]}"', self.workloads)
-        self.assertIn(f'scientific_artifacts_secret_key  = "{credential["secret_key"]}"', self.workloads)
+        self.assertRegex(
+            self.workloads,
+            rf'scientific_artifacts_secret_name\s*=\s*"{re.escape(credential["secret_name"])}"',
+        )
+        self.assertRegex(
+            self.workloads,
+            rf'scientific_artifacts_secret_key\s*=\s*"{re.escape(credential["secret_key"])}"',
+        )
         self.assertIn(f'namespace = "{credential["namespace"]}"', self.workloads)
 
     def test_the_egress_allowlist_and_rollout_annotation_reach_the_chart(self) -> None:

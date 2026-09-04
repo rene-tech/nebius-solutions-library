@@ -68,9 +68,16 @@ output "effective_configuration" {
       object_key              = "scientific/v1/tenants/<tenant>/operations/<operation>/stages/<stage>/shards/<shard>/attempts/<attempt>/<input|output>/sha256/<digest>"
     }
     scientific_batch = {
-      enabled                 = var.deployment.scientific_batch.enabled
-      writes_enabled          = var.deployment.scientific_batch.writes_enabled
-      namespace               = var.deployment.scientific_batch.namespace
+      enabled        = var.deployment.scientific_batch.enabled
+      writes_enabled = var.deployment.scientific_batch.writes_enabled
+      namespace      = var.deployment.scientific_batch.namespace
+      runtime_cache = {
+        enabled            = var.deployment.scientific_batch.runtime_cache.enabled
+        claim_name         = var.deployment.scientific_batch.runtime_cache.enabled ? "fs2-scientific-runtime-cache" : null
+        mount_path         = var.deployment.scientific_batch.runtime_cache.enabled ? "/cache" : null
+        storage_class_name = var.deployment.scientific_batch.runtime_cache.storage_class_name
+        size_gib           = var.deployment.scientific_batch.runtime_cache.size_gib
+      }
       artifact_store_required = true
       execution_map_source    = local.scientific_execution_map_source
       execution_map_sha256    = local.scientific_execution_map_sha256

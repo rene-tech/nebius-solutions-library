@@ -254,6 +254,7 @@ resource "helm_release" "control_plane" {
     kubernetes_secret_v1.admin,
     kubernetes_secret_v1.bootstrap_access,
     kubernetes_secret_v1.scientific_artifact_store,
+    kubernetes_persistent_volume_claim_v1.scientific_runtime_cache,
     terraform_data.scientific_artifacts_contract,
     kubernetes_config_map_v1.serving_bindings,
     kubernetes_config_map_v1.lean_routes,

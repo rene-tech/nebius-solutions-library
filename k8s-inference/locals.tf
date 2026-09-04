@@ -34,6 +34,14 @@ locals {
   # `toJson`. For this JSON-compatible value those bytes are Terraform's
   # `jsonencode` bytes too; the Helm test renders and compares them directly.
   scientific_execution_map_sha256 = sha256(jsonencode(local.scientific_execution_map))
+  scientific_runtime_cache_mounts = flatten([
+    for model in try(local.scientific_execution_map.models, []) : [
+      for stage in try(model.stages, []) : [
+        for mount in try(stage.mounts, []) : mount
+        if try(mount.kind, "") == "runtime-cache"
+      ]
+    ]
+  ])
 
   capacity_profile    = var.deployment.profiles.capacity
   accelerator_profile = coalesce(var.deployment.profiles.accelerators, local.capacity_profile)
@@ -1075,6 +1083,7 @@ locals {
       enabled                  = var.deployment.scientific_batch.enabled
       writes_enabled           = var.deployment.scientific_batch.writes_enabled
       namespace                = var.deployment.scientific_batch.namespace
+      runtime_cache            = var.deployment.scientific_batch.runtime_cache
       execution_map            = local.scientific_execution_map
       workers                  = var.deployment.scientific_batch.workers
       poll_seconds             = var.deployment.scientific_batch.poll_seconds

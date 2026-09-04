@@ -891,11 +891,20 @@ class StageVolumeBinding:
 
     def __post_init__(self) -> None:
         _check_name(self.name, "stage volume name")
-        if self.kind not in {"artifact-workspace", "reference", "private"}:
+        if self.kind not in {"artifact-workspace", "reference", "private", "runtime-cache"}:
             raise ValueError("stage volume kind is unsupported")
         if self.kind == "artifact-workspace":
             if self.claim_name is not None or self.host_path is not None or self.read_only:
                 raise ValueError("attempt workspace must be a writable emptyDir")
+        elif self.kind == "runtime-cache":
+            if (
+                self.claim_name != "fs2-scientific-runtime-cache"
+                or self.host_path is not None
+                or self.sub_path is not None
+                or self.read_only
+                or self.mount_path != "/cache"
+            ):
+                raise ValueError("runtime cache must use the Terraform-owned writable claim at /cache")
         elif (self.claim_name is None) == (self.host_path is None) or not self.read_only:
             raise ValueError("runtime stage volumes require one read-only physical source")
         path = PurePosixPath(self.mount_path)
