@@ -78,10 +78,7 @@ locals {
       name = name
       uid  = local.scientific_runtime_cache_directory_claims_by_name[name][0].uid
       gid  = local.scientific_runtime_cache_directory_claims_by_name[name][0].gid
-      # mounted-fs-path CSI preserves owner/group rwx bits but clears setgid.
-      # The scientific images use a stable matching uid/gid, so 0770 retains
-      # the required write contract without an impossible post-mount check.
-      mode = "0770"
+      mode = "2770"
     }
   ]
   scientific_runtime_cache_ownership_contract = {
@@ -340,7 +337,15 @@ resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap" {
             run_as_group               = 0
             capabilities {
               drop = ["ALL"]
-              add  = ["CHOWN", "DAC_OVERRIDE", "FOWNER"]
+              # After chowning a boundary to its model GID, Linux requires
+              # CAP_FSETID to retain setgid when the process is not a member
+              # of that GID. Without it chmod(02770) silently becomes 0770.
+              add = [
+                "CHOWN",
+                "DAC_OVERRIDE",
+                "FOWNER",
+                "FSETID",
+              ]
             }
           }
         }
