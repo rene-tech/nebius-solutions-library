@@ -710,6 +710,48 @@ class PublicArtifactTests(unittest.TestCase):
                 job["spec"]["template"]["metadata"]["labels"]["reference-data.fs2.nebius.ai/network-mode"],
             )
 
+    def test_renderer_projects_catalog_provenance_evidence_at_declared_path(self) -> None:
+        args = argparse.Namespace(
+            catalog=ROOT / "artifact-catalog.json", artifact=["esmfold2-trunk"],
+            namespace="fs2-reference-data", local_queue="reference-data",
+            service_account="fs2-reference-data",
+            shared_filesystem_host_path="/mnt/reference-data",
+            cache_subpath="model-artifacts/public/v1", image=DEFAULT_IMAGE,
+            project_id="project-test", region="region-test", cluster="cluster-test",
+            filesystem_id="computefilesystem-test", filesystem_size_gib=2048,
+            cpu_pool_id="computenodegroup-test", cpu_pool_name="reference-data-cpu",
+            reference_plane_source_commit="abcdef0123456789",
+            source_commit="0123456789abcdef",
+            node_selector=json.dumps({
+                "workload.fs2.nebius/reference-data": "true",
+                "capacity.fs2.nebius/type": "regular",
+                "capacity.fs2.nebius/pool": "reference-data",
+                "storage.fs2.nebius/reference-data": "true",
+            }),
+            node_toleration=json.dumps({
+                "key": "workload.fs2.nebius/reference-data", "operator": "Equal",
+                "value": "true", "effect": "NoSchedule",
+            }),
+            active_deadline_seconds=3600, ttl_seconds=86400,
+        )
+        rendered = render(args)
+        config_map = next(item for item in rendered["items"] if item["kind"] == "ConfigMap")
+        job = next(item for item in rendered["items"] if item["kind"] == "Job")
+        program = next(
+            volume["configMap"]
+            for volume in job["spec"]["template"]["spec"]["volumes"]
+            if volume["name"] == "program"
+        )
+        for support_path in (
+            "evidence/protenix-v2-mirror-verification-20260902.json",
+            "evidence/esm-af3-external-runtime-contract-20260902.json",
+            "smoke/protenix-v2-minimal.json",
+        ):
+            support_item = next(
+                item for item in program["items"] if item["path"] == support_path
+            )
+            self.assertIn(support_item["key"], config_map["data"])
+
     def test_renderer_rejects_old_shared_system_pool_and_small_filesystem(self) -> None:
         payload = b'{"model":"fixture"}\n'
         with tempfile.TemporaryDirectory() as temp:
