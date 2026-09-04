@@ -1,0 +1,220 @@
+{
+  "schema": "fs2.nebius.ai/public-artifact-h100-localization-evidence/v1",
+  "status": "passed",
+  "observed_at": "2026-09-04T17:26:52Z",
+  "scope": {
+    "cluster": "k8s-inference-h100",
+    "namespace": "fs2-reference-data",
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "routes": "unchanged-closed"
+  },
+  "artifact_binding": {
+    "artifact_id": "esmc-6b",
+    "content_digest": "sha256:8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+    "manifest_digest": "sha256:b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454a",
+    "localization_receipt_digest": "sha256:14599935d3e48e949cb8218d3192bb35e5947a15bacdc96796dbbee097860962",
+    "receipt_file": {
+      "bytes": 4627,
+      "sha256": "d817a572a0df622e350585c600ba84de3fc51fc3b76c740515d3824857a054e7",
+      "sub_path": "model-artifacts/public/v1/receipts/esmc-6b/b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454a.json"
+    },
+    "object_sub_path": "model-artifacts/public/v1/objects/esmc-6b/sha256/8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+    "expanded_bytes": 25408251020,
+    "mounts": [
+      {
+        "consumer_id": "esmfold2",
+        "mount_path": "/models/esmc-6b",
+        "read_only": true
+      },
+      {
+        "consumer_id": "esmfold2-fast",
+        "mount_path": "/models/esmc-6b",
+        "read_only": true
+      }
+    ]
+  },
+  "terminal_job": {
+    "name": "artifact-esmc-6b-b1f18d241536",
+    "uid": "c7165caa-af78-433b-913f-974d5476dae9",
+    "pod": "artifact-esmc-6b-b1f18d241536-jvnjd",
+    "pod_uid": "084df174-d202-492c-b90f-386ac091c17d",
+    "node": "computeinstance-e00js2rm3pshmstjdn",
+    "created_at": "2026-09-04T17:04:01Z",
+    "container_started_at": "2026-09-04T17:04:02Z",
+    "receipt_started_at": "2026-09-04T17:04:03Z",
+    "verified_at": "2026-09-04T17:26:49Z",
+    "completed_at": "2026-09-04T17:26:52Z",
+    "exit_code": 0,
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:069c7ceb9e5e910a7c3f764687b861ff3e461445f46f4d0e7469c23fcbf60b83",
+    "kubelet_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:069c7ceb9e5e910a7c3f764687b861ff3e461445f46f4d0e7469c23fcbf60b83",
+    "program_digest": "aaebc40ccfa6978b5f67a971188ad3c5cae485e39ec04fe701680ee2481ee3fc",
+    "source_commit": "7d61d4a6511c3059be77d7a4fbec3bc91535346a",
+    "download_concurrency": 8
+  },
+  "resumable_download_lineage": [
+    {
+      "state": "superseded-after-partial-progress",
+      "job_uid": "fde5462f-534e-4b81-b916-fdf0cc49a14d",
+      "started_at": "2026-09-04T16:04:49Z",
+      "superseded_at": "2026-09-04T16:45:59Z",
+      "download_concurrency": 1,
+      "source_commit": "5cb7cad6a372db1fbe44407778b618a014592727"
+    },
+    {
+      "state": "superseded-after-partial-progress",
+      "job_uid": "429c1434-79fb-4f57-9663-af1e9f77c69b",
+      "started_at": "2026-09-04T16:45:59Z",
+      "superseded_at": "2026-09-04T17:04:01Z",
+      "download_concurrency": 4,
+      "program_digest": "aaebc40ccfa6978b5f67a971188ad3c5cae485e39ec04fe701680ee2481ee3fc",
+      "source_commit": "7d61d4a6511c3059be77d7a4fbec3bc91535346a"
+    },
+    {
+      "state": "complete",
+      "job_uid": "c7165caa-af78-433b-913f-974d5476dae9",
+      "started_at": "2026-09-04T17:04:01Z",
+      "completed_at": "2026-09-04T17:26:52Z",
+      "download_concurrency": 8,
+      "program_digest": "aaebc40ccfa6978b5f67a971188ad3c5cae485e39ec04fe701680ee2481ee3fc",
+      "source_commit": "7d61d4a6511c3059be77d7a4fbec3bc91535346a"
+    }
+  ],
+  "throughput_observation": {
+    "four_worker_approximate_aggregate_mib_per_second": 8,
+    "four_worker_measurement_kind": "operator spot observation, not a controlled benchmark",
+    "eight_worker_terminal_wall_seconds": 1371,
+    "eight_worker_interpretation": "Not an end-to-end throughput benchmark: the Job resumed existing partials, initially used several sources, and ended with one source-bound final shard before whole-artifact verification.",
+    "writer_safety": "Replacement Jobs reused exact .part files; filesystem locking serialized writers during termination overlap. Each completed source retained per-file SHA-256 verification, fsync, and atomic publication."
+  },
+  "terminal_receipt": {
+    "artifact_id": "esmc-6b",
+    "cache_uri": "nebius-sharedfs://computefilesystem-e00smrbs2e9zanhv56/model-artifacts/public/v1/objects/esmc-6b/sha256/8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+    "catalog_digest": "b29d1a2b7bf1bb521fd5a48438b87e20b30d9b1c6ff7365cd84c274986127765",
+    "consumer_bindings": [
+      {
+        "consumer_id": "esmfold2",
+        "mount_path": "/models/esmc-6b",
+        "mount_root": "/models",
+        "read_only": true
+      },
+      {
+        "consumer_id": "esmfold2-fast",
+        "mount_path": "/models/esmc-6b",
+        "mount_root": "/models",
+        "read_only": true
+      }
+    ],
+    "content_digest": "8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+    "expanded_bytes": 25408251020,
+    "family": "esmfold2",
+    "files": [
+      {
+        "bytes": 341,
+        "path": "config.json",
+        "sha256": "c5566fab6a17fd674141331fe75de917b7904d99fb7a410d2b1593c21e576913"
+      },
+      {
+        "bytes": 4864457920,
+        "path": "model-00001-of-00006.safetensors",
+        "sha256": "bd90149ff223e6ac1a0cac6147a5ae0df20d3a21df4f65356a1f19cd14f4aa8a"
+      },
+      {
+        "bytes": 4971211344,
+        "path": "model-00002-of-00006.safetensors",
+        "sha256": "f75e2144d8269fe2eb4b3e0823fb089b94f176d8024153e85b8fb573a42294fa"
+      },
+      {
+        "bytes": 4863752992,
+        "path": "model-00003-of-00006.safetensors",
+        "sha256": "f699f01ecc9691d9c6470492765fe54b8b5d2e9f277c139e89427433ffdfe0b2"
+      },
+      {
+        "bytes": 4971211344,
+        "path": "model-00004-of-00006.safetensors",
+        "sha256": "46add1b7be098bbfdc3073884851ba3057f1b33ea23a158b650a37007dabd13d"
+      },
+      {
+        "bytes": 4863752992,
+        "path": "model-00005-of-00006.safetensors",
+        "sha256": "1e1cb62f060a34e18f54a31a76683ef888b8cec59e73315f5b31d25d45a1f88c"
+      },
+      {
+        "bytes": 873762296,
+        "path": "model-00006-of-00006.safetensors",
+        "sha256": "56c73e13ae96e777ce65eee99364056069ef93b646470f352f83c5f1037b1b18"
+      },
+      {
+        "bytes": 97349,
+        "path": "model.safetensors.index.json",
+        "sha256": "6846456e20e6ee2c37461f7bfc21d316d69bdaf165b925691afcb39e583244da"
+      },
+      {
+        "bytes": 171,
+        "path": "special_tokens_map.json",
+        "sha256": "0b7245ec86c8c3aeaf61523ba70dfa79be137e6283f127bd651adc30b4f15c74"
+      },
+      {
+        "bytes": 2879,
+        "path": "tokenizer.json",
+        "sha256": "8d3447b278176e65fb3ef0224472927bf5fee3be46ea2bd77fad0111423cee1f"
+      },
+      {
+        "bytes": 1392,
+        "path": "tokenizer_config.json",
+        "sha256": "e8d8e40c9f92b334f0272e80bb65ed4043cb9836523cbae899e9859e8cbb8833"
+      }
+    ],
+    "license": {
+      "id": "MIT-and-third-party-notices",
+      "state": "verified"
+    },
+    "manifest_digest": "b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454a",
+    "offline_checks": [
+      "config-json",
+      "tokenizer-json",
+      "safetensors-index-all-shards",
+      "esmc-6b-exact-file-set",
+      "esmc-6b-six-shards",
+      "esmc-6b-index-binds-all-six-shards",
+      "esmc-6b-tokenizer-support-files",
+      "json:config.json",
+      "safetensors-header:model-00001-of-00006.safetensors",
+      "safetensors-header:model-00002-of-00006.safetensors",
+      "safetensors-header:model-00003-of-00006.safetensors",
+      "safetensors-header:model-00004-of-00006.safetensors",
+      "safetensors-header:model-00005-of-00006.safetensors",
+      "safetensors-header:model-00006-of-00006.safetensors",
+      "json:model.safetensors.index.json",
+      "json:special_tokens_map.json",
+      "json:tokenizer.json",
+      "json:tokenizer_config.json"
+    ],
+    "receipt_digest": "14599935d3e48e949cb8218d3192bb35e5947a15bacdc96796dbbee097860962",
+    "runtime_handoffs": [],
+    "schema": "fs2-serve.nebius.ai/public-artifact-cache-receipt/v1",
+    "source": {
+      "revision": "45b0fa5d7fb06faefbd5e3b89bdcef35d564e79a",
+      "uri": "hf://biohub/ESMC-6B"
+    },
+    "started_at": "2026-09-04T17:04:03Z",
+    "state": "verified",
+    "storage": {
+      "cache_subpath": "model-artifacts/public/v1",
+      "cluster": "k8s-inference-h100",
+      "cpu_pool_id": "mk8snodegroup-e00ha8zfdnxn12qmbj",
+      "cpu_pool_label": "reference-data",
+      "cpu_pool_name": "k8s-inference-h100-reference-data-cpu",
+      "filesystem_id": "computefilesystem-e00smrbs2e9zanhv56",
+      "filesystem_size_gib": 2048,
+      "local_queue": "reference-data",
+      "namespace": "fs2-reference-data",
+      "project_id": "project-e00rene",
+      "reference_plane_source_commit": "6acf38cc961eedbcf4e9896718823bc01bfebdb7",
+      "region": "eu-north1",
+      "shared_filesystem_host_path": "/mnt/fs2-reference-data/data",
+      "source_commit": "7d61d4a6511c3059be77d7a4fbec3bc91535346a"
+    },
+    "verified_at": "2026-09-04T17:26:49Z"
+  }
+}

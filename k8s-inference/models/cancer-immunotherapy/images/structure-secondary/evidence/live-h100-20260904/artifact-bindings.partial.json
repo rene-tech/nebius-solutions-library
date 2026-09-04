@@ -1,14 +1,14 @@
 {
   "schema": "fs2.nebius.ai/structure-secondary-live-artifact-bindings/v1",
-  "state": "partial",
-  "observed_at": "2026-09-04T16:13:24Z",
+  "state": "complete",
+  "observed_at": "2026-09-04T17:26:52Z",
   "source_commit": "5cb7cad6a372db1fbe44407778b618a014592727",
   "scope": {
     "cluster": "k8s-inference-h100",
     "project_id": "project-e00rene",
     "region": "eu-north1",
     "public_routes": "closed",
-    "note": "This is an intermediate, evidence-backed handoff. OpenFold3/OpenBind is complete at the artifact-binding layer. ESMFold2 awaits esmc-6b, Protenix awaits composite materialization, and AlphaFold3 uses its separate private/reference contracts. No missing digest is inferred."
+    "note": "All five secondary successors have exact physical artifact bindings and retained H100 semantic PASS evidence. AlphaFold3 keeps its private parameter and public reference identities in separate contracts. No missing digest is inferred and routes remained closed."
   },
   "public_storage": {
     "kind": "nebius-shared-filesystem-host-path",
@@ -90,7 +90,7 @@
       }
     },
     "esmfold2": {
-      "artifact_binding_state": "partial-awaiting-esmc-6b",
+      "artifact_binding_state": "complete",
       "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
       "variant_id": "biohub-v3-4-0",
       "stage_id": "fold",
@@ -143,13 +143,34 @@
           "artifact_id": "esmc-6b",
           "content_digest": "sha256:8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
           "manifest_digest": "sha256:b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454",
-          "localization_receipt_digest": null,
-          "state": "staging-in-progress"
+          "localization_receipt_digest": "sha256:14599935d3e48e949cb8218d3192bb35e5947a15bacdc96796dbbee097860962",
+          "receipt_file_sha256": "d817a572a0df622e350585c600ba84de3fc51fc3b76c740515d3824857a054e7",
+          "receipt_sub_path": "model-artifacts/public/v1/receipts/esmc-6b/b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454a.json",
+          "object_sub_path": "model-artifacts/public/v1/objects/esmc-6b/sha256/8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+          "mount_path": "/models/esmc-6b",
+          "read_only": true,
+          "expanded_bytes": 25408251020,
+          "staging_job": {
+            "name": "artifact-esmc-6b-b1f18d241536",
+            "uid": "c7165caa-af78-433b-913f-974d5476dae9",
+            "started_at": "2026-09-04T17:04:01Z",
+            "completed_at": "2026-09-04T17:26:52Z",
+            "state": "complete"
+          }
         }
-      ]
+      ],
+      "semantic_qualification": {
+        "state": "passed",
+        "evidence_file": "esmfold2-h100-semantic-qualification.json",
+        "evidence_file_sha256": "82b38d4a9d7c9aaa006b4b8e6dd40ffa701a9f5220e1d0314fc8fc4edec9d129",
+        "qualification_result_sha256": "e13a4a704fd43f5487972c6a5e8f7bd574f0626dec487a6fa0b36f9336e093db",
+        "job": "secondary-esmfold2-02c01986250b",
+        "job_uid": "1776c2dd-cb4d-418e-9b1c-1599590ffe24",
+        "completed_at": "2026-09-04T17:28:47Z"
+      }
     },
     "esmfold2-fast": {
-      "artifact_binding_state": "partial-awaiting-esmc-6b",
+      "artifact_binding_state": "complete",
       "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
       "variant_id": "biohub-v3-4-0",
       "stage_id": "fold",
@@ -182,19 +203,51 @@
         {
           "artifact_id": "esmfold2-ccd",
           "content_digest": "sha256:b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+          "manifest_digest": "sha256:4b701f8db3ca2d75353db710e0f6624fec6e1cb48f86cf435ec1bfa191b5bf4c",
           "localization_receipt_digest": "sha256:e1584e950890ca2be08bfb385148c7a66d3078d9b35cc42ef40a2e6b45b3cad8",
+          "receipt_file_sha256": "bf9402b023385cb75e0ea247d2097f0b7833dd7ec4d4e6a2b11251a9d6b2b598",
+          "receipt_sub_path": "model-artifacts/public/v1/receipts/esmfold2-ccd/4b701f8db3ca2d75353db710e0f6624fec6e1cb48f86cf435ec1bfa191b5bf4c.json",
+          "object_sub_path": "model-artifacts/public/v1/objects/esmfold2-ccd/sha256/b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
           "mount_path": "/databases/esmfold2",
           "read_only": true,
-          "source_record": "models.esmfold2.artifacts[1]"
+          "expanded_bytes": 417306584,
+          "staging_job": {
+            "name": "artifact-esmfold2-ccd-4b701f8db3ca",
+            "uid": "211db9b2-96c6-4602-a4e5-9a5ad4d2af81",
+            "started_at": "2026-09-04T16:04:49Z",
+            "completed_at": "2026-09-04T16:04:53Z",
+            "state": "complete"
+          }
         },
         {
           "artifact_id": "esmc-6b",
           "content_digest": "sha256:8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
           "manifest_digest": "sha256:b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454",
-          "localization_receipt_digest": null,
-          "state": "staging-in-progress"
+          "localization_receipt_digest": "sha256:14599935d3e48e949cb8218d3192bb35e5947a15bacdc96796dbbee097860962",
+          "receipt_file_sha256": "d817a572a0df622e350585c600ba84de3fc51fc3b76c740515d3824857a054e7",
+          "receipt_sub_path": "model-artifacts/public/v1/receipts/esmc-6b/b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454a.json",
+          "object_sub_path": "model-artifacts/public/v1/objects/esmc-6b/sha256/8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+          "mount_path": "/models/esmc-6b",
+          "read_only": true,
+          "expanded_bytes": 25408251020,
+          "staging_job": {
+            "name": "artifact-esmc-6b-b1f18d241536",
+            "uid": "c7165caa-af78-433b-913f-974d5476dae9",
+            "started_at": "2026-09-04T17:04:01Z",
+            "completed_at": "2026-09-04T17:26:52Z",
+            "state": "complete"
+          }
         }
-      ]
+      ],
+      "semantic_qualification": {
+        "state": "passed",
+        "evidence_file": "esmfold2-fast-h100-semantic-qualification.json",
+        "evidence_file_sha256": "d1ed9458bf2a4745c66a9a1c6387721cc2a5d7195c6e57e8f7a7867a7dc8370d",
+        "qualification_result_sha256": "542643d26c259b8477dda1b2b167876794ff443df9e63c3253270a1e328ad12d",
+        "job": "secondary-esmfold2-fast-afc2d1934def",
+        "job_uid": "5534fd47-a674-467b-8f07-4a38f4599d4d",
+        "completed_at": "2026-09-04T17:28:47Z"
+      }
     },
     "protenix-v2": {
     "artifact_binding_state": "complete",
