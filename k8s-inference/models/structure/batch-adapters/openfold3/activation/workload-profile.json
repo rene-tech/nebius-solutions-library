@@ -17,7 +17,7 @@
     },
     "execution_identity": {
       "model_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
-      "runtime_image_digest": null,
+      "runtime_image_digest": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
       "runtime_recipe_sha256": null,
       "workload_recipe_sha256": null,
       "artifact_manifest_digest": null,
@@ -133,10 +133,10 @@
       "commercial_use": "allowed",
       "non_clinical": true,
       "limitations": [
-        "The published h100-r4 image is intentionally rejected because its runtime files are unreadable by UID 10001; activation requires the independently corrected r5 digest.",
+        "The r5 image is superseded because its 0444 runner parent directory was not traversable by UID 10001; r6 bakes the exact 102-byte runner below a 0555 parent and passed exact-artifact H100 semantics without a runtime ConfigMap projection.",
         "OpenFold3 is an independent, non-equivalent backend to AlphaFold 3: distinct code, weights, license and results; it is never reported as AlphaFold 3.",
         "The public scientific identity is openfold3-openbind so it cannot collide with the existing openfold3 HTTP catalog record; the legacy runtime-emitted openfold3 label is accepted only inside this adapter's output-validation boundary.",
-        "The OpenBind-0 checkpoint and components.bcif are catalog manifests without a localization generation or node admission receipt."
+        "The OpenBind-0 checkpoint and components.bcif are bound to immutable localization receipts; route exposure remains closed until aggregate profile publication."
       ]
     }
   }

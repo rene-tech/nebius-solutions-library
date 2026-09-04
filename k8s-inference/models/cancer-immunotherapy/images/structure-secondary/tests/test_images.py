@@ -562,13 +562,21 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             "esmfold2": "sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
             "esmfold2-fast": "sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
             "protenix-v2": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
-            "openfold3": None,
+            "openfold3": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
         }
         self.assertEqual(
             {image["id"]: image["published_digest"] for image in LOCK["images"]},
             expected,
         )
-        self.assertTrue(all(image["deployable"] is False for image in LOCK["images"]))
+        self.assertEqual(
+            {image["id"]: image["deployable"] for image in LOCK["images"]},
+            {
+                "esmfold2": False,
+                "esmfold2-fast": False,
+                "protenix-v2": False,
+                "openfold3": True,
+            },
+        )
 
         self.assertEqual(
             LOCK["publication_policy"],
@@ -578,7 +586,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             "esmfold2": "pending-exact-artifact-semantic-test",
             "esmfold2-fast": "pending-exact-artifact-semantic-test",
             "protenix-v2": "pending-exact-checkpoint-semantic-test",
-            "openfold3": "pending-exact-artifact-semantic-test",
+            "openfold3": "qualified-exact-artifact-semantic",
         }
         for image in LOCK["images"]:
             with self.subTest(image=image["id"]):
@@ -667,12 +675,26 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
         for image in images.values():
             fast_start = image["fast_start"]
             self.assertEqual(fast_start["maximum_candidate_level"], "L1")
-            self.assertIsNone(fast_start["qualified_level"])
-            self.assertEqual(
-                fast_start["qualification_state"],
-                "evidence-collected-pending-independent-acceptance",
-            )
-            self.assertEqual(fast_start["level_states"], expected_level_states)
+            if image["id"] == "openfold3":
+                self.assertEqual(fast_start["qualified_level"], "L1")
+                self.assertEqual(
+                    fast_start["qualification_state"],
+                    "qualified-exact-artifact-h100-semantic",
+                )
+                self.assertEqual(
+                    fast_start["level_states"],
+                    {
+                        **expected_level_states,
+                        "L1": "qualified-regional-image-and-exact-artifact-h100-semantic",
+                    },
+                )
+            else:
+                self.assertIsNone(fast_start["qualified_level"])
+                self.assertEqual(
+                    fast_start["qualification_state"],
+                    "evidence-collected-pending-independent-acceptance",
+                )
+                self.assertEqual(fast_start["level_states"], expected_level_states)
 
         for model_id in ("esmfold2", "esmfold2-fast"):
             contract = images[model_id]["runtime_contract"]
@@ -2022,6 +2044,18 @@ for seed in seeds:
         self.assertEqual(len(superseded), 7)
         self.assertTrue(all(item["deployable"] is False for item in superseded))
         self.assertTrue(all(item["digest"].startswith("sha256:") for item in superseded))
+
+    def test_openfold_qualification_consumes_the_baked_runner(self) -> None:
+        renderer = (
+            ROOT / "qualification/render_semantic_job.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("OPENFOLD_BASE_RUNNER", renderer)
+        self.assertNotIn('"mountPath": "/opt/fs2/runtime/openfold3"', renderer)
+        self.assertNotIn('"runner-base.yaml":', renderer)
+        self.assertIn(
+            "--base-runner-yaml /opt/fs2/runtime/openfold3/runner-base.yaml",
+            renderer,
+        )
 
 
 if __name__ == "__main__":

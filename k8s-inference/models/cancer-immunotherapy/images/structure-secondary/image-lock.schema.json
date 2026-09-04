@@ -58,7 +58,7 @@
           "accelerator_support": {"$ref": "#/$defs/acceleratorSupport"},
           "smoke": {"type": "string", "pattern": "^/"},
           "published_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
-          "deployable": {"const": false}
+          "deployable": {"type": "boolean"}
         }
       }
     }
@@ -171,14 +171,24 @@
       "required": ["maximum_candidate_level", "qualified_level", "qualification_state", "level_states", "compiler_cache_optimization"],
       "properties": {
         "maximum_candidate_level": {"const": "L1"},
-        "qualified_level": {"type": "null"},
-        "qualification_state": {"const": "evidence-collected-pending-independent-acceptance"},
+        "qualified_level": {"enum": [null, "L1"]},
+        "qualification_state": {
+          "enum": [
+            "evidence-collected-pending-independent-acceptance",
+            "qualified-exact-artifact-h100-semantic"
+          ]
+        },
         "level_states": {
           "type": "object",
           "additionalProperties": false,
           "required": ["L1", "L2", "L3", "L4"],
           "properties": {
-            "L1": {"const": "candidate-evidence-collected-pending-independent-acceptance"},
+            "L1": {
+              "enum": [
+                "candidate-evidence-collected-pending-independent-acceptance",
+                "qualified-regional-image-and-exact-artifact-h100-semantic"
+              ]
+            },
             "L2": {"const": "unavailable-no-shared-storage-gpu-process-snapshot"},
             "L3": {"const": "unavailable-no-local-disk-cached-snapshot"},
             "L4": {"const": "unavailable-no-system-ram-retained-model"}

@@ -364,10 +364,10 @@
       },
       "fast_start": {
         "maximum_candidate_level": "L1",
-        "qualified_level": null,
-        "qualification_state": "evidence-collected-pending-independent-acceptance",
+        "qualified_level": "L1",
+        "qualification_state": "qualified-exact-artifact-h100-semantic",
         "level_states": {
-          "L1": "candidate-evidence-collected-pending-independent-acceptance",
+          "L1": "qualified-regional-image-and-exact-artifact-h100-semantic",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -375,12 +375,12 @@
         "compiler_cache_optimization": "auxiliary-l1-plus-persistent-cache-pending-first-vs-warm-h100-timing"
       },
       "accelerator_support": {
-        "h100": {"compute_capability": "9.0", "status": "pending-exact-artifact-semantic-test"},
+        "h100": {"compute_capability": "9.0", "status": "qualified-exact-artifact-semantic"},
         "blackwell": {"status": "not-qualified", "scope": "portability-not-readiness", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": null,
-      "deployable": false
+      "published_digest": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
+      "deployable": true
     }
   ]
 }
