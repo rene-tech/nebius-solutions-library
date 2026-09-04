@@ -131,6 +131,7 @@ def test_terraform_uses_execution_map_owners_and_blocks_control_plane() -> None:
     assert "workspace_gid = try(stage.workspace_gid, null)" in cache_source
     assert 'mode = "2770"' in cache_source
     assert 'add  = ["CHOWN", "DAC_OVERRIDE", "FOWNER"]' in cache_source
+    assert '"storage.fs2.nebius/shared-cache" = "true"' in cache_source
     assert "fs_group" not in cache_source
     control_plane_source = (ROOT / "stages/workloads/control_plane.tf").read_text(
         encoding="utf-8"
