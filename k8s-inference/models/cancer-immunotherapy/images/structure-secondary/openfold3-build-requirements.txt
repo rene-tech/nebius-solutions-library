@@ -1,0 +1,2 @@
+setuptools-scm==9.2.2 \
+    --hash=sha256:30e8f84d2ab1ba7cb0e653429b179395d0c33775d54807fc5f1dd6671801aef7
