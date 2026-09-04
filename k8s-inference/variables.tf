@@ -531,19 +531,19 @@ variable "deployment" {
       }), {})
     }), {})
 
-    # Staged scientific batch execution. Both gates stay false until the
-    # controller successors are integrated; the result store above is
-    # independently deployable while they are. Enabling it also installs and
-    # qualifies the pinned JobSet API, because a true-gang stage has no other
-    # executable API.
+    # Staged scientific batch execution. The execution map defaults to the
+    # exact generated contract committed with this module. Supplying one is an
+    # advanced override; root preconditions bind it to the same committed
+    # profile qualification and execution identities before any stage runs.
+    # Enabling the feature also installs and qualifies the pinned JobSet API,
+    # because a true-gang stage has no other executable API.
     scientific_batch = optional(object({
       enabled        = optional(bool, false)
       writes_enabled = optional(bool, false)
       namespace      = optional(string, "fs2-models")
-      execution_map = optional(any, {
-        schema = "fs2-serve.nebius.ai/scientific-execution-map/v3"
-        models = []
-      })
+
+      execution_map = optional(any)
+
       workers                  = optional(number, 2)
       poll_seconds             = optional(string, "0.25")
       lease_seconds            = optional(string, "30")

@@ -7,6 +7,31 @@ resource "terraform_data" "deployment_contract" {
       error_message = "Scientific batch writes require the scientific batch controller gate."
     }
 
+    precondition {
+      condition = !var.deployment.scientific_batch.enabled || try(
+        local.scientific_execution_map.schema == "fs2-serve.nebius.ai/scientific-execution-map/v3" &&
+        length(local.scientific_execution_map.models) > 0 &&
+        length(local.scientific_execution_map.models) == length(distinct([
+          for model in local.scientific_execution_map.models : model.model_id
+        ])),
+        false,
+      )
+      error_message = "Enabled scientific batch requires a non-empty schema-v3 execution map with one unique entry per model. Omit deployment.scientific_batch.execution_map to use the committed generated map."
+    }
+
+    # A map is one qualified unit: Helm hashes its exact compact JSON bytes and
+    # every included profile binds that whole digest. Checking the same bytes at
+    # the facade prevents a plausible-looking override from reaching the stage
+    # with stale profile or execution identities.
+    precondition {
+      condition = !var.deployment.scientific_batch.enabled || try(alltrue([
+        for model in local.scientific_execution_map.models :
+        local.scientific_workload_profiles_by_model_id[model.model_id].qualification.execution_map_sha256 == local.scientific_execution_map_sha256 &&
+        local.scientific_workload_profiles_by_model_id[model.model_id].execution_identity.execution_identity_sha256 == model.execution_identity_sha256
+      ]), false)
+      error_message = "The effective scientific execution map does not match the committed workload-profile qualification digest and execution identities. Regenerate and review the map and profiles together; do not paste or edit generated map fields independently."
+    }
+
     # Kueue compares an excluded prefix literally against the whole
     # ResourceName, so an auxiliary device prefix that also matches an
     # accelerator would silently stop budgeting GPUs.

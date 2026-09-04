@@ -1,0 +1,44 @@
+2026-09-03T03:34:13.791230641Z 
+2026-09-03T03:34:13.791276439Z === Configuring pipeline ===
+2026-09-03T03:34:13.791681469Z Using dataset artifact: /opt/fs2/artifacts/boltzgen
+2026-09-03T03:34:13.836354170Z Creating output directory: /work/faststart/boltzgen-baseline-t02
+2026-09-03T03:34:13.837520197Z ************** Checking design spec: /opt/fs2/source/example/vanilla_protein/1g13prot.yaml **************
+2026-09-03T03:34:13.919307452Z Total designed residues: 103
+2026-09-03T03:34:13.923722359Z Design specification visualization is written to /work/faststart/boltzgen-baseline-t02/1g13prot.cif
+2026-09-03T03:34:13.923727854Z *********************************************************************************************************
+2026-09-03T03:34:14.320194703Z Using kernels: True [device capability: (9, 0)]
+2026-09-03T03:34:14.320201375Z Config overrides for protocol protein-anything: {}
+2026-09-03T03:34:14.320202782Z Using 1 devices
+2026-09-03T03:34:14.320204176Z Raw designs will be saved to: /work/faststart/boltzgen-baseline-t02/intermediate_designs
+2026-09-03T03:34:14.320206298Z Using diffusion batch size: 1
+2026-09-03T03:34:14.320208098Z Number of diffusion batches: 1
+2026-09-03T03:34:14.320577409Z Using model artifact: /opt/fs2/artifacts/boltzgen/boltzgen1_diverse.ckpt
+2026-09-03T03:34:14.321690639Z Using model artifact: /opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt
+2026-09-03T03:34:14.321692929Z Using model artifact: /opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt
+2026-09-03T03:34:14.321723159Z Final ranked designs will be saved to: /work/faststart/boltzgen-baseline-t02/final_ranked_designs
+2026-09-03T03:34:14.321739256Z [1] design                   
+2026-09-03T03:34:14.362850283Z Configuration complete. Configs written to /work/faststart/boltzgen-baseline-t02/config
+2026-09-03T03:34:14.362860909Z Steps manifest written to /work/faststart/boltzgen-baseline-t02/steps.yaml
+2026-09-03T03:34:14.362928654Z 
+2026-09-03T03:34:14.362931369Z === Executing pipeline ===
+2026-09-03T03:34:14.365092256Z **************************************************
+2026-09-03T03:34:14.365094469Z Pipeline step 1 of 1: design
+2026-09-03T03:34:45.668648896Z 
+Predicting: |          | 0/? [00:00<?, ?it/s]
+[Step 1/1] design - Predicting: |          | 0/? [00:00<?, ?it/s]
+[Step 1/1] design - Predicting: |          | 0/? [00:00<?, ?it/s]
+Predicting DataLoader 0:   0%|          | 0/1 [00:00<?, ?it/s]   
+[Step 1/1] design - Predicting DataLoader 0: :   0%|          | 0/1 [00:00<?, ?it/s]Switched step_scale to 2.0
+2026-09-03T03:34:45.668723985Z Switched noise_scale to 0.88
+2026-09-03T03:34:49.790780932Z /opt/venv/lib/python3.12/site-packages/cuequivariance_ops_torch/triangle_attention.py:199: UserWarning: Non-SM100f kernel expects bias to be float32 so it's going to be cast to torch.float32. Check if you can change your code for maximum performance.
+2026-09-03T03:34:49.790838237Z   warnings.warn(
+2026-09-03T03:34:50.869318312Z /opt/venv/lib/python3.12/site-packages/cuequivariance_ops_torch/triangle_attention.py:199: UserWarning: Non-SM100f kernel expects bias to be float32 so it's going to be cast to torch.float32. Check if you can change your code for maximum performance.
+2026-09-03T03:34:50.869335813Z   warnings.warn(
+2026-09-03T03:34:52.530423135Z /opt/fs2/source/src/boltzgen/task/predict/writer.py:377: ResourceWarning: unclosed file <_io.TextIOWrapper name='/work/faststart/boltzgen-baseline-t02/intermediate_designs/1g13prot.cif' mode='w' encoding='utf-8'>
+2026-09-03T03:34:52.530449467Z   open(gen_path, "w").write(
+2026-09-03T03:34:52.544121520Z 
+[Step 1/1] design - Predicting DataLoader 0: : 100%|██████████| 1/1 [00:06<00:00,  0.15it/s]Number of failed examples: 0
+2026-09-03T03:34:52.544289454Z 
+[Step 1/1] design - Predicting DataLoader 0: : 100%|██████████| 1/1 [00:06<00:00,  0.15it/s]
+2026-09-03T03:34:53.368547864Z ✓ Step design completed successfully in 39.0s
+2026-09-03T03:34:55.077598178Z FS2_SEMANTIC_RESULT_EMITTED

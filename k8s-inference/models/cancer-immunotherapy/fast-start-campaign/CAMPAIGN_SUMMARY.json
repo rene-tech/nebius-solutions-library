@@ -1,0 +1,751 @@
+{
+  "campaign_id": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+  "cluster": {
+    "cluster_queue": "inference-accelerators",
+    "context": "k8s-inference-h100",
+    "local_queue": "inference-models",
+    "namespace": "fs2-models",
+    "project_id": "project-e00rene",
+    "region": "eu-north1"
+  },
+  "level_contract": {
+    "below_all_thresholds": "Off",
+    "boundaries": {
+      "end": "the first semantic result the model emits, which for a batch runtime is the same instant as semantic ready",
+      "start": "the instant the Pod is scheduled onto a Ready accelerator node, which is the capacity-available point for a batch stage"
+    },
+    "boundary_rationale": "The published contract assigns queue admission and placement to capacity wait, and assigns image setup, artifact restore, runtime initialisation, weight transfer and compilation to model start. Sandbox and volume setup therefore counts inside model start, not outside it. Measuring from container start instead would silently hide the recursive volume-ownership pass, which the baseline trials showed is the single largest contributor.",
+    "measured_value": "model_start_seconds",
+    "note": "Capacity wait and Kueue queue wait are reported separately and are deliberately excluded from the level evaluation, exactly as the published contract requires.",
+    "source": "k8s-inference/FAST_START_LEVELS.md",
+    "thresholds_seconds": {
+      "L1": 300,
+      "L2": 120,
+      "L3": 60,
+      "L4": 30
+    }
+  },
+  "mechanism_evidence": {
+    "fsgroup_recursive_ownership": {
+      "guidance": "a Pod that only reads a shared claim should use supplementalGroups and set no fsGroup at all",
+      "remediation": "fsGroupChangePolicy OnRootMismatch reduces it to 1-2 s",
+      "second_failure_mode": "the same recursive pass rewrites ownership on the claim it walks. On the tenant-private academic claim it replaced the contract group 65532 with 10001 and made licensed bytes group-writable, leaving the parameter object unreadable to every contract-conforming Pod. The cost is a performance problem; the ownership rewrite is a correctness and licensing problem.",
+      "startup_cost": "153-305 s per Pod start on a 128 GiB shared claim under the default fsGroupChangePolicy Always"
+    },
+    "gpu_process_snapshot": {
+      "claim": "none",
+      "proof": "node label snapshot.fs2.nebius/eligible=false on both H100 capacity-block nodes; no CRIU/cuda-checkpoint device state was captured or restored in this campaign",
+      "state": "unsupported"
+    },
+    "host_ram_standby": {
+      "reason": "batch stages terminate their process at the end of each trial, so no host-RAM standby process survives between trials",
+      "state": "not-exercised"
+    },
+    "hot_replica": {
+      "reason": "these scientific runtimes are batch stages with no long-lived Service endpoint in this campaign",
+      "state": "not-applicable"
+    },
+    "local_nvme": {
+      "proof": "node label local-nvme.fs2.nebius/eligible=false on both H100 capacity-block nodes",
+      "state": "unavailable"
+    }
+  },
+  "models": {
+    "alphafold3": {
+      "artifact_bytes_read_floor": 1020545840,
+      "image": {
+        "digest": "sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887",
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/tenant-academic/alphafold3@sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887",
+        "tag": "3.0.4-academic"
+      },
+      "kueue_admitted": false,
+      "namespace": "fs2-academic-poc",
+      "variants": {
+        "baseline": {
+          "gpu_device_kind": [
+            "CudaDevice(id=0)"
+          ],
+          "image_state": [
+            "node-cached"
+          ],
+          "label": "prepared-node, cold XLA compilation",
+          "meets_three_trial_requirement": true,
+          "nodes_used": [
+            "5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
+            "ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9"
+          ],
+          "nvidia_driver_version": [
+            "580.159.04-1ubuntu1"
+          ],
+          "phases_seconds": {
+            "capacity_wait_seconds": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "n": 3,
+              "p95": 0.0
+            },
+            "compute_to_first_result_seconds": {
+              "max": 45.379,
+              "mean": 44.668,
+              "min": 43.663,
+              "n": 3,
+              "p95": 45.379
+            },
+            "end_to_end_seconds": {
+              "max": 67.0,
+              "mean": 66.0,
+              "min": 64.0,
+              "n": 3,
+              "p95": 67.0
+            },
+            "model_start_seconds": {
+              "max": 60.805,
+              "mean": 59.757,
+              "min": 58.23,
+              "n": 3,
+              "p95": 60.805
+            },
+            "runtime_init_and_artifact_load_seconds": {
+              "max": 13.567,
+              "mean": 13.422,
+              "min": 13.272,
+              "n": 3,
+              "p95": 13.567
+            },
+            "sandbox_and_volume_setup_seconds": {
+              "max": 2.0,
+              "mean": 1.667,
+              "min": 1.0,
+              "n": 3,
+              "p95": 2.0
+            },
+            "schedule_to_semantic_complete_seconds": {
+              "max": 67.0,
+              "mean": 66.0,
+              "min": 64.0,
+              "n": 3,
+              "p95": 67.0
+            },
+            "teardown_seconds": {
+              "max": 6.765,
+              "mean": 6.243,
+              "min": 5.77,
+              "n": 3,
+              "p95": 6.765
+            },
+            "time_to_first_semantic_result_seconds": {
+              "max": 58.805,
+              "mean": 58.09,
+              "min": 57.23,
+              "n": 3,
+              "p95": 58.805
+            }
+          },
+          "qualified_level_all_trials": "L2",
+          "trial_ids": [
+            "alphafold3-baseline-t01",
+            "alphafold3-baseline-t02",
+            "alphafold3-baseline-t03"
+          ],
+          "trials_complete": 3,
+          "trials_semantically_passed": 3,
+          "trials_submitted": 3,
+          "volume_ownership_contention": {}
+        }
+      }
+    },
+    "boltzgen": {
+      "artifact_bytes_read_floor": 4217544661,
+      "image": {
+        "digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+        "tag": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0-cueq-v3"
+      },
+      "kueue_admitted": true,
+      "namespace": "fs2-models",
+      "variants": {
+        "baseline": {
+          "gpu_device_kind": [
+            "9, 0"
+          ],
+          "image_state": [
+            "node-cached"
+          ],
+          "label": "prepared-node, cold kernel and compile caches",
+          "meets_three_trial_requirement": true,
+          "nodes_used": [
+            "5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
+            "ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9"
+          ],
+          "nvidia_driver_version": [
+            "580.159.04-1ubuntu1"
+          ],
+          "phases_seconds": {
+            "capacity_wait_seconds": {
+              "max": 1.0,
+              "mean": 0.333,
+              "min": 0.0,
+              "n": 3,
+              "p95": 1.0
+            },
+            "compute_to_first_result_seconds": {
+              "max": 41.154,
+              "mean": 38.332,
+              "min": 36.797,
+              "n": 3,
+              "p95": 41.154
+            },
+            "end_to_end_seconds": {
+              "max": 345.0,
+              "mean": 245.667,
+              "min": 194.0,
+              "n": 3,
+              "p95": 345.0
+            },
+            "model_start_seconds": {
+              "max": 345.293,
+              "mean": 245.522,
+              "min": 193.195,
+              "n": 3,
+              "p95": 345.293
+            },
+            "runtime_init_and_artifact_load_seconds": {
+              "max": 3.398,
+              "mean": 3.19,
+              "min": 2.924,
+              "n": 3,
+              "p95": 3.398
+            },
+            "sandbox_and_volume_setup_seconds": {
+              "max": 305.0,
+              "mean": 204.0,
+              "min": 153.0,
+              "n": 3,
+              "p95": 305.0
+            },
+            "schedule_to_semantic_complete_seconds": {
+              "max": 345.0,
+              "mean": 245.333,
+              "min": 193.0,
+              "n": 3,
+              "p95": 345.0
+            },
+            "teardown_seconds": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "n": 3,
+              "p95": 0.0
+            },
+            "time_to_first_semantic_result_seconds": {
+              "max": 44.078,
+              "mean": 41.522,
+              "min": 40.195,
+              "n": 3,
+              "p95": 44.078
+            }
+          },
+          "qualified_level_all_trials": "Off",
+          "trial_ids": [
+            "boltzgen-baseline-t01",
+            "boltzgen-baseline-t02",
+            "boltzgen-baseline-t03"
+          ],
+          "trials_complete": 3,
+          "trials_semantically_passed": 3,
+          "trials_submitted": 3,
+          "volume_ownership_contention": {
+            "boltzgen-baseline-t01": [
+              "boltzgen-baseline-t03"
+            ],
+            "boltzgen-baseline-t03": [
+              "boltzgen-baseline-t01"
+            ]
+          }
+        },
+        "fast-volume": {
+          "gpu_device_kind": [
+            "9, 0"
+          ],
+          "image_state": [
+            "node-cached"
+          ],
+          "label": "prepared-node, no recursive volume ownership pass",
+          "meets_three_trial_requirement": true,
+          "nodes_used": [
+            "5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
+            "ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9"
+          ],
+          "nvidia_driver_version": [
+            "580.159.04-1ubuntu1"
+          ],
+          "phases_seconds": {
+            "capacity_wait_seconds": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "n": 3,
+              "p95": 0.0
+            },
+            "compute_to_first_result_seconds": {
+              "max": 40.585,
+              "mean": 39.603,
+              "min": 37.763,
+              "n": 3,
+              "p95": 40.585
+            },
+            "end_to_end_seconds": {
+              "max": 45.0,
+              "mean": 44.0,
+              "min": 42.0,
+              "n": 3,
+              "p95": 45.0
+            },
+            "model_start_seconds": {
+              "max": 45.872,
+              "mean": 44.554,
+              "min": 42.455,
+              "n": 3,
+              "p95": 45.872
+            },
+            "runtime_init_and_artifact_load_seconds": {
+              "max": 3.692,
+              "mean": 3.284,
+              "min": 2.872,
+              "n": 3,
+              "p95": 3.692
+            },
+            "sandbox_and_volume_setup_seconds": {
+              "max": 2.0,
+              "mean": 1.667,
+              "min": 1.0,
+              "n": 3,
+              "p95": 2.0
+            },
+            "schedule_to_semantic_complete_seconds": {
+              "max": 45.0,
+              "mean": 44.0,
+              "min": 42.0,
+              "n": 3,
+              "p95": 45.0
+            },
+            "teardown_seconds": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "n": 3,
+              "p95": 0.0
+            },
+            "time_to_first_semantic_result_seconds": {
+              "max": 43.872,
+              "mean": 42.887,
+              "min": 41.455,
+              "n": 3,
+              "p95": 43.872
+            }
+          },
+          "qualified_level_all_trials": "L3",
+          "trial_ids": [
+            "boltzgen-fast-volume-t01",
+            "boltzgen-fast-volume-t02",
+            "boltzgen-fast-volume-t03"
+          ],
+          "trials_complete": 3,
+          "trials_semantically_passed": 3,
+          "trials_submitted": 3,
+          "volume_ownership_contention": {}
+        }
+      }
+    },
+    "mosaic": {
+      "artifact_bytes_read_floor": 2293242770,
+      "image": {
+        "digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+        "tag": "70fec525423f5f87156a1a957b4a4048f9f8e676-adapter-v5"
+      },
+      "kueue_admitted": true,
+      "namespace": "fs2-models",
+      "variants": {
+        "baseline": {
+          "gpu_device_kind": [
+            "NVIDIA H100 80GB HBM3"
+          ],
+          "image_state": [
+            "node-cached"
+          ],
+          "label": "prepared-node, cold XLA compilation",
+          "meets_three_trial_requirement": true,
+          "nodes_used": [
+            "5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
+            "ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9"
+          ],
+          "nvidia_driver_version": [
+            "580.159.04-1ubuntu1"
+          ],
+          "phases_seconds": {
+            "capacity_wait_seconds": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "n": 3,
+              "p95": 0.0
+            },
+            "compute_to_first_result_seconds": {
+              "max": 72.071,
+              "mean": 70.464,
+              "min": 69.2,
+              "n": 3,
+              "p95": 72.071
+            },
+            "end_to_end_seconds": {
+              "max": 520.0,
+              "mean": 419.333,
+              "min": 367.0,
+              "n": 3,
+              "p95": 520.0
+            },
+            "model_start_seconds": {
+              "max": 516.486,
+              "mean": 415.81,
+              "min": 363.513,
+              "n": 3,
+              "p95": 516.486
+            },
+            "runtime_init_and_artifact_load_seconds": {
+              "max": 141.366,
+              "mean": 141.346,
+              "min": 141.313,
+              "n": 3,
+              "p95": 141.366
+            },
+            "sandbox_and_volume_setup_seconds": {
+              "max": 305.0,
+              "mean": 204.0,
+              "min": 153.0,
+              "n": 3,
+              "p95": 305.0
+            },
+            "schedule_to_semantic_complete_seconds": {
+              "max": 520.0,
+              "mean": 419.333,
+              "min": 367.0,
+              "n": 3,
+              "p95": 520.0
+            },
+            "teardown_seconds": {
+              "max": 3.57,
+              "mean": 3.524,
+              "min": 3.487,
+              "n": 3,
+              "p95": 3.57
+            },
+            "time_to_first_semantic_result_seconds": {
+              "max": 213.43,
+              "mean": 211.81,
+              "min": 210.513,
+              "n": 3,
+              "p95": 213.43
+            }
+          },
+          "qualified_level_all_trials": "Off",
+          "trial_ids": [
+            "mosaic-baseline-t01",
+            "mosaic-baseline-t02",
+            "mosaic-baseline-t03"
+          ],
+          "trials_complete": 3,
+          "trials_semantically_passed": 3,
+          "trials_submitted": 3,
+          "volume_ownership_contention": {
+            "mosaic-baseline-t01": [
+              "mosaic-baseline-t03"
+            ],
+            "mosaic-baseline-t03": [
+              "mosaic-baseline-t01"
+            ]
+          }
+        },
+        "fast-volume": {
+          "gpu_device_kind": [
+            "NVIDIA H100 80GB HBM3"
+          ],
+          "image_state": [
+            "node-cached"
+          ],
+          "label": "prepared-node, no recursive volume ownership pass",
+          "meets_three_trial_requirement": true,
+          "nodes_used": [
+            "5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
+            "ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9"
+          ],
+          "nvidia_driver_version": [
+            "580.159.04-1ubuntu1"
+          ],
+          "phases_seconds": {
+            "capacity_wait_seconds": {
+              "max": 1.0,
+              "mean": 0.333,
+              "min": 0.0,
+              "n": 3,
+              "p95": 1.0
+            },
+            "compute_to_first_result_seconds": {
+              "max": 73.22,
+              "mean": 72.052,
+              "min": 71.193,
+              "n": 3,
+              "p95": 73.22
+            },
+            "end_to_end_seconds": {
+              "max": 371.0,
+              "mean": 275.0,
+              "min": 223.0,
+              "n": 3,
+              "p95": 371.0
+            },
+            "model_start_seconds": {
+              "max": 367.377,
+              "mean": 271.533,
+              "min": 219.088,
+              "n": 3,
+              "p95": 367.377
+            },
+            "runtime_init_and_artifact_load_seconds": {
+              "max": 152.915,
+              "mean": 146.814,
+              "min": 142.183,
+              "n": 3,
+              "p95": 152.915
+            },
+            "sandbox_and_volume_setup_seconds": {
+              "max": 154.0,
+              "mean": 52.667,
+              "min": 2.0,
+              "n": 3,
+              "p95": 154.0
+            },
+            "schedule_to_semantic_complete_seconds": {
+              "max": 371.0,
+              "mean": 274.667,
+              "min": 222.0,
+              "n": 3,
+              "p95": 371.0
+            },
+            "teardown_seconds": {
+              "max": 3.623,
+              "mean": 3.134,
+              "min": 2.866,
+              "n": 3,
+              "p95": 3.623
+            },
+            "time_to_first_semantic_result_seconds": {
+              "max": 226.134,
+              "mean": 218.866,
+              "min": 213.377,
+              "n": 3,
+              "p95": 226.134
+            }
+          },
+          "qualified_level_all_trials": "Off",
+          "steady_state": {
+            "excluded": [
+              "mosaic-fast-volume-t01"
+            ],
+            "excluded_detail": [
+              {
+                "own_recursive_pass": false,
+                "sandbox_and_volume_setup_seconds": 154.0,
+                "stalled_by_concurrent_trials": [
+                  "boltzgen-baseline-t03"
+                ],
+                "trial_id": "mosaic-fast-volume-t01"
+              }
+            ],
+            "exclusion_reason": "volume setup in these trials was serialised behind a recursive fsGroup ownership pass over the shared claim, either the trial's own pass or a concurrent trial's pass on the same node and claim. Under fsGroupChangePolicy OnRootMismatch that cost is paid once per claim rather than on every start, and it disappears entirely once no Pod on the node still uses the default Always policy.",
+            "model_start_seconds": {
+              "max": 228.134,
+              "mean": 223.611,
+              "min": 219.088,
+              "n": 2,
+              "p95": 228.134
+            },
+            "qualified_level": "L1",
+            "trials": [
+              "mosaic-fast-volume-t02",
+              "mosaic-fast-volume-t03"
+            ]
+          },
+          "trial_ids": [
+            "mosaic-fast-volume-t01",
+            "mosaic-fast-volume-t02",
+            "mosaic-fast-volume-t03"
+          ],
+          "trials_complete": 3,
+          "trials_semantically_passed": 3,
+          "trials_submitted": 3,
+          "volume_ownership_contention": {
+            "mosaic-fast-volume-t01": [
+              "boltzgen-baseline-t03"
+            ]
+          }
+        },
+        "warm-jit": {
+          "compilation": {
+            "first_step_seconds": {
+              "mosaic-warm-jit-t01": 85.34,
+              "mosaic-warm-jit-t02": 8.76,
+              "mosaic-warm-jit-t03": 8.24,
+              "mosaic-warm-jit-t04": 8.35
+            },
+            "one_time_compilation": {
+              "model_start_seconds": {
+                "max": 217.099,
+                "mean": 217.099,
+                "min": 217.099,
+                "n": 1,
+                "p95": 217.099
+              },
+              "qualified_level": "L1",
+              "trials": [
+                "mosaic-warm-jit-t01"
+              ]
+            },
+            "rule": "a trial whose first optimizer step is at least 4x the cohort's fastest first step had to compile; the rest reused cached executables",
+            "steady_state": {
+              "model_start_seconds": {
+                "max": 76.845,
+                "mean": 75.587,
+                "min": 74.435,
+                "n": 3,
+                "p95": 76.845
+              },
+              "qualified_level": "L2",
+              "trials": [
+                "mosaic-warm-jit-t02",
+                "mosaic-warm-jit-t03",
+                "mosaic-warm-jit-t04"
+              ]
+            }
+          },
+          "gpu_device_kind": [
+            "NVIDIA H100 80GB HBM3"
+          ],
+          "image_state": [
+            "node-cached"
+          ],
+          "label": "prepared-node, ownership remediated, persistent XLA compilation cache",
+          "meets_three_trial_requirement": true,
+          "nodes_used": [
+            "5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
+            "ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9"
+          ],
+          "nvidia_driver_version": [
+            "580.159.04-1ubuntu1"
+          ],
+          "phases_seconds": {
+            "capacity_wait_seconds": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "n": 4,
+              "p95": 0.0
+            },
+            "compute_to_first_result_seconds": {
+              "max": 75.295,
+              "mean": 29.679,
+              "min": 14.278,
+              "n": 4,
+              "p95": 75.295
+            },
+            "end_to_end_seconds": {
+              "max": 221.0,
+              "mean": 113.75,
+              "min": 77.0,
+              "n": 4,
+              "p95": 221.0
+            },
+            "model_start_seconds": {
+              "max": 217.099,
+              "mean": 110.965,
+              "min": 74.435,
+              "n": 4,
+              "p95": 217.099
+            },
+            "runtime_init_and_artifact_load_seconds": {
+              "max": 140.804,
+              "mean": 79.785,
+              "min": 58.044,
+              "n": 4,
+              "p95": 140.804
+            },
+            "sandbox_and_volume_setup_seconds": {
+              "max": 2.0,
+              "mean": 1.5,
+              "min": 1.0,
+              "n": 4,
+              "p95": 2.0
+            },
+            "schedule_to_semantic_complete_seconds": {
+              "max": 221.0,
+              "mean": 113.75,
+              "min": 77.0,
+              "n": 4,
+              "p95": 221.0
+            },
+            "teardown_seconds": {
+              "max": 3.901,
+              "mean": 2.785,
+              "min": 2.155,
+              "n": 4,
+              "p95": 3.901
+            },
+            "time_to_first_semantic_result_seconds": {
+              "max": 216.099,
+              "mean": 109.465,
+              "min": 72.435,
+              "n": 4,
+              "p95": 216.099
+            }
+          },
+          "qualified_level_all_trials": "L1",
+          "trial_ids": [
+            "mosaic-warm-jit-t01",
+            "mosaic-warm-jit-t02",
+            "mosaic-warm-jit-t03",
+            "mosaic-warm-jit-t04"
+          ],
+          "trials_complete": 4,
+          "trials_semantically_passed": 4,
+          "trials_submitted": 4,
+          "volume_ownership_contention": {}
+        }
+      }
+    }
+  },
+  "owner_task": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+  "placement": {
+    "capacity_source": "capacity-block",
+    "capacity_type": "regular",
+    "node_selector": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+      "accelerator.fs2.nebius/pool-id": "h100-reserved-8x"
+    },
+    "rationale": "The preemptible h100-1x pool that carried the original one-off Mosaic qualification is at zero nodes for this campaign. Only the two always-hot capacity-block nodes advertise H100 GPUs, so every trial is pinned to the reserved-8x flavor that Kueue actually covers.",
+    "tolerations": [
+      {
+        "effect": "NoSchedule",
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference"
+      }
+    ]
+  },
+  "schema": "fs2.nebius.ai/fast-start-live-campaign-summary/v1",
+  "totals": {
+    "complete": 19,
+    "semantically_passed": 19,
+    "trials": 19
+  }
+}

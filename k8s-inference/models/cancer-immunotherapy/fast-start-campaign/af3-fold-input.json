@@ -1,0 +1,17 @@
+{
+  "dialect": "alphafold3",
+  "version": 2,
+  "name": "fs2_faststart_af3_minimal",
+  "modelSeeds": [1],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MKTIIALSYIFCLVFA",
+        "unpairedMsa": ">query\nMKTIIALSYIFCLVFA\n",
+        "pairedMsa": "",
+        "templates": []
+      }
+    }
+  ]
+}

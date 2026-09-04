@@ -463,10 +463,10 @@ deployment = {
   #   enabled        = false
   #   writes_enabled = false
   #   namespace      = "fs2-models"
-  #   execution_map = {
-  #     schema = "fs2-serve.nebius.ai/scientific-execution-map/v3"
-  #     models = [] # Generated model/stage bindings; required when enabled.
-  #   }
+  #   # execution_map is intentionally omitted. Terraform loads the exact
+  #   # generated catalog/runtime/contracts/scientific-execution-map.json
+  #   # contract. Advanced overrides must be regenerated with matching
+  #   # committed workload-profile qualification and execution identities.
   #   workers                  = 2
   #   poll_seconds             = "0.25"
   #   lease_seconds            = "30"

@@ -102,6 +102,22 @@ def test_verified_chart_archive_is_the_bytes_helm_installs() -> None:
         assert "CHART_ARCHIVE" in script
 
 
+def test_jobset_chart_materializer_remains_plan_time_during_namespace_changes() -> None:
+    """Namespace ordering must not defer the child module's external data source."""
+
+    foundation = (ROOT / "stages/foundation/releases.tf").read_text(encoding="utf-8")
+    jobset_module = foundation.split('module "jobset_controller" {', 1)[1].split("\n}", 1)[0]
+
+    # The resource-derived input keeps consumers behind namespace creation.
+    assert (
+        'namespace          = kubernetes_namespace_v1.platform["jobset-system"].metadata[0].name'
+        in jobset_module
+    )
+    # A whole-module dependency also captures data.external.chart, moving its
+    # read to apply and presenting Helm with an unknown/empty chart at plan.
+    assert "  depends_on =" not in jobset_module
+
+
 def test_chart_materializer_is_content_addressed_and_idempotent() -> None:
     """A rerun with unchanged bytes does no work, and drift is refused."""
 

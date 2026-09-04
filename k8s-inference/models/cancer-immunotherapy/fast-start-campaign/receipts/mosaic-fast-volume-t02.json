@@ -1,0 +1,453 @@
+{
+  "artifact_bytes_read_floor": 2293242770,
+  "campaign_id": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+  "cluster": {
+    "cluster_queue": "inference-accelerators",
+    "context": "k8s-inference-h100",
+    "kueue_admitted": true,
+    "local_queue": "inference-models",
+    "namespace": "fs2-models",
+    "project_id": "project-e00rene",
+    "region": "eu-north1"
+  },
+  "external_artifacts": [
+    {
+      "bytes": 2286561469,
+      "id": "boltz2-conf",
+      "path": "/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt",
+      "sha256": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
+      "verified_by_runtime": true
+    },
+    {
+      "bytes": 6681301,
+      "id": "proteinmpnn-v-48-020",
+      "path": "/opt/fs2/artifacts/mosaic/proteinmpnn/v_48_020.pt",
+      "sha256": "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
+      "verified_by_runtime": true
+    },
+    {
+      "entries": 45227,
+      "id": "boltz2-mols",
+      "kind": "directory",
+      "note": "the runtime checks directory presence; the archive identity is pinned in the image lock",
+      "path": "/opt/fs2/artifacts/mosaic/boltz/mols",
+      "verified_by_runtime": false
+    }
+  ],
+  "gpu_telemetry": {
+    "concurrent_campaign_trials_on_node": [
+      "boltzgen-baseline-t02",
+      "mosaic-fast-volume-t03"
+    ],
+    "devices": [
+      {
+        "framebuffer_used_mib": {
+          "max": 0.0,
+          "mean": 0.0,
+          "min": 0.0,
+          "samples": 45
+        },
+        "gpu_index": "0",
+        "gpu_utilization_percent": {
+          "max": 0.0,
+          "mean": 0.0,
+          "min": 0.0,
+          "samples": 45
+        },
+        "model_name": "NVIDIA H100 80GB HBM3",
+        "pci_bus_id": "00000000:8D:00.0",
+        "power_usage_watts": {
+          "max": 69.216,
+          "mean": 69.005,
+          "min": 68.836,
+          "samples": 45
+        },
+        "sm_clock_mhz": {
+          "max": 345.0,
+          "mean": 345.0,
+          "min": 345.0,
+          "samples": 45
+        },
+        "uuid": "GPU-52f5e5da-cfdc-5e42-f8eb-84dec2969f54"
+      },
+      {
+        "framebuffer_used_mib": {
+          "max": 61760.0,
+          "mean": 47878.444,
+          "min": 0.0,
+          "samples": 45
+        },
+        "gpu_index": "1",
+        "gpu_utilization_percent": {
+          "max": 85.0,
+          "mean": 3.533,
+          "min": 0.0,
+          "samples": 45
+        },
+        "model_name": "NVIDIA H100 80GB HBM3",
+        "pci_bus_id": "00000000:91:00.0",
+        "power_usage_watts": {
+          "max": 317.844,
+          "mean": 113.918,
+          "min": 70.742,
+          "samples": 45
+        },
+        "sm_clock_mhz": {
+          "max": 1980.0,
+          "mean": 1616.667,
+          "min": 345.0,
+          "samples": 45
+        },
+        "uuid": "GPU-b1a62569-6a84-851e-8340-1a31f1a20de1"
+      },
+      {
+        "framebuffer_used_mib": {
+          "max": 66984.0,
+          "mean": 66984.0,
+          "min": 66984.0,
+          "samples": 45
+        },
+        "gpu_index": "2",
+        "gpu_utilization_percent": {
+          "max": 0.0,
+          "mean": 0.0,
+          "min": 0.0,
+          "samples": 45
+        },
+        "model_name": "NVIDIA H100 80GB HBM3",
+        "pci_bus_id": "00000000:95:00.0",
+        "power_usage_watts": {
+          "max": 126.362,
+          "mean": 126.243,
+          "min": 126.132,
+          "samples": 45
+        },
+        "sm_clock_mhz": {
+          "max": 1980.0,
+          "mean": 1980.0,
+          "min": 1980.0,
+          "samples": 45
+        },
+        "uuid": "GPU-2fcd2646-4580-e5db-69a5-b2219ad0e345"
+      },
+      {
+        "framebuffer_used_mib": {
+          "max": 0.0,
+          "mean": 0.0,
+          "min": 0.0,
+          "samples": 45
+        },
+        "gpu_index": "3",
+        "gpu_utilization_percent": {
+          "max": 0.0,
+          "mean": 0.0,
+          "min": 0.0,
+          "samples": 45
+        },
+        "model_name": "NVIDIA H100 80GB HBM3",
+        "pci_bus_id": "00000000:99:00.0",
+        "power_usage_watts": {
+          "max": 74.011,
+          "mean": 73.951,
+          "min": 73.863,
+          "samples": 45
+        },
+        "sm_clock_mhz": {
+          "max": 345.0,
+          "mean": 345.0,
+          "min": 345.0,
+          "samples": 45
+        },
+        "uuid": "GPU-56941528-f485-5237-c98a-08e1f253a9c3"
+      },
+      {
+        "framebuffer_used_mib": {
+          "max": 0.0,
+          "mean": 0.0,
+          "min": 0.0,
+          "samples": 45
+        },
+        "gpu_index": "4",
+        "gpu_utilization_percent": {
+          "max": 0.0,
+          "mean": 0.0,
+          "min": 0.0,
+          "samples": 45
+        },
+        "model_name": "NVIDIA H100 80GB HBM3",
+        "pci_bus_id": "00000000:AB:00.0",
+        "power_usage_watts": {
+          "max": 71.461,
+          "mean": 71.376,
+          "min": 71.217,
+          "samples": 45
+        },
+        "sm_clock_mhz": {
+          "max": 345.0,
+          "mean": 345.0,
+          "min": 345.0,
+          "samples": 45
+        },
+        "uuid": "GPU-644f23ac-4f00-aea9-7b7d-a57717848200"
+      },
+      {
+        "framebuffer_used_mib": {
+          "max": 0.0,
+          "mean": 0.0,
+          "min": 0.0,
+          "samples": 45
+        },
+        "gpu_index": "5",
+        "gpu_utilization_percent": {
+          "max": 0.0,
+          "mean": 0.0,
+          "min": 0.0,
+          "samples": 45
+        },
+        "model_name": "NVIDIA H100 80GB HBM3",
+        "pci_bus_id": "00000000:AF:00.0",
+        "power_usage_watts": {
+          "max": 71.799,
+          "mean": 71.757,
+          "min": 71.699,
+          "samples": 45
+        },
+        "sm_clock_mhz": {
+          "max": 345.0,
+          "mean": 345.0,
+          "min": 345.0,
+          "samples": 45
+        },
+        "uuid": "GPU-d0f8bd7b-ca08-783a-56de-6dbaa54932c7"
+      },
+      {
+        "framebuffer_used_mib": {
+          "max": 0.0,
+          "mean": 0.0,
+          "min": 0.0,
+          "samples": 12
+        },
+        "gpu_index": "6",
+        "gpu_utilization_percent": {
+          "max": 0.0,
+          "mean": 0.0,
+          "min": 0.0,
+          "samples": 12
+        },
+        "model_name": "NVIDIA H100 80GB HBM3",
+        "pci_bus_id": "00000000:B3:00.0",
+        "power_usage_watts": {
+          "max": 71.133,
+          "mean": 71.074,
+          "min": 71.014,
+          "samples": 12
+        },
+        "sm_clock_mhz": {
+          "max": 345.0,
+          "mean": 345.0,
+          "min": 345.0,
+          "samples": 12
+        },
+        "uuid": "GPU-facf5f91-1954-6615-4fbf-418efd69bd0c"
+      },
+      {
+        "framebuffer_used_mib": {
+          "max": 0.0,
+          "mean": 0.0,
+          "min": 0.0,
+          "samples": 1
+        },
+        "gpu_index": "7",
+        "gpu_utilization_percent": {
+          "max": 0.0,
+          "mean": 0.0,
+          "min": 0.0,
+          "samples": 1
+        },
+        "model_name": "NVIDIA H100 80GB HBM3",
+        "pci_bus_id": "00000000:B7:00.0",
+        "power_usage_watts": {
+          "max": 70.218,
+          "mean": 70.218,
+          "min": 70.218,
+          "samples": 1
+        },
+        "sm_clock_mhz": {
+          "max": 345.0,
+          "mean": 345.0,
+          "min": 345.0,
+          "samples": 1
+        },
+        "uuid": "GPU-eb9c2898-bf6f-83b6-b76c-2c3b5b02500c"
+      }
+    ],
+    "devices_on_node": 8,
+    "devices_with_nonzero_utilization": 1,
+    "node_hostname_sha256": "ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9",
+    "scope": "node-scoped",
+    "scope_note": "the exporter publishes no Pod label, so these series describe every GPU on the node during the trial window rather than the single device this trial held",
+    "source": "DCGM exporter scraped by the cluster Prometheus",
+    "window": {
+      "from": "2026-09-03T03:34:16Z",
+      "to": "2026-09-03T03:37:56Z"
+    }
+  },
+  "image": {
+    "digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+    "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+    "source_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+    "tag": "70fec525423f5f87156a1a957b4a4048f9f8e676-adapter-v5"
+  },
+  "jit_cache": "per-pod-ephemeral",
+  "job": "fsc-mosaic-fast-volume-t02-20bd4e7a18dc",
+  "job_state": "complete",
+  "job_uid": "1ec9d0ff-76f6-4a40-a205-be0896137a0c",
+  "kueue_workload": "job-fsc-mosaic-fast-volume-t02-20bd4e7a18dc-69622",
+  "measured": {
+    "assigned_level": "L1",
+    "boundaries": {
+      "admitted_at": "2026-09-03T03:34:14Z",
+      "container_finished_at": "2026-09-03T03:37:56Z",
+      "container_started_at": "2026-09-03T03:34:16Z",
+      "first_log_at": "2026-09-03T03:34:35.087498Z",
+      "first_progress_at": "2026-09-03T03:36:41.344399Z",
+      "first_semantic_result_at": "2026-09-03T03:37:53.087815Z",
+      "last_progress_at": "2026-09-03T03:36:46.257073Z",
+      "pod_scheduled_at": "2026-09-03T03:34:14Z",
+      "quota_reserved_at": "2026-09-03T03:34:14Z",
+      "submitted_at": "2026-09-03T03:34:13Z"
+    },
+    "container_id": "containerd://5e288177a23a5f0fcf83409ff058c375ad94abcec63219118a7a95b8ae040f60",
+    "exit_code": 0,
+    "gpu_device_kind_reported_by_runtime": "NVIDIA H100 80GB HBM3",
+    "image": {
+      "cached_on_node": true,
+      "image_bytes": null,
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69\" already present on machine and can be accessed by the pod",
+      "pull_bytes_per_second": null,
+      "pull_seconds": null,
+      "pulled_at": "2026-09-03T03:34:14Z",
+      "pulling_started_at": null,
+      "state": "node-cached"
+    },
+    "image_id_on_node": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+    "phases_seconds": {
+      "capacity_wait_seconds": 1.0,
+      "compute_to_first_result_seconds": 71.743,
+      "container_seconds": 220.0,
+      "end_to_end_seconds": 223.0,
+      "model_start_seconds": 219.088,
+      "placement_seconds": 0.0,
+      "queue_admission_seconds": 1.0,
+      "runtime_init_and_artifact_load_seconds": 145.344,
+      "sandbox_and_volume_setup_seconds": 2.0,
+      "schedule_to_semantic_complete_seconds": 222.0,
+      "teardown_seconds": 2.912,
+      "time_to_first_semantic_result_seconds": 217.088
+    },
+    "precision_notes": [],
+    "runtime_reported": {},
+    "throughput": {
+      "observed_progress_lines": 20,
+      "progress_lines_per_second": 4.0708,
+      "runtime_reported_step_seconds_count": 20,
+      "runtime_reported_step_seconds_first": 89.77,
+      "runtime_reported_step_seconds_max": 89.77,
+      "runtime_reported_step_seconds_mean": 4.734,
+      "runtime_reported_step_seconds_min": 0.25,
+      "span_seconds": 4.913
+    },
+    "unavailable": [],
+    "volume_ownership": {
+      "event_count": 0,
+      "first_reported_at": null,
+      "last_reported_at": null,
+      "recursive_fsgroup_pass_observed": false,
+      "sample_message": null
+    }
+  },
+  "mechanism_evidence": {
+    "gpu_process_snapshot": {
+      "claim": "none",
+      "proof": "node label snapshot.fs2.nebius/eligible=false on both H100 capacity-block nodes; no CRIU/cuda-checkpoint device state was captured or restored in this campaign",
+      "state": "unsupported"
+    },
+    "host_ram_standby": {
+      "reason": "batch stages terminate their process at the end of each trial, so no host-RAM standby process survives between trials",
+      "state": "not-exercised"
+    },
+    "hot_replica": {
+      "reason": "these scientific runtimes are batch stages with no long-lived Service endpoint in this campaign",
+      "state": "not-applicable"
+    },
+    "local_nvme": {
+      "proof": "node label local-nvme.fs2.nebius/eligible=false on both H100 capacity-block nodes",
+      "state": "unavailable"
+    }
+  },
+  "model_id": "mosaic",
+  "node": {
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "capacity_source": "capacity-block",
+    "capacity_type": "regular",
+    "container_runtime": "containerd://2.2.6",
+    "cuda_version": "13.0.3-1",
+    "gpu_name": "H100",
+    "instance_type": "gpu-h100-sxm",
+    "kernel": "6.11.0-1016-nvidia",
+    "kubelet_version": "v1.35.6",
+    "local_nvme_eligible": "false",
+    "node_name_sha256": "ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9",
+    "node_uid": "5700ea19-0b46-4020-afa5-c8f1a105dcdd",
+    "nvidia_driver_version": "580.159.04-1ubuntu1",
+    "pool_id": "h100-reserved-8x",
+    "snapshot_eligible": "false"
+  },
+  "owner_task": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+  "placement": {
+    "capacity_source": "capacity-block",
+    "gpus_requested": "1",
+    "node_selector": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+      "accelerator.fs2.nebius/pool-id": "h100-reserved-8x"
+    }
+  },
+  "pod": "fsc-mosaic-fast-volume-t02-20bd4e7a18dc-p7cgr",
+  "pod_uid": "b3f721b2-702a-47eb-9479-4b68ee22dbff",
+  "schema": "fs2.nebius.ai/fast-start-live-trial-receipt/v1",
+  "semantic_validation": {
+    "candidate": {
+      "iptm": 0.8587456345558167,
+      "mean_plddt": 0.9284003973007202,
+      "objective": 12.36087417602539,
+      "sequence": "VGLALYCLWPYLFDGDAEEHHDEEALSEGKLPNEAFLAIG"
+    },
+    "checks": {
+      "backend_id_matches": true,
+      "iptm_above_trivial": true,
+      "iptm_in_unit_range": true,
+      "no_placeholder_residues": true,
+      "plddt_in_unit_range": true,
+      "sequence_length_matches_structure": true,
+      "shard_status_succeeded": true,
+      "source_revision_matches": true
+    },
+    "gate": "mosaic_binder",
+    "reused_validator": "models/cancer-immunotherapy/runtime-images/mosaic/qualification/validate_result.py",
+    "status": "passed",
+    "structure": {
+      "atoms": 200,
+      "bytes": 16204,
+      "distinct_residue_types": 16,
+      "dominant_residue_fraction": 0.175,
+      "max_extent_angstrom": 29.737,
+      "residues": 40,
+      "sha256": "3e58ed640cf659d196ba5a9bfcac459e7be8ba490248b479a5beff2ca2fd4054",
+      "three_letter_length": 40
+    }
+  },
+  "trial_id": "mosaic-fast-volume-t02",
+  "trial_index": 2,
+  "variant": "fast-volume",
+  "variant_label": "prepared-node, no recursive volume ownership pass"
+}

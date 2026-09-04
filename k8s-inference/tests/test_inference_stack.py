@@ -245,10 +245,9 @@ def regional_dynamic(run_root: Path) -> dict:
 class InferenceStackTests(unittest.TestCase):
     def test_workloads_plan_refuses_execution_map_drift_before_terraform(self) -> None:
         configuration = contract()
-        expected_map = {
-            "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
-            "models": [{"model_id": "boltzgen", "variant_id": "upstream-v0-3-2"}],
-        }
+        expected_map = json.loads(
+            (DEPLOY_ROOT / "catalog/runtime/contracts/scientific-execution-map.json").read_text(encoding="utf-8")
+        )
         configuration["stages"]["workloads"]["scientific_batch"] = {
             "enabled": True,
             "execution_map": expected_map,

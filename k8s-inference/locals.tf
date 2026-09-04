@@ -5,6 +5,36 @@ locals {
   pool_profile_contract    = jsondecode(file("${path.module}/catalog/profiles/accelerator-pool-profiles.json"))
   model_profile_contract   = jsondecode(file("${path.module}/catalog/profiles/model-profiles.json"))
 
+  # Scientific execution is generated with the source catalog and checked in as
+  # one reviewed object. A customer enabling the feature should not have to copy
+  # that generated object into terraform.tfvars. The optional input remains an
+  # advanced override, but every consumer below receives this one effective
+  # value without selecting or rebuilding any of its fields.
+  committed_scientific_execution_map = jsondecode(file(
+    "${path.module}/catalog/runtime/contracts/scientific-execution-map.json"
+  ))
+  scientific_workload_profile_contract = jsondecode(file(
+    "${path.module}/catalog/runtime/contracts/scientific-workload-profiles.json"
+  ))
+  scientific_workload_profiles_by_model_id = {
+    for profile in local.scientific_workload_profile_contract.profiles :
+    profile.model_id => profile
+  }
+  scientific_execution_map = (
+    var.deployment.scientific_batch.execution_map == null ?
+    local.committed_scientific_execution_map :
+    var.deployment.scientific_batch.execution_map
+  )
+  scientific_execution_map_source = (
+    var.deployment.scientific_batch.execution_map == null ?
+    "catalog/runtime/contracts/scientific-execution-map.json" :
+    "deployment.scientific_batch.execution_map"
+  )
+  # Helm's scientific-execution-map template hashes the bytes emitted by
+  # `toJson`. For this JSON-compatible value those bytes are Terraform's
+  # `jsonencode` bytes too; the Helm test renders and compares them directly.
+  scientific_execution_map_sha256 = sha256(jsonencode(local.scientific_execution_map))
+
   capacity_profile    = var.deployment.profiles.capacity
   accelerator_profile = coalesce(var.deployment.profiles.accelerators, local.capacity_profile)
   model_profile       = var.deployment.profiles.models
@@ -1042,7 +1072,7 @@ locals {
       enabled                  = var.deployment.scientific_batch.enabled
       writes_enabled           = var.deployment.scientific_batch.writes_enabled
       namespace                = var.deployment.scientific_batch.namespace
-      execution_map            = var.deployment.scientific_batch.execution_map
+      execution_map            = local.scientific_execution_map
       workers                  = var.deployment.scientific_batch.workers
       poll_seconds             = var.deployment.scientific_batch.poll_seconds
       lease_seconds            = var.deployment.scientific_batch.lease_seconds

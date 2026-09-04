@@ -225,7 +225,9 @@ module "jobset_controller" {
   kubernetes_version = var.jobset.kubernetes_version
   labels             = local.common_labels
 
-  depends_on = [kubernetes_namespace_v1.platform["jobset-system"]]
+  # The resource-derived namespace input keeps its consumers behind namespace
+  # creation. A module-wide depends_on would also defer the plan-time chart
+  # materializer, leaving helm_release.jobset.chart unknown during plan.
 }
 
 # KEDA is installed once by the foundation. Static workloads leave it dormant;

@@ -1,0 +1,4 @@
+# The repository root ignores **/*.log as build noise. These files are not build
+# noise: each one is the timestamped container log a trial's phase boundaries
+# were derived from, and without it a receipt cannot be re-checked.
+!*.log
