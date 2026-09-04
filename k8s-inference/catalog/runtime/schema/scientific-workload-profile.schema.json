@@ -412,6 +412,86 @@
           }
         }
       }
+    },
+    "runtime_artifacts": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "description": "Model material this profile requires at runtime, and the exact content identity the deployment's localization must prove. verify_runtime_artifacts refuses to admit a run whose execution-map localization disagrees with any entry here, so a profile cannot silently run against different weights than it was qualified on.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "artifact_id",
+          "content_identity"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "content_identity": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "digest_sha256"
+            ],
+            "properties": {
+              "digest_sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          },
+          "file_manifest": {
+            "type": "array",
+            "maxItems": 4096,
+            "description": "Exact per-file evidence for a small artifact. Left empty for a tree-localized artifact, whose identity is the aggregate inventory digest instead.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256",
+                "size_bytes"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "size_bytes": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required_files": {
+            "type": "array",
+            "maxItems": 4096,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            }
+          },
+          "readiness_manifest_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
     }
   },
   "allOf": [

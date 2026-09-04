@@ -217,7 +217,29 @@
         "scheduler_eligibility_receipt_sha256": null,
         "execution_map_sha256": "682f8863a152c1e9cd5645103cac9370c3f4f7ba0d0c5c8f8f6de1ad14671a1e",
         "qualified_at": "2026-09-03T07:34:56Z"
-      }
+      },
+      "runtime_artifacts": [
+        {
+          "artifact_id": "boltzgen-checkpoints",
+          "content_identity": {
+            "digest_sha256": "ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+            "size_bytes": 10234382415
+          },
+          "file_manifest": [],
+          "required_files": [],
+          "readiness_manifest_sha256": "723ada21585427b7cec08ddeccbba3279e74bd3c4660c8d12cc0d33e3f36a44f"
+        },
+        {
+          "artifact_id": "boltzgen-inference-molecules",
+          "content_identity": {
+            "digest_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+            "size_bytes": 1820698819
+          },
+          "file_manifest": [],
+          "required_files": [],
+          "readiness_manifest_sha256": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4"
+        }
+      ]
     },
     {
       "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
