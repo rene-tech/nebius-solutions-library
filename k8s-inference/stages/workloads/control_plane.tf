@@ -19,6 +19,12 @@ locals {
   ]))
   control_plane_overrides = {
     replicaCount = 2
+    autoscaling = {
+      enabled                        = var.control_plane_autoscaling.enabled
+      minReplicas                    = var.control_plane_autoscaling.min_replicas
+      maxReplicas                    = var.control_plane_autoscaling.max_replicas
+      targetCPUUtilizationPercentage = var.control_plane_autoscaling.target_cpu_utilization_percentage
+    }
     image = {
       repository = var.control_plane_image.repository
       digest     = var.control_plane_image.digest

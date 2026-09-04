@@ -1126,7 +1126,8 @@ locals {
       repository = var.deployment.applications.control_plane.repository
       digest     = var.deployment.applications.control_plane.digest
     }
-    catalog_rollout_digest = var.deployment.applications.control_plane.catalog_rollout_digest
+    control_plane_autoscaling = var.deployment.applications.control_plane.autoscaling
+    catalog_rollout_digest    = var.deployment.applications.control_plane.catalog_rollout_digest
     admin_console = {
       image = {
         repository = var.deployment.applications.admin_console.repository

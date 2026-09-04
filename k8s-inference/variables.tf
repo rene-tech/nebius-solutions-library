@@ -611,6 +611,12 @@ variable "deployment" {
         repository             = string
         digest                 = string
         catalog_rollout_digest = string
+        autoscaling = optional(object({
+          enabled                           = optional(bool, true)
+          min_replicas                      = optional(number, 2)
+          max_replicas                      = optional(number, 8)
+          target_cpu_utilization_percentage = optional(number, 70)
+        }), {})
       })
       admin_console = object({
         repository = string
@@ -906,6 +912,14 @@ variable "deployment" {
       can(regex("^[a-zA-Z0-9._:/-]+$", var.deployment.applications.control_plane.repository)) &&
       can(regex("^sha256:[0-9a-f]{64}$", var.deployment.applications.control_plane.digest)) &&
       can(regex("^sha256:[0-9a-f]{64}$", var.deployment.applications.control_plane.catalog_rollout_digest)) &&
+      floor(var.deployment.applications.control_plane.autoscaling.min_replicas) == var.deployment.applications.control_plane.autoscaling.min_replicas &&
+      floor(var.deployment.applications.control_plane.autoscaling.max_replicas) == var.deployment.applications.control_plane.autoscaling.max_replicas &&
+      floor(var.deployment.applications.control_plane.autoscaling.target_cpu_utilization_percentage) == var.deployment.applications.control_plane.autoscaling.target_cpu_utilization_percentage &&
+      var.deployment.applications.control_plane.autoscaling.min_replicas >= 1 &&
+      var.deployment.applications.control_plane.autoscaling.max_replicas >= var.deployment.applications.control_plane.autoscaling.min_replicas &&
+      var.deployment.applications.control_plane.autoscaling.max_replicas <= 64 &&
+      var.deployment.applications.control_plane.autoscaling.target_cpu_utilization_percentage >= 1 &&
+      var.deployment.applications.control_plane.autoscaling.target_cpu_utilization_percentage <= 100 &&
       can(regex("^[a-zA-Z0-9._:/-]+$", var.deployment.applications.admin_console.repository)) &&
       can(regex("^sha256:[0-9a-f]{64}$", var.deployment.applications.admin_console.digest)) &&
       can(regex("^[0-9a-f]{40}$", var.deployment.applications.admin_console.provenance.source_commit)) &&
@@ -915,7 +929,7 @@ variable "deployment" {
       floor(var.deployment.applications.admin_console.replica_count) == var.deployment.applications.admin_console.replica_count &&
       var.deployment.applications.admin_console.replica_count >= 1
     )
-    error_message = "applications must provide immutable control-plane and admin-console OCI repositories/digests plus provenance."
+    error_message = "applications must provide immutable control-plane and admin-console OCI repositories/digests plus provenance, and a bounded whole-number control-plane autoscaling envelope."
   }
 
   validation {

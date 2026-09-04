@@ -530,6 +530,13 @@ deployment = {
       repository             = "registry.example.invalid/k8s-inference/control-plane"
       digest                 = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
       catalog_rollout_digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      # Size this envelope to the schedulable CPU capacity of the system pool.
+      autoscaling = {
+        enabled                           = true
+        min_replicas                      = 2
+        max_replicas                      = 8
+        target_cpu_utilization_percentage = 70
+      }
     }
     admin_console = {
       repository = "registry.example.invalid/k8s-inference/admin-console"

@@ -1418,6 +1418,36 @@ variable "control_plane_image" {
   }
 }
 
+variable "control_plane_autoscaling" {
+  description = "Customer-configurable HPA envelope for the control-plane API. Keep max_replicas within schedulable system-node capacity."
+  type = object({
+    enabled                           = bool
+    min_replicas                      = number
+    max_replicas                      = number
+    target_cpu_utilization_percentage = number
+  })
+  default = {
+    enabled                           = true
+    min_replicas                      = 2
+    max_replicas                      = 8
+    target_cpu_utilization_percentage = 70
+  }
+
+  validation {
+    condition = (
+      floor(var.control_plane_autoscaling.min_replicas) == var.control_plane_autoscaling.min_replicas &&
+      floor(var.control_plane_autoscaling.max_replicas) == var.control_plane_autoscaling.max_replicas &&
+      floor(var.control_plane_autoscaling.target_cpu_utilization_percentage) == var.control_plane_autoscaling.target_cpu_utilization_percentage &&
+      var.control_plane_autoscaling.min_replicas >= 1 &&
+      var.control_plane_autoscaling.max_replicas >= var.control_plane_autoscaling.min_replicas &&
+      var.control_plane_autoscaling.max_replicas <= 64 &&
+      var.control_plane_autoscaling.target_cpu_utilization_percentage >= 1 &&
+      var.control_plane_autoscaling.target_cpu_utilization_percentage <= 100
+    )
+    error_message = "control_plane_autoscaling requires whole-number replicas with 1 <= min <= max <= 64 and a target CPU percentage from 1 through 100."
+  }
+}
+
 variable "catalog_rollout_digest" {
   description = "Canonical catalog digest packaged in control_plane_image."
   type        = string

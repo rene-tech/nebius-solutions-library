@@ -340,6 +340,15 @@ class DeploymentContractTests(unittest.TestCase):
             contract["stages"]["workloads"]["admin_console"]["image"]["digest"],
             r"^sha256:[a-f0-9]{64}$",
         )
+        self.assertEqual(
+            contract["stages"]["workloads"]["control_plane_autoscaling"],
+            {
+                "enabled": True,
+                "min_replicas": 2,
+                "max_replicas": 8,
+                "target_cpu_utilization_percentage": 70,
+            },
+        )
 
         identity = json.dumps(
             {
@@ -365,6 +374,41 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertEqual(
             outputs["effective_configuration"]["port_forward_ports"],
             contract["stages"]["infrastructure"]["port_forward_local_ports"],
+        )
+
+    def test_control_plane_hpa_envelope_is_a_tfvars_only_workload_contract(
+        self,
+    ) -> None:
+        applications = json.loads(json.dumps(TEST_APPLICATIONS))
+        applications["control_plane"]["autoscaling"] = {
+            "enabled": True,
+            "min_replicas": 2,
+            "max_replicas": 3,
+            "target_cpu_utilization_percentage": 75,
+        }
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-control-plane-hpa",
+            "target": self.catalog_target(),
+            "applications": applications,
+        }
+        outputs = self._planned_outputs(
+            self._write_configuration("control-plane-hpa", deployment),
+            "control-plane-hpa",
+        )
+        self.assertEqual(
+            outputs["deployment_contract"]["stages"]["workloads"][
+                "control_plane_autoscaling"
+            ],
+            applications["control_plane"]["autoscaling"],
+        )
+
+        control_plane_source = (
+            DEPLOY_ROOT / "stages/workloads/control_plane.tf"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "maxReplicas                    = var.control_plane_autoscaling.max_replicas",
+            control_plane_source,
         )
 
     def test_system_pool_inotify_ceiling_is_a_bounded_tfvars_setting(self) -> None:
