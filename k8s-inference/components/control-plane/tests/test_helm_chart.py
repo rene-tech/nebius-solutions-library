@@ -1041,6 +1041,56 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
     }
 
 
+def test_committed_scientific_profile_binds_exact_helm_execution_map_bytes() -> None:
+    execution_map = json.loads((CATALOG_ROOT / "contracts/scientific-execution-map.json").read_text())
+    profiles = json.loads((CATALOG_ROOT / "contracts/scientific-workload-profiles.json").read_text())["profiles"]
+
+    documents = render(
+        "--set",
+        "scientificBatch.enabled=true",
+        "--set",
+        "scientificBatch.writesEnabled=true",
+        "--set",
+        "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-committed",
+        "--set",
+        "scientificBatch.schedulingContractNamespace=fs2-system",
+        "--set",
+        "scientificBatch.schedulingContractSha256=" + "c" * 64,
+        "--set",
+        "scientificBatch.executionMapConfigMapName=scientific-execution-committed",
+        "--set-json",
+        "scientificBatch.executionMap=" + json.dumps(execution_map, separators=(",", ":"), sort_keys=True),
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set-string",
+        "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+        "--set-string",
+        "scientificArtifacts.egressCidrs[0]=192.0.2.20/32",
+    )
+    rendered = next(
+        document
+        for document in documents
+        if document["kind"] == "ConfigMap"
+        and document.get("metadata", {}).get("labels", {}).get("app.kubernetes.io/component")
+        == "scientific-execution-map"
+    )
+    rendered_bytes = rendered["data"]["execution-map.json"].encode()
+    rendered_sha256 = hashlib.sha256(rendered_bytes).hexdigest()
+    assert rendered["metadata"]["annotations"]["fs2-serve.nebius.ai/execution-map-sha256"] == rendered_sha256
+    profiles_by_id = {item["model_id"]: item for item in profiles}
+    for map_model in execution_map["models"]:
+        profile = profiles_by_id[map_model["model_id"]]
+        assert profile["qualification"]["execution_map_sha256"] == rendered_sha256
+
+        identity = profile["execution_identity"]
+        identity_payload = {key: value for key, value in identity.items() if key != "execution_identity_sha256"}
+        expected_identity = hashlib.sha256(
+            json.dumps(identity_payload, separators=(",", ":"), sort_keys=True).encode()
+        ).hexdigest()
+        assert identity["execution_identity_sha256"] == expected_identity
+        assert map_model["execution_identity_sha256"] == expected_identity
+
+
 def test_scientific_batch_can_start_fail_closed_with_only_the_internal_cpu_canary() -> None:
     documents = render(
         "--set",

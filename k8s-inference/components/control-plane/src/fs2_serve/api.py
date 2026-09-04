@@ -142,6 +142,7 @@ from .store import (
 from .telemetry import Metrics
 
 LOGGER = logging.getLogger("fs2_serve.access")
+SCIENTIFIC_LOGGER = logging.getLogger("fs2_serve.scientific_batch")
 IDENTITY_HEADERS = {
     b"x-fs2-tenant",
     b"x-fs2-principal",
@@ -693,7 +694,13 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         return _error(404, "scientific_batch_not_found", "scientific batch was not found")
 
     @app.exception_handler(ScientificProfileError)
-    async def scientific_profile_error(_: Request, __: ScientificProfileError) -> JSONResponse:
+    async def scientific_profile_error(request: Request, error: ScientificProfileError) -> JSONResponse:
+        SCIENTIFIC_LOGGER.warning(
+            "scientific profile unavailable method=%s path=%s reason=%s",
+            request.method,
+            request.url.path,
+            error,
+        )
         return _error(503, "scientific_profile_unavailable", "scientific workload profile is unavailable")
 
     @app.exception_handler(ArtifactNotFoundError)

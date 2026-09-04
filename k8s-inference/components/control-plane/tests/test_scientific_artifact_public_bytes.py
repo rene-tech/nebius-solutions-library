@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -325,7 +326,8 @@ async def test_result_scope_is_required_to_read_artifact_bytes(registry, cipher,
 
 
 @pytest.mark.asyncio
-async def test_an_unknown_model_cannot_reserve_an_upload(registry, cipher, hasher) -> None:
+async def test_an_unknown_model_cannot_reserve_an_upload(registry, cipher, hasher, caplog) -> None:
+    caplog.set_level(logging.WARNING, logger="fs2_serve.scientific_batch")
     runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
     _artifact_plane(runtime)
     issued = await runtime.tokens.issue(
@@ -347,6 +349,10 @@ async def test_an_unknown_model_cannot_reserve_an_upload(registry, cipher, hashe
         )
         assert response.status_code == 503
         assert response.json()["error"]["type"] == "scientific_profile_unavailable"
+    assert (
+        "scientific profile unavailable method=POST "
+        "path=/v1/scientific-artifacts/uploads reason=scientific workload profile is not runnable"
+    ) in caplog.text
 
 
 @pytest.mark.asyncio

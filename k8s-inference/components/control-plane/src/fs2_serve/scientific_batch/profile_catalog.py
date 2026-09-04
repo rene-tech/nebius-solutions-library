@@ -7,6 +7,7 @@ then projects their operator-owned workload subset into internal records.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -55,6 +56,11 @@ def _validator(schema: Mapping[str, Any], label: str) -> Draft202012Validator:
         return Draft202012Validator(schema, format_checker=FormatChecker())
     except SchemaError as error:
         raise ScientificProfileError(f"{label} is not a valid JSON Schema") from error
+
+
+def _canonical_sha256(value: object) -> str:
+    payload = json.dumps(value, separators=(",", ":"), sort_keys=True).encode()
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _schema_contract_name(schema: Mapping[str, Any]) -> str | None:
@@ -244,6 +250,13 @@ class ScientificProfileCatalog:
                 profile_validator.validate(raw)
             except ValidationError as error:
                 raise ScientificProfileError("a scientific workload profile violates its canonical schema") from error
+            identity = _object_schema(raw.get("execution_identity"), "scientific execution identity")
+            recorded_identity = identity.get("execution_identity_sha256")
+            if recorded_identity is not None:
+                identity_payload = dict(identity)
+                del identity_payload["execution_identity_sha256"]
+                if recorded_identity != _canonical_sha256(identity_payload):
+                    raise ScientificProfileError("scientific workload execution identity is stale")
             profile = ScientificWorkloadProfile(MappingProxyType(cast(dict[str, Any], raw)))
             if profile.model_id in profiles:
                 raise ScientificProfileError("scientific workload profile model IDs must be unique")

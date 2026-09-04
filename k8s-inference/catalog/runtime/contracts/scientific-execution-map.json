@@ -5,7 +5,7 @@
       "model_id": "boltzgen",
       "variant_id": "upstream-v0-3-2",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "0daf037f4869d476482514268053681dca74db9d6e3df135af52826e4c6627cd",
+      "execution_identity_sha256": "db2d180b64dc66db7e6aeb1a55085837757e635fde93e3ac163050eca27644e1",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"

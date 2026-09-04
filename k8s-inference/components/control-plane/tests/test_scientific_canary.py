@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,7 @@ from fs2_serve.scientific_batch.execution import (
     FileScientificManifestRenderer,
     ScientificExecutionMapError,
 )
-from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog
+from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog, ScientificProfileError
 
 
 def test_internal_cpu_canary_is_deterministic_and_never_a_discoverable_profile() -> None:
@@ -61,3 +62,16 @@ def test_empty_public_execution_map_is_refused_once_a_profile_is_runnable(tmp_pa
     )
     assert set(renderer.variants) == {"boltzgen"}
     assert receipt.canary_id not in renderer.variants
+
+
+def test_profile_catalog_refuses_a_stale_execution_identity(tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog"
+    shutil.copytree(CATALOG_ROOT, catalog)
+    profile_path = catalog / "contracts/scientific-workload-profiles.json"
+    document = json.loads(profile_path.read_text())
+    profile = next(item for item in document["profiles"] if item["model_id"] == "boltzgen")
+    profile["execution_identity"]["workload_recipe_sha256"] = "a" * 64
+    profile_path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ScientificProfileError, match="execution identity is stale"):
+        ScientificProfileCatalog.load(catalog)

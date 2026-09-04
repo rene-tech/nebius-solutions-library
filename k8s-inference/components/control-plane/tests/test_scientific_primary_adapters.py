@@ -372,6 +372,24 @@ def test_boltzgen_uses_one_gpu_shard_commands_and_every_exact_checkpoint_identit
     request = fixture("boltzgen", "positive-design.json")
     result = boltzgen.compile_run(profile("boltzgen"), request, operation_id="op-boltz-02")
     assert len(result.invocations) == 14
+    assert {invocation.stage_id for invocation in result.invocations} == {
+        "configure",
+        "design",
+        "inverse-folding",
+        "folding",
+        "design-folding",
+        "analysis",
+        "filtering",
+    }
+    assert tuple(stage.stage_id for stage in result.controller_plan.stages) == (
+        "configure",
+        "design",
+        "inverse-folding",
+        "folding",
+        "design-folding",
+        "analysis",
+        "filtering",
+    )
     assert result.controller_plan.stage("configure").shards == ("pdl1-a", "pdl1-b")
     configure = [item for item in result.invocations if item.stage_id == "configure"]
     for invocation, designs in zip(configure, (10, 12), strict=True):
