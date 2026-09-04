@@ -113,7 +113,7 @@ class CommandContractTests(unittest.TestCase):
         handoff = outputs["data_handoff"]
         self.assertTrue(handoff["path"].endswith("fs2-af3-handoff"))
         self.assertEqual("index.json", handoff["index"])
-        self.assertEqual("fs2-serve.nebius.ai/alphafold3-data-handoff/v1", handoff["schema"])
+        self.assertEqual("fs2-serve.nebius.ai/alphafold3-data-handoff/v2", handoff["schema"])
         self.assertIn("one entry per fold job", handoff["multiplicity"])
         self.assertIn("relative", handoff["portability"])
         self.assertIn("No absolute path", handoff["portability"])

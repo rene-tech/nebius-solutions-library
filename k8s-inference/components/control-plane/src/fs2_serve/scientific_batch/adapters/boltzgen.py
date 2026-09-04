@@ -90,7 +90,12 @@ PROTOCOLS = frozenset(
         "protein-redesign",
     }
 )
-MAX_INPUT_BYTES = 256 * 1024 * 1024
+# Keep the live, qualified v0.3.2 path inside the current bounded in-memory
+# handoff implementation.  The accepted fixtures exercise a 20-design shard,
+# a two-shard 22-design campaign, and budget 3.  Cap the public shape just
+# above that qualified envelope; larger campaigns remain closed until the
+# streaming handoff successor is qualified.
+MAX_INPUT_BYTES = 16 * 1024 * 1024
 MAX_OUTPUT_BYTES = 8 * 1024 * 1024 * 1024
 # The current companion safely buffers and extracts at most 256 MiB.  Keep
 # producer content below that after tar framing, and fail closed instead of
@@ -112,8 +117,10 @@ STAGE_COMPLETION_SCHEMA = "fs2-serve.nebius.ai/scientific-stage-completion/v1"
 # host plane.  The renderer refuses a hostPath projection unless the frozen
 # invocation carries that exact published group.
 REFERENCE_DATA_SUPPLEMENTAL_GROUP = 1000
-MAX_BATCHES = 32
-MAX_TOTAL_DESIGNS = 60_000
+MAX_BATCHES = 2
+MAX_DESIGNS_PER_BATCH = 20
+MAX_BUDGET_PER_BATCH = 3
+MAX_TOTAL_DESIGNS = 24
 INPUT_MANIFEST_MEDIA_TYPE = "application/vnd.fs2.scientific-manifest+json"
 CAMPAIGN_INPUT_ID = "campaign-input"
 CAMPAIGN_INPUT_SEMANTIC_TYPE = "boltzgen-campaign-input/v1"
@@ -141,8 +148,18 @@ class DesignBatch:
         reuse = item["reuse_completed"]
         if not isinstance(reuse, bool):
             raise ScientificAdapterError("reuse_completed must be a boolean")
-        designs = bounded_int(item["num_designs"], minimum=1, maximum=10_000, label=f"batches[{index}].num_designs")
-        budget = bounded_int(item["budget"], minimum=1, maximum=1000, label=f"batches[{index}].budget")
+        designs = bounded_int(
+            item["num_designs"],
+            minimum=1,
+            maximum=MAX_DESIGNS_PER_BATCH,
+            label=f"batches[{index}].num_designs",
+        )
+        budget = bounded_int(
+            item["budget"],
+            minimum=1,
+            maximum=MAX_BUDGET_PER_BATCH,
+            label=f"batches[{index}].budget",
+        )
         if budget > designs:
             raise ScientificAdapterError("BoltzGen budget cannot exceed num_designs")
         return cls(

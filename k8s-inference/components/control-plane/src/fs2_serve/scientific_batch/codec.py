@@ -226,6 +226,8 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                             for mount in binding.mounts
                         ],
                         "service_account_name": binding.service_account_name,
+                        "workspace_uid": binding.workspace_uid,
+                        "workspace_gid": binding.workspace_gid,
                         "request_cpu": binding.request_cpu,
                         "request_memory": binding.request_memory,
                         "request_ephemeral_storage": binding.request_ephemeral_storage,
@@ -885,28 +887,36 @@ def state_from_value(raw: object) -> ScientificBatchState:
         stage_bindings: list[StageExecutionBinding] = []
         if not legacy_before_v8:
             for raw_binding in _items(execution["stage_bindings"], "stage execution bindings", maximum=64):
-                binding = _object(
-                    raw_binding,
-                    {
-                        "stage_id",
-                        "image",
-                        "collector_id",
-                        "validator_id",
-                        "mounts",
-                        "service_account_name",
-                        "request_cpu",
-                        "request_memory",
-                        "request_ephemeral_storage",
-                        "limit_cpu",
-                        "limit_memory",
-                        "limit_ephemeral_storage",
-                        "active_deadline_seconds",
-                        "termination_grace_seconds",
-                        "environment",
-                        "required_node_labels",
-                    },
-                    "stage execution binding",
-                )
+                expected_binding_fields = {
+                    "stage_id",
+                    "image",
+                    "collector_id",
+                    "validator_id",
+                    "mounts",
+                    "service_account_name",
+                    "workspace_uid",
+                    "workspace_gid",
+                    "request_cpu",
+                    "request_memory",
+                    "request_ephemeral_storage",
+                    "limit_cpu",
+                    "limit_memory",
+                    "limit_ephemeral_storage",
+                    "active_deadline_seconds",
+                    "termination_grace_seconds",
+                    "environment",
+                    "required_node_labels",
+                }
+                # v8 rows admitted before the shared-workspace identity repair
+                # remain readable but cannot be rendered; a missing identity
+                # is never inferred from a mutable image default.
+                legacy_identity_fields = expected_binding_fields - {"workspace_uid", "workspace_gid"}
+                if not isinstance(raw_binding, dict) or frozenset(raw_binding) not in {
+                    frozenset(expected_binding_fields),
+                    frozenset(legacy_identity_fields),
+                }:
+                    raise ValueError("stored stage execution binding fields differ")
+                binding = raw_binding
                 mounts = tuple(
                     StageVolumeBinding(
                         name=_string(mount["name"], "stage volume name"),
@@ -953,6 +963,16 @@ def state_from_value(raw: object) -> ScientificBatchState:
                         mounts=mounts,
                         service_account_name=_string(
                             binding["service_account_name"], "stage execution service account"
+                        ),
+                        workspace_uid=(
+                            None
+                            if "workspace_uid" not in binding or binding["workspace_uid"] is None
+                            else _integer(binding["workspace_uid"], "stage workspace UID")
+                        ),
+                        workspace_gid=(
+                            None
+                            if "workspace_gid" not in binding or binding["workspace_gid"] is None
+                            else _integer(binding["workspace_gid"], "stage workspace GID")
                         ),
                         request_cpu=_string(binding["request_cpu"], "stage execution requested CPU"),
                         request_memory=_string(binding["request_memory"], "stage execution requested memory"),

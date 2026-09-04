@@ -5,7 +5,7 @@
       "model_id": "boltzgen",
       "variant_id": "upstream-v0-3-2",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "4a40c76bae6150ad1915388a2717ba1c4e7c44fba287f828c1085a18d9e51eb3",
+      "execution_identity_sha256": "ecc726237a6f7d2d88359a44947e01d5f7018d5ea598ab47fd4d39b78986977e",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -84,6 +84,8 @@
             }
           ],
           "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
             "requests": {
               "cpu": "8000m",
@@ -139,6 +141,8 @@
             }
           ],
           "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
             "requests": {
               "cpu": "8000m",
@@ -194,6 +198,8 @@
             }
           ],
           "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
             "requests": {
               "cpu": "8000m",
@@ -249,6 +255,8 @@
             }
           ],
           "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
             "requests": {
               "cpu": "8000m",
@@ -304,6 +312,8 @@
             }
           ],
           "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
             "requests": {
               "cpu": "8000m",
@@ -359,6 +369,8 @@
             }
           ],
           "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
             "requests": {
               "cpu": "8000m",
@@ -396,6 +408,8 @@
             }
           ],
           "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
             "requests": {
               "cpu": "2000m",
@@ -430,6 +444,8 @@
             }
           ],
           "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
             "requests": {
               "cpu": "2000m",

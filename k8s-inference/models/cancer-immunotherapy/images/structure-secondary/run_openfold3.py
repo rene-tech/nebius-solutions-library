@@ -205,6 +205,7 @@ def build_command(
 def _prepare(args: argparse.Namespace) -> None:
     input_manifest = _file(args.input_manifest, "input-manifest")
     _logical_id(args.output_artifact_id)
+    _logical_id(args.raw_input_artifact_id)
     raw_sha256 = _sha256(input_manifest)
     if raw_sha256 != args.raw_input_sha256:
         raise SystemExit("raw-input-sha256 does not bind input-manifest")
@@ -238,6 +239,7 @@ def _prepare(args: argparse.Namespace) -> None:
         "member": "query.json",
         "sha256": _sha256(query_json),
         "raw_input_sha256": raw_sha256,
+        "raw_input_artifact_id": args.raw_input_artifact_id,
         "model_seeds": seeds,
         "msa_mode": args.msa_mode,
         "runner_base_sha256": _sha256(base_runner),
@@ -272,7 +274,12 @@ def _prepare(args: argparse.Namespace) -> None:
 
 
 def _write_confidence(
-    output_dir: Path, *, seeds: list[int], samples_per_seed: int
+    output_dir: Path,
+    *,
+    seeds: list[int],
+    samples_per_seed: int,
+    input_artifact_id: str,
+    raw_input_sha256: str,
 ) -> dict[str, object]:
     summaries = sorted(output_dir.rglob("*_confidences_aggregated.json"))
     results: list[dict[str, object]] = []
@@ -331,12 +338,15 @@ def _write_confidence(
         seeds=seeds,
         samples_per_seed=samples_per_seed,
         results=results,
+        input_artifact_id=input_artifact_id,
+        raw_input_sha256=raw_input_sha256,
     )
 
 
 def _predict(args: argparse.Namespace) -> None:
     _validate_runtime_localization_args("predict", args)
     _logical_id(args.input_artifact_id)
+    _logical_id(args.expected_raw_input_artifact_id)
     if re.fullmatch(r"[0-9a-f]{64}", args.expected_raw_input_sha256) is None:
         raise SystemExit("expected-raw-input-sha256 must be a lowercase SHA-256")
     if Path(args.checkpoint) != CANONICAL_CHECKPOINT:
@@ -374,6 +384,7 @@ def _predict(args: argparse.Namespace) -> None:
         "member": "query.json",
         "sha256": _sha256(query),
         "raw_input_sha256": args.expected_raw_input_sha256,
+        "raw_input_artifact_id": args.expected_raw_input_artifact_id,
         "model_seeds": seeds,
         "msa_mode": args.msa_mode,
         "runner_base_sha256": _sha256(base_runner),
@@ -414,7 +425,13 @@ def _predict(args: argparse.Namespace) -> None:
     from openfold3.run_openfold import cli
 
     cli.main(args=command[1:], prog_name="run_openfold", standalone_mode=False)
-    confidence = _write_confidence(output, seeds=seeds, samples_per_seed=1)
+    confidence = _write_confidence(
+        output,
+        seeds=seeds,
+        samples_per_seed=1,
+        input_artifact_id=args.expected_raw_input_artifact_id,
+        raw_input_sha256=args.expected_raw_input_sha256,
+    )
     print(json.dumps(confidence, sort_keys=True, separators=(",", ":")))
 
 
@@ -431,6 +448,7 @@ def main(argv: list[str] | None = None) -> None:
     prepare.add_argument("--handoff-tar", required=True)
     prepare.add_argument("--output-artifact-id", required=True)
     prepare.add_argument("--raw-input-sha256", required=True)
+    prepare.add_argument("--raw-input-artifact-id", required=True)
     prepare.add_argument("--msa-mode", choices=("none",), required=True)
     prepare.add_argument("--model-seeds", required=True)
     prepare.add_argument("--offline", action="store_true", required=True)
@@ -441,6 +459,7 @@ def main(argv: list[str] | None = None) -> None:
     predict.add_argument("--provenance-marker", required=True)
     predict.add_argument("--input-artifact-id", required=True)
     predict.add_argument("--expected-raw-input-sha256", required=True)
+    predict.add_argument("--expected-raw-input-artifact-id", required=True)
     predict.add_argument("--output-dir", required=True)
     predict.add_argument("--checkpoint", required=True)
     predict.add_argument("--ccd-path", required=True)

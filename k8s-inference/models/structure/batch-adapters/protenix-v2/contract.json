@@ -11,6 +11,8 @@
     "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2",
     "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r4",
     "digest": "sha256:27d816dc518b5dda205f9916205fbc4e2053a8109d9380b85628d9f0d968a644",
+    "workspace_uid": 10001,
+    "workspace_gid": 10001,
     "state": "build-only-not-semantic-qualified"
   },
   "activation": {

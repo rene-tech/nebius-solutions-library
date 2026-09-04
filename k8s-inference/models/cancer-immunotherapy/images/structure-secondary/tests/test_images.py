@@ -326,6 +326,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                     provenance_marker=str(prepared / "provenance.json"),
                     handoff_tar=str(root / "handoff.tar.zst"),
                     output_artifact_id="openfold-stage-1",
+                    raw_input_artifact_id="raw-openfold-request-1",
                     raw_input_sha256=hashlib.sha256(raw.read_bytes()).hexdigest(),
                     msa_mode="none",
                     model_seeds="101,202",
@@ -1032,7 +1033,11 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                         encoding="utf-8",
                     )
             confidence = module._write_confidence(
-                output, seeds=[202, 101], samples_per_seed=2
+                output,
+                seeds=[202, 101],
+                samples_per_seed=2,
+                input_artifact_id="raw-protenix-request-1",
+                raw_input_sha256="a" * 64,
             )
             jsonschema.Draft202012Validator(CONFIDENCE_SCHEMA).validate(confidence)
             self.assertEqual(
@@ -1058,7 +1063,13 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             missing = output / "dataset/fixture/seed_202/predictions/fixture_summary_confidence_sample_1.json"
             missing.unlink()
             with self.assertRaisesRegex(SystemExit, "exact seed/sample product"):
-                module._write_confidence(output, seeds=[202, 101], samples_per_seed=2)
+                module._write_confidence(
+                    output,
+                    seeds=[202, 101],
+                    samples_per_seed=2,
+                    input_artifact_id="raw-protenix-request-1",
+                    raw_input_sha256="a" * 64,
+                )
             missing.write_text(
                 json.dumps({"plddt": 89.0, "ptm": 0.8, "iptm": 0.7, "ranking_score": 0.75}),
                 encoding="utf-8",
@@ -1069,7 +1080,13 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(SystemExit, "finite scalar"):
-                module._write_confidence(output, seeds=[202, 101], samples_per_seed=2)
+                module._write_confidence(
+                    output,
+                    seeds=[202, 101],
+                    samples_per_seed=2,
+                    input_artifact_id="raw-protenix-request-1",
+                    raw_input_sha256="a" * 64,
+                )
 
     def test_protenix_pred_executes_generated_argv_and_collects_confidence(self) -> None:
         module = load_module("run_protenix")
@@ -1119,6 +1136,7 @@ for seed in seeds:
                         "artifact_id": "prepared-1",
                         "member": "processed.json",
                         "sha256": hashlib.sha256(input_path.read_bytes()).hexdigest(),
+                        "raw_input_artifact_id": "raw-protenix-request-1",
                         "raw_input_sha256": "b" * 64,
                         "msa_mode": "none",
                         "composite_artifact_id": module.ARTIFACT_ID,
@@ -1148,6 +1166,8 @@ for seed in seeds:
                 input=str(input_path),
                 input_marker=str(marker_path),
                 input_artifact_id="prepared-1",
+                expected_raw_input_artifact_id="raw-protenix-request-1",
+                expected_raw_input_sha256="b" * 64,
                 output_dir=str(output),
                 msa_mode="none",
                 seeds="101,202",
@@ -1208,6 +1228,7 @@ for seed in seeds:
                 "artifact_id": "prepared-1",
                 "member": "processed.json",
                 "sha256": hashlib.sha256(processed.read_bytes()).hexdigest(),
+                "raw_input_artifact_id": "raw-protenix-request-1",
                 "raw_input_sha256": "a" * 64,
                 "msa_mode": "none",
                 "composite_artifact_id": module.ARTIFACT_ID,
@@ -1235,6 +1256,8 @@ for seed in seeds:
                 "input": str(processed),
                 "input_marker": str(provenance),
                 "input_artifact_id": "prepared-1",
+                "expected_raw_input_artifact_id": "raw-protenix-request-1",
+                "expected_raw_input_sha256": "a" * 64,
                 "output_dir": str(root / "out"),
                 "msa_mode": "none",
                 "seeds": "1,2",
@@ -1272,13 +1295,16 @@ for seed in seeds:
             "--processed-json", "/work/prep/prepared/processed.json",
             "--provenance-marker", "/work/prep/prepared/provenance.json",
             "--handoff-tar", "/work/prep/prepared.tar.zst", "--output-artifact-id", "protenix-stage-1",
+            "--raw-input-artifact-id", "raw-protenix-request-1", "--raw-input-sha256", "a" * 64,
             "--msa-mode", "none", "--reference-root", "/models/protenix-v2",
             "--reference-manifest", "/models/protenix-v2/manifest.json",
             "--runtime-localization-marker", "/work/prep/.fs2/runtime-localization.json",
         ]
         pred = [
             "pred", "--input", "/work/pred/input/processed.json", "--input-marker", "/work/pred/input/provenance.json",
-            "--input-artifact-id", "protenix-stage-1", "--output-dir", "/work/pred/outputs",
+            "--input-artifact-id", "protenix-stage-1",
+            "--expected-raw-input-artifact-id", "raw-protenix-request-1",
+            "--expected-raw-input-sha256", "a" * 64, "--output-dir", "/work/pred/outputs",
             "--checkpoint", "/models/protenix-v2/checkpoint/protenix-v2.pt",
             "--common-dir", "/models/protenix-v2/common", "--msa-mode", "none", "--seeds", "101,202",
             "--sample-count", "2", "--disable-templates", "--disable-rna-msa",
@@ -1409,6 +1435,7 @@ for seed in seeds:
                 provenance_marker=str(prepared / "provenance.json"),
                 handoff_tar=str(archive),
                 output_artifact_id="openfold-stage-1",
+                raw_input_artifact_id="raw-openfold-request-1",
                 raw_input_sha256=hashlib.sha256(raw.read_bytes()).hexdigest(),
                 msa_mode="none",
                 model_seeds="7,9",
@@ -1456,12 +1483,14 @@ for seed in seeds:
             "--provenance-marker", "/work/prepared/provenance.json",
             "--handoff-tar", "/work/prepared.tar.zst", "--output-artifact-id", "openfold-stage-1",
             "--raw-input-sha256", "a" * 64,
+            "--raw-input-artifact-id", "raw-openfold-request-1",
             "--model-seeds", "101,202", "--offline",
         ]
         predict_argv = [
             "predict", "--query-json", "/work/input/query.json",
             "--provenance-marker", "/work/input/provenance.json", "--input-artifact-id", "openfold-stage-1",
-            "--expected-raw-input-sha256", "a" * 64, "--output-dir", "/work/outputs",
+            "--expected-raw-input-sha256", "a" * 64,
+            "--expected-raw-input-artifact-id", "raw-openfold-request-1", "--output-dir", "/work/outputs",
             "--checkpoint", "/models/openfold3/of3-ob-2025-06-30-174k.pt",
             "--ccd-path", "/databases/openfold3/components.bcif",
             "--runner-yaml", "/work/runner.yaml", "--base-runner-yaml", "/opt/fs2/runtime/openfold3/runner-base.yaml",
@@ -1523,7 +1552,11 @@ for seed in seeds:
                         encoding="utf-8",
                     )
             envelope = module._write_confidence(
-                output, seeds=[101, 202], samples_per_seed=1
+                output,
+                seeds=[101, 202],
+                samples_per_seed=1,
+                input_artifact_id="raw-openfold-request-1",
+                raw_input_sha256="a" * 64,
             )
             jsonschema.Draft202012Validator(CONFIDENCE_SCHEMA).validate(envelope)
             self.assertEqual(envelope["schema"], "fs2.nebius.ai/structure-confidence/v1")
@@ -1538,7 +1571,13 @@ for seed in seeds:
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(SystemExit, "finite scalar"):
-                module._write_confidence(output, seeds=[101, 202], samples_per_seed=1)
+                module._write_confidence(
+                    output,
+                    seeds=[101, 202],
+                    samples_per_seed=1,
+                    input_artifact_id="raw-openfold-request-1",
+                    raw_input_sha256="a" * 64,
+                )
 
     def test_openfold_multisample_cardinality_and_one_based_normalization(self) -> None:
         module = load_module("run_openfold3")
@@ -1556,7 +1595,13 @@ for seed in seeds:
                     (directory / f"{prefix}_confidences_aggregated.json").write_text(
                         '{"avg_plddt":88.0,"gpde":4.0}', encoding="utf-8"
                     )
-            envelope = module._write_confidence(output, seeds=[7, 9], samples_per_seed=2)
+            envelope = module._write_confidence(
+                output,
+                seeds=[7, 9],
+                samples_per_seed=2,
+                input_artifact_id="raw-openfold-request-1",
+                raw_input_sha256="a" * 64,
+            )
             self.assertEqual(
                 [(item["seed"], item["sample_index"]) for item in envelope["results"]],
                 [(7, 0), (7, 1), (9, 0), (9, 1)],
@@ -1564,7 +1609,13 @@ for seed in seeds:
             duplicate = output / "query/seed_7/query_seed_7_sample_01_confidences_aggregated.json"
             duplicate.write_text('{"avg_plddt":88.0,"gpde":4.0}', encoding="utf-8")
             with self.assertRaisesRegex(SystemExit, "(canonical|exact seed/sample|one-to-one)"):
-                module._write_confidence(output, seeds=[7, 9], samples_per_seed=2)
+                module._write_confidence(
+                    output,
+                    seeds=[7, 9],
+                    samples_per_seed=2,
+                    input_artifact_id="raw-openfold-request-1",
+                    raw_input_sha256="a" * 64,
+                )
 
     def test_semantic_smoke_validates_exact_envelope_atoms_metrics_and_cardinality(self) -> None:
         contract = load_module("result_contract")
@@ -1586,6 +1637,8 @@ for seed in seeds:
                     "seed": 5, "sample_index": 0, "structure": structure,
                     "summary": None, "metrics": {"plddt_mean": 1.0},
                 }],
+                input_artifact_id="raw-esmfold-request-1",
+                raw_input_sha256="a" * 64,
             )
             confidence_path, validated, structures = smoke._validate_semantic_output(
                 output, runtime_id="esmfold2", seeds=[5], samples_per_seed=1
@@ -1627,6 +1680,8 @@ for seed in seeds:
                         "seed": 5, "sample_index": 0, "structure": structure,
                         "summary": None, "metrics": {"plddt_mean": 0.5},
                     }],
+                    input_artifact_id="raw-esmfold-request-1",
+                    raw_input_sha256="a" * 64,
                 )
 
     def test_esm_production_defaults_and_non_hopper_flash_disable(self) -> None:
@@ -1643,7 +1698,7 @@ for seed in seeds:
         self.assertNotIn(".cpu().tolist()", source)
         self.assertIn("ccd_path.stat().st_size != CCD_BYTES", source)
         self.assertNotIn("_sha256(ccd_path)", source)
-        self.assertNotIn("import hashlib", source)
+        self.assertIn("localized ESMFold input differs from the frozen verified digest", source)
         self.assertFalse(hasattr(load_module("run_esmfold2"), "_sha256"))
         metric_schema = CONFIDENCE_SCHEMA["properties"]["results"]["items"]
         metric_schema = metric_schema["properties"]["metrics"]["properties"]["plddt_mean"]
@@ -1795,6 +1850,7 @@ for seed in seeds:
                     "--base-runner-yaml", "/b", "--runner-yaml", "/r",
                     "--provenance-marker", "/p", "--handoff-tar", "/t",
                     "--output-artifact-id", "id", "--raw-input-sha256", "a" * 64,
+                    "--raw-input-artifact-id", "raw-openfold-request-1",
                     "--msa-mode", "precomputed", "--model-seeds", "1", "--offline",
                 ])
             handler.assert_not_called()

@@ -9,8 +9,6 @@ import inspect
 import io
 import json
 import os
-import shutil
-import subprocess
 import sys
 import tarfile
 from collections.abc import Mapping
@@ -64,6 +62,7 @@ SOLUTION_ROOT = Path(__file__).resolve().parents[3]
 CATALOG_ROOT = SOLUTION_ROOT / "catalog/runtime"
 ADAPTER_ROOT = SOLUTION_ROOT / "models/structure/batch-adapters"
 IMAGE_HANDOFF = ADAPTER_ROOT / "secondary-r4-image-handoff.json"
+IMAGE_SOURCE_ROOT = SOLUTION_ROOT / "models/cancer-immunotherapy/images/structure-secondary"
 WRAPPER_ROOT_ENV = "FS2_SECONDARY_WRAPPER_ROOT"
 
 MODULES = {
@@ -154,10 +153,41 @@ def compile_fixture(model_id: str, name: str):
 
 def _valid_prepared_handoff(model_id: str, invocation=None) -> tuple[str, bytes]:
     if model_id in {"esmfold2", "esmfold2-fast"}:
+        prepared = {"sequences": [{"type": "protein", "id": "A", "sequence": "ACDE", "msa": None}]}
+        artifact_id = invocation.produces if invocation is not None else "fixture-stage-artifact"
+        raw_id = (
+            _argument(invocation.argv, "--raw-input-artifact-id")
+            if invocation is not None
+            else "00000000-0000-4000-8000-000000000099"
+        )
+        raw_digest = (
+            _argument(invocation.argv, "--raw-input-sha256") if invocation is not None else "a" * 64
+        )
+        variant = _argument(invocation.argv, "--variant") if invocation is not None else model_id
+        mode = _argument(invocation.argv, "--mode") if invocation is not None else "single-sequence"
+        seed = int(_argument(invocation.argv, "--seed")) if invocation is not None else 0
+        source_revision = (
+            _argument(invocation.argv, "--source-revision")
+            if invocation is not None
+            else esmfold2.SOURCE_REVISION
+        )
         return (
             "prepared-input.json",
             json.dumps(
-                {"sequences": [{"type": "protein", "id": "A", "sequence": "ACDE", "msa": None}]},
+                {
+                    "schema": "fs2.nebius.ai/esmfold2-prepared-handoff/v2",
+                    "artifact_id": artifact_id,
+                    "raw_input_artifact_id": raw_id,
+                    "raw_input_sha256": raw_digest,
+                    "variant": variant,
+                    "mode": mode,
+                    "seed": seed,
+                    "source_revision": source_revision,
+                    "prepared_sha256": hashlib.sha256(
+                        json.dumps(prepared, sort_keys=True, separators=(",", ":")).encode()
+                    ).hexdigest(),
+                    "prepared_input": prepared,
+                },
                 sort_keys=True,
             ).encode()
             + b"\n",
@@ -179,7 +209,16 @@ def _valid_prepared_handoff(model_id: str, invocation=None) -> tuple[str, bytes]
             "artifact_id": artifact_id,
             "member": payload_name,
             "sha256": hashlib.sha256(payload).hexdigest(),
-            "raw_input_sha256": "a" * 64,
+            "raw_input_sha256": (
+                _argument(invocation.argv, "--raw-input-sha256")
+                if invocation is not None
+                else "a" * 64
+            ),
+            "raw_input_artifact_id": (
+                _argument(invocation.argv, "--raw-input-artifact-id")
+                if invocation is not None
+                else "00000000-0000-4000-8000-000000000099"
+            ),
             "msa_mode": "none",
             "composite_artifact_id": protenix_v2.MODEL_ARTIFACT,
             "composite_artifact_revision": protenix_v2.COMPOSITE_ARTIFACT_REVISION,
@@ -217,6 +256,11 @@ def _valid_prepared_handoff(model_id: str, invocation=None) -> tuple[str, bytes]
             "member": payload_name,
             "sha256": hashlib.sha256(payload).hexdigest(),
             "raw_input_sha256": raw_input_sha256,
+            "raw_input_artifact_id": (
+                _argument(invocation.argv, "--raw-input-artifact-id")
+                if invocation is not None
+                else "00000000-0000-4000-8000-000000000099"
+            ),
             "model_seeds": seeds,
             "msa_mode": "none",
             "runner_base_sha256": openfold3.RUNNER_BASE_SHA256,
@@ -439,6 +483,8 @@ def _execution_renderer(
                 "validator_id": execution["validator_id"],
                 "mounts": mounts,
                 "service_account_name": "scientific-runner",
+                "workspace_uid": 10001,
+                "workspace_gid": 10001,
                 "resources": {
                     "requests": {
                         "cpu": f"{resources['cpu_millis']}m",
@@ -818,7 +864,7 @@ def test_esmf2_variants_use_distinct_artifacts_and_fast_rejects_msa() -> None:
         compile_fixture("esmfold2-fast", "negative-msa")
 
 
-def test_exact_r4_argv_and_cache_contracts() -> None:
+def test_successor_argv_and_cache_contracts() -> None:
     esm = compile_fixture("esmfold2", "positive-sequence")
     prepare, fold = esm.invocations
     assert prepare.argv[:2] == ("/usr/local/bin/fs2-run-esmfold2", "prepare-input")
@@ -923,13 +969,9 @@ def _marker_artifacts(model_id: str, invocation) -> list[dict[str, object]]:
     ]
 
 
-def test_every_generated_argv_cross_runs_through_exact_r4_parsers_and_markers(tmp_path: Path) -> None:
-    root = tmp_path / "exact-r4-wrapper-source"
+def test_every_generated_argv_cross_runs_through_successor_source_parsers_and_markers(tmp_path: Path) -> None:
+    root = tmp_path / "successor-wrapper-source"
     root.mkdir()
-    source_commit = json.loads(IMAGE_HANDOFF.read_text(encoding="utf-8"))["image_source_commit"]
-    git = shutil.which("git")
-    assert git is not None
-    repository = SOLUTION_ROOT.parent
     parser_sources = (
         "run_esmfold2.py",
         "run_protenix.py",
@@ -938,14 +980,8 @@ def test_every_generated_argv_cross_runs_through_exact_r4_parsers_and_markers(tm
         "result_contract.py",
         "runtime_localization.py",
     )
-    source_prefix = "k8s-inference/models/cancer-immunotherapy/images/structure-secondary"
     for filename in parser_sources:
-        source = subprocess.run(  # noqa: S603 - fixed git executable and immutable pinned revision
-            [git, "-C", str(repository), "show", f"{source_commit}:{source_prefix}/{filename}"],
-            check=True,
-            capture_output=True,
-        ).stdout
-        (root / filename).write_bytes(source)
+        (root / filename).write_bytes((IMAGE_SOURCE_ROOT / filename).read_bytes())
     wrappers = {
         "esmfold2": _load_wrapper(root, "run_esmfold2"),
         "esmfold2-fast": _load_wrapper(root, "run_esmfold2"),
@@ -964,11 +1000,7 @@ def test_every_generated_argv_cross_runs_through_exact_r4_parsers_and_markers(tm
                 "operation_id": "00000000-0000-4000-8000-000000000010",
                 "attempt_id": "00000000-0000-4000-8000-000000000011",
                 "tenant_id": "adapter-contract-tenant",
-                # The immutable r4 OpenFold image predated the public identity
-                # correction. It is exercised exactly here, while the repaired
-                # successor source uses openfold3-openbind and remains closed
-                # until a new immutable digest is published.
-                "model_id": "openfold3" if model_id == "openfold3-openbind" else model_id,
+                "model_id": model_id,
                 "variant_id": plan.variant_id,
                 "stage_id": invocation.stage_id,
                 "artifacts": _marker_artifacts(model_id, invocation),
@@ -1008,6 +1040,7 @@ def _write_confidence_workspace(
     model_revision: str,
     seeds: tuple[int, ...],
     samples: int,
+    invocation=None,
 ) -> Path:
     workspace = tmp_path / runtime_id
     outputs = workspace / "outputs"
@@ -1036,6 +1069,18 @@ def _write_confidence_workspace(
         "schema": "fs2.nebius.ai/structure-confidence/v1",
         "runtime_id": runtime_id,
         "model_revision": model_revision,
+        "input_identity": {
+            "artifact_id": (
+                _argument(invocation.argv, "--expected-raw-input-artifact-id")
+                if invocation is not None
+                else "00000000-0000-4000-8000-000000000099"
+            ),
+            "sha256": (
+                _argument(invocation.argv, "--expected-raw-input-sha256")
+                if invocation is not None
+                else "a" * 64
+            ),
+        },
         "seeds": list(seeds),
         "samples_per_seed": samples,
         "results": results,
@@ -1137,6 +1182,7 @@ def test_companion_registry_collects_frozen_prepare_and_result_invocations(model
         model_revision=revision,
         seeds=seeds,
         samples=samples,
+        invocation=result,
     )
     collected = collect_registered_stage_output(result, result_workspace)
     assert isinstance(collected, CollectedStageOutput)
@@ -1193,6 +1239,7 @@ def test_result_collector_waits_while_confidence_terminal_marker_is_partial(mode
         model_revision=revision,
         seeds=seeds,
         samples=samples,
+        invocation=result,
     )
     final = workspace / "outputs/confidence.json"
     complete = final.read_bytes()
@@ -1226,6 +1273,7 @@ def test_production_companion_publishes_result_manifest_and_validation(model_id:
         model_revision=revision,
         seeds=seeds,
         samples=samples,
+        invocation=result,
     )
 
     class Client:
@@ -1292,6 +1340,8 @@ def test_contract_documents_match_code_and_the_exact_r4_handoff() -> None:
         assert value["runtime_image"]["repository"] == images[model_id]["repository"]
         assert value["runtime_image"]["tag"] == images[model_id]["tag"]
         assert value["runtime_image"]["digest"] == images[model_id]["digest"]
+        assert value["runtime_image"]["workspace_uid"] == 10001
+        assert value["runtime_image"]["workspace_gid"] == 10001
         assert value["runtime_image"]["state"] == "build-only-not-semantic-qualified"
         assert {
             stage["stage_id"]: {

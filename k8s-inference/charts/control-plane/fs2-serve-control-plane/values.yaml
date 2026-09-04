@@ -644,8 +644,12 @@ scientificArtifacts:
     - application/json
     - application/gzip
     - application/vnd.fs2.scientific-manifest+json
-    - chemical/x-pdb
+    - application/vnd.fs2.scientific-validation+json
+    - application/x-tar
     - chemical/x-cif
+    - chemical/x-mmcif
+    - chemical/x-pdb
+    - text/csv
     - text/plain
     - text/x-fasta
   # CIDRs the control plane may reach on 443 to serve artifact handles and

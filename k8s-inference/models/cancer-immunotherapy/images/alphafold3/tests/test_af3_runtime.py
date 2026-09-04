@@ -504,17 +504,19 @@ class ReceiptTests(unittest.TestCase):
             source.parent.mkdir()
             source.write_bytes(b"x" * 257)
             with mock.patch.object(af3, "MAX_DATA_HANDOFF_BYTES", 16 * 1024):
-                af3.build_data_handoff(output)
+                af3.build_data_handoff(output, {"artifact_id": "fold-input", "sha256": "a" * 64})
             index = output / af3.DATA_HANDOFF_DIRNAME / af3.DATA_HANDOFF_INDEX
             exact_total = source.stat().st_size + index.stat().st_size
 
             with mock.patch.object(af3, "MAX_DATA_HANDOFF_BYTES", exact_total):
-                handoff = af3.build_data_handoff(output)
+                handoff = af3.build_data_handoff(
+                    output, {"artifact_id": "fold-input", "sha256": "a" * 64}
+                )
             self.assertEqual(handoff["count"], 1)
 
             with mock.patch.object(af3, "MAX_DATA_HANDOFF_BYTES", exact_total - 1):
                 with self.assertRaisesRegex(af3.ContractError, "handoff plus index"):
-                    af3.build_data_handoff(output)
+                    af3.build_data_handoff(output, {"artifact_id": "fold-input", "sha256": "a" * 64})
 
     def test_a_failure_receipt_matches_the_published_schema(self) -> None:
         from jsonschema import Draft202012Validator

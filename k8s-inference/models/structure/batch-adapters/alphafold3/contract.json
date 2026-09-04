@@ -11,6 +11,8 @@
   },
   "runtime": {
     "image_digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
+    "workspace_uid": 1001,
+    "workspace_gid": 1001,
     "production_protocol_compatible": false,
     "successor_required": "Build and qualify a new immutable image from the atomic-receipt, bounded-handoff source before route activation.",
     "command_io_contract": "models/cancer-immunotherapy/images/alphafold3/contracts/af3-command-io-contract.json",
@@ -64,7 +66,7 @@
         "format": "application/x-tar",
         "directory": "fs2-af3-handoff",
         "index": "index.json",
-        "schema": "fs2-serve.nebius.ai/alphafold3-data-handoff/v1",
+        "schema": "fs2-serve.nebius.ai/alphafold3-data-handoff/v2",
         "collector": "alphafold3-data-collector-v1",
         "collector_requires_terminal_receipt": "data-runtime-receipt.json",
         "collector_limits": {

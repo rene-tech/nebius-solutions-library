@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import math
+import re
 import tarfile
 from collections.abc import Mapping
 from pathlib import Path
@@ -27,9 +28,11 @@ if TYPE_CHECKING:
     from . import CollectedStageOutput
 
 CONFIDENCE_SCHEMA = "fs2.nebius.ai/structure-confidence/v1"
+ESMFOLD_HANDOFF_SCHEMA = "fs2.nebius.ai/esmfold2-prepared-handoff/v2"
 _METRIC_BOUNDS = {
     "plddt": (0.0, 100.0),
-    "plddt_mean": (0.0, 100.0),
+    # The production runners emit this aggregate as a normalized fraction.
+    "plddt_mean": (0.0, 1.0),
     "avg_plddt": (0.0, 100.0),
     "gpde": (0.0, 64.0),
     "ptm": (0.0, 1.0),
@@ -57,6 +60,7 @@ _HANDOFF_ARCHIVES = {
                 "member",
                 "sha256",
                 "raw_input_sha256",
+                "raw_input_artifact_id",
                 "model_seeds",
                 "msa_mode",
                 "runner_base_sha256",
@@ -75,6 +79,7 @@ _HANDOFF_ARCHIVES = {
                 "member",
                 "sha256",
                 "raw_input_sha256",
+                "raw_input_artifact_id",
                 "msa_mode",
                 "composite_artifact_id",
                 "composite_artifact_revision",
@@ -101,9 +106,40 @@ def _json_object(content: bytes, *, label: str) -> dict[str, object]:
     return document
 
 
-def _validate_esm_prepared(content: bytes) -> None:
+def _validate_esm_prepared(
+    content: bytes, *, expected_provenance: Mapping[str, object] | None
+) -> None:
     document = _json_object(content, label="ESMFold prepared handoff")
-    sequences = document.get("sequences")
+    expected_fields = {
+        "schema",
+        "artifact_id",
+        "raw_input_artifact_id",
+        "raw_input_sha256",
+        "variant",
+        "mode",
+        "seed",
+        "source_revision",
+        "prepared_sha256",
+        "prepared_input",
+    }
+    prepared = document.get("prepared_input")
+    raw_input_sha256 = document.get("raw_input_sha256")
+    if (
+        set(document) != expected_fields
+        or document.get("schema") != ESMFOLD_HANDOFF_SCHEMA
+        or not isinstance(prepared, dict)
+        or document.get("prepared_sha256")
+        != _sha256_bytes(json.dumps(prepared, sort_keys=True, separators=(",", ":")).encode())
+        or not isinstance(raw_input_sha256, str)
+        or len(raw_input_sha256) != 64
+        or any(char not in "0123456789abcdef" for char in raw_input_sha256)
+    ):
+        raise ScientificAdapterError("ESMFold prepared handoff provenance is invalid")
+    if expected_provenance is not None and any(
+        document.get(field) != expected for field, expected in expected_provenance.items()
+    ):
+        raise ScientificAdapterError("ESMFold prepared handoff differs from the frozen invocation")
+    sequences = prepared.get("sequences")
     if not isinstance(sequences, list) or not 1 <= len(sequences) <= 256:
         raise ScientificAdapterError("ESMFold prepared handoff must contain sequences")
     seen_ids: set[str] = set()
@@ -239,7 +275,7 @@ def _validate_handoff_content(
     expected_provenance: Mapping[str, object] | None = None,
 ) -> None:
     if semantic_type in {"esmfold2-prepared-input/v1", "esmfold2-fast-prepared-input/v1"}:
-        _validate_esm_prepared(content)
+        _validate_esm_prepared(content, expected_provenance=expected_provenance)
     elif semantic_type in _HANDOFF_ARCHIVES:
         _validate_archive_handoff(
             content,
@@ -364,6 +400,8 @@ def _validated_confidence_entries(
     expected_model_revision: str,
     expected_seeds: tuple[int, ...],
     expected_samples_per_seed: int,
+    expected_input_artifact_id: str | None = None,
+    expected_raw_input_sha256: str | None = None,
 ) -> tuple[tuple[tuple[str, str, Path, bool], ...], dict[str, object]]:
     root = workspace.resolve(strict=True)
     output_root = (root / "outputs").resolve()
@@ -380,11 +418,13 @@ def _validated_confidence_entries(
         "schema",
         "runtime_id",
         "model_revision",
+        "input_identity",
         "seeds",
         "samples_per_seed",
         "results",
     }
     results = envelope.get("results") if isinstance(envelope, dict) else None
+    input_identity = envelope.get("input_identity") if isinstance(envelope, dict) else None
     if (
         not isinstance(envelope, dict)
         or set(envelope) != expected_fields
@@ -393,6 +433,24 @@ def _validated_confidence_entries(
         or envelope["seeds"] != list(expected_seeds)
         or envelope["samples_per_seed"] != expected_samples_per_seed
         or envelope["model_revision"] != expected_model_revision
+        or not isinstance(input_identity, dict)
+        or set(input_identity) != {"artifact_id", "sha256"}
+        or not isinstance(input_identity.get("artifact_id"), str)
+        or re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", input_identity["artifact_id"]
+        )
+        is None
+        or not isinstance(input_identity.get("sha256"), str)
+        or len(input_identity["sha256"]) != 64
+        or any(char not in "0123456789abcdef" for char in input_identity["sha256"])
+        or (
+            expected_input_artifact_id is not None
+            and input_identity["artifact_id"] != expected_input_artifact_id
+        )
+        or (
+            expected_raw_input_sha256 is not None
+            and input_identity["sha256"] != expected_raw_input_sha256
+        )
         or not isinstance(results, list)
         or len(results) != len(expected_seeds) * expected_samples_per_seed
     ):
@@ -516,6 +574,8 @@ def validate_confidence_envelope(
     expected_model_revision: str,
     expected_seeds: tuple[int, ...],
     expected_samples_per_seed: int,
+    expected_input_artifact_id: str | None = None,
+    expected_raw_input_sha256: str | None = None,
 ) -> dict[str, object]:
     """Validate exact backend identity, cardinality, metrics, and structure bytes."""
 
@@ -525,6 +585,8 @@ def validate_confidence_envelope(
         expected_model_revision=expected_model_revision,
         expected_seeds=expected_seeds,
         expected_samples_per_seed=expected_samples_per_seed,
+        expected_input_artifact_id=expected_input_artifact_id,
+        expected_raw_input_sha256=expected_raw_input_sha256,
     )
     validation["validator_id"] = validator_id
     return validation
@@ -539,6 +601,8 @@ def collect_confidence_envelope(
     expected_seeds: tuple[int, ...],
     expected_samples_per_seed: int,
     maximum_total_bytes: int,
+    expected_input_artifact_id: str | None = None,
+    expected_raw_input_sha256: str | None = None,
 ) -> CollectedOutput:
     """Validate and collect one canonical confidence envelope and its closure."""
 
@@ -548,6 +612,8 @@ def collect_confidence_envelope(
         expected_model_revision=expected_model_revision,
         expected_seeds=expected_seeds,
         expected_samples_per_seed=expected_samples_per_seed,
+        expected_input_artifact_id=expected_input_artifact_id,
+        expected_raw_input_sha256=expected_raw_input_sha256,
     )
     if validation["status"] != "passed":
         raise ScientificAdapterError("secondary structure validation did not pass")
@@ -570,6 +636,8 @@ def collect_confidence_stage(
     expected_seeds: tuple[int, ...],
     expected_samples_per_seed: int,
     maximum_total_bytes: int,
+    expected_input_artifact_id: str | None = None,
+    expected_raw_input_sha256: str | None = None,
 ) -> CollectedStageOutput:
     """Validate a confidence closure and expose its existing files to the companion."""
 
@@ -583,6 +651,8 @@ def collect_confidence_stage(
         expected_model_revision=expected_model_revision,
         expected_seeds=expected_seeds,
         expected_samples_per_seed=expected_samples_per_seed,
+        expected_input_artifact_id=expected_input_artifact_id,
+        expected_raw_input_sha256=expected_raw_input_sha256,
     )
     artifacts: list[CollectedArtifactFile] = []
     total = 0

@@ -327,6 +327,8 @@ def command_io_contract() -> dict[str, Any]:
                     "--reference-receipt", "{reference_receipt}",
                     "--threads", "{msa_threads}",
                     "--cpu-request", "{cpu_request}",
+                    "--raw-input-artifact-id", "{raw_input_artifact_id}",
+                    "--raw-input-sha256", "{raw_input_sha256}",
                 ],
                 "optional_runtime_args": [
                     "--database-root", "--reference-manifest", "--manifest-uri",
@@ -437,6 +439,8 @@ def command_io_contract() -> dict[str, Any]:
                     "inference",
                     "--handoff-dir", "{handoff_dir}",
                     "--output-dir", "{output_dir}",
+                    "--expected-raw-input-artifact-id", "{raw_input_artifact_id}",
+                    "--expected-raw-input-sha256", "{raw_input_sha256}",
                 ],
                 "input_selection": (
                     "Exactly one of --handoff-dir, the directory the data stage packaged, or "

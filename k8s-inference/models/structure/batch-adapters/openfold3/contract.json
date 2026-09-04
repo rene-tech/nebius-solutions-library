@@ -12,6 +12,8 @@
     "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream",
     "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r4",
     "digest": "sha256:d1d249fcd8aca464ff0ee0b6e78e0f9c1fe243e0ebd18acc3c4223070fcf203b",
+    "workspace_uid": 10001,
+    "workspace_gid": 10001,
     "state": "build-only-not-semantic-qualified"
   },
   "activation": {

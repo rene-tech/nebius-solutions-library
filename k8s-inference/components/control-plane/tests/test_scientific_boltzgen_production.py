@@ -516,6 +516,39 @@ def test_materializer_cannot_replace_the_injected_stage_runner(tmp_path: Path, m
         )
 
 
+def test_boltzgen_campaign_materializer_rejects_more_than_qualified_member_bound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "scientific"
+    root.mkdir()
+    monkeypatch.setattr(companion, "_ROOT", root)
+    raw = io.BytesIO()
+    with tarfile.open(fileobj=raw, mode="w", format=tarfile.PAX_FORMAT) as archive:
+        for index in range(129):
+            payload = b"x"
+            member = tarfile.TarInfo(f"member-{index:03d}.txt")
+            member.size = len(payload)
+            archive.addfile(member, io.BytesIO(payload))
+    content = zstandard.ZstdCompressor().compress(raw.getvalue())
+    artifact_id = uuid4()
+    client = _ArtifactClient()
+    client.downloads[artifact_id] = (content, "application/x-tar")
+
+    with pytest.raises(ValueError, match="member count"):
+        companion.materialize_artifact(
+            client=client,  # type: ignore[arg-type]
+            artifact_id=artifact_id,
+            destination=root / "target",
+            mode=MaterializationMode.BOLTZGEN_INPUT,
+            compression="zstd",
+            yaml_name="design.yaml",
+            reuse_prefix=None,
+            expected_digest="sha256:" + hashlib.sha256(content).hexdigest(),
+            expected_size_bytes=len(content),
+            expected_media_type="application/x-tar",
+        )
+
+
 def test_filtering_collects_exact_csv_and_mmcif_outputs_from_global_registry(tmp_path: Path) -> None:
     _catalog, _renderer_value, plan = _bound_plan()
     invocation = next(item for item in plan.invocations if item.stage_id == "filtering")

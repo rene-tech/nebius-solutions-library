@@ -114,6 +114,7 @@ def compile_run(
         label="OpenFold3 OpenBind",
     )
     raw_input_sha256 = model_input.digest.removeprefix("sha256:")
+    raw_input_artifact_id = str(model_input.artifact_id)
     assert_profile_identity(
         profile,
         model_id=MODEL_ID,
@@ -151,6 +152,8 @@ def compile_run(
                 prepared,
                 "--raw-input-sha256",
                 raw_input_sha256,
+                "--raw-input-artifact-id",
+                raw_input_artifact_id,
                 "--msa-mode",
                 "none",
                 "--model-seeds",
@@ -193,6 +196,8 @@ def compile_run(
                 prepared,
                 "--expected-raw-input-sha256",
                 raw_input_sha256,
+                "--expected-raw-input-artifact-id",
+                raw_input_artifact_id,
                 "--output-dir",
                 f"{inference_root}/outputs",
                 "--checkpoint",
@@ -320,6 +325,7 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
             expected_provenance={
                 "artifact_id": invocation.produces,
                 "raw_input_sha256": _argument(invocation, "--raw-input-sha256"),
+                "raw_input_artifact_id": _argument(invocation, "--raw-input-artifact-id"),
                 "model_seeds": prepared_seeds,
                 "msa_mode": _argument(invocation, "--msa-mode"),
                 "runner_base_sha256": RUNNER_BASE_SHA256,
@@ -346,6 +352,8 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
             expected_model_revision=SOURCE_REVISION,
             expected_seeds=seeds,
             expected_samples_per_seed=1,
+            expected_input_artifact_id=_argument(invocation, "--expected-raw-input-artifact-id"),
+            expected_raw_input_sha256=_argument(invocation, "--expected-raw-input-sha256"),
             maximum_total_bytes=invocation.max_output_bytes,
         )
     raise ScientificAdapterError(f"unsupported OpenFold3 OpenBind collector identity {invocation.collector_id!r}")

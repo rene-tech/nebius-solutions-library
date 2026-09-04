@@ -163,6 +163,11 @@ def academic_scheduling() -> SchedulingContractResolver:
 
 def test_candidate_keeps_academic_planes_separate_and_is_not_route_exposed() -> None:
     candidate = profile()
+    contract = load(ADAPTER_ROOT / "contract.json")
+    assert contract["runtime"]["workspace_uid"] == 1001
+    assert contract["runtime"]["workspace_gid"] == 1001
+    assert contract["runtime"]["production_protocol_compatible"] is False
+    assert contract["route_gate"]["route_exposed"] is False
     assert candidate["state"] == "candidate-unqualified"
     assert candidate["route_exposed"] is False
     assert candidate["access"] == {
@@ -232,6 +237,10 @@ def _inference_workspace(tmp_path: Path) -> Path:
     receipt = load(RUNTIME_FIXTURES / "inference-stage-receipt.json")
     receipt.update(
         {
+            "input_identity": {
+                "artifact_id": "00000000-0000-4000-8000-000000000001",
+                "sha256": "a" * 64,
+            },
             "image": {
                 "runtime_id": af3.MODEL_ID,
                 "upstream_commit": af3.SOURCE_REVISION,
@@ -265,6 +274,10 @@ def _data_workspace(tmp_path: Path, *, publish_receipt: bool = True) -> tuple[Pa
     }
     index = {
         "schema": af3.HANDOFF_SCHEMA,
+        "input_identity": {
+            "artifact_id": "00000000-0000-4000-8000-000000000001",
+            "sha256": "a" * 64,
+        },
         "count": 1,
         "fold_jobs": ["pdl1-binder"],
         "entries": [entry],
@@ -275,6 +288,10 @@ def _data_workspace(tmp_path: Path, *, publish_receipt: bool = True) -> tuple[Pa
     receipt = load(RUNTIME_FIXTURES / "data-stage-receipt.json")
     receipt.update(
         {
+            "input_identity": {
+                "artifact_id": "00000000-0000-4000-8000-000000000001",
+                "sha256": "a" * 64,
+            },
             "image": {
                 "runtime_id": af3.MODEL_ID,
                 "upstream_commit": af3.SOURCE_REVISION,

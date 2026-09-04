@@ -630,11 +630,30 @@ def test_public_requests_reject_duplicate_unknown_path_and_execution_fields() ->
 
 def test_identity_and_all_numeric_batch_bounds_fail_closed() -> None:
     request = fixture("boltzgen", "positive-design.json")
-    for field, value in (("num_designs", True), ("num_designs", 10001), ("budget", 1001)):
+    for field, value in (
+        ("num_designs", True),
+        ("num_designs", boltzgen.MAX_DESIGNS_PER_BATCH + 1),
+        ("budget", boltzgen.MAX_BUDGET_PER_BATCH + 1),
+    ):
         candidate = copy.deepcopy(request)
         candidate["parameters"]["batches"][0][field] = value
         with pytest.raises(ScientificAdapterError):
             boltzgen.compile_run(profile("boltzgen"), candidate, operation_id="op-bad-02")
+    accepted_limit = copy.deepcopy(request)
+    accepted_limit["parameters"]["batches"][0]["num_designs"] = 20
+    accepted_limit["parameters"]["batches"][0]["budget"] = 3
+    accepted_limit["parameters"]["batches"][1]["num_designs"] = 4
+    boltzgen.compile_run(profile("boltzgen"), accepted_limit, operation_id="op-bounded-limit")
+    too_many_batches = copy.deepcopy(request)
+    too_many_batches["parameters"]["batches"].append(
+        {"shard_id": "pdl1-c", "num_designs": 1, "budget": 1, "reuse_completed": False}
+    )
+    with pytest.raises(ScientificAdapterError, match="1..2"):
+        boltzgen.compile_run(profile("boltzgen"), too_many_batches, operation_id="op-too-many-batches")
+    too_many_total = copy.deepcopy(request)
+    too_many_total["parameters"]["batches"][0]["num_designs"] = 13
+    with pytest.raises(ScientificAdapterError, match="total design bound"):
+        boltzgen.compile_run(profile("boltzgen"), too_many_total, operation_id="op-too-many-designs")
     duplicate = copy.deepcopy(request)
     duplicate["parameters"]["batches"][1]["shard_id"] = "pdl1-a"
     with pytest.raises(ScientificAdapterError, match="unique"):

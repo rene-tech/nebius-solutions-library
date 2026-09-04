@@ -523,8 +523,11 @@ variable "deployment" {
           "application/octet-stream",
           "application/vnd.fs2.scientific-manifest+json",
           "application/vnd.fs2.scientific-validation+json",
+          "application/x-tar",
           "chemical/x-cif",
+          "chemical/x-mmcif",
           "chemical/x-pdb",
+          "text/csv",
           "text/plain",
           "text/x-fasta",
         ])

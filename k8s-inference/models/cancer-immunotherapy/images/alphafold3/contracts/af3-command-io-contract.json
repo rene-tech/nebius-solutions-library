@@ -217,7 +217,7 @@
           "name": "data_handoff",
           "path": "{output_dir}/fs2-af3-handoff",
           "portability": "Mount this directory into the GPU stage and pass --handoff-dir. Paths are relative, so the GPU pod reconstructs them under its own artifact mount. No absolute path from the CPU pod is recorded or reused.",
-          "schema": "fs2-serve.nebius.ai/alphafold3-data-handoff/v1",
+          "schema": "fs2-serve.nebius.ai/alphafold3-data-handoff/v2",
           "writable": true
         },
         {
@@ -240,7 +240,11 @@
         "--threads",
         "{msa_threads}",
         "--cpu-request",
-        "{cpu_request}"
+        "{cpu_request}",
+        "--raw-input-artifact-id",
+        "{raw_input_artifact_id}",
+        "--raw-input-sha256",
+        "{raw_input_sha256}"
       ]
     },
     "inference": {
@@ -319,7 +323,7 @@
           "placeholder": "{handoff_dir}",
           "read_only": true,
           "required": true,
-          "schema": "fs2-serve.nebius.ai/alphafold3-data-handoff/v1"
+          "schema": "fs2-serve.nebius.ai/alphafold3-data-handoff/v2"
         },
         {
           "claim": "academic-assets-runtime-rwx",
@@ -365,7 +369,11 @@
         "--handoff-dir",
         "{handoff_dir}",
         "--output-dir",
-        "{output_dir}"
+        "{output_dir}",
+        "--expected-raw-input-artifact-id",
+        "{raw_input_artifact_id}",
+        "--expected-raw-input-sha256",
+        "{raw_input_sha256}"
       ]
     }
   }

@@ -316,7 +316,12 @@ def build_pred_command(
 
 
 def _write_confidence(
-    output_dir: Path, *, seeds: list[int], samples_per_seed: int
+    output_dir: Path,
+    *,
+    seeds: list[int],
+    samples_per_seed: int,
+    input_artifact_id: str,
+    raw_input_sha256: str,
 ) -> dict[str, object]:
     candidates = sorted(
         output_dir.rglob("*_summary_confidence_sample_*.json"),
@@ -364,6 +369,8 @@ def _write_confidence(
         seeds=seeds,
         samples_per_seed=samples_per_seed,
         results=results,
+        input_artifact_id=input_artifact_id,
+        raw_input_sha256=raw_input_sha256,
     )
 
 
@@ -372,7 +379,12 @@ def _prep(args: argparse.Namespace) -> None:
     _require_artifact_boundary_args(args)
     artifact_manifest_sha256 = _validate_artifact()
     _logical_id(args.output_artifact_id)
+    _logical_id(args.raw_input_artifact_id)
+    if re.fullmatch(r"[0-9a-f]{64}", args.raw_input_sha256) is None:
+        raise SystemExit("raw-input-sha256 must be a lowercase SHA-256")
     input_path = _file(args.input, "input")
+    if sha256_file(input_path) != args.raw_input_sha256:
+        raise SystemExit("localized Protenix input differs from the frozen verified digest")
     output_dir = _output(args.output_dir, "output-dir")
     processed_json = _output(args.processed_json, "processed-json")
     provenance_marker = _output(args.provenance_marker, "provenance-marker")
@@ -420,6 +432,7 @@ def _prep(args: argparse.Namespace) -> None:
         "member": "processed.json",
         "sha256": sha256_file(processed_json),
         "raw_input_sha256": sha256_file(input_path),
+        "raw_input_artifact_id": args.raw_input_artifact_id,
         "msa_mode": args.msa_mode,
         "composite_artifact_id": ARTIFACT_ID,
         "composite_artifact_revision": ARTIFACT_REVISION,
@@ -446,13 +459,17 @@ def _pred(args: argparse.Namespace) -> None:
     input_path = _file(args.input, "enriched input")
     input_marker = _file(args.input_marker, "input-marker")
     _logical_id(args.input_artifact_id)
+    _logical_id(args.expected_raw_input_artifact_id)
+    if re.fullmatch(r"[0-9a-f]{64}", args.expected_raw_input_sha256) is None:
+        raise SystemExit("expected-raw-input-sha256 must be a lowercase SHA-256")
     marker = _load_marker(input_marker)
     expected_marker = {
         "schema": PROTENIX_HANDOFF_SCHEMA,
         "artifact_id": args.input_artifact_id,
         "member": "processed.json",
         "sha256": sha256_file(input_path),
-        "raw_input_sha256": marker.get("raw_input_sha256"),
+        "raw_input_sha256": args.expected_raw_input_sha256,
+        "raw_input_artifact_id": args.expected_raw_input_artifact_id,
         "msa_mode": args.msa_mode,
         "composite_artifact_id": ARTIFACT_ID,
         "composite_artifact_revision": ARTIFACT_REVISION,
@@ -461,9 +478,7 @@ def _pred(args: argparse.Namespace) -> None:
         "source_revision": CODE_REVISION,
     }
     if (
-        not isinstance(marker.get("raw_input_sha256"), str)
-        or re.fullmatch(r"[0-9a-f]{64}", str(marker.get("raw_input_sha256"))) is None
-        or marker != expected_marker
+        marker != expected_marker
     ):
         raise SystemExit(
             "input-marker does not bind the Protenix input, msa_mode, and composite artifact manifest"
@@ -508,7 +523,11 @@ def _pred(args: argparse.Namespace) -> None:
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
     confidence = _write_confidence(
-        output_dir, seeds=seeds, samples_per_seed=args.sample_count
+        output_dir,
+        seeds=seeds,
+        samples_per_seed=args.sample_count,
+        input_artifact_id=args.expected_raw_input_artifact_id,
+        raw_input_sha256=args.expected_raw_input_sha256,
     )
     print(json.dumps(confidence, sort_keys=True, separators=(",", ":")))
 
@@ -524,6 +543,8 @@ def main(argv: list[str] | None = None) -> None:
     prep.add_argument("--provenance-marker", required=True)
     prep.add_argument("--handoff-tar", required=True)
     prep.add_argument("--output-artifact-id", required=True)
+    prep.add_argument("--raw-input-artifact-id", required=True)
+    prep.add_argument("--raw-input-sha256", required=True)
     prep.add_argument("--msa-mode", choices=("none",), required=True)
     prep.add_argument("--reference-root", required=True)
     prep.add_argument("--reference-manifest", required=True)
@@ -534,6 +555,8 @@ def main(argv: list[str] | None = None) -> None:
     pred.add_argument("--input", required=True)
     pred.add_argument("--input-marker", required=True)
     pred.add_argument("--input-artifact-id", required=True)
+    pred.add_argument("--expected-raw-input-artifact-id", required=True)
+    pred.add_argument("--expected-raw-input-sha256", required=True)
     pred.add_argument("--output-dir", required=True)
     pred.add_argument("--checkpoint", required=True)
     pred.add_argument("--common-dir", required=True)

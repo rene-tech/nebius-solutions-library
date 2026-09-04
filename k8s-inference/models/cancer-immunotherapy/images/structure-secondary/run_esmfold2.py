@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import sys
 
 from result_contract import atomic_write_text, finite_metric, write_confidence_envelope
@@ -22,6 +24,7 @@ ESMFOLD2_FAST_CONTENT_SHA256 = "19ceaffb5860acf160ea199599fb719b0566519e4cc2fa7a
 ESMC_CONTENT_SHA256 = "8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758"
 CCD_CONTENT_SHA256 = "b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e"
 VARIANT_ID = "biohub-v3-4-0"
+HANDOFF_SCHEMA = "fs2.nebius.ai/esmfold2-prepared-handoff/v2"
 
 
 def _absolute_file(path: str, label: str) -> Path:
@@ -38,6 +41,12 @@ def _absolute_dir(path: str, label: str) -> Path:
     return candidate
 
 
+def _canonical_sha256(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 def _load_request(path: Path):
     from esm.utils.structure.input_builder import deserialize_structure_prediction_input
 
@@ -45,6 +54,32 @@ def _load_request(path: Path):
     if not isinstance(document, dict) or not document.get("sequences"):
         raise SystemExit("ESMFold2 request must contain a non-empty sequences array")
     return deserialize_structure_prediction_input(document)
+
+
+def _load_prepared_handoff(args: argparse.Namespace):
+    from esm.utils.structure.input_builder import deserialize_structure_prediction_input
+
+    path = _absolute_file(args.request, "request")
+    try:
+        envelope = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"prepared ESMFold handoff is invalid JSON: {exc}") from exc
+    prepared = envelope.get("prepared_input") if isinstance(envelope, dict) else None
+    expected = {
+        "schema": HANDOFF_SCHEMA,
+        "artifact_id": args.input_artifact_id,
+        "raw_input_artifact_id": args.expected_raw_input_artifact_id,
+        "raw_input_sha256": args.expected_raw_input_sha256,
+        "variant": args.variant,
+        "mode": args.expected_mode,
+        "seed": args.seed,
+        "source_revision": args.source_revision,
+        "prepared_sha256": _canonical_sha256(prepared),
+        "prepared_input": prepared,
+    }
+    if not isinstance(prepared, dict) or envelope != expected:
+        raise SystemExit("prepared ESMFold handoff differs from the frozen invocation")
+    return deserialize_structure_prediction_input(prepared)
 
 
 def _validate_runtime_localization_args(
@@ -86,6 +121,14 @@ def _prepare(args: argparse.Namespace) -> None:
     )
 
     input_path = _absolute_file(args.input, "input")
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", args.output_artifact_id) is None:
+        raise SystemExit("output-artifact-id is invalid")
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", args.raw_input_artifact_id) is None:
+        raise SystemExit("raw-input-artifact-id is invalid")
+    if re.fullmatch(r"[0-9a-f]{64}", args.raw_input_sha256) is None:
+        raise SystemExit("raw-input-sha256 must be a lowercase SHA-256")
+    if hashlib.sha256(input_path.read_bytes()).hexdigest() != args.raw_input_sha256:
+        raise SystemExit("localized ESMFold input differs from the frozen verified digest")
     if args.sequence:
         manifest = json.loads(input_path.read_text(encoding="utf-8"))
         chain: dict[str, object] = {
@@ -107,10 +150,20 @@ def _prepare(args: argparse.Namespace) -> None:
     if not output.is_absolute():
         raise SystemExit("output must be an absolute path")
     output.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(
-        output,
-        json.dumps(serialize_structure_prediction_input(request), sort_keys=True) + "\n",
-    )
+    prepared = serialize_structure_prediction_input(request)
+    envelope = {
+        "schema": HANDOFF_SCHEMA,
+        "artifact_id": args.output_artifact_id,
+        "raw_input_artifact_id": args.raw_input_artifact_id,
+        "raw_input_sha256": args.raw_input_sha256,
+        "variant": args.variant,
+        "mode": args.mode,
+        "seed": args.seed,
+        "source_revision": args.source_revision,
+        "prepared_sha256": _canonical_sha256(prepared),
+        "prepared_input": prepared,
+    }
+    atomic_write_text(output, json.dumps(envelope, sort_keys=True, separators=(",", ":")) + "\n")
 
 
 def _fold(args: argparse.Namespace) -> None:
@@ -140,7 +193,7 @@ def _fold(args: argparse.Namespace) -> None:
             "TRANSFORMERS_OFFLINE": "1",
         }
     )
-    request = _load_request(_absolute_file(args.request, "request"))
+    request = _load_prepared_handoff(args)
     output = Path(args.output) if args.output else Path(args.output_dir) / f"{args.complex_id}.cif"
     if not output.is_absolute():
         raise SystemExit("output or output-dir must resolve to an absolute path")
@@ -206,6 +259,8 @@ def _fold(args: argparse.Namespace) -> None:
                 "metrics": metrics,
             }
         ],
+        input_artifact_id=args.expected_raw_input_artifact_id,
+        raw_input_sha256=args.expected_raw_input_sha256,
     )
     evidence = {
         "schema": "fs2.nebius.ai/esmfold2-semantic-smoke/v1",
@@ -236,6 +291,11 @@ def main() -> None:
     prepare_input.add_argument("--input", dest="input")
     prepare_input.add_argument("--input-manifest", dest="input")
     prepare.add_argument("--output", required=True)
+    prepare.add_argument("--output-artifact-id", required=True)
+    prepare.add_argument("--raw-input-artifact-id", required=True)
+    prepare.add_argument("--raw-input-sha256", required=True)
+    prepare.add_argument("--variant", choices=("esmfold2", "esmfold2-fast"), required=True)
+    prepare.add_argument("--source-revision", required=True)
     prepare.add_argument("--sequence")
     prepare.add_argument("--mode", choices=("single-sequence", "precomputed-msa"), default="single-sequence")
     prepare.add_argument("--seed", type=int, default=0)
@@ -260,6 +320,11 @@ def main() -> None:
     fold.add_argument("--complex-id", default="fs2-smoke")
     fold.add_argument("--variant", choices=("esmfold2", "esmfold2-fast"), required=True)
     fold.add_argument("--runtime-localization-marker", required=True)
+    fold.add_argument("--input-artifact-id", required=True)
+    fold.add_argument("--expected-raw-input-artifact-id", required=True)
+    fold.add_argument("--expected-raw-input-sha256", required=True)
+    fold.add_argument("--expected-mode", choices=("single-sequence", "precomputed-msa"), required=True)
+    fold.add_argument("--source-revision", required=True)
     fold.set_defaults(handler=_fold)
 
     args = parser.parse_args()

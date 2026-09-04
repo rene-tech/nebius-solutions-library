@@ -98,7 +98,7 @@ DATA_OUTPUT_DIR = "data-output"
 HANDOFF_DIR_NAME = "fs2-af3-handoff"
 HANDOFF_MOUNT_DIR = "handoff"
 HANDOFF_INDEX = "index.json"
-HANDOFF_SCHEMA = "fs2-serve.nebius.ai/alphafold3-data-handoff/v1"
+HANDOFF_SCHEMA = "fs2-serve.nebius.ai/alphafold3-data-handoff/v2"
 HANDOFF_PACKAGE = "handoff.tar"
 DATA_RECEIPT_FILENAME = "data-runtime-receipt.json"
 INFERENCE_RECEIPT_FILENAME = "inference-runtime-receipt.json"
@@ -271,6 +271,12 @@ def _assert_clean_argv(argv: tuple[str, ...]) -> None:
             raise ScientificAdapterError(f"AlphaFold 3 argv uses retired command surface {token}")
 
 
+def _argument(invocation: StageInvocation, name: str) -> str:
+    if invocation.argv.count(name) != 1 or invocation.argv.index(name) + 1 >= len(invocation.argv):
+        raise ScientificAdapterError(f"AlphaFold 3 invocation has no exact {name} argument")
+    return invocation.argv[invocation.argv.index(name) + 1]
+
+
 def _load_json_file(path: Path, *, label: str, maximum_bytes: int) -> Mapping[str, object]:
     try:
         payload = path.read_bytes()
@@ -372,6 +378,12 @@ def collect_data(invocation: StageInvocation, workspace: Path) -> CollectedStage
         maximum_bytes=MAX_METADATA_BYTES,
     )
     _assert_terminal_receipt(receipt, mode="data")
+    expected_input_identity = {
+        "artifact_id": _argument(invocation, "--raw-input-artifact-id"),
+        "sha256": _argument(invocation, "--raw-input-sha256"),
+    }
+    if receipt.get("input_identity") != expected_input_identity:
+        raise ScientificAdapterError("AlphaFold 3 data receipt lost the frozen fold-input identity")
     reference = receipt.get("reference_data")
     cpu = receipt.get("cpu_envelope")
     if (
@@ -396,6 +408,7 @@ def collect_data(invocation: StageInvocation, workspace: Path) -> CollectedStage
     fold_jobs = index.get("fold_jobs")
     expected_index_fields = {
         "schema",
+        "input_identity",
         "count",
         "fold_jobs",
         "entries",
@@ -404,6 +417,7 @@ def collect_data(invocation: StageInvocation, workspace: Path) -> CollectedStage
     if (
         set(index) != expected_index_fields
         or index.get("schema") != HANDOFF_SCHEMA
+        or index.get("input_identity") != expected_input_identity
         or index.get("paths_are_relative_to") != "the directory containing this index"
         or not isinstance(entries, list)
         or not 1 <= len(entries) <= MAX_HANDOFF_FILES
@@ -417,6 +431,7 @@ def collect_data(invocation: StageInvocation, workspace: Path) -> CollectedStage
     if (
         not isinstance(receipt_handoff, Mapping)
         or receipt_handoff.get("schema") != HANDOFF_SCHEMA
+        or receipt_handoff.get("input_identity") != expected_input_identity
         or receipt_handoff.get("count") != len(entries)
         or receipt_handoff.get("fold_jobs") != fold_jobs
         or receipt_handoff.get("entries") != entries
@@ -522,6 +537,12 @@ def collect_result(invocation: StageInvocation, workspace: Path) -> CollectedSta
         maximum_bytes=MAX_METADATA_BYTES,
     )
     _assert_terminal_receipt(receipt, mode="inference")
+    expected_input_identity = {
+        "artifact_id": _argument(invocation, "--expected-raw-input-artifact-id"),
+        "sha256": _argument(invocation, "--expected-raw-input-sha256"),
+    }
+    if receipt.get("input_identity") != expected_input_identity:
+        raise ScientificAdapterError("AlphaFold 3 inference receipt lost the frozen fold-input identity")
     parameters = receipt.get("parameters")
     if (
         not isinstance(parameters, Mapping)
@@ -601,6 +622,8 @@ def compile_run(
         raise ScientificAdapterError("route variant_id does not match the AlphaFold 3 adapter")
     request, parameters = _request(request_value)
     fold_input = _verified_fold_input(request, input_artifacts)
+    raw_input_artifact_id = str(fold_input.artifact_id)
+    raw_input_sha256 = fold_input.digest.removeprefix("sha256:")
     assert_profile_identity(
         profile,
         model_id=MODEL_ID,
@@ -633,6 +656,10 @@ def compile_run(
         cpu_count,
         "--cpu-request",
         cpu_count,
+        "--raw-input-artifact-id",
+        raw_input_artifact_id,
+        "--raw-input-sha256",
+        raw_input_sha256,
         "--receipt",
         f"{data_root}/{DATA_RECEIPT_FILENAME}",
     )
@@ -672,6 +699,10 @@ def compile_run(
         f"{inference_root}/outputs",
         "--receipt",
         f"{inference_root}/{INFERENCE_RECEIPT_FILENAME}",
+        "--expected-raw-input-artifact-id",
+        raw_input_artifact_id,
+        "--expected-raw-input-sha256",
+        raw_input_sha256,
     ]
     if parameters.fold_job is not None:
         inference_argv_values.extend(("--fold-job", parameters.fold_job))

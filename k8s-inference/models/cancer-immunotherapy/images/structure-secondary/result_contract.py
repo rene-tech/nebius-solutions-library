@@ -7,6 +7,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 import tempfile
 from typing import Mapping
@@ -116,7 +117,14 @@ def write_confidence_envelope(
     seeds: list[int],
     samples_per_seed: int,
     results: list[dict[str, object]],
+    input_artifact_id: str,
+    raw_input_sha256: str,
 ) -> dict[str, object]:
+    if (
+        re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", input_artifact_id) is None
+        or re.fullmatch(r"[0-9a-f]{64}", raw_input_sha256) is None
+    ):
+        raise SystemExit("confidence envelope input identity is invalid")
     if (
         not 1 <= len(seeds) <= MAX_SEEDS
         or any(
@@ -219,6 +227,10 @@ def write_confidence_envelope(
         "schema": "fs2.nebius.ai/structure-confidence/v1",
         "runtime_id": runtime_id,
         "model_revision": model_revision,
+        "input_identity": {
+            "artifact_id": input_artifact_id,
+            "sha256": raw_input_sha256,
+        },
         "seeds": seeds,
         "samples_per_seed": samples_per_seed,
         "results": normalized,
@@ -247,6 +259,7 @@ def validate_confidence_envelope(
         "schema",
         "runtime_id",
         "model_revision",
+        "input_identity",
         "seeds",
         "samples_per_seed",
         "results",
@@ -256,12 +269,22 @@ def validate_confidence_envelope(
     samples = envelope.get("samples_per_seed")
     results = envelope.get("results")
     runtime_id = envelope.get("runtime_id")
+    input_identity = envelope.get("input_identity")
     if (
         envelope.get("schema") != "fs2.nebius.ai/structure-confidence/v1"
         or not isinstance(runtime_id, str)
         or not runtime_id
         or not isinstance(envelope.get("model_revision"), str)
         or not envelope["model_revision"]
+        or not isinstance(input_identity, dict)
+        or set(input_identity) != {"artifact_id", "sha256"}
+        or not isinstance(input_identity.get("artifact_id"), str)
+        or re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", input_identity["artifact_id"]
+        )
+        is None
+        or not isinstance(input_identity.get("sha256"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", input_identity["sha256"]) is None
         or not isinstance(seeds, list)
         or not 1 <= len(seeds) <= MAX_SEEDS
         or any(

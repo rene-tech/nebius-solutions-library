@@ -87,6 +87,8 @@ def compile_run(
         maximum_bytes=MAX_INPUT_BYTES,
         label="ESMFold2-Fast",
     )
+    raw_input_artifact_id = str(model_input.artifact_id)
+    raw_input_sha256 = model_input.digest.removeprefix("sha256:")
     assert_profile_identity(
         profile,
         model_id=MODEL_ID,
@@ -111,6 +113,16 @@ def compile_run(
                 f"{prepare_root}/input-manifest.json",
                 "--output",
                 f"{prepare_root}/prepared-input.json",
+                "--output-artifact-id",
+                prepared,
+                "--raw-input-artifact-id",
+                raw_input_artifact_id,
+                "--raw-input-sha256",
+                raw_input_sha256,
+                "--variant",
+                MODEL_ID,
+                "--source-revision",
+                SOURCE_REVISION,
                 "--sequence",
                 parameters.sequence,
                 "--mode",
@@ -148,6 +160,16 @@ def compile_run(
                 "fold",
                 "--input",
                 f"{fold_root}/prepared-input.json",
+                "--input-artifact-id",
+                prepared,
+                "--expected-raw-input-artifact-id",
+                raw_input_artifact_id,
+                "--expected-raw-input-sha256",
+                raw_input_sha256,
+                "--expected-mode",
+                "single-sequence",
+                "--source-revision",
+                SOURCE_REVISION,
                 "--output-dir",
                 f"{fold_root}/outputs",
                 "--model-dir",
@@ -257,6 +279,15 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
             media_type="application/json",
             maximum_bytes=16 * 1024 * 1024,
             validator_id=invocation.validator_id,
+            expected_provenance={
+                "artifact_id": invocation.produces,
+                "raw_input_artifact_id": esmfold2._argument(invocation, "--raw-input-artifact-id"),
+                "raw_input_sha256": esmfold2._argument(invocation, "--raw-input-sha256"),
+                "variant": esmfold2._argument(invocation, "--variant"),
+                "mode": esmfold2._argument(invocation, "--mode"),
+                "seed": int(esmfold2._argument(invocation, "--seed")),
+                "source_revision": esmfold2._argument(invocation, "--source-revision"),
+            },
         )
     if invocation.collector_id == RESULT_COLLECTOR_ID:
         if invocation.stage_id != "fold" or invocation.validator_id != VALIDATOR_ID:
@@ -275,6 +306,10 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
             expected_model_revision=MODEL_REVISION,
             expected_seeds=(seed,),
             expected_samples_per_seed=1,
+            expected_input_artifact_id=esmfold2._argument(
+                invocation, "--expected-raw-input-artifact-id"
+            ),
+            expected_raw_input_sha256=esmfold2._argument(invocation, "--expected-raw-input-sha256"),
             maximum_total_bytes=invocation.max_output_bytes,
         )
     raise ScientificAdapterError(f"unsupported ESMFold2-Fast collector identity {invocation.collector_id!r}")

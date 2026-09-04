@@ -140,6 +140,8 @@ def compile_run(
         maximum_bytes=MAX_INPUT_BYTES,
         label="Protenix v2",
     )
+    raw_input_sha256 = model_input.digest.removeprefix("sha256:")
+    raw_input_artifact_id = str(model_input.artifact_id)
     assert_profile_identity(
         profile,
         model_id=MODEL_ID,
@@ -174,6 +176,10 @@ def compile_run(
                 f"{prep_root}/handoff.tar.zst",
                 "--output-artifact-id",
                 prepared,
+                "--raw-input-artifact-id",
+                raw_input_artifact_id,
+                "--raw-input-sha256",
+                raw_input_sha256,
                 "--msa-mode",
                 "none",
                 "--reference-root",
@@ -225,6 +231,10 @@ def compile_run(
                 f"{pred_root}/input/provenance.json",
                 "--input-artifact-id",
                 prepared,
+                "--expected-raw-input-artifact-id",
+                raw_input_artifact_id,
+                "--expected-raw-input-sha256",
+                raw_input_sha256,
                 "--output-dir",
                 f"{pred_root}/outputs",
                 "--checkpoint",
@@ -340,6 +350,8 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
             validator_id=invocation.validator_id,
             expected_provenance={
                 "artifact_id": invocation.produces,
+                "raw_input_artifact_id": _argument(invocation, "--raw-input-artifact-id"),
+                "raw_input_sha256": _argument(invocation, "--raw-input-sha256"),
                 "msa_mode": _argument(invocation, "--msa-mode"),
                 "composite_artifact_id": MODEL_ARTIFACT,
                 "composite_artifact_revision": COMPOSITE_ARTIFACT_REVISION,
@@ -369,6 +381,8 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
             expected_model_revision=OUTPUT_MODEL_REVISION,
             expected_seeds=seeds,
             expected_samples_per_seed=samples,
+            expected_input_artifact_id=_argument(invocation, "--expected-raw-input-artifact-id"),
+            expected_raw_input_sha256=_argument(invocation, "--expected-raw-input-sha256"),
             maximum_total_bytes=invocation.max_output_bytes,
         )
     raise ScientificAdapterError(f"unsupported Protenix v2 collector identity {invocation.collector_id!r}")
