@@ -26,8 +26,10 @@ from . import (
     esmfold2,
     esmfold2_fast,
     localization,
+    mosaic,
     openfold3,
     protenix_v2,
+    rfdiffusion,
 )
 from .common import ScientificAdapterError, load_json_request, profile_from_catalog
 from .localization import (
@@ -221,6 +223,8 @@ for _module_name in (
     "esmfold2_fast",
     "protenix_v2",
     "openfold3",
+    "mosaic",
+    "rfdiffusion",
 ):
     _register_legacy_primary(_module_name)
 
@@ -243,11 +247,13 @@ __all__ = [
     "load_localization_contracts_from_path",
     "load_json_request",
     "localization",
+    "mosaic",
     "openfold3",
     "preflight_stage_trees",
     "profile_from_catalog",
     "register_adapter",
     "protenix_v2",
+    "rfdiffusion",
 ]
 
 for _module_name in ("proteina_complexa", "boltzgen", "bindcraft"):

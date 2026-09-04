@@ -21,13 +21,19 @@ The activation state is fail closed:
   BindCraft also carries the adapter's exact deployment-authorization overlay;
   those controller-only fields are intentionally outside the public profile
   projection because the current public schema cannot express them.
-* Mosaic and RFdiffusion remain blocked because current main has no canonical
-  public generation for their model bytes. Their transitional qualification
-  claims are evidence, not activation inputs, so the fragments contain no
-  invented claim or `subPath`.
+* Mosaic and RFdiffusion have canonical public generations. Their activation
+  fragments still pin the previously accepted single-root images, while the
+  split-root successors are published and await serialized lock/profile
+  integration plus live controller qualification.
 * Every projected profile is `candidate-unqualified`, every route and MCP
   invocation flag remains off, and a real public controller run is required
   before promotion.
+
+Mosaic and RFdiffusion now have canonical localization generations and reviewed
+controller compilers/collectors. The old accepted-image path mismatch, exact
+published successor identities, and remaining promotion gates are recorded in
+[`CONTROLLER_INTEGRATION_GAPS.md`](CONTROLLER_INTEGRATION_GAPS.md). They remain
+route-disabled; model-local semantic evidence is not a serialized companion run.
 
 Every fragment also records the exact integration source revision and complete
 runtime-recipe path set. `fs2-path-set-sha256-v1` is byte-for-byte the control
