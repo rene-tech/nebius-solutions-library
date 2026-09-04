@@ -24,6 +24,11 @@ MIN_ATOM_RECORDS = 10
 IMAGE_RUNTIME_UID = 10001
 IMAGE_RUNTIME_GID = 10001
 CACHE_WRITE_PROBE = b"fs2-cache-write-probe-v1\n"
+OPENFOLD_RUNNER_BASE = Path("/opt/fs2/runtime/openfold3/runner-base.yaml")
+OPENFOLD_RUNNER_BASE_BYTES = 102
+OPENFOLD_RUNNER_BASE_SHA256 = (
+    "c42271cdfc4c9dd01ceca7a9e0c2d0a207c2d8106a2bb03146d491d54b601469"
+)
 BUILD_CACHE_CONTRACTS: dict[str, dict[str, object]] = {
     "protenix-v2": {
         "mount_roots": ["/cache/protenix"],
@@ -299,8 +304,31 @@ def _build_smoke(runtime_id: str) -> dict[str, Any]:
             )
         _run_cli(["/usr/local/bin/fs2-run-openfold3", "--help"], "prepare")
         _run_cli(["/usr/local/bin/fs2-run-openfold3", "predict", "--help"], "checkpoint")
+        runner_bytes = OPENFOLD_RUNNER_BASE.read_bytes()
+        runner_sha256 = sha256_file(OPENFOLD_RUNNER_BASE)
+        runner_mode = OPENFOLD_RUNNER_BASE.stat().st_mode & 0o777
+        runner_directory_mode = OPENFOLD_RUNNER_BASE.parent.stat().st_mode & 0o777
+        if (
+            len(runner_bytes) != OPENFOLD_RUNNER_BASE_BYTES
+            or runner_sha256 != OPENFOLD_RUNNER_BASE_SHA256
+            or runner_mode != 0o444
+            or runner_directory_mode != 0o555
+        ):
+            raise RuntimeError(
+                "OpenFold3 runner-base image contract differs from the canonical "
+                "nonroot-readable asset"
+            )
         result["cli"] = "fs2-run-openfold3 prepare|predict"
         result["ccd_api"] = "biotite.structure.info.ccd.set_ccd_path"
+        result["runner_base"] = {
+            "path": str(OPENFOLD_RUNNER_BASE),
+            "bytes": len(runner_bytes),
+            "sha256": runner_sha256,
+            "mode": format(runner_mode, "04o"),
+            "directory_mode": format(runner_directory_mode, "04o"),
+            "effective_uid": os.geteuid(),
+            "effective_gid": os.getegid(),
+        }
         return result
 
     raise RuntimeError(f"unsupported FS2_RUNTIME_ID: {runtime_id!r}")

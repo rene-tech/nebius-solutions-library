@@ -529,7 +529,8 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             with self.subTest(image=image["id"]):
                 revision = expected[image["id"]]
                 self.assertEqual(image["source"]["revision"], revision)
-                self.assertEqual(image["tag"], f"{revision}-h100-r4")
+                generation = "r6" if image["id"] == "openfold3" else "r5"
+                self.assertEqual(image["tag"], f"{revision}-h100-{generation}")
                 self.assertRegex(image["source"]["tag"], r"^v[0-9]")
                 for base in image["base_images"]:
                     self.assertRegex(base, r"@sha256:[0-9a-f]{64}$")
@@ -561,7 +562,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             "esmfold2": "sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
             "esmfold2-fast": "sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
             "protenix-v2": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
-            "openfold3": "sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de",
+            "openfold3": None,
         }
         self.assertEqual(
             {image["id"]: image["published_digest"] for image in LOCK["images"]},
@@ -713,7 +714,8 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
         openfold = (ROOT / "Dockerfile.openfold3").read_text(encoding="utf-8")
         for value in expected["openfold3"][1].values():
             self.assertGreaterEqual(openfold.count(value), 2)
-        self.assertIn("mkdir -p /opt/fs2/runtime /models/openfold3 /databases/openfold3 /outputs /cache/openfold3/triton /cache/openfold3/torch-extensions /cache/openfold3/xdg", openfold)
+        self.assertIn("mkdir -p /opt/fs2/runtime/openfold3 /models/openfold3 /databases/openfold3 /outputs /cache/openfold3/triton /cache/openfold3/torch-extensions /cache/openfold3/xdg", openfold)
+        self.assertIn("chmod 0555 /opt/fs2/runtime /opt/fs2/runtime/openfold3", openfold)
         self.assertIn("chown -R 10001:10001 /models /databases /outputs /cache/openfold3", openfold)
         self.assertNotIn("TRITON_CACHE_DIR=/tmp", openfold)
         self.assertNotIn("TORCH_EXTENSIONS_DIR=/tmp", openfold)
@@ -1908,20 +1910,16 @@ for seed in seeds:
         )
         self.assertIn('"ls-remote"', verifier)
         self.assertIn("adapter commit is not the exact clean pushed branch head", verifier)
-        self.assertIn("MODEL_CONTRACT_PATHS", verifier)
+        self.assertIn("MODEL_CONTRACTS", verifier)
         self.assertIn("_candidate_profile_from_contract", verifier)
         self.assertIn("invocation.runtime_artifacts", verifier)
         self.assertIn("pending-external-activation", verifier)
-        self.assertIn("PUBLISHED_IMAGE_SOURCE_REVISION", verifier)
+        self.assertIn("MINIMUM_REPAIR_REVISION", verifier)
         self.assertIn(
-            'EXPECTED_ADAPTER_REVISION = "0ad6ffe9126c6e70fe3dbdff6e0936e0544dd9b2"',
+            'MINIMUM_REPAIR_REVISION = "cd4069927a447f21bee2b538bb9edb5c4c38266c"',
             verifier,
         )
-        self.assertIn(
-            'EXPECTED_ADAPTER_BASE_REVISION = "a1ecc219f5e319be87cfa20d5a79af1e3674c6f0"',
-            verifier,
-        )
-        self.assertIn("_validate_published_runtime_bytes", verifier)
+        self.assertIn("_validate_committed_runtime_bytes", verifier)
         self.assertNotIn("scientific-workload-profiles.json", verifier)
         self.assertNotIn("scientific-execution-targets.json", verifier)
         self.assertNotIn("runtime_mounts", verifier)
