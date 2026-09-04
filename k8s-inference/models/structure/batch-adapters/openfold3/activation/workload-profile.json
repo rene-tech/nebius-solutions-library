@@ -1,0 +1,118 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-workload-profile-projection/v1",
+  "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
+  "rendered_by": "models/structure/batch-adapters/render_activation_fragments.py",
+  "profile": {
+    "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+    "model_id": "openfold3",
+    "display_name": "OpenFold3 OpenBind v0.5.0",
+    "execution_mode": "scientific-batch",
+    "state": "candidate-unqualified",
+    "route_exposed": false,
+    "source": {
+      "kind": "git",
+      "repository": "aqlaboratory/openfold-3",
+      "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+      "review_url": "https://github.com/aqlaboratory/openfold-3/tree/c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+      "classification": "candidate-input"
+    },
+    "execution_identity": {
+      "model_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+      "runtime_image_digest": "sha256:d1d249fcd8aca464ff0ee0b6e78e0f9c1fe243e0ebd18acc3c4223070fcf203b",
+      "runtime_recipe_sha256": "70ff4f530d4a9ffa675795c2535e464fe18e90f25a58f62adacfb8c99eb96189",
+      "workload_recipe_sha256": "0badafd530a15d6ff4abb1c62f1dd6f07c779845a6cda6b3fdb81bc4f0065102",
+      "artifact_manifest_digest": null,
+      "execution_identity_sha256": null
+    },
+    "interface": {
+      "protocol": "scientific-batch-v1",
+      "submit_endpoint": "/v1/models/openfold3:submit",
+      "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+      "parameter_schema": "fs2-serve.nebius.ai/openfold3-upstream-openbind-v0-5-0-parameters/v1",
+      "operations": [
+        "predict-complex-structure"
+      ],
+      "service_classes": [
+        "customer-batch"
+      ],
+      "mcp": {
+        "discoverable": true,
+        "invocable": false,
+        "tool_name": "submit_openfold3",
+        "description": "Submit an OpenFold3 complex structure prediction; an independent backend that never satisfies an alphafold3 request."
+      }
+    },
+    "access": {
+      "profile": "standard",
+      "state": "not-required",
+      "receipt_digest": null,
+      "credentials_embedded": false
+    },
+    "resources": {
+      "gpu_count": 1,
+      "gpu_topology": "single-gpu",
+      "host_architectures": [
+        "amd64"
+      ],
+      "compatible_pool_ids": [
+        "h100-1x",
+        "h100-reserved-8x"
+      ],
+      "required_node_labels": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+      }
+    },
+    "workload": {
+      "stages": [
+        {
+          "id": "data-pipeline",
+          "needs": [],
+          "resource_class": "cpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 32,
+          "checkpoint_mode": "none",
+          "preemption_mode": "non_preemptible"
+        },
+        {
+          "id": "inference",
+          "needs": [
+            "data-pipeline"
+          ],
+          "resource_class": "gpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 32,
+          "checkpoint_mode": "restart",
+          "preemption_mode": "restartable"
+        }
+      ],
+      "retry": {
+        "max_attempts": 2,
+        "retryable_exit_codes": [
+          137,
+          143
+        ]
+      },
+      "cancellation": {
+        "mode": "terminate-attempt",
+        "grace_seconds": 60
+      }
+    },
+    "semantic_validation": {
+      "validator_id": "openfold3-upstream-openbind-v0-5-0",
+      "state": "candidate-unqualified"
+    },
+    "policy": {
+      "commercial_use": "allowed",
+      "non_clinical": true,
+      "limitations": [
+        "Image sha256:d1d249fc...f203b is a build-only -h100-r4 candidate; it has no exact-artifact semantic H100 evidence.",
+        "OpenFold3 is an independent, non-equivalent backend to AlphaFold 3: distinct code, weights, license and results; it is never reported as AlphaFold 3.",
+        "The scientific model id openfold3 collides with the existing HTTP catalog record catalog/runtime/models/openfold3.json in the onboarding compiler's collision check; the integration owner must resolve that namespace before the profile is merged.",
+        "The OpenBind-0 checkpoint and components.bcif are catalog manifests without a localization generation or node admission receipt."
+      ]
+    }
+  }
+}

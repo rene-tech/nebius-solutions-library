@@ -1,0 +1,39 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-activation-integration-recipe/v1",
+  "model_id": "esmfold2",
+  "variant_id": "biohub-v3-4-0",
+  "recipe_paths": [
+    "components/control-plane/src/fs2_serve/scientific_batch/adapters/esmfold2.py",
+    "catalog/runtime/schema/esmfold2-parameters.schema.json",
+    "models/structure/batch-adapters/esmfold2/contract.json"
+  ],
+  "runtime_recipe_sha256_at_render": "bc88e2d6f89dd7f16fc2c243eb8fa7a3c519049a7d0482eeaa49aa422fadd143",
+  "recipe_note": "Computed with adapters.common.runtime_recipe_sha256's algorithm over the shared execution contracts plus recipe_paths. Any edit to a shared execution contract moves it, so the deterministic refresh is to rerun models/structure/batch-adapters/render_activation_fragments.py on the integration head and then refresh_scientific_recipes.py after the aggregate append; the value here proves the fragment matched the code on this branch head.",
+  "shared_edits": [
+    {
+      "file": "catalog/runtime/contracts/scientific-workload-profiles.json",
+      "edit": "append activation/workload-profile.json#profile, then run components/control-plane/scripts/refresh_scientific_recipes.py after registering the model there"
+    },
+    {
+      "file": "components/control-plane/src/fs2_serve/scientific_batch/adapters/common.py",
+      "edit": "add _RECIPE_MODEL_PATHS['esmfold2'] = [\"components/control-plane/src/fs2_serve/scientific_batch/adapters/esmfold2.py\", \"catalog/runtime/schema/esmfold2-parameters.schema.json\", \"models/structure/batch-adapters/esmfold2/contract.json\"]"
+    },
+    {
+      "file": "components/control-plane/scripts/refresh_scientific_recipes.py",
+      "edit": "run it after the aggregate append; on the general-cpu-lane integration head it iterates every profile, refuses any model without a _RECIPE_MODEL_PATHS entry, and re-derives runtime_recipe_sha256, workload_recipe_sha256, execution_identity_sha256 and the execution-map identity chain (current main instead needs the model added to its MODEL_IDS tuple)"
+    },
+    {
+      "file": "tests/test_scientific_workload_contracts.py",
+      "edit": "extend the exact profile order, the image digest map and the parameter-schema fixture cases"
+    },
+    {
+      "file": "components/control-plane/tests/test_scientific_canary.py",
+      "edit": "raise the pinned profile_count once the profile is appended"
+    },
+    {
+      "file": "catalog/runtime/contracts/scientific-execution-map.json",
+      "edit": "append activation/execution-map-fragment.json#model only after every runtime_artifacts localization_receipt_digest is a real receipt digest"
+    }
+  ],
+  "no_deploy": "This recipe changes no live cluster, Terraform state, quota or shared service."
+}

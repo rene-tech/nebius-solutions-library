@@ -1,0 +1,118 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-workload-profile-projection/v1",
+  "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
+  "rendered_by": "models/structure/batch-adapters/render_activation_fragments.py",
+  "profile": {
+    "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+    "model_id": "protenix-v2",
+    "display_name": "Protenix v2.0.0",
+    "execution_mode": "scientific-batch",
+    "state": "candidate-unqualified",
+    "route_exposed": false,
+    "source": {
+      "kind": "git",
+      "repository": "bytedance/Protenix",
+      "revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+      "review_url": "https://github.com/bytedance/Protenix/tree/2475421477ab414b571149ad4a875c390ff8a35d",
+      "classification": "candidate-input"
+    },
+    "execution_identity": {
+      "model_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+      "runtime_image_digest": "sha256:27d816dc518b5dda205f9916205fbc4e2053a8109d9380b85628d9f0d968a644",
+      "runtime_recipe_sha256": "6a97b8c78fcd59e6f69926a1a0c59cf11d33ce346f5b193e7121dcf03fbf54bf",
+      "workload_recipe_sha256": "8e85d280fcae73efff25cb1f773bdae72688639379c51d442582bc5dad9fb8b7",
+      "artifact_manifest_digest": null,
+      "execution_identity_sha256": null
+    },
+    "interface": {
+      "protocol": "scientific-batch-v1",
+      "submit_endpoint": "/v1/models/protenix-v2:submit",
+      "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+      "parameter_schema": "fs2-serve.nebius.ai/protenix-v2-upstream-v2-0-0-parameters/v1",
+      "operations": [
+        "predict-complex-structure"
+      ],
+      "service_classes": [
+        "customer-batch"
+      ],
+      "mcp": {
+        "discoverable": true,
+        "invocable": false,
+        "tool_name": "submit_protenix_v2",
+        "description": "Submit a Protenix v2 biomolecular complex structure prediction on the offline no-MSA lane."
+      }
+    },
+    "access": {
+      "profile": "standard",
+      "state": "not-required",
+      "receipt_digest": null,
+      "credentials_embedded": false
+    },
+    "resources": {
+      "gpu_count": 1,
+      "gpu_topology": "single-gpu",
+      "host_architectures": [
+        "amd64"
+      ],
+      "compatible_pool_ids": [
+        "h100-1x",
+        "h100-reserved-8x"
+      ],
+      "required_node_labels": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+      }
+    },
+    "workload": {
+      "stages": [
+        {
+          "id": "prepare-data",
+          "needs": [],
+          "resource_class": "cpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 64,
+          "checkpoint_mode": "restart",
+          "preemption_mode": "restartable"
+        },
+        {
+          "id": "sample-structure",
+          "needs": [
+            "prepare-data"
+          ],
+          "resource_class": "gpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 32,
+          "checkpoint_mode": "restart",
+          "preemption_mode": "restartable"
+        }
+      ],
+      "retry": {
+        "max_attempts": 2,
+        "retryable_exit_codes": [
+          137,
+          143
+        ]
+      },
+      "cancellation": {
+        "mode": "terminate-attempt",
+        "grace_seconds": 60
+      }
+    },
+    "semantic_validation": {
+      "validator_id": "protenix-v2-upstream-v2-0-0",
+      "state": "candidate-unqualified"
+    },
+    "policy": {
+      "commercial_use": "allowed",
+      "non_clinical": true,
+      "limitations": [
+        "Image sha256:27d816dc...8a644 is a build-only -h100-r4 candidate; it has no exact-artifact semantic H100 evidence.",
+        "The v2 checkpoint was recovered from the immutable third-party mirror TMF001/protenix-v2-weights@653edab2 and is not yet byte-compared with the publisher CDN object.",
+        "The adapter contract pins composite identity 5e1c3b54...74d48 while the artifact catalog records 8e14bb80...12eca for the same five files; the localization producer must settle one identity before activation.",
+        "Only msa_mode none is admitted; precomputed MSA waits for a validated relocation contract and no mode contacts an MSA server."
+      ]
+    }
+  }
+}

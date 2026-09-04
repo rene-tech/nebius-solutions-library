@@ -1,0 +1,202 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-execution-map-fragment/v1",
+  "merge_target": "catalog/runtime/contracts/scientific-execution-map.json",
+  "execution_map_schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
+  "rendered_by": "models/structure/batch-adapters/render_activation_fragments.py",
+  "state": "stages-bound-runtime-artifacts-pending-localization",
+  "model": {
+    "model_id": "esmfold2",
+    "variant_id": "biohub-v3-4-0",
+    "workload_namespace": "fs2-models",
+    "access_profile": "public",
+    "execution_identity_sha256": null,
+    "plan_adapter": {
+      "module": "fs2_serve.scientific_batch.adapters",
+      "function": "compile_adapter_run"
+    },
+    "runtime_artifacts": [
+      {
+        "artifact_id": "esmfold2-trunk",
+        "mount_path": "/models/esmfold2",
+        "content_digest": "sha256:136a3580c01cc055ae5a1278bae056e5150a5441ddb89dfbafb9f4e88d763a0c",
+        "localization_receipt_digest": null,
+        "file_manifest": [
+          {
+            "path": "config.json",
+            "sha256": "e9ec2496ec433a1dce18627ed4bf3785b4ce0c1d69e4bb4663dad1ab895da012",
+            "size_bytes": 2337
+          },
+          {
+            "path": "model.safetensors",
+            "sha256": "138fd4350d6892b81ce6be7ff9bf5a93ae9d4d3751f46a27438a3f9f0dcefa0e",
+            "size_bytes": 939505228
+          }
+        ]
+      },
+      {
+        "artifact_id": "esmc-6b",
+        "mount_path": "/models/esmc-6b",
+        "content_digest": "sha256:8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+        "localization_receipt_digest": null,
+        "file_manifest": [
+          {
+            "path": "config.json",
+            "sha256": "c5566fab6a17fd674141331fe75de917b7904d99fb7a410d2b1593c21e576913",
+            "size_bytes": 341
+          },
+          {
+            "path": "model-00001-of-00006.safetensors",
+            "sha256": "bd90149ff223e6ac1a0cac6147a5ae0df20d3a21df4f65356a1f19cd14f4aa8a",
+            "size_bytes": 4864457920
+          },
+          {
+            "path": "model-00002-of-00006.safetensors",
+            "sha256": "f75e2144d8269fe2eb4b3e0823fb089b94f176d8024153e85b8fb573a42294fa",
+            "size_bytes": 4971211344
+          },
+          {
+            "path": "model-00003-of-00006.safetensors",
+            "sha256": "f699f01ecc9691d9c6470492765fe54b8b5d2e9f277c139e89427433ffdfe0b2",
+            "size_bytes": 4863752992
+          },
+          {
+            "path": "model-00004-of-00006.safetensors",
+            "sha256": "46add1b7be098bbfdc3073884851ba3057f1b33ea23a158b650a37007dabd13d",
+            "size_bytes": 4971211344
+          },
+          {
+            "path": "model-00005-of-00006.safetensors",
+            "sha256": "1e1cb62f060a34e18f54a31a76683ef888b8cec59e73315f5b31d25d45a1f88c",
+            "size_bytes": 4863752992
+          },
+          {
+            "path": "model-00006-of-00006.safetensors",
+            "sha256": "56c73e13ae96e777ce65eee99364056069ef93b646470f352f83c5f1037b1b18",
+            "size_bytes": 873762296
+          },
+          {
+            "path": "model.safetensors.index.json",
+            "sha256": "6846456e20e6ee2c37461f7bfc21d316d69bdaf165b925691afcb39e583244da",
+            "size_bytes": 97349
+          },
+          {
+            "path": "special_tokens_map.json",
+            "sha256": "0b7245ec86c8c3aeaf61523ba70dfa79be137e6283f127bd651adc30b4f15c74",
+            "size_bytes": 171
+          },
+          {
+            "path": "tokenizer.json",
+            "sha256": "8d3447b278176e65fb3ef0224472927bf5fee3be46ea2bd77fad0111423cee1f",
+            "size_bytes": 2879
+          },
+          {
+            "path": "tokenizer_config.json",
+            "sha256": "e8d8e40c9f92b334f0272e80bb65ed4043cb9836523cbae899e9859e8cbb8833",
+            "size_bytes": 1392
+          }
+        ]
+      },
+      {
+        "artifact_id": "esmfold2-ccd",
+        "mount_path": "/databases/esmfold2",
+        "content_digest": "sha256:b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+        "localization_receipt_digest": null,
+        "file_manifest": [
+          {
+            "path": "ccd.pkl",
+            "sha256": "9ff44b1927c6b9198e38ffe0928706827a09a350c15530beeeabebfa88038fc5",
+            "size_bytes": 417306584
+          }
+        ]
+      }
+    ],
+    "stages": [
+      {
+        "stage_id": "prepare-input",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:e8fb269ff17e752ed8dd8f6c4689eaa55c0efc7adaffc156ccd9357bd075463d",
+        "collector_id": "esmfold2-prepare-collector-v1",
+        "validator_id": "esmfold2-prepare-validator-v1",
+        "mounts": [
+          {
+            "name": "artifact-workspace",
+            "kind": "artifact-workspace",
+            "claim_name": null,
+            "host_path": null,
+            "mount_path": "/mnt/fs2-scientific",
+            "sub_path": null,
+            "read_only": false
+          }
+        ],
+        "service_account_name": "default",
+        "resources": {
+          "requests": {
+            "cpu": "4000m",
+            "memory": "16Gi",
+            "ephemeral_storage": "32Gi"
+          },
+          "limits": {
+            "cpu": "8000m",
+            "memory": "32Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "active_deadline_seconds": 43200,
+        "termination_grace_seconds": 90,
+        "environment": {},
+        "required_node_labels": {}
+      },
+      {
+        "stage_id": "fold",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:e8fb269ff17e752ed8dd8f6c4689eaa55c0efc7adaffc156ccd9357bd075463d",
+        "collector_id": "esmfold2-result-collector-v1",
+        "validator_id": "esmfold2-biohub-v3-4-0",
+        "mounts": [
+          {
+            "name": "artifact-workspace",
+            "kind": "artifact-workspace",
+            "claim_name": null,
+            "host_path": null,
+            "mount_path": "/mnt/fs2-scientific",
+            "sub_path": null,
+            "read_only": false
+          },
+          {
+            "name": "reference-data",
+            "kind": "reference",
+            "claim_name": null,
+            "host_path": "/mnt/fs2-reference-data/data",
+            "mount_path": "/reference-data",
+            "sub_path": null,
+            "read_only": true
+          }
+        ],
+        "service_account_name": "default",
+        "resources": {
+          "requests": {
+            "cpu": "8000m",
+            "memory": "96Gi",
+            "ephemeral_storage": "32Gi"
+          },
+          "limits": {
+            "cpu": "32000m",
+            "memory": "256Gi",
+            "ephemeral_storage": "128Gi"
+          }
+        },
+        "active_deadline_seconds": 43200,
+        "termination_grace_seconds": 90,
+        "environment": {},
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+          "storage.fs2.nebius/reference-data": "true"
+        }
+      }
+    ]
+  },
+  "activation_gates": [
+    "semantic-h100: The immutable image passed build-only H100 start checks with empty /models and /databases; no exact-artifact semantic inference has run, so the profile stays candidate-unqualified and unrouted.",
+    "artifact-localization: The runtime artifacts exist only as catalog manifests; no scientific-localization generation, marker or node admission receipt has been produced for them.",
+    "public-localization-delivery: Public localization generations live on the reference-data plane. Current main can mount that plane only whole at /reference-data; the general-cpu-lane integration head (003064c4) additionally allows exactly one read-only subPath generation mount at the adapter's declared path. Either way the mount needs the generation's content-addressed sub path, which only a localization receipt provides, so the runtime_artifacts localization_receipt_digest values below stay null until that receipt exists.",
+    "general-cpu-pool: No general CPU pool is deployed (deployment.cpu_pools is empty), so a CPU stage that defaults to the general-cpu class has no live lane until fs2-general-cpu-batch-pool-terraform lands."
+  ]
+}

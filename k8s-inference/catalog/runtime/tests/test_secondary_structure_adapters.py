@@ -113,15 +113,40 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
             "independent-non-equivalent-alternative-to-alphafold3",
         )
 
+    def _assert_candidate_profile(self, profile: dict[str, object]) -> None:
+        """A secondary profile may name its build-only image but must stay unrouted."""
+
+        model_id = str(profile["model_id"])
+        self.assertEqual(profile["state"], "candidate-unqualified")
+        self.assertIs(profile["route_exposed"], False)
+        identity = profile["execution_identity"]
+        self.assertEqual(identity["runtime_image_digest"], self.images[model_id]["digest"])  # type: ignore[index]
+        self.assertIsNone(identity["artifact_manifest_digest"])  # type: ignore[index]
+        self.assertIsNone(identity["execution_identity_sha256"])  # type: ignore[index]
+        self.assertEqual(profile["semantic_validation"]["state"], "candidate-unqualified")  # type: ignore[index]
+        self.assertIs(profile["interface"]["mcp"]["invocable"], False)  # type: ignore[index]
+
     def test_no_public_workload_profile_is_accidentally_activated(self) -> None:
         profiles = load_json(PROFILE_PATH)["profiles"]
-        for profile in profiles:
+        for profile in profiles:  # type: ignore[union-attr]
             if profile["model_id"] not in MODEL_IDS:
                 continue
             with self.subTest(model_id=profile["model_id"]):
-                self.assertEqual(profile["state"], "candidate-unqualified")
-                self.assertIs(profile["route_exposed"], False)
-                self.assertIsNone(profile["runtime_image_digest"])
+                self._assert_candidate_profile(profile)
+
+    def test_model_owned_activation_fragments_stay_candidate_and_match_the_handoff(self) -> None:
+        for model_id in MODEL_IDS:
+            with self.subTest(model_id=model_id):
+                fragment = load_json(ADAPTER_ROOT / model_id / "activation" / "workload-profile.json")
+                self.assertEqual(
+                    fragment["schema"], "fs2-serve.nebius.ai/scientific-workload-profile-projection/v1"
+                )
+                self.assertEqual(
+                    fragment["merge_target"], "catalog/runtime/contracts/scientific-workload-profiles.json"
+                )
+                profile = fragment["profile"]
+                self.assertEqual(profile["model_id"], model_id)  # type: ignore[index]
+                self._assert_candidate_profile(profile)  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":

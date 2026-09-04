@@ -1,0 +1,153 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-execution-map-fragment/v1",
+  "merge_target": "catalog/runtime/contracts/scientific-execution-map.json",
+  "execution_map_schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
+  "rendered_by": "models/structure/batch-adapters/render_activation_fragments.py",
+  "state": "stages-bound-runtime-artifacts-pending-localization",
+  "model": {
+    "model_id": "protenix-v2",
+    "variant_id": "upstream-v2-0-0",
+    "workload_namespace": "fs2-models",
+    "access_profile": "public",
+    "execution_identity_sha256": null,
+    "plan_adapter": {
+      "module": "fs2_serve.scientific_batch.adapters",
+      "function": "compile_adapter_run"
+    },
+    "runtime_artifacts": [
+      {
+        "artifact_id": "protenix-v2",
+        "mount_path": "/models/protenix-v2",
+        "content_digest": "sha256:8e14bb809d37db806159b7d277577abc692aec81d8899fbc84915d23ebe12eca",
+        "localization_receipt_digest": null,
+        "file_manifest": [
+          {
+            "path": "checkpoint/protenix-v2.pt",
+            "sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+            "size_bytes": 1859785497
+          },
+          {
+            "path": "common/clusters-by-entity-40.txt",
+            "sha256": "1ab4af905e75b382eda8dec59917dc3608bee0729e36b9e71baf860bbe86850c",
+            "size_bytes": 21699572
+          },
+          {
+            "path": "common/components.cif",
+            "sha256": "bb31ae5cf6c8bc669924313077cb4231ee5ffefd3a20118cd14f3ec89f8bb6a5",
+            "size_bytes": 490777362
+          },
+          {
+            "path": "common/components.cif.rdkit_mol.pkl",
+            "sha256": "d1cfb71f5993a3ebea7c47877022d7f597bbfbaf86e28a4770e957da6c50cd35",
+            "size_bytes": 142498117
+          },
+          {
+            "path": "common/obsolete_release_date.csv",
+            "sha256": "a4f3f63ac5d7eebd78b07995cc669b9eccd6f5d8813c9492c9df02868893cf33",
+            "size_bytes": 134716
+          }
+        ]
+      }
+    ],
+    "stages": [
+      {
+        "stage_id": "prepare-data",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:27d816dc518b5dda205f9916205fbc4e2053a8109d9380b85628d9f0d968a644",
+        "collector_id": "protenix-v2-prep-collector-v1",
+        "validator_id": "protenix-v2-prep-validator-v1",
+        "mounts": [
+          {
+            "name": "artifact-workspace",
+            "kind": "artifact-workspace",
+            "claim_name": null,
+            "host_path": null,
+            "mount_path": "/mnt/fs2-scientific",
+            "sub_path": null,
+            "read_only": false
+          },
+          {
+            "name": "reference-data",
+            "kind": "reference",
+            "claim_name": null,
+            "host_path": "/mnt/fs2-reference-data/data",
+            "mount_path": "/reference-data",
+            "sub_path": null,
+            "read_only": true
+          }
+        ],
+        "service_account_name": "default",
+        "resources": {
+          "requests": {
+            "cpu": "4000m",
+            "memory": "16Gi",
+            "ephemeral_storage": "32Gi"
+          },
+          "limits": {
+            "cpu": "8000m",
+            "memory": "32Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "active_deadline_seconds": 43200,
+        "termination_grace_seconds": 90,
+        "environment": {},
+        "required_node_labels": {
+          "storage.fs2.nebius/reference-data": "true"
+        }
+      },
+      {
+        "stage_id": "sample-structure",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:27d816dc518b5dda205f9916205fbc4e2053a8109d9380b85628d9f0d968a644",
+        "collector_id": "protenix-v2-result-collector-v1",
+        "validator_id": "protenix-v2-upstream-v2-0-0",
+        "mounts": [
+          {
+            "name": "artifact-workspace",
+            "kind": "artifact-workspace",
+            "claim_name": null,
+            "host_path": null,
+            "mount_path": "/mnt/fs2-scientific",
+            "sub_path": null,
+            "read_only": false
+          },
+          {
+            "name": "reference-data",
+            "kind": "reference",
+            "claim_name": null,
+            "host_path": "/mnt/fs2-reference-data/data",
+            "mount_path": "/reference-data",
+            "sub_path": null,
+            "read_only": true
+          }
+        ],
+        "service_account_name": "default",
+        "resources": {
+          "requests": {
+            "cpu": "8000m",
+            "memory": "96Gi",
+            "ephemeral_storage": "32Gi"
+          },
+          "limits": {
+            "cpu": "32000m",
+            "memory": "256Gi",
+            "ephemeral_storage": "128Gi"
+          }
+        },
+        "active_deadline_seconds": 43200,
+        "termination_grace_seconds": 90,
+        "environment": {},
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+          "storage.fs2.nebius/reference-data": "true"
+        }
+      }
+    ]
+  },
+  "activation_gates": [
+    "semantic-h100: The immutable image passed build-only H100 start checks with empty /models and /databases; no exact-artifact semantic inference has run, so the profile stays candidate-unqualified and unrouted.",
+    "artifact-localization: The runtime artifacts exist only as catalog manifests; no scientific-localization generation, marker or node admission receipt has been produced for them.",
+    "public-localization-delivery: Public localization generations live on the reference-data plane. Current main can mount that plane only whole at /reference-data; the general-cpu-lane integration head (003064c4) additionally allows exactly one read-only subPath generation mount at the adapter's declared path. Either way the mount needs the generation's content-addressed sub path, which only a localization receipt provides, so the runtime_artifacts localization_receipt_digest values below stay null until that receipt exists.",
+    "general-cpu-pool: No general CPU pool is deployed (deployment.cpu_pools is empty), so a CPU stage that defaults to the general-cpu class has no live lane until fs2-general-cpu-batch-pool-terraform lands.",
+    "writable-cache: The declared compiler cache root needs a writable per-model claim; execution map v3 mounts only read-only reference/private sources, so the cache stays an unprovisioned auxiliary and no fast-start level above L1 is claimed."
+  ]
+}

@@ -1,0 +1,118 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-workload-profile-projection/v1",
+  "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
+  "rendered_by": "models/structure/batch-adapters/render_activation_fragments.py",
+  "profile": {
+    "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+    "model_id": "esmfold2",
+    "display_name": "ESMFold2 v3.4.0 (Biohub esm)",
+    "execution_mode": "scientific-batch",
+    "state": "candidate-unqualified",
+    "route_exposed": false,
+    "source": {
+      "kind": "git",
+      "repository": "Biohub/esm",
+      "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "review_url": "https://github.com/Biohub/esm/tree/827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "classification": "candidate-input"
+    },
+    "execution_identity": {
+      "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "runtime_image_digest": "sha256:e8fb269ff17e752ed8dd8f6c4689eaa55c0efc7adaffc156ccd9357bd075463d",
+      "runtime_recipe_sha256": "bc88e2d6f89dd7f16fc2c243eb8fa7a3c519049a7d0482eeaa49aa422fadd143",
+      "workload_recipe_sha256": "5d53520b7b0999230389fe33a63579319f0fa6bfc01071521b9d033f528d132e",
+      "artifact_manifest_digest": null,
+      "execution_identity_sha256": null
+    },
+    "interface": {
+      "protocol": "scientific-batch-v1",
+      "submit_endpoint": "/v1/models/esmfold2:submit",
+      "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+      "parameter_schema": "fs2-serve.nebius.ai/esmfold2-biohub-v3-4-0-parameters/v1",
+      "operations": [
+        "predict-structure"
+      ],
+      "service_classes": [
+        "interactive",
+        "customer-batch"
+      ],
+      "mcp": {
+        "discoverable": true,
+        "invocable": false,
+        "tool_name": "submit_esmfold2",
+        "description": "Submit an ESMFold2 single-sequence or precomputed-MSA protein structure prediction."
+      }
+    },
+    "access": {
+      "profile": "standard",
+      "state": "not-required",
+      "receipt_digest": null,
+      "credentials_embedded": false
+    },
+    "resources": {
+      "gpu_count": 1,
+      "gpu_topology": "single-gpu",
+      "host_architectures": [
+        "amd64"
+      ],
+      "compatible_pool_ids": [
+        "h100-1x",
+        "h100-reserved-8x"
+      ],
+      "required_node_labels": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+      }
+    },
+    "workload": {
+      "stages": [
+        {
+          "id": "prepare-input",
+          "needs": [],
+          "resource_class": "cpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 64,
+          "checkpoint_mode": "restart",
+          "preemption_mode": "restartable"
+        },
+        {
+          "id": "fold",
+          "needs": [
+            "prepare-input"
+          ],
+          "resource_class": "gpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 64,
+          "checkpoint_mode": "restart",
+          "preemption_mode": "restartable"
+        }
+      ],
+      "retry": {
+        "max_attempts": 2,
+        "retryable_exit_codes": [
+          137,
+          143
+        ]
+      },
+      "cancellation": {
+        "mode": "terminate-attempt",
+        "grace_seconds": 60
+      }
+    },
+    "semantic_validation": {
+      "validator_id": "esmfold2-biohub-v3-4-0",
+      "state": "candidate-unqualified"
+    },
+    "policy": {
+      "commercial_use": "allowed",
+      "non_clinical": true,
+      "limitations": [
+        "Image sha256:e8fb269f...5463d is a build-only -h100-r4 candidate; it has no exact-artifact semantic H100 evidence.",
+        "The trunk, ESMC-6B and CCD artifacts are catalog manifests without a localization generation or node admission receipt.",
+        "precomputed-msa consumes MSA rows carried in the input manifest only; no online MSA server is ever contacted."
+      ]
+    }
+  }
+}

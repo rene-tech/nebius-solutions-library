@@ -1,0 +1,189 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-execution-map-fragment/v1",
+  "merge_target": "catalog/runtime/contracts/scientific-execution-map.json",
+  "execution_map_schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
+  "rendered_by": "models/structure/batch-adapters/render_activation_fragments.py",
+  "state": "identities-complete-pending-serialized-integration",
+  "model": {
+    "model_id": "alphafold3",
+    "variant_id": "upstream-v3-0-4",
+    "workload_namespace": "fs2-academic-poc",
+    "access_profile": "academic",
+    "execution_identity_sha256": null,
+    "plan_adapter": {
+      "module": "fs2_serve.scientific_batch.adapters",
+      "function": "compile_adapter_run"
+    },
+    "runtime_artifacts": [
+      {
+        "artifact_id": "alphafold3-parameters",
+        "mount_path": "/models/af3.bin.zst",
+        "content_digest": "sha256:74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+        "localization_receipt_digest": "sha256:aa16a75f50a83fa1426b67477363b44788ec16a75b770b09aa5ac899ce84f293",
+        "file_manifest": [
+          {
+            "path": "af3.bin.zst",
+            "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+            "size_bytes": 1020545840
+          }
+        ]
+      },
+      {
+        "artifact_id": "alphafold3-public-databases-v3.0",
+        "mount_path": "/reference-data",
+        "content_digest": "sha256:d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
+        "localization_receipt_digest": "sha256:b049e69846867caa75ef140e105a962fcf14e5c78ec8bfd97741cced32a8f6a6",
+        "aggregate_tree": {
+          "storage_kind": "reference-data-plane",
+          "tree_sha256": "d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
+          "manifest_sha256": "aa585259ce05393cd38db1693299ed9ec7f9c421aa4e1159f8d5aa0eb0ba9748",
+          "inventory_sha256": "38af3baa89a66cd24dec785279670a2e37597f98d206f555a04c138c6be71579",
+          "manifest_algorithm": "fs2-serve.nebius.ai/reference-data-manifest/v1",
+          "file_count": 195867,
+          "directory_count": 0,
+          "expanded_bytes": 672435030513,
+          "canonical_path": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
+          "marker_relative_path": ".fs2-manifest-sha256"
+        },
+        "verification_receipt": {
+          "bundle_id": "alphafold3-public-databases-v3.0",
+          "content": {
+            "expanded_bytes": 672435030513,
+            "file_count": 195867,
+            "inline_inventory": false,
+            "inventory_marker": ".fs2-manifest-sha256",
+            "inventory_sha256": "38af3baa89a66cd24dec785279670a2e37597f98d206f555a04c138c6be71579",
+            "manifest_sha256": "aa585259ce05393cd38db1693299ed9ec7f9c421aa4e1159f8d5aa0eb0ba9748",
+            "tree_sha256": "d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea"
+          },
+          "created_at": "2026-09-03T09:30:33Z",
+          "placement": {
+            "node_selector": {
+              "capacity.fs2.nebius/pool": "reference-data",
+              "capacity.fs2.nebius/type": "regular",
+              "storage.fs2.nebius/reference-data": "true",
+              "workload.fs2.nebius/reference-data": "true"
+            },
+            "pool": "reference-cpu",
+            "resource_class": "cpu",
+            "tolerations": [
+              {
+                "effect": "NoSchedule",
+                "key": "workload.fs2.nebius/reference-data",
+                "operator": "Equal",
+                "value": "true"
+              }
+            ]
+          },
+          "revision": "v3.0-paper-snapshot-2022-09-28",
+          "schema": "fs2-serve.nebius.ai/reference-data-terminal-receipt/v1",
+          "storage": {
+            "dataset_sub_path": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
+            "host_root": "/mnt/fs2-reference-data/data",
+            "mount_path": "/reference-data",
+            "read_only": true
+          }
+        }
+      }
+    ],
+    "stages": [
+      {
+        "stage_id": "data-pipeline",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3@sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
+        "collector_id": "alphafold3-data-collector-v1",
+        "validator_id": "alphafold3-data-validator-v1",
+        "mounts": [
+          {
+            "name": "artifact-workspace",
+            "kind": "artifact-workspace",
+            "claim_name": null,
+            "host_path": null,
+            "mount_path": "/mnt/fs2-scientific",
+            "sub_path": null,
+            "read_only": false
+          },
+          {
+            "name": "alphafold3-databases",
+            "kind": "reference",
+            "claim_name": null,
+            "host_path": "/mnt/fs2-reference-data/data",
+            "mount_path": "/reference-data",
+            "sub_path": null,
+            "read_only": true
+          }
+        ],
+        "service_account_name": "fs2-academic-runner",
+        "resources": {
+          "requests": {
+            "cpu": "16",
+            "memory": "64Gi",
+            "ephemeral_storage": "32Gi"
+          },
+          "limits": {
+            "cpu": "16",
+            "memory": "64Gi",
+            "ephemeral_storage": "32Gi"
+          }
+        },
+        "active_deadline_seconds": 43200,
+        "termination_grace_seconds": 90,
+        "environment": {},
+        "required_node_labels": {
+          "storage.fs2.nebius/reference-data": "true"
+        }
+      },
+      {
+        "stage_id": "inference",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3@sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
+        "collector_id": "alphafold3-result-collector-v1",
+        "validator_id": "alphafold3-upstream-v3-0-4",
+        "mounts": [
+          {
+            "name": "artifact-workspace",
+            "kind": "artifact-workspace",
+            "claim_name": null,
+            "host_path": null,
+            "mount_path": "/mnt/fs2-scientific",
+            "sub_path": null,
+            "read_only": false
+          },
+          {
+            "name": "alphafold3-parameters",
+            "kind": "private",
+            "claim_name": "academic-assets-runtime-rwx",
+            "host_path": null,
+            "mount_path": "/models",
+            "sub_path": "alphafold3",
+            "read_only": true
+          }
+        ],
+        "service_account_name": "fs2-academic-runner",
+        "resources": {
+          "requests": {
+            "cpu": "8",
+            "memory": "96Gi",
+            "ephemeral_storage": "32Gi"
+          },
+          "limits": {
+            "cpu": "32",
+            "memory": "256Gi",
+            "ephemeral_storage": "128Gi"
+          }
+        },
+        "active_deadline_seconds": 43200,
+        "termination_grace_seconds": 90,
+        "environment": {},
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+        }
+      }
+    ]
+  },
+  "activation_gates": [
+    "reference-cpu-class: the data-pipeline stage needs a 16 CPU / 64 GiB reference-data node class; both live reference nodes are 8 vCPU / 32 GiB behind a 6 CPU / 24Gi Kueue quota, so runnable_on_declared_pool is false until the general CPU lane provisions the larger class.",
+    "allow-list: fs2_serve.scientific_batch.adapters must add \"alphafold3\" to its module allow-list tuple; that one-line shared edit moves the boltzgen and proteina-complexa recipe digests and is therefore left to the serialized integration step.",
+    "academic-claim-ownership: the licensed object must be re-verified as gid 65532 / mode 0440 with supplementalGroups consumption before a GPU run; a 2026-09-03 fsGroup rewrite was reported and a repair was recorded by the BindCraft adapter task, but this task did not re-verify it live.",
+    "formal-license: AlphaFold 3 formal institutional licence acceptance is FormalAcceptancePending; the authorized proof-of-concept path does not require it, and it is not synthesized here.",
+    "cpu-class-record: scheduling/cpu-class-contract.json still names the AlphaFold 3 CPU stage raw-input; the controller gate and this fragment use data-pipeline, so the scheduling owner must rename the bound workload entry."
+  ]
+}
