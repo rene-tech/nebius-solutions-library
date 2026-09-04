@@ -1,41 +1,41 @@
 {
-  "schema": "fs2.nebius.ai/secondary-r4-image-handoff/v1",
-  "state": "build-only-not-activated",
-  "image_source_commit": "e6d20c7cb3abf5e172852f17a20c7e100daa1245",
+  "schema": "fs2.nebius.ai/secondary-successor-image-handoff/v1",
+  "state": "publication-pending-not-activated",
+  "image_source_commit": null,
   "semantic_h100_qualification": false,
   "route_activation_allowed": false,
   "production_protocol_compatible": false,
-  "successor_requirement": "All four r4 images predate atomic final-output publication. Build and semantically qualify immutable successors from the repaired source; OpenFold also requires the corrected runtime UID and public model identity.",
+  "successor_requirement": "Publish these repaired successors, then perform exact-artifact H100 semantic qualification before any route activation.",
   "images": [
     {
       "model_id": "esmfold2",
       "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2",
-      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r4",
-      "digest": "sha256:e8fb269ff17e752ed8dd8f6c4689eaa55c0efc7adaffc156ccd9357bd075463d"
+      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r5",
+      "digest": null
     },
     {
       "model_id": "esmfold2-fast",
       "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast",
-      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r4",
-      "digest": "sha256:ba55b9bb418d9714b21634c9fd6281f678529042bc3d0b8f06f184fa314a2577"
+      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r5",
+      "digest": null
     },
     {
       "model_id": "protenix-v2",
       "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2",
-      "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r4",
-      "digest": "sha256:27d816dc518b5dda205f9916205fbc4e2053a8109d9380b85628d9f0d968a644"
+      "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r5",
+      "digest": null
     },
     {
       "model_id": "openfold3-openbind",
       "evidence_directory": "openfold3",
       "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream",
-      "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r4",
-      "digest": "sha256:d1d249fcd8aca464ff0ee0b6e78e0f9c1fe243e0ebd18acc3c4223070fcf203b"
+      "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r5",
+      "digest": null
     }
   ],
   "evidence": {
-    "source": ".local/state/fs2-cancer-images-structure-secondary-r20260902/published-e6d20c7c-r4",
-    "scope": "Published immutable registry manifests and real H100 CUDA/build-only startup checks; no exact-artifact semantic inference claim.",
+    "source": "pending repository-owned publisher receipt",
+    "scope": "Publication preparation only; no registry, H100, or semantic claim exists until the publisher records it.",
     "activation_gate": "Promote only after immutable artifact localization, exact runtime cache delivery where declared, and successful semantic H100 inference."
   }
 }

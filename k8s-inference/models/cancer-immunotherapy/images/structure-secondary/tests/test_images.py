@@ -529,7 +529,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             with self.subTest(image=image["id"]):
                 revision = expected[image["id"]]
                 self.assertEqual(image["source"]["revision"], revision)
-                self.assertEqual(image["tag"], f"{revision}-h100-r4")
+                self.assertEqual(image["tag"], f"{revision}-h100-r5")
                 self.assertRegex(image["source"]["tag"], r"^v[0-9]")
                 for base in image["base_images"]:
                     self.assertRegex(base, r"@sha256:[0-9a-f]{64}$")
@@ -557,12 +557,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 self.assertNotIn(phrase, reviewed_text)
 
     def test_current_publication_digests_are_immutable_candidates(self) -> None:
-        expected = {
-            "esmfold2": "sha256:e8fb269ff17e752ed8dd8f6c4689eaa55c0efc7adaffc156ccd9357bd075463d",
-            "esmfold2-fast": "sha256:ba55b9bb418d9714b21634c9fd6281f678529042bc3d0b8f06f184fa314a2577",
-            "protenix-v2": "sha256:27d816dc518b5dda205f9916205fbc4e2053a8109d9380b85628d9f0d968a644",
-            "openfold3": "sha256:d1d249fcd8aca464ff0ee0b6e78e0f9c1fe243e0ebd18acc3c4223070fcf203b",
-        }
+        expected = {image["id"]: None for image in LOCK["images"]}
         self.assertEqual(
             {image["id"]: image["published_digest"] for image in LOCK["images"]},
             expected,
@@ -1908,20 +1903,16 @@ for seed in seeds:
         )
         self.assertIn('"ls-remote"', verifier)
         self.assertIn("adapter commit is not the exact clean pushed branch head", verifier)
-        self.assertIn("MODEL_CONTRACT_PATHS", verifier)
+        self.assertIn("MODEL_CONTRACTS", verifier)
         self.assertIn("_candidate_profile_from_contract", verifier)
         self.assertIn("invocation.runtime_artifacts", verifier)
         self.assertIn("pending-external-activation", verifier)
-        self.assertIn("PUBLISHED_IMAGE_SOURCE_REVISION", verifier)
+        self.assertIn("MINIMUM_REPAIR_REVISION", verifier)
         self.assertIn(
-            'EXPECTED_ADAPTER_REVISION = "0ad6ffe9126c6e70fe3dbdff6e0936e0544dd9b2"',
+            'MINIMUM_REPAIR_REVISION = "cd4069927a447f21bee2b538bb9edb5c4c38266c"',
             verifier,
         )
-        self.assertIn(
-            'EXPECTED_ADAPTER_BASE_REVISION = "a1ecc219f5e319be87cfa20d5a79af1e3674c6f0"',
-            verifier,
-        )
-        self.assertIn("_validate_published_runtime_bytes", verifier)
+        self.assertIn("_validate_committed_runtime_bytes", verifier)
         self.assertNotIn("scientific-workload-profiles.json", verifier)
         self.assertNotIn("scientific-execution-targets.json", verifier)
         self.assertNotIn("runtime_mounts", verifier)
@@ -2021,7 +2012,7 @@ for seed in seeds:
 
     def test_preliminary_publications_remain_explicitly_non_deployable(self) -> None:
         superseded = LOCK["superseded_publications"]
-        self.assertEqual(len(superseded), 7)
+        self.assertEqual(len(superseded), 11)
         self.assertTrue(all(item["deployable"] is False for item in superseded))
         self.assertTrue(all(item["digest"].startswith("sha256:") for item in superseded))
 

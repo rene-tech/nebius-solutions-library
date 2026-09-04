@@ -53,6 +53,34 @@
       "digest": "sha256:ca05bb15341045bb2876153faccb0d029a27b0050350d6b86a83a76b4fa73bb4",
       "deployable": false,
       "reason": "real H100 direct-command smoke pulled the image then exited 127 because the advertised Python executable relied on the bypassed container entrypoint"
+    },
+    {
+      "id": "esmfold2",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2:827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r4",
+      "digest": "sha256:e8fb269ff17e752ed8dd8f6c4689eaa55c0efc7adaffc156ccd9357bd075463d",
+      "deployable": false,
+      "reason": "predates the repaired atomic handoff, frozen input identity, and shared workspace identity contract"
+    },
+    {
+      "id": "esmfold2-fast",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast:827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r4",
+      "digest": "sha256:ba55b9bb418d9714b21634c9fd6281f678529042bc3d0b8f06f184fa314a2577",
+      "deployable": false,
+      "reason": "predates the repaired atomic handoff, frozen input identity, and shared workspace identity contract"
+    },
+    {
+      "id": "protenix-v2",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2:2475421477ab414b571149ad4a875c390ff8a35d-h100-r4",
+      "digest": "sha256:27d816dc518b5dda205f9916205fbc4e2053a8109d9380b85628d9f0d968a644",
+      "deployable": false,
+      "reason": "predates the repaired atomic handoff, frozen input identity, and shared workspace identity contract"
+    },
+    {
+      "id": "openfold3",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream:c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r4",
+      "digest": "sha256:d1d249fcd8aca464ff0ee0b6e78e0f9c1fe243e0ebd18acc3c4223070fcf203b",
+      "deployable": false,
+      "reason": "predates the repaired atomic handoff, frozen input identity, public model identity, and shared workspace identity contract"
     }
   ],
   "images": [
@@ -60,7 +88,7 @@
       "id": "esmfold2",
       "dockerfile": "Dockerfile.esmfold2",
       "repository": "cancer-immunotherapy/esmfold2",
-      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r4",
+      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r5",
       "source": {
         "repository": "https://github.com/Biohub/esm.git",
         "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
@@ -111,8 +139,8 @@
         "network_policy": "offline-local-artifacts-only",
         "required_mounts": ["/models/esmfold2", "/models/esmc-6b", "/databases/esmfold2"],
         "commands": [
-          "/usr/local/bin/fs2-run-esmfold2 prepare-input --input-manifest <raw.json> --output <request.json> [--sequence <AA>] --mode <single-sequence|precomputed-msa> --seed <int>",
-          "/usr/local/bin/fs2-run-esmfold2 fold --input <request.json> --output-dir <dir> --variant esmfold2 --seed <int> --runtime-localization-marker <runtime-localization.json> [--smoke]"
+          "/usr/local/bin/fs2-run-esmfold2 prepare-input --input-manifest <raw.json> --output <request.json> --output-artifact-id <id> --raw-input-artifact-id <id> --raw-input-sha256 <sha256> --variant esmfold2 --source-revision <revision> [--sequence <AA>] --mode <single-sequence|precomputed-msa> --seed <int>",
+          "/usr/local/bin/fs2-run-esmfold2 fold --input <request.json> --input-artifact-id <id> --expected-raw-input-artifact-id <id> --expected-raw-input-sha256 <sha256> --expected-mode <single-sequence|precomputed-msa> --source-revision <revision> --output-dir <dir> --variant esmfold2 --seed <int> --runtime-localization-marker <runtime-localization.json> [--smoke]"
         ]
       },
       "fast_start": {
@@ -132,14 +160,14 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-only-sdpa-dispatch", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": "sha256:e8fb269ff17e752ed8dd8f6c4689eaa55c0efc7adaffc156ccd9357bd075463d",
+      "published_digest": null,
       "deployable": false
     },
     {
       "id": "esmfold2-fast",
       "dockerfile": "Dockerfile.esmfold2",
       "repository": "cancer-immunotherapy/esmfold2-fast",
-      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r4",
+      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r5",
       "source": {
         "repository": "https://github.com/Biohub/esm.git",
         "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
@@ -190,8 +218,8 @@
         "network_policy": "offline-local-artifacts-only",
         "required_mounts": ["/models/esmfold2-fast", "/models/esmc-6b", "/databases/esmfold2"],
         "commands": [
-          "/usr/local/bin/fs2-run-esmfold2 prepare-input --input-manifest <raw.json> --output <request.json> [--sequence <AA>] --mode <single-sequence|precomputed-msa> --seed <int>",
-          "/usr/local/bin/fs2-run-esmfold2 fold --input <request.json> --output-dir <dir> --variant esmfold2-fast --seed <int> --runtime-localization-marker <runtime-localization.json> [--smoke]"
+          "/usr/local/bin/fs2-run-esmfold2 prepare-input --input-manifest <raw.json> --output <request.json> --output-artifact-id <id> --raw-input-artifact-id <id> --raw-input-sha256 <sha256> --variant esmfold2-fast --source-revision <revision> [--sequence <AA>] --mode <single-sequence|precomputed-msa> --seed <int>",
+          "/usr/local/bin/fs2-run-esmfold2 fold --input <request.json> --input-artifact-id <id> --expected-raw-input-artifact-id <id> --expected-raw-input-sha256 <sha256> --expected-mode <single-sequence|precomputed-msa> --source-revision <revision> --output-dir <dir> --variant esmfold2-fast --seed <int> --runtime-localization-marker <runtime-localization.json> [--smoke]"
         ]
       },
       "fast_start": {
@@ -211,14 +239,14 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-only-sdpa-dispatch", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": "sha256:ba55b9bb418d9714b21634c9fd6281f678529042bc3d0b8f06f184fa314a2577",
+      "published_digest": null,
       "deployable": false
     },
     {
       "id": "protenix-v2",
       "dockerfile": "Dockerfile.protenix-v2",
       "repository": "cancer-immunotherapy/protenix-v2",
-      "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r4",
+      "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r5",
       "source": {
         "repository": "https://github.com/bytedance/Protenix.git",
         "revision": "2475421477ab414b571149ad4a875c390ff8a35d",
@@ -281,8 +309,8 @@
           "XDG_CACHE_HOME": "/cache/protenix/xdg"
         },
         "commands": [
-          "/usr/local/bin/fs2-run-protenix prep --input <raw.json> --output-dir <dir> --processed-json <processed.json> --provenance-marker <provenance.json> --handoff-tar <handoff.tar.zst> --output-artifact-id <id> --msa-mode none --reference-root /models/protenix-v2 --reference-manifest /models/protenix-v2/manifest.json --runtime-localization-marker <runtime-localization.json>",
-          "/usr/local/bin/fs2-run-protenix pred --input <input/processed.json> --input-marker <input/provenance.json> --input-artifact-id <id> --output-dir <dir> --checkpoint /models/protenix-v2/checkpoint/protenix-v2.pt --common-dir /models/protenix-v2/common --msa-mode none --seeds <1..16-unique-csv> --sample-count <1..16> --disable-templates --disable-rna-msa --runtime-localization-marker <runtime-localization.json>"
+          "/usr/local/bin/fs2-run-protenix prep --input <raw.json> --output-dir <dir> --processed-json <processed.json> --provenance-marker <provenance.json> --handoff-tar <handoff.tar.zst> --output-artifact-id <id> --raw-input-artifact-id <id> --raw-input-sha256 <sha256> --msa-mode none --reference-root /models/protenix-v2 --reference-manifest /models/protenix-v2/manifest.json --runtime-localization-marker <runtime-localization.json>",
+          "/usr/local/bin/fs2-run-protenix pred --input <input/processed.json> --input-marker <input/provenance.json> --input-artifact-id <id> --expected-raw-input-artifact-id <id> --expected-raw-input-sha256 <sha256> --output-dir <dir> --checkpoint /models/protenix-v2/checkpoint/protenix-v2.pt --common-dir /models/protenix-v2/common --msa-mode none --seeds <1..16-unique-csv> --sample-count <1..16> --disable-templates --disable-rna-msa --runtime-localization-marker <runtime-localization.json>"
         ]
       },
       "fast_start": {
@@ -302,14 +330,14 @@
         "blackwell": {"status": "unsupported", "scope": "pinned-pytorch-2.7.1-cu126-libtorch-has-no-blackwell-cubin-or-ptx", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": "sha256:27d816dc518b5dda205f9916205fbc4e2053a8109d9380b85628d9f0d968a644",
+      "published_digest": null,
       "deployable": false
     },
     {
       "id": "openfold3",
       "dockerfile": "Dockerfile.openfold3",
       "repository": "cancer-immunotherapy/openfold3-upstream",
-      "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r4",
+      "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r5",
       "source": {
         "repository": "https://github.com/aqlaboratory/openfold-3.git",
         "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
@@ -358,8 +386,8 @@
           "XDG_CACHE_HOME": "/cache/openfold3/xdg"
         },
         "commands": [
-          "/usr/local/bin/fs2-run-openfold3 prepare --input-manifest <input.json> --query-json <prepared/query.json> --base-runner-yaml /opt/fs2/runtime/openfold3/runner-base.yaml --runner-yaml <prepared/runner.yaml> --provenance-marker <prepared/provenance.json> --handoff-tar <prepared.tar.zst> --output-artifact-id <id> --raw-input-sha256 <sha256> --msa-mode none --model-seeds <csv> --offline",
-          "/usr/local/bin/fs2-run-openfold3 predict --query-json <input/query.json> --provenance-marker <input/provenance.json> --input-artifact-id <id> --expected-raw-input-sha256 <sha256> --output-dir <dir> --checkpoint /models/openfold3/of3-ob-2025-06-30-174k.pt --ccd-path /databases/openfold3/components.bcif --runner-yaml <runner.yaml> --base-runner-yaml /opt/fs2/runtime/openfold3/runner-base.yaml --num-diffusion-samples 1 --num-model-seeds <seed-count> --model-seeds <csv> --msa-mode none --use-templates false --runtime-localization-marker <runtime-localization.json>"
+          "/usr/local/bin/fs2-run-openfold3 prepare --input-manifest <input.json> --query-json <prepared/query.json> --base-runner-yaml /opt/fs2/runtime/openfold3/runner-base.yaml --runner-yaml <prepared/runner.yaml> --provenance-marker <prepared/provenance.json> --handoff-tar <prepared.tar.zst> --output-artifact-id <id> --raw-input-artifact-id <id> --raw-input-sha256 <sha256> --msa-mode none --model-seeds <csv> --offline",
+          "/usr/local/bin/fs2-run-openfold3 predict --query-json <input/query.json> --provenance-marker <input/provenance.json> --input-artifact-id <id> --expected-raw-input-artifact-id <id> --expected-raw-input-sha256 <sha256> --output-dir <dir> --checkpoint /models/openfold3/of3-ob-2025-06-30-174k.pt --ccd-path /databases/openfold3/components.bcif --runner-yaml <runner.yaml> --base-runner-yaml /opt/fs2/runtime/openfold3/runner-base.yaml --num-diffusion-samples 1 --num-model-seeds <seed-count> --model-seeds <csv> --msa-mode none --use-templates false --runtime-localization-marker <runtime-localization.json>"
         ]
       },
       "fast_start": {
@@ -379,7 +407,7 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-not-readiness", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": "sha256:d1d249fcd8aca464ff0ee0b6e78e0f9c1fe243e0ebd18acc3c4223070fcf203b",
+      "published_digest": null,
       "deployable": false
     }
   ]

@@ -97,6 +97,7 @@ uv run \
   --with packaging \
   --with pyyaml \
   --with jsonschema \
+  --with zstandard \
   --python 3.11 \
   python -m unittest discover -s "${runtime_dir}/tests" -p 'test_*.py' -v
 
