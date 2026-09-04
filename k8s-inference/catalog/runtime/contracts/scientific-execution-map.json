@@ -72,6 +72,24 @@
               "mount_path": "/reference-data",
               "sub_path": null,
               "read_only": true
+            },
+            {
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "kind": "reference",
+              "mount_path": "/opt/fs2/artifacts/boltzgen-checkpoints",
+              "name": "boltzgen-checkpoints",
+              "read_only": true,
+              "sub_path": "scientific-localization/public/generations/boltzgen-checkpoints/sha256/ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf"
+            },
+            {
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "kind": "reference",
+              "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+              "name": "boltzgen-inference-molecules",
+              "read_only": true,
+              "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
             }
           ],
           "service_account_name": "default",
@@ -91,7 +109,7 @@
           "termination_grace_seconds": 90,
           "environment": {},
           "required_node_labels": {
-            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
             "storage.fs2.nebius/reference-data": "true"
           }
         },
@@ -118,6 +136,24 @@
               "mount_path": "/reference-data",
               "sub_path": null,
               "read_only": true
+            },
+            {
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "kind": "reference",
+              "mount_path": "/opt/fs2/artifacts/boltzgen-checkpoints",
+              "name": "boltzgen-checkpoints",
+              "read_only": true,
+              "sub_path": "scientific-localization/public/generations/boltzgen-checkpoints/sha256/ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf"
+            },
+            {
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "kind": "reference",
+              "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+              "name": "boltzgen-inference-molecules",
+              "read_only": true,
+              "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
             }
           ],
           "service_account_name": "default",
@@ -137,7 +173,7 @@
           "termination_grace_seconds": 90,
           "environment": {},
           "required_node_labels": {
-            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
             "storage.fs2.nebius/reference-data": "true"
           }
         },
@@ -164,6 +200,24 @@
               "mount_path": "/reference-data",
               "sub_path": null,
               "read_only": true
+            },
+            {
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "kind": "reference",
+              "mount_path": "/opt/fs2/artifacts/boltzgen-checkpoints",
+              "name": "boltzgen-checkpoints",
+              "read_only": true,
+              "sub_path": "scientific-localization/public/generations/boltzgen-checkpoints/sha256/ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf"
+            },
+            {
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "kind": "reference",
+              "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+              "name": "boltzgen-inference-molecules",
+              "read_only": true,
+              "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
             }
           ],
           "service_account_name": "default",
@@ -183,7 +237,7 @@
           "termination_grace_seconds": 90,
           "environment": {},
           "required_node_labels": {
-            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
             "storage.fs2.nebius/reference-data": "true"
           }
         },
@@ -210,6 +264,24 @@
               "mount_path": "/reference-data",
               "sub_path": null,
               "read_only": true
+            },
+            {
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "kind": "reference",
+              "mount_path": "/opt/fs2/artifacts/boltzgen-checkpoints",
+              "name": "boltzgen-checkpoints",
+              "read_only": true,
+              "sub_path": "scientific-localization/public/generations/boltzgen-checkpoints/sha256/ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf"
+            },
+            {
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "kind": "reference",
+              "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+              "name": "boltzgen-inference-molecules",
+              "read_only": true,
+              "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
             }
           ],
           "service_account_name": "default",
@@ -229,7 +301,7 @@
           "termination_grace_seconds": 90,
           "environment": {},
           "required_node_labels": {
-            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
             "storage.fs2.nebius/reference-data": "true"
           }
         },
@@ -256,6 +328,24 @@
               "mount_path": "/reference-data",
               "sub_path": null,
               "read_only": true
+            },
+            {
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "kind": "reference",
+              "mount_path": "/opt/fs2/artifacts/boltzgen-checkpoints",
+              "name": "boltzgen-checkpoints",
+              "read_only": true,
+              "sub_path": "scientific-localization/public/generations/boltzgen-checkpoints/sha256/ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf"
+            },
+            {
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "kind": "reference",
+              "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+              "name": "boltzgen-inference-molecules",
+              "read_only": true,
+              "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
             }
           ],
           "service_account_name": "default",
@@ -275,7 +365,7 @@
           "termination_grace_seconds": 90,
           "environment": {},
           "required_node_labels": {
-            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
             "storage.fs2.nebius/reference-data": "true"
           }
         },
@@ -302,6 +392,24 @@
               "mount_path": "/reference-data",
               "sub_path": null,
               "read_only": true
+            },
+            {
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "kind": "reference",
+              "mount_path": "/opt/fs2/artifacts/boltzgen-checkpoints",
+              "name": "boltzgen-checkpoints",
+              "read_only": true,
+              "sub_path": "scientific-localization/public/generations/boltzgen-checkpoints/sha256/ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf"
+            },
+            {
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "kind": "reference",
+              "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+              "name": "boltzgen-inference-molecules",
+              "read_only": true,
+              "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
             }
           ],
           "service_account_name": "default",
@@ -321,7 +429,7 @@
           "termination_grace_seconds": 90,
           "environment": {},
           "required_node_labels": {
-            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
             "storage.fs2.nebius/reference-data": "true"
           }
         },
@@ -339,37 +447,25 @@
               "mount_path": "/mnt/fs2-scientific",
               "sub_path": null,
               "read_only": false
-            },
-            {
-              "name": "reference-data",
-              "kind": "reference",
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "mount_path": "/reference-data",
-              "sub_path": null,
-              "read_only": true
             }
           ],
           "service_account_name": "default",
           "resources": {
             "requests": {
-              "cpu": "8000m",
-              "memory": "96Gi",
-              "ephemeral_storage": "32Gi"
+              "cpu": "2000m",
+              "memory": "4Gi",
+              "ephemeral_storage": "8Gi"
             },
             "limits": {
-              "cpu": "32000m",
-              "memory": "256Gi",
-              "ephemeral_storage": "128Gi"
+              "cpu": "4000m",
+              "memory": "8Gi",
+              "ephemeral_storage": "16Gi"
             }
           },
           "active_deadline_seconds": 43200,
           "termination_grace_seconds": 90,
           "environment": {},
-          "required_node_labels": {
-            "accelerator.fs2.nebius/pool-id": "h100-1x",
-            "storage.fs2.nebius/reference-data": "true"
-          }
+          "required_node_labels": {}
         },
         {
           "stage_id": "filtering",
@@ -385,37 +481,25 @@
               "mount_path": "/mnt/fs2-scientific",
               "sub_path": null,
               "read_only": false
-            },
-            {
-              "name": "reference-data",
-              "kind": "reference",
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "mount_path": "/reference-data",
-              "sub_path": null,
-              "read_only": true
             }
           ],
           "service_account_name": "default",
           "resources": {
             "requests": {
-              "cpu": "8000m",
-              "memory": "96Gi",
-              "ephemeral_storage": "32Gi"
+              "cpu": "2000m",
+              "memory": "4Gi",
+              "ephemeral_storage": "8Gi"
             },
             "limits": {
-              "cpu": "32000m",
-              "memory": "256Gi",
-              "ephemeral_storage": "128Gi"
+              "cpu": "4000m",
+              "memory": "8Gi",
+              "ephemeral_storage": "16Gi"
             }
           },
           "active_deadline_seconds": 43200,
           "termination_grace_seconds": 90,
           "environment": {},
-          "required_node_labels": {
-            "accelerator.fs2.nebius/pool-id": "h100-1x",
-            "storage.fs2.nebius/reference-data": "true"
-          }
+          "required_node_labels": {}
         }
       ],
       "access_profile": "public"

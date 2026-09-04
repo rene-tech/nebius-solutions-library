@@ -514,9 +514,23 @@ class FileScientificManifestRenderer:
                                 raise ScientificExecutionMapError(
                                     "reference-data host path must use the published datasets root"
                                 )
-                            if mount_path != "/reference-data" or sub_path is not None:
+                            # The whole plane may only ever appear at
+                            # /reference-data. One localization generation may
+                            # instead be projected at the adapters' shared
+                            # /opt/fs2/artifacts/<id> contract, which needs a
+                            # subPath: a public generation is a single
+                            # content-addressed directory inside this same
+                            # read-only plane, so projecting it copies nothing
+                            # and widens no access. The subPath itself is
+                            # traversal-checked below and the mount stays
+                            # read-only, so the reachable bytes are a subset of
+                            # what the whole-plane mount already exposes.
+                            whole_plane = mount_path == "/reference-data" and sub_path is None
+                            one_generation = mount_path != "/reference-data" and sub_path is not None
+                            if not (whole_plane or one_generation):
                                 raise ScientificExecutionMapError(
-                                    "reference-data host plane must be mounted whole at /reference-data"
+                                    "reference-data host mount must be the whole plane at /reference-data"
+                                    " or exactly one subPath generation"
                                 )
                         if not read_only:
                             raise ScientificExecutionMapError("reference/private mounts require a read-only source")

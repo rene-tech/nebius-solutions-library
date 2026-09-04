@@ -19,7 +19,7 @@
         "model_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
         "runtime_image_digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
         "runtime_recipe_sha256": "904466c3c21c41fc05358744061bd4533fdf9ae647356d5ca7d717c0f062ead4",
-        "workload_recipe_sha256": "74bc6015176c892f35c33e9122588909f4cea106b73708cb6ba1d8b8efae4d84",
+        "workload_recipe_sha256": "223b796e10fbf933d591817163086bc2830d0e54212b6a7d8e27624aae24d336",
         "artifact_manifest_digest": "8305400f8711388cbc5d9937a120d7ca4de390170082047511e859f636a2dd66",
         "execution_identity_sha256": "0daf037f4869d476482514268053681dca74db9d6e3df135af52826e4c6627cd"
       },
@@ -259,7 +259,7 @@
         "model_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
         "runtime_image_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
         "runtime_recipe_sha256": "d6b1f52f77249a19cbf7a519f31064b894ae395cdc76eca4f7067643a224fa74",
-        "workload_recipe_sha256": "1ea1d90228cff7efbc4c3e6f6c394be0e384e7870a2a94fa8897b81fe6bfa73b",
+        "workload_recipe_sha256": "f614aa8507bb31c70d9e9316e4a2a9eb297922cc06555af3a801f0240e9b5797",
         "artifact_manifest_digest": null,
         "execution_identity_sha256": null
       },
