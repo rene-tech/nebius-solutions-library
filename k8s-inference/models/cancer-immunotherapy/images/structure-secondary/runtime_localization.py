@@ -143,7 +143,7 @@ def validate_runtime_localization(
     if not isinstance(raw_artifacts, list) or len(raw_artifacts) != len(artifacts):
         raise SystemExit("runtime localization marker artifact cardinality differs")
     observed: set[str] = set()
-    artifact_fields = {
+    legacy_artifact_fields = {
         "artifact_id",
         "mount_path",
         "content_digest",
@@ -153,6 +153,16 @@ def validate_runtime_localization(
         "readiness_receipt_sha256",
         "authorization_receipt_sha256",
     }
+    current_artifact_fields = (
+        legacy_artifact_fields
+        - {"expected_manifest_sha256"}
+        | {
+            "artifact_manifest_sha256",
+            "verification_receipt",
+            "files",
+            "aggregate_tree",
+        }
+    )
     access_receipt = os.environ.get("FS2_ARTIFACT_ACCESS_RECEIPT_DIGEST", "")
     if access_receipt:
         if _DIGEST.fullmatch(access_receipt) is None:
@@ -161,8 +171,17 @@ def validate_runtime_localization(
     else:
         expected_authorization = None
     for raw in raw_artifacts:
-        if not isinstance(raw, dict) or set(raw) != artifact_fields:
+        if not isinstance(raw, dict) or set(raw) not in {
+            frozenset(legacy_artifact_fields),
+            frozenset(current_artifact_fields),
+        }:
             raise SystemExit("runtime localization marker artifact fields differ")
+        current_marker = "artifact_manifest_sha256" in raw
+        manifest_sha256 = raw.get(
+            "artifact_manifest_sha256"
+            if current_marker
+            else "expected_manifest_sha256"
+        )
         artifact_id = raw.get("artifact_id")
         if not isinstance(artifact_id, str) or artifact_id in observed:
             raise SystemExit("runtime localization marker artifact IDs are invalid or duplicated")
@@ -172,12 +191,78 @@ def validate_runtime_localization(
             raise SystemExit(f"runtime localization marker contains unexpected artifact {artifact_id}")
         localization_receipt = raw.get("localization_receipt_digest")
         readiness_receipt = raw.get("readiness_receipt_sha256")
+        expected_manifest = expected.expected_manifest_sha256
+        if current_marker and expected_manifest is None:
+            expected_manifest = expected.content_sha256
+        if current_marker:
+            files = raw.get("files")
+            aggregate_tree = raw.get("aggregate_tree")
+            verification_receipt = raw.get("verification_receipt")
+            if (
+                not isinstance(files, list)
+                or len(files) > 4096
+                or bool(files) == (aggregate_tree is not None)
+            ):
+                raise SystemExit(
+                    f"runtime localization marker evidence mode differs for {artifact_id}"
+                )
+            if files:
+                if verification_receipt is not None:
+                    raise SystemExit(
+                        f"runtime localization marker verification receipt differs for {artifact_id}"
+                    )
+                paths: set[str] = set()
+                for file in files:
+                    if not isinstance(file, dict) or set(file) != {
+                        "path",
+                        "digest",
+                        "size_bytes",
+                    }:
+                        raise SystemExit(
+                            f"runtime localization marker file evidence differs for {artifact_id}"
+                        )
+                    file_path = file.get("path")
+                    relative = Path(file_path) if isinstance(file_path, str) else None
+                    if (
+                        relative is None
+                        or relative.is_absolute()
+                        or any(part in {"", ".", ".."} for part in relative.parts)
+                        or relative.as_posix() != file_path
+                        or "\\" in file_path
+                        or file_path in paths
+                        or not isinstance(file.get("digest"), str)
+                        or _DIGEST.fullmatch(file["digest"]) is None
+                        or not isinstance(file.get("size_bytes"), int)
+                        or isinstance(file["size_bytes"], bool)
+                        or file["size_bytes"] < 0
+                    ):
+                        raise SystemExit(
+                            f"runtime localization marker file evidence differs for {artifact_id}"
+                        )
+                    paths.add(file_path)
+            elif (
+                not isinstance(aggregate_tree, dict)
+                or aggregate_tree.get("tree_digest") != raw.get("content_digest")
+                or (
+                    aggregate_tree.get("storage_kind") == "reference-data-plane"
+                )
+                != isinstance(verification_receipt, dict)
+            ):
+                raise SystemExit(
+                    f"runtime localization marker aggregate evidence differs for {artifact_id}"
+                )
         if (
             raw.get("mount_path") != expected.mount_path
             or raw.get("content_digest") != f"sha256:{expected.content_sha256}"
             or raw.get("sub_path") != expected.sub_path
-            or raw.get("expected_manifest_sha256")
-            != expected.expected_manifest_sha256
+            or manifest_sha256 != expected_manifest
+            or (
+                current_marker
+                and (
+                    not isinstance(manifest_sha256, str)
+                    or _SHA256.fullmatch(manifest_sha256) is None
+                )
+            )
             or not isinstance(localization_receipt, str)
             or _DIGEST.fullmatch(localization_receipt) is None
             or readiness_receipt != localization_receipt.removeprefix("sha256:")

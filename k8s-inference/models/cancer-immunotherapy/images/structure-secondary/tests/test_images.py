@@ -71,11 +71,22 @@ def write_runtime_localization_marker(
                 "artifact_id": artifact["artifact_id"],
                 "mount_path": artifact["mount_path"],
                 "content_digest": f"sha256:{artifact['content_sha256']}",
+                "artifact_manifest_sha256": artifact.get(
+                    "expected_manifest_sha256", artifact["content_sha256"]
+                ),
                 "localization_receipt_digest": f"sha256:{receipt}",
                 "sub_path": artifact.get("sub_path"),
-                "expected_manifest_sha256": artifact.get("expected_manifest_sha256"),
                 "readiness_receipt_sha256": receipt,
                 "authorization_receipt_sha256": authorization_receipt_sha256,
+                "verification_receipt": None,
+                "files": [
+                    {
+                        "path": "weights.bin",
+                        "digest": "sha256:" + "e" * 64,
+                        "size_bytes": 1,
+                    }
+                ],
+                "aggregate_tree": None,
             }
             for artifact in artifacts
         ],
@@ -454,7 +465,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 for field, value in (
                     ("content_digest", "sha256:" + "0" * 64),
                     ("mount_path", "/models/substitute"),
-                    ("expected_manifest_sha256", "0" * 64),
+                    ("artifact_manifest_sha256", "0" * 64),
                     ("readiness_receipt_sha256", "0" * 64),
                     ("authorization_receipt_sha256", "0" * 64),
                 ):
