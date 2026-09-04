@@ -150,7 +150,12 @@ same exact deployment tuple.
 Automatic assignment never rewrites an operator's artifact, runtime template,
 cache tier, or snapshot identity behind their back. It compares only benchmark
 paths compatible with that immutable desired tuple and publishes the selected
-mechanism in status for the operator and mechanism adapters. Moving to a
+mechanism in status for the operator and mechanism adapters. The same decision
+is passed to the renderer; status cannot claim one mechanism while the runtime
+Pod uses another. Candidates that are not production-selectable, are missing
+from any selected pool, or cannot be rendered with the installed actors and
+storage are removed before scoring. If no candidate survives, the conventional
+loader is rendered and reported. Moving to a
 physically different cache/snapshot/runtime path is a reviewed live `ModelDeployment`
 revision when that path is already present in the infrastructure envelope; a
 new storage or node-pool capability remains a Terraform change.
@@ -173,6 +178,23 @@ The runtime image, model artifacts, compiled kernels, snapshot, and host-memory
 state are separate dependencies. A GPU snapshot does not by itself eliminate a
 large image pull; the selected path must also make its exact runtime image
 available quickly enough to meet the level.
+
+The current production boundary is intentionally fail-closed:
+
+- GPU-resident declarations and evidence remain visible, but cannot be selected
+  until a real promotion/readiness actor is installed.
+- `runtime-sleep-offload` host-memory declarations remain visible as unavailable,
+  but are neither offered in the admin form nor rendered as fake runtime flags.
+- Locked host-memory residency is selectable only when every selected pool has
+  measured allocatable RAM and the holder reservation plus the effective Pod
+  memory request fits that physical pool. There is no arbitrary percentage cap.
+- A host-memory path becomes effective only after one owned holder DaemonSet per
+  selected pool is fully scheduled, updated, Ready and available. Each holder
+  verifies and records a digest of the localized file bytes and its exact Pod
+  UID. A process-held POSIX lock on the shared receipt filesystem proves that
+  the receipt-producing incarnation is still alive; a fresh receipt left by a
+  terminated predecessor cannot satisfy runtime admission. Metadata-only or
+  same-size-but-different content cannot satisfy readiness.
 
 ModelExpress moves compatible tensors from an existing donor to a new engine,
 so its behavior depends on donor residency and exact runtime compatibility.

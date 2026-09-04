@@ -197,6 +197,10 @@ export const modelDeploymentMutationCapabilitiesFixture: ModelDeploymentMutation
         ...modelDeploymentSpecFixture.placement,
         poolRefs: ["reserved-h100", "preemptible-h100"],
       },
+      cache: {
+        ...modelDeploymentSpecFixture.cache,
+        tier: "SharedFilesystem",
+      },
     },
     pool_choices: [
       {
@@ -218,6 +222,30 @@ export const modelDeploymentMutationCapabilitiesFixture: ModelDeploymentMutation
     priority_class_choices: ["interactive", "standard"],
     tenant_choices: ["tenant-fixture"],
     scale_to_zero_qualified: true,
+    fast_start_mechanism_choices: [
+      {
+        mechanism: "conventional",
+        pool_refs: ["reserved-h100", "preemptible-h100"],
+        required_cache_tier: null,
+        minimum_hot_replicas: 0,
+        minimum_max_replicas: 1,
+      },
+      {
+        mechanism: "regional-cache",
+        pool_refs: ["reserved-h100", "preemptible-h100"],
+        required_cache_tier: "SharedFilesystem",
+        minimum_hot_replicas: 0,
+        minimum_max_replicas: 1,
+      },
+      {
+        mechanism: "host-memory-residency",
+        pool_refs: ["reserved-h100", "preemptible-h100"],
+        required_cache_tier: "SharedFilesystem",
+        minimum_hot_replicas: 0,
+        minimum_max_replicas: 1,
+      },
+    ],
+    fast_start_qualified_level: "L3",
   }],
 };
 

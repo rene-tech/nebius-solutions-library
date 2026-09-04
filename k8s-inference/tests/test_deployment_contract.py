@@ -302,6 +302,7 @@ class DeploymentContractTests(unittest.TestCase):
                 "fast_start_evidence_file": None,
                 "fast_start_environment_qualifications_file": None,
                 "fast_start_measurement_contracts_file": None,
+                "fast_start_mechanisms_file": None,
                 "fast_start_wait_second_value": 0.01,
                 "fast_start_mechanism_hourly_costs": {},
                 "priority_classes": {
@@ -712,6 +713,20 @@ class DeploymentContractTests(unittest.TestCase):
         )["deployment_contract"]
         kueue = contract["stages"]["foundation"]["kueue"]
         self.assertTrue(kueue["budget_core_resources"])
+        # The facade must hand the same measured values to workloads.  The
+        # stage narrows away provenance after variable conversion, but a missing
+        # sibling input here previously made host-memory validation see an
+        # empty map even while the root accepted the measurement.
+        self.assertEqual(
+            contract["stages"]["workloads"]["accelerator_node_schedulable_capacity"],
+            {
+                pool_id: {
+                    **capacity,
+                    "evidence": {**capacity["evidence"], "node_group_id": None},
+                }
+                for pool_id, capacity in ACCELERATOR_CAPACITY_FIXTURE.items()
+            },
+        )
         self.assertEqual(
             kueue["exclude_resource_prefixes"],
             [
@@ -1533,6 +1548,7 @@ class DeploymentContractTests(unittest.TestCase):
                 "fast_start_evidence_file": None,
                 "fast_start_environment_qualifications_file": None,
                 "fast_start_measurement_contracts_file": None,
+                "fast_start_mechanisms_file": None,
                 "fast_start_wait_second_value": 0.01,
                 "fast_start_mechanism_hourly_costs": {},
                 "priority_classes": {

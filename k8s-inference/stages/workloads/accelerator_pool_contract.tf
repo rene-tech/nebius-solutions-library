@@ -279,6 +279,15 @@ variable "accelerator_pool_contract" {
   }
 }
 
+variable "accelerator_node_schedulable_capacity" {
+  description = "Measured per-node Kubernetes schedulable capacity keyed by accelerator pool. Host-memory residency is unavailable unless every declared pool has this physical bound."
+  type = map(object({
+    cpu_millicores = number
+    memory_mib     = number
+  }))
+  default = {}
+}
+
 locals {
   # Keep cached pre-delivery contracts hash-stable during destroy; new
   # contracts include the complete canonical artifact-delivery object.

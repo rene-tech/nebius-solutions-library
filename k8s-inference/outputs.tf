@@ -135,6 +135,7 @@ output "effective_configuration" {
       fast_start_measurement_contracts_file_set      = var.deployment.dynamic_models.fast_start_measurement_contracts_file != null
       fast_start_wait_second_value                   = var.deployment.dynamic_models.fast_start_wait_second_value
       fast_start_mechanism_hourly_costs              = var.deployment.dynamic_models.fast_start_mechanism_hourly_costs
+      fast_start_claims                              = var.deployment.storage.fast_start_claims
       priority_classes                               = var.deployment.dynamic_models.priority_classes
     }
     model_express = {

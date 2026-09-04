@@ -4,6 +4,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { adminApi, AdminApiError } from "../../api/client";
 import type {
   ModelDeploymentActionCapability,
+  ModelDeploymentCacheMechanismStatus,
   ModelDeploymentFastStartLevel,
   ModelExpressMechanismStatus,
   ModelDeploymentFastStartStatistics,
@@ -206,6 +207,51 @@ function evidenceClass(
   return "Measured · no level qualified";
 }
 
+function mechanismBytes(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "Unavailable";
+  if (value < 1024) return `${value} bytes`;
+  const units = ["KiB", "MiB", "GiB", "TiB"];
+  let scaled = value / 1024;
+  let unit = 0;
+  while (scaled >= 1024 && unit < units.length - 1) { scaled /= 1024; unit += 1; }
+  return `${scaled.toFixed(scaled < 10 ? 2 : 1)} ${units[unit]} (${value} bytes)`;
+}
+
+/**
+ * One cold-start mechanism row. It deliberately never renders a level: a
+ * Configured mechanism with no populated cohort sits next to an Off level, and
+ * that combination is the honest report rather than a defect.
+ */
+function cacheMechanismSummary(name: string, value: ModelDeploymentCacheMechanismStatus): string {
+  const parts: string[] = [value.state];
+  if (value.selected) parts.push("selected");
+  if (value.state === "Unavailable" || value.state === "Undeclared") parts.push(value.reason);
+  const residency = value.residencyMode ?? value.residency_mode;
+  if (residency) parts.push(residency);
+  const reserved = value.reservedHostMemoryBytes ?? value.reserved_host_memory_bytes;
+  if (reserved !== null && reserved !== undefined) {
+    const fraction = value.reservedHostMemoryFraction ?? value.reserved_host_memory_fraction;
+    const scope = value.hostMemoryReservationScope ?? value.host_memory_reservation_scope ?? "per-node";
+    const scopeLabel = scope === "per-replica" ? "per replica" : "per node";
+    parts.push(`host RAM ${scopeLabel} ${mechanismBytes(reserved)}${scope === "per-node" && fraction ? ` · ${(fraction * 100).toFixed(2)}% of node` : ""}`);
+    const maximum = value.maximumReservedHostMemoryBytes ?? value.maximum_reserved_host_memory_bytes;
+    if (maximum !== null && maximum !== undefined) parts.push(`configured maximum ${mechanismBytes(maximum)}`);
+  }
+  const abi = value.retainedCompileCacheAbi ?? value.retained_compile_cache_abi;
+  if (abi) parts.push(`compile cache ${abi}`);
+  const standby = value.standbyReplicas ?? value.standby_replicas;
+  if (standby !== null && standby !== undefined) {
+    const accelerators = value.reservedAccelerators ?? value.reserved_accelerators;
+    const minimumHot = value.minimumHotReplicas ?? value.minimum_hot_replicas;
+    const configuredHot = value.configuredHotReplicas ?? value.configured_hot_replicas;
+    parts.push(`${standby} standby replica(s) holding ${accelerators ?? "unavailable"} accelerator(s)`);
+    parts.push(`hot floor ${configuredHot ?? "unavailable"} of minimum ${minimumHot ?? "unavailable"}`);
+  }
+  const digest = value.configDigest ?? value.config_digest;
+  if (digest) parts.push(digest);
+  return `${name}: ${parts.join(" · ")}`;
+}
+
 function FastStartRuntime({ view, spec }: { view: ModelDeploymentStatusView; spec: ModelDeploymentSpec }) {
   const observed = normalizedFastStartStatus(view);
   const effective = effectiveFastStartLevel(view);
@@ -223,6 +269,7 @@ function FastStartRuntime({ view, spec }: { view: ModelDeploymentStatusView; spe
   const mechanisms = observed?.mechanisms
     ? Object.entries(observed.mechanisms).filter(([name]) => name !== "modelexpress")
     : [];
+  const cacheMechanisms = Object.entries(observed?.cacheMechanisms ?? {}).sort(([left], [right]) => left.localeCompare(right));
   return (
     <section className="subpanel section-stack" aria-labelledby="fast-start-runtime-title">
       <div className="section-heading">
@@ -279,8 +326,9 @@ function FastStartRuntime({ view, spec }: { view: ModelDeploymentStatusView; spe
             <div><dt>Observed transfer</dt><dd>{(modelExpress.transferredBytes ?? modelExpress.transferred_bytes) === null || (modelExpress.transferredBytes ?? modelExpress.transferred_bytes) === undefined ? "Unavailable" : `${modelExpress.transferredBytes ?? modelExpress.transferred_bytes} bytes`} · {(modelExpress.transferSeconds ?? modelExpress.transfer_seconds) === null || (modelExpress.transferSeconds ?? modelExpress.transfer_seconds) === undefined ? "duration unavailable" : `${modelExpress.transferSeconds ?? modelExpress.transfer_seconds}s`}</dd></div>
             <div><dt>Transfer telemetry</dt><dd>{modelExpress.telemetryState ?? modelExpress.telemetry_state ?? "Unavailable"}{(modelExpress.fallbackReason ?? modelExpress.fallback_reason) ? ` · ${modelExpress.fallbackReason ?? modelExpress.fallback_reason}` : " · no per-deployment upstream path record"}</dd></div>
           </> : null}
+          {cacheMechanisms.map(([name, value]) => <div key={`cache-mechanism-${name}`}><dt>Cold-start {name}</dt><dd>{cacheMechanismSummary(name, value)}</dd></div>)}
           {mechanisms.map(([name, value]) => <div key={name}><dt>{name.replaceAll("_", " ")}</dt><dd>{mechanismValue(value)}</dd></div>)}
-          {!mechanisms.length && !observed?.pools.length ? <div><dt>Controller mechanisms</dt><dd>Unavailable</dd></div> : null}
+          {!mechanisms.length && !cacheMechanisms.length && !observed?.pools.length ? <div><dt>Controller mechanisms</dt><dd>Unavailable</dd></div> : null}
         </dl>
         {observed?.pools.length ? <div className="condition-list" aria-label="Per-pool fast-start evidence">
           {observed.pools.map((pool, poolIndex) => {

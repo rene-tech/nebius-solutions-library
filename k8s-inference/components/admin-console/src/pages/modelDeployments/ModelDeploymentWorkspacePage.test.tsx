@@ -85,7 +85,21 @@ describe("ModelDeployment workspace", () => {
     expect(screen.getByRole("checkbox", { name: "Use preemptible-h100" })).toBeChecked();
     expect(screen.getByLabelText("Hot floor")).toHaveValue(modelDeploymentSpecFixture.availability.minReplicas);
     expect(screen.getByLabelText("Fast-start mode")).toHaveValue("Fixed");
+    expect(screen.getByLabelText("Fast-start mode")).toBeEnabled();
     expect(screen.getByLabelText("Fast-start level")).toHaveValue("L3");
+    expect(screen.getByLabelText("Fast-start level")).toBeEnabled();
+    fireEvent.click(screen.getByText("Operator mechanism details"));
+    const mechanism = screen.getByLabelText("Cold-start mechanism");
+    expect(mechanism).toBeEnabled();
+    expect(within(mechanism).getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual([
+      "",
+      "conventional",
+      "regional-cache",
+      "host-memory-residency",
+    ]);
+    expect(within(mechanism).getByRole("option", { name: "Default conventional loader" })).toBeInTheDocument();
+    fireEvent.change(mechanism, { target: { value: "regional-cache" } });
+    expect(screen.getByLabelText("Cache tier")).toHaveValue("SharedFilesystem");
     expect(screen.getByRole("button", { name: "Validate draft" })).toBeEnabled();
     expect(screen.getByText(/No observed state or history yet/)).toBeInTheDocument();
   });
@@ -115,6 +129,42 @@ describe("ModelDeployment workspace", () => {
     await waitFor(() => expect(plan).toHaveBeenCalledWith(expect.objectContaining({
       spec: expect.objectContaining({
         placement: expect.objectContaining({ poolRefs: ["reserved-h100", "preemptible-h100"] }),
+      }),
+    })));
+  });
+
+  it("enforces the exact server-authoritative pool set and capacity for an explicit mechanism", async () => {
+    const capabilities = structuredClone(modelDeploymentMutationCapabilitiesFixture);
+    const option = capabilities.configuration_options[0]!;
+    option.pool_choices.forEach((choice) => { choice.maximum_replicas = 2; });
+    const hostMemory = option.fast_start_mechanism_choices.find(
+      (choice) => choice.mechanism === "host-memory-residency",
+    )!;
+    hostMemory.pool_refs = ["reserved-h100"];
+    vi.spyOn(adminApi, "modelDeploymentCapabilities").mockResolvedValue(testEnvelope(capabilities));
+    const plan = vi.spyOn(adminApi, "planModelDeployment").mockResolvedValue(testEnvelope(modelDeploymentPlanFixture));
+    renderCreatePage();
+
+    const model = await screen.findByRole("combobox", { name: "Qualified model" });
+    await waitFor(() => expect(model).toBeEnabled());
+    fireEvent.change(model, { target: { value: "qwen3-8b" } });
+    fireEvent.click(screen.getByText("Operator mechanism details"));
+    fireEvent.change(screen.getByLabelText("Cold-start mechanism"), {
+      target: { value: "host-memory-residency" },
+    });
+
+    expect(screen.getByRole("checkbox", { name: "Use reserved-h100" })).toBeChecked();
+    const incompatiblePool = screen.getByRole("checkbox", { name: "Use preemptible-h100" });
+    expect(incompatiblePool).not.toBeChecked();
+    expect(incompatiblePool).toBeDisabled();
+    expect(screen.getByLabelText("Replica ceiling")).toHaveValue(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview render plan" }));
+    await waitFor(() => expect(plan).toHaveBeenCalledWith(expect.objectContaining({
+      spec: expect.objectContaining({
+        placement: expect.objectContaining({ poolRefs: ["reserved-h100"] }),
+        availability: expect.objectContaining({ maxReplicas: 2 }),
+        cache: expect.objectContaining({ mechanism: "host-memory-residency" }),
       }),
     })));
   });
@@ -226,6 +276,10 @@ describe("ModelDeployment workspace", () => {
     fireEvent.change(screen.getByLabelText("Fast-start mode"), { target: { value: "Automatic" } });
     fireEvent.change(screen.getByLabelText("Minimum fast-start level"), { target: { value: "L1" } });
     fireEvent.change(screen.getByLabelText("Maximum fast-start level"), { target: { value: "L4" } });
+    expect(screen.getByText("Best target ≤30 seconds; may assign the highest qualified level below L1.")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("When the target is unavailable"), { target: { value: "RequireTarget" } });
+    expect(screen.getByText("Best target ≤30 seconds; will not assign below L1.")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("When the target is unavailable"), { target: { value: "AllowLowerLevel" } });
     fireEvent.click(screen.getByRole("button", { name: "Validate draft" }));
     await waitFor(() => expect(validate).toHaveBeenCalledWith(expect.objectContaining({
       name: "qwen-live",
@@ -573,6 +627,28 @@ describe("ModelDeployment workspace", () => {
     await screen.findByRole("heading", { name: "qwen-live" });
     expect(await screen.findByText(/Mutation capabilities are unavailable/)).toBeInTheDocument();
     for (const action of ["Apply", "Drain", "Rollback", "Reconcile", "Delete"]) expect(screen.getByRole("button", { name: action })).toBeDisabled();
+  });
+
+  it("does not re-offer a stored mechanism when its authoritative option is unavailable", async () => {
+    mockReadSurface();
+    vi.mocked(adminApi.modelDeployment).mockResolvedValue(testEnvelope({
+      ...modelDeploymentRevisionFixture,
+      spec: {
+        ...modelDeploymentRevisionFixture.spec,
+        cache: { ...modelDeploymentRevisionFixture.spec.cache, mechanism: "host-memory-residency" },
+      },
+    }));
+    vi.mocked(adminApi.modelDeploymentCapabilities).mockRejectedValue(
+      new AdminApiError("capabilities unavailable", 503, "request-mechanism"),
+    );
+    renderPage();
+
+    await screen.findByRole("heading", { name: "qwen-live" });
+    const mechanism = screen.getByLabelText("Cold-start mechanism");
+    expect(mechanism).toBeDisabled();
+    expect(mechanism).toHaveValue("host-memory-residency");
+    expect(within(mechanism).getByRole("option", { name: "host-memory-residency" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent(/currently stored mechanism is unavailable/);
   });
 
   it("honors each advertised action capability independently", async () => {
