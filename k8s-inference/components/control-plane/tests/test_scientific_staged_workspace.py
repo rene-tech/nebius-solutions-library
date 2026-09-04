@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import os
@@ -9,6 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 from uuid import UUID
 
+import httpx
 import pytest
 
 from fs2_serve.scientific_batch import companion
@@ -85,6 +87,87 @@ class _ArtifactClient:
         assert expected_size_bytes == len(self.content)
         assert expected_media_type == "application/octet-stream"
         return self.content
+
+
+def test_workload_download_verifies_raw_gzip_bytes_without_http_decoding() -> None:
+    artifact_id = UUID("00000000-0000-4000-8000-000000000003")
+    content = gzip.compress(b"immutable scientific input", mtime=0)
+    digest = hashlib.sha256(content).hexdigest()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "artifacts.internal":
+            return httpx.Response(
+                200,
+                json={
+                    "artifact": {
+                        "sha256": digest,
+                        "size_bytes": len(content),
+                        "media_type": "application/x-tar",
+                    },
+                    "handle": {
+                        "method": "GET",
+                        "url": "https://objects.test/input.tar.gz",
+                        "headers": {},
+                    },
+                },
+            )
+        return httpx.Response(200, stream=httpx.ByteStream(content), headers={"Content-Encoding": "gzip"})
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    client = companion.WorkloadArtifactHttpClient(
+        base_url="https://artifacts.internal",
+        capability="test-capability",
+        client=http,
+    )
+
+    assert (
+        client.download(
+            artifact_id,
+            expected_digest=f"sha256:{digest}",
+            expected_size_bytes=len(content),
+            expected_media_type="application/x-tar",
+        )
+        == content
+    )
+
+
+def test_workload_download_rejects_raw_bytes_beyond_the_frozen_size() -> None:
+    artifact_id = UUID("00000000-0000-4000-8000-000000000004")
+    expected = b"bounded"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "artifacts.internal":
+            return httpx.Response(
+                200,
+                json={
+                    "artifact": {
+                        "sha256": hashlib.sha256(expected).hexdigest(),
+                        "size_bytes": len(expected),
+                        "media_type": "application/octet-stream",
+                    },
+                    "handle": {
+                        "method": "GET",
+                        "url": "https://objects.test/input.bin",
+                        "headers": {},
+                    },
+                },
+            )
+        return httpx.Response(200, stream=httpx.ByteStream(expected + b"-overrun"))
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    client = companion.WorkloadArtifactHttpClient(
+        base_url="https://artifacts.internal",
+        capability="test-capability",
+        client=http,
+    )
+
+    with pytest.raises(ValueError, match="exceeds its immutable pointer"):
+        client.download(
+            artifact_id,
+            expected_digest=f"sha256:{hashlib.sha256(expected).hexdigest()}",
+            expected_size_bytes=len(expected),
+            expected_media_type="application/octet-stream",
+        )
 
 
 def test_runner_completion_and_handoff_are_atomic_deterministic_and_materializable(
