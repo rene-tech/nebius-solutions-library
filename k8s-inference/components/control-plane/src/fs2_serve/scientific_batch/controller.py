@@ -684,6 +684,12 @@ class ScientificBatchController:
             raise RuntimeError("Kueue-backed workload progressed without a resolved scheduling admission")
         if admission is not None:
             decision = record.scheduling.stage(attempt.stage_id)
+            # Kubernetes metav1 condition timestamps are serialized at whole-
+            # second precision, while the admission snapshot retains database
+            # microseconds. Treat the snapshot's containing second as the
+            # earliest representable Kueue instant; an earlier second remains
+            # a real ordering violation.
+            captured_at_floor = record.scheduling.captured_at.replace(microsecond=0)
             if (
                 admission.accelerator_count != decision.accelerator_count
                 or admission.accelerator_resource_name != decision.accelerator_resource_name
@@ -702,7 +708,7 @@ class ScientificBatchController:
                     )
                 )
                 or (admission.quota_reserved_at or admission.admitted_at) is None
-                or cast(datetime, admission.quota_reserved_at or admission.admitted_at) < record.scheduling.captured_at
+                or cast(datetime, admission.quota_reserved_at or admission.admitted_at) < captured_at_floor
             ):
                 raise RuntimeError("Kueue scheduling admission differs from the frozen stage request")
         kueue_uid = observation.kueue_workload_uid or attempt.kueue_workload_uid

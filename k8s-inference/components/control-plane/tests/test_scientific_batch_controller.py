@@ -514,6 +514,87 @@ async def test_quota_reservation_then_admission_updates_one_immutable_tuple_with
 
 
 @pytest.mark.asyncio
+async def test_kueue_whole_second_reservation_matches_fractional_admission_snapshot() -> None:
+    repository = FakeScientificBatchRepository()
+    cluster = FakeScientificBatchCluster()
+    reconciler = controller(repository, cluster)
+    operation_id = uuid4()
+    batch_plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="fold"),))
+    frozen = replace(snapshot(batch_plan), captured_at=NOW + timedelta(microseconds=613_568))
+    await reconciler.admit(
+        operation_id=operation_id,
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        plan=batch_plan,
+        scheduling=frozen,
+    )
+    await reconciler.reconcile_once()
+    attempt = repository.records[operation_id].stage("fold").attempts[0]
+    reservation = SchedulingAdmission(
+        resolved_pool_id="h100-preemptible",
+        admitted_resource_flavor="inference-h100-1x",
+        accelerator_resource_name="nvidia.com/gpu",
+        accelerator_count=1,
+        quota_reserved_at=NOW,
+        admitted_at=NOW,
+    )
+    cluster.set_observation(
+        attempt.workload,
+        WorkloadObservation(
+            ref=attempt.workload,
+            attempt_id=attempt.attempt_id,
+            state=WorkloadState.RUNNING,
+            phases=(LifecyclePhase.ADMITTED,),
+            scheduling_admission=reservation,
+        ),
+    )
+
+    await reconciler.reconcile_once()
+
+    assert repository.records[operation_id].stage("fold").attempts[0].scheduling_admission == reservation
+
+
+@pytest.mark.asyncio
+async def test_kueue_reservation_from_an_earlier_second_is_rejected() -> None:
+    repository = FakeScientificBatchRepository()
+    cluster = FakeScientificBatchCluster()
+    reconciler = controller(repository, cluster)
+    operation_id = uuid4()
+    batch_plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="fold"),))
+    frozen = replace(snapshot(batch_plan), captured_at=NOW + timedelta(microseconds=87_100))
+    await reconciler.admit(
+        operation_id=operation_id,
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        plan=batch_plan,
+        scheduling=frozen,
+    )
+    await reconciler.reconcile_once()
+    attempt = repository.records[operation_id].stage("fold").attempts[0]
+    prior = NOW - timedelta(seconds=1)
+    cluster.set_observation(
+        attempt.workload,
+        WorkloadObservation(
+            ref=attempt.workload,
+            attempt_id=attempt.attempt_id,
+            state=WorkloadState.RUNNING,
+            phases=(LifecyclePhase.ADMITTED,),
+            scheduling_admission=SchedulingAdmission(
+                resolved_pool_id="h100-preemptible",
+                admitted_resource_flavor="inference-h100-1x",
+                accelerator_resource_name="nvidia.com/gpu",
+                accelerator_count=1,
+                quota_reserved_at=prior,
+                admitted_at=prior,
+            ),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="Kueue scheduling admission differs"):
+        await reconciler.reconcile_once()
+
+
+@pytest.mark.asyncio
 async def test_same_workload_rereservation_is_deleted_and_retry_gets_fresh_queue_clock() -> None:
     repository = FakeScientificBatchRepository()
     cluster = FakeScientificBatchCluster()
