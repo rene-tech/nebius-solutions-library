@@ -75,6 +75,11 @@ Measured with `scripts/benchmark_parallel_staging.py` on eight incompressible
 
 Both modes publish a single identical manifest digest across all workers.
 
+`.staging` is shared with other tasks that mount the same filesystem, so it is
+only ever cleaned entry by entry. The publisher creates its working directories
+with `mkdtemp` there and removes only its own; nothing removes `.staging`
+itself.
+
 ## 3. The published handoff is bounded and content addressed
 
 There is exactly one public handoff contract,
@@ -104,6 +109,10 @@ a file list. It carries:
 An inventory of at most 4096 files stays inline in the manifest; anything larger
 is published only as the separate content-addressed inventory document and
 referenced by digest. `content.inline_inventory` states which applies.
+
+The live AlphaFold 3 publication's exact bounded document is retained at
+`evidence/af3-terminal-receipt-20260903.json`; its canonical receipt digest is
+asserted by the remediation contract tests.
 
 Field names are exact. A consumer draft that sends `published_manifest_sha256`
 or `source_sub_path` is rejected with an error naming the actual field.

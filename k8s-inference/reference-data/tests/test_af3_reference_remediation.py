@@ -640,6 +640,104 @@ class Af3ReferenceDataRemediationTests(unittest.TestCase):
             reference_data.validate_terminal_receipt(drafted)
         self.assertIn("unknown fields", str(raised.exception))
 
+    def test_the_checked_in_live_receipt_matches_its_terminal_identity(self) -> None:
+        receipt = reference_data.validate_terminal_receipt(reference_data.load_json(
+            REFERENCE_DATA / "evidence" / "af3-terminal-receipt-20260903.json"
+        ))
+
+        self.assertEqual(
+            "b049e69846867caa75ef140e105a962fcf14e5c78ec8bfd97741cced32a8f6a6",
+            reference_data.sha256_bytes(reference_data.canonical_json(receipt)),
+        )
+        self.assertEqual(
+            "d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
+            receipt["content"]["tree_sha256"],
+        )
+        self.assertEqual(
+            "aa585259ce05393cd38db1693299ed9ec7f9c421aa4e1159f8d5aa0eb0ba9748",
+            receipt["content"]["manifest_sha256"],
+        )
+        self.assertEqual(
+            "38af3baa89a66cd24dec785279670a2e37597f98d206f555a04c138c6be71579",
+            receipt["content"]["inventory_sha256"],
+        )
+        self.assertEqual(195_867, receipt["content"]["file_count"])
+        self.assertEqual(672_435_030_513, receipt["content"]["expanded_bytes"])
+        self.assertIs(False, receipt["content"]["inline_inventory"])
+
+    # -------------------------------------------- validating a live publication
+
+    def _validator(self):
+        sys.path.insert(0, str(REFERENCE_DATA / "scripts"))
+        import validate_published_revision  # noqa: PLC0415
+
+        return validate_published_revision
+
+    def test_validation_accepts_a_bounded_publication_and_writes_nothing(self) -> None:
+        catalog_path, _sources = self._multi_object_catalog()
+        root = self.work / "store"
+        manifest, digest = reference_data.stage_bundle(catalog_path, "fixture", root)
+
+        before = sorted(path.relative_to(root).as_posix() for path in root.rglob("*"))
+        report = self._validator().validate(root, "fixture", deep=True, host_root="/mnt/fs2-reference-data/data")
+        after = sorted(path.relative_to(root).as_posix() for path in root.rglob("*"))
+
+        self.assertEqual(before, after)
+        self.assertIs(True, report["valid"], report["findings"])
+        self.assertIs(True, report["published"])
+        self.assertIs(True, report["bounded_contract"])
+        self.assertEqual("published", report["receipt_source"])
+        self.assertEqual(digest, report["manifest"]["sha256"])
+        self.assertEqual(manifest["content"]["tree_sha256"], report["manifest"]["tree_sha256"])
+        self.assertEqual(
+            f"/mnt/fs2-reference-data/data/{report['mount']['dataset_sub_path']}",
+            report["mount"]["host_path"],
+        )
+        self.assertEqual("0o555", report["mount"]["directory_mode"])
+
+    def test_validation_derives_the_receipt_for_a_legacy_publication(self) -> None:
+        catalog_path, _sources = self._multi_object_catalog()
+        root = self.work / "store"
+        _manifest, digest = reference_data.stage_bundle(catalog_path, "fixture", root)
+        self._downgrade_to_legacy_publication(root, digest)
+
+        report = self._validator().validate(root, "fixture", deep=False, host_root="/mnt/fs2-reference-data/data")
+
+        self.assertIs(False, report["bounded_contract"])
+        self.assertEqual("derived-not-written", report["receipt_source"])
+        receipt = reference_data.validate_terminal_receipt(report["receipt"])
+        self.assertEqual(report["manifest"]["sha256"], receipt["content"]["manifest_sha256"])
+        self.assertTrue(
+            receipt["storage"]["dataset_sub_path"].endswith(
+                f"/sha256/{report['manifest']['tree_sha256']}"
+            )
+        )
+        self.assertFalse((root / "receipts" / "fixture" / "fixture-2026-09-03.json").exists())
+
+    def test_validation_reports_a_tampered_tree_rather_than_passing(self) -> None:
+        catalog_path, _sources = self._multi_object_catalog()
+        root = self.work / "store"
+        manifest, _digest = reference_data.stage_bundle(catalog_path, "fixture", root)
+        published = Path(manifest["storage"]["shared_filesystem_uri"].removeprefix("file://"))
+
+        mode = published.stat().st_mode & 0o7777
+        published.chmod(0o755)
+        extra = published / "unexpected.txt"
+        extra.write_text("EXTRA\n", encoding="utf-8")
+        published.chmod(mode)
+
+        report = self._validator().validate(root, "fixture", deep=False, host_root="/mnt/fs2-reference-data/data")
+        self.assertIs(False, report["valid"])
+        failed = {item["check"] for item in report["findings"] if not item["ok"]}
+        self.assertIn("tree file count matches the manifest", failed)
+
+    def test_validation_of_an_unpublished_root_says_so(self) -> None:
+        root = self.work / "empty"
+        root.mkdir()
+        report = self._validator().validate(root, "fixture", deep=False, host_root="/mnt/fs2-reference-data/data")
+        self.assertIs(False, report["published"])
+        self.assertIs(False, report["valid"])
+
     # ------------------------------------------- upgrading a legacy publication
 
     def _downgrade_to_legacy_publication(self, root: Path, manifest_sha256: str) -> dict[str, Any]:
