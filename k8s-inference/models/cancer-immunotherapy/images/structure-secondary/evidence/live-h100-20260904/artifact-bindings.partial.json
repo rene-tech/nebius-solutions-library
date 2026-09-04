@@ -272,6 +272,8 @@
       "inventory_sha256": "38af3baa89a66cd24dec785279670a2e37597f98d206f555a04c138c6be71579",
       "manifest_sha256": "aa585259ce05393cd38db1693299ed9ec7f9c421aa4e1159f8d5aa0eb0ba9748",
       "localization_receipt_digest": "sha256:3c7d4176a31f9b7f413bbebd0259652f496e96154ae89e3a48ef4710b0e28874",
+      "verification_receipt_file": "alphafold3-reference-terminal-receipt.json",
+      "verification_receipt_file_sha256": "3c7d4176a31f9b7f413bbebd0259652f496e96154ae89e3a48ef4710b0e28874",
       "receipt_sub_path": "receipts/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28.json",
       "object_sub_path": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
       "expanded_bytes": 672435030513,

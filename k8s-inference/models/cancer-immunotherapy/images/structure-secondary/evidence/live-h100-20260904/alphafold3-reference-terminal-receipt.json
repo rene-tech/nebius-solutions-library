@@ -1,0 +1,39 @@
+{
+  "bundle_id": "alphafold3-public-databases-v3.0",
+  "content": {
+    "expanded_bytes": 672435030513,
+    "file_count": 195867,
+    "inline_inventory": false,
+    "inventory_marker": ".fs2-manifest-sha256",
+    "inventory_sha256": "38af3baa89a66cd24dec785279670a2e37597f98d206f555a04c138c6be71579",
+    "manifest_sha256": "aa585259ce05393cd38db1693299ed9ec7f9c421aa4e1159f8d5aa0eb0ba9748",
+    "tree_sha256": "d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea"
+  },
+  "created_at": "2026-09-03T09:30:33Z",
+  "placement": {
+    "node_selector": {
+      "capacity.fs2.nebius/pool": "reference-data",
+      "capacity.fs2.nebius/type": "regular",
+      "storage.fs2.nebius/reference-data": "true",
+      "workload.fs2.nebius/reference-data": "true"
+    },
+    "pool": "reference-cpu",
+    "resource_class": "cpu",
+    "tolerations": [
+      {
+        "effect": "NoSchedule",
+        "key": "workload.fs2.nebius/reference-data",
+        "operator": "Equal",
+        "value": "true"
+      }
+    ]
+  },
+  "revision": "v3.0-paper-snapshot-2022-09-28",
+  "schema": "fs2-serve.nebius.ai/reference-data-terminal-receipt/v1",
+  "storage": {
+    "dataset_sub_path": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
+    "host_root": "/mnt/fs2-reference-data/data",
+    "mount_path": "/reference-data",
+    "read_only": true
+  }
+}
