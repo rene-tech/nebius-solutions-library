@@ -2023,6 +2023,13 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertNotIn('"nvidia.com/gpu"', pipeline_source)
         self.assertIn('suspend                 = true', pipeline_source)
         self.assertIn('"--object-store-prefix", "s3://${var.object_bucket_name}/reference-data"', pipeline_source)
+        self.assertIn('"placement-contract.json" = file(', pipeline_source)
+        self.assertIn("tools_sha256     = sha256(jsonencode(local.tools_files))", pipeline_source)
+        self.assertRegex(pipeline_source, r"data\s*=\s*local\.tools_files")
+        self.assertRegex(
+            pipeline_source,
+            r'(?s)resource "kubernetes_config_map_v1" "tools" \{.*?create_before_destroy = true',
+        )
         self.assertIn("spec = local.pipeline_job_contract.spec", pipeline_source)
         self.assertIn('path = "/healthz"', pipeline_source)
         self.assertIn(

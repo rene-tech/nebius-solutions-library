@@ -17,7 +17,16 @@ locals {
     "app.kubernetes.io/part-of"    = "fs2-serve"
     "app.kubernetes.io/managed-by" = "terraform"
   }
-  tools_sha256     = filesha256("${path.module}/../reference_data.py")
+  # reference_data.py overlays the tfvars-derived placement document onto the
+  # reviewed default contract. Package both files in the immutable tools
+  # ConfigMap and bind its name to the complete byte set; shipping the script
+  # alone makes every in-cluster placement load fail before it can read the
+  # mounted override.
+  tools_files = {
+    "placement-contract.json" = file("${path.module}/../placement-contract.json")
+    "reference_data.py"       = file("${path.module}/../reference_data.py")
+  }
+  tools_sha256     = sha256(jsonencode(local.tools_files))
   tools_config_map = "fs2-reference-data-tools-${substr(local.tools_sha256, 0, 12)}"
   credentials_identity = substr(sha256(jsonencode({
     access_key_id       = var.object_storage_access.access_key_id
@@ -466,6 +475,10 @@ resource "kubernetes_secret_v1" "object_storage" {
 }
 
 resource "kubernetes_config_map_v1" "tools" {
+  lifecycle {
+    create_before_destroy = true
+  }
+
   metadata {
     name      = local.tools_config_map
     namespace = kubernetes_namespace_v1.reference_data.metadata[0].name
@@ -475,9 +488,7 @@ resource "kubernetes_config_map_v1" "tools" {
     }
   }
   immutable = true
-  data = {
-    "reference_data.py" = file("${path.module}/../reference_data.py")
-  }
+  data      = local.tools_files
 }
 
 resource "kubernetes_manifest" "cpu_flavor" {
