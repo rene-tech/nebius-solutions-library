@@ -1423,6 +1423,58 @@ class InferenceStackTests(unittest.TestCase):
                 "terraform-test", Path("/private/test-run"), contract()
             )
 
+    def test_access_bundle_binds_the_fleet_token_to_the_academic_tenant(self) -> None:
+        deployment_contract = contract()
+        deployment_contract["academic_assets"] = {
+            "enabled": True,
+            "tenant_id": "tenant-academic",
+        }
+        bundle = complete_access_bundle()
+        bundle["mcp_access"]["tenant_id"] = "tenant-academic"
+        bundle["mcp_access"]["scopes"].extend(
+            ["use.nonclinical", "use.noncommercial"]
+        )
+
+        with (
+            mock.patch.object(STACK, "stage_environment", return_value={}),
+            mock.patch.object(STACK, "terraform_json_output", return_value=bundle),
+        ):
+            self.assertEqual(
+                STACK.workload_access_bundle(
+                    "terraform-test", Path("/private/test-run"), deployment_contract
+                ),
+                bundle,
+            )
+
+        for field, value in (
+            ("tenant_id", "project-tenant"),
+            ("scopes", ["mcp.invoke", "inference.invoke"]),
+        ):
+            with self.subTest(field=field):
+                malformed = complete_access_bundle()
+                malformed["mcp_access"]["tenant_id"] = "tenant-academic"
+                malformed["mcp_access"]["scopes"] = [
+                    "mcp.invoke",
+                    "inference.invoke",
+                    "use.nonclinical",
+                    "use.noncommercial",
+                ]
+                malformed["mcp_access"][field] = value
+                with (
+                    mock.patch.object(STACK, "stage_environment", return_value={}),
+                    mock.patch.object(
+                        STACK, "terraform_json_output", return_value=malformed
+                    ),
+                    self.assertRaisesRegex(
+                        STACK.DeploymentError, "missing or malformed"
+                    ),
+                ):
+                    STACK.workload_access_bundle(
+                        "terraform-test",
+                        Path("/private/test-run"),
+                        deployment_contract,
+                    )
+
     def test_output_rejects_an_incomplete_workloads_stage(self) -> None:
         with (
             mock.patch.object(STACK, "state_ready", return_value=False),

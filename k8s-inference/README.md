@@ -174,7 +174,11 @@ credentials, cluster/project/region identity, and the kubeconfig command:
 ```
 
 `mcp_inference_token` remains for compatibility. `inference_access_token` is a
-clear alias of that same scoped PAT for OpenAI-compatible `/v1` clients.
+clear alias of that same scoped PAT for OpenAI-compatible `/v1` clients. When
+`academic_assets.enabled` is true, Terraform binds this one fleet PAT to the
+configured academic tenant; it can still call public profiles and also passes
+the exact tenant handoff required by academic scientific submissions. Other
+tenant credentials remain a live admin-console operation.
 
 Open the emitted `admin_portal_url` and paste
 `credentials.admin_bootstrap_token` into the operator sign-in form. MCP clients

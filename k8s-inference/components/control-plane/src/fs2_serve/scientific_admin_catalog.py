@@ -38,8 +38,8 @@ MAX_PROJECTION_ISSUES = 256
 _REFERENCE_DATA_MODELS = frozenset({"alphafold3", "protenix-v2"})
 _ALTERNATIVES = {
     "alphafold3": ScientificExplicitAlternative(
-        model_id="openfold3",
-        display_name="OpenFold3",
+        model_id="openfold3-openbind",
+        display_name="OpenFold3 OpenBind",
         reason="Open alternative; it is not represented as native AlphaFold3.",
     ),
     "bindcraft": ScientificExplicitAlternative(

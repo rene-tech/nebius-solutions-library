@@ -2043,6 +2043,21 @@ def workload_access_bundle(
         or not {"mcp.invoke", "inference.invoke"}.issubset(scopes)
     ):
         raise DeploymentError("the workloads access bundle is missing or malformed")
+
+    academic_assets = contract.get("academic_assets")
+    academic_fleet_enabled = (
+        isinstance(academic_assets, dict)
+        and academic_assets.get("enabled") is True
+    )
+    if academic_fleet_enabled:
+        academic_tenant_id = academic_assets.get("tenant_id")
+        if (
+            not isinstance(academic_tenant_id, str)
+            or not academic_tenant_id.strip()
+            or mcp_access.get("tenant_id") != academic_tenant_id
+            or not {"use.nonclinical", "use.noncommercial"}.issubset(scopes)
+        ):
+            raise DeploymentError("the workloads access bundle is missing or malformed")
     if reference_data is not None:
         if not isinstance(reference_data, dict) or not has_non_empty_strings(
             reference_data,

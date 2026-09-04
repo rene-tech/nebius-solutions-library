@@ -1,6 +1,10 @@
 locals {
   bootstrap_access_secret_name = "fs2-serve-bootstrap-access"
   bootstrap_access_principal   = "terraform-bootstrap-client"
+  # One user-facing PAT covers the configured fleet. Academic scientific
+  # execution requires the caller tenant to match the exact academic-assets
+  # authorization handoff; public profiles remain available to that tenant.
+  bootstrap_access_tenant_id = var.academic_assets.enabled ? var.academic_assets.tenant_id : local.selected_target.tenant_id
   # The bootstrap client follows the live catalog so a dynamically added model
   # does not require rotating this Terraform-owned credential. Protocol and
   # tenant scopes remain bounded; catalog/routing policy is still authoritative.
@@ -25,7 +29,7 @@ locals {
       secretName     = kubernetes_secret_v1.bootstrap_access.metadata[0].name
       tokenKey       = "token"
       principalId    = local.bootstrap_access_principal
-      tenantId       = local.selected_target.tenant_id
+      tenantId       = local.bootstrap_access_tenant_id
       name           = "Terraform bootstrap MCP and inference"
       scopes         = local.bootstrap_access_scopes
       models         = local.bootstrap_access_models
@@ -38,7 +42,7 @@ resource "random_id" "bootstrap_access_token_id" {
   byte_length = 16
   keepers = {
     cluster_id = var.cluster_id
-    tenant_id  = local.selected_target.tenant_id
+    tenant_id  = local.bootstrap_access_tenant_id
   }
 }
 
@@ -47,7 +51,7 @@ resource "random_password" "bootstrap_access_token_secret" {
   special = false
   keepers = {
     cluster_id = var.cluster_id
-    tenant_id  = local.selected_target.tenant_id
+    tenant_id  = local.bootstrap_access_tenant_id
   }
 }
 

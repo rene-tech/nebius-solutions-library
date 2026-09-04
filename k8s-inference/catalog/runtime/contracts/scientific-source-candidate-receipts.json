@@ -105,6 +105,23 @@
       "notes": "Provisional escalante-bio/mosaic identity requested by the workload owner; confirm semantic fit before any build or route promotion."
     },
     {
+      "model_id": "openfold3-openbind",
+      "upstream_name": "OpenFold3 OpenBind v0.5.0",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "git-ls-remote-head",
+      "source": {
+        "kind": "git",
+        "repository": "aqlaboratory/openfold-3",
+        "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+        "review_url": "https://github.com/aqlaboratory/openfold-3/tree/c4771653c5d0a3ebb0b3af71b05efd64bc44ee86"
+      },
+      "access_profile": "standard",
+      "access_state": "unverified",
+      "notes": "OpenFold3 OpenBind candidate bound to the exact open runtime source family; public completion and scheduler evidence remain independently required for qualification."
+    },
+    {
       "model_id": "proteina-complexa",
       "upstream_name": "Proteina-Complexa",
       "backend_identity": "native-upstream",

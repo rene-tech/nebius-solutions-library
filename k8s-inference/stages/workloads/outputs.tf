@@ -141,7 +141,7 @@ output "access_bundle" {
     }
     mcp_access = {
       principal_id    = local.bootstrap_access_principal
-      tenant_id       = local.selected_target.tenant_id
+      tenant_id       = local.bootstrap_access_tenant_id
       scopes          = local.bootstrap_access_scopes
       models          = local.bootstrap_access_models
       max_concurrency = 32

@@ -68,7 +68,7 @@ async def test_candidate_catalog_is_truthful_about_access_identity_and_cache_sta
     assert "Formal acceptance is advisory" in alpha_fold.access.gate
     assert alpha_fold.access.credentials_exposed is False
     assert alpha_fold.access.alternative is not None
-    assert alpha_fold.access.alternative.model_id == "openfold3"
+    assert alpha_fold.access.alternative.model_id == "openfold3-openbind"
     # No exact fast-start observation is joined to a scientific backend yet, so
     # the tier must stay unobserved rather than inheriting a generic default.
     assert alpha_fold.caching.exact_tier == "not-observed"
@@ -178,7 +178,7 @@ async def test_catalog_adapter_never_turns_a_request_time_licence_receipt_into_a
     assert "contradicts deployment-bound admission" in alpha_fold.access.gate
 
 
-async def test_delivered_catalog_isolated_missing_profiles_per_model(registry: Registry) -> None:
+async def test_delivered_catalog_joins_every_published_candidate(registry: Registry) -> None:
     delivered = ScientificCatalogFileAdapter(
         registry=registry,
         receipts_file=scientific_receipts_file(DELIVERED_CATALOG),
@@ -186,7 +186,7 @@ async def test_delivered_catalog_isolated_missing_profiles_per_model(registry: R
     )
     snapshot = await delivered.list_models()
 
-    assert len(snapshot.data.items) == 9
+    assert len(snapshot.data.items) == 10
     by_candidate = {item.candidate_id: item for item in snapshot.data.items}
     boltzgen = by_candidate["boltzgen"]
     assert boltzgen.workload_profile == "published"
@@ -198,7 +198,7 @@ async def test_delivered_catalog_isolated_missing_profiles_per_model(registry: R
         "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e"
     )
     assert boltzgen.backend.execution_identity_digest == (
-        "ecc726237a6f7d2d88359a44947e01d5f7018d5ea598ab47fd4d39b78986977e"
+        "9d41092dd5c8ad874284c3acf347a29bb4b2ae2695e84fcf30796f27fff6de02"
     )
     assert boltzgen.available_upgrade is not None
     assert boltzgen.available_upgrade.source_repository == "HannesStark/boltzgen"
@@ -211,9 +211,16 @@ async def test_delivered_catalog_isolated_missing_profiles_per_model(registry: R
         for issue in snapshot.data.projection_issues
     )
     assert by_candidate["proteina-complexa"].workload_profile == "published"
-    assert by_candidate["mosaic"].workload_profile == "absent"
-    assert by_candidate["mosaic"].readiness == "unknown"
-    assert "workload-profile" in by_candidate["mosaic"].missing_evidence
+    openfold = by_candidate["openfold3-openbind"]
+    assert openfold.workload_profile == "published"
+    assert openfold.readiness == "candidate"
+    assert openfold.backend.source_repository == "aqlaboratory/openfold-3"
+    assert openfold.backend.source_revision == "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86"
+    assert openfold.backend.model_revision == "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86"
+    assert "qualified-evidence" in openfold.missing_evidence
+    assert by_candidate["mosaic"].workload_profile == "published"
+    assert by_candidate["mosaic"].readiness == "candidate"
+    assert "qualified-evidence" in by_candidate["mosaic"].missing_evidence
 
 
 async def test_invalid_profile_is_isolated_to_its_candidate(registry: Registry, tmp_path: Path) -> None:

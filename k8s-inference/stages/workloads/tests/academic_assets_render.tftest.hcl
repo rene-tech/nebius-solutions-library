@@ -263,7 +263,7 @@ run "enabled_academic_config_reaches_the_chart" {
   }
 
   plan_options {
-    target = [terraform_data.academic_assets_contract]
+    target = [terraform_data.academic_assets_contract, random_id.bootstrap_access_token_id]
   }
 
   assert {
@@ -285,6 +285,11 @@ run "enabled_academic_config_reaches_the_chart" {
       terraform_data.academic_assets_contract.input.delivery.world_readable == false
     )
     error_message = "The projected delivery must keep the mount-not-bake invariants."
+  }
+
+  assert {
+    condition     = random_id.bootstrap_access_token_id.keepers.tenant_id == "tenant-academic"
+    error_message = "The user-facing MCP/inference PAT must use the academic tenant so one credential can access the whole configured fleet."
   }
 }
 

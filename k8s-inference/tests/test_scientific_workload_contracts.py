@@ -189,6 +189,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
             "esmfold2": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
             "esmfold2-fast": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
             "mosaic": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+            "openfold3-openbind": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
             "proteina-complexa": "54058860d43444c7289873f77d3e50b5b02348cd",
             "protenix-v2": "4c355be4553512f72453ecbfb65e69f4c35d1413",
             "rfdiffusion-upstream": "86507b6538f51fce57b5a72477165f03999ed7ae",
