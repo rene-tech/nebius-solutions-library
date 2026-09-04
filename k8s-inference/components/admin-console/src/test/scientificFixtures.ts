@@ -528,6 +528,7 @@ interface ReadinessSeed {
   access?: ScientificAccessGate;
   interactive?: boolean;
   tier?: ScientificModelReadiness["caching"]["exact_tier"];
+  upgradeCharacter?: string;
 }
 
 function readiness(seed: ReadinessSeed): ScientificModelReadiness {
@@ -559,6 +560,13 @@ function readiness(seed: ReadinessSeed): ScientificModelReadiness {
       ? ["presentation", "interactive", "customer-batch", "bulk-backfill"]
       : ["customer-batch", "bulk-backfill"],
     backend: backend(seed.modelId, seed.repository, seed.character),
+    available_upgrade: seed.upgradeCharacter ? {
+      state: "available-unqualified",
+      source_kind: "git",
+      source_repository: seed.repository,
+      source_revision: seed.upgradeCharacter.repeat(40),
+      review_url: null,
+    } : null,
     access,
     caching: {
       exact_tier: seed.tier ?? "not-observed",
@@ -577,7 +585,7 @@ function readiness(seed: ReadinessSeed): ScientificModelReadiness {
 export const scientificModelReadinessFixture: ScientificModelReadinessList = {
   items: [
     readiness({ modelId: "proteina-complexa", displayName: "Proteina-Complexa", repository: "Labs22/Proteina-Complexa", character: "8", mode: "scientific-batch" }),
-    readiness({ modelId: "boltzgen", displayName: "BoltzGen", repository: "jwohlwend/boltzgen", character: "9", mode: "hybrid", interactive: true }),
+    readiness({ modelId: "boltzgen", displayName: "BoltzGen", repository: "jwohlwend/boltzgen", character: "9", mode: "hybrid", interactive: true, upgradeCharacter: "1" }),
     readiness({ modelId: "mosaic", displayName: "mosaic", repository: "mosaic-model/mosaic", character: "a", mode: "scientific-batch" }),
     readiness({ modelId: "bindcraft", displayName: "BindCraft (native PyRosetta)", repository: "martinpacesa/BindCraft", character: "b", mode: "scientific-batch", access: bindCraftAccess, tier: "container-image-local", interactive: true }),
     readiness({ modelId: "rfdiffusion", displayName: "RFdiffusion", repository: "RosettaCommons/RFdiffusion", character: "c", mode: "scientific-batch", readiness: "qualified", tier: "model-artifact-local" }),

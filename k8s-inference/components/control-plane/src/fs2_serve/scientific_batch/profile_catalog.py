@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, cast
@@ -21,6 +23,14 @@ from jsonschema.exceptions import SchemaError, ValidationError  # type: ignore[i
 SCIENTIFIC_REQUEST_SCHEMA = "fs2-serve.nebius.ai/scientific-run-request/v1"
 SCIENTIFIC_RESULT_SCHEMA = "fs2-serve.nebius.ai/scientific-run-result/v1"
 SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA = "fs2-serve.nebius.ai/scientific-artifact-manifest/v1"
+_RAW_SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
+_RFC3339_DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$")
+_REQUIRED_QUALIFICATION_DIGESTS = (
+    "h100_semantic_receipt_sha256",
+    "public_completion_receipt_sha256",
+    "scheduler_eligibility_receipt_sha256",
+    "execution_map_sha256",
+)
 
 
 class ScientificProfileError(RuntimeError):
@@ -76,6 +86,66 @@ def _schema_contract_name(schema: Mapping[str, Any]) -> str | None:
         if slug and version.startswith("v"):
             return f"fs2-serve.nebius.ai/{slug}/{version}"
     return None
+
+
+def profile_has_complete_qualification_evidence(value: Mapping[str, Any]) -> bool:
+    """Return whether a profile carries the complete, immutable qualification set.
+
+    ``active`` profiles intentionally remain dispatchable while their public
+    completion and scheduler receipts are being produced. They are not
+    qualified discovery records until the profile is promoted to ``qualified``
+    and every required digest is a real lowercase SHA-256 value.
+    """
+
+    qualification = value.get("qualification")
+    semantic = value.get("semantic_validation")
+    identity = value.get("execution_identity")
+    source = value.get("source")
+    if (
+        not isinstance(qualification, Mapping)
+        or not isinstance(semantic, Mapping)
+        or not isinstance(identity, Mapping)
+        or not isinstance(source, Mapping)
+    ):
+        return False
+    qualified_at = qualification.get("qualified_at")
+    try:
+        qualified_time = (
+            datetime.fromisoformat(qualified_at.replace("Z", "+00:00"))
+            if isinstance(qualified_at, str)
+            and 1 <= len(qualified_at) <= 64
+            and _RFC3339_DATETIME_RE.fullmatch(qualified_at) is not None
+            else None
+        )
+    except ValueError:
+        qualified_time = None
+    return (
+        value.get("state") == "qualified"
+        and semantic.get("state") == "qualified"
+        and source.get("kind") in {"git", "huggingface"}
+        and isinstance(source.get("repository"), str)
+        and isinstance(source.get("revision"), str)
+        and re.fullmatch(r"[a-f0-9]{40}", source["revision"]) is not None
+        and identity.get("model_revision") == source.get("revision")
+        and isinstance(identity.get("runtime_image_digest"), str)
+        and re.fullmatch(r"sha256:[a-f0-9]{64}", identity["runtime_image_digest"]) is not None
+        and all(
+            isinstance(identity.get(field), str) and _RAW_SHA256_RE.fullmatch(identity[field]) is not None
+            for field in (
+                "runtime_recipe_sha256",
+                "workload_recipe_sha256",
+                "artifact_manifest_digest",
+                "execution_identity_sha256",
+            )
+        )
+        and qualified_time is not None
+        and qualified_time.tzinfo is not None
+        and qualified_time.utcoffset() is not None
+        and all(
+            isinstance(qualification.get(field), str) and _RAW_SHA256_RE.fullmatch(qualification[field]) is not None
+            for field in _REQUIRED_QUALIFICATION_DIGESTS
+        )
+    )
 
 
 @dataclass(frozen=True, slots=True)

@@ -80,6 +80,14 @@ export interface ScientificBackendIdentity {
   execution_identity_digest: string | null;
 }
 
+export interface ScientificAvailableUpgrade {
+  state: "available-unqualified";
+  source_kind: "git";
+  source_repository: string;
+  source_revision: string;
+  review_url: string | null;
+}
+
 export interface ScientificQueueState {
   tenant_queue: string;
   model_lane: string;
@@ -291,6 +299,7 @@ export interface ScientificModelReadiness {
   interactive_supported: boolean | null;
   service_classes: ScientificServiceClass[];
   backend: ScientificBackendIdentity;
+  available_upgrade: ScientificAvailableUpgrade | null;
   access: ScientificAccessGate;
   caching: ScientificCachingReadiness;
 }

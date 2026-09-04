@@ -188,7 +188,18 @@ export function ScientificRunsPage() {
                     <td><ScientificStatusChip state={model.readiness} reason={model.readiness_reason} /><span className="secondary-line scientific-secondary">{model.readiness_reason}</span>{model.missing_evidence.length ? <span className="secondary-line scientific-secondary">Missing {model.missing_evidence.join(", ")}</span> : null}</td>
                     <td>{model.execution_mode ?? "Not published"}<span className="secondary-line">Batch {model.batch_supported ? "supported" : "unsupported"} · Interactive {model.interactive_supported === null ? "unknown" : model.interactive_supported ? "supported" : "unsupported"}</span><span className="secondary-line scientific-secondary">{model.service_classes.join(", ") || "No service classes published"}</span></td>
                     <td><AccessGate access={model.access} compact /></td>
-                    <td>{model.backend.backend_id}<span className="secondary-line">{model.backend.source_repository}@{shortDigest(model.backend.source_revision)}</span><code className="scientific-digest" title={model.backend.runtime_image_digest ?? undefined}>{shortDigest(model.backend.runtime_image_digest)}</code></td>
+                    <td>
+                      {model.backend.backend_id}
+                      <span className="secondary-line scientific-secondary">Deployed / pinned revision</span>
+                      <span className="secondary-line">{model.backend.source_repository}@{shortDigest(model.backend.source_revision)}</span>
+                      <code className="scientific-digest" title={model.backend.runtime_image_digest ?? undefined}>{shortDigest(model.backend.runtime_image_digest)}</code>
+                      {model.available_upgrade ? (
+                        <>
+                          <span className="secondary-line scientific-secondary">Available upstream revision · unqualified</span>
+                          <code className="scientific-digest" title={model.available_upgrade.source_revision}>{shortDigest(model.available_upgrade.source_revision)}</code>
+                        </>
+                      ) : null}
+                    </td>
                     <td><span className="scientific-tier scientific-tier--declared">{model.caching.exact_tier}</span><span className="secondary-line scientific-secondary">Image {model.caching.image} · artifacts {model.caching.artifacts} · references {model.caching.reference_data}</span><span className="secondary-line scientific-secondary">Checkpoint {model.caching.runtime_checkpoint} · GPU snapshot {model.caching.gpu_snapshot}</span><span className="secondary-line scientific-secondary">{model.caching.reason}</span></td>
                   </tr>
                 ))}</tbody>

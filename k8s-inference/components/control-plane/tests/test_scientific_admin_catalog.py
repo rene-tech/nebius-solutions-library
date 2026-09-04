@@ -179,7 +179,6 @@ async def test_catalog_adapter_never_turns_a_request_time_licence_receipt_into_a
 
 
 async def test_delivered_catalog_isolated_missing_profiles_per_model(registry: Registry) -> None:
-
     delivered = ScientificCatalogFileAdapter(
         registry=registry,
         receipts_file=scientific_receipts_file(DELIVERED_CATALOG),
@@ -189,11 +188,25 @@ async def test_delivered_catalog_isolated_missing_profiles_per_model(registry: R
 
     assert len(snapshot.data.items) == 9
     by_candidate = {item.candidate_id: item for item in snapshot.data.items}
-    assert by_candidate["boltzgen"].workload_profile == "published"
-    assert by_candidate["boltzgen"].readiness == "unknown"
-    assert by_candidate["boltzgen"].backend.source_repository == "conflicting-catalog-evidence"
-    assert "source-identity-agreement" in by_candidate["boltzgen"].missing_evidence
-    assert any(
+    boltzgen = by_candidate["boltzgen"]
+    assert boltzgen.workload_profile == "published"
+    assert boltzgen.readiness == "candidate"
+    assert boltzgen.backend.source_repository == "HannesStark/boltzgen"
+    assert boltzgen.backend.source_revision == "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0"
+    assert boltzgen.backend.model_revision == "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0"
+    assert boltzgen.backend.runtime_image_digest == (
+        "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e"
+    )
+    assert boltzgen.backend.execution_identity_digest == (
+        "ad894520846cf2c5dad109023f893fac31f43f5fe63ba930726480c32b068590"
+    )
+    assert boltzgen.available_upgrade is not None
+    assert boltzgen.available_upgrade.source_repository == "HannesStark/boltzgen"
+    assert boltzgen.available_upgrade.source_revision == "a3149cf18eeb58648d1abbb27539bd73f746cdda"
+    assert boltzgen.available_upgrade.state == "available-unqualified"
+    assert "qualified-evidence" in boltzgen.missing_evidence
+    assert "source-identity-agreement" not in boltzgen.missing_evidence
+    assert not any(
         issue.candidate_id == "boltzgen" and issue.source == "workload-profile"
         for issue in snapshot.data.projection_issues
     )
@@ -261,10 +274,7 @@ async def test_projection_issue_isolation_is_bounded(registry: Registry, tmp_pat
         json.dumps(
             {
                 "schema": "fs2-serve.nebius.ai/scientific-workload-profiles/v1",
-                "profiles": [
-                    {"model_id": f"profile-{index:03d}", "schema": "unsupported"}
-                    for index in range(256)
-                ],
+                "profiles": [{"model_id": f"profile-{index:03d}", "schema": "unsupported"} for index in range(256)],
             }
         ),
         encoding="utf-8",
@@ -319,9 +329,7 @@ async def test_duplicate_candidate_receipts_never_trust_the_first_row(registry: 
     assert alpha_fold[0].access.profile == "academic"
     assert alpha_fold[0].access.state == "unverified"
     assert any(
-        issue.candidate_id == "alphafold3"
-        and issue.source == "candidate-receipt"
-        and "duplicated" in issue.reason
+        issue.candidate_id == "alphafold3" and issue.source == "candidate-receipt" and "duplicated" in issue.reason
         for issue in snapshot.data.projection_issues
     )
 
@@ -411,11 +419,65 @@ async def test_same_revision_in_a_different_repository_is_not_the_same_candidate
 
     assert rfdiffusion.readiness == "unknown"
     assert rfdiffusion.qualification.state == "identity-mismatch"
-    assert rfdiffusion.backend.source_repository == "conflicting-catalog-evidence"
+    assert rfdiffusion.backend.source_repository == "untrusted-fork/RFdiffusion"
+    assert rfdiffusion.backend.source_revision == "4444444444444444444444444444444444444444"
+    assert rfdiffusion.available_upgrade is None
     assert any(
         issue.candidate_id == "rfdiffusion-upstream" and issue.source == "workload-profile"
         for issue in snapshot.data.projection_issues
     )
+
+
+async def test_same_repository_revision_drift_is_an_upgrade_but_source_kind_drift_is_a_conflict(
+    registry: Registry,
+    tmp_path: Path,
+) -> None:
+    profiles = json.loads((FIXTURES / "scientific-workload-profiles.json").read_text(encoding="utf-8"))
+    profile = profiles["profiles"][1]
+    profile["source"]["kind"] = "archive"
+    profiles_file = tmp_path / "scientific-workload-profiles.json"
+    profiles_file.write_text(json.dumps(profiles), encoding="utf-8")
+
+    snapshot = await adapter(registry, profiles_file=profiles_file).list_models()
+    rfdiffusion = next(item for item in snapshot.data.items if item.candidate_id == "rfdiffusion-upstream")
+
+    assert rfdiffusion.readiness == "unknown"
+    assert rfdiffusion.qualification.state == "identity-mismatch"
+    assert rfdiffusion.backend.source_repository == "RosettaCommons/RFdiffusion"
+    assert rfdiffusion.backend.source_revision == "4444444444444444444444444444444444444444"
+    assert rfdiffusion.available_upgrade is None
+    assert "source-identity-agreement" in rfdiffusion.missing_evidence
+
+
+async def test_global_catalog_qualifies_only_a_complete_pinned_profile(
+    registry: Registry,
+    tmp_path: Path,
+) -> None:
+    profiles = json.loads((FIXTURES / "scientific-workload-profiles.json").read_text(encoding="utf-8"))
+    profile = profiles["profiles"][1]
+    profile["state"] = "qualified"
+    profile["route_exposed"] = True
+    profile["semantic_validation"] = {"state": "qualified"}
+    profile["execution_identity"]["artifact_manifest_digest"] = "7" * 64
+    profile["execution_identity"]["execution_identity_sha256"] = "8" * 64
+    profile["qualification"] = {
+        "h100_semantic_receipt_sha256": "1" * 64,
+        "public_completion_receipt_sha256": "2" * 64,
+        "scheduler_eligibility_receipt_sha256": "3" * 64,
+        "execution_map_sha256": "4" * 64,
+        "qualified_at": "2026-09-04T12:00:00Z",
+    }
+    profiles_file = tmp_path / "scientific-workload-profiles.json"
+    profiles_file.write_text(json.dumps(profiles), encoding="utf-8")
+
+    snapshot = await adapter(registry, profiles_file=profiles_file).list_models()
+    rfdiffusion = next(item for item in snapshot.data.items if item.candidate_id == "rfdiffusion-upstream")
+
+    assert rfdiffusion.readiness == "qualified"
+    assert rfdiffusion.qualification.state == "qualified"
+    assert rfdiffusion.backend.source_revision == "4444444444444444444444444444444444444444"
+    assert rfdiffusion.available_upgrade is None
+    assert "qualified-evidence" not in rfdiffusion.missing_evidence
 
 
 async def test_missing_academic_asset_identity_is_not_synthesised(registry: Registry, tmp_path: Path) -> None:
@@ -431,9 +493,7 @@ async def test_missing_academic_asset_identity_is_not_synthesised(registry: Regi
     assert alpha_fold.access.state == "unverified"
     assert alpha_fold.access.authorization is None
     assert any(
-        issue.candidate_id == "alphafold3"
-        and issue.source == "academic-readiness"
-        and "asset identity" in issue.reason
+        issue.candidate_id == "alphafold3" and issue.source == "academic-readiness" and "asset identity" in issue.reason
         for issue in snapshot.data.projection_issues
     )
 
@@ -462,6 +522,7 @@ async def test_access_sources_can_narrow_but_never_upgrade_a_blocked_receipt(
 
     assert rfdiffusion.access.state == "blocked"
     assert rfdiffusion.readiness == "blocked"
+
 
 class DiscoveryService:
     def discovery_profiles(self, *, tenant_id, allowed_models, surface):
@@ -548,8 +609,7 @@ class ProfileStateConsistencyTests(unittest.TestCase):
         from fs2_serve.scientific_admin_catalog import _profile_state_is_consistent
         from fs2_serve.scientific_batch.adapters.common import profile_state_is_consistent
 
-        for state, routed in (("candidate-unqualified", False), ("active", True),
-                              ("qualified", True)):
+        for state, routed in (("candidate-unqualified", False), ("active", True), ("qualified", True)):
             with self.subTest(state=state, route_exposed=routed):
                 self.assertTrue(_profile_state_is_consistent(state, routed))
                 self.assertTrue(profile_state_is_consistent(state, routed))
@@ -558,9 +618,13 @@ class ProfileStateConsistencyTests(unittest.TestCase):
         from fs2_serve.scientific_admin_catalog import _profile_state_is_consistent
         from fs2_serve.scientific_batch.adapters.common import profile_state_is_consistent
 
-        for state, routed in (("candidate-unqualified", True), ("active", False),
-                              ("qualified", False), ("unknown-state", True),
-                              ("unknown-state", False)):
+        for state, routed in (
+            ("candidate-unqualified", True),
+            ("active", False),
+            ("qualified", False),
+            ("unknown-state", True),
+            ("unknown-state", False),
+        ):
             with self.subTest(state=state, route_exposed=routed):
                 self.assertFalse(_profile_state_is_consistent(state, routed))
                 self.assertFalse(profile_state_is_consistent(state, routed))

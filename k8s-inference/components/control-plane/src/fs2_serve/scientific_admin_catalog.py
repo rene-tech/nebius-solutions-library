@@ -18,6 +18,7 @@ from .scientific_admin import (
 from .scientific_admin_models import (
     ScientificAccessAuthorization,
     ScientificAccessGate,
+    ScientificAvailableUpgrade,
     ScientificBackendIdentity,
     ScientificCachingReadiness,
     ScientificExplicitAlternative,
@@ -27,6 +28,7 @@ from .scientific_admin_models import (
     ScientificQualificationJoin,
     ScientificServiceClass,
 )
+from .scientific_batch.profile_catalog import profile_has_complete_qualification_evidence
 from .scientific_batch.service import ScientificBatchService, ScientificProfileDiscovery
 
 SCIENTIFIC_SOURCE_RECEIPTS = "scientific-source-candidate-receipts.json"
@@ -93,7 +95,6 @@ class ScientificProfileDiscoveryAdapter:
             observed_at=self.clock().astimezone(UTC),
         )
 
-
     @staticmethod
     def _project(profile: ScientificProfileDiscovery) -> ScientificModelReadiness:
         service_classes = [ScientificServiceClass(value) for value in profile.service_classes]
@@ -150,9 +151,7 @@ class ScientificProfileDiscoveryAdapter:
                 ),
                 receipt_digest=profile.access_receipt_digest,
                 authorization=None,
-                formal_license_status=(
-                    "FormalAcceptancePending" if access_profile == "academic" else "not-applicable"
-                ),
+                formal_license_status=("FormalAcceptancePending" if access_profile == "academic" else "not-applicable"),
                 alternative=None,
             ),
             caching=ScientificCachingReadiness(
@@ -351,9 +350,7 @@ class ScientificCatalogFileAdapter:
                 profiles.pop(model_id, None)
             elif profile.get("schema") != "fs2-serve.nebius.ai/scientific-workload-profile/v1":
                 reason = "workload profile entry schema is unsupported"
-            elif not _profile_state_is_consistent(
-                profile.get("state"), profile.get("route_exposed")
-            ):
+            elif not _profile_state_is_consistent(profile.get("state"), profile.get("route_exposed")):
                 reason = "v1 workload profile state and route exposure disagree"
             if reason is not None:
                 if model_id is not None:
@@ -469,9 +466,7 @@ class ScientificCatalogFileAdapter:
                 continue
             profile_variants = _mapping_or_empty(candidate.get("profile_variants"))
             variant_ids = frozenset(
-                value
-                for value in profile_variants.values()
-                if isinstance(value, str) and 1 <= len(value) <= 128
+                value for value in profile_variants.values() if isinstance(value, str) and 1 <= len(value) <= 128
             )
             scopes[bounded_candidate] = CandidateRouteScope(
                 lane_id=lane_id,
@@ -678,6 +673,7 @@ class ScientificCatalogFileAdapter:
         runtime_image = _optional_text(execution_identity.get("runtime_image_digest"))
         execution_identity_digest = _optional_text(execution_identity.get("execution_identity_sha256"))
         document_identity_consistent = True
+        available_upgrade: ScientificAvailableUpgrade | None = None
         if profile is not None:
             profile_source = _mapping_or_empty(profile.get("source"))
             profile_source_kind = _optional_text(profile_source.get("kind"), maximum=32)
@@ -686,36 +682,55 @@ class ScientificCatalogFileAdapter:
             receipt_source_kind = _optional_text(receipt_source.get("kind"), maximum=32)
             receipt_source_repository = _optional_text(receipt_source.get("repository"), maximum=512)
             receipt_source_revision = _optional_text(receipt_source.get("revision"))
-            document_identity_consistent = (
+            pinned_source_consistent = (
+                profile_source_kind is not None
+                and profile_source_repository is not None
+                and profile_source_revision is not None
+                and model_revision == profile_source_revision
+            )
+            source_family_consistent = (
                 receipt_source_kind is not None
                 and receipt_source_repository is not None
                 and receipt_source_revision is not None
-                and profile_source_kind is not None
-                and profile_source_repository is not None
-                and profile_source_revision is not None
-                and model_revision is not None
+                and receipt_source_kind == "git"
                 and receipt_source_kind == profile_source_kind
                 and receipt_source_repository == profile_source_repository
-                and receipt_source_revision == profile_source_revision == model_revision
             )
+            document_identity_consistent = pinned_source_consistent and source_family_consistent
             if not document_identity_consistent:
                 missing.append("source-identity-agreement")
-            missing.append("qualified-evidence")
+            elif receipt_source_revision != profile_source_revision:
+                available_upgrade = ScientificAvailableUpgrade(
+                    source_kind="git",
+                    source_repository=_text(receipt_source_repository, "upgrade repository", 512),
+                    source_revision=_text(receipt_source_revision, "upgrade revision", 64),
+                    review_url=_optional_text(receipt_source.get("review_url"), maximum=2048),
+                )
+            if not profile_has_complete_qualification_evidence(profile):
+                missing.append("qualified-evidence")
 
         if not document_identity_consistent:
             qualification = ScientificQualificationJoin(
                 state="identity-mismatch",
-                reason="candidate receipt and workload profile identify different source trees",
+                reason="candidate receipt and pinned workload profile identify different source repositories or kinds",
                 serving_lane_id=lane_id if lane_id != candidate_id else None,
-                compared=["receipt_source", "profile_source", "model_revision"],
+                compared=["receipt_source_kind", "receipt_source_repository", "profile_source", "model_revision"],
                 mismatched=["source_identity"],
             )
-            # Do not choose one conflicting source as the backend identity.
-            repository = "conflicting-catalog-evidence"
-            source_revision = None
-            model_revision = None
-            runtime_image = None
-            execution_identity_digest = None
+        elif profile is not None and profile_has_complete_qualification_evidence(profile):
+            qualification = ScientificQualificationJoin(
+                state="qualified",
+                reason="the pinned workload profile carries the complete qualification receipt set",
+                serving_lane_id=lane_id if lane_id != candidate_id else None,
+                compared=[
+                    "source_identity",
+                    "execution_identity_digest",
+                    "h100_semantic_receipt",
+                    "public_completion_receipt",
+                    "scheduler_eligibility_receipt",
+                    "execution_map",
+                ],
+            )
         else:
             qualification = _execution_identity_join(
                 candidate_id=candidate_id,
@@ -801,6 +816,7 @@ class ScientificCatalogFileAdapter:
                 runtime_image_digest=runtime_image,
                 execution_identity_digest=execution_identity_digest,
             ),
+            available_upgrade=available_upgrade,
             access=access,
             caching=ScientificCachingReadiness(
                 exact_tier="not-observed",
@@ -995,8 +1011,9 @@ class ScientificCatalogFileAdapter:
 
         raw_formal = academic_state.get("formal_license_status")
         formal_license_status: Literal["FormalAcceptancePending", "FormalAcceptanceRecorded", "not-applicable"] = (
-            raw_formal if raw_formal in {"FormalAcceptancePending", "FormalAcceptanceRecorded"} else
-            "FormalAcceptancePending"
+            raw_formal
+            if raw_formal in {"FormalAcceptancePending", "FormalAcceptanceRecorded"}
+            else "FormalAcceptancePending"
         )
         return (
             ScientificAccessGate(

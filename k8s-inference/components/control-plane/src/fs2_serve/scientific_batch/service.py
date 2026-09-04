@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from uuid import UUID
 
 from pydantic import Field
@@ -37,7 +37,12 @@ from .models import (
     WorkloadKind,
 )
 from .postgres_repository import ScientificBatchNotFoundError
-from .profile_catalog import ScientificProfileCatalog, ScientificProfileError, ScientificWorkloadProfile
+from .profile_catalog import (
+    ScientificProfileCatalog,
+    ScientificProfileError,
+    ScientificWorkloadProfile,
+    profile_has_complete_qualification_evidence,
+)
 from .protocols import BatchRepositoryConflictError
 from .scheduling import SchedulingContractError, SchedulingContractResolver
 
@@ -214,11 +219,15 @@ class ScientificProfileDiscovery(StrictModel):
     access_profile: str
     access_state: str
     access_receipt_digest: str | None
-    h100_semantic_receipt_sha256: str
-    public_completion_receipt_sha256: str
-    scheduler_eligibility_receipt_sha256: str
-    execution_map_sha256: str
-    qualified_at: str
+    h100_semantic_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    public_completion_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    scheduler_eligibility_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    execution_map_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    qualified_at: str = Field(
+        min_length=20,
+        max_length=64,
+        pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$",
+    )
     mcp_tool_name: str
     mcp_description: str
 
@@ -274,9 +283,9 @@ class ScientificBatchService:
                 continue
             try:
                 qualification = profile.value["qualification"]
-                if self.execution_binding.execution_map_sha256 != (
-                    f"sha256:{qualification['execution_map_sha256']}"
-                ):
+                if not profile_has_complete_qualification_evidence(profile.value):
+                    raise ScientificProfileError("scientific profile does not carry complete qualification receipts")
+                if self.execution_binding.execution_map_sha256 != (f"sha256:{qualification['execution_map_sha256']}"):
                     raise ScientificProfileError("scientific qualification binds another execution map")
                 self.execution_binding.access_context(profile, tenant_id=tenant_id)
                 variant_id = self.execution_binding.variant_id(profile.model_id)
@@ -322,13 +331,13 @@ class ScientificBatchService:
                     access_profile=profile.access_profile,
                     access_state=profile.access_state,
                     access_receipt_digest=profile.access_receipt_digest,
-                    h100_semantic_receipt_sha256=str(qualification["h100_semantic_receipt_sha256"]),
-                    public_completion_receipt_sha256=str(qualification["public_completion_receipt_sha256"]),
-                    scheduler_eligibility_receipt_sha256=str(
-                        qualification["scheduler_eligibility_receipt_sha256"]
+                    h100_semantic_receipt_sha256=cast(str, qualification["h100_semantic_receipt_sha256"]),
+                    public_completion_receipt_sha256=cast(str, qualification["public_completion_receipt_sha256"]),
+                    scheduler_eligibility_receipt_sha256=cast(
+                        str, qualification["scheduler_eligibility_receipt_sha256"]
                     ),
-                    execution_map_sha256=str(qualification["execution_map_sha256"]),
-                    qualified_at=str(qualification["qualified_at"]),
+                    execution_map_sha256=cast(str, qualification["execution_map_sha256"]),
+                    qualified_at=cast(str, qualification["qualified_at"]),
                     mcp_tool_name=profile.mcp_tool_name,
                     mcp_description=profile.mcp_description,
                 )
@@ -493,6 +502,7 @@ class ScientificBatchService:
         except SchedulingContractError as error:
             raise ScientificProfileError("Kueue scheduling contract cannot admit this profile") from error
         body = json.dumps(validated, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+
         def freeze_admission(operation: OperationView) -> dict[str, object]:
             try:
                 snapshot = self.scheduling.freeze(

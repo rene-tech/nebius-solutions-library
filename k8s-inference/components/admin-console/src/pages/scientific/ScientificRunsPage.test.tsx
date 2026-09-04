@@ -59,6 +59,11 @@ describe("scientific runs fixture contract", () => {
     const bindCraft = screen.getByRole("row", { name: /BindCraft \(native PyRosetta\).*candidate/ });
     expect(within(bindCraft).getByText((_, element) => element?.classList.contains("scientific-alternative") === true && element.textContent?.includes("Open binder workflow") === true)).toHaveTextContent("not represented as native BindCraft/PyRosetta");
     expect(within(bindCraft).getByText(/GPU snapshot unsupported/)).toBeInTheDocument();
+
+    const boltzgen = screen.getByRole("row", { name: /BoltzGen.*candidate/ });
+    expect(within(boltzgen).getByText("Deployed / pinned revision")).toBeInTheDocument();
+    expect(within(boltzgen).getByText("Available upstream revision · unqualified")).toBeInTheDocument();
+    expect(within(boltzgen).getByTitle("1".repeat(40))).toHaveTextContent("11111111111111…1111");
   });
 
   it("sends only validated scientific run filters and follows the opaque cursor", async () => {
