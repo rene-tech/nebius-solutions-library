@@ -88,6 +88,23 @@ def _runtime_command(invocation: StageInvocation) -> tuple[str, ...]:
     return invocation.argv
 
 
+def _runtime_volume_sub_path(source_sub_path: str | None, binding_sub_path: str | None) -> str | None:
+    """Resolve physical and logical artifact selectors to one Kubernetes subPath.
+
+    A runtime binding normally adds a path below its physical source.  An exact
+    file binding may instead repeat the source's canonical volume-relative path
+    so that the same identity is available to the runtime localization marker.
+    That repeated selector names the same object; it is not a nested path.
+    """
+
+    source = None if source_sub_path is None else PurePosixPath(source_sub_path)
+    binding = None if binding_sub_path is None else PurePosixPath(binding_sub_path)
+    if source is not None and source == binding:
+        return source.as_posix()
+    parts = tuple(part for path in (source, binding) if path is not None for part in path.parts)
+    return PurePosixPath(*parts).as_posix() if parts else None
+
+
 def _object(value: object, label: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping) or not all(isinstance(key, str) for key in value):
         raise ScientificExecutionMapError(f"{label} is not an object")
@@ -1453,17 +1470,11 @@ class FileScientificManifestRenderer:
                 "mountPath": binding.mount_path,
                 "readOnly": True,
             }
-            sub_parts = tuple(
-                part
-                for value in (source.sub_path, binding.sub_path)
-                if value is not None
-                for part in PurePosixPath(value).parts
-            )
-            if sub_parts:
-                volume_mount["subPath"] = PurePosixPath(*sub_parts).as_posix()
+            actual_path = _runtime_volume_sub_path(source.sub_path, binding.sub_path)
+            if actual_path is not None:
+                volume_mount["subPath"] = actual_path
             localization = localized[binding.artifact_id]
             if localization.aggregate_tree is not None:
-                actual_path = PurePosixPath(*sub_parts).as_posix() if sub_parts else None
                 if localization.aggregate_tree.storage_kind is RuntimeArtifactTreeKind.REFERENCE_DATA_PLANE:
                     if actual_path is not None or source.mount_path != "/reference-data":
                         raise ScientificExecutionMapError(
