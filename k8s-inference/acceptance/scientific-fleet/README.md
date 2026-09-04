@@ -82,6 +82,83 @@ Run the offline fake-HTTP acceptance suite with:
 acceptance/scientific-fleet/run_checks.sh
 ```
 
+## Complete fleet acceptance and benchmark receipt
+
+`run_fleet_acceptance.py` discovers the four primary activation fragments and
+the five secondary public-acceptance records committed under `models/`, then
+runs the single-model client above in separate child processes. `--max-parallel`
+bounds concurrent customer submissions; the default is four and the accepted
+range is 1–32. One failed model does not cancel the remaining models, and the
+command exits nonzero after every discovered input reaches an outcome.
+
+The bearer value remains only in `FS2_INFERENCE_TOKEN`. The fleet process puts
+the environment-variable **name**, never its value, in child argv. Child
+stdout/stderr is captured and not replayed. Per-model receipts and the canonical
+aggregate are mode `0600`; each run gets its own mode `0700` directory beneath
+the requested receipt root.
+
+After the deployed routes are ready, run the whole current fleet with:
+
+```bash
+export FS2_INFERENCE_TOKEN='...'
+python3 acceptance/scientific-fleet/run_fleet_acceptance.py \
+  --endpoint https://inference.example \
+  --run-id scientific-fleet-20260904-01 \
+  --receipt-root /secure/fs2-acceptance \
+  --max-parallel 8
+```
+
+This writes:
+
+```text
+/secure/fs2-acceptance/scientific-fleet-20260904-01/
+├── aggregate.json
+├── alphafold3.json
+├── bindcraft.json
+├── esmfold2.json
+└── ... one receipt for every successful model
+```
+
+`aggregate.json` is compact, key-sorted canonical JSON. Its model rows pin the
+input and per-model receipt digests and copy the API-provided cold-start,
+runtime identity/timestamps/attempts, and queue/admission evidence. Exact GPU
+occupied/idle accounting is copied when a per-model API receipt exposes one of
+the recognized accounting projections. When it does not, the field is
+explicitly `available: false`; the runner never estimates ledger data from
+wall-clock timestamps. Failed rows contain only the model/input identity and a
+stable non-secret failure code. Reusing a run ID fails before any network call
+unless `--overwrite` is explicit.
+
+The customer operation/result contract does not currently return the exact
+per-attempt lifecycle rollup. The operator summary at
+`GET /admin/api/v1/scientific-runs/{operation_id}` is useful for joining the
+run, but its GPU measurements correctly remain unavailable until that admin
+projection is connected to the lifecycle ledger. The authoritative existing
+PostgreSQL join for post-run enrichment is:
+
+```sql
+SELECT subject.operation_id, subject.attempt_id, rollup.terminal,
+       rollup.reconciled, rollup.quality, rollup.data_gaps,
+       rollup.scheduler_occupied_gpu_seconds,
+       rollup.device_allocated_gpu_seconds,
+       rollup.active_gpu_seconds,
+       rollup.occupied_idle_gpu_seconds,
+       rollup.phase_gpu_seconds,
+       rollup.reconciliation_delta_seconds
+FROM fs2_telemetry_subjects AS subject
+JOIN fs2_reporting_lifecycle_latest AS rollup USING (subject_id)
+WHERE subject.operation_id = ANY ($1::uuid[])
+ORDER BY subject.operation_id, subject.attempt_id;
+```
+
+Supply the operation IDs from `aggregate.json`; sum attempt rows per operation
+only when every row is terminal and reconciled and `data_gaps` is empty.
+Prometheus exposes the fleet-level equivalents as
+`fs2_serve_lifecycle_clock_gpu_seconds_total{clock="scheduler_occupied"}` and
+`fs2_serve_lifecycle_gpu_seconds_total` (with `phase="active_compute"` for
+active time and non-active phases for occupied-idle analysis). These metrics
+are cumulative by tenant/model, so use pre/post deltas for one fleet run.
+
 ## Secondary structure fleet inputs
 
 The five secondary/academic structure lanes have model-owned public acceptance
