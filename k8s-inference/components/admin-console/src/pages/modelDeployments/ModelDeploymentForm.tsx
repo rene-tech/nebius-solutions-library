@@ -265,7 +265,11 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
         />
         <div className="fast-start-policy-summary form-grid__wide" role="status">
           <strong>{fastStart.mode === "Fixed" ? fastStartLevelLabel(fastStart.level) : `Automatic ${fastStart.minimumLevel}–${fastStart.maximumLevel}`}</strong>
-          <span>{fastStart.mode === "Fixed" ? fastStartTarget(fastStart.level) : `Best target ${fastStartTarget(fastStart.maximumLevel)}; never below ${fastStart.minimumLevel}.`}</span>
+          <span>{fastStart.mode === "Fixed"
+            ? fastStartTarget(fastStart.level)
+            : fastStart.fallbackPolicy === "RequireTarget"
+              ? `Best target ${fastStartTarget(fastStart.maximumLevel)}; will not assign below ${fastStart.minimumLevel}.`
+              : `Best target ${fastStartTarget(fastStart.maximumLevel)}; may assign the highest qualified level below ${fastStart.minimumLevel}.`}</span>
           <small>The target clock starts when compatible accelerator capacity is available. Capacity wait and total request-to-ready time are reported separately.</small>
         </div>
         <details className="fast-start-mechanisms form-grid__wide">

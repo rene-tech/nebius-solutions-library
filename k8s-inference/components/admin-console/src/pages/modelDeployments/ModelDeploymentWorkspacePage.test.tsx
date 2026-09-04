@@ -264,6 +264,10 @@ describe("ModelDeployment workspace", () => {
     fireEvent.change(screen.getByLabelText("Fast-start mode"), { target: { value: "Automatic" } });
     fireEvent.change(screen.getByLabelText("Minimum fast-start level"), { target: { value: "L1" } });
     fireEvent.change(screen.getByLabelText("Maximum fast-start level"), { target: { value: "L4" } });
+    expect(screen.getByText("Best target ≤30 seconds; may assign the highest qualified level below L1.")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("When the target is unavailable"), { target: { value: "RequireTarget" } });
+    expect(screen.getByText("Best target ≤30 seconds; will not assign below L1.")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("When the target is unavailable"), { target: { value: "AllowLowerLevel" } });
     fireEvent.click(screen.getByRole("button", { name: "Validate draft" }));
     await waitFor(() => expect(validate).toHaveBeenCalledWith(expect.objectContaining({
       name: "qwen-live",

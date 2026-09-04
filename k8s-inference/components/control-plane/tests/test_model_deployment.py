@@ -402,6 +402,9 @@ def test_crd_is_structural_versioned_and_has_explicit_terraform_upgrade_owner() 
         "regional-cache",
         "host-memory-residency",
     ]
+    mechanism_description = spec_properties["cache"]["properties"]["mechanism"]["description"]
+    assert "Fixed mode uses the conventional loader" in mechanism_description
+    assert "Automatic mode selects" in mechanism_description
     fast_start = spec_properties["fastStart"]
     assert fast_start["default"] == {"mode": "Fixed", "level": "Off", "fallbackPolicy": "AllowLowerLevel"}
     levels = ["Off", "L1", "L2", "L3", "L4"]

@@ -27,7 +27,7 @@ from .access import AdminAccessService
 from .access_models import OperatorPrincipal, OperatorRole
 from .admin import AdminProblemError
 from .admin_models import AdminEnvelope
-from .fast_start import FastStartLevel
+from .fast_start import FastStartLevel, FastStartMode, FastStartSpec
 from .fast_start_mechanisms import (
     DECLARED_MECHANISMS,
     SELECTABLE_MECHANISMS,
@@ -42,6 +42,7 @@ from .model_deployment import (
     KIND,
     CacheTier,
     DesiredState,
+    FastStartMechanismDecision,
     InfrastructureEnvelope,
     LifecycleSpec,
     ModelDeploymentSpec,
@@ -461,60 +462,40 @@ class ModelDeploymentMutationService:
         self.prometheus_server_address = prometheus_server_address
         self.namespace = namespace
 
-    def _host_memory_pool_is_renderable(
+    def _render_is_proven(
         self,
         *,
-        default_spec: ModelDeploymentSpec,
-        pool_ref: str,
+        spec: ModelDeploymentSpec,
+        mechanism: FastStartMechanismDecision,
+        admitted_pool_ref: str | None,
+        name: str,
+        generation: int,
     ) -> bool:
-        """Prove a host-memory choice with the installed runtime template.
+        """Render the exact accepted mechanism with the installed template."""
 
-        Kubernetes may pack one runtime Pod into every accelerator slot on a
-        node.  The admin API has no separate per-node Pod-density control, so a
-        pool is safe to advertise only when the holder plus that full packing
-        renders within measured allocatable RAM.  Reusing the qualified
-        renderer keeps this capability check identical to the apply path and
-        includes init containers, Pod overhead and mechanism-specific mounts.
-        """
-
-        if self.renderer is None or self.prometheus_server_address is None:
-            return False
-        pool = self.envelope.pools[pool_ref]
-        runtime_pods_per_node = pool.accelerators_per_node // default_spec.placement.accelerators_per_replica
-        if runtime_pods_per_node < 1:
-            return False
-        candidate = default_spec.model_copy(
-            update={
-                "placement": default_spec.placement.model_copy(update={"pool_refs": [pool_ref]}),
-                "availability": default_spec.availability.model_copy(update={"max_replicas": runtime_pods_per_node}),
-                "cache": default_spec.cache.model_copy(
-                    update={
-                        "tier": CacheTier.SHARED_FILESYSTEM,
-                        "mechanism": FastStartMechanism.HOST_MEMORY_RESIDENCY,
-                    }
-                ),
-            }
-        )
-        decision = validate_model_deployment(candidate, self.envelope)
         if (
-            decision.disposition is not ValidationDisposition.ACCEPTED
-            or not decision.fast_start_mechanism.renderable
-            or decision.fast_start_mechanism.mechanism is not FastStartMechanism.HOST_MEMORY_RESIDENCY
+            self.renderer is None
+            or self.prometheus_server_address is None
+            or admitted_pool_ref is None
+            or not mechanism.renderable
         ):
             return False
-        qualification = self.envelope.qualifications[candidate.model_ref]
+        qualification = self.envelope.qualifications.get(spec.model_ref)
+        pool = self.envelope.pools.get(admitted_pool_ref)
+        if qualification is None or pool is None:
+            return False
         try:
             self.renderer.render(
-                candidate,
+                spec,
                 RenderContext(
-                    name=_dns_safe_name(candidate.model_ref),
+                    name=name,
                     namespace=self.namespace,
                     uid=None,
-                    generation=1,
+                    generation=generation,
                     pool=pool,
-                    eligible_pools=[pool],
+                    eligible_pools=[self.envelope.pools[pool_ref] for pool_ref in spec.placement.pool_refs],
                     prometheus_server_address=self.prometheus_server_address,
-                    fast_start_mechanism=decision.fast_start_mechanism,
+                    fast_start_mechanism=mechanism,
                     model_express=qualification.model_express,
                     regional_cache=qualification.regional_cache,
                     host_memory_residency=qualification.host_memory_residency,
@@ -526,6 +507,71 @@ class ModelDeploymentMutationService:
         except ValueError:
             return False
         return True
+
+    def _mechanism_choice_is_renderable(
+        self,
+        *,
+        default_spec: ModelDeploymentSpec,
+        choice: ModelDeploymentFastStartMechanismChoice,
+        pool_refs: list[str],
+        prove_full_node_pool: bool = False,
+    ) -> bool:
+        """Prove an advertised mechanism and pool set with the real renderer.
+
+        A host-memory single-pool proof fills every accelerator slot on one
+        node so holder plus runtime RAM is checked at worst-case Pod density.
+        The subsequent full-set proof catches multi-pool render interactions.
+        """
+
+        minimum_replicas = max(default_spec.availability.min_replicas, choice.minimum_hot_replicas)
+        available_replicas = sum(
+            (self.envelope.pools[pool_ref].accelerators_per_node // default_spec.placement.accelerators_per_replica)
+            * self.envelope.pools[pool_ref].max_nodes
+            for pool_ref in pool_refs
+        )
+        maximum_replicas = max(default_spec.availability.max_replicas, choice.minimum_max_replicas)
+        if len(pool_refs) == 1:
+            # This artificial subset proves that the pool may be offered; it
+            # must not inherit a multi-pool replica ceiling the pool cannot
+            # satisfy on its own.
+            maximum_replicas = min(maximum_replicas, available_replicas)
+        if prove_full_node_pool:
+            if len(pool_refs) != 1:
+                return False
+            pool = self.envelope.pools[pool_refs[0]]
+            runtime_pods_per_node = pool.accelerators_per_node // default_spec.placement.accelerators_per_replica
+            if runtime_pods_per_node < 1:
+                return False
+            maximum_replicas = runtime_pods_per_node
+        if maximum_replicas < max(minimum_replicas, choice.minimum_max_replicas):
+            return False
+        candidate = default_spec.model_copy(
+            update={
+                "placement": default_spec.placement.model_copy(update={"pool_refs": pool_refs}),
+                "availability": default_spec.availability.model_copy(
+                    update={
+                        "min_replicas": minimum_replicas,
+                        "max_replicas": maximum_replicas,
+                    }
+                ),
+                "cache": default_spec.cache.model_copy(
+                    update={
+                        "tier": choice.required_cache_tier or default_spec.cache.tier,
+                        "mechanism": choice.mechanism,
+                    }
+                ),
+            }
+        )
+        decision = validate_model_deployment(candidate, self.envelope)
+        if decision.disposition is not ValidationDisposition.ACCEPTED:
+            return False
+        return self._render_is_proven(
+            spec=candidate,
+            mechanism=decision.fast_start_mechanism,
+            admitted_pool_ref=decision.admitted_pool_ref,
+            name=_dns_safe_name(candidate.model_ref),
+            generation=1,
+        )
 
     def configuration_options(self) -> list[ModelDeploymentConfigurationOption]:
         """Return only complete defaults accepted by the installed envelope."""
@@ -727,19 +773,38 @@ class ModelDeploymentMutationService:
                 )
                 renderable_mechanism_choices: list[ModelDeploymentFastStartMechanismChoice] = []
                 for choice in mechanism_choices:
-                    if choice.mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY:
-                        renderable_pool_refs = [
-                            pool_ref
-                            for pool_ref in choice.pool_refs
-                            if self._host_memory_pool_is_renderable(
-                                default_spec=default_spec,
-                                pool_ref=pool_ref,
-                            )
-                        ]
-                        if not renderable_pool_refs:
-                            continue
-                        choice = choice.model_copy(update={"pool_refs": renderable_pool_refs})
+                    renderable_pool_refs = [
+                        pool_ref
+                        for pool_ref in choice.pool_refs
+                        if self._mechanism_choice_is_renderable(
+                            default_spec=default_spec,
+                            choice=choice,
+                            pool_refs=[pool_ref],
+                            prove_full_node_pool=choice.mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY,
+                        )
+                    ]
+                    if not renderable_pool_refs:
+                        continue
+                    choice = choice.model_copy(update={"pool_refs": renderable_pool_refs})
+                    if not self._mechanism_choice_is_renderable(
+                        default_spec=default_spec,
+                        choice=choice,
+                        pool_refs=renderable_pool_refs,
+                    ):
+                        continue
                     renderable_mechanism_choices.append(choice)
+                conventional_choice = next(
+                    (
+                        choice
+                        for choice in renderable_mechanism_choices
+                        if choice.mechanism is FastStartMechanism.CONVENTIONAL
+                    ),
+                    None,
+                )
+                if conventional_choice is None or set(conventional_choice.pool_refs) != set(
+                    default_spec.placement.pool_refs
+                ):
+                    continue
                 decision = validate_model_deployment(default_spec, self.envelope)
                 if decision.disposition is not ValidationDisposition.ACCEPTED or decision.fast_start is None:
                     continue
@@ -781,7 +846,13 @@ class ModelDeploymentMutationService:
             receipt=receipt,
         )
 
-    def _validate(self, spec: ModelDeploymentSpec, current: ModelDeploymentRevision | None) -> None:
+    def _validate(
+        self,
+        spec: ModelDeploymentSpec,
+        current: ModelDeploymentRevision | None,
+        *,
+        name: str,
+    ) -> None:
         decision = validate_model_deployment(
             spec,
             self.envelope,
@@ -803,6 +874,45 @@ class ModelDeploymentMutationService:
                 409,
                 "model_deployment_infrastructure_required",
                 f"Terraform-owned prerequisites are unavailable: {inputs}",
+            )
+        render_decisions = [decision]
+        if spec.cache.mechanism is None and spec.fast_start.mode is FastStartMode.AUTOMATIC:
+            # Automatic may choose a different qualified mechanism after demand
+            # history changes. Prove every mechanism that live validation could
+            # admit later, not only the missing-history choice made during this
+            # request. A no-target proof spec isolates renderability from evidence
+            # that can legitimately arrive after the desired revision is stored.
+            proof_spec = spec.model_copy(update={"fast_start": FastStartSpec()})
+            for mechanism in SELECTABLE_MECHANISMS:
+                if mechanism is decision.fast_start_mechanism.mechanism:
+                    continue
+                candidate = validate_model_deployment(
+                    proof_spec,
+                    self.envelope,
+                    current=current.spec if current is not None else None,
+                    fast_start_mechanism=FastStartMechanismDecision(
+                        mechanism=mechanism,
+                        source="Automatic",
+                        renderable=True,
+                        reason="AuthoritativeRenderCandidate",
+                    ),
+                )
+                if candidate.disposition is ValidationDisposition.ACCEPTED:
+                    render_decisions.append(candidate)
+        if any(
+            not self._render_is_proven(
+                spec=spec,
+                mechanism=render_decision.fast_start_mechanism,
+                admitted_pool_ref=render_decision.admitted_pool_ref,
+                name=name,
+                generation=current.revision + 1 if current is not None else 1,
+            )
+            for render_decision in render_decisions
+        ):
+            raise ModelDeploymentMutationProblemError(
+                422,
+                "model_deployment_render_failed",
+                "qualified renderer could not produce the desired revision",
             )
 
     @staticmethod
@@ -866,7 +976,7 @@ class ModelDeploymentMutationService:
             raise ModelDeploymentMutationProblemError(409, "model_identity_conflict", "model belongs to another tenant")
         if actor.tenant_id is not None and actor.tenant_id != proposal.spec.tenant_id:
             raise ModelDeploymentMutationProblemError(403, "tenant_forbidden", "tenant is outside operator policy")
-        self._validate(proposal.spec, current)
+        self._validate(proposal.spec, current, name=proposal.name)
         if current is not None:
             await self._require_cold_cutover(current=current, proposed=proposal.spec)
         action = (
@@ -941,7 +1051,7 @@ class ModelDeploymentMutationService:
         target = next((item for item in rows if item.revision == request.target_revision), None)
         if target is None:
             raise ModelDeploymentMutationProblemError(404, "model_revision_not_found", "target revision was not found")
-        self._validate(target.spec, current)
+        self._validate(target.spec, current, name=current.name)
         await self._require_cold_cutover(current=current, proposed=target.spec)
         return await self._append_action(
             current=current,

@@ -77,7 +77,7 @@ export interface ModelDeploymentSpec {
     tier: ModelDeploymentCacheTier;
     snapshotPreference: ModelDeploymentSnapshotPreference;
     snapshotRef: (ModelDeploymentNamedDigest & { strategy: ModelDeploymentSnapshotStrategy }) | null;
-    /** Pinned cold-start mechanism; null lets evidence select the fastest qualified path. */
+    /** Pinned mechanism; null uses conventional in Fixed mode and evidence-based selection in Automatic mode. */
     mechanism?: ModelDeploymentFastStartMechanism | null;
   };
   /** Optional while older ModelDeployment revisions are still being migrated. */

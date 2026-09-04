@@ -18,7 +18,7 @@ from test_model_deployment import (
 
 from fs2_serve.access_models import OperatorPrincipal, OperatorRole, PrincipalKind
 from fs2_serve.crypto import KeyedHasher, PayloadCipher
-from fs2_serve.fast_start import FastStartLevel, FastStartSpec
+from fs2_serve.fast_start import FastStartLevel, FastStartMode, FastStartSpec
 from fs2_serve.fast_start_mechanisms import FastStartMechanism
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.model_deployment import (
@@ -56,6 +56,8 @@ from fs2_serve.model_deployment_records import (
     ModelDeploymentRuntimePhase,
     ModelDeploymentStatusObservation,
 )
+
+PROMETHEUS_ADDRESS = "http://prometheus.fs2-observability.svc:9090"
 
 
 def _actor() -> OperatorPrincipal:
@@ -113,6 +115,8 @@ def test_configuration_options_are_exact_valid_installed_defaults() -> None:
         ),
         writer=FakeWriter(),
         envelope=installed,
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     )
 
     options = service.configuration_options()
@@ -149,6 +153,8 @@ def test_configuration_options_are_exact_valid_installed_defaults() -> None:
         repository=service.repository,
         writer=FakeWriter(),
         envelope=hot_only,
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     )
     hot_only_option = hot_only_service.configuration_options()[0]
     assert not hot_only_option.scale_to_zero_qualified
@@ -160,6 +166,8 @@ def test_configuration_options_are_exact_valid_installed_defaults() -> None:
         repository=service.repository,
         writer=FakeWriter(),
         envelope=no_mcp,
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     ).configuration_options()[0]
     assert not no_mcp_option.default_spec.exposure.mcp
     assert no_mcp_option.default_spec.exposure.mcp_tool_name is None
@@ -194,7 +202,7 @@ def test_configuration_options_publish_only_declared_mechanisms_and_their_depend
         writer=FakeWriter(),
         envelope=installed,
         renderer=renderer(),
-        prometheus_server_address="http://prometheus.fs2-observability.svc:9090",
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     )
 
     option = service.configuration_options()[0]
@@ -212,10 +220,8 @@ def test_configuration_options_publish_only_declared_mechanisms_and_their_depend
         repository=service.repository,
         writer=FakeWriter(),
         envelope=installed,
-    ).configuration_options()[0]
-    assert FastStartMechanism.HOST_MEMORY_RESIDENCY not in {
-        choice.mechanism for choice in unproven.fast_start_mechanism_choices
-    }
+    ).configuration_options()
+    assert unproven == []
 
     for mechanism, choice in choices.items():
         selected = option.default_spec.model_copy(
@@ -284,7 +290,7 @@ def test_configuration_options_prove_host_memory_fit_with_the_qualified_runtime_
         writer=FakeWriter(),
         envelope=installed,
         renderer=renderer(runtime_memory_request="1Gi"),
-        prometheus_server_address="http://prometheus.fs2-observability.svc:9090",
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     ).configuration_options()[0]
     assert FastStartMechanism.HOST_MEMORY_RESIDENCY not in {
         choice.mechanism for choice in cannot_fill_node.fast_start_mechanism_choices
@@ -295,7 +301,7 @@ def test_configuration_options_prove_host_memory_fit_with_the_qualified_runtime_
         writer=FakeWriter(),
         envelope=installed,
         renderer=renderer(runtime_memory_request="512Mi"),
-        prometheus_server_address="http://prometheus.fs2-observability.svc:9090",
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     ).configuration_options()[0]
     host_choice = next(
         choice
@@ -303,6 +309,130 @@ def test_configuration_options_prove_host_memory_fit_with_the_qualified_runtime_
         if choice.mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY
     )
     assert host_choice.pool_refs == ["pool-a"]
+
+
+@pytest.mark.asyncio
+async def test_regional_cache_mirror_mismatch_is_neither_advertised_nor_persisted() -> None:
+    installed = envelope()
+    base_qualification = installed.qualifications["qwen.3-8b"]
+    foreign_image = f"foreign.example/fs2/vllm@sha256:{'b' * 64}"
+    qualification = base_qualification.model_copy(
+        update={
+            "runtime_images": [foreign_image],
+            "regional_cache": render_regional_cache(pool_refs=("pool-a",)),
+            "template_cache_tiers": {
+                digest: CacheTier.SHARED_FILESYSTEM for digest in base_qualification.template_digests
+            },
+        }
+    )
+    installed = installed.model_copy(update={"qualifications": {qualification.model_ref: qualification}})
+    store = MemoryStore(
+        PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+        KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+    )
+    writer = FakeWriter()
+    service = ModelDeploymentMutationService(
+        repository=StoreModelDeploymentRepository(store),
+        writer=writer,
+        envelope=installed,
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
+    )
+
+    option = service.configuration_options()[0]
+    assert [choice.mechanism for choice in option.fast_start_mechanism_choices] == [
+        FastStartMechanism.CONVENTIONAL
+    ]
+    regional = option.default_spec.model_copy(
+        update={
+            "cache": option.default_spec.cache.model_copy(
+                update={
+                    "tier": CacheTier.SHARED_FILESYSTEM,
+                    "mechanism": FastStartMechanism.REGIONAL_CACHE,
+                }
+            )
+        }
+    )
+    assert validate_model_deployment(regional, installed).disposition is ValidationDisposition.ACCEPTED
+
+    with pytest.raises(ModelDeploymentMutationProblemError) as rejected:
+        await service.apply(
+            _apply_request(
+                key="reject-unrenderable-regional-cache-0001",
+                proposal=ModelDeploymentPreviewProposal(name="qwen-live", spec=regional),
+            ),
+            _actor(),
+        )
+
+    assert rejected.value.status_code == 422
+    assert rejected.value.code == "model_deployment_render_failed"
+    assert await service.repository.current(
+        namespace="fs2-models",
+        name="qwen-live",
+        tenant_id=None,
+    ) is None
+    assert writer.writes == []
+
+    automatic = regional.model_copy(
+        update={
+            "cache": regional.cache.model_copy(update={"mechanism": None}),
+            "fast_start": FastStartSpec(
+                mode=FastStartMode.AUTOMATIC,
+                minimum_level=FastStartLevel.OFF,
+                maximum_level=FastStartLevel.L4,
+            ),
+        }
+    )
+    automatic_decision = validate_model_deployment(automatic, installed)
+    assert automatic_decision.disposition is ValidationDisposition.ACCEPTED
+    assert automatic_decision.fast_start_mechanism.mechanism is FastStartMechanism.CONVENTIONAL
+    with pytest.raises(ModelDeploymentMutationProblemError) as automatic_rejected:
+        await service.apply(
+            _apply_request(
+                key="reject-latent-unrenderable-regional-cache-0002",
+                proposal=ModelDeploymentPreviewProposal(name="qwen-auto", spec=automatic),
+            ),
+            _actor(),
+        )
+    assert automatic_rejected.value.code == "model_deployment_render_failed"
+    assert await service.repository.current(
+        namespace="fs2-models",
+        name="qwen-auto",
+        tenant_id=None,
+    ) is None
+    assert writer.writes == []
+
+
+@pytest.mark.asyncio
+async def test_apply_requires_authoritative_render_proof_before_persisting() -> None:
+    store = MemoryStore(
+        PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+        KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+    )
+    writer = FakeWriter()
+    service = ModelDeploymentMutationService(
+        repository=StoreModelDeploymentRepository(store),
+        writer=writer,
+        envelope=envelope(),
+    )
+
+    with pytest.raises(ModelDeploymentMutationProblemError) as rejected:
+        await service.apply(
+            _apply_request(
+                key="reject-unproven-render-0001",
+                proposal=ModelDeploymentPreviewProposal(name="qwen-live", spec=model_spec()),
+            ),
+            _actor(),
+        )
+
+    assert rejected.value.status_code == 422
+    assert rejected.value.code == "model_deployment_render_failed"
+    assert await service.repository.current(
+        namespace="fs2-models",
+        name="qwen-live",
+        tenant_id=None,
+    ) is None
+    assert writer.writes == []
 
 
 def test_configuration_options_hide_sleep_offload_without_a_runtime_actor() -> None:
@@ -325,6 +455,8 @@ def test_configuration_options_hide_sleep_offload_without_a_runtime_actor() -> N
         ),
         writer=FakeWriter(),
         envelope=installed,
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     )
 
     mechanisms = [choice.mechanism for choice in service.configuration_options()[0].fast_start_mechanism_choices]
@@ -344,6 +476,8 @@ def test_configuration_default_selects_every_compatible_pool_and_invariant_allow
         ),
         writer=FakeWriter(),
         envelope=installed,
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     )
 
     option = service.configuration_options()[0]
@@ -505,6 +639,8 @@ def test_capabilities_route_publishes_server_authoritative_configuration_options
         repository=StoreModelDeploymentRepository(runtime.store),
         writer=FakeWriter(),
         envelope=envelope(),
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     )
     with _client(runtime) as client:
         assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
@@ -541,6 +677,8 @@ async def test_apply_drain_rollback_reconcile_and_pending_projection() -> None:
         repository=StoreModelDeploymentRepository(store),
         writer=writer,
         envelope=envelope(),
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     )
     proposal = ModelDeploymentPreviewProposal(name="qwen-live", spec=model_spec())
 
@@ -608,6 +746,8 @@ async def test_runtime_material_change_requires_observed_cold_drained_revision()
         repository=StoreModelDeploymentRepository(store),
         writer=FakeWriter(),
         envelope=envelope(),
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     )
     created = await service.apply(
         _apply_request(
@@ -754,6 +894,8 @@ async def test_kubernetes_writer_updates_post_owned_fields_with_merge_patch(tmp_
         repository=StoreModelDeploymentRepository(store),
         writer=writer,
         envelope=envelope(),
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     )
     proposal = ModelDeploymentPreviewProposal(name="qwen-live", spec=model_spec())
     result = await service.apply(_apply_request(key="create-qwen-0001", proposal=proposal), _actor())
