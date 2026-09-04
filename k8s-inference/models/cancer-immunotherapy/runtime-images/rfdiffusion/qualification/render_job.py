@@ -40,6 +40,7 @@ LOCK = json.loads((HERE.parent / "image-lock.json").read_text(encoding="utf-8"))
 DIGEST_REFERENCE = re.compile(r"^[^@\s]+@sha256:[0-9a-f]{64}$")
 
 ARTIFACT_MOUNT = "/opt/fs2/artifacts"
+INPUT_ARTIFACT_MOUNT = "/opt/fs2/inputs"
 WORKSPACE_MOUNT = "/workspace"
 REQUEST_MOUNT = "/var/run/fs2"
 
@@ -213,7 +214,7 @@ def render(
         artifact_mounts.append(
             {
                 "name": volume_name,
-                "mountPath": f"{ARTIFACT_MOUNT}/{plane_name}",
+                "mountPath": f"{INPUT_ARTIFACT_MOUNT}/{plane_name}",
                 "readOnly": True,
             }
         )
@@ -296,6 +297,7 @@ def render(
         "--request", f"{REQUEST_MOUNT}/request.json",
         "--input-manifest", f"{REQUEST_MOUNT}/input-manifest.json",
         "--artifact-root", ARTIFACT_MOUNT,
+        "--input-artifact-root", INPUT_ARTIFACT_MOUNT,
         "--checkpoint-artifact-id", checkpoint_artifact_id,
         "--output", f"{WORKSPACE_MOUNT}/{name}",
         "--scratch", "/tmp/fs2-rfdiffusion",
