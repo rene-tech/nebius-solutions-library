@@ -716,7 +716,21 @@ def test_boltzgen_uses_one_gpu_shard_commands_and_every_exact_checkpoint_identit
     assert reuse.controller_plan.stage("affinity").resource_class is ResourceClass.GPU
     assert reuse.controller_plan.stage("analysis").resource_class is ResourceClass.CPU
     assert reuse.controller_plan.stage("configure").resource_class is ResourceClass.GPU
-    assert all(item.runtime_artifacts == () for item in reuse.invocations if item.stage_id in {"analysis", "filtering"})
+    assert all(
+        item.runtime_artifacts == (boltzgen.MOLECULES_ARTIFACT_ID,)
+        for item in reuse.invocations
+        if item.stage_id in {"analysis", "filtering"}
+    )
+    assert all(
+        tuple(mount.artifact_id for mount in item.runtime_mounts) == (boltzgen.MOLECULES_ARTIFACT_ID,)
+        for item in reuse.invocations
+        if item.stage_id in {"analysis", "filtering"}
+    )
+    assert all(
+        item.runtime_trees == (boltzgen.molecules_tree_binding(),)
+        for item in reuse.invocations
+        if item.stage_id in {"analysis", "filtering"}
+    )
     assert all(item.materializations for item in reuse.invocations)
     for item in reuse.invocations[1:]:
         assert item.argv[:3] == (

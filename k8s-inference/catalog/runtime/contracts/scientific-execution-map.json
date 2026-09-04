@@ -5,7 +5,7 @@
       "model_id": "boltzgen",
       "variant_id": "upstream-v0-3-2",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "8d55b1460e04a2e6958e401c92a7f4dccccdbcdb4d321029e4014d3ee70cf435",
+      "execution_identity_sha256": "cb036d68d8f537ec399c883b17832350a55459c51820051495713bd7acf1305a",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -399,6 +399,15 @@
               "mount_path": "/mnt/fs2-scientific",
               "sub_path": null,
               "read_only": false
+            },
+            {
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "kind": "reference",
+              "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+              "name": "boltzgen-inference-molecules",
+              "read_only": true,
+              "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
             }
           ],
           "service_account_name": "default",
@@ -419,7 +428,9 @@
           "active_deadline_seconds": 43200,
           "termination_grace_seconds": 90,
           "environment": {},
-          "required_node_labels": {}
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
         },
         {
           "stage_id": "filtering",
@@ -435,6 +446,15 @@
               "mount_path": "/mnt/fs2-scientific",
               "sub_path": null,
               "read_only": false
+            },
+            {
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "kind": "reference",
+              "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+              "name": "boltzgen-inference-molecules",
+              "read_only": true,
+              "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
             }
           ],
           "service_account_name": "default",
@@ -455,7 +475,9 @@
           "active_deadline_seconds": 43200,
           "termination_grace_seconds": 90,
           "environment": {},
-          "required_node_labels": {}
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
         }
       ],
       "access_profile": "public"
@@ -464,7 +486,7 @@
       "model_id": "proteina-complexa",
       "variant_id": "upstream-dev-20260827",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "5c72ddaa44c4aaec55a4aa2f7f60ef75e4c1ea1ecc523a7b9ae388b3e32dd96f",
+      "execution_identity_sha256": "25af126ba4c4b406b9660f7754d1b082dad3c37b25fd823116e68def99506d0a",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -782,7 +804,7 @@
       "model_id": "bindcraft",
       "variant_id": "v1-5-3-pyrosetta-academic",
       "workload_namespace": "fs2-academic-poc",
-      "execution_identity_sha256": "cb1aacc26a7ff596134f2734d67bbe15fe04480f603fe4f95eb1288441b27aad",
+      "execution_identity_sha256": "782a168ef424a2a89f93f4ea1d6b05cd6a3a303cc168390ba9d11895c95d3c46",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1000,7 +1022,7 @@
       "model_id": "mosaic",
       "variant_id": "mosaic-boltz2-proteinmpnn-v1",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "afb4044f2ac90c9344beefa08721cb00a86d36687c5dc81cba86dbd0ce2b36e7",
+      "execution_identity_sha256": "bc52e31db06cff743a2481a0b0abd723e55e191b11d1cb8aa574800a96428b8b",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1178,7 +1200,7 @@
       "model_id": "rfdiffusion",
       "variant_id": "rfdiffusion-v1-1-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "c077c9537dab56c3a77ddd07b10228974b8a482ce6d4ae170b097b2cc9adf517",
+      "execution_identity_sha256": "379cd8100d35b375082891d333d87f75ec798a4af98a05a9f5022c6373766b15",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1295,7 +1317,7 @@
       "model_id": "esmfold2",
       "variant_id": "biohub-v3-4-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "c418456c09f2c2ad2404fe2761c4b6ae8e09f8afe0297a9317daea7159369fec",
+      "execution_identity_sha256": "724b5e407fe1705b55460182b4ab393468dd029e9c8c9016ff69fc39e252e534",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1506,7 +1528,7 @@
       "model_id": "esmfold2-fast",
       "variant_id": "biohub-v3-4-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "53f10c3361c9f35b1078f055346fe85d375f8192e213cf2bbf6796ff53d9379c",
+      "execution_identity_sha256": "f4ca01927e3b073dcce177c539a137971b1ec33c0c77b7584a68c4dc30e5e169",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1717,7 +1739,7 @@
       "model_id": "openfold3-openbind",
       "variant_id": "upstream-openbind-v0-5-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "7360e8e8f901a92645580cdc1f46e35bd30a2205efe68fe756b3a8d9a628a78e",
+      "execution_identity_sha256": "6ce367a2d4e10b592ec5641a5c2a820dabddc77ab3cbec48b27cff47b66826e3",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1864,7 +1886,7 @@
       "model_id": "protenix-v2",
       "variant_id": "upstream-v2-0-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "5f8e54bee9fcb9dc759f5f3335097afd7181f14177746b1ab298d6e33ecb1812",
+      "execution_identity_sha256": "60cf8a25ea4f2aaa4988076cd722d042a176f7199f6ca44a71a1dae3403d62b7",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -2045,7 +2067,7 @@
       "model_id": "alphafold3",
       "variant_id": "upstream-v3-0-4",
       "workload_namespace": "fs2-academic-poc",
-      "execution_identity_sha256": "a4c67d8ba17e4df66648a853e46f03e9c9df1a3b2309cf20e945d256c72af075",
+      "execution_identity_sha256": "26346ae34a9f772b3229c6f1677d0cb208d9a1cbcf4199515cced41c2737bf23",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"

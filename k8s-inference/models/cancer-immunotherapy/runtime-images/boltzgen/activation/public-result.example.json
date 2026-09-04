@@ -11,10 +11,10 @@
     "variant_id": "upstream-v0-3-2",
     "model_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
     "runtime_image_digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
-    "runtime_recipe_sha256": "164475e69b1d3910cb01c1537cb3975a49aed6e212b2c8779272b2ad3ce47942",
-    "workload_recipe_sha256": "223b796e10fbf933d591817163086bc2830d0e54212b6a7d8e27624aae24d336",
+    "runtime_recipe_sha256": "639af92e7d1832ae1551d37a4a077d31ecb993f63d3adab93156e05bb1220b81",
+    "workload_recipe_sha256": "9990f584f6779d4e261aa0a93c901a0a761ef2d5d3cd2557ad89363b3bbb4f0a",
     "model_artifact_manifest_digest": "11675abe2450d38b2b8033bef278c8152271de6453c002e23beda4cd19780cf2",
-    "execution_identity_sha256": "a837af087e70094c8c0b780e4f3b0fd3bebfddf2092b62a3ce45d454ac6aca4a"
+    "execution_identity_sha256": "c2aa5afcf2b5d607f6b8725f7d7ab27529c8857f81257be4bc81b22a576237c8"
   },
   "access_admission": {
     "profile": "standard",

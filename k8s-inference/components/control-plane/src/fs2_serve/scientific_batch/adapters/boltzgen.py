@@ -215,7 +215,19 @@ def molecules_tree_binding() -> RuntimeTreeBinding:
 
 GPU_STAGES = ("configure", "design", "inverse-folding", "folding", "design-folding", "affinity")
 FINAL_STAGES = ("analysis", "filtering")
-RUNTIME_ARTIFACT_STAGES = frozenset(GPU_STAGES)
+WEIGHTS_ARTIFACT_STAGES = frozenset(GPU_STAGES)
+MOLECULES_ARTIFACT_STAGES = frozenset((*GPU_STAGES, *FINAL_STAGES))
+
+
+def _stage_runtime_artifacts(stage_id: str) -> tuple[str, ...]:
+    """Return only the immutable trees that the selected upstream step reads."""
+
+    artifacts: list[str] = []
+    if stage_id in WEIGHTS_ARTIFACT_STAGES:
+        artifacts.append(WEIGHTS_ARTIFACT_ID)
+    if stage_id in MOLECULES_ARTIFACT_STAGES:
+        artifacts.append(MOLECULES_ARTIFACT_ID)
+    return tuple(artifacts)
 
 
 def _protocol_steps(protocol: str) -> tuple[str, ...]:
@@ -384,6 +396,7 @@ def compile_run(
     prior_artifacts = {batch.shard_id: campaign_artifact_id for batch in parameters.batches}
     invocations: list[StageInvocation] = []
     for stage_id in selected_stages:
+        runtime_artifacts = _stage_runtime_artifacts(stage_id)
         for batch in parameters.batches:
             previous = prior_artifacts[batch.shard_id]
             output = logical_stage_artifact(operation_id, stage_id, batch.shard_id)
@@ -427,26 +440,16 @@ def compile_run(
                     max_output_artifacts=(1 if stage_id != selected_stages[-1] else batch.budget + 1),
                     max_output_bytes=(MAX_STAGE_HANDOFF_BYTES if stage_id != selected_stages[-1] else MAX_OUTPUT_BYTES),
                     materializations=(materialization,),
-                    runtime_artifacts=(
-                        (WEIGHTS_ARTIFACT_ID, MOLECULES_ARTIFACT_ID) if stage_id in RUNTIME_ARTIFACT_STAGES else ()
-                    ),
-                    runtime_mounts=(
-                        (
-                            RuntimeArtifactMount(
-                                artifact_id=WEIGHTS_ARTIFACT_ID,
-                                mount_path=model_root(WEIGHTS_ARTIFACT_ID),
-                                supplemental_groups=(REFERENCE_DATA_SUPPLEMENTAL_GROUP,),
-                            ),
-                            RuntimeArtifactMount(
-                                artifact_id=MOLECULES_ARTIFACT_ID,
-                                mount_path=model_root(MOLECULES_ARTIFACT_ID),
-                                supplemental_groups=(REFERENCE_DATA_SUPPLEMENTAL_GROUP,),
-                            ),
+                    runtime_artifacts=runtime_artifacts,
+                    runtime_mounts=tuple(
+                        RuntimeArtifactMount(
+                            artifact_id=artifact_id,
+                            mount_path=model_root(artifact_id),
+                            supplemental_groups=(REFERENCE_DATA_SUPPLEMENTAL_GROUP,),
                         )
-                        if stage_id in RUNTIME_ARTIFACT_STAGES
-                        else ()
+                        for artifact_id in runtime_artifacts
                     ),
-                    runtime_trees=((molecules_tree_binding(),) if stage_id in RUNTIME_ARTIFACT_STAGES else ()),
+                    runtime_trees=((molecules_tree_binding(),) if MOLECULES_ARTIFACT_ID in runtime_artifacts else ()),
                 )
             )
             prior_artifacts[batch.shard_id] = output
