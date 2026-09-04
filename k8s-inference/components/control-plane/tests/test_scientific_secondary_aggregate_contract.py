@@ -125,6 +125,8 @@ def test_complete_fleet_is_serialized_while_secondary_routes_remain_closed() -> 
         assert identity["runtime_image_digest"] == expected["digest"]
         assert identity["artifact_manifest_digest"] is None
         assert identity["execution_identity_sha256"] is None
+        assert profile["resources"]["compatible_pool_ids"] == ["h100-reserved-8x", "h100-1x"]
+        assert "accelerator.fs2.nebius/pool-id" not in profile["resources"]["required_node_labels"]
         assert tuple(item["artifact_id"] for item in profile["runtime_artifacts"]) == expected["artifacts"]
         with pytest.raises(ScientificProfileError, match="not runnable"):
             catalog.get(model_id)
@@ -135,6 +137,10 @@ def test_complete_fleet_is_serialized_while_secondary_routes_remain_closed() -> 
         assert execution["execution_identity_sha256"] is None
         assert tuple(stage["stage_id"] for stage in execution["stages"]) == expected["stages"]
         assert tuple(item["artifact_id"] for item in execution["runtime_artifacts"]) == expected["artifacts"]
+        assert all(
+            "accelerator.fs2.nebius/pool-id" not in stage["required_node_labels"]
+            for stage in execution["stages"]
+        )
 
     renderer = FileScientificManifestRenderer(
         path=CATALOG_ROOT / "contracts/scientific-execution-map.json",
@@ -229,3 +235,70 @@ def test_alphafold3_keeps_public_and_academic_planes_separate() -> None:
         for item in inference_mounts
     )
     assert all(item["kind"] != "reference" and item["host_path"] is None for item in inference_mounts)
+
+
+def test_openfold3_uses_the_exact_live_localizations_and_shared_cache() -> None:
+    profiles_document, execution_document = _documents()
+    profile = next(
+        item for item in profiles_document["profiles"] if item["model_id"] == "openfold3-openbind"
+    )
+    execution = next(
+        item for item in execution_document["models"] if item["model_id"] == "openfold3-openbind"
+    )
+
+    expected = {
+        "openfold3-openbind-0": {
+            "content": "f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
+            "manifest": "8afc057f877ae42aecbaeb56c0be74987e920dcf016c3d7a12dc7ea2370df806",
+            "receipt": "fd39c6ef471c575f0b797e5e7777c948d04151d59b31c5c32f4f0ede728a780c",
+            "file": "of3-ob-2025-06-30-174k.pt",
+            "file_sha256": "bd43301c011d5f87580d3e8b548658869433e4488399feb03035ba248f8e29e4",
+            "size": 2287872989,
+            "mount": "/models/openfold3",
+        },
+        "openfold3-components-bcif": {
+            "content": "ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
+            "manifest": "1b5e78ab84e9cf8c3807554cd7cf6af15668046bc5031b7d234cd1330c7ba055",
+            "receipt": "c8195ee346b3bffad1940c0ff600e52bb2e1ba3046e579627f3ad0329ee0fcc6",
+            "file": "components.bcif",
+            "file_sha256": "473d845c8b250b188dbed9bf505ae206692a178a2a7c4869bf8f9de707ffcc0c",
+            "size": 63393643,
+            "mount": "/databases/openfold3",
+        },
+    }
+    profile_artifacts = {item["artifact_id"]: item for item in profile["runtime_artifacts"]}
+    localizations = {item["artifact_id"]: item for item in execution["runtime_artifacts"]}
+    assert set(profile_artifacts) == set(expected) == set(localizations)
+    for artifact_id, values in expected.items():
+        requirement = profile_artifacts[artifact_id]
+        localization = localizations[artifact_id]
+        assert requirement["content_identity"] == {
+            "digest_sha256": values["content"],
+            "size_bytes": values["size"],
+        }
+        assert requirement["readiness_manifest_sha256"] == values["manifest"]
+        assert requirement["required_files"] == [values["file"]]
+        assert requirement["file_manifest"] == [
+            {"path": values["file"], "sha256": values["file_sha256"], "size_bytes": values["size"]}
+        ]
+        assert localization == {
+            "artifact_id": artifact_id,
+            "mount_path": values["mount"],
+            "content_digest": "sha256:" + values["content"],
+            "localization_receipt_digest": "sha256:" + values["receipt"],
+            "file_manifest": requirement["file_manifest"],
+        }
+
+    inference = next(item for item in execution["stages"] if item["stage_id"] == "inference")
+    reference_mounts = [item for item in inference["mounts"] if item["kind"] == "reference"]
+    assert {item["host_path"] for item in reference_mounts} == {"/mnt/fs2-reference-data/data"}
+    assert {item["mount_path"] for item in reference_mounts} == {
+        "/models/openfold3",
+        "/databases/openfold3",
+    }
+    assert all(item["sub_path"].startswith("model-artifacts/public/v1/objects/") for item in reference_mounts)
+    assert inference["environment"] == {
+        "TRITON_CACHE_DIR": "/cache/openfold3/triton",
+        "TORCH_EXTENSIONS_DIR": "/cache/openfold3/torch-extensions",
+        "XDG_CACHE_HOME": "/cache/openfold3/xdg",
+    }
