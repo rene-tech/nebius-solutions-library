@@ -122,15 +122,17 @@
       }
     },
     "qualification": {
-      "state": "published-successor-awaiting-h100-controller-qualification",
+      "state": "h100-qualified-awaiting-production-controller-route",
+      "qualified_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
       "evidence": [
+        "evidence/h100-v6-split-root-qualification-20260904.json",
         "evidence/h100-run-receipt.json",
         "evidence/h100-semantic-qualification.json"
       ],
       "historical_predecessor_digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
-      "evidence_transfer_policy": "The listed evidence belongs to adapter-v5 and demonstrates the unchanged scientific path only; adapter-v6 requires a new immutable-image controller run before route exposure.",
+      "evidence_transfer_policy": "The adapter-v6 split-root receipt is first-party evidence for the exact successor digest. Historical adapter-v5 evidence remains only as the independently reproduced semantic baseline; route exposure still requires the serialized production-controller run.",
       "canonical_output_validator": "passed",
-      "scope": "successor adds only independent request/model artifact roots; no semantic, throughput, fast-start, snapshot, elasticity or contention claim until the new digest is run",
+      "scope": "adapter-v6 is semantically qualified on H100 for the bounded design and aggregate workflow with canonical model and request bytes on separate read-only roots; no production-controller, throughput, GPU snapshot, elasticity, contention, or other accelerator-family claim is made",
       "route_exposed": false
     }
   },
