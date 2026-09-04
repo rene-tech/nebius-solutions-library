@@ -11,6 +11,7 @@ from ..models import (
     AdapterExecutionPlan,
     ArtifactMaterialization,
     MaterializationMode,
+    RuntimeArtifactMount,
     ScientificInputArtifact,
     StageInvocation,
 )
@@ -26,6 +27,7 @@ from .common import (
     strict_object,
 )
 from .secondary_structure import (
+    PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP,
     collect_confidence_envelope,
     collect_confidence_stage,
     collect_handoff,
@@ -218,6 +220,14 @@ def compile_run(
                 ),
             ),
             runtime_artifacts=(MODEL_ARTIFACT,),
+            runtime_mounts=(
+                RuntimeArtifactMount(
+                    artifact_id=MODEL_ARTIFACT,
+                    mount_path="/models/protenix-v2",
+                    read_only=True,
+                    supplemental_groups=(PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP,),
+                ),
+            ),
         ),
         StageInvocation(
             stage_id="sample-structure",
@@ -277,6 +287,14 @@ def compile_run(
                 ),
             ),
             runtime_artifacts=(MODEL_ARTIFACT,),
+            runtime_mounts=(
+                RuntimeArtifactMount(
+                    artifact_id=MODEL_ARTIFACT,
+                    mount_path="/models/protenix-v2",
+                    read_only=True,
+                    supplemental_groups=(PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP,),
+                ),
+            ),
         ),
     )
     return build_execution_plan(
