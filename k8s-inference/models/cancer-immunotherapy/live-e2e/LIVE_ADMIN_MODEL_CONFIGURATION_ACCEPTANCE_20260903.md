@@ -21,6 +21,11 @@ Qwen also recycled repeatedly during the observation window without a Qwen spec
 change. It recovered and had a ready EndpointSlice at the final check, but
 continuous existing-model service is therefore not proven.
 
+The causal diagnosis was completed on 2026-09-04. A concurrent fast-start task
+explicitly deleted Qwen pods and launched overlapping deletion loops; the Cosmos
+edit did not trigger a Qwen rollout. Exact correlation and the scoped fix are in
+[`QWEN_POD_RECYCLE_ROOT_CAUSE_20260904.md`](QWEN_POD_RECYCLE_ROOT_CAUSE_20260904.md).
+
 This is a scoped live finding, not cancer-platform readiness. No scientific
 model workflow, mixed-load wave, Terraform convergence check or GPU accounting
 claim was attempted.

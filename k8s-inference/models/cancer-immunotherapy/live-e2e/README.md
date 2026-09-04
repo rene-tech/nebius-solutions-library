@@ -7,6 +7,13 @@ exact placement cold-cutover, cache qualification, safe-sandbox and Qwen
 continuity gaps. It does not change the preparation-only status of the broader
 cancer-model execution matrix below.
 
+The subsequent read-only diagnosis is recorded in
+[`QWEN_POD_RECYCLE_ROOT_CAUSE_20260904.md`](QWEN_POD_RECYCLE_ROOT_CAUSE_20260904.md).
+It proves that a concurrent fast-start task explicitly deleted the Qwen pods;
+the Cosmos admin edit did not cause a cross-model rollout. The zero-ready
+interval remains an operational isolation failure until destructive model tests
+are RBAC-gated and serialized through a UID-fenced per-model maintenance lease.
+
 This directory prepares the final H100 acceptance wave without claiming that it
 has run. The checked-in plan is bound to reviewed `main` commit
 `c83b97c6f18b09f13b0623d20f6436398337085f`. It covers the nine requested model
