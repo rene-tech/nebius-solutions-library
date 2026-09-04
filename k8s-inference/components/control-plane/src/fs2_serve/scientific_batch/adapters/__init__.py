@@ -147,6 +147,7 @@ def _register_legacy_primary(module_name: str) -> None:
     variant = module.VARIANT_ID
     compile_run = module.compile_run
     requires_verified_inputs = bool(getattr(module, "REQUIRES_VERIFIED_INPUT_ARTIFACTS", False))
+    requires_deployment_access_context = bool(getattr(module, "REQUIRES_DEPLOYMENT_ACCESS_CONTEXT", False))
 
     def compiler(
         profile: Mapping[str, object],
@@ -157,20 +158,26 @@ def _register_legacy_primary(module_name: str) -> None:
         access_context: ArtifactAccessContext,
         input_artifacts: tuple[ScientificInputArtifact, ...],
     ) -> AdapterExecutionPlan:
-        del access_context
         if variant_id != variant:
             raise ScientificAdapterError(f"route variant_id does not match the {model_id} adapter")
+        compiler_arguments: dict[str, object] = {}
+        if requires_deployment_access_context:
+            compiler_arguments["access_context"] = access_context
         if requires_verified_inputs:
+            compiler_arguments["input_artifacts"] = input_artifacts
             return cast(
                 AdapterExecutionPlan,
                 compile_run(
                     profile,
                     request,
                     operation_id=operation_id,
-                    input_artifacts=input_artifacts,
+                    **compiler_arguments,
                 ),
             )
-        return cast(AdapterExecutionPlan, compile_run(profile, request, operation_id=operation_id))
+        return cast(
+            AdapterExecutionPlan,
+            compile_run(profile, request, operation_id=operation_id, **compiler_arguments),
+        )
 
     _COMPILERS.setdefault(model_id, compiler)
     _DEFAULT_VARIANTS.setdefault(model_id, variant)

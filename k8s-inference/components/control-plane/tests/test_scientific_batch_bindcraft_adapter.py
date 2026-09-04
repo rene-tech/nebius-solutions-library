@@ -20,6 +20,7 @@ from fs2_serve.scientific_batch.adapters.materialization import safe_extract_tar
 from fs2_serve.scientific_batch.adapters.staged_workspace import STAGE_COMPLETION_SCHEMA
 from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer
 from fs2_serve.scientific_batch.models import (
+    ArtifactAccessContext,
     RuntimeArtifactAggregateTree,
     RuntimeArtifactFile,
     RuntimeArtifactLocalization,
@@ -549,12 +550,20 @@ def test_the_stage_topology_is_a_gpu_fanout_and_one_cpu_aggregate() -> None:
 
 
 def test_dispatch_reaches_the_adapter_through_the_public_allow_list() -> None:
+    access_context = ArtifactAccessContext(
+        profile="academic",
+        receipt_digest="sha256:" + "a" * 64,
+        tenant_id="tenant-academic",
+    )
+    routed_profile = granted()
+    routed_profile["access"]["receipt_digest"] = "a" * 64
     plan = compile_adapter_run(
         "bindcraft",
-        granted(),
+        routed_profile,
         fixture("positive-default-lane"),
         operation_id="op-bindcraft-01",
         variant_id=bindcraft.VARIANT_ID,
+        access_context=access_context,
         input_artifacts=(verified_target(),),
     )
     assert plan.model_id == "bindcraft"
@@ -566,6 +575,44 @@ def test_dispatch_reaches_the_adapter_through_the_public_allow_list() -> None:
             fixture("positive-default-lane"),
             operation_id="op-bindcraft-01",
             variant_id="upstream-pyrosetta",
+            access_context=access_context,
+            input_artifacts=(verified_target(),),
+        )
+
+
+def test_public_catalog_profile_uses_the_deployment_access_handoff() -> None:
+    published = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+    catalog_profile = next(item for item in published["profiles"] if item["model_id"] == "bindcraft")
+    receipt_digest = catalog_profile["access"]["receipt_digest"]
+    access_context = ArtifactAccessContext(
+        profile="academic",
+        receipt_digest=f"sha256:{receipt_digest}",
+        tenant_id="tenant-academic",
+    )
+
+    plan = compile_adapter_run(
+        "bindcraft",
+        catalog_profile,
+        fixture("positive-default-lane"),
+        operation_id="op-bindcraft-public-profile",
+        variant_id=bindcraft.VARIANT_ID,
+        access_context=access_context,
+        input_artifacts=(verified_target(),),
+    )
+    assert plan.model_id == "bindcraft"
+
+    with pytest.raises(ScientificAdapterError, match="authorization is absent or mismatched"):
+        compile_adapter_run(
+            "bindcraft",
+            catalog_profile,
+            fixture("positive-default-lane"),
+            operation_id="op-bindcraft-public-profile-mismatch",
+            variant_id=bindcraft.VARIANT_ID,
+            access_context=ArtifactAccessContext(
+                profile="academic",
+                receipt_digest="sha256:" + "0" * 64,
+                tenant_id="tenant-academic",
+            ),
             input_artifacts=(verified_target(),),
         )
 

@@ -29,6 +29,7 @@ import zstandard
 from ..catalog_adapter import ScientificStageExpansion
 from ..models import (
     AdapterExecutionPlan,
+    ArtifactAccessContext,
     ArtifactMaterialization,
     MaterializationMode,
     RuntimeArtifactAdmissionRole,
@@ -88,6 +89,7 @@ NATIVE_INPUT_MANIFEST_ID = "manifest.bindcraft.controller-input"
 REFERENCE_DATA_SUPPLEMENTAL_GROUP = 1000
 ACADEMIC_ASSET_SUPPLEMENTAL_GROUP = 65532
 REQUIRES_VERIFIED_INPUT_ARTIFACTS = True
+REQUIRES_DEPLOYMENT_ACCESS_CONTEXT = True
 
 # The reviewed outer entrypoint is the artifact gate. It verifies the AlphaFold2
 # manifest and binds PyRosetta on every non-smoke command before it execs the
@@ -566,7 +568,11 @@ def materialize_runtime_documents(invocation: StageInvocation, workspace: Path) 
     return publish("request.json", request_bytes), publish("input-manifest.json", manifest_bytes)
 
 
-def assert_deployment_authorized(profile: Mapping[str, object]) -> Mapping[str, object]:
+def assert_deployment_authorized(
+    profile: Mapping[str, object],
+    *,
+    access_context: ArtifactAccessContext | None = None,
+) -> Mapping[str, object]:
     """Fail closed unless the deployment itself carries the academic grant.
 
     The grant is deployment state. An ordinary request carries no licence
@@ -576,6 +582,32 @@ def assert_deployment_authorized(profile: Mapping[str, object]) -> Mapping[str, 
     access = profile.get("access")
     if not isinstance(access, Mapping) or access.get("profile") != "academic":
         raise ScientificAdapterError("BindCraft requires the academic access profile")
+    if access.get("state") != "verified" or access.get("credentials_embedded") is not False:
+        raise ScientificAdapterError("BindCraft deployment academic authorization is absent")
+
+    # The public workload profile deliberately carries only the immutable
+    # authorization receipt identity.  Tenant binding and the deployment
+    # authorization handoff are resolved by ScientificExecutionMap before an
+    # adapter runs; they must not be copied into a customer request or added as
+    # schema-external profile fields.  Direct adapter callers from the legacy
+    # qualification harness still exercise the older expanded profile below.
+    if access_context is not None:
+        receipt_digest = access.get("receipt_digest")
+        if (
+            not isinstance(receipt_digest, str)
+            or re.fullmatch(r"[a-f0-9]{64}", receipt_digest) is None
+            or access_context.profile != "academic"
+            or access_context.receipt_digest != f"sha256:{receipt_digest}"
+            or access_context.tenant_id is None
+        ):
+            raise ScientificAdapterError("BindCraft deployment academic authorization is absent or mismatched")
+        return {
+            "authorization_id": access_context.receipt_digest,
+            "tenant_id": access_context.tenant_id,
+            "use_authorization_status": "Granted",
+            "execution_authorization_status": "Authorized",
+        }
+
     if access.get("request_time_license_receipt_required") is not False:
         raise ScientificAdapterError("BindCraft must not require a per-request licence receipt")
     authorization = access.get("authorization")
@@ -711,6 +743,7 @@ def compile_run(
     *,
     operation_id: str,
     input_artifacts: tuple[ScientificInputArtifact, ...] | None = None,
+    access_context: ArtifactAccessContext | None = None,
 ) -> AdapterExecutionPlan:
     """Compile one authorized academic request into an executable plan."""
 
@@ -723,7 +756,7 @@ def compile_run(
         parameter_schema=PARAMETER_SCHEMA,
         request=request,
     )
-    assert_deployment_authorized(profile)
+    assert_deployment_authorized(profile, access_context=access_context)
     target = verified_manifest_entry(
         request,
         input_artifacts,
