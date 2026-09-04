@@ -548,7 +548,7 @@ class PostgresStore:
             )
             await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_batch_events TO {quoted_runtime}")
             await connection.execute(
-                f"GRANT SELECT,INSERT,DELETE ON fs2_scientific_admission_outbox TO {quoted_runtime}"
+                f"GRANT SELECT,INSERT,UPDATE,DELETE ON fs2_scientific_admission_outbox TO {quoted_runtime}"
             )
             await connection.execute(
                 f"GRANT DELETE ON fs2_scientific_stage_attempts,fs2_scientific_artifacts,"
@@ -689,10 +689,23 @@ class PostgresStore:
                 if applied == expected:
                     async with pool.acquire() as connection:
                         runtime_privileges_ready = await connection.fetchval(
-                            "SELECT has_table_privilege('fs2_serve_runtime',"
-                            "'public.fs2_scientific_admission_outbox','SELECT,INSERT,DELETE') "
-                            "AND has_table_privilege(current_user,"
-                            "'public.fs2_scientific_admission_outbox','SELECT,INSERT,DELETE')"
+                            "SELECT "
+                            "has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_admission_outbox','SELECT') AND "
+                            "has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_admission_outbox','INSERT') AND "
+                            "has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_admission_outbox','UPDATE') AND "
+                            "has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_admission_outbox','DELETE') AND "
+                            "has_table_privilege(current_user,"
+                            "'public.fs2_scientific_admission_outbox','SELECT') AND "
+                            "has_table_privilege(current_user,"
+                            "'public.fs2_scientific_admission_outbox','INSERT') AND "
+                            "has_table_privilege(current_user,"
+                            "'public.fs2_scientific_admission_outbox','UPDATE') AND "
+                            "has_table_privilege(current_user,"
+                            "'public.fs2_scientific_admission_outbox','DELETE')"
                         )
                     if not runtime_privileges_ready:
                         raise RuntimeError("database schema runtime privileges are incomplete")

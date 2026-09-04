@@ -32,9 +32,9 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0021_scientific_admission_outbox_runtime_grant.sql",
-        "migration_count": 21,
-        "migration_set_sha256": "e4bc9dd323d92fb1c7593f69359e96396f3e81ad142463031fad1106df34387c",
+        "last_migration_version": "0022_scientific_admission_outbox_lock_privilege.sql",
+        "migration_count": 22,
+        "migration_set_sha256": "ddf67d0975ed9546d5e333b9436d70713f31d81b78ecaeda6f82ea62080958fb",
         "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
@@ -44,19 +44,29 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     assert [migration["ordinal"] for migration in migrations] == list(range(1, receipt["migration_count"] + 1))
 
 
-def test_outbox_runtime_grant_repair_is_additive_and_readiness_checked() -> None:
-    sql = (MIGRATIONS / "0021_scientific_admission_outbox_runtime_grant.sql").read_text(encoding="utf-8")
-    normalized = " ".join(sql.split())
-    assert "IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'fs2_serve_runtime')" in normalized
+def test_outbox_runtime_grant_repairs_are_additive_and_readiness_checked() -> None:
+    base_sql = (MIGRATIONS / "0021_scientific_admission_outbox_runtime_grant.sql").read_text(
+        encoding="utf-8"
+    )
+    base_normalized = " ".join(base_sql.split())
+    assert "IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'fs2_serve_runtime')" in base_normalized
     assert (
         "GRANT SELECT, INSERT, DELETE ON TABLE fs2_scientific_admission_outbox TO fs2_serve_runtime"
-        in normalized
+        in base_normalized
     )
+    lock_sql = (MIGRATIONS / "0022_scientific_admission_outbox_lock_privilege.sql").read_text(
+        encoding="utf-8"
+    )
+    lock_normalized = " ".join(lock_sql.split())
+    assert "IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'fs2_serve_runtime')" in lock_normalized
+    assert "GRANT UPDATE ON TABLE fs2_scientific_admission_outbox TO fs2_serve_runtime" in lock_normalized
 
     wait_source = inspect.getsource(PostgresStore.wait_for_schema)
     assert "has_table_privilege('fs2_serve_runtime'" in wait_source
     assert "has_table_privilege(current_user" in wait_source
-    assert "fs2_scientific_admission_outbox','SELECT,INSERT,DELETE'" in wait_source
+    for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+        assert wait_source.count(f"fs2_scientific_admission_outbox','{privilege}'") == 2
+    assert "SELECT,INSERT" not in wait_source
     assert "database schema runtime privileges are incomplete" in wait_source
 
 
