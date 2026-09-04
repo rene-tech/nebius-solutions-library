@@ -685,7 +685,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
         openfold = (ROOT / "Dockerfile.openfold3").read_text(encoding="utf-8")
         for value in expected["openfold3"][1].values():
             self.assertGreaterEqual(openfold.count(value), 2)
-        self.assertIn("mkdir -p /opt/fs2/runtime /models/openfold3 /databases/openfold3 /outputs /cache/openfold3/triton /cache/openfold3/torch-extensions /cache/openfold3/xdg", openfold)
+        self.assertIn("mkdir -p /opt/fs2/runtime/openfold3 /models/openfold3 /databases/openfold3 /outputs /cache/openfold3/triton /cache/openfold3/torch-extensions /cache/openfold3/xdg", openfold)
         self.assertIn("chown -R 10001:10001 /models /databases /outputs /cache/openfold3", openfold)
         self.assertNotIn("TRITON_CACHE_DIR=/tmp", openfold)
         self.assertNotIn("TORCH_EXTENSIONS_DIR=/tmp", openfold)
@@ -699,6 +699,52 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
         self.assertIn("cannot qualify L2", readme)
         self.assertIn("maximum_candidate_level: L1", readme)
         self.assertIn("L2, L3, and L4 are explicitly", readme)
+
+    def test_openfold3_baked_runner_is_traversable_and_digest_checked(self) -> None:
+        dockerfile = (ROOT / "Dockerfile.openfold3").read_text(encoding="utf-8")
+        mkdir = "mkdir -p /opt/fs2/runtime/openfold3"
+        chmod = "chmod 0555 /opt/fs2/runtime /opt/fs2/runtime/openfold3"
+        copy = (
+            "COPY --chmod=0444 openfold3-runner-base.yaml "
+            "/opt/fs2/runtime/openfold3/runner-base.yaml"
+        )
+        self.assertIn(mkdir, dockerfile)
+        self.assertIn(chmod, dockerfile)
+        self.assertIn(copy, dockerfile)
+        self.assertLess(dockerfile.index(mkdir), dockerfile.index(copy))
+        self.assertLess(dockerfile.index(chmod), dockerfile.index(copy))
+
+        smoke = load_module("image_smoke")
+        expected_sha256 = hashlib.sha256(
+            (ROOT / "openfold3-runner-base.yaml").read_bytes()
+        ).hexdigest()
+        self.assertEqual(smoke.OPENFOLD_RUNNER_BASE_SHA256, expected_sha256)
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary) / "openfold3"
+            parent.mkdir()
+            runner = parent / "runner-base.yaml"
+            runner.write_bytes((ROOT / "openfold3-runner-base.yaml").read_bytes())
+            runner.chmod(0o444)
+            parent.chmod(0o555)
+            self.assertEqual(
+                smoke._validate_baked_file(runner, expected_sha256),
+                {"path": str(runner), "sha256": expected_sha256},
+            )
+            with self.assertRaisesRegex(RuntimeError, "digest mismatch"):
+                smoke._validate_baked_file(runner, "0" * 64)
+            with (
+                mock.patch.object(smoke.os, "access", return_value=False),
+                self.assertRaisesRegex(RuntimeError, "not traversable"),
+            ):
+                smoke._validate_baked_file(runner, expected_sha256)
+
+        smoke_source = (ROOT / "image_smoke.py").read_text(encoding="utf-8")
+        self.assertIn(
+            "base_runner = _validate_baked_file(\n"
+            "            OPENFOLD_RUNNER_BASE, OPENFOLD_RUNNER_BASE_SHA256\n"
+            "        )",
+            smoke_source,
+        )
 
     def test_build_cache_smoke_contract_exactly_matches_image_lock(self) -> None:
         smoke = load_module("image_smoke")

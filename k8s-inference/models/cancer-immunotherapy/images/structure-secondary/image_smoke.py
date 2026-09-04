@@ -19,6 +19,10 @@ from result_contract import sha256_file, validate_confidence_envelope
 
 
 SOURCE_REVISION_FILE = Path("/opt/fs2/source-revision")
+OPENFOLD_RUNNER_BASE = Path("/opt/fs2/runtime/openfold3/runner-base.yaml")
+OPENFOLD_RUNNER_BASE_SHA256 = (
+    "c42271cdfc4c9dd01ceca7a9e0c2d0a207c2d8106a2bb03146d491d54b601469"
+)
 EXTERNAL_ROOTS = (Path("/models"), Path("/databases"))
 MIN_ATOM_RECORDS = 10
 IMAGE_RUNTIME_UID = 10001
@@ -155,6 +159,27 @@ def _assert_external_roots_are_empty() -> dict[str, list[str]]:
     return contents
 
 
+def _validate_baked_file(path: Path, expected_sha256: str) -> dict[str, str]:
+    if not path.is_absolute():
+        raise RuntimeError(f"baked runtime path must be absolute: {path}")
+    if not path.parent.is_dir() or not os.access(
+        path.parent, os.X_OK, effective_ids=True
+    ):
+        raise RuntimeError(
+            f"baked runtime parent is missing or not traversable: {path.parent}"
+        )
+    try:
+        actual_sha256 = sha256_file(path)
+    except OSError as exc:
+        raise RuntimeError(f"baked runtime file is not readable: {path}: {exc}") from exc
+    if actual_sha256 != expected_sha256:
+        raise RuntimeError(
+            f"baked runtime file digest mismatch: {path}: "
+            f"expected={expected_sha256} actual={actual_sha256}"
+        )
+    return {"path": str(path), "sha256": actual_sha256}
+
+
 def _torch_build_smoke() -> dict[str, Any]:
     import torch
 
@@ -284,6 +309,9 @@ def _build_smoke(runtime_id: str) -> dict[str, Any]:
         return result
 
     if runtime_id == "openfold3":
+        base_runner = _validate_baked_file(
+            OPENFOLD_RUNNER_BASE, OPENFOLD_RUNNER_BASE_SHA256
+        )
         import openfold3
         from biotite.structure.info import ccd
         from openfold3.projects.of3_all_atom import model
@@ -301,6 +329,7 @@ def _build_smoke(runtime_id: str) -> dict[str, Any]:
         _run_cli(["/usr/local/bin/fs2-run-openfold3", "predict", "--help"], "checkpoint")
         result["cli"] = "fs2-run-openfold3 prepare|predict"
         result["ccd_api"] = "biotite.structure.info.ccd.set_ccd_path"
+        result["base_runner"] = base_runner
         return result
 
     raise RuntimeError(f"unsupported FS2_RUNTIME_ID: {runtime_id!r}")
