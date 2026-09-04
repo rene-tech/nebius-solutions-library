@@ -133,11 +133,67 @@
       "commercial_use": "allowed",
       "non_clinical": true,
       "limitations": [
-        "Image sha256:b90a02bd...426af8 is the published, protocol-compatible -h100-r5 successor; it remains build-only and has no exact-artifact semantic H100 evidence.",
+        "Image sha256:b90a02bd...426af8 is the published, protocol-compatible -h100-r5 successor; it remains candidate-unqualified until a live semantic H100 run completes through the public controller path.",
         "The v2 checkpoint was recovered from the immutable third-party mirror TMF001/protenix-v2-weights@653edab2 and is not yet byte-compared with the publisher CDN object.",
-        "The source payload 8e14bb80...12eca is transformed by localization manifest a093d28e...cc6b7 into the mounted runtime tree 5e1c3b54...74d48; all three identities remain distinct and must match their own receipts.",
+        "The source payload 8e14bb80...12eca is transformed by localization manifest a093d28e...cc6b7 into the exact shared-filesystem runtime tree 5e1c3b54...74d48 with localization receipt ea301407...04b4; all identities remain distinct.",
         "Only msa_mode none is admitted; precomputed MSA waits for a validated relocation contract and no mode contacts an MSA server."
       ]
-    }
+    },
+    "runtime_artifacts": [
+      {
+        "artifact_id": "protenix-v2",
+        "content_identity": {
+          "digest_sha256": "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
+          "size_bytes": 2514897184
+        },
+        "file_manifest": [
+          {
+            "path": ".fs2-manifest-sha256",
+            "sha256": "ebf101faecd9e311292e40b2e53cce4983f7d49e38ef4dba0f20d16174dc39bb",
+            "size_bytes": 65
+          },
+          {
+            "path": "checkpoint/protenix-v2.pt",
+            "sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+            "size_bytes": 1859785497
+          },
+          {
+            "path": "common/clusters-by-entity-40.txt",
+            "sha256": "1ab4af905e75b382eda8dec59917dc3608bee0729e36b9e71baf860bbe86850c",
+            "size_bytes": 21699572
+          },
+          {
+            "path": "common/components.cif",
+            "sha256": "bb31ae5cf6c8bc669924313077cb4231ee5ffefd3a20118cd14f3ec89f8bb6a5",
+            "size_bytes": 490777362
+          },
+          {
+            "path": "common/components.cif.rdkit_mol.pkl",
+            "sha256": "d1cfb71f5993a3ebea7c47877022d7f597bbfbaf86e28a4770e957da6c50cd35",
+            "size_bytes": 142498117
+          },
+          {
+            "path": "common/obsolete_release_date.csv",
+            "sha256": "a4f3f63ac5d7eebd78b07995cc669b9eccd6f5d8813c9492c9df02868893cf33",
+            "size_bytes": 134716
+          },
+          {
+            "path": "manifest.json",
+            "sha256": "8c1e3240cba92fa265ebfa7e3c806af2206d3ae9347444fe3075ab90e576444f",
+            "size_bytes": 1855
+          }
+        ],
+        "required_files": [
+          ".fs2-manifest-sha256",
+          "checkpoint/protenix-v2.pt",
+          "common/clusters-by-entity-40.txt",
+          "common/components.cif",
+          "common/components.cif.rdkit_mol.pkl",
+          "common/obsolete_release_date.csv",
+          "manifest.json"
+        ],
+        "readiness_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7"
+      }
+    ]
   }
 }

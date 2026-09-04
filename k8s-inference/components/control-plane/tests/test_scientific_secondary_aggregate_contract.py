@@ -302,3 +302,49 @@ def test_openfold3_uses_the_exact_live_localizations_and_shared_cache() -> None:
         "TORCH_EXTENSIONS_DIR": "/cache/openfold3/torch-extensions",
         "XDG_CACHE_HOME": "/cache/openfold3/xdg",
     }
+
+
+def test_protenix_uses_the_exact_composite_tree_receipt_and_cache() -> None:
+    profiles_document, execution_document = _documents()
+    profile = next(item for item in profiles_document["profiles"] if item["model_id"] == "protenix-v2")
+    execution = next(item for item in execution_document["models"] if item["model_id"] == "protenix-v2")
+    requirement = profile["runtime_artifacts"][0]
+    localization = execution["runtime_artifacts"][0]
+
+    assert requirement["artifact_id"] == localization["artifact_id"] == "protenix-v2"
+    assert requirement["content_identity"] == {
+        "digest_sha256": "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
+        "size_bytes": 2514897184,
+    }
+    assert requirement["readiness_manifest_sha256"] == (
+        "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7"
+    )
+    assert localization["content_digest"] == "sha256:" + requirement["content_identity"]["digest_sha256"]
+    assert localization["localization_receipt_digest"] == (
+        "sha256:ea301407e2ac427bf87d4617136629f178a75d55f67e3aea882de4bc19ce04b4"
+    )
+    assert localization["file_manifest"] == requirement["file_manifest"]
+    assert {item["path"] for item in localization["file_manifest"]} == set(requirement["required_files"])
+    assert sum(item["size_bytes"] for item in localization["file_manifest"]) == 2514897184
+
+    expected_cache = {
+        "TRITON_CACHE_DIR": "/cache/protenix/triton",
+        "CUEQ_TRITON_CACHE_DIR": "/cache/protenix/cueq-triton",
+        "TORCH_EXTENSIONS_DIR": "/cache/protenix/torch-extensions",
+        "XDG_CACHE_HOME": "/cache/protenix/xdg",
+    }
+    for stage in execution["stages"]:
+        assert stage["environment"] == expected_cache
+        reference = next(item for item in stage["mounts"] if item["kind"] == "reference")
+        assert reference == {
+            "name": "protenix-v2",
+            "kind": "reference",
+            "claim_name": None,
+            "host_path": "/mnt/fs2-reference-data/data",
+            "mount_path": "/models/protenix-v2",
+            "sub_path": (
+                "scientific-localization/public/generations/protenix-v2/sha256/"
+                "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48"
+            ),
+            "read_only": True,
+        }
