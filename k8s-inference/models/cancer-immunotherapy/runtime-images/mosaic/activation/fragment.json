@@ -14,7 +14,7 @@
       "digest_evidence_path": "models/cancer-immunotherapy/runtime-images/mosaic/image-lock.json"
     },
     "runtime_recipe": {
-      "source_revision": "92343f091dd6bf6da3d4a31f6c0b163db8087830",
+      "source_revision": "897c04aafbb4bb7b1879ae459527caf70aeeb94e",
       "algorithm": "fs2-path-set-sha256-v1",
       "paths": [
         "catalog/runtime/contracts/scientific-artifact-localization.json",
@@ -76,10 +76,10 @@
       "execution_identity": {
         "model_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
         "runtime_image_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
-      "runtime_recipe_sha256": "075cfaa5c70bb74b5e23bd4e38595caf958e833136299e3568ce840fd0a80dd5",
+      "runtime_recipe_sha256": "a63c58de12512035aff3d2ad4a7a64e1b091a7853e3ee6e3956ca2e55a357892",
         "workload_recipe_sha256": "4d2f21deaafd20c839ee3a81490bbaae2f3d1857294d8a3593916e77b4b06083",
         "artifact_manifest_digest": "777eebe088d6d0b26a43dce8d696cca1f9a9b81fe289eac79682cb441c1dc149",
-        "execution_identity_sha256": "830617df782d63660478218bd21dc282f8bf51a9e14ceb04da28bbba3a0c8e58"
+        "execution_identity_sha256": "afb4044f2ac90c9344beefa08721cb00a86d36687c5dc81cba86dbd0ce2b36e7"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -180,7 +180,7 @@
         "h100_semantic_receipt_sha256": "9eeef6c219c3ee0e9754e9d45be9de3f77ccec7824ce9e6b3f0fa17405aef339",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "7af5da8ed9e97cb99dc4c04e9aafe56eda45db8cd44d76df84da403e42a2e1a0",
+        "execution_map_sha256": "1b00c5b641422f1789603a1f634b9dd375a4ca04f2845bbef1837eafb476d0b1",
         "qualified_at": "2026-09-04T15:25:31Z"
       },
       "policy": {
