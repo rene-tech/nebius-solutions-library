@@ -676,7 +676,100 @@
             "restartable",
             "checkpointable"
           ]
+        },
+        "placement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "class"
+          ],
+          "description": "The lane this stage belongs to. Only `class` is required: a profile names the kind of capacity it needs, and the deployment's Kueue contract resolves the queue, namespace and flavor. The optional fields pin a deployment that wants to assert them, and are rejected when they disagree with the resolved lane.",
+          "properties": {
+            "class": {
+              "enum": [
+                "reference-data",
+                "general-cpu",
+                "accelerator"
+              ]
+            },
+            "local_queue": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253
+            },
+            "cluster_queue": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253
+            },
+            "namespace": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 63
+            },
+            "resource_flavor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253
+            }
+          }
+        },
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cpu_millis",
+            "memory_bytes",
+            "ephemeral_storage_bytes",
+            "limits"
+          ],
+          "description": "The frozen request envelope a non-accelerator stage is admitted against. Kueue counts these against the lane's ClusterQueue, so a stage without one cannot be admitted.",
+          "properties": {
+            "cpu_millis": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "memory_bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "ephemeral_storage_bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "limits": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cpu_millis",
+                "memory_bytes",
+                "ephemeral_storage_bytes"
+              ],
+              "properties": {
+                "cpu_millis": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "memory_bytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "ephemeral_storage_bytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
         }
+      },
+      "dependentRequired": {
+        "placement": [
+          "resources"
+        ],
+        "resources": [
+          "placement"
+        ]
       }
     },
     "workload": {

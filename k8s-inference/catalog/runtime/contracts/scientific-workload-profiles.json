@@ -145,7 +145,20 @@
             "min_parallelism": 1,
             "max_parallelism": 32,
             "checkpoint_mode": "none",
-            "preemption_mode": "non_preemptible"
+            "preemption_mode": "non_preemptible",
+            "placement": {
+              "class": "general-cpu"
+            },
+            "resources": {
+              "cpu_millis": 2000,
+              "memory_bytes": 4294967296,
+              "ephemeral_storage_bytes": 8589934592,
+              "limits": {
+                "cpu_millis": 4000,
+                "memory_bytes": 8589934592,
+                "ephemeral_storage_bytes": 17179869184
+              }
+            }
           },
           {
             "id": "filtering",
@@ -157,7 +170,20 @@
             "min_parallelism": 1,
             "max_parallelism": 32,
             "checkpoint_mode": "none",
-            "preemption_mode": "non_preemptible"
+            "preemption_mode": "non_preemptible",
+            "placement": {
+              "class": "general-cpu"
+            },
+            "resources": {
+              "cpu_millis": 2000,
+              "memory_bytes": 4294967296,
+              "ephemeral_storage_bytes": 8589934592,
+              "limits": {
+                "cpu_millis": 4000,
+                "memory_bytes": 8589934592,
+                "ephemeral_storage_bytes": 17179869184
+              }
+            }
           }
         ],
         "retry": {
@@ -277,7 +303,20 @@
             "min_parallelism": 1,
             "max_parallelism": 1,
             "checkpoint_mode": "none",
-            "preemption_mode": "non_preemptible"
+            "preemption_mode": "non_preemptible",
+            "placement": {
+              "class": "general-cpu"
+            },
+            "resources": {
+              "cpu_millis": 2000,
+              "memory_bytes": 4294967296,
+              "ephemeral_storage_bytes": 8589934592,
+              "limits": {
+                "cpu_millis": 4000,
+                "memory_bytes": 8589934592,
+                "ephemeral_storage_bytes": 17179869184
+              }
+            }
           },
           {
             "id": "evaluate",
@@ -301,7 +340,20 @@
             "min_parallelism": 1,
             "max_parallelism": 1,
             "checkpoint_mode": "none",
-            "preemption_mode": "non_preemptible"
+            "preemption_mode": "non_preemptible",
+            "placement": {
+              "class": "general-cpu"
+            },
+            "resources": {
+              "cpu_millis": 2000,
+              "memory_bytes": 4294967296,
+              "ephemeral_storage_bytes": 8589934592,
+              "limits": {
+                "cpu_millis": 4000,
+                "memory_bytes": 8589934592,
+                "ephemeral_storage_bytes": 17179869184
+              }
+            }
           }
         ],
         "retry": {

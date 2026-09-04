@@ -2,11 +2,24 @@
   "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
   "operation": "design-binders",
   "service_class": "customer-batch",
+  "_input_manifest_note": [
+    "input_manifest names a scientific artifact manifest, never the payload.",
+    "Stage the run with two uploads through /v1/scientific-artifacts/uploads:",
+    "  1. the campaign payload: a tar of inputs/design-specs/<shard>.yaml plus",
+    "     inputs/5J89-chain-A.cif, gzipped, declared as application/gzip with",
+    "     compression gzip. application/x-tar is NOT in the artifact media-type",
+    "     allowlist (FS2_ARTIFACT_MEDIA_TYPES) and is rejected with 422.",
+    "  2. a fs2-serve.nebius.ai/scientific-artifact-manifest/v1 document whose",
+    "     single entry points at artifact 1, uploaded as",
+    "     application/vnd.fs2.scientific-manifest+json.",
+    "Then submit with input_manifest set to artifact 2. See manifest-template.json."
+  ],
   "input_manifest": {
-    "artifact_id": "boltzgen.qual.pdl1.r20260903",
+    "artifact_id": "00000000-0000-0000-0000-000000000000",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
     "size_bytes": 1,
-    "media_type": "application/x-tar"
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
   },
   "parameters": {
     "protocol": "protein-anything",

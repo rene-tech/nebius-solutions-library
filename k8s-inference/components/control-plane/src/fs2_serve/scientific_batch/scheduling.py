@@ -189,13 +189,26 @@ class SchedulingContractResolver:
                     desired_local_queue=desired_queue,
                 )
             resolved_namespace = workload_namespace or route_namespace
-            if placement is not None and placement.get("namespace") != route_namespace:
+            # An omitted placement field is "unconstrained", not "must equal
+            # None". A stage names the lane it belongs to with placement.class;
+            # requiring it to also restate this deployment's namespace, queue
+            # and flavor would bake one cluster's topology into every model
+            # profile in the catalog. A field that IS given is still enforced.
+            if (
+                placement is not None
+                and placement.get("namespace") is not None
+                and placement.get("namespace") != route_namespace
+            ):
                 raise SchedulingContractError("profile stage namespace differs from the routed LocalQueue")
             if resolved_namespace != route_namespace:
                 raise SchedulingContractError(
                     "scientific execution namespace differs from the routed Kueue LocalQueue namespace"
                 )
-            if placement is not None and placement.get("cluster_queue") != cluster_queue_name:
+            if (
+                placement is not None
+                and placement.get("cluster_queue") is not None
+                and placement.get("cluster_queue") != cluster_queue_name
+            ):
                 raise SchedulingContractError("profile stage ClusterQueue differs from the routed LocalQueue")
 
             requested_flavor = None if placement is None else placement.get("resource_flavor")
