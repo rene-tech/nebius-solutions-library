@@ -3,10 +3,11 @@
   "operation": "design-binder",
   "service_class": "customer-batch",
   "input_manifest": {
-    "artifact_id": "bindcraft.pdl1.target.01",
+    "artifact_id": "manifest.bindcraft.pdl1.01",
     "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "size_bytes": 24576,
-    "media_type": "chemical/x-pdb"
+    "size_bytes": 391,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
   },
   "parameters": {
     "target": {

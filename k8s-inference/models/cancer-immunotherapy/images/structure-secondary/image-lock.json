@@ -118,9 +118,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "evidence-collected-pending-independent-acceptance",
+        "qualification_state": "published-build-only-not-semantic-qualified",
         "level_states": {
-          "L1": "candidate-evidence-collected-pending-independent-acceptance",
+          "L1": "candidate-published-build-only-not-semantic-qualified",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -197,9 +197,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "evidence-collected-pending-independent-acceptance",
+        "qualification_state": "published-build-only-not-semantic-qualified",
         "level_states": {
-          "L1": "candidate-evidence-collected-pending-independent-acceptance",
+          "L1": "candidate-published-build-only-not-semantic-qualified",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -288,9 +288,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "evidence-collected-pending-independent-acceptance",
+        "qualification_state": "published-build-only-not-semantic-qualified",
         "level_states": {
-          "L1": "candidate-evidence-collected-pending-independent-acceptance",
+          "L1": "candidate-published-build-only-not-semantic-qualified",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"

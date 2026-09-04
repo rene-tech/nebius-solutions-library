@@ -1,0 +1,13 @@
+{
+  "schema": "fs2-serve.nebius.ai/deterministic-tar-gzip-manifest/v1",
+  "members": [
+    {
+      "archive_path": "5J89-chain-A.cif",
+      "source_path": "models/cancer-immunotherapy/runtime-images/boltzgen/activation/5J89-chain-A.cif"
+    },
+    {
+      "archive_path": "design-specs/pdl1-face.yaml",
+      "source_path": "models/cancer-immunotherapy/runtime-images/boltzgen/qualification/pdl1-face.yaml"
+    }
+  ]
+}

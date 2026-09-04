@@ -14,6 +14,17 @@
     "parameter_schema": "fs2-serve.nebius.ai/bindcraft-v1-5-3-parameters/v1",
     "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
     "runtime_parameter_schema": "fs2-serve.nebius.ai/bindcraft-native-pyrosetta-parameters/v1",
+    "input_contract": {
+      "outer_request_pointer": "one uncompressed application/vnd.fs2.scientific-manifest+json artifact",
+      "verified_entry": {
+        "logical_artifact_id": "target_structure",
+        "semantic_type": "protein-structure-pdb/v1",
+        "media_type": "chemical/x-pdb",
+        "compression": "none",
+        "cardinality": 1
+      },
+      "materialization": "The artifact service verifies the inner entry; the adapter consumes and materializes only target_structure. The outer manifest artifact is never used as target PDB bytes."
+    },
     "operations": [
       "design-binder"
     ],
@@ -85,6 +96,7 @@
     "note": "The generations are rendered, not published: the accepted handoff reports generations_published false and the host plane has no generations directory. No live run exists. The private academic plane is repaired and conforming; public immutable generation publication remains the runtime gate."
   },
   "controller_requirements": [
+    "Resolve the public uncompressed scientific-manifest pointer through the artifact service and pass exactly one verified target_structure / protein-structure-pdb/v1 / chemical/x-pdb entry to the adapter; never materialize the outer manifest as the PDB.",
     "The adapter supplies a per-stage public-to-native translation in FS2_BINDCRAFT_REQUEST_JSON. bindcraft.materialize_runtime_documents publishes it as .fs2/request.json byte for byte beside the localization marker, idempotently refusing drift.",
     "The adapter supplies FS2_BINDCRAFT_INPUT_MANIFEST_JSON, whose exact bytes are bound by the native request. bindcraft.materialize_runtime_documents publishes it as .fs2/input-manifest.json and verifies the ID, size and SHA-256 join before either file is usable.",
     "Publish .fs2/external-trees.json in schema fs2.nebius.ai/bindcraft-external-tree-admission/v1, using the four roles and roots in FS2_BINDCRAFT_EXTERNAL_TREE_ROLES and filling each tree's sha256 from the localization the controller itself verified. The adapter supplies no digest on purpose, so the pending four-tree generation is bound in exactly one place.",

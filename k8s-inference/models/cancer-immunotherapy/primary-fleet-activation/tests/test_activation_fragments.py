@@ -100,8 +100,7 @@ class PrimaryActivationFragmentTests(unittest.TestCase):
         def wrong_generation(fragment):
             artifact = fragment["execution_projection"]["runtime_artifacts"][0]
             artifact["source"]["sub_path"] = (
-                "scientific-localization/public/generations/"
-                f"{artifact['artifact_id']}/sha256/{'0' * 64}"
+                f"scientific-localization/public/generations/{artifact['artifact_id']}/sha256/{'0' * 64}"
             )
 
         self.assertIn(
@@ -110,7 +109,13 @@ class PrimaryActivationFragmentTests(unittest.TestCase):
         )
 
     def test_ready_bindings_use_read_only_generation_subpaths(self) -> None:
-        for model_id in ("proteina-complexa", "bindcraft", "mosaic", "rfdiffusion"):
+        for model_id in (
+            "boltzgen",
+            "proteina-complexa",
+            "bindcraft",
+            "mosaic",
+            "rfdiffusion",
+        ):
             fragment, errors = activation.validate_fragment(
                 activation.FRAGMENTS[model_id]
             )
@@ -124,10 +129,7 @@ class PrimaryActivationFragmentTests(unittest.TestCase):
                 )
 
     def test_recipes_are_derived_from_the_exact_integration_source(self) -> None:
-        registry = (
-            "components/control-plane/src/fs2_serve/"
-            "scientific_batch/adapters/__init__.py"
-        )
+        registry = "components/control-plane/src/fs2_serve/scientific_batch/adapters/__init__.py"
         for model_id, path in activation.FRAGMENTS.items():
             with self.subTest(model_id=model_id):
                 fragment, errors = activation.validate_fragment(path)
@@ -154,70 +156,45 @@ class PrimaryActivationFragmentTests(unittest.TestCase):
             activation.PROFILE_SCHEMA.parent.parent
             / "contracts/scientific-workload-profiles.json"
         )
-        canonical = next(
-            item
-            for item in profiles["profiles"]
-            if item["model_id"] == "proteina-complexa"
-        )
-        fragment = activation.load_json(activation.FRAGMENTS["proteina-complexa"])
-        self.assertEqual(
-            fragment["profile_projection"]["profile"]["execution_identity"][
-                "runtime_recipe_sha256"
-            ],
-            canonical["execution_identity"]["runtime_recipe_sha256"],
-        )
+        canonical_by_id = {item["model_id"]: item for item in profiles["profiles"]}
+        for model_id, path in activation.FRAGMENTS.items():
+            with self.subTest(serialized_identity=model_id):
+                fragment = activation.load_json(path)
+                projected = fragment["profile_projection"]["profile"][
+                    "execution_identity"
+                ]
+                canonical = canonical_by_id[model_id]["execution_identity"]
+                self.assertEqual(
+                    projected["runtime_recipe_sha256"],
+                    canonical["runtime_recipe_sha256"],
+                )
+                self.assertEqual(
+                    projected["workload_recipe_sha256"],
+                    canonical["workload_recipe_sha256"],
+                )
 
     def test_shared_aggregates_carry_no_authored_change(self) -> None:
         self.assertEqual(activation.validate_no_aggregate_edits(), [])
 
-    def test_serialized_boltz_mount_cleanup_allowance_is_exact_and_atomic(self) -> None:
+    def test_serialized_boltz_mount_cleanup_is_in_the_integration_baseline(
+        self,
+    ) -> None:
         relative = "catalog/runtime/contracts/scientific-execution-map.json"
         source = activation._aggregate_at_baseline(relative)
-
-        def clone(value):
-            return json.loads(json.dumps(value))
-
-        accepted_baseline = clone(source)
-        accepted_current = clone(source)
         boltz = next(
-            item
-            for item in accepted_current["models"]
-            if item["model_id"] == "boltzgen"
+            item for item in source["models"] if item["model_id"] == "boltzgen"
         )
-        for stage in boltz["stages"]:
-            if stage["stage_id"] in activation.BOLTZGEN_GPU_STAGES:
-                stage["mounts"].remove(activation.BOLTZGEN_LEGACY_BROAD_MOUNT)
-        activation._normalize_serialized_boltzgen_mount_cleanup(
-            relative, accepted_baseline, accepted_current
-        )
-        self.assertEqual(accepted_baseline, accepted_current)
-
-        partial_baseline = clone(source)
-        partial_current = clone(source)
-        boltz = next(
-            item for item in partial_current["models"] if item["model_id"] == "boltzgen"
-        )
-        first = next(
-            item for item in boltz["stages"] if item["stage_id"] == "configure"
-        )
-        first["mounts"].remove(activation.BOLTZGEN_LEGACY_BROAD_MOUNT)
-        activation._normalize_serialized_boltzgen_mount_cleanup(
-            relative, partial_baseline, partial_current
-        )
-        self.assertNotEqual(partial_baseline, partial_current)
-
-        tampered_baseline = clone(source)
-        tampered_current = clone(accepted_current)
-        boltz = next(
-            item
-            for item in tampered_current["models"]
-            if item["model_id"] == "boltzgen"
-        )
-        boltz["stages"][0]["mounts"][1]["mount_path"] = "/unreviewed"
-        activation._normalize_serialized_boltzgen_mount_cleanup(
-            relative, tampered_baseline, tampered_current
-        )
-        self.assertNotEqual(tampered_baseline, tampered_current)
+        gpu_stages = {
+            stage["stage_id"]: stage
+            for stage in boltz["stages"]
+            if stage["stage_id"] in activation.BOLTZGEN_GPU_STAGES
+        }
+        self.assertEqual(set(gpu_stages), activation.BOLTZGEN_GPU_STAGES)
+        for stage in gpu_stages.values():
+            self.assertNotIn(
+                activation.BOLTZGEN_LEGACY_BROAD_MOUNT,
+                stage["mounts"],
+            )
 
     def test_derived_identity_refresh_is_accepted_and_authorship_is_not(self) -> None:
         """The guard must separate a recomputed digest from authored content.

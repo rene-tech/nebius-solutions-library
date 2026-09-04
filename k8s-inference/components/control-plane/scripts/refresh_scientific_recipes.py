@@ -159,7 +159,9 @@ def _derive_contracts(
         seen_models.add(model_id)
         profile = profiles.get(model_id)
         identity = derived_identities.get(model_id)
-        if profile is None or identity is None:
+        if profile is None:
+            raise SystemExit(f"execution-map model {model_id} has no profile identity")
+        if identity is None and profile.get("state") != "candidate-unqualified":
             raise SystemExit(f"execution-map model {model_id} has no complete profile identity")
         _replace(
             model,
@@ -174,6 +176,8 @@ def _derive_contracts(
     for profile in mapped_profiles:
         model_id = profile["model_id"]
         qualification = profile.get("qualification")
+        if profile.get("state") == "candidate-unqualified" and qualification is None:
+            continue
         if not isinstance(qualification, dict):
             raise SystemExit(f"execution-map model {model_id} has no qualification contract")
         _replace(

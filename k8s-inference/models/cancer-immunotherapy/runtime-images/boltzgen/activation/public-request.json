@@ -1,0 +1,28 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "design-binders",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "manifest.boltzgen.pdl1.01",
+    "sha256": "d3fc05a26579932874e3f4ffb9babe63468bc85d6c475d172e7fa2b68370253a",
+    "size_bytes": 403,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
+  },
+  "parameters": {
+    "protocol": "protein-anything",
+    "batches": [
+      {
+        "shard_id": "pdl1-face",
+        "num_designs": 1,
+        "budget": 1,
+        "reuse_completed": false
+      }
+    ]
+  },
+  "client_context": {
+    "batch_id": "batch.primary-activation.boltzgen.01",
+    "correlation_id": "primary-activation.boltzgen.01",
+    "display_name": "BoltzGen PD-L1 bounded public acceptance"
+  }
+}

@@ -1,4 +1,4 @@
-"""Production-controller regressions for Mosaic and RFdiffusion candidates."""
+"""Production-controller regressions for active Mosaic and RFdiffusion profiles."""
 
 from __future__ import annotations
 
@@ -215,8 +215,11 @@ def test_fragment_dag_compiles_through_global_registry_with_exact_shell_free_inv
 ) -> None:
     fragment = _fragment(model_id)
     profile = fragment["profile_projection"]["profile"]
-    assert profile["state"] == "candidate-unqualified"
-    assert profile["route_exposed"] is False
+    assert profile["state"] == "active"
+    assert profile["route_exposed"] is True
+    assert profile["source"]["classification"] == "qualified-input"
+    assert profile["interface"]["mcp"]["invocable"] is True
+    assert profile["semantic_validation"]["state"] == "active"
     assert fragment["execution_projection"]["state"] == "ready-for-serialized-integration"
 
     plan = _plan(model_id, count=2)

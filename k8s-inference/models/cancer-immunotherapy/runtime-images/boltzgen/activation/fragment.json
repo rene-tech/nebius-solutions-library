@@ -1,0 +1,528 @@
+{
+  "schema": "fs2.nebius.ai/primary-scientific-activation-fragment/v1",
+  "model_id": "boltzgen",
+  "accepted_evidence": {
+    "source": {
+      "repository": "https://github.com/HannesStark/boltzgen",
+      "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+      "license": "MIT"
+    },
+    "runtime_image": {
+      "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+      "digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+      "lock_path": "models/cancer-immunotherapy/runtime-images/boltzgen/image-lock.json",
+      "digest_evidence_path": "models/cancer-immunotherapy/runtime-images/boltzgen/image-lock.json"
+    },
+    "runtime_recipe": {
+      "source_revision": "cd3cb554404847c829ba01c25b0db5c23ad5f535",
+      "algorithm": "fs2-path-set-sha256-v1",
+      "paths": [
+        "catalog/runtime/contracts/scientific-artifact-localization.json",
+        "catalog/runtime/schema/boltzgen-parameters.schema.json",
+        "catalog/runtime/schema/scientific-artifact-localization.schema.json",
+        "catalog/runtime/schema/scientific-run-request.schema.json",
+        "catalog/runtime/schema/scientific-run-result.schema.json",
+        "components/control-plane/src/fs2_serve/scientific_batch/__init__.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/__init__.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/boltzgen.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/common.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/localization.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/materialization.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/primitives.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/production_registry.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/staged_workspace.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/verified_input.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/catalog_adapter.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/companion.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/controller.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/execution.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/models.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/protocols.py",
+        "models/structure/batch-adapters/boltzgen/adapter.py",
+        "models/structure/batch-adapters/boltzgen/contract.json"
+      ]
+    },
+    "h100": {
+      "state": "semantic-qualified-active-awaiting-public-acceptance",
+      "accelerator_class": "nvidia-h100-sxm5-80gb",
+      "evidence_paths": [
+        "models/cancer-immunotherapy/runtime-images/boltzgen/evidence/h100-qualification-receipt.json"
+      ]
+    },
+    "main_commits": [
+      "1bccfac878805a8a13cba36c13972b4ef7ed49a9",
+      "003064c440c4ab198bf96957e435a7aac8da6800",
+      "353060554d422811263af0f21ed175d235b638e5",
+      "ec39059f45806281799a5e0a8790f50a37f49508"
+    ]
+  },
+  "profile_projection": {
+    "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
+    "profile": {
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "model_id": "boltzgen",
+      "display_name": "BoltzGen v0.3.2",
+      "execution_mode": "scientific-batch",
+      "state": "active",
+      "route_exposed": true,
+      "source": {
+        "kind": "git",
+        "repository": "HannesStark/boltzgen",
+        "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "review_url": "https://github.com/HannesStark/boltzgen/tree/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "classification": "qualified-input"
+      },
+      "execution_identity": {
+        "model_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "runtime_image_digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+        "runtime_recipe_sha256": "0643e1968e08c4bdd527165eeca3305c9e90d01bab054751c5f467fc1a080872",
+        "workload_recipe_sha256": "223b796e10fbf933d591817163086bc2830d0e54212b6a7d8e27624aae24d336",
+        "artifact_manifest_digest": "8305400f8711388cbc5d9937a120d7ca4de390170082047511e859f636a2dd66",
+        "execution_identity_sha256": "9d41092dd5c8ad874284c3acf347a29bb4b2ae2695e84fcf30796f27fff6de02"
+      },
+      "interface": {
+        "protocol": "scientific-batch-v1",
+        "submit_endpoint": "/v1/models/boltzgen:submit",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "parameter_schema": "fs2-serve.nebius.ai/boltzgen-parameters/v1",
+        "operations": [
+          "design-binders"
+        ],
+        "service_classes": [
+          "customer-batch",
+          "bulk-backfill"
+        ],
+        "mcp": {
+          "discoverable": true,
+          "invocable": true,
+          "tool_name": "submit_boltzgen",
+          "description": "Submit a bounded asynchronous BoltzGen design campaign."
+        }
+      },
+      "access": {
+        "profile": "standard",
+        "state": "not-required",
+        "receipt_digest": null,
+        "credentials_embedded": false
+      },
+      "resources": {
+        "gpu_count": 1,
+        "gpu_topology": "single-gpu",
+        "host_architectures": [
+          "amd64"
+        ],
+        "compatible_pool_ids": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+        }
+      },
+      "workload": {
+        "stages": [
+          {
+            "id": "configure",
+            "needs": [],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          },
+          {
+            "id": "design",
+            "needs": [
+              "configure"
+            ],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          },
+          {
+            "id": "inverse-folding",
+            "needs": [
+              "design"
+            ],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          },
+          {
+            "id": "folding",
+            "needs": [
+              "inverse-folding"
+            ],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          },
+          {
+            "id": "design-folding",
+            "needs": [
+              "folding"
+            ],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          },
+          {
+            "id": "affinity",
+            "needs": [
+              "design-folding"
+            ],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          },
+          {
+            "id": "analysis",
+            "needs": [
+              "folding"
+            ],
+            "resource_class": "cpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "none",
+            "preemption_mode": "non_preemptible",
+            "placement": {
+              "class": "general-cpu"
+            },
+            "resources": {
+              "cpu_millis": 2000,
+              "memory_bytes": 4294967296,
+              "ephemeral_storage_bytes": 8589934592,
+              "limits": {
+                "cpu_millis": 4000,
+                "memory_bytes": 8589934592,
+                "ephemeral_storage_bytes": 17179869184
+              }
+            }
+          },
+          {
+            "id": "filtering",
+            "needs": [
+              "analysis"
+            ],
+            "resource_class": "cpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "none",
+            "preemption_mode": "non_preemptible",
+            "placement": {
+              "class": "general-cpu"
+            },
+            "resources": {
+              "cpu_millis": 2000,
+              "memory_bytes": 4294967296,
+              "ephemeral_storage_bytes": 8589934592,
+              "limits": {
+                "cpu_millis": 4000,
+                "memory_bytes": 8589934592,
+                "ephemeral_storage_bytes": 17179869184
+              }
+            }
+          }
+        ],
+        "retry": {
+          "max_attempts": 2,
+          "retryable_exit_codes": [
+            137,
+            143
+          ]
+        },
+        "cancellation": {
+          "mode": "terminate-attempt",
+          "grace_seconds": 60
+        }
+      },
+      "semantic_validation": {
+        "validator_id": "boltzgen-v0-3-2",
+        "state": "active"
+      },
+      "policy": {
+        "commercial_use": "allowed",
+        "non_clinical": true,
+        "limitations": [
+          "The immutable runtime and both public artifact generations passed the bounded configure-and-design H100 qualification used by this active bridge; full public multi-stage acceptance receipts remain pending.",
+          "A preempted attempt restarts from committed inputs; BoltzGen partial attempt output is not represented as a resumable platform checkpoint.",
+          "The separately pinned inference molecule dictionary remains blocked on its terms receipt."
+        ]
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "f4a36ad7b8367e3383f584f96377313d39a26b5a08343d789311a41b04b79a46",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
+        "qualified_at": "2026-09-03T07:34:56Z"
+      },
+      "runtime_artifacts": [
+        {
+          "artifact_id": "boltzgen-checkpoints",
+          "content_identity": {
+            "digest_sha256": "ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+            "size_bytes": 10234382415
+          },
+          "file_manifest": [],
+          "required_files": [],
+          "readiness_manifest_sha256": "723ada21585427b7cec08ddeccbba3279e74bd3c4660c8d12cc0d33e3f36a44f"
+        },
+        {
+          "artifact_id": "boltzgen-inference-molecules",
+          "content_identity": {
+            "digest_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+            "size_bytes": 1820698819
+          },
+          "file_manifest": [],
+          "required_files": [],
+          "readiness_manifest_sha256": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4"
+        }
+      ]
+    }
+  },
+  "execution_projection": {
+    "merge_target": "catalog/runtime/contracts/scientific-execution-map.json",
+    "state": "ready-for-serialized-integration",
+    "variant_id": "upstream-v0-3-2",
+    "namespace": "fs2-models",
+    "runtime_artifacts": [
+      {
+        "artifact_id": "boltzgen-checkpoints",
+        "state": "ready",
+        "mount_path": "/opt/fs2/artifacts/boltzgen-checkpoints",
+        "content_digest": "sha256:ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+        "generation": "ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+        "source": {
+          "kind": "reference-host-path",
+          "root": "/mnt/fs2-reference-data/data",
+          "sub_path": "scientific-localization/public/generations/boltzgen-checkpoints/sha256/ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+          "read_only": true,
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        "evidence_path": "models/cancer-immunotherapy/runtime-images/boltzgen/image-lock.json"
+      },
+      {
+        "artifact_id": "boltzgen-inference-molecules",
+        "state": "ready",
+        "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+        "content_digest": "sha256:8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+        "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+        "source": {
+          "kind": "reference-host-path",
+          "root": "/mnt/fs2-reference-data/data",
+          "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "read_only": true,
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        "evidence_path": "models/cancer-immunotherapy/runtime-images/boltzgen/image-lock.json"
+      }
+    ],
+    "artifact_identity_inputs": [
+      "ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+      "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
+    ],
+    "stages": [
+      {
+        "id": "configure",
+        "resource_class": "gpu",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+        "runtime_artifacts": [
+          "boltzgen-checkpoints",
+          "boltzgen-inference-molecules"
+        ],
+        "placement": {
+          "accelerator_classes": [
+            "nvidia-h100-sxm5-80gb"
+          ],
+          "eligible_pool_ids": [
+            "h100-reserved-8x",
+            "h100-1x"
+          ],
+          "required_node_labels": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        }
+      },
+      {
+        "id": "design",
+        "resource_class": "gpu",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+        "runtime_artifacts": [
+          "boltzgen-checkpoints",
+          "boltzgen-inference-molecules"
+        ],
+        "placement": {
+          "accelerator_classes": [
+            "nvidia-h100-sxm5-80gb"
+          ],
+          "eligible_pool_ids": [
+            "h100-reserved-8x",
+            "h100-1x"
+          ],
+          "required_node_labels": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        }
+      },
+      {
+        "id": "inverse-folding",
+        "resource_class": "gpu",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+        "runtime_artifacts": [
+          "boltzgen-checkpoints",
+          "boltzgen-inference-molecules"
+        ],
+        "placement": {
+          "accelerator_classes": [
+            "nvidia-h100-sxm5-80gb"
+          ],
+          "eligible_pool_ids": [
+            "h100-reserved-8x",
+            "h100-1x"
+          ],
+          "required_node_labels": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        }
+      },
+      {
+        "id": "folding",
+        "resource_class": "gpu",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+        "runtime_artifacts": [
+          "boltzgen-checkpoints",
+          "boltzgen-inference-molecules"
+        ],
+        "placement": {
+          "accelerator_classes": [
+            "nvidia-h100-sxm5-80gb"
+          ],
+          "eligible_pool_ids": [
+            "h100-reserved-8x",
+            "h100-1x"
+          ],
+          "required_node_labels": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        }
+      },
+      {
+        "id": "design-folding",
+        "resource_class": "gpu",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+        "runtime_artifacts": [
+          "boltzgen-checkpoints",
+          "boltzgen-inference-molecules"
+        ],
+        "placement": {
+          "accelerator_classes": [
+            "nvidia-h100-sxm5-80gb"
+          ],
+          "eligible_pool_ids": [
+            "h100-reserved-8x",
+            "h100-1x"
+          ],
+          "required_node_labels": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        }
+      },
+      {
+        "id": "affinity",
+        "resource_class": "gpu",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+        "runtime_artifacts": [
+          "boltzgen-checkpoints",
+          "boltzgen-inference-molecules"
+        ],
+        "placement": {
+          "accelerator_classes": [
+            "nvidia-h100-sxm5-80gb"
+          ],
+          "eligible_pool_ids": [
+            "h100-reserved-8x",
+            "h100-1x"
+          ],
+          "required_node_labels": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        }
+      },
+      {
+        "id": "analysis",
+        "resource_class": "cpu",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+        "runtime_artifacts": [],
+        "placement": {
+          "accelerator_classes": [],
+          "eligible_pool_ids": [],
+          "required_node_labels": {}
+        }
+      },
+      {
+        "id": "filtering",
+        "resource_class": "cpu",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+        "runtime_artifacts": [],
+        "placement": {
+          "accelerator_classes": [],
+          "eligible_pool_ids": [],
+          "required_node_labels": {}
+        }
+      }
+    ],
+    "blockers": []
+  },
+  "public_fixtures": {
+    "request": "models/cancer-immunotherapy/runtime-images/boltzgen/activation/public-request.json",
+    "result": "models/cancer-immunotherapy/runtime-images/boltzgen/activation/public-result.example.json",
+    "semantic_validator": "models/cancer-immunotherapy/runtime-images/boltzgen/qualification/validate_result.py",
+    "supporting_inputs": [
+      {
+        "role": "request-input-manifest",
+        "path": "models/cancer-immunotherapy/runtime-images/boltzgen/activation/input-manifest.json",
+        "encoding": "canonical-json-newline"
+      },
+      {
+        "role": "manifest-artifact",
+        "name": "campaign-input",
+        "path": "models/cancer-immunotherapy/runtime-images/boltzgen/activation/campaign-archive.json",
+        "encoding": "deterministic-tar-gzip-manifest-v1"
+      }
+    ]
+  },
+  "activation_gate": {
+    "route_exposed": true,
+    "ready_for_route": true,
+    "public_platform_run_required": true
+  }
+}

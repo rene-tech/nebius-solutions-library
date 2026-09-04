@@ -19,6 +19,7 @@ from ..models import (
     MaterializationMode,
     RuntimeArtifactMount,
     RuntimeTreeBinding,
+    ScientificInputArtifact,
     StageInvocation,
     StageWorkspaceDocument,
 )
@@ -70,6 +71,11 @@ STAGE_HANDOFF_NAME = "stage-handoff"
 STAGE_HANDOFF_SEMANTIC_TYPE = "proteina-complexa-workspace-handoff-tar/v1"
 PUBLIC_REQUEST_DOCUMENT = ".fs2/public-request.json"
 REFERENCE_DATA_SUPPLEMENTAL_GROUP = 1000
+REQUIRES_VERIFIED_INPUT_ARTIFACTS = True
+INPUT_MANIFEST_MEDIA_TYPE = "application/vnd.fs2.scientific-manifest+json"
+TARGET_BUNDLE_ID = "target-bundle"
+TARGET_BUNDLE_SEMANTIC_TYPE = "proteina-complexa-target-bundle/v1"
+TARGET_BUNDLE_MEDIA_TYPE = "application/x-tar"
 
 AF2_ARTIFACT_ID = "alphafold2-params"
 RF3_ARTIFACT_ID = "rosettafold3-checkpoint"
@@ -307,7 +313,48 @@ def _load_public_request(workspace: Path) -> Mapping[str, object]:
     return value
 
 
-def compile_run(profile: Mapping[str, object], request_value: object, *, operation_id: str) -> AdapterExecutionPlan:
+def _target_bundle(
+    request: PublicRunRequest,
+    input_artifacts: tuple[ScientificInputArtifact, ...] | None,
+) -> tuple[str, str | None]:
+    """Bind the verified public manifest entry that seeds the campaign workspace."""
+
+    if input_artifacts is None:
+        if request.input_manifest.media_type == INPUT_MANIFEST_MEDIA_TYPE:
+            raise ScientificAdapterError("Proteina-Complexa manifest requests require verified input_artifacts")
+        if request.input_manifest.media_type != TARGET_BUNDLE_MEDIA_TYPE:
+            raise ScientificAdapterError("Proteina-Complexa direct input must be an application/x-tar target bundle")
+        if request.input_manifest.compression not in {"gzip", "zstd"}:
+            raise ScientificAdapterError("Proteina-Complexa direct target bundle must use gzip or zstd compression")
+        return request.input_manifest.artifact_id, request.input_manifest.compression
+
+    if request.input_manifest.media_type != INPUT_MANIFEST_MEDIA_TYPE:
+        raise ScientificAdapterError("Proteina-Complexa input_manifest must identify a scientific manifest")
+    if request.input_manifest.compression not in {None, "none"}:
+        raise ScientificAdapterError("Proteina-Complexa input manifest must not be compressed")
+    if len(input_artifacts) != 1:
+        raise ScientificAdapterError("Proteina-Complexa input manifest must contain exactly one target-bundle")
+    target = input_artifacts[0]
+    if target.logical_artifact_id != TARGET_BUNDLE_ID:
+        raise ScientificAdapterError("Proteina-Complexa input manifest must contain target-bundle")
+    if target.semantic_type != TARGET_BUNDLE_SEMANTIC_TYPE:
+        raise ScientificAdapterError("Proteina-Complexa target-bundle semantic type is invalid")
+    if target.media_type != TARGET_BUNDLE_MEDIA_TYPE or target.compression not in {"gzip", "zstd"}:
+        raise ScientificAdapterError("Proteina-Complexa target-bundle media or compression type is invalid")
+    if not 1 <= target.size_bytes <= MAX_INPUT_BYTES:
+        raise ScientificAdapterError("Proteina-Complexa target-bundle size is outside the adapter bound")
+    if str(target.artifact_id) == request.input_manifest.artifact_id:
+        raise ScientificAdapterError("Proteina-Complexa target bundle and manifest must be distinct artifacts")
+    return target.logical_artifact_id, target.compression
+
+
+def compile_run(
+    profile: Mapping[str, object],
+    request_value: object,
+    *,
+    operation_id: str,
+    input_artifacts: tuple[ScientificInputArtifact, ...] | None = None,
+) -> AdapterExecutionPlan:
     """Compile a canonical request into the canonical four-stage controller plan."""
 
     request, parameters = _request(request_value)
@@ -319,9 +366,10 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
         parameter_schema=PARAMETER_SCHEMA,
         request=request,
     )
+    target_bundle_id, target_bundle_compression = _target_bundle(request, input_artifacts)
     stage_ids = ("generate", "filter", "evaluate", "analyze")
     invocations: list[StageInvocation] = []
-    previous = request.input_manifest.artifact_id
+    previous = target_bundle_id
     workspace = run_workspace(MODEL_ID, operation_id, "main")
     for stage_id in stage_ids:
         output = logical_stage_artifact(operation_id, stage_id, "main")
@@ -348,7 +396,7 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
                             if stage_id == "generate"
                             else MaterializationMode.OVERLAY_TAR
                         ),
-                        compression=request.input_manifest.compression if stage_id == "generate" else "zstd",
+                        compression=target_bundle_compression if stage_id == "generate" else "zstd",
                     ),
                 ),
                 runtime_artifacts=_stage_runtime_artifacts(parameters, stage_id),

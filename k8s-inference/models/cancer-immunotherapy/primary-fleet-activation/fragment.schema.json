@@ -66,7 +66,13 @@
           "additionalProperties": false,
           "required": ["state", "accelerator_class", "evidence_paths"],
           "properties": {
-            "state": {"const": "semantic-qualified-route-disabled"},
+            "state": {
+              "enum": [
+                "semantic-qualified-route-disabled",
+                "semantic-qualified-active-awaiting-public-acceptance",
+                "published-successor-awaiting-h100-controller-qualification"
+              ]
+            },
             "accelerator_class": {"const": "nvidia-h100-sxm5-80gb"},
             "evidence_paths": {
               "type": "array",
@@ -155,9 +161,54 @@
             "required": ["role", "path", "encoding"],
             "properties": {
               "role": {"enum": ["request-input-manifest", "manifest-artifact"]},
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+              },
               "path": {"$ref": "#/$defs/repository_path"},
-              "encoding": {"enum": ["raw", "canonical-json-newline"]}
-            }
+              "encoding": {
+                "enum": [
+                  "raw",
+                  "canonical-json-newline",
+                  "deterministic-tar-gzip-v1",
+                  "deterministic-tar-gzip-manifest-v1"
+                ]
+              },
+              "archive_path": {"$ref": "#/$defs/repository_path"}
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "encoding": {"const": "deterministic-tar-gzip-v1"}
+                  },
+                  "required": ["encoding"]
+                },
+                "then": {
+                  "required": ["name", "archive_path"],
+                  "properties": {
+                    "role": {"const": "manifest-artifact"}
+                  }
+                },
+                "else": {
+                  "not": {"required": ["archive_path"]}
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "encoding": {"const": "deterministic-tar-gzip-manifest-v1"}
+                  },
+                  "required": ["encoding"]
+                },
+                "then": {
+                  "required": ["name"],
+                  "properties": {
+                    "role": {"const": "manifest-artifact"}
+                  }
+                }
+              }
+            ]
           }
         }
       }
@@ -167,8 +218,8 @@
       "additionalProperties": false,
       "required": ["route_exposed", "ready_for_route", "public_platform_run_required"],
       "properties": {
-        "route_exposed": {"const": false},
-        "ready_for_route": {"const": false},
+        "route_exposed": {"const": true},
+        "ready_for_route": {"const": true},
         "public_platform_run_required": {"const": true}
       }
     }

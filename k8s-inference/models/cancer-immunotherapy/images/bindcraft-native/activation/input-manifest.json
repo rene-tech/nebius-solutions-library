@@ -1,0 +1,17 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+  "manifest_id": "manifest.bindcraft.pdl1.01",
+  "entries": [
+    {
+      "name": "target_structure",
+      "semantic_type": "protein-structure-pdb/v1",
+      "artifact": {
+        "artifact_id": "bindcraft.pdl1.target.01",
+        "sha256": "5e949950d8255ec3bf390b8bf24f5c71c6ac8fc65bc553d7e477563c9599b93e",
+        "size_bytes": 74614,
+        "media_type": "chemical/x-pdb",
+        "compression": "none"
+      }
+    }
+  ]
+}

@@ -39,9 +39,12 @@ def load_module(name: str):
 
 
 def canonical_sha256(value: object) -> str:
-    encoded = json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
-    ).encode("utf-8") + b"\n"
+    encoded = (
+        json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("utf-8")
+        + b"\n"
+    )
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -70,9 +73,7 @@ def write_runtime_localization_marker(
                 "content_digest": f"sha256:{artifact['content_sha256']}",
                 "localization_receipt_digest": f"sha256:{receipt}",
                 "sub_path": artifact.get("sub_path"),
-                "expected_manifest_sha256": artifact.get(
-                    "expected_manifest_sha256"
-                ),
+                "expected_manifest_sha256": artifact.get("expected_manifest_sha256"),
                 "readiness_receipt_sha256": receipt,
                 "authorization_receipt_sha256": authorization_receipt_sha256,
             }
@@ -131,7 +132,9 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             for artifact_id, path_key in artifact_paths.items():
                 with self.subTest(model_id=model_id, artifact_id=artifact_id):
                     worker_artifact = integration[model_id]["artifacts"][artifact_id]
-                    self.assertEqual(locked[artifact_id]["mount"], worker_artifact["mount_path"])
+                    self.assertEqual(
+                        locked[artifact_id]["mount"], worker_artifact["mount_path"]
+                    )
                     self.assertEqual(
                         locked[artifact_id]["content_digest"],
                         worker_artifact["content_digest_sha256"],
@@ -353,7 +356,9 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
 
     def test_lock_v2_validates_and_has_four_unique_derived_targets(self) -> None:
         jsonschema.Draft202012Validator(SCHEMA).validate(LOCK)
-        self.assertEqual(LOCK["schema"], "fs2.nebius.ai/structure-secondary-image-lock/v2")
+        self.assertEqual(
+            LOCK["schema"], "fs2.nebius.ai/structure-secondary-image-lock/v2"
+        )
         images = LOCK["images"]
         self.assertEqual(
             [image["id"] for image in images],
@@ -374,7 +379,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             expected_repositories,
         )
         targets = {
-            f'{LOCK["registry_default"]}/{image["repository"]}:{image["tag"]}'
+            f"{LOCK['registry_default']}/{image['repository']}:{image['tag']}"
             for image in images
         }
         self.assertEqual(len(targets), 4)
@@ -443,7 +448,9 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                     stage_id="sample-structure",
                     artifacts=expected,
                 )
-                self.assertEqual(marker["artifacts"][0]["readiness_receipt_sha256"], "d" * 64)
+                self.assertEqual(
+                    marker["artifacts"][0]["readiness_receipt_sha256"], "d" * 64
+                )
                 for field, value in (
                     ("content_digest", "sha256:" + "0" * 64),
                     ("mount_path", "/models/substitute"),
@@ -500,17 +507,25 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 variant_id=module.VARIANT_ID,
                 stage_id="inference",
                 artifacts=[
-                    {"artifact_id": "openfold3-openbind-0", "mount_path": "/models/openfold3",
-                     "content_sha256": module.CHECKPOINT_CONTENT_SHA256},
-                    {"artifact_id": "openfold3-components-bcif", "mount_path": "/databases/openfold3",
-                     "content_sha256": module.CCD_CONTENT_SHA256},
+                    {
+                        "artifact_id": "openfold3-openbind-0",
+                        "mount_path": "/models/openfold3",
+                        "content_sha256": module.CHECKPOINT_CONTENT_SHA256,
+                    },
+                    {
+                        "artifact_id": "openfold3-components-bcif",
+                        "mount_path": "/databases/openfold3",
+                        "content_sha256": module.CCD_CONTENT_SHA256,
+                    },
                 ],
             )
             environment = {
                 "FS2_OPERATION_ID": "00000000-0000-4000-8000-000000000010",
                 "FS2_ATTEMPT_ID": "00000000-0000-4000-8000-000000000011",
-                "FS2_TENANT_ID": "test-tenant", "FS2_VARIANT_ID": module.VARIANT_ID,
-                "FS2_STAGE_ID": "inference", "FS2_RUNTIME_LOCALIZATION_MARKER": str(marker_path),
+                "FS2_TENANT_ID": "test-tenant",
+                "FS2_VARIANT_ID": module.VARIANT_ID,
+                "FS2_STAGE_ID": "inference",
+                "FS2_RUNTIME_LOCALIZATION_MARKER": str(marker_path),
                 "FS2_ARTIFACT_ACCESS_RECEIPT_DIGEST": "",
             }
             args = types.SimpleNamespace(runtime_localization_marker=str(marker_path))
@@ -595,14 +610,18 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                     expected_h100_states[image["id"]],
                 )
 
-        protenix = next(image for image in LOCK["images"] if image["id"] == "protenix-v2")
+        protenix = next(
+            image for image in LOCK["images"] if image["id"] == "protenix-v2"
+        )
         checkpoint_artifact = protenix["external_artifacts"][0]
         self.assertEqual(
             checkpoint_artifact["state"],
             "third-party-mirror-verified-not-publisher-byte-compared",
         )
 
-    def test_mandatory_check_uses_reachable_generator_in_fresh_object_store(self) -> None:
+    def test_mandatory_check_uses_reachable_generator_in_fresh_object_store(
+        self,
+    ) -> None:
         source = (ROOT / "check.sh").read_text(encoding="utf-8")
         self.assertIn(
             "artifact_worker_revision=a1ecc219f5e319be87cfa20d5a79af1e3674c6f0",
@@ -617,7 +636,9 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
         self.assertIn("--no-tags --depth=1", source)
         self.assertIn('origin "$revision"', source)
         self.assertNotIn('origin "$ref"', source)
-        self.assertIn('artifact_worker_source="${temporary_root}/artifact-worker"', source)
+        self.assertIn(
+            'artifact_worker_source="${temporary_root}/artifact-worker"', source
+        )
         self.assertIn('"${superseded_unreachable_revision}^{commit}"', source)
         self.assertNotIn('git -C "$runtime_dir" show', source)
         self.assertNotIn('git -C "$runtime_dir" cat-file', source)
@@ -648,9 +669,11 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 artifacts["esmfold2-ccd"]["sha256"],
                 "9ff44b1927c6b9198e38ffe0928706827a09a350c15530beeeabebfa88038fc5",
             )
-            expected_trunk = f'/models/{image["id"]}'
+            expected_trunk = f"/models/{image['id']}"
             trunk = next(
-                artifact for artifact in artifacts.values() if artifact["id"].endswith("trunk")
+                artifact
+                for artifact in artifacts.values()
+                if artifact["id"].endswith("trunk")
             )
             self.assertEqual(trunk["mount"], expected_trunk)
             self.assertEqual(artifacts["esmc-6b"]["mount"], "/models/esmc-6b")
@@ -664,10 +687,12 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 "b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
             )
 
-    def test_fast_start_cache_contracts_are_auxiliary_and_numbered_level_is_l1(self) -> None:
+    def test_fast_start_cache_contracts_are_auxiliary_and_numbered_level_is_l1(
+        self,
+    ) -> None:
         images = {image["id"]: image for image in LOCK["images"]}
         expected_level_states = {
-            "L1": "candidate-evidence-collected-pending-independent-acceptance",
+            "L1": "candidate-published-build-only-not-semantic-qualified",
             "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
             "L3": "unavailable-no-local-disk-cached-snapshot",
             "L4": "unavailable-no-system-ram-retained-model",
@@ -692,7 +717,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 self.assertIsNone(fast_start["qualified_level"])
                 self.assertEqual(
                     fast_start["qualification_state"],
-                    "evidence-collected-pending-independent-acceptance",
+                    "published-build-only-not-semantic-qualified",
                 )
                 self.assertEqual(fast_start["level_states"], expected_level_states)
 
@@ -736,9 +761,17 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
         openfold = (ROOT / "Dockerfile.openfold3").read_text(encoding="utf-8")
         for value in expected["openfold3"][1].values():
             self.assertGreaterEqual(openfold.count(value), 2)
-        self.assertIn("mkdir -p /opt/fs2/runtime/openfold3 /models/openfold3 /databases/openfold3 /outputs /cache/openfold3/triton /cache/openfold3/torch-extensions /cache/openfold3/xdg", openfold)
-        self.assertIn("chmod 0555 /opt/fs2/runtime /opt/fs2/runtime/openfold3", openfold)
-        self.assertIn("chown -R 10001:10001 /models /databases /outputs /cache/openfold3", openfold)
+        self.assertIn(
+            "mkdir -p /opt/fs2/runtime/openfold3 /models/openfold3 /databases/openfold3 /outputs /cache/openfold3/triton /cache/openfold3/torch-extensions /cache/openfold3/xdg",
+            openfold,
+        )
+        self.assertIn(
+            "chmod 0555 /opt/fs2/runtime /opt/fs2/runtime/openfold3", openfold
+        )
+        self.assertIn(
+            "chown -R 10001:10001 /models /databases /outputs /cache/openfold3",
+            openfold,
+        )
         self.assertNotIn("TRITON_CACHE_DIR=/tmp", openfold)
         self.assertNotIn("TORCH_EXTENSIONS_DIR=/tmp", openfold)
         self.assertNotIn("XDG_CACHE_HOME=/tmp", openfold)
@@ -816,7 +849,9 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             )
             self.assertEqual(list(root.rglob(".fs2-cache-smoke.*")), [])
 
-    def test_build_cache_smoke_fails_closed_on_identity_environment_and_path(self) -> None:
+    def test_build_cache_smoke_fails_closed_on_identity_environment_and_path(
+        self,
+    ) -> None:
         smoke = load_module("image_smoke")
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "cache"
@@ -863,9 +898,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                         }
                     }
                     with (
-                        mock.patch.object(
-                            smoke, "BUILD_CACHE_CONTRACTS", bad_contract
-                        ),
+                        mock.patch.object(smoke, "BUILD_CACHE_CONTRACTS", bad_contract),
                         mock.patch.object(smoke.os, "geteuid", return_value=10001),
                         mock.patch.object(smoke.os, "getegid", return_value=10001),
                         mock.patch.dict(os.environ, {"CACHE_DIR": bad_path}),
@@ -914,16 +947,28 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 ".fs2-manifest-sha256",
             ],
         )
-        self.assertEqual(image["accelerator_support"]["blackwell"]["status"], "unsupported")
+        self.assertEqual(
+            image["accelerator_support"]["blackwell"]["status"], "unsupported"
+        )
         self.assertIn("libtorch", image["accelerator_support"]["blackwell"]["scope"])
-        self.assertIn("pending-exact-checkpoint", image["accelerator_support"]["h100"]["status"])
-        self.assertEqual(image["runtime_contract"]["required_mounts"], ["/models/protenix-v2"])
-        self.assertEqual(image["runtime_contract"]["writable_cache_mounts"], ["/cache/protenix"])
+        self.assertIn(
+            "pending-exact-checkpoint", image["accelerator_support"]["h100"]["status"]
+        )
+        self.assertEqual(
+            image["runtime_contract"]["required_mounts"], ["/models/protenix-v2"]
+        )
+        self.assertEqual(
+            image["runtime_contract"]["writable_cache_mounts"], ["/cache/protenix"]
+        )
         self.assertIn("triton-jit", image["runtime_contract"]["runtime_compilation"])
-        self.assertIn("system-gcc-launcher", image["runtime_contract"]["runtime_compilation"])
+        self.assertIn(
+            "system-gcc-launcher", image["runtime_contract"]["runtime_compilation"]
+        )
         self.assertIn("no-nvcc", image["runtime_contract"]["runtime_compilation"])
 
-    def test_protenix_composite_manifest_binds_entire_tree_without_runtime_rehash(self) -> None:
+    def test_protenix_composite_manifest_binds_entire_tree_without_runtime_rehash(
+        self,
+    ) -> None:
         module = load_module("run_protenix")
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -933,7 +978,10 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 stream.truncate(module.CHECKPOINT_BYTES)
             common = root / "common"
             common.mkdir()
-            for relative, (byte_count, _digest) in module.COMMON_FILE_IDENTITIES.items():
+            for relative, (
+                byte_count,
+                _digest,
+            ) in module.COMMON_FILE_IDENTITIES.items():
                 with (root / relative).open("wb") as stream:
                     stream.truncate(byte_count)
             files = [
@@ -944,7 +992,9 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 },
                 *[
                     {"path": relative, "bytes": identity[0], "sha256": identity[1]}
-                    for relative, identity in sorted(module.COMMON_FILE_IDENTITIES.items())
+                    for relative, identity in sorted(
+                        module.COMMON_FILE_IDENTITIES.items()
+                    )
                 ],
             ]
             manifest = {
@@ -1003,7 +1053,9 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 ready_path.write_text(
                     canonical_sha256(substituted) + "\n", encoding="utf-8"
                 )
-                with self.assertRaisesRegex(SystemExit, "exact common file|localization acceptance"):
+                with self.assertRaisesRegex(
+                    SystemExit, "exact common file|localization acceptance"
+                ):
                     module._validate_artifact()
 
     def test_generated_protenix_argv_is_fixed_and_canonical(self) -> None:
@@ -1038,13 +1090,17 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             output = Path(temporary)
             for seed in (101, 202):
                 for sample in (0, 1):
-                    directory = output / "dataset" / "fixture" / f"seed_{seed}" / "predictions"
+                    directory = (
+                        output / "dataset" / "fixture" / f"seed_{seed}" / "predictions"
+                    )
                     directory.mkdir(parents=True, exist_ok=True)
                     prefix = "fixture"
                     (directory / f"{prefix}_sample_{sample}.cif").write_text(
                         f"data_seed_{seed}_sample_{sample}\n", encoding="utf-8"
                     )
-                    (directory / f"{prefix}_summary_confidence_sample_{sample}.json").write_text(
+                    (
+                        directory / f"{prefix}_summary_confidence_sample_{sample}.json"
+                    ).write_text(
                         json.dumps(
                             {
                                 "plddt": 90.0 - sample,
@@ -1082,9 +1138,13 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 structure = output / result["structure"]["filename"]
                 self.assertEqual(result["structure"]["bytes"], structure.stat().st_size)
                 self.assertEqual(
-                    result["structure"]["sha256"], hashlib.sha256(structure.read_bytes()).hexdigest()
+                    result["structure"]["sha256"],
+                    hashlib.sha256(structure.read_bytes()).hexdigest(),
                 )
-            missing = output / "dataset/fixture/seed_202/predictions/fixture_summary_confidence_sample_1.json"
+            missing = (
+                output
+                / "dataset/fixture/seed_202/predictions/fixture_summary_confidence_sample_1.json"
+            )
             missing.unlink()
             with self.assertRaisesRegex(SystemExit, "exact seed/sample product"):
                 module._write_confidence(
@@ -1095,12 +1155,24 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                     raw_input_sha256="a" * 64,
                 )
             missing.write_text(
-                json.dumps({"plddt": 89.0, "ptm": 0.8, "iptm": 0.7, "ranking_score": 0.75}),
+                json.dumps(
+                    {"plddt": 89.0, "ptm": 0.8, "iptm": 0.7, "ranking_score": 0.75}
+                ),
                 encoding="utf-8",
             )
-            bad = output / "dataset/fixture/seed_101/predictions/fixture_summary_confidence_sample_0.json"
+            bad = (
+                output
+                / "dataset/fixture/seed_101/predictions/fixture_summary_confidence_sample_0.json"
+            )
             bad.write_text(
-                json.dumps({"plddt": float("nan"), "ptm": 0.8, "iptm": 0.7, "ranking_score": 0.75}),
+                json.dumps(
+                    {
+                        "plddt": float("nan"),
+                        "ptm": 0.8,
+                        "iptm": 0.7,
+                        "ranking_score": 0.75,
+                    }
+                ),
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(SystemExit, "finite scalar"):
@@ -1112,7 +1184,9 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                     raw_input_sha256="a" * 64,
                 )
 
-    def test_protenix_pred_executes_generated_argv_and_collects_confidence(self) -> None:
+    def test_protenix_pred_executes_generated_argv_and_collects_confidence(
+        self,
+    ) -> None:
         module = load_module("run_protenix")
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1235,7 +1309,9 @@ for seed in seeds:
             self.assertEqual(argv[argv.index("--use_template") + 1], "false")
             self.assertEqual(argv[argv.index("--use_rna_msa") + 1], "false")
             cache_env = json.loads((output / "cache-env.json").read_text())
-            self.assertEqual(cache_env, {"triton": str(triton_cache), "cueq": str(cueq_cache)})
+            self.assertEqual(
+                cache_env, {"triton": str(triton_cache), "cueq": str(cueq_cache)}
+            )
             envelope = json.loads((output / "confidence.json").read_text())
             jsonschema.Draft202012Validator(CONFIDENCE_SCHEMA).validate(envelope)
             self.assertEqual(envelope["seeds"], [101, 202])
@@ -1315,24 +1391,60 @@ for seed in seeds:
         """Parser-only fixtures; real adapter tuples are verified by the external gate."""
         protenix = load_module("run_protenix")
         prep = [
-            "prep", "--input", "/work/prep/input.json", "--output-dir", "/work/prep/prepared",
-            "--processed-json", "/work/prep/prepared/processed.json",
-            "--provenance-marker", "/work/prep/prepared/provenance.json",
-            "--handoff-tar", "/work/prep/prepared.tar.zst", "--output-artifact-id", "protenix-stage-1",
-            "--raw-input-artifact-id", "raw-protenix-request-1", "--raw-input-sha256", "a" * 64,
-            "--msa-mode", "none", "--reference-root", "/models/protenix-v2",
-            "--reference-manifest", "/models/protenix-v2/manifest.json",
-            "--runtime-localization-marker", "/work/prep/.fs2/runtime-localization.json",
+            "prep",
+            "--input",
+            "/work/prep/input.json",
+            "--output-dir",
+            "/work/prep/prepared",
+            "--processed-json",
+            "/work/prep/prepared/processed.json",
+            "--provenance-marker",
+            "/work/prep/prepared/provenance.json",
+            "--handoff-tar",
+            "/work/prep/prepared.tar.zst",
+            "--output-artifact-id",
+            "protenix-stage-1",
+            "--raw-input-artifact-id",
+            "raw-protenix-request-1",
+            "--raw-input-sha256",
+            "a" * 64,
+            "--msa-mode",
+            "none",
+            "--reference-root",
+            "/models/protenix-v2",
+            "--reference-manifest",
+            "/models/protenix-v2/manifest.json",
+            "--runtime-localization-marker",
+            "/work/prep/.fs2/runtime-localization.json",
         ]
         pred = [
-            "pred", "--input", "/work/pred/input/processed.json", "--input-marker", "/work/pred/input/provenance.json",
-            "--input-artifact-id", "protenix-stage-1",
-            "--expected-raw-input-artifact-id", "raw-protenix-request-1",
-            "--expected-raw-input-sha256", "a" * 64, "--output-dir", "/work/pred/outputs",
-            "--checkpoint", "/models/protenix-v2/checkpoint/protenix-v2.pt",
-            "--common-dir", "/models/protenix-v2/common", "--msa-mode", "none", "--seeds", "101,202",
-            "--sample-count", "2", "--disable-templates", "--disable-rna-msa",
-            "--runtime-localization-marker", "/work/pred/.fs2/runtime-localization.json",
+            "pred",
+            "--input",
+            "/work/pred/input/processed.json",
+            "--input-marker",
+            "/work/pred/input/provenance.json",
+            "--input-artifact-id",
+            "protenix-stage-1",
+            "--expected-raw-input-artifact-id",
+            "raw-protenix-request-1",
+            "--expected-raw-input-sha256",
+            "a" * 64,
+            "--output-dir",
+            "/work/pred/outputs",
+            "--checkpoint",
+            "/models/protenix-v2/checkpoint/protenix-v2.pt",
+            "--common-dir",
+            "/models/protenix-v2/common",
+            "--msa-mode",
+            "none",
+            "--seeds",
+            "101,202",
+            "--sample-count",
+            "2",
+            "--disable-templates",
+            "--disable-rna-msa",
+            "--runtime-localization-marker",
+            "/work/pred/.fs2/runtime-localization.json",
         ]
         with mock.patch.object(protenix, "_prep") as handler:
             protenix.main(prep)
@@ -1371,9 +1483,13 @@ for seed in seeds:
                 {"processed.json": processed, "provenance.json": marker},
             )
             raw_tar = root / "handoff.tar"
-            subprocess.run(["zstd", "-q", "-d", "-o", str(raw_tar), str(archive)], check=True)
+            subprocess.run(
+                ["zstd", "-q", "-d", "-o", str(raw_tar), str(archive)], check=True
+            )
             with tarfile.open(raw_tar) as bundle:
-                self.assertEqual(bundle.getnames(), ["processed.json", "provenance.json"])
+                self.assertEqual(
+                    bundle.getnames(), ["processed.json", "provenance.json"]
+                )
                 self.assertNotIn(str(root), " ".join(bundle.getnames()))
             relocated = root / "relocated"
             relocated.mkdir()
@@ -1402,8 +1518,12 @@ for seed in seeds:
                 self.assertEqual(output.read_bytes(), b"previous-generation")
                 return real_run(argv, **kwargs)
 
-            with mock.patch.object(handoff.subprocess, "run", side_effect=observe_compressor):
-                handoff.write_archive(output, {"processed.json": payload, "provenance.json": provenance})
+            with mock.patch.object(
+                handoff.subprocess, "run", side_effect=observe_compressor
+            ):
+                handoff.write_archive(
+                    output, {"processed.json": payload, "provenance.json": provenance}
+                )
             self.assertNotEqual(output.read_bytes(), b"previous-generation")
             self.assertFalse(any(root.glob(".*.partial")))
 
@@ -1413,12 +1533,16 @@ for seed in seeds:
             root = Path(temporary)
             output = root / "prepared-input.json"
             output.write_text('{"generation":"old"}\n', encoding="utf-8")
-            replacement = '{"sequences":[{"id":"A","sequence":"ACDE","type":"protein"}]}\n'
+            replacement = (
+                '{"sequences":[{"id":"A","sequence":"ACDE","type":"protein"}]}\n'
+            )
             real_replace = os.replace
 
             def observe_replace(source, destination):
                 self.assertEqual(Path(destination), output)
-                self.assertEqual(output.read_text(encoding="utf-8"), '{"generation":"old"}\n')
+                self.assertEqual(
+                    output.read_text(encoding="utf-8"), '{"generation":"old"}\n'
+                )
                 self.assertEqual(Path(source).read_text(encoding="utf-8"), replacement)
                 real_replace(source, destination)
 
@@ -1433,11 +1557,21 @@ for seed in seeds:
             root = Path(temporary)
             raw = root / "input.json"
             raw.write_text(
-                json.dumps({
-                    "queries": {"fixture": {"chains": [{
-                        "molecule_type": "protein", "chain_ids": "A", "sequence": "ACDE"
-                    }]}}
-                }),
+                json.dumps(
+                    {
+                        "queries": {
+                            "fixture": {
+                                "chains": [
+                                    {
+                                        "molecule_type": "protein",
+                                        "chain_ids": "A",
+                                        "sequence": "ACDE",
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                ),
                 encoding="utf-8",
             )
             base = root / "runner-base.yaml"
@@ -1467,14 +1601,20 @@ for seed in seeds:
             )
             with (
                 mock.patch.object(module, "CANONICAL_BASE_RUNNER", base),
-                mock.patch.object(module, "BASE_RUNNER_SHA256", hashlib.sha256(base.read_bytes()).hexdigest()),
+                mock.patch.object(
+                    module,
+                    "BASE_RUNNER_SHA256",
+                    hashlib.sha256(base.read_bytes()).hexdigest(),
+                ),
                 redirect_stdout(io.StringIO()),
             ):
                 module._prepare(args)
             marker = json.loads((prepared / "provenance.json").read_text())
             self.assertEqual(marker["member"], "query.json")
             self.assertEqual(marker["model_seeds"], [7, 9])
-            self.assertEqual(marker["raw_input_sha256"], hashlib.sha256(raw.read_bytes()).hexdigest())
+            self.assertEqual(
+                marker["raw_input_sha256"], hashlib.sha256(raw.read_bytes()).hexdigest()
+            )
             self.assertEqual(marker["lane_id"], "openfold3-openbind-0-none")
             query = json.loads((prepared / "query.json").read_text())
             self.assertEqual(query["seeds"], [7, 9])
@@ -1484,44 +1624,85 @@ for seed in seeds:
             chain = query["queries"]["fixture"]["chains"][0]
             self.assertNotIn("use_msas", chain)
             self.assertEqual(
-                yaml.safe_load((prepared / "runner.yaml").read_text())["experiment_settings"]["seeds"],
+                yaml.safe_load((prepared / "runner.yaml").read_text())[
+                    "experiment_settings"
+                ]["seeds"],
                 [7, 9],
             )
             raw_tar = root / "prepared.tar"
-            subprocess.run(["zstd", "-q", "-d", "-o", str(raw_tar), str(archive)], check=True)
+            subprocess.run(
+                ["zstd", "-q", "-d", "-o", str(raw_tar), str(archive)], check=True
+            )
             with tarfile.open(raw_tar) as bundle:
                 self.assertEqual(bundle.getnames(), ["query.json", "provenance.json"])
 
-    def test_generated_openfold_argv_is_offline_and_public_ccd_api_is_used(self) -> None:
+    def test_generated_openfold_argv_is_offline_and_public_ccd_api_is_used(
+        self,
+    ) -> None:
         wrapper = ROOT / "run_openfold3.py"
         module = load_module("run_openfold3")
         image = next(item for item in LOCK["images"] if item["id"] == "openfold3")
-        self.assertNotIn(
-            "database-dir", image["runtime_contract"]["commands"][0]
-        )
+        self.assertNotIn("database-dir", image["runtime_contract"]["commands"][0])
         prepare_argv = [
-            "prepare", "--input-manifest", "/work/input.json",
-            "--query-json", "/work/prepared/query.json",
-            "--base-runner-yaml", "/opt/fs2/runtime/openfold3/runner-base.yaml",
-            "--runner-yaml", "/work/prepared/runner.yaml", "--msa-mode", "none",
-            "--provenance-marker", "/work/prepared/provenance.json",
-            "--handoff-tar", "/work/prepared.tar.zst", "--output-artifact-id", "openfold-stage-1",
-            "--raw-input-sha256", "a" * 64,
-            "--raw-input-artifact-id", "raw-openfold-request-1",
-            "--model-seeds", "101,202", "--offline",
+            "prepare",
+            "--input-manifest",
+            "/work/input.json",
+            "--query-json",
+            "/work/prepared/query.json",
+            "--base-runner-yaml",
+            "/opt/fs2/runtime/openfold3/runner-base.yaml",
+            "--runner-yaml",
+            "/work/prepared/runner.yaml",
+            "--msa-mode",
+            "none",
+            "--provenance-marker",
+            "/work/prepared/provenance.json",
+            "--handoff-tar",
+            "/work/prepared.tar.zst",
+            "--output-artifact-id",
+            "openfold-stage-1",
+            "--raw-input-sha256",
+            "a" * 64,
+            "--raw-input-artifact-id",
+            "raw-openfold-request-1",
+            "--model-seeds",
+            "101,202",
+            "--offline",
         ]
         predict_argv = [
-            "predict", "--query-json", "/work/input/query.json",
-            "--provenance-marker", "/work/input/provenance.json", "--input-artifact-id", "openfold-stage-1",
-            "--expected-raw-input-sha256", "a" * 64,
-            "--expected-raw-input-artifact-id", "raw-openfold-request-1", "--output-dir", "/work/outputs",
-            "--checkpoint", "/models/openfold3/of3-ob-2025-06-30-174k.pt",
-            "--ccd-path", "/databases/openfold3/components.bcif",
-            "--runner-yaml", "/work/runner.yaml", "--base-runner-yaml", "/opt/fs2/runtime/openfold3/runner-base.yaml",
-            "--num-diffusion-samples", "1",
-            "--num-model-seeds", "2", "--model-seeds", "101,202",
-            "--msa-mode", "none", "--use-templates", "false",
-            "--runtime-localization-marker", "/work/.fs2/runtime-localization.json",
+            "predict",
+            "--query-json",
+            "/work/input/query.json",
+            "--provenance-marker",
+            "/work/input/provenance.json",
+            "--input-artifact-id",
+            "openfold-stage-1",
+            "--expected-raw-input-sha256",
+            "a" * 64,
+            "--expected-raw-input-artifact-id",
+            "raw-openfold-request-1",
+            "--output-dir",
+            "/work/outputs",
+            "--checkpoint",
+            "/models/openfold3/of3-ob-2025-06-30-174k.pt",
+            "--ccd-path",
+            "/databases/openfold3/components.bcif",
+            "--runner-yaml",
+            "/work/runner.yaml",
+            "--base-runner-yaml",
+            "/opt/fs2/runtime/openfold3/runner-base.yaml",
+            "--num-diffusion-samples",
+            "1",
+            "--num-model-seeds",
+            "2",
+            "--model-seeds",
+            "101,202",
+            "--msa-mode",
+            "none",
+            "--use-templates",
+            "false",
+            "--runtime-localization-marker",
+            "/work/.fs2/runtime-localization.json",
         ]
         with mock.patch.object(module, "_prepare") as prepare_handler:
             module.main(prepare_argv)
@@ -1536,9 +1717,11 @@ for seed in seeds:
             self.assertEqual(parsed.num_diffusion_samples, 1)
             self.assertEqual(parsed.use_templates, "false")
         argv = module.build_command(
-            query=Path("/work/query.json"), output=Path("/work/outputs"),
+            query=Path("/work/query.json"),
+            output=Path("/work/outputs"),
             checkpoint=Path("/models/openfold3/of3-ob-2025-06-30-174k.pt"),
-            runner_yaml=Path("/work/runner.yaml"), num_diffusion_samples=1,
+            runner_yaml=Path("/work/runner.yaml"),
+            num_diffusion_samples=1,
         )
         self.assertEqual(argv[:2], ["run_openfold", "predict"])
         self.assertIn("--inference-ckpt-path", argv)
@@ -1550,7 +1733,9 @@ for seed in seeds:
         self.assertNotIn("._CCD_FILE", source)
         self.assertIn("standalone_mode=False", source)
 
-    def test_openfold_two_seed_one_sample_confidence_binds_structures_and_bounds(self) -> None:
+    def test_openfold_two_seed_one_sample_confidence_binds_structures_and_bounds(
+        self,
+    ) -> None:
         module = load_module("run_openfold3")
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary)
@@ -1583,13 +1768,22 @@ for seed in seeds:
                 raw_input_sha256="a" * 64,
             )
             jsonschema.Draft202012Validator(CONFIDENCE_SCHEMA).validate(envelope)
-            self.assertEqual(envelope["schema"], "fs2.nebius.ai/structure-confidence/v1")
+            self.assertEqual(
+                envelope["schema"], "fs2.nebius.ai/structure-confidence/v1"
+            )
             self.assertEqual(len(envelope["results"]), 2)
-            self.assertEqual([result["sample_index"] for result in envelope["results"]], [0, 0])
+            self.assertEqual(
+                [result["sample_index"] for result in envelope["results"]], [0, 0]
+            )
             encoded = (output / "confidence.json").read_text(encoding="utf-8")
             self.assertNotIn("per_atom", encoded)
             self.assertNotIn(str(output), encoded)
-            bad = output / "query" / "seed_101" / "query_seed_101_sample_1_confidences_aggregated.json"
+            bad = (
+                output
+                / "query"
+                / "seed_101"
+                / "query_seed_101_sample_1_confidences_aggregated.json"
+            )
             bad.write_text(
                 json.dumps({"avg_plddt": 88.0, "gpde": float("inf")}),
                 encoding="utf-8",
@@ -1630,9 +1824,14 @@ for seed in seeds:
                 [(item["seed"], item["sample_index"]) for item in envelope["results"]],
                 [(7, 0), (7, 1), (9, 0), (9, 1)],
             )
-            duplicate = output / "query/seed_7/query_seed_7_sample_01_confidences_aggregated.json"
+            duplicate = (
+                output
+                / "query/seed_7/query_seed_7_sample_01_confidences_aggregated.json"
+            )
             duplicate.write_text('{"avg_plddt":88.0,"gpde":4.0}', encoding="utf-8")
-            with self.assertRaisesRegex(SystemExit, "(canonical|exact seed/sample|one-to-one)"):
+            with self.assertRaisesRegex(
+                SystemExit, "(canonical|exact seed/sample|one-to-one)"
+            ):
                 module._write_confidence(
                     output,
                     seeds=[7, 9],
@@ -1641,7 +1840,9 @@ for seed in seeds:
                     raw_input_sha256="a" * 64,
                 )
 
-    def test_semantic_smoke_validates_exact_envelope_atoms_metrics_and_cardinality(self) -> None:
+    def test_semantic_smoke_validates_exact_envelope_atoms_metrics_and_cardinality(
+        self,
+    ) -> None:
         contract = load_module("result_contract")
         smoke = load_module("image_smoke")
         with tempfile.TemporaryDirectory() as temporary:
@@ -1657,10 +1858,15 @@ for seed in seeds:
                 model_revision="fixture",
                 seeds=[5],
                 samples_per_seed=1,
-                results=[{
-                    "seed": 5, "sample_index": 0, "structure": structure,
-                    "summary": None, "metrics": {"plddt_mean": 1.0},
-                }],
+                results=[
+                    {
+                        "seed": 5,
+                        "sample_index": 0,
+                        "structure": structure,
+                        "summary": None,
+                        "metrics": {"plddt_mean": 1.0},
+                    }
+                ],
                 input_artifact_id="raw-esmfold-request-1",
                 raw_input_sha256="a" * 64,
             )
@@ -1679,15 +1885,21 @@ for seed in seeds:
                     output, runtime_id="esmfold2", seeds=[5], samples_per_seed=1
                 )
 
-            (output / "confidence.json").write_text(json.dumps(envelope), encoding="utf-8")
+            (output / "confidence.json").write_text(
+                json.dumps(envelope), encoding="utf-8"
+            )
             structure.write_text("JUNK\n", encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "bind its structure bytes"):
                 smoke._validate_semantic_output(
                     output, runtime_id="esmfold2", seeds=[5], samples_per_seed=1
                 )
             envelope["results"][0]["structure"]["bytes"] = structure.stat().st_size
-            envelope["results"][0]["structure"]["sha256"] = hashlib.sha256(structure.read_bytes()).hexdigest()
-            (output / "confidence.json").write_text(json.dumps(envelope), encoding="utf-8")
+            envelope["results"][0]["structure"]["sha256"] = hashlib.sha256(
+                structure.read_bytes()
+            ).hexdigest()
+            (output / "confidence.json").write_text(
+                json.dumps(envelope), encoding="utf-8"
+            )
             with self.assertRaisesRegex(RuntimeError, "fewer than 10 atom"):
                 smoke._validate_semantic_output(
                     output, runtime_id="esmfold2", seeds=[5], samples_per_seed=1
@@ -1700,49 +1912,74 @@ for seed in seeds:
                     model_revision="fixture",
                     seeds=[5, 6],
                     samples_per_seed=1,
-                    results=[{
-                        "seed": 5, "sample_index": 0, "structure": structure,
-                        "summary": None, "metrics": {"plddt_mean": 0.5},
-                    }],
+                    results=[
+                        {
+                            "seed": 5,
+                            "sample_index": 0,
+                            "structure": structure,
+                            "summary": None,
+                            "metrics": {"plddt_mean": 0.5},
+                        }
+                    ],
                     input_artifact_id="raw-esmfold-request-1",
                     raw_input_sha256="a" * 64,
                 )
 
     def test_esm_production_defaults_and_non_hopper_flash_disable(self) -> None:
         source = (ROOT / "run_esmfold2.py").read_text(encoding="utf-8")
-        self.assertIn('default=20', source)
-        self.assertIn('default=200', source)
+        self.assertIn("default=20", source)
+        self.assertIn("default=200", source)
         self.assertIn('"--smoke"', source)
         self.assertIn("esmfold2_layers.FLASH_ATTN_AVAILABLE = False", source)
-        self.assertIn('attention = "flash_attention_2" if args.hardware_mode == "h100" else "sdpa"', source)
+        self.assertIn(
+            'attention = "flash_attention_2" if args.hardware_mode == "h100" else "sdpa"',
+            source,
+        )
         self.assertIn('confidence_path = output.parent / "confidence.json"', source)
         self.assertIn('"plddt_mean"', source)
-        self.assertRegex(source, r'"plddt_mean",\s*float\(.+?\),\s*0\.0,\s*1\.0,',)
+        self.assertRegex(
+            source,
+            r'"plddt_mean",\s*float\(.+?\),\s*0\.0,\s*1\.0,',
+        )
         self.assertIn("write_confidence_envelope", source)
         self.assertNotIn(".cpu().tolist()", source)
         self.assertIn("ccd_path.stat().st_size != CCD_BYTES", source)
         self.assertNotIn("_sha256(ccd_path)", source)
-        self.assertIn("localized ESMFold input differs from the frozen verified digest", source)
+        self.assertIn(
+            "localized ESMFold input differs from the frozen verified digest", source
+        )
         self.assertFalse(hasattr(load_module("run_esmfold2"), "_sha256"))
         metric_schema = CONFIDENCE_SCHEMA["properties"]["results"]["items"]
-        metric_schema = metric_schema["properties"]["metrics"]["properties"]["plddt_mean"]
+        metric_schema = metric_schema["properties"]["metrics"]["properties"][
+            "plddt_mean"
+        ]
         self.assertEqual(metric_schema, {"type": "number", "minimum": 0, "maximum": 1})
 
-    def test_dockerfiles_are_exact_external_and_do_not_duplicate_large_chmod_layers(self) -> None:
+    def test_dockerfiles_are_exact_external_and_do_not_duplicate_large_chmod_layers(
+        self,
+    ) -> None:
         for image in LOCK["images"]:
             dockerfile = (ROOT / image["dockerfile"]).read_text(encoding="utf-8")
             with self.subTest(image=image["id"]):
                 self.assertIn(image["source"]["revision"], dockerfile)
-                self.assertIn('test "$(git rev-parse HEAD)" = "${SOURCE_REVISION}"', dockerfile)
+                self.assertIn(
+                    'test "$(git rev-parse HEAD)" = "${SOURCE_REVISION}"', dockerfile
+                )
                 self.assertIn("git describe --tags --exact-match HEAD", dockerfile)
-                self.assertIn('ai.nebius.fs2.artifact.policy="external-only"', dockerfile)
+                self.assertIn(
+                    'ai.nebius.fs2.artifact.policy="external-only"', dockerfile
+                )
                 self.assertIn("USER 10001:10001", dockerfile)
-                self.assertIn("result_contract.py /usr/local/bin/result_contract.py", dockerfile)
+                self.assertIn(
+                    "result_contract.py /usr/local/bin/result_contract.py", dockerfile
+                )
                 self.assertIn(
                     "runtime_localization.py /usr/local/bin/runtime_localization.py",
                     dockerfile,
                 )
-                self.assertIn("confidence.schema.json /opt/fs2/confidence.schema.json", dockerfile)
+                self.assertIn(
+                    "confidence.schema.json /opt/fs2/confidence.schema.json", dockerfile
+                )
                 artifact_copies = [
                     line
                     for line in dockerfile.splitlines()
@@ -1758,7 +1995,7 @@ for seed in seeds:
         self.assertIn("! command -v nvcc", runtime_stage)
         self.assertIn("command -v gcc", runtime_stage)
         self.assertIn("ca-certificates gcc postgresql-client", runtime_stage)
-        self.assertIn('unsupported-pinned-pytorch-cu126', protenix)
+        self.assertIn("unsupported-pinned-pytorch-cu126", protenix)
         self.assertEqual(
             protenix.count('importlib.metadata.version("protenix") == "2.0.0"'),
             1,
@@ -1774,10 +2011,15 @@ for seed in seeds:
         self.assertIn(
             "python-runtime-launcher.sh /usr/local/bin/fs2-run-openfold3", of3
         )
-        self.assertIn("openfold3-runner-base.yaml /opt/fs2/runtime/openfold3/runner-base.yaml", of3)
+        self.assertIn(
+            "openfold3-runner-base.yaml /opt/fs2/runtime/openfold3/runner-base.yaml",
+            of3,
+        )
         self.assertIn("libaio-dev zstd", of3)
 
-    def test_protenix_fast_layernorm_is_prebuilt_but_triton_jit_is_truthful(self) -> None:
+    def test_protenix_fast_layernorm_is_prebuilt_but_triton_jit_is_truthful(
+        self,
+    ) -> None:
         compiler = (ROOT / "protenix-torch-ext-compile.py").read_text(encoding="utf-8")
         self.assertIn('"arch=compute_90,code=sm_90"', compiler)
         self.assertIn('"arch=compute_90,code=compute_90"', compiler)
@@ -1785,20 +2027,30 @@ for seed in seeds:
         dockerfile = (ROOT / "Dockerfile.protenix-v2").read_text(encoding="utf-8")
         self.assertIn("verify_protenix_offline_prep.py", dockerfile)
         self.assertIn('rm -rf "${package_root}/model/layer_norm/kernel"', dockerfile)
-        self.assertIn('"${package_root}/model/layer_norm/torch_ext_compile.py"', dockerfile)
+        self.assertIn(
+            '"${package_root}/model/layer_norm/torch_ext_compile.py"', dockerfile
+        )
         self.assertIn("env -C / /opt/protenix-venv/bin/python -c", dockerfile)
         self.assertIn("TRITON_CACHE_DIR=/cache/protenix/triton", dockerfile)
         self.assertIn("CUEQ_TRITON_CACHE_DIR=/cache/protenix/cueq-triton", dockerfile)
-        self.assertIn("TORCH_EXTENSIONS_DIR=/cache/protenix/torch-extensions", dockerfile)
+        self.assertIn(
+            "TORCH_EXTENSIONS_DIR=/cache/protenix/torch-extensions", dockerfile
+        )
         self.assertIn("XDG_CACHE_HOME=/cache/protenix/xdg", dockerfile)
         self.assertIn("/cache/protenix/torch-extensions", dockerfile)
         self.assertIn("/cache/protenix/xdg", dockerfile)
-        self.assertIn("chown -R 10001:10001 /models /outputs /cache/protenix", dockerfile)
+        self.assertIn(
+            "chown -R 10001:10001 /models /outputs /cache/protenix", dockerfile
+        )
         smoke = (ROOT / "image_smoke.py").read_text(encoding="utf-8")
         self.assertIn("active-triton-jit-first-shape-then-cache", smoke)
-        self.assertIn('launcher_compiler = shutil.which("gcc") or shutil.which("clang")', smoke)
+        self.assertIn(
+            'launcher_compiler = shutil.which("gcc") or shutil.which("clang")', smoke
+        )
         self.assertIn("_probe_python_launcher_compiler", smoke)
-        self.assertIn('"launcher_probe": "bounded-python-extension-compile-passed"', smoke)
+        self.assertIn(
+            '"launcher_probe": "bounded-python-extension-compile-passed"', smoke
+        )
         self.assertIn('"nvcc": "absent"', smoke)
         self.assertNotIn('result["runtime_jit"] = "disabled"', smoke)
 
@@ -1869,14 +2121,34 @@ for seed in seeds:
             )
         with mock.patch.object(module, "_prepare") as handler:
             with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-                module.main([
-                    "prepare", "--input-manifest", "/i", "--query-json", "/q",
-                    "--base-runner-yaml", "/b", "--runner-yaml", "/r",
-                    "--provenance-marker", "/p", "--handoff-tar", "/t",
-                    "--output-artifact-id", "id", "--raw-input-sha256", "a" * 64,
-                    "--raw-input-artifact-id", "raw-openfold-request-1",
-                    "--msa-mode", "precomputed", "--model-seeds", "1", "--offline",
-                ])
+                module.main(
+                    [
+                        "prepare",
+                        "--input-manifest",
+                        "/i",
+                        "--query-json",
+                        "/q",
+                        "--base-runner-yaml",
+                        "/b",
+                        "--runner-yaml",
+                        "/r",
+                        "--provenance-marker",
+                        "/p",
+                        "--handoff-tar",
+                        "/t",
+                        "--output-artifact-id",
+                        "id",
+                        "--raw-input-sha256",
+                        "a" * 64,
+                        "--raw-input-artifact-id",
+                        "raw-openfold-request-1",
+                        "--msa-mode",
+                        "precomputed",
+                        "--model-seeds",
+                        "1",
+                        "--offline",
+                    ]
+                )
             handler.assert_not_called()
 
     def test_smoke_defaults_to_semantic_and_build_mode_is_explicit(self) -> None:
@@ -1887,8 +2159,7 @@ for seed in seeds:
         self.assertIn("--runtime-localization-marker", source)
         self.assertIn("MIN_ATOM_RECORDS = 10", source)
         self.assertNotIn(
-            'runtime_id in {"esmfold2", "esmfold2-fast", "protenix-v2"}:\n'
-            "        expected_seeds",
+            'runtime_id in {"esmfold2", "esmfold2-fast", "protenix-v2"}:\n        expected_seeds',
             source,
         )
         publisher = (ROOT / "build-and-publish.sh").read_text(encoding="utf-8")
@@ -1910,7 +2181,9 @@ for seed in seeds:
             publisher.index('docker push "$target"'),
         )
 
-    def test_publisher_consumes_v2_repository_tag_and_configurable_registry(self) -> None:
+    def test_publisher_consumes_v2_repository_tag_and_configurable_registry(
+        self,
+    ) -> None:
         script = (ROOT / "build-and-publish.sh").read_text(encoding="utf-8")
         self.assertIn("--registry-root", script)
         self.assertIn("FS2_REGISTRY_ROOT", script)
@@ -1931,7 +2204,9 @@ for seed in seeds:
             encoding="utf-8"
         )
         self.assertIn('"ls-remote"', verifier)
-        self.assertIn("adapter commit is not the exact clean pushed branch head", verifier)
+        self.assertIn(
+            "adapter commit is not the exact clean pushed branch head", verifier
+        )
         self.assertIn("MODEL_CONTRACTS", verifier)
         self.assertIn("_candidate_profile_from_contract", verifier)
         self.assertIn("invocation.runtime_artifacts", verifier)
@@ -1953,9 +2228,7 @@ for seed in seeds:
         self.assertIn("refusing raced overwrite", script)
         self.assertNotIn(":latest", script)
         self.assertNotIn("docker login", script)
-        self.assertIn(
-            "refs/heads/main:refs/remotes/origin/main", script
-        )
+        self.assertIn("refs/heads/main:refs/remotes/origin/main", script)
 
         self.assertIn("merge-base --is-ancestor", script)
         self.assertIn("refusing stale-base build", script)
@@ -1987,7 +2260,9 @@ for seed in seeds:
         self.assertIn("concrete runtime adapter worktree is required", blocked.stdout)
         self.assertNotIn("SOURCE id=", blocked.stdout)
 
-    def test_narrow_adapter_evidence_is_build_only_and_external_activation_stays_open(self) -> None:
+    def test_narrow_adapter_evidence_is_build_only_and_external_activation_stays_open(
+        self,
+    ) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("0ad6ffe9126c6e70fe3dbdff6e0936e0544dd9b2", readme)
         self.assertIn("model-owned adapter contracts", readme)
@@ -2043,12 +2318,14 @@ for seed in seeds:
         superseded = LOCK["superseded_publications"]
         self.assertEqual(len(superseded), 7)
         self.assertTrue(all(item["deployable"] is False for item in superseded))
-        self.assertTrue(all(item["digest"].startswith("sha256:") for item in superseded))
+        self.assertTrue(
+            all(item["digest"].startswith("sha256:") for item in superseded)
+        )
 
     def test_openfold_qualification_consumes_the_baked_runner(self) -> None:
-        renderer = (
-            ROOT / "qualification/render_semantic_job.py"
-        ).read_text(encoding="utf-8")
+        renderer = (ROOT / "qualification/render_semantic_job.py").read_text(
+            encoding="utf-8"
+        )
         self.assertNotIn("OPENFOLD_BASE_RUNNER", renderer)
         self.assertNotIn('"mountPath": "/opt/fs2/runtime/openfold3"', renderer)
         self.assertNotIn('"runner-base.yaml":', renderer)

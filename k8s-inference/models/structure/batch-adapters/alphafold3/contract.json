@@ -10,11 +10,11 @@
     "release_tag": "v3.0.4"
   },
   "runtime": {
-    "image_digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
+    "image_digest": "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
     "workspace_uid": 1001,
     "workspace_gid": 1001,
-    "production_protocol_compatible": false,
-    "successor_required": "Build and qualify a new immutable image from the atomic-receipt, bounded-handoff source before route activation.",
+    "production_protocol_compatible": true,
+    "qualification_required": "The published r7 successor requires exact-digest H100 parameter-load and inference qualification before route activation.",
     "command_io_contract": "models/cancer-immunotherapy/images/alphafold3/contracts/af3-command-io-contract.json",
     "command": [
       "/alphafold3_venv/bin/python3",
@@ -124,6 +124,6 @@
   ],
   "route_gate": {
     "route_exposed": false,
-    "blocked_until": "a producer-generated terminal reference receipt is published and the integrated renderer is live-qualified"
+    "blocked_until": "the exact r7 digest passes H100 parameter-load and inference qualification, a producer-generated terminal reference receipt is published, and the integrated renderer is live-qualified"
   }
 }

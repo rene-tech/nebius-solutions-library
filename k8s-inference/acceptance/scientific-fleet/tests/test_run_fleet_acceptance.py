@@ -24,6 +24,7 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 PRIMARY_PATHS = {
+    "boltzgen": "models/cancer-immunotherapy/runtime-images/boltzgen/activation/fragment.json",
     "bindcraft": "models/cancer-immunotherapy/images/bindcraft-native/activation/fragment.json",
     "mosaic": "models/cancer-immunotherapy/runtime-images/mosaic/activation/fragment.json",
     "proteina-complexa": (
@@ -45,8 +46,7 @@ SECRET = "fleet-bearer-value-must-never-appear"
 
 def canonical(value: object) -> bytes:
     return (
-        json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
-        + "\n"
+        json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n"
     ).encode()
 
 
@@ -255,14 +255,14 @@ class FleetAcceptanceTest(unittest.TestCase):
         repository_root = MODULE_PATH.parents[2]
         discovered = MODULE.discover_inputs(repository_root)
 
-        self.assertEqual(len(discovered), 9)
+        self.assertEqual(len(discovered), 10)
         self.assertEqual(
             {item.model_id for item in discovered},
             MODULE.EXPECTED_PRIMARY | MODULE.EXPECTED_SECONDARY,
         )
         self.assertEqual(
             sum(item.kind == "primary-activation-fragment" for item in discovered),
-            4,
+            5,
         )
         self.assertEqual(
             sum(item.kind == "secondary-public-acceptance" for item in discovered),
@@ -281,10 +281,10 @@ class FleetAcceptanceTest(unittest.TestCase):
             ):
                 result = MODULE.run_fleet(self._config(root))
 
-            self.assertEqual((result.succeeded, result.failed), (9, 0))
+            self.assertEqual((result.succeeded, result.failed), (10, 0))
             self.assertGreaterEqual(child.maximum_active, 2)
             self.assertLessEqual(child.maximum_active, 3)
-            self.assertEqual(len(child.commands), 9)
+            self.assertEqual(len(child.commands), 10)
             aggregate_bytes = result.aggregate_path.read_bytes()
             self.assertEqual(
                 aggregate_bytes,
@@ -300,9 +300,7 @@ class FleetAcceptanceTest(unittest.TestCase):
                 accounting = item["api_measurements"]["gpu_occupied_idle"]
                 self.assertTrue(accounting["available"])
                 self.assertEqual(accounting["source_field"], "gpu_accounting")
-                self.assertEqual(
-                    accounting["value"]["occupied_idle_gpu_seconds"], 4.5
-                )
+                self.assertEqual(accounting["value"]["occupied_idle_gpu_seconds"], 4.5)
                 receipt = result.aggregate_path.parent / item["receipt"]["path"]
                 self.assertEqual(stat.S_IMODE(receipt.stat().st_mode), 0o600)
                 self.assertNotIn(SECRET.encode(), receipt.read_bytes())
@@ -321,9 +319,11 @@ class FleetAcceptanceTest(unittest.TestCase):
             ):
                 result = MODULE.run_fleet(self._config(root))
 
-            self.assertEqual((result.succeeded, result.failed), (8, 1))
+            self.assertEqual((result.succeeded, result.failed), (9, 1))
             failed = [
-                item for item in result.aggregate["models"] if item["status"] == "failed"
+                item
+                for item in result.aggregate["models"]
+                if item["status"] == "failed"
             ]
             self.assertEqual(
                 failed,
@@ -342,7 +342,7 @@ class FleetAcceptanceTest(unittest.TestCase):
                 ],
             )
             self.assertFalse((result.aggregate_path.parent / "mosaic.json").exists())
-            self.assertEqual(len(child.commands), 9)
+            self.assertEqual(len(child.commands), 10)
 
     def test_sensitive_child_receipt_is_rejected_and_removed(self) -> None:
         with TemporaryDirectory() as directory:
@@ -356,7 +356,7 @@ class FleetAcceptanceTest(unittest.TestCase):
             ):
                 result = MODULE.run_fleet(self._config(root))
 
-            self.assertEqual((result.succeeded, result.failed), (0, 9))
+            self.assertEqual((result.succeeded, result.failed), (0, 10))
             self.assertNotIn(SECRET.encode(), result.aggregate_path.read_bytes())
             self.assertEqual(
                 {item["error_code"] for item in result.aggregate["models"]},
@@ -367,7 +367,9 @@ class FleetAcceptanceTest(unittest.TestCase):
                 ["aggregate.json"],
             )
 
-    def test_missing_input_and_existing_receipt_fail_before_children_start(self) -> None:
+    def test_missing_input_and_existing_receipt_fail_before_children_start(
+        self,
+    ) -> None:
         with TemporaryDirectory() as directory:
             root = self._repository(Path(directory))
             missing = root / PRIMARY_PATHS["rfdiffusion"]

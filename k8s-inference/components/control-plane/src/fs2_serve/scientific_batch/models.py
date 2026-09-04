@@ -535,6 +535,7 @@ class RuntimeArtifactAggregateTree:
                 "fs2-flat-tree-inventory/v1",
                 "fs2-tree-inventory/v2",
                 "fs2-tree-manifest/v1",
+                "fs2-raw-file/v1",
             }:
                 raise ValueError("runtime localization tree algorithm is unsupported")
             if self.inventory_digest != self.tree_digest:
@@ -1077,9 +1078,7 @@ class AdapterExecutionPlan:
 
     @property
     def localized_tree_artifacts(self) -> tuple[str, ...]:
-        return tuple(
-            sorted({tree.artifact_id for invocation in self.invocations for tree in invocation.runtime_trees})
-        )
+        return tuple(sorted({tree.artifact_id for invocation in self.invocations for tree in invocation.runtime_trees}))
 
 
 @dataclass(frozen=True, slots=True)
@@ -1793,9 +1792,7 @@ class PodPhaseInterval:
         if self.started_at.tzinfo is None or self.started_at.utcoffset() is None:
             raise ValueError("Pod phase interval start must be timezone-aware")
         if self.ended_at is not None and (
-            self.ended_at.tzinfo is None
-            or self.ended_at.utcoffset() is None
-            or self.ended_at < self.started_at
+            self.ended_at.tzinfo is None or self.ended_at.utcoffset() is None or self.ended_at < self.started_at
         ):
             raise ValueError("Pod phase interval end is invalid")
 
@@ -1840,10 +1837,7 @@ class PodLifecycleObservation:
             raise ValueError("observed GPU UUIDs must be unique")
         if self.gpu_uuids and len(self.gpu_uuids) != self.gpu_count:
             raise ValueError("observed GPU UUID count differs from the Pod allocation")
-        if any(
-            re.fullmatch(r"^(?:GPU|MIG)-[A-Za-z0-9_.:/-]{1,123}$", value) is None
-            for value in self.gpu_uuids
-        ):
+        if any(re.fullmatch(r"^(?:GPU|MIG)-[A-Za-z0-9_.:/-]{1,123}$", value) is None for value in self.gpu_uuids):
             raise ValueError("observed GPU UUID is invalid")
         identities = [(item.phase, item.started_at) for item in self.phases]
         if len(identities) != len(set(identities)):

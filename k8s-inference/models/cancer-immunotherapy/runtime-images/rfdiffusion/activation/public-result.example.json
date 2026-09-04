@@ -10,11 +10,11 @@
     "model_id": "rfdiffusion",
     "variant_id": "rfdiffusion-v1-1-0",
     "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
-    "runtime_image_digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
-    "runtime_recipe_sha256": "a43cb088e08278e089433bdd8816b14ac94d7cc490dfb7ec9a771498da0941dc",
-    "workload_recipe_sha256": "548da3b7c5dd5868d7e8adaf64b4dcc0bb2e89b3611f324eb6701478bb76cb5e",
+    "runtime_image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+    "runtime_recipe_sha256": "8b89855058e29f6771aca7645a8ad581c644c7812c89e27c505ac4ddacb34a77",
+    "workload_recipe_sha256": "625ac765fe08415199b937a1ddb8b6289ed7924e0b88b9f5f342391076891bde",
     "model_artifact_manifest_digest": "e8e779d3d87881efd714fd47d84712d33b3afd9eafcc13d7157d07b42b5edc7b",
-    "execution_identity_sha256": "cf41965500b6a89ef29c3b7203912085549acb1fc067f3965f6753c34e3db571"
+    "execution_identity_sha256": "080ccf01c7f2276c76b120c10520fbbede758a752f3996ddd4d8cb63612d383c"
   },
   "access_admission": {
     "profile": "standard",
@@ -36,8 +36,8 @@
         "workload_priority_class": "customer-batch",
         "workload_priority_value": 500,
         "resolved_pool_preference": [
-          "h100-1x",
-          "h100-reserved-8x"
+          "h100-reserved-8x",
+          "h100-1x"
         ],
         "accelerator_resource_name": "nvidia.com/gpu",
         "accelerator_count": 1,
@@ -78,8 +78,8 @@
     "receipt_digest": null
   },
   "error": {
-    "code": "ACTIVATION_NOT_ENABLED",
-    "message": "The RFdiffusion checkpoint has no canonical localized generation, so the route remains disabled.",
+    "code": "PUBLIC_ACCEPTANCE_PENDING",
+    "message": "The profile is active and dispatchable; this fixture remains non-success until a public controller run supplies completion and scheduler receipts.",
     "retryable": false
   }
 }

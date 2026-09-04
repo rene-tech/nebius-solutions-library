@@ -21,6 +21,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import zstandard
+from jsonschema import Draft202012Validator
 from scientific_batch_fakes import FakeScientificBatchCluster, FakeScientificBatchRepository
 
 from fs2_serve.crypto import KeyedHasher
@@ -51,11 +52,20 @@ from fs2_serve.scientific_batch.adapters import (
     collect_stage_output as collect_registered_stage_output,
 )
 from fs2_serve.scientific_batch.adapters.common import load_output_manifest
+from fs2_serve.scientific_batch.adapters.secondary_structure import (
+    PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP,
+)
 from fs2_serve.scientific_batch.artifact_bridge import ArtifactServiceBridge
 from fs2_serve.scientific_batch.capability import ScientificWorkloadCapabilityAuthority
 from fs2_serve.scientific_batch.controller import ScientificBatchController
 from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer, _invocation_json
-from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog, ScientificWorkloadProfile
+from fs2_serve.scientific_batch.profile_catalog import (
+    SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA,
+    SCIENTIFIC_REQUEST_SCHEMA,
+    SCIENTIFIC_RESULT_SCHEMA,
+    ScientificProfileCatalog,
+    ScientificWorkloadProfile,
+)
 from fs2_serve.scientific_batch.scheduling import SchedulingContractResolver
 from fs2_serve.scientific_batch.service import ScientificBatchService
 
@@ -102,6 +112,38 @@ STAGE_SHAPES = {
         ("data-pipeline", "cpu", 32, "none", "non_preemptible"),
         ("inference", "gpu", 32, "restart", "restartable"),
     ),
+}
+RUNTIME_MOUNT_PATHS = {
+    "esmfold2": {
+        "fold": {
+            "esmfold2-trunk": "/models/esmfold2",
+            "esmc-6b": "/models/esmc-6b",
+            "esmfold2-ccd": "/databases/esmfold2",
+        }
+    },
+    "esmfold2-fast": {
+        "fold": {
+            "esmfold2-fast-trunk": "/models/esmfold2-fast",
+            "esmc-6b": "/models/esmc-6b",
+            "esmfold2-ccd": "/databases/esmfold2",
+        }
+    },
+    "protenix-v2": {
+        "prepare-data": {"protenix-v2": "/models/protenix-v2"},
+        "sample-structure": {"protenix-v2": "/models/protenix-v2"},
+    },
+    "openfold3-openbind": {
+        "inference": {
+            "openfold3-openbind-0": "/models/openfold3",
+            "openfold3-components-bcif": "/databases/openfold3",
+        }
+    },
+}
+PARAMETER_SCHEMA_FILES = {
+    "esmfold2": "esmfold2-parameters.schema.json",
+    "esmfold2-fast": "esmfold2-fast-parameters.schema.json",
+    "protenix-v2": "protenix-v2-parameters.schema.json",
+    "openfold3-openbind": "openfold3-parameters.schema.json",
 }
 
 
@@ -161,16 +203,12 @@ def _valid_prepared_handoff(model_id: str, invocation=None) -> tuple[str, bytes]
             if invocation is not None
             else "00000000-0000-4000-8000-000000000099"
         )
-        raw_digest = (
-            _argument(invocation.argv, "--raw-input-sha256") if invocation is not None else "a" * 64
-        )
+        raw_digest = _argument(invocation.argv, "--raw-input-sha256") if invocation is not None else "a" * 64
         variant = _argument(invocation.argv, "--variant") if invocation is not None else model_id
         mode = _argument(invocation.argv, "--mode") if invocation is not None else "single-sequence"
         seed = int(_argument(invocation.argv, "--seed")) if invocation is not None else 0
         source_revision = (
-            _argument(invocation.argv, "--source-revision")
-            if invocation is not None
-            else esmfold2.SOURCE_REVISION
+            _argument(invocation.argv, "--source-revision") if invocation is not None else esmfold2.SOURCE_REVISION
         )
         return (
             "prepared-input.json",
@@ -211,9 +249,7 @@ def _valid_prepared_handoff(model_id: str, invocation=None) -> tuple[str, bytes]
             "member": payload_name,
             "sha256": hashlib.sha256(payload).hexdigest(),
             "raw_input_sha256": (
-                _argument(invocation.argv, "--raw-input-sha256")
-                if invocation is not None
-                else "a" * 64
+                _argument(invocation.argv, "--raw-input-sha256") if invocation is not None else "a" * 64
             ),
             "raw_input_artifact_id": (
                 _argument(invocation.argv, "--raw-input-artifact-id")
@@ -412,10 +448,19 @@ def _qualified_profile(model_id: str) -> ScientificWorkloadProfile:
 
 
 def _profile_catalog(model_id: str) -> ScientificProfileCatalog:
-    loaded = ScientificProfileCatalog.load(CATALOG_ROOT)
+    model_profile = _qualified_profile(model_id)
+
+    def validator(name: str) -> Draft202012Validator:
+        return Draft202012Validator(json.loads((CATALOG_ROOT / "schema" / name).read_text(encoding="utf-8")))
+
     return ScientificProfileCatalog(
-        profiles={model_id: _qualified_profile(model_id)},
-        validators=loaded._validators,  # type: ignore[attr-defined]
+        profiles={model_id: model_profile},
+        validators={
+            SCIENTIFIC_REQUEST_SCHEMA: validator("scientific-run-request.schema.json"),
+            SCIENTIFIC_RESULT_SCHEMA: validator("scientific-run-result.schema.json"),
+            SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA: validator("scientific-artifact-manifest.schema.json"),
+            model_profile.parameter_schema: validator(PARAMETER_SCHEMA_FILES[model_id]),
+        },
     )
 
 
@@ -729,6 +774,11 @@ async def test_service_bridge_scheduler_controller_and_renderer_use_one_frozen_c
         item["value"] for item in materializer["env"] if item["name"] == "FS2_STAGE_INVOCATION_JSON"
     )
     assert json.loads(frozen_invocation)["materializations"][0]["artifact_id"] == MODULES[model_id].INPUT_ARTIFACT_ID
+    if model_id == "protenix-v2":
+        assert pod["securityContext"]["supplementalGroups"] == [PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP]
+        assert "fsGroup" not in pod["securityContext"]
+    else:
+        assert "supplementalGroups" not in pod["securityContext"]
 
 
 @pytest.mark.parametrize("model_id", tuple(MODULES))
@@ -773,6 +823,20 @@ def test_two_positive_fixtures_compile_to_cpu_then_gpu(model_id: str) -> None:
         )
         assert plan.invocations[1].runtime_artifacts == tuple(
             MODULES[model_id].STAGE_EXECUTION_CONTRACTS[plan.invocations[1].stage_id]["runtime_artifacts"]
+        )
+
+
+@pytest.mark.parametrize("model_id", tuple(MODULES))
+def test_public_runtime_artifact_mounts_are_exact_read_only_and_group_readable(model_id: str) -> None:
+    plan = compile_fixture(model_id, POSITIVE_FIXTURES[model_id][0])
+    expected_by_stage = RUNTIME_MOUNT_PATHS[model_id]
+    for invocation in plan.invocations:
+        expected = expected_by_stage.get(invocation.stage_id, {})
+        assert invocation.runtime_artifacts == tuple(expected)
+        assert {mount.artifact_id: mount.mount_path for mount in invocation.runtime_mounts} == expected
+        assert all(mount.read_only for mount in invocation.runtime_mounts)
+        assert all(
+            mount.supplemental_groups == (PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP,) for mount in invocation.runtime_mounts
         )
 
 
@@ -1077,9 +1141,7 @@ def _write_confidence_workspace(
                 else "00000000-0000-4000-8000-000000000099"
             ),
             "sha256": (
-                _argument(invocation.argv, "--expected-raw-input-sha256")
-                if invocation is not None
-                else "a" * 64
+                _argument(invocation.argv, "--expected-raw-input-sha256") if invocation is not None else "a" * 64
             ),
         },
         "seeds": list(seeds),
@@ -1321,8 +1383,8 @@ def test_production_companion_publishes_result_manifest_and_validation(model_id:
 
 def test_contract_documents_match_code_and_the_published_successor_handoff() -> None:
     handoff = json.loads(IMAGE_HANDOFF.read_text(encoding="utf-8"))
-    assert handoff["state"] == "published-build-only-not-activated"
-    assert handoff["production_protocol_compatible"] is True
+    assert handoff["state"] == "publication-partial-pending-not-activated"
+    assert handoff["production_protocol_compatible"] is False
     assert handoff["semantic_h100_qualification"] is False
     assert handoff["route_activation_allowed"] is False
     assert "alphafold3" not in {item["model_id"] for item in handoff["images"]}
@@ -1334,17 +1396,20 @@ def test_contract_documents_match_code_and_the_published_successor_handoff() -> 
         assert value["variant_id"] == module.VARIANT_ID
         assert value["source"]["repository"] == module.SOURCE_REPOSITORY
         assert value["source"]["revision"] == module.SOURCE_REVISION
+        semantic_qualified = model_id == "openfold3-openbind"
         assert value["activation"] == {
             "profile_state": "candidate-unqualified",
             "route_exposed": False,
-            "semantic_h100_qualified": False,
+            "semantic_h100_qualified": semantic_qualified,
         }
         assert value["runtime_image"]["repository"] == images[model_id]["repository"]
         assert value["runtime_image"]["tag"] == images[model_id]["tag"]
         assert value["runtime_image"]["digest"] == images[model_id]["digest"]
         assert value["runtime_image"]["workspace_uid"] == 10001
         assert value["runtime_image"]["workspace_gid"] == 10001
-        assert value["runtime_image"]["state"] == "build-only-not-semantic-qualified"
+        assert value["runtime_image"]["state"] == (
+            "semantic-h100-qualified" if semantic_qualified else "build-only-not-semantic-qualified"
+        )
         assert {
             stage["stage_id"]: {
                 "collector_id": stage["collector_id"],
@@ -1367,6 +1432,19 @@ def test_committed_publication_evidence_matches_the_exact_image_handoff() -> Non
     }
     evidence_images = {item["model_id"]: item for item in evidence["images"]}
     for image in handoff["images"]:
+        if image["model_id"] == "openfold3-openbind":
+            successor = json.loads(
+                (
+                    SOLUTION_ROOT / "models/cancer-immunotherapy/images/structure-secondary/evidence/"
+                    "openfold3-runner-baked-publication-20260904.json"
+                ).read_text(encoding="utf-8")
+            )
+            assert successor["image"]["target"] == f"{image['repository']}:{image['tag']}"
+            assert successor["image"]["digest"] == image["digest"]
+            assert successor["image"]["default_uid"] == 10001
+            assert successor["image"]["default_gid"] == 10001
+            assert re.fullmatch(r"[0-9a-f]{64}", successor["sbom"]["sha256"])
+            continue
         item = evidence_images[image["model_id"]]
         assert item["target"] == f"{image['repository']}:{image['tag']}"
         assert item["digest"] == image["digest"]

@@ -43,6 +43,7 @@ from .common import (
     run_workspace,
     strict_object,
 )
+from .secondary_structure import PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP
 
 MODEL_ID = "alphafold3"
 VARIANT_ID = "upstream-v3-0-4"
@@ -51,7 +52,7 @@ SOURCE_REVISION = "85c4d20505fd5cef05eac22b534d4e793971ae69"
 PARAMETER_SCHEMA = "fs2-serve.nebius.ai/alphafold3-upstream-v3-0-4-parameters/v1"
 VALIDATOR_ID = "alphafold3-upstream-v3-0-4"
 
-RUNTIME_IMAGE_DIGEST = "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e"
+RUNTIME_IMAGE_DIGEST = "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7"
 RUNTIME_COMMAND = ("/alphafold3_venv/bin/python3", "/opt/fs2/af3_runtime.py")
 
 PARAMETERS_ARTIFACT = "alphafold3-parameters"
@@ -123,6 +124,7 @@ FORBIDDEN_ARGV_TOKENS = (
     "--runtime-localization-marker",
 )
 ADMISSION_BLOCKER = "AcademicDeploymentAuthorizationMissing"
+DEPLOYMENT_AUTHORIZATION_RECEIPT_SHA256 = "3a3d5d77a7f58d7875e33e78defe0dcb482dbe590e18380704594c4c1c3a8155"
 
 RUNTIME_MOUNTS: Mapping[str, RuntimeArtifactMount] = MappingProxyType(
     {
@@ -133,6 +135,7 @@ RUNTIME_MOUNTS: Mapping[str, RuntimeArtifactMount] = MappingProxyType(
             # Receipt, dataset marker and sibling manifest all live below this
             # root. A subPath mount would hide two of those objects.
             sub_path=None,
+            supplemental_groups=(PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP,),
         ),
         INFERENCE_STAGE_ID: RuntimeArtifactMount(
             artifact_id=PARAMETERS_ARTIFACT,
@@ -210,7 +213,7 @@ def _assert_deployment_authorization(profile: Mapping[str, object]) -> None:
     if not isinstance(access, Mapping) or dict(access) != {
         "profile": "academic",
         "state": "verified",
-        "receipt_digest": None,
+        "receipt_digest": DEPLOYMENT_AUTHORIZATION_RECEIPT_SHA256,
         "credentials_embedded": False,
     }:
         raise ScientificAdapterError(ADMISSION_BLOCKER)

@@ -10,6 +10,7 @@ from argparse import Namespace
 from pathlib import Path
 from types import ModuleType
 from typing import Any
+from uuid import UUID
 
 import pytest
 
@@ -23,6 +24,7 @@ from fs2_serve.scientific_batch.models import (
     RuntimeArtifactFile,
     RuntimeArtifactLocalization,
     RuntimeArtifactTreeKind,
+    ScientificInputArtifact,
 )
 
 SOLUTION_ROOT = Path(__file__).resolve().parents[3]
@@ -140,8 +142,27 @@ def granted() -> dict[str, Any]:
     return profile(authorization=GRANTED_AUTHORIZATION)
 
 
+def verified_target(**overrides: object) -> ScientificInputArtifact:
+    values: dict[str, object] = {
+        "logical_artifact_id": bindcraft.TARGET_INPUT_ID,
+        "semantic_type": bindcraft.TARGET_SEMANTIC_TYPE,
+        "artifact_id": UUID("30000000-0000-4000-8000-000000000001"),
+        "digest": "sha256:" + "d" * 64,
+        "size_bytes": 24_576,
+        "media_type": bindcraft.TARGET_MEDIA_TYPE,
+        "compression": "none",
+    }
+    values.update(overrides)
+    return ScientificInputArtifact(**values)  # type: ignore[arg-type]
+
+
 def compile_fixture(name: str, *, operation_id: str = "op-bindcraft-01") -> Any:
-    return bindcraft.compile_run(granted(), fixture(name), operation_id=operation_id)
+    return bindcraft.compile_run(
+        granted(),
+        fixture(name),
+        operation_id=operation_id,
+        input_artifacts=(verified_target(),),
+    )
 
 
 def contract_artifacts() -> dict[str, dict[str, Any]]:
@@ -282,16 +303,22 @@ def test_stage_argv_is_shell_free_and_uses_the_reviewed_outer_entrypoint() -> No
 def test_each_invocation_carries_its_exact_native_request_and_input_manifest() -> None:
     request = fixture("positive-default-lane")
     request["parameters"]["designs"] = 33
-    plan = bindcraft.compile_run(granted(), request, operation_id="op-bindcraft-native-documents")
+    target = verified_target()
+    plan = bindcraft.compile_run(
+        granted(),
+        request,
+        operation_id="op-bindcraft-native-documents",
+        input_artifacts=(target,),
+    )
     public, parameters = bindcraft._request(request)
-    expected_manifest = bindcraft.native_input_manifest(public)
+    expected_manifest = bindcraft.native_input_manifest(target)
     expected_manifest_bytes = bindcraft._canonical_json(expected_manifest).encode()
 
     for index, shard_id in enumerate(parameters.shard_ids):
         invocation = plan.invocation("design", shard_id)
         environment = dict(invocation.environment)
         native = json.loads(environment["FS2_BINDCRAFT_REQUEST_JSON"])
-        assert native == bindcraft.native_request(public, parameters, shard_index=index)
+        assert native == bindcraft.native_request(public, parameters, expected_manifest, shard_index=index)
         assert native["parameters"]["accepted_designs_per_shard"] == parameters.accepted_designs(index)
         assert native["parameters"]["max_trajectories_per_shard"] == parameters.max_trajectories(index)
         assert native["parameters"]["target_chains"] == ["A"]
@@ -308,20 +335,90 @@ def test_each_invocation_carries_its_exact_native_request_and_input_manifest() -
     assert json.loads(aggregate["FS2_BINDCRAFT_REQUEST_JSON"]) == bindcraft.native_request(
         public,
         parameters,
+        expected_manifest,
         shard_index=0,
     )
     assert "FS2_BINDCRAFT_TARGET_PDB" not in aggregate
     assert aggregate["FS2_SCIENTIFIC_COLLECTOR_ID"] == bindcraft.AGGREGATE_COLLECTOR_ID
 
 
-def test_target_must_be_one_uncompressed_pdb() -> None:
-    for media_type, compression in (("application/json", None), ("chemical/x-pdb", "zstd")):
-        request = fixture("positive-default-lane")
-        request["input_manifest"]["media_type"] = media_type
-        if compression is not None:
-            request["input_manifest"]["compression"] = compression
-        with pytest.raises(ScientificAdapterError, match="[Pp][Dd][Bb]|uncompressed"):
-            bindcraft.compile_run(granted(), request, operation_id="op-bindcraft-input-type")
+def test_target_must_come_from_one_verified_manifest_entry() -> None:
+    direct = fixture("positive-default-lane")
+    direct["input_manifest"]["media_type"] = bindcraft.TARGET_MEDIA_TYPE
+    with pytest.raises(ScientificAdapterError, match="scientific manifest"):
+        bindcraft.compile_run(
+            granted(),
+            direct,
+            operation_id="op-bindcraft-direct-pdb",
+            input_artifacts=(verified_target(),),
+        )
+
+    compressed_manifest = fixture("positive-default-lane")
+    compressed_manifest["input_manifest"]["compression"] = "zstd"
+    with pytest.raises(ScientificAdapterError, match="must not be compressed"):
+        bindcraft.compile_run(
+            granted(),
+            compressed_manifest,
+            operation_id="op-bindcraft-compressed-manifest",
+            input_artifacts=(verified_target(),),
+        )
+
+    with pytest.raises(ScientificAdapterError, match="exactly one verified"):
+        bindcraft.compile_run(
+            granted(),
+            fixture("positive-default-lane"),
+            operation_id="op-bindcraft-missing-entry",
+            input_artifacts=(),
+        )
+    with pytest.raises(ScientificAdapterError, match="exactly one verified"):
+        bindcraft.compile_run(
+            granted(),
+            fixture("positive-default-lane"),
+            operation_id="op-bindcraft-extra-entry",
+            input_artifacts=(verified_target(), verified_target(artifact_id=UUID(int=2))),
+        )
+
+    for override, expected in (
+        ({"logical_artifact_id": "wrong_target"}, "exactly one verified"),
+        ({"semantic_type": "protein-sequence-fasta/v1"}, "semantic type"),
+        ({"media_type": "application/json"}, "media or compression"),
+        ({"compression": "zstd"}, "media or compression"),
+    ):
+        with pytest.raises(ScientificAdapterError, match=expected):
+            bindcraft.compile_run(
+                granted(),
+                fixture("positive-default-lane"),
+                operation_id="op-bindcraft-invalid-entry",
+                input_artifacts=(verified_target(**override),),
+            )
+
+
+def test_verified_target_is_the_only_materialization_source() -> None:
+    request = fixture("positive-default-lane")
+    target = verified_target(
+        artifact_id=UUID("30000000-0000-4000-8000-000000000099"),
+        digest="sha256:" + "9" * 64,
+        size_bytes=74_614,
+    )
+    plan = bindcraft.compile_run(
+        granted(),
+        request,
+        operation_id="op-bindcraft-verified-target",
+        input_artifacts=(target,),
+    )
+    design = plan.invocation("design", "design-000")
+    assert design.consumes == (bindcraft.TARGET_INPUT_ID,)
+    assert design.materializations[0].artifact_id == bindcraft.TARGET_INPUT_ID
+    assert request["input_manifest"]["artifact_id"] not in design.consumes
+    manifest = json.loads(dict(design.environment)["FS2_BINDCRAFT_INPUT_MANIFEST_JSON"])
+    pointer = manifest["entries"][0]["artifact"]
+    assert pointer == {
+        "artifact_id": str(target.artifact_id),
+        "sha256": target.digest.removeprefix("sha256:"),
+        "size_bytes": target.size_bytes,
+        "media_type": bindcraft.TARGET_MEDIA_TYPE,
+        "compression": "none",
+    }
 
 
 def test_runtime_document_materialization_is_idempotent_and_refuses_drift(tmp_path: Path) -> None:
@@ -354,7 +451,9 @@ def test_the_default_mpnn_lane_is_vanilla_and_soluble_is_never_implicit() -> Non
     request = fixture("positive-soluble-lane")
     request["parameters"]["mpnn_lane"] = "SOLUBLE"
     with pytest.raises(ScientificAdapterError, match="mpnn_lane"):
-        bindcraft.compile_run(granted(), request, operation_id="op-bindcraft-01")
+        bindcraft.compile_run(
+            granted(), request, operation_id="op-bindcraft-01", input_artifacts=(verified_target(),)
+        )
 
 
 def test_the_adapter_refuses_what_the_native_schema_cannot_express() -> None:
@@ -369,14 +468,18 @@ def test_the_adapter_refuses_what_the_native_schema_cannot_express() -> None:
         request = fixture("positive-default-lane")
         request["parameters"].update(override)
         with pytest.raises(ScientificAdapterError, match=expected):
-            bindcraft.compile_run(granted(), request, operation_id="op-bindcraft-01")
+            bindcraft.compile_run(
+                granted(), request, operation_id="op-bindcraft-01", input_artifacts=(verified_target(),)
+            )
 
 
 def test_every_requested_design_is_assigned_to_exactly_one_shard() -> None:
     for designs in (1, 2, 31, 32, 33, 100, 319, 320):
         request = fixture("positive-default-lane")
         request["parameters"]["designs"] = designs
-        plan = bindcraft.compile_run(granted(), request, operation_id="op-bindcraft-01")
+        plan = bindcraft.compile_run(
+            granted(), request, operation_id="op-bindcraft-01", input_artifacts=(verified_target(),)
+        )
         shards = plan.controller_plan.stages[0].shards
         assert len(shards) == min(designs, bindcraft.MAX_DESIGN_SHARDS)
         quotas = [
@@ -394,7 +497,9 @@ def test_a_request_above_the_executable_design_ceiling_fails_closed() -> None:
         request = fixture("positive-default-lane")
         request["parameters"]["designs"] = designs
         with pytest.raises(ScientificAdapterError, match="at most 320 designs"):
-            bindcraft.compile_run(granted(), request, operation_id="op-bindcraft-01")
+            bindcraft.compile_run(
+                granted(), request, operation_id="op-bindcraft-01", input_artifacts=(verified_target(),)
+            )
 
 
 def test_admission_is_deployment_bound_and_takes_no_request_receipt() -> None:
@@ -409,15 +514,28 @@ def test_admission_is_deployment_bound_and_takes_no_request_receipt() -> None:
     ):
         with pytest.raises(ScientificAdapterError, match="authoriz"):
             bindcraft.compile_run(
-                profile(authorization=authorization), fixture("positive-default-lane"), operation_id="op-1"
+                profile(authorization=authorization),
+                fixture("positive-default-lane"),
+                operation_id="op-1",
+                input_artifacts=(verified_target(),),
             )
     receipt_required = granted()
     receipt_required["access"]["request_time_license_receipt_required"] = True
     with pytest.raises(ScientificAdapterError, match="per-request licence receipt"):
-        bindcraft.compile_run(receipt_required, fixture("positive-default-lane"), operation_id="op-1")
+        bindcraft.compile_run(
+            receipt_required,
+            fixture("positive-default-lane"),
+            operation_id="op-1",
+            input_artifacts=(verified_target(),),
+        )
 
     with pytest.raises(ScientificAdapterError, match="unknown \\['license_receipt'\\]"):
-        bindcraft.compile_run(granted(), fixture("negative-caller-execution-fields"), operation_id="op-1")
+        bindcraft.compile_run(
+            granted(),
+            fixture("negative-caller-execution-fields"),
+            operation_id="op-1",
+            input_artifacts=(verified_target(),),
+        )
 
 
 def test_the_stage_topology_is_a_gpu_fanout_and_one_cpu_aggregate() -> None:
@@ -437,6 +555,7 @@ def test_dispatch_reaches_the_adapter_through_the_public_allow_list() -> None:
         fixture("positive-default-lane"),
         operation_id="op-bindcraft-01",
         variant_id=bindcraft.VARIANT_ID,
+        input_artifacts=(verified_target(),),
     )
     assert plan.model_id == "bindcraft"
     assert plan.variant_id == "v1-5-3-pyrosetta-academic"
@@ -447,6 +566,7 @@ def test_dispatch_reaches_the_adapter_through_the_public_allow_list() -> None:
             fixture("positive-default-lane"),
             operation_id="op-bindcraft-01",
             variant_id="upstream-pyrosetta",
+            input_artifacts=(verified_target(),),
         )
 
 
@@ -703,9 +823,10 @@ def test_design_companion_binds_completion_request_and_exact_handoff(tmp_path: P
         granted(),
         request,
         operation_id="op-bindcraft-companion",
-    ).invocation("design", "design-000")
-    workspace = tmp_path / "design-000"
-    publish_shard(workspace, index=0, request=request)
+        input_artifacts=(verified_target(),),
+    ).invocation("design", "design-001")
+    workspace = tmp_path / "design-001"
+    publish_shard(workspace, index=1, request=request)
     completion_sha256 = publish_stage_completion(invocation, workspace)
 
     collected = bindcraft.collect_companion_output(invocation, workspace)
@@ -714,7 +835,7 @@ def test_design_companion_binds_completion_request_and_exact_handoff(tmp_path: P
     assert collected.artifacts[0].semantic_type == "bindcraft-native-shard-bundle-tar/v1"
     assert collected.artifacts[0].compression == "zstd"
     assert collected.validation["completion_marker_sha256"] == completion_sha256
-    assert collected.validation["shard_id"] == "design-000"
+    assert collected.validation["shard_id"] == "design-001"
     assert collected.validation["status"] == "passed"
 
 
@@ -799,21 +920,29 @@ def test_compiled_argv_and_native_document_execute_the_real_r18_parser_contract(
     target = tmp_path / "target.pdb"
     target.write_text(_pdb(complex_structure=True), encoding="ascii")
     target_bytes = target.read_bytes()
-    request["input_manifest"]["sha256"] = hashlib.sha256(target_bytes).hexdigest()
-    request["input_manifest"]["size_bytes"] = len(target_bytes)
-    plan = bindcraft.compile_run(granted(), request, operation_id="op-bindcraft-r18-parser")
+    admitted = verified_target(
+        digest="sha256:" + hashlib.sha256(target_bytes).hexdigest(),
+        size_bytes=len(target_bytes),
+    )
+    input_manifest = bindcraft.native_input_manifest(admitted)
+    plan = bindcraft.compile_run(
+        granted(),
+        request,
+        operation_id="op-bindcraft-r18-parser",
+        input_artifacts=(admitted,),
+    )
     public, parameters = bindcraft._request(request)
     design = plan.invocation("design", "design-000")
     aggregate = plan.invocation("aggregate", "main")
     assert runtime.parser().parse_args(list(design.argv[6:])).mode == "run-trajectory"
     assert runtime.parser().parse_args(list(aggregate.argv[6:])).mode == "aggregate"
 
-    native = bindcraft.native_request(public, parameters, shard_index=0)
+    native = bindcraft.native_request(public, parameters, input_manifest, shard_index=0)
     native["parameters"]["_shard_index"] = 0
     monkeypatch.setenv("FS2_BINDCRAFT_TARGET_PDB", str(target))
     admitted_target, admitted_pointer = runtime._target_artifact(
         native,
-        bindcraft.native_input_manifest(public),
+        input_manifest,
     )
     assert admitted_target == target
     assert admitted_pointer["sha256"] == hashlib.sha256(target_bytes).hexdigest()
@@ -853,7 +982,12 @@ def test_r18_aggregate_consumes_the_bundle_and_the_final_collector_returns_every
     runtime = _r18_runtime()
     request = fixture("positive-default-lane")
     request["parameters"]["designs"] = 2
-    plan = bindcraft.compile_run(granted(), request, operation_id="op-r18-aggregate")
+    plan = bindcraft.compile_run(
+        granted(),
+        request,
+        operation_id="op-r18-aggregate",
+        input_artifacts=(verified_target(),),
+    )
     aggregate = tmp_path / "aggregate"
     for index in range(2):
         design = tmp_path / f"design-{index:03d}"
