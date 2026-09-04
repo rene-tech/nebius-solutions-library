@@ -78,7 +78,10 @@ locals {
       name = name
       uid  = local.scientific_runtime_cache_directory_claims_by_name[name][0].uid
       gid  = local.scientific_runtime_cache_directory_claims_by_name[name][0].gid
-      mode = "2770"
+      # mounted-fs-path CSI preserves owner/group rwx bits but clears setgid.
+      # The scientific images use a stable matching uid/gid, so 0770 retains
+      # the required write contract without an impossible post-mount check.
+      mode = "0770"
     }
   ]
   scientific_runtime_cache_ownership_contract = {

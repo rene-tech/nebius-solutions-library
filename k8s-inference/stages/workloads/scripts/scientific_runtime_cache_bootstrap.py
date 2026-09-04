@@ -18,7 +18,7 @@ from typing import Any
 CONTRACT_ENV = "FS2_SCIENTIFIC_RUNTIME_CACHE_OWNERSHIP_JSON"
 CONTRACT_SCHEMA = "fs2-serve.nebius.ai/scientific-runtime-cache-ownership/v1"
 CACHE_ROOT = Path("/cache")
-DIRECTORY_MODE = 0o2770
+DIRECTORY_MODE = 0o770
 DIRECTORY_NAME = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$")
 
 
@@ -83,8 +83,8 @@ def prepare(contract: object, *, expected_root: Path = CACHE_ROOT) -> tuple[str,
             )
         uid = _identity(directory["uid"], f"runtime cache directory {name} uid")
         gid = _identity(directory["gid"], f"runtime cache directory {name} gid")
-        if directory["mode"] != "2770":
-            raise CacheOwnershipError("runtime cache directory mode must be 2770")
+        if directory["mode"] != "0770":
+            raise CacheOwnershipError("runtime cache directory mode must be 0770")
 
         target = root / name
         try:

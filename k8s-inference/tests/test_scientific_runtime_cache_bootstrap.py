@@ -28,7 +28,7 @@ def contract(root: Path, *names: str) -> dict[str, object]:
                 "name": name,
                 "uid": os.getuid(),
                 "gid": os.getgid(),
-                "mode": "2770",
+                "mode": "0770",
             }
             for name in names
         ],
@@ -54,7 +54,7 @@ def test_prepares_only_exact_model_boundaries_and_preserves_existing_entries(
         status = (tmp_path / name).stat()
         assert status.st_uid == os.getuid()
         assert status.st_gid == os.getgid()
-        assert stat.S_IMODE(status.st_mode) == 0o2770
+        assert stat.S_IMODE(status.st_mode) == 0o770
     assert compiled.read_bytes() == b"existing-cache-entry"
     assert stat.S_IMODE(compiled.stat().st_mode) == 0o600
 
@@ -77,7 +77,7 @@ def test_refuses_a_symlink_collision_without_touching_its_target(
     with pytest.raises(BOOTSTRAP.CacheOwnershipError, match="not a real directory"):
         BOOTSTRAP.prepare(contract(tmp_path, "mosaic"), expected_root=tmp_path)
 
-    assert stat.S_IMODE(external.stat().st_mode) != 0o2770
+    assert stat.S_IMODE(external.stat().st_mode) != 0o770
 
 
 def test_refuses_ownership_contract_drift(tmp_path: Path) -> None:
@@ -86,7 +86,7 @@ def test_refuses_ownership_contract_drift(tmp_path: Path) -> None:
     assert isinstance(directories, list)
     directories[0]["mode"] = "0777"
 
-    with pytest.raises(BOOTSTRAP.CacheOwnershipError, match="mode must be 2770"):
+    with pytest.raises(BOOTSTRAP.CacheOwnershipError, match="mode must be 0770"):
         BOOTSTRAP.prepare(document, expected_root=tmp_path)
 
 
@@ -129,7 +129,7 @@ def test_terraform_uses_execution_map_owners_and_blocks_control_plane() -> None:
     )
     assert "workspace_uid = try(stage.workspace_uid, null)" in cache_source
     assert "workspace_gid = try(stage.workspace_gid, null)" in cache_source
-    assert 'mode = "2770"' in cache_source
+    assert 'mode = "0770"' in cache_source
     assert 'add  = ["CHOWN", "DAC_OVERRIDE", "FOWNER"]' in cache_source
     assert '"storage.fs2.nebius/shared-cache" = "true"' in cache_source
     assert "fs_group" not in cache_source
