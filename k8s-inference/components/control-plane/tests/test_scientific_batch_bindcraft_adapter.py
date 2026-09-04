@@ -27,6 +27,7 @@ from fs2_serve.scientific_batch.models import (
     RuntimeArtifactLocalization,
     RuntimeArtifactTreeKind,
     ScientificInputArtifact,
+    StagePlacementClass,
 )
 
 SOLUTION_ROOT = Path(__file__).resolve().parents[3]
@@ -130,6 +131,17 @@ def profile(*, authorization: dict[str, Any] | None = None) -> dict[str, Any]:
                     "max_parallelism": 1,
                     "checkpoint_mode": "none",
                     "preemption_mode": "non_preemptible",
+                    "placement": {"class": "academic-cpu"},
+                    "resources": {
+                        "cpu_millis": 2000,
+                        "memory_bytes": 8 * 1024**3,
+                        "ephemeral_storage_bytes": 16 * 1024**3,
+                        "limits": {
+                            "cpu_millis": 4000,
+                            "memory_bytes": 16 * 1024**3,
+                            "ephemeral_storage_bytes": 32 * 1024**3,
+                        },
+                    },
                 },
             ],
             "retry": {"max_attempts": 2, "retryable_exit_codes": [137, 143]},
@@ -597,6 +609,7 @@ def test_the_stage_topology_is_a_gpu_fanout_and_one_cpu_aggregate() -> None:
     assert tuple(stage.stage_id for stage in stages) == ("design", "aggregate")
     assert stages[0].resource_class is ResourceClass.GPU
     assert stages[1].resource_class is ResourceClass.CPU
+    assert stages[1].placement_class is StagePlacementClass.ACADEMIC_CPU
     assert stages[1].depends_on == ("design",)
     assert stages[1].shards == ("main",)
 

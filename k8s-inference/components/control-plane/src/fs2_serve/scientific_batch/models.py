@@ -127,6 +127,7 @@ class StagePlacementClass(StrEnum):
 
     REFERENCE_DATA_CPU = "reference-data"
     GENERAL_CPU = "general-cpu"
+    ACADEMIC_CPU = "academic-cpu"
     ACCELERATOR = "accelerator"
 
 

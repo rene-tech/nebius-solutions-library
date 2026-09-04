@@ -178,14 +178,16 @@ locals {
   # group is created rather than when a BindCraft aggregation Job first fails
   # to schedule.
   cpu_class_contract = jsondecode(file("${path.module}/scheduling/cpu-class-contract.json"))
-  general_cpu_bound_workloads = [
-    for workload in local.cpu_class_contract.classes["general-cpu"].bound_workloads : {
-      model_id       = workload.model_id
-      stage          = workload.stage
-      cpu_millicores = tonumber(workload.capacity.cpu) * 1000
-      memory_mib     = tonumber(trimsuffix(workload.capacity.memory, "Gi")) * 1024
-    }
-  ]
+  general_cpu_bound_workloads = flatten([
+    for class_name in ["general-cpu", "academic-cpu"] : [
+      for workload in local.cpu_class_contract.classes[class_name].bound_workloads : {
+        model_id       = workload.model_id
+        stage          = workload.stage
+        cpu_millicores = tonumber(workload.capacity.cpu) * 1000
+        memory_mib     = tonumber(trimsuffix(workload.capacity.memory, "Gi")) * 1024
+      }
+    ]
+  ])
   # One stage Pod runs on one node, so every bound workload must fit the largest
   # node the lane offers, not the lane total.
   general_cpu_fit_violations = local.general_cpu_enabled ? [
@@ -210,12 +212,10 @@ locals {
     queueing_strategy   = var.deployment.scheduling.general_cpu.queueing_strategy
     fair_sharing_weight = var.deployment.scheduling.general_cpu.fair_sharing_weight
   }
-  # Exactly one execution namespace, and always a namespace some owner actually
-  # creates. It defaults to the academic tenant when that tenant exists, because
-  # a licensed BindCraft stage must run beside the claim it mounts; otherwise it
-  # falls back to fs2-models, which the platform always provisions. An operator
-  # naming another namespace is responsible for creating it.
-  general_cpu_default_namespace = var.academic_assets.enabled ? var.academic_assets.namespace : "fs2-models"
+  # The ordinary general-cpu class stays in the model namespace. When academic
+  # execution is enabled, the workloads stage derives a separate academic-cpu
+  # class and LocalQueue in the claim namespace over this same backing lane.
+  general_cpu_default_namespace = "fs2-models"
   general_cpu_namespace = coalesce(
     var.deployment.scheduling.general_cpu.namespace,
     local.general_cpu_default_namespace,

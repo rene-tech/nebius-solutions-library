@@ -224,6 +224,9 @@ variables {
     core_pool_capacity = {
       nebius-b300-preemptible-1x = { cpu_millicores = 22000, memory_mib = 344064 }
     }
+    model_eligible_pool_ids = {
+      bindcraft = ["nebius-b300-preemptible-1x"]
+    }
   }
 
   general_cpu_lane = {
@@ -233,7 +236,7 @@ variables {
     resource_flavor     = "general-cpu"
     queueing_strategy   = "BestEffortFIFO"
     fair_sharing_weight = 1
-    namespace           = "fs2-academic-poc"
+    namespace           = "fs2-models"
   }
 
   general_cpu_pools = {
@@ -276,6 +279,54 @@ variables {
       }
     }
     reference_data_filesystem = false
+  }
+
+  academic_assets = {
+    enabled        = true
+    project_id     = "project-modelexpresstest"
+    region         = "us-north1"
+    tenant_id      = "tenant-academic"
+    institution_id = null
+    namespace      = "fs2-academic-poc"
+    runtime_claim = {
+      name          = "academic-assets-runtime-rwx"
+      storage_gib   = 128
+      storage_class = "csi-mounted-fs-path-sc"
+      access_mode   = "ReadWriteMany"
+      lifecycle     = "disposable"
+    }
+    legacy_quarantine_claim = {
+      enabled     = false
+      namespace   = "fs2-models"
+      name        = "cancer-immunotherapy-academic-assets-rwx-v1"
+      storage_gib = 128
+      retain      = false
+    }
+    delivery = {
+      mode                    = "tenant-private-volume"
+      mount_root              = "/opt/fs2/academic"
+      asset_gid               = 65532
+      consumer_access         = "supplemental-group"
+      world_readable          = false
+      embed_licensed_bytes    = false
+      general_shared_cache    = false
+      deny_egress_on_validate = true
+    }
+    execution = {
+      enabled                    = true
+      local_queue                = "academic-scientific"
+      cluster_queue              = "inference-accelerators"
+      service_account            = "fs2-academic-runner"
+      controller_namespace       = "fs2-system"
+      controller_service_account = "fs2-serve-control-plane-runtime"
+    }
+    assets = {
+      bindcraft-pyrosetta = {
+        model_id      = "bindcraft"
+        relative_path = "bindcraft/pyrosetta"
+      }
+    }
+    readiness_manifest_sha256 = null
   }
 }
 
@@ -320,7 +371,7 @@ run "a_general_pool_yields_a_real_cpu_admission_tuple" {
     condition = (
       terraform_data.general_cpu_contract.input.cpu_classes["general-cpu"].cluster_queue == "general-cpu" &&
       terraform_data.general_cpu_contract.input.cpu_classes["general-cpu"].local_queue == "general-cpu" &&
-      terraform_data.general_cpu_contract.input.cpu_classes["general-cpu"].namespace == "fs2-academic-poc" &&
+      terraform_data.general_cpu_contract.input.cpu_classes["general-cpu"].namespace == "fs2-models" &&
       terraform_data.general_cpu_contract.input.cpu_classes["general-cpu"].resource_flavor == "general-cpu" &&
       terraform_data.general_cpu_contract.input.cpu_classes["general-cpu"].eligible_pool_ids == ["general-cpu-8x"] &&
       terraform_data.general_cpu_contract.input.cpu_classes["general-cpu"].pool_resolution.mode == "per-pool-flavor" &&
@@ -364,6 +415,62 @@ run "a_general_pool_yields_a_real_cpu_admission_tuple" {
   assert {
     condition     = terraform_data.general_cpu_contract.input.cohort == null
     error_message = "The general CPU lane must join no cohort."
+  }
+}
+
+run "academic_cpu_reuses_the_general_lane_through_its_own_local_queue" {
+  command = plan
+
+  plan_options {
+    target = [module.kueue_scheduling.terraform_data.contract]
+  }
+
+  assert {
+    condition = (
+      module.kueue_scheduling.contract.cpu_classes["academic-cpu"].namespace == "fs2-academic-poc" &&
+      module.kueue_scheduling.contract.cpu_classes["academic-cpu"].local_queue == "academic-general-cpu" &&
+      module.kueue_scheduling.contract.local_queues["academic-general-cpu"].metadata.namespace == "fs2-academic-poc" &&
+      module.kueue_scheduling.contract.local_queues["academic-general-cpu"].spec.clusterQueue == "general-cpu" &&
+      length(module.kueue_scheduling.contract.local_queue_routes["academic-general-cpu"].model_ids) == 0 &&
+      length(module.kueue_scheduling.contract.local_queue_routes["academic-general-cpu"].tenant_ids) == 0 &&
+      length(module.kueue_scheduling.contract.local_queue_routes["academic-general-cpu"].service_classes) == 0
+    )
+    error_message = "academic-cpu must have one route-less Terraform-owned LocalQueue in the academic namespace."
+  }
+
+  assert {
+    condition = (
+      module.kueue_scheduling.contract.cpu_classes["academic-cpu"].cluster_queue == "general-cpu" &&
+      module.kueue_scheduling.contract.cpu_classes["academic-cpu"].resource_flavor == "general-cpu" &&
+      jsonencode(module.kueue_scheduling.contract.cpu_classes["academic-cpu"].eligible_pool_ids) ==
+      jsonencode(module.kueue_scheduling.contract.cpu_classes["general-cpu"].eligible_pool_ids) &&
+      jsonencode(module.kueue_scheduling.contract.cpu_classes["academic-cpu"].pool_resolution) ==
+      jsonencode(module.kueue_scheduling.contract.cpu_classes["general-cpu"].pool_resolution) &&
+      jsonencode(module.kueue_scheduling.contract.cpu_classes["academic-cpu"].node_selector) ==
+      jsonencode(module.kueue_scheduling.contract.cpu_classes["general-cpu"].node_selector) &&
+      jsonencode(module.kueue_scheduling.contract.cpu_classes["academic-cpu"].tolerations) ==
+      jsonencode(module.kueue_scheduling.contract.cpu_classes["general-cpu"].tolerations) &&
+      jsonencode(module.kueue_scheduling.contract.cpu_classes["academic-cpu"].schedulable_capacity) ==
+      jsonencode(module.kueue_scheduling.contract.cpu_classes["general-cpu"].schedulable_capacity) &&
+      contains(module.kueue_scheduling.contract.cluster_queue_namespaces["general-cpu"], "fs2-models") &&
+      contains(module.kueue_scheduling.contract.cluster_queue_namespaces["general-cpu"], "fs2-academic-poc") &&
+      one(module.general_cpu_scheduling.contract.manifests.cluster_queue.spec.namespaceSelector.matchExpressions).key ==
+      "kubernetes.io/metadata.name" &&
+      one(module.general_cpu_scheduling.contract.manifests.cluster_queue.spec.namespaceSelector.matchExpressions).operator ==
+      "In" &&
+      tolist(one(module.general_cpu_scheduling.contract.manifests.cluster_queue.spec.namespaceSelector.matchExpressions).values) ==
+      tolist(["fs2-academic-poc", "fs2-models"])
+    )
+    error_message = "academic-cpu must reuse the exact existing general CPU queue, flavor, pool, selector, tolerations and capacity while admitting both namespaces."
+  }
+
+  assert {
+    condition = (
+      module.kueue_scheduling.contract.cpu_stage_requests["academic-cpu"].cpu_millicores == 2000 &&
+      module.kueue_scheduling.contract.cpu_stage_requests["academic-cpu"].memory_mib == 8192 &&
+      !contains(keys(module.kueue_scheduling.contract.cpu_classes), "reference-data")
+    )
+    error_message = "The BindCraft aggregate request must fit the general pool without creating or borrowing reference-data capacity."
   }
 }
 
@@ -423,7 +530,8 @@ run "only_the_general_cpu_class_is_contributed" {
     condition = (
       terraform_data.general_cpu_contract.input.scheduling_contribution.external_lane_facts.cluster_queue == "general-cpu" &&
       terraform_data.general_cpu_contract.input.scheduling_contribution.external_lane_facts.local_queue == "general-cpu" &&
-      terraform_data.general_cpu_contract.input.scheduling_contribution.external_lane_facts.namespace == "fs2-academic-poc" &&
+      terraform_data.general_cpu_contract.input.scheduling_contribution.external_lane_facts.namespace == "fs2-models" &&
+      toset(terraform_data.general_cpu_contract.input.scheduling_contribution.external_lane_facts.namespaces) == toset(["fs2-models", "fs2-academic-poc"]) &&
       terraform_data.general_cpu_contract.input.scheduling_contribution.external_lane_facts.nominal_cpu == "28000m"
     )
     error_message = "The contribution must carry the exact ownership facts of the queues it created."

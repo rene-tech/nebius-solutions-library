@@ -345,24 +345,20 @@ variable "deployment" {
         }
       })
       # The general CPU admission lane over deployment.cpu_pools. One dedicated
-      # ClusterQueue admits CPU-class scientific stages from exactly one
-      # execution namespace through one namespace-local LocalQueue. v1 is
-      # deliberately single-namespace and single-pool: the assembled scheduling
-      # contract maps a class to one LocalQueue by bare name and Kueue reports
-      # one admitted flavor, so a second namespace or pool could not be frozen
-      # or identified. The lane never joins the accelerator cohort and never
-      # lends or borrows reference-data capacity; controllers resolve the
-      # portable class "general-cpu" against exactly this lane, fail-closed.
+      # ClusterQueue admits CPU-class scientific stages through namespace-local
+      # LocalQueues. Every class is single-namespace: general-cpu uses this
+      # namespace, while enabled academic execution derives academic-cpu in the
+      # claim namespace over the same flavor and pool. The lane is single-pool,
+      # never joins the accelerator cohort, and never lends or borrows
+      # reference-data capacity.
       general_cpu = optional(object({
         cluster_queue       = optional(string, "general-cpu")
         local_queue         = optional(string, "general-cpu")
         queueing_strategy   = optional(string, "BestEffortFIFO")
         fair_sharing_weight = optional(number, 1)
-        # One execution namespace, and only a namespace this stack owns:
-        # fs2-models, which the platform always provisions, or the academic
-        # tenant namespace when academic assets are enabled. A namespace no
-        # owner creates would leave the LocalQueue dangling and break the
-        # self-contained one-tfvars contract.
+        # Namespace of the ordinary general-cpu class. Defaults to fs2-models.
+        # Academic execution receives its own derived class and LocalQueue in
+        # the claim namespace, so this value need not be changed for BindCraft.
         namespace = optional(string)
       }), {})
     }), {})
@@ -1322,7 +1318,7 @@ variable "deployment" {
       length(var.deployment.cpu_pools) <= 1,
       false,
     )
-    error_message = "scheduling.general_cpu must use DNS-safe queue names distinct from the reference-data flavor/queue and every accelerator ClusterQueue, a supported queueing strategy, a positive fair-sharing weight, an execution namespace this stack owns (fs2-models, or the academic tenant namespace when academic assets are enabled), and a declared cpu_pools entry; v1 accepts exactly one general CPU pool, because one flavor spanning several pools cannot identify the node group that ran a stage."
+    error_message = "scheduling.general_cpu must use DNS-safe queue names distinct from the reference-data flavor/queue and every accelerator ClusterQueue, a supported queueing strategy, a positive fair-sharing weight, an execution namespace this stack owns (fs2-models, or the academic tenant namespace when academic assets are enabled), and a declared cpu_pools entry; every class is namespace-specific and v1 accepts exactly one general CPU pool, because one flavor spanning several pools cannot identify the node group that ran a stage."
   }
 
   validation {

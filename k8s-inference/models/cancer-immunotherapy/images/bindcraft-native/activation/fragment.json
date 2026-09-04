@@ -143,7 +143,7 @@
             "checkpoint_mode": "none",
             "preemption_mode": "non_preemptible",
             "placement": {
-              "class": "general-cpu"
+              "class": "academic-cpu"
             },
             "resources": {
               "cpu_millis": 2000,

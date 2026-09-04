@@ -30,7 +30,7 @@ variable "pool_contract" {
 }
 
 variable "lane" {
-  description = "Operator lane policy: queue identities, admission strategy, fair-sharing weight and the single execution namespace whose LocalQueue admits into this lane."
+  description = "Operator lane policy: queue identities, admission strategy, fair-sharing weight, the primary general-cpu execution namespace, and any additional stack-owned namespaces admitted through their own LocalQueues."
   type = object({
     enabled             = bool
     cluster_queue       = string
@@ -39,6 +39,7 @@ variable "lane" {
     queueing_strategy   = string
     fair_sharing_weight = number
     namespace           = string
+    admitted_namespaces = optional(set(string), [])
   })
 }
 

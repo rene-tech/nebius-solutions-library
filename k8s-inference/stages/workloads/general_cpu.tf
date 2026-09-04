@@ -1,8 +1,9 @@
 # General CPU admission lane, workload side.
 #
 # Ownership, stated once so it stays true:
-#   * this file owns the general-cpu ResourceFlavor, ClusterQueue and the
-#     LocalQueue of its single execution namespace, and nothing else;
+#   * this file owns the general-cpu ResourceFlavor, ClusterQueue and ordinary
+#     LocalQueue; the scheduling assembler owns the academic namespace's
+#     additional LocalQueue over that same ClusterQueue, and nothing else;
 #   * the reference-data plane owns its own flavor, queue and LocalQueue, and is
 #     read here only to prove the general lane reuses none of them;
 #   * the scheduling workstream is the sole producer of the reference-data
@@ -10,10 +11,11 @@
 #     of the ConfigMap that publishes it.
 #
 # What this file contributes is one canonical general-cpu class entry, its
-# digest, and the ownership facts describing the queues it created. The
-# assembler merges that entry as-is; nothing here writes a document, a
-# ConfigMap, a digest of someone else's bytes, or a chart value that would
-# claim a contract exists before its owner has published one.
+# digest, and the ownership facts describing the queue and flavor it created.
+# The assembler may project that exact backing into an academic-cpu class with
+# a distinct namespace-local queue; nothing here writes a document, ConfigMap,
+# or digest of someone else's bytes, or claims a contract exists before its
+# owner has published one.
 
 locals {
 
@@ -37,6 +39,16 @@ locals {
     queueing_strategy   = var.general_cpu_lane.queueing_strategy
     fair_sharing_weight = var.general_cpu_lane.fair_sharing_weight
     namespace           = var.general_cpu_lane.namespace
+    # A licensed run stays in the claim namespace from GPU design through CPU
+    # aggregation. The academic-cpu class and its distinct LocalQueue are
+    # assembled below; this widens only the existing general CPU ClusterQueue's
+    # namespace selector and adds no quota or capacity.
+    admitted_namespaces = (
+      var.general_cpu_lane.enabled &&
+      var.general_cpu_pools != null &&
+      var.academic_assets.enabled &&
+      var.academic_assets.execution.enabled
+    ) ? [var.academic_assets.namespace] : []
   }
 
   # Identities only. The reference-data class itself is produced and assembled
@@ -132,8 +144,9 @@ resource "terraform_data" "general_cpu_local_queue_binding" {
   ]
 }
 
-# The LocalQueue of the single execution namespace. A Job is admitted through
-# the queue in its own namespace, so a tenant cannot submit into another lane.
+# The ordinary general-cpu LocalQueue. A Job is admitted through the queue in
+# its own namespace; the academic class gets a separate LocalQueue assembled
+# in queue.tf, so a tenant never submits through another namespace's queue.
 resource "kubernetes_manifest" "general_cpu_local_queue" {
   for_each = local.general_cpu_contract.manifests.local_queues
 
@@ -237,8 +250,8 @@ resource "terraform_data" "general_cpu_contract" {
       error_message = "The assembled scheduling contract must carry this producer's general-cpu entry unaltered, under the same class contract version."
     }
 
-    # BindCraft aggregation is the bound consumer of this class; it must resolve
-    # to a complete, exact placement or not resolve at all.
+    # Every class projected from this backing, including BindCraft's
+    # academic-cpu aggregate class, needs this complete exact placement.
     precondition {
       condition = !local.general_cpu_enabled || (
         length(local.general_cpu_contract.pool_ids) > 0 &&

@@ -53,6 +53,7 @@ from fs2_serve.scientific_artifacts import (
 )
 from fs2_serve.scientific_batch.artifact_bridge import ArtifactServiceBridge
 from fs2_serve.scientific_batch.capability import ScientificWorkloadCapabilityAuthority
+from fs2_serve.scientific_batch.catalog_adapter import scientific_plan_from_catalog_profile
 from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
 from fs2_serve.scientific_batch.controller import ScientificBatchController
 from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer, ScientificExecutionMapError
@@ -102,6 +103,7 @@ from fs2_serve.scientific_batch.models import (
     ServiceClass,
     StageExecutionBinding,
     StageInvocation,
+    StagePlacementClass,
     StageSchedulingDecision,
     StageStatus,
     StageVolumeBinding,
@@ -340,6 +342,63 @@ def scheduling_with_academic_route(*, shadow: bool = False) -> dict[str, object]
         "alphafold3": namespace,
         "bindcraft": namespace,
     }
+    general_cpu = {
+        "local_queue": "general-cpu",
+        "cluster_queue": "general-cpu",
+        "namespace": "fs2-models",
+        "resource_flavor": "general-cpu",
+        "eligible_pool_ids": ["general-cpu-8x"],
+        "pool_resolution": {"mode": "per-pool-flavor", "pool_id": "general-cpu-8x"},
+        "node_selector": {
+            "workload.fs2.nebius/general-cpu": "true",
+            "capacity.fs2.nebius/pool-id": "general-cpu-8x",
+        },
+        "tolerations": [
+            {
+                "key": "workload.fs2.nebius/general-cpu",
+                "operator": "Equal",
+                "value": "true",
+                "effect": "NoSchedule",
+            }
+        ],
+        "schedulable_capacity": {
+            "cpu": "7000m",
+            "memory": "28672Mi",
+            "ephemeral_storage": "114688Mi",
+            "cpu_millicores": 7000,
+            "memory_mib": 28672,
+            "ephemeral_storage_mib": 114688,
+        },
+    }
+    contract["cpu_classes_schema"] = "fs2-serve.nebius.ai/cpu-stage-classes/v1"
+    contract["cpu_classes"] = {
+        "general-cpu": general_cpu,
+        "academic-cpu": {
+            **general_cpu,
+            "local_queue": "academic-general-cpu",
+            "namespace": namespace,
+        },
+    }
+    contract["cpu_stage_requests"] = {"academic-cpu": {"cpu_millicores": 2000, "memory_mib": 8192}}
+    contract["cluster_queues"]["general-cpu"] = {
+        "metadata": {"name": "general-cpu"},
+        "spec": {"resourceGroups": []},
+    }
+    for queue_name, queue_namespace in (
+        ("general-cpu", "fs2-models"),
+        ("academic-general-cpu", namespace),
+    ):
+        contract["local_queues"][queue_name] = {
+            "metadata": {"name": queue_name, "namespace": queue_namespace},
+            "spec": {"clusterQueue": "general-cpu"},
+        }
+        contract["local_queue_routes"][queue_name] = {
+            "namespace": queue_namespace,
+            "cluster_queue": "general-cpu",
+            "model_ids": [],
+            "tenant_ids": [],
+            "service_classes": [],
+        }
     contract["model_eligible_pool_ids"].update(
         {
             "alphafold3": ["h100-hot", "h100-preemptible"],
@@ -1611,6 +1670,33 @@ def test_scheduling_resolver_freezes_academic_execution_and_localqueue_namespace
             plan=batch_plan,
             workload_namespace="fs2-academic-poc",
         )
+
+
+def test_bindcraft_aggregate_stays_academic_on_the_general_cpu_backing() -> None:
+    published = json.loads((CATALOG_ROOT / "contracts" / "scientific-workload-profiles.json").read_text())
+    profile = next(item for item in published["profiles"] if item["model_id"] == "bindcraft")
+    plan = scientific_plan_from_catalog_profile(profile)
+
+    frozen = SchedulingContractResolver(scheduling_with_academic_route()).freeze(
+        service_class="customer-batch",
+        model_id="bindcraft",
+        tenant_id=ACADEMIC_TENANT_ID,
+        profile=profile,
+        plan=plan,
+        workload_namespace="fs2-academic-poc",
+    )
+
+    design = frozen.stage("design")
+    aggregate = frozen.stage("aggregate")
+    assert design.workload_namespace == aggregate.workload_namespace == "fs2-academic-poc"
+    assert design.resolved_local_queue == "academic-scientific"
+    assert aggregate.placement_class is StagePlacementClass.ACADEMIC_CPU
+    assert aggregate.resolved_local_queue == "academic-general-cpu"
+    assert aggregate.resolved_cluster_queue == "general-cpu"
+    assert aggregate.requested_resource_flavor == "general-cpu"
+    assert aggregate.resolved_pool_preference == ("general-cpu-8x",)
+    assert ("workload.fs2.nebius/general-cpu", "true") in aggregate.node_selector
+    assert aggregate.resolved_cluster_queue != "reference-data-cpu"
 
 
 def test_scheduling_resolver_rejects_ambiguous_model_tenant_execution_namespaces() -> None:
