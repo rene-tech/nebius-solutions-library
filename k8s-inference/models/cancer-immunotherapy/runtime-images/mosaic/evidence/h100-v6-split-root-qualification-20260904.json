@@ -1,0 +1,98 @@
+{
+  "schema": "fs2.nebius.ai/mosaic-h100-split-root-qualification/v1",
+  "observed_at": "2026-09-04T15:25:31Z",
+  "claim": "The immutable adapter-v6 image completed the full Mosaic design and aggregate workflow on NVIDIA H100 with model generations and the request target mounted on distinct read-only roots. The canonical controller adapter validator and the independent structural validator both passed.",
+  "cluster": {
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+    "kube_system_namespace_uid": "5e8135da-4a78-4669-863d-455840d0700b",
+    "namespace": "fs2-models"
+  },
+  "image": {
+    "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
+    "requested_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
+    "kubelet_image_id_matched": true
+  },
+  "artifact_roots": {
+    "model_root": "/opt/fs2/artifacts",
+    "request_root": "/opt/fs2/inputs",
+    "distinct_roots_confirmed": true,
+    "request_target_mount": "/opt/fs2/inputs/inputs",
+    "model_generations": [
+      {
+        "artifact_id": "mosaic-boltz2-conf",
+        "mount_path": "/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt",
+        "generation": "e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6"
+      },
+      {
+        "artifact_id": "boltzgen-inference-molecules",
+        "mount_path": "/opt/fs2/artifacts/mosaic/boltz/mols",
+        "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
+      },
+      {
+        "artifact_id": "mosaic-components",
+        "mount_path": "/opt/fs2/artifacts/mosaic/proteinmpnn",
+        "generation": "d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6"
+      }
+    ]
+  },
+  "design_run": {
+    "job": "mosaic-008753fc8d77ab7b-s000",
+    "pod": "mosaic-008753fc8d77ab7b-s000-skxwz",
+    "pod_uid": "4cf7e168-b1fe-4faa-898a-8e17caf0622e",
+    "node": "computeinstance-e00m0hsph76ajt9sdb",
+    "scheduled_at": "2026-09-04T15:17:59Z",
+    "container_started_at": "2026-09-04T15:19:19Z",
+    "container_finished_at": "2026-09-04T15:22:55Z",
+    "image_start_seconds": 80,
+    "container_runtime_seconds": 216,
+    "exit_code": 0,
+    "restart_count": 0,
+    "status": "succeeded",
+    "accelerator": "NVIDIA H100 80GB HBM3",
+    "backend_id": "mosaic-boltz2-proteinmpnn-v1",
+    "seed": 7300
+  },
+  "aggregate_run": {
+    "job": "mosaic-008753fc8d77ab7b-aggregate",
+    "pod": "mosaic-008753fc8d77ab7b-aggregate-44cb4",
+    "pod_uid": "13bb5bb0-0bf7-46dc-a69d-9c0ecd8591dd",
+    "node": "computeinstance-e00m0hsph76ajt9sdb",
+    "scheduled_at": "2026-09-04T15:25:29Z",
+    "container_started_at": "2026-09-04T15:25:31Z",
+    "container_finished_at": "2026-09-04T15:25:31Z",
+    "exit_code": 0,
+    "status": "succeeded",
+    "atomic_commit": true,
+    "succeeded_shards": 1
+  },
+  "outputs": {
+    "output_manifest_sha256": "600a1a5b99b7b44805136b6a55ca4786e0bdd38e6ff1a322792d7c42e0eab96a",
+    "artifact_index_sha256": "ba15b50fa2f03d10015fc74ceb38456b32f22e0e9dfd595f3add5317da69bbab",
+    "aggregate_sha256": "e880cdc7ddbf094e17abc86e4353b635f6a77da10999b66de36451dc90d8869b",
+    "shard_result_sha256": "d890d03809133b0ae17c425efe569f3d6173e60015e959210078081f82ec770b",
+    "candidate_structure_sha256": "347c0ba32650285982fbb413b93ad9772cc584c688e996741c68c3f7c7170bf0"
+  },
+  "semantic_validation": {
+    "status": "passed",
+    "canonical_adapter_commit": "6551d8708c829fe99d229d1f547b8bd8cab0231e",
+    "canonical_validator": "validate_output_manifest",
+    "candidate_count": 1,
+    "shard_count": 1,
+    "candidate_metrics": {
+      "iptm": 0.8679506778717041,
+      "mean_plddt": 0.9325760006904602,
+      "objective": 12.283712387084961,
+      "sequence_length": 40
+    },
+    "binder_structure": {
+      "residues": 40,
+      "atoms": 200,
+      "distinct_residue_types": 16,
+      "dominant_residue_fraction": 0.175,
+      "max_extent_angstrom": 29.754
+    }
+  },
+  "scope": "This qualifies adapter-v6 on H100, the three canonical model generations, the split request root, the bounded single-shard scientific workflow, atomic aggregation, and canonical output validation. It is not a production-controller route test and makes no GPU snapshot, elasticity, throughput, or other accelerator-family claim."
+}
