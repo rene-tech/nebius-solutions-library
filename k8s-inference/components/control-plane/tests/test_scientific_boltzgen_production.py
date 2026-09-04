@@ -589,6 +589,61 @@ def test_intermediate_handoff_round_trips_through_global_collector_and_materiali
     assert (destination / companion.STAGE_RUNNER_RELATIVE_PATH).is_file()
 
 
+def test_public_campaign_archive_materializes_below_inputs_in_a_prepared_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _catalog, _renderer_value, plan = _bound_plan()
+    invocation = next(item for item in plan.invocations if item.stage_id == "configure")
+    root = tmp_path / "scientific"
+    root.mkdir()
+    monkeypatch.setattr(companion, "_ROOT", root)
+    workspace = root / "configure"
+    companion.prepare_workspace(
+        workspace,
+        runtime_localization_json=_runtime_marker(invocation),
+        stage_invocation_json=_invocation_json(invocation),
+    )
+    runner = workspace / companion.STAGE_RUNNER_RELATIVE_PATH
+    trusted_runner = runner.read_bytes()
+
+    campaign = io.BytesIO()
+    members = {
+        "5J89-chain-A.cif": (ACTIVATION_ROOT / "5J89-chain-A.cif").read_bytes(),
+        "design-specs/pdl1-face.yaml": (ACTIVATION_ROOT.parent / "qualification/pdl1-face.yaml").read_bytes(),
+    }
+    with tarfile.open(fileobj=campaign, mode="w:gz", format=tarfile.USTAR_FORMAT) as archive:
+        for name, content in members.items():
+            member = tarfile.TarInfo(name)
+            member.size = len(content)
+            member.mode = 0o444
+            archive.addfile(member, io.BytesIO(content))
+    content = campaign.getvalue()
+    artifact_id = uuid4()
+    client = _ArtifactClient()
+    client.downloads[artifact_id] = (content, boltzgen.CAMPAIGN_INPUT_MEDIA_TYPE)
+
+    companion.materialize_artifact(
+        client=client,  # type: ignore[arg-type]
+        artifact_id=artifact_id,
+        destination=workspace,
+        mode=MaterializationMode.BOLTZGEN_INPUT,
+        compression="gzip",
+        yaml_name="design-specs/pdl1-face.yaml",
+        reuse_prefix=None,
+        expected_digest="sha256:" + hashlib.sha256(content).hexdigest(),
+        expected_size_bytes=len(content),
+        expected_media_type=boltzgen.CAMPAIGN_INPUT_MEDIA_TYPE,
+    )
+
+    target = workspace / "inputs/5J89-chain-A.cif"
+    design = workspace / "inputs/design-specs/pdl1-face.yaml"
+    assert target.read_bytes() == members["5J89-chain-A.cif"]
+    assert str(target.resolve()) in design.read_text(encoding="utf-8")
+    assert not (workspace / "5J89-chain-A.cif").exists()
+    assert not (workspace / "design-specs").exists()
+    assert runner.read_bytes() == trusted_runner
+
+
 def test_materializer_cannot_replace_the_injected_stage_runner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = tmp_path / "scientific"
     root.mkdir()
