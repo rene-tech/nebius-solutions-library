@@ -93,6 +93,52 @@ def _read_stable_file(path: Path, *, maximum_bytes: int, label: str) -> bytes:
     return content
 
 
+def _has_symlink_component(root: Path, path: Path) -> bool:
+    """Return true when any selected path component below ``root`` is a link."""
+
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return True
+    current = root
+    for part in relative.parts:
+        current = current / part
+        try:
+            if stat.S_ISLNK(current.lstat().st_mode):
+                return True
+        except OSError:
+            return True
+    return False
+
+
+def contained_stable_file(
+    workspace: Path,
+    relative_path: str,
+    *,
+    maximum_bytes: int,
+    label: str,
+) -> tuple[Path, bytes]:
+    """Resolve and stably read one allow-listed relative workspace file."""
+
+    relative = PurePosixPath(relative_path)
+    if (
+        not relative_path
+        or relative.is_absolute()
+        or any(part in {"", ".", ".."} for part in relative.parts)
+        or "\\" in relative_path
+    ):
+        raise ScientificAdapterError(f"{label} path is unsafe")
+    try:
+        root = workspace.resolve(strict=True)
+        path = workspace.joinpath(*relative.parts)
+        resolved = path.resolve(strict=True)
+    except OSError as error:
+        raise ScientificAdapterError(f"{label} is unavailable") from error
+    if root not in resolved.parents or _has_symlink_component(root, path):
+        raise ScientificAdapterError(f"{label} is not a contained regular file")
+    return resolved, _read_stable_file(resolved, maximum_bytes=maximum_bytes, label=label)
+
+
 def completion_marker(invocation: StageInvocation, workspace: Path, *, label: str) -> str:
     """Validate and digest the atomic marker for the frozen invocation."""
 
@@ -172,8 +218,9 @@ def snapshot_workspace(
     label: str,
     maximum_members: int,
     maximum_content_bytes: int,
+    included_paths: tuple[str, ...] | None = None,
 ) -> tuple[SnapshotEntry, ...]:
-    """Capture one bounded symlink-free workspace after terminal completion."""
+    """Capture bounded allow-listed outputs from a completed workspace."""
 
     try:
         root = workspace.resolve(strict=True)
@@ -185,7 +232,30 @@ def snapshot_workspace(
     total = 0
     files = 0
     try:
-        candidates = sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix())
+        if included_paths is None:
+            candidates = sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix())
+        else:
+            if not included_paths or len(included_paths) != len(set(included_paths)):
+                raise ScientificAdapterError(f"{label} handoff output allow-list is empty or duplicated")
+            selected: set[Path] = set()
+            for raw in included_paths:
+                selector_relative = PurePosixPath(raw)
+                if (
+                    not raw
+                    or selector_relative.is_absolute()
+                    or any(part in {"", ".", ".."} for part in selector_relative.parts)
+                    or selector_relative.parts[0] == ".fs2"
+                    or "\\" in raw
+                ):
+                    raise ScientificAdapterError(f"{label} handoff output allow-list is unsafe")
+                path = root.joinpath(*selector_relative.parts)
+                resolved = path.resolve(strict=True)
+                if root not in resolved.parents or _has_symlink_component(root, path):
+                    raise ScientificAdapterError(f"{label} handoff output escapes the workspace")
+                selected.add(path)
+                if path.is_dir():
+                    selected.update(path.rglob("*"))
+            candidates = sorted(selected, key=lambda item: item.relative_to(root).as_posix())
     except OSError as error:
         raise ScientificAdapterError(f"{label} workspace changed during collection") from error
     for path in candidates:
@@ -198,7 +268,7 @@ def snapshot_workspace(
             resolved = path.resolve(strict=True)
         except OSError as error:
             raise ScientificAdapterError(f"{label} workspace changed during collection") from error
-        if root not in resolved.parents or stat.S_ISLNK(metadata.st_mode):
+        if root not in resolved.parents or stat.S_ISLNK(metadata.st_mode) or _has_symlink_component(root, path):
             raise ScientificAdapterError(f"{label} handoff contains an escaping or symbolic-link entry")
         if stat.S_ISDIR(metadata.st_mode):
             entries.append(SnapshotEntry(name=name, is_directory=True))
@@ -312,6 +382,7 @@ def collect_workspace_handoff(
     maximum_members: int,
     maximum_content_bytes: int,
     maximum_archive_bytes: int,
+    included_paths: tuple[str, ...] | None = None,
 ) -> CollectedStageOutput:
     """Validate completion and publish one materializer-compatible handoff."""
 
@@ -325,6 +396,7 @@ def collect_workspace_handoff(
         label=label,
         maximum_members=maximum_members,
         maximum_content_bytes=maximum_content_bytes,
+        included_paths=included_paths,
     )
     content = encode_handoff(entries, label=label, maximum_archive_bytes=maximum_archive_bytes)
     validate_handoff(
@@ -366,6 +438,7 @@ __all__ = [
     "atomic_publish",
     "collect_workspace_handoff",
     "completion_marker",
+    "contained_stable_file",
     "encode_handoff",
     "snapshot_workspace",
     "unwrapped_stage_argv",
