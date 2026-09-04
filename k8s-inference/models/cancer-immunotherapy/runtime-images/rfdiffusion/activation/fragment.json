@@ -60,22 +60,22 @@
       "model_id": "rfdiffusion",
       "display_name": "RFdiffusion v1.1.0",
       "execution_mode": "scientific-batch",
-      "state": "candidate-unqualified",
-      "route_exposed": false,
+      "state": "active",
+      "route_exposed": true,
       "source": {
         "kind": "git",
         "repository": "RosettaCommons/RFdiffusion",
         "revision": "9273ef67335acaf91df0150473a274759229cdf6",
         "review_url": "https://github.com/RosettaCommons/RFdiffusion/tree/9273ef67335acaf91df0150473a274759229cdf6",
-        "classification": "candidate-input"
+        "classification": "qualified-input"
       },
       "execution_identity": {
         "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
         "runtime_image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
         "runtime_recipe_sha256": "a43cb088e08278e089433bdd8816b14ac94d7cc490dfb7ec9a771498da0941dc",
         "workload_recipe_sha256": "548da3b7c5dd5868d7e8adaf64b4dcc0bb2e89b3611f324eb6701478bb76cb5e",
-        "artifact_manifest_digest": null,
-        "execution_identity_sha256": null
+        "artifact_manifest_digest": "931ae8f26343abe60d3fd4efb71da9ca2822899bde61357044eea09ca85bfc2d",
+        "execution_identity_sha256": "ba33a17f3867344af9f02c7050f0784f628784b995e102a01d5f717c8fec4844"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -93,7 +93,7 @@
         ],
         "mcp": {
           "discoverable": true,
-          "invocable": false,
+          "invocable": true,
           "tool_name": "submit_rfdiffusion",
           "description": "Submit a bounded RFdiffusion backbone or motif-scaffolding run."
         }
@@ -158,7 +158,14 @@
       },
       "semantic_validation": {
         "validator_id": "rfdiffusion-v1-1-0",
-        "state": "candidate-unqualified"
+        "state": "active"
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "1f392018020143dbc81695632cdfef02b9582f49e0187f72e6a172c0e8b80765",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "qualified_at": "2026-09-04T15:21:42Z"
       },
       "policy": {
         "commercial_use": "allowed",
