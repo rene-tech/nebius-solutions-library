@@ -116,8 +116,11 @@ def environment_identity(pool: PoolEnvelope) -> RuntimeEnvironmentIdentity:
     return RuntimeEnvironmentIdentity.model_validate({**payload, "qualificationDigest": canonical_digest(payload)})
 
 
-def qualify_for_fast_start(installed: InfrastructureEnvelope) -> InfrastructureEnvelope:
-    base_spec = model_spec()
+def qualify_for_fast_start(
+    installed: InfrastructureEnvelope,
+    base_spec: ModelDeploymentSpec | None = None,
+) -> InfrastructureEnvelope:
+    base_spec = base_spec or model_spec()
     pools = {
         key: pool.model_copy(
             update={
@@ -619,8 +622,15 @@ def test_fixed_mode_honours_requests_only_with_evidence_then_falls_back_or_rejec
     assert decision.fast_start.qualification.state is FastStartQualificationState.UNQUALIFIED
     assert decision.fast_start.assigned_level is None and decision.fast_start.target_seconds is None
 
+    conventional_installed = with_evidence(
+        envelope(),
+        evidence(base, envelope().pools["pool-a"], seconds=[50.0] * 20, mechanism="conventional"),
+        evidence(base, envelope().pools["pool-b"], seconds=[100.0] * 20, mechanism="conventional"),
+    )
     accepted = validate_model_deployment(
-        with_fast_start(base, level="L2", fallback_policy="RequireTarget"), installed, evaluation_time=NOW
+        with_fast_start(base, level="L2", fallback_policy="RequireTarget"),
+        conventional_installed,
+        evaluation_time=NOW,
     )
     assert accepted.disposition is ValidationDisposition.ACCEPTED
     assert accepted.fast_start is not None and accepted.fast_start.assigned_level is FastStartLevel.L2

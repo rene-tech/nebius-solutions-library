@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from fs2_serve.access_models import OperatorPrincipal, OperatorRole, PrincipalKind
 from fs2_serve.api import create_app
 from fs2_serve.fast_start_mechanisms import (
+    FastStartMechanism,
     GpuResidentQualification,
     HostMemoryResidencyQualification,
     RegionalCacheQualification,
@@ -35,6 +36,7 @@ from fs2_serve.model_deployment import (
     DesiredState,
     DrainObservation,
     ExposureSpec,
+    FastStartMechanismDecision,
     InfrastructureEnvelope,
     LegacyManifestRenderer,
     LegacyTemplateBundle,
@@ -148,6 +150,7 @@ def envelope() -> InfrastructureEnvelope:
             resource_name="nvidia.com/gpu",
             capacity_type="preemptible",
             accelerators_per_node=8,
+            allocatable_memory_bytes=1024 * 1024**3,
             min_nodes=0,
             max_nodes=1,
             node_selector={"accelerator.fs2.nebius/pool-id": "pool-a"},
@@ -158,6 +161,7 @@ def envelope() -> InfrastructureEnvelope:
             resource_name="vendor.example/gpu",
             capacity_type="preemptible",
             accelerators_per_node=4,
+            allocatable_memory_bytes=2 * 1024 * 1024**3,
             min_nodes=0,
             max_nodes=4,
             node_selector={"accelerator.fs2.nebius/pool-id": "pool-b"},
@@ -202,6 +206,7 @@ def reserved_and_preemptible_envelope() -> InfrastructureEnvelope:
                     resource_name="nvidia.com/gpu",
                     capacity_type="regular",
                     accelerators_per_node=1,
+                    allocatable_memory_bytes=1024 * 1024**3,
                     min_nodes=1,
                     max_nodes=2,
                     node_selector={"accelerator.fs2.nebius/pool-id": "reserved-h100"},
@@ -212,6 +217,7 @@ def reserved_and_preemptible_envelope() -> InfrastructureEnvelope:
                     resource_name="nvidia.com/gpu",
                     capacity_type="preemptible",
                     accelerators_per_node=1,
+                    allocatable_memory_bytes=1024 * 1024**3,
                     min_nodes=0,
                     max_nodes=2,
                     node_selector={"accelerator.fs2.nebius/pool-id": "preemptible-h100"},
@@ -222,7 +228,7 @@ def reserved_and_preemptible_envelope() -> InfrastructureEnvelope:
     )
 
 
-def renderer() -> LegacyManifestRenderer:
+def renderer(*, runtime_memory_request: str | None = None) -> LegacyManifestRenderer:
     bundle = LegacyTemplateBundle(
         model_ref="qwen.3-8b",
         runtime_profile="vllm",
@@ -246,8 +252,14 @@ def renderer() -> LegacyManifestRenderer:
                                     "name": "runtime",
                                     "image": f"old.example/runtime@{digest('e')}",
                                     "resources": {
-                                        "requests": {"nvidia.com/gpu": "1"},
-                                        "limits": {"nvidia.com/gpu": "1"},
+                                        "requests": {
+                                            "nvidia.com/gpu": "1",
+                                            **({"memory": runtime_memory_request} if runtime_memory_request else {}),
+                                        },
+                                        "limits": {
+                                            "nvidia.com/gpu": "1",
+                                            **({"memory": runtime_memory_request} if runtime_memory_request else {}),
+                                        },
                                     },
                                     # The live render mounts the retained payload
                                     # read-only and discards its JIT cache with
@@ -1352,6 +1364,7 @@ def test_invalid_lifecycle_and_resource_names_fail_in_schema_model() -> None:
             resource_name="nvidia.com/gpu",
             capacity_type="preemptible",
             accelerators_per_node=8,
+            allocatable_memory_bytes=1024 * 1024**3,
             min_nodes=0,
             max_nodes=1,
             node_selector={"accelerator.fs2.nebius/pool-id": "pool-b"},
@@ -1717,16 +1730,22 @@ def render_regional_cache(pool_refs: Sequence[str] = ("pool-a", "pool-b")) -> Re
     )
 
 
-def render_host_memory(pool_refs: Sequence[str] = ("pool-a", "pool-b")) -> HostMemoryResidencyQualification:
+def render_host_memory(
+    pool_refs: Sequence[str] = ("pool-a", "pool-b"),
+    *,
+    mode: str = "locked-payload-residency",
+    reserved_bytes: int = 19327352832,
+    node_allocatable_bytes: int = 1648745732096,
+) -> HostMemoryResidencyQualification:
     return _self_digested(
         HostMemoryResidencyQualification,
-        residency_mode="locked-payload-residency",
+        residency_mode=mode,
         payload_claim_name="qwen-cache-rwx",
         payload_content_path="/models/qwen/payload",
         payload_digest=digest("a"),
         payload_bytes=16397461266,
-        reserved_bytes=19327352832,
-        node_allocatable_bytes=1648745732096,
+        reserved_bytes=reserved_bytes,
+        node_allocatable_bytes=node_allocatable_bytes,
         holder=ResidencyHolder(
             name="fsm-hostmem-qwen",
             namespace="fs2-models",
@@ -1748,6 +1767,38 @@ def render_gpu_resident(pool_refs: Sequence[str] = ("pool-a", "pool-b")) -> GpuR
         promotion_probe_period_seconds=1,
         pool_refs=list(pool_refs),
     )
+
+
+def test_gpu_resident_cannot_be_pinned_on_a_model_deployment() -> None:
+    wire = model_spec().model_dump(mode="json", by_alias=True)
+    wire["cache"] = {**wire["cache"], "mechanism": "gpu-resident"}
+    with pytest.raises(ValidationError, match="not selectable"):
+        ModelDeploymentSpec.model_validate(wire)
+
+
+def test_host_memory_reservation_must_fit_every_declared_pool() -> None:
+    base = envelope()
+    declaration = render_host_memory()
+    qualification = base.qualifications["qwen.3-8b"].model_copy(update={"host_memory_residency": declaration})
+    payload = base.model_dump(mode="json", by_alias=True)
+    payload["pools"]["pool-b"]["allocatableMemoryBytes"] = declaration.reserved_bytes - 1
+    payload["qualifications"] = {qualification.model_ref: qualification.model_dump(mode="json", by_alias=True)}
+    with pytest.raises(ValidationError, match="exceeds an eligible pool"):
+        InfrastructureEnvelope.model_validate(payload)
+
+
+def test_host_memory_has_no_policy_cap_below_physical_pool_memory() -> None:
+    gib = 1024**3
+    declaration = render_host_memory(
+        reserved_bytes=900 * gib,
+        node_allocatable_bytes=1024 * gib,
+    )
+    base = envelope()
+    qualification = base.qualifications["qwen.3-8b"].model_copy(update={"host_memory_residency": declaration})
+    payload = base.model_dump(mode="json", by_alias=True)
+    payload["qualifications"] = {qualification.model_ref: qualification.model_dump(mode="json", by_alias=True)}
+    installed = InfrastructureEnvelope.model_validate(payload)
+    assert installed.qualifications["qwen.3-8b"].host_memory_residency == declaration
 
 
 def _pinned(mechanism: str) -> ModelDeploymentSpec:
@@ -1857,9 +1908,93 @@ def test_a_host_memory_render_without_a_holder_image_is_refused() -> None:
         _render("host-memory-residency", host_memory_residency=render_host_memory())
 
 
+def test_host_memory_fit_accounts_for_every_gpu_limited_runtime_pod_per_node() -> None:
+    gib = 1024**3
+    spec = _pinned("host-memory-residency").model_copy(
+        update={"availability": _pinned("host-memory-residency").availability.model_copy(update={"max_replicas": 20})}
+    )
+    declaration = render_host_memory(
+        reserved_bytes=18 * gib,
+        node_allocatable_bytes=20 * gib,
+    )
+    base = envelope()
+    pools = {
+        pool_ref: pool.model_copy(update={"allocatable_memory_bytes": 20 * gib})
+        for pool_ref, pool in base.pools.items()
+    }
+    qualification = base.qualifications[spec.model_ref].model_copy(
+        update={
+            "host_memory_residency": declaration,
+            "template_cache_tiers": {
+                digest_value: CacheTier.SHARED_FILESYSTEM
+                for digest_value in base.qualifications[spec.model_ref].template_digests
+            },
+        }
+    )
+    installed = base.model_copy(
+        update={
+            "pools": pools,
+            "qualifications": {qualification.model_ref: qualification},
+            "residency_holder_image": spec.runtime.image,
+        }
+    )
+    context = render_context().model_copy(
+        update={
+            "pool": pools["pool-b"],
+            "eligible_pools": [pools[pool_ref] for pool_ref in spec.placement.pool_refs],
+            "host_memory_residency": declaration,
+            "residency_holder_image": spec.runtime.image,
+        }
+    )
+
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=installed,
+        renderer=renderer(runtime_memory_request="1Gi"),
+        render_context=context,
+        observed=[],
+        discovery_complete=True,
+    )
+
+    assert plan.action is ReconcileAction.REJECT
+    assert "render_contract_invalid" in {issue.code for issue in plan.validation.issues}
+
+
 def test_gpu_resident_is_not_selectable_without_a_promotion_controller() -> None:
     with pytest.raises(ValidationError, match="not selectable"):
         _pinned("gpu-resident")
+
+
+def test_a_crafted_gpu_resident_render_decision_cannot_bypass_validation() -> None:
+    spec = model_spec()
+    context = render_context().model_copy(
+        update={
+            "fast_start_mechanism": FastStartMechanismDecision(
+                mechanism=FastStartMechanism.GPU_RESIDENT,
+                source="Automatic",
+                renderable=True,
+                reason="DemandCostSelected",
+            )
+        }
+    )
+
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=envelope(),
+        renderer=renderer(),
+        render_context=context,
+        observed=[],
+        discovery_complete=True,
+    )
+
+    assert plan.action is ReconcileAction.REJECT
+    assert plan.validation.fast_start_mechanism.renderable is False
+    assert plan.validation.fast_start_mechanism.reason == "MechanismNotSelectable"
+    assert "fast_start_mechanism_unavailable" in {issue.code for issue in plan.validation.issues}
 
 
 def test_a_render_whose_declaration_misses_the_pool_is_refused() -> None:

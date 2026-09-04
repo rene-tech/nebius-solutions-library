@@ -33,6 +33,7 @@ from .fast_start_mechanisms import (
     SELECTABLE_MECHANISMS,
     FastStartMechanism,
     GpuResidentQualification,
+    HostMemoryResidencyQualification,
 )
 from .model_deployment import (
     API_VERSION,
@@ -537,6 +538,15 @@ class ModelDeploymentMutationService:
                 declared_pool_refs = [
                     pool_ref for pool_ref in selectable_pool_refs if pool_ref in declaration.pool_refs
                 ]
+                if isinstance(declaration, HostMemoryResidencyQualification):
+                    if declaration.residency_mode == "runtime-sleep-offload":
+                        continue
+                    declared_pool_refs = [
+                        pool_ref
+                        for pool_ref in declared_pool_refs
+                        if (allocatable_memory := self.envelope.pools[pool_ref].allocatable_memory_bytes) is not None
+                        and declaration.reserved_bytes <= allocatable_memory
+                    ]
                 if not declared_pool_refs:
                     continue
                 minimum_hot_replicas = 0
@@ -603,8 +613,9 @@ class ModelDeploymentMutationService:
                             "tier": qualification.template_cache_tiers[template_digest].value,
                             "snapshotPreference": "Never",
                             "snapshotRef": None,
-                            # An unpinned draft keeps the historical spec digest
-                            # and lets evidence select the fastest qualified path.
+                            # An unpinned draft keeps the historical spec digest.
+                            # Fixed mode renders conventional loading; Automatic
+                            # mode resolves one qualified, renderable mechanism.
                             "mechanism": None,
                         },
                         "queue": {

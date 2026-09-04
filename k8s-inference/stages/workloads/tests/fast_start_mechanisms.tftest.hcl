@@ -139,6 +139,13 @@ variables {
     }
   }
 
+  accelerator_node_schedulable_capacity = {
+    nebius-b300-preemptible-1x = {
+      cpu_millicores = 22000
+      memory_mib     = 344064
+    }
+  }
+
   public_edge_contract = {
     schema                  = "fs2-serve.nebius.ai/public-edge/v1"
     mode                    = "internal-only"

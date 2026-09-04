@@ -228,6 +228,32 @@ def test_configuration_options_publish_only_declared_mechanisms_and_their_depend
         assert validate_model_deployment(selected, installed).disposition is ValidationDisposition.ACCEPTED
 
 
+def test_configuration_options_hide_sleep_offload_without_a_runtime_actor() -> None:
+    installed = envelope()
+    qualification = installed.qualifications["qwen.3-8b"].model_copy(
+        update={
+            "host_memory_residency": render_host_memory(
+                pool_refs=("pool-a",),
+                mode="runtime-sleep-offload",
+            )
+        }
+    )
+    installed = installed.model_copy(update={"qualifications": {qualification.model_ref: qualification}})
+    service = ModelDeploymentMutationService(
+        repository=StoreModelDeploymentRepository(
+            MemoryStore(
+                PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+                KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+            )
+        ),
+        writer=FakeWriter(),
+        envelope=installed,
+    )
+
+    mechanisms = [choice.mechanism for choice in service.configuration_options()[0].fast_start_mechanism_choices]
+    assert FastStartMechanism.HOST_MEMORY_RESIDENCY not in mechanisms
+
+
 def test_configuration_default_selects_every_compatible_pool_and_invariant_allows_subsets() -> None:
     installed = reserved_and_preemptible_envelope()
     qualification = installed.qualifications["qwen.3-8b"].model_copy(update={"max_accelerators_per_replica": 1})

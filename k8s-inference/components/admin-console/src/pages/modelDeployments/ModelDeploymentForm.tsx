@@ -49,10 +49,10 @@ function NumberField({ label, value, onChange, min = 0, max, hint, disabled }: O
   return <TextField disabled={disabled} hint={hint} label={label} max={max} min={min} onChange={(value) => onChange(Number(value))} required type="number" value={String(value)} />;
 }
 
-function SelectField<T extends string>({ label, value, values, onChange, hint, disabled, formatOption = (item) => item }: { label: string; value: T; values: readonly T[]; onChange: (value: T) => void; hint?: string; disabled?: boolean; formatOption?: (value: T) => string }) {
+function SelectField<T extends string>({ label, value, values, onChange, hint, disabled, disabledValues = [], formatOption = (item) => item }: { label: string; value: T; values: readonly T[]; onChange: (value: T) => void; hint?: string; disabled?: boolean; disabledValues?: readonly T[]; formatOption?: (value: T) => string }) {
   return (
     <label>{label}
-      <select aria-label={label} disabled={disabled} onChange={(event) => onChange(event.target.value as T)} value={value}>{values.map((item) => <option key={item} value={item}>{formatOption(item)}</option>)}</select>
+      <select aria-label={label} disabled={disabled} onChange={(event) => onChange(event.target.value as T)} value={value}>{values.map((item) => <option disabled={disabledValues.includes(item)} key={item} value={item}>{formatOption(item)}</option>)}</select>
       {hint ? <small>{hint}</small> : null}
     </label>
   );
@@ -83,14 +83,15 @@ interface Props {
 export function ModelDeploymentForm({ name, namespace, spec, identityLocked, disabled, configurationOption, onNameChange, onNamespaceChange, onChange }: Props) {
   const presetLocked = Boolean(configurationOption);
   const fastStart = normalizeFastStartPolicy(spec.fastStart);
+  const configuredMechanisms = configurationOption?.fast_start_mechanism_choices.map((choice) => choice.mechanism) ?? [];
+  const selectedMechanismUnavailable = Boolean(
+    spec.cache.mechanism && !configuredMechanisms.includes(spec.cache.mechanism),
+  );
   const selectableMechanisms: Array<ModelDeploymentFastStartMechanism | ""> = [
     "",
-    ...(configurationOption?.fast_start_mechanism_choices.map((choice) => choice.mechanism)
-      ?? ["conventional", "regional-cache", "host-memory-residency"]),
+    ...configuredMechanisms,
+    ...(selectedMechanismUnavailable ? [spec.cache.mechanism!] : []),
   ];
-  if (spec.cache.mechanism && !selectableMechanisms.includes(spec.cache.mechanism)) {
-    selectableMechanisms.push(spec.cache.mechanism);
-  }
   function update(change: (next: ModelDeploymentSpec) => void) {
     const next = structuredClone(spec);
     change(next);
@@ -257,6 +258,8 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
           <p>These implementation controls remain visible for diagnosis and backwards compatibility. A cache or snapshot setting alone does not prove a fast-start level.</p>
           <div className="model-deployment-form-grid">
             <SelectField<ModelDeploymentFastStartMechanism | "">
+              disabled={!configurationOption}
+              disabledValues={selectedMechanismUnavailable && spec.cache.mechanism ? [spec.cache.mechanism] : []}
               hint={configurationOption ? "Only mechanisms declared for this installed model tuple are offered. Selecting one applies its pool, cache-tier and hot-capacity requirements." : undefined}
               label="Cold-start mechanism"
               onChange={(value) => update((next) => {
@@ -271,8 +274,9 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
               })}
               value={spec.cache.mechanism ?? ""}
               values={selectableMechanisms}
-              formatOption={(value) => value || "Automatic from qualified evidence"}
+              formatOption={(value) => value || (fastStart.mode === "Automatic" ? "Automatic from qualified evidence" : "Default conventional loader")}
             />
+            {selectedMechanismUnavailable ? <small role="alert">The currently stored mechanism is unavailable and cannot be selected for this installed model and pool set.</small> : null}
             <SelectField<ModelDeploymentCacheTier> disabled={presetLocked} label="Cache tier" onChange={(value) => update((next) => { next.cache.tier = value; })} value={spec.cache.tier} values={["Disabled", "ObjectStore", "SharedFilesystem", "NodeLocal"]} />
             <SelectField<ModelDeploymentSnapshotPreference> disabled={presetLocked} label="Snapshot preference" onChange={(value) => update((next) => { next.cache.snapshotPreference = value; next.cache.snapshotRef = value === "Never" ? null : next.cache.snapshotRef ?? { name: "", digest: "", strategy: "Weights" }; })} value={spec.cache.snapshotPreference} values={["Never", "Prefer", "Require"]} />
             <TextField disabled={presetLocked || !spec.cache.snapshotRef} label="Snapshot name" onChange={(value) => update((next) => { if (next.cache.snapshotRef) next.cache.snapshotRef.name = value; })} placeholder={spec.cache.snapshotRef ? "Qualified snapshot" : "Not used"} value={spec.cache.snapshotRef?.name ?? ""} />

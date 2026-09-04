@@ -45,7 +45,9 @@ from .fast_start import (
 from .fast_start_identity import mechanism_config_digest
 from .fast_start_mechanisms import (
     DECLARED_MECHANISMS,
+    MECHANISM_ANNOTATION,
     FastStartCacheMechanismStatus,
+    FastStartMechanism,
     project_cache_mechanisms,
 )
 from .fast_start_policy import (
@@ -66,6 +68,7 @@ from .model_deployment import (
     AdoptionMode,
     DesiredState,
     DrainObservation,
+    FastStartMechanismDecision,
     InfrastructureEnvelope,
     LegacyManifestRenderer,
     LegacyTemplateBundle,
@@ -82,6 +85,7 @@ from .model_deployment import (
     effective_hot_floor,
     operation_demand_promql,
     plan_reconciliation,
+    reject_validation_decision,
     validate_model_deployment,
 )
 from .models import StrictModel
@@ -422,9 +426,28 @@ def _snapshot(body: dict[str, Any], desired: RenderedResource | None = None) -> 
     observed_generation = (
         observed_generation if isinstance(observed_generation, int) and observed_generation >= 0 else None
     )
-    desired_replicas = spec.get("replicas")
-    desired_replicas = desired_replicas if isinstance(desired_replicas, int) and desired_replicas >= 0 else None
-    zero_when_observed = kind == "Deployment" and observed_generation is not None
+    if kind == "DaemonSet":
+        desired_replicas = _nonnegative_status_int(status, "desiredNumberScheduled", zero_when_observed=False)
+        replicas = _nonnegative_status_int(status, "currentNumberScheduled", zero_when_observed=False)
+        updated_replicas = _nonnegative_status_int(status, "updatedNumberScheduled", zero_when_observed=False)
+        ready_replicas = _nonnegative_status_int(status, "numberReady", zero_when_observed=False)
+        available_replicas = _nonnegative_status_int(status, "numberAvailable", zero_when_observed=False)
+        unavailable_replicas = _nonnegative_status_int(
+            status,
+            "numberUnavailable",
+            zero_when_observed=observed_generation is not None,
+        )
+    else:
+        desired_replicas = spec.get("replicas")
+        desired_replicas = desired_replicas if isinstance(desired_replicas, int) and desired_replicas >= 0 else None
+        zero_when_observed = kind == "Deployment" and observed_generation is not None
+        replicas = _nonnegative_status_int(status, "replicas", zero_when_observed=zero_when_observed)
+        updated_replicas = _nonnegative_status_int(status, "updatedReplicas", zero_when_observed=zero_when_observed)
+        ready_replicas = _nonnegative_status_int(status, "readyReplicas", zero_when_observed=zero_when_observed)
+        available_replicas = _nonnegative_status_int(status, "availableReplicas", zero_when_observed=zero_when_observed)
+        unavailable_replicas = _nonnegative_status_int(
+            status, "unavailableReplicas", zero_when_observed=zero_when_observed
+        )
     return ResourceSnapshot(
         observed=ObservedResource(
             api_version=str(api_version),
@@ -441,13 +464,11 @@ def _snapshot(body: dict[str, Any], desired: RenderedResource | None = None) -> 
         generation=int(metadata.get("generation", 0)),
         observed_generation=observed_generation,
         desired_replicas=desired_replicas,
-        replicas=_nonnegative_status_int(status, "replicas", zero_when_observed=zero_when_observed),
-        updated_replicas=_nonnegative_status_int(status, "updatedReplicas", zero_when_observed=zero_when_observed),
-        ready_replicas=_nonnegative_status_int(status, "readyReplicas", zero_when_observed=zero_when_observed),
-        available_replicas=_nonnegative_status_int(status, "availableReplicas", zero_when_observed=zero_when_observed),
-        unavailable_replicas=_nonnegative_status_int(
-            status, "unavailableReplicas", zero_when_observed=zero_when_observed
-        ),
+        replicas=replicas,
+        updated_replicas=updated_replicas,
+        ready_replicas=ready_replicas,
+        available_replicas=available_replicas,
+        unavailable_replicas=unavailable_replicas,
         replica_field_managers=_replica_field_managers(body),
         raw=body,
     )
@@ -1259,6 +1280,31 @@ def _deployment_rollout_complete(item: ResourceSnapshot) -> bool:
     )
 
 
+def _residency_holder_ready(
+    desired: RenderedResource,
+    observed: ResourceSnapshot | None,
+    owner_uid: str,
+) -> bool:
+    """Require a non-empty, current DaemonSet whose receipt-backed probe is Ready."""
+
+    if observed is None:
+        return False
+    desired_nodes = observed.desired_replicas
+    return bool(
+        desired_nodes is not None
+        and desired_nodes > 0
+        and observed.observed.controller_owner_uid == owner_uid
+        and FIELD_MANAGER in observed.observed.field_managers
+        and observed.observed.digest == desired.digest
+        and observed.observed_generation == observed.generation
+        and observed.replicas == desired_nodes
+        and observed.updated_replicas == desired_nodes
+        and observed.ready_replicas == desired_nodes
+        and observed.available_replicas == desired_nodes
+        and observed.unavailable_replicas == 0
+    )
+
+
 def _pod_phase_counts(pods: list[PodSnapshot]) -> dict[str, int]:
     active = [pod for pod in pods if not pod.deleting]
     return {
@@ -1351,6 +1397,7 @@ def _automatic_fast_start_assessment(
     previous: Mapping[str, Any],
     history: tuple[FastStartHistoryWindow, FastStartHistoryWindow] | None,
     now: datetime,
+    mechanism_decision: FastStartMechanismDecision,
 ) -> tuple[FastStartAssessment, FastStartAutomaticStatus | None]:
     if spec.fast_start.mode is not FastStartMode.AUTOMATIC or envelope is None:
         return assessment, None
@@ -1363,14 +1410,17 @@ def _automatic_fast_start_assessment(
         except ValueError:
             previous_detail = None
     prior_state = _previous_automatic_state(previous)
+    effective_mechanism = mechanism_decision.mechanism.value
     if (
         previous_detail is not None
         and prior_state is not None
+        and previous_detail.evaluated_at <= now
         and now - previous_detail.evaluated_at < timedelta(minutes=5)
         and spec.fast_start.minimum_level.rank <= prior_state.assigned_level.rank <= spec.fast_start.maximum_level.rank
         and prior_state.assigned_level.rank <= assessment.qualified_level.rank
         and converged
         and history is not None
+        and previous_detail.mechanism_id == effective_mechanism
     ):
         retained_level = prior_state.assigned_level
         qualification = FastStartQualification(
@@ -1403,6 +1453,7 @@ def _automatic_fast_start_assessment(
         if pool_paths and all(pool_paths)
         else set()
     )
+    common_mechanisms.intersection_update({effective_mechanism})
     paths: list[FastStartPath] = []
     for mechanism in sorted(common_mechanisms):
         selected_paths = [
@@ -1443,23 +1494,16 @@ def _automatic_fast_start_assessment(
             )
         )
     if not paths:
-        selected_mechanisms = sorted(
-            {pool.selected_mechanism for pool in assessment.pools if pool.selected_mechanism is not None}
-        )
-        mechanism_id = "+".join(selected_mechanisms)[:128] or "conventional"
-        statistics = assessment.model_start
         paths.append(
             FastStartPath(
-                mechanism_id=mechanism_id,
-                qualified_level=assessment.qualified_level,
+                mechanism_id=effective_mechanism,
+                qualified_level=FastStartLevel.OFF,
                 ready=converged,
-                qualification_current=statistics is not None,
-                qualified_p95_model_start_seconds=(None if statistics is None else statistics.p95_seconds),
-                successful_attempts=(0 if statistics is None else statistics.sample_count - statistics.failed_count),
-                failed_attempts=0 if statistics is None else statistics.failed_count,
-                hourly_cost=sum(
-                    envelope.fast_start_mechanism_hourly_costs.get(name, 0.0) for name in selected_mechanisms
-                ),
+                qualification_current=False,
+                qualified_p95_model_start_seconds=None,
+                successful_attempts=0,
+                failed_attempts=0,
+                hourly_cost=envelope.fast_start_mechanism_hourly_costs.get(effective_mechanism, 0.0),
             )
         )
     policy = AutomaticFastStartPolicy(
@@ -1478,11 +1522,11 @@ def _automatic_fast_start_assessment(
         prior_state=prior_state,
         now=now,
     )
-    chosen_mechanism = decision.mechanism_id or decision.fallback_mechanism_id
-    selected_statistics = assessment.model_start
-    selected_capacity_wait = assessment.capacity_wait
-    selected_end_to_end = assessment.end_to_end
-    selected_identity_digest = assessment.selected_identity_digest
+    chosen_mechanism = effective_mechanism
+    selected_statistics = None
+    selected_capacity_wait = None
+    selected_end_to_end = None
+    selected_identity_digest = None
     if chosen_mechanism is not None:
         selected_pool_paths: list[FastStartPathAssessment] = []
         for pool in assessment.pools:
@@ -1559,7 +1603,7 @@ def _automatic_fast_start_assessment(
         reason=decision.reason.value,
         evaluated_at=now,
         history_complete=history is not None,
-        mechanism_id=decision.mechanism_id or decision.fallback_mechanism_id,
+        mechanism_id=effective_mechanism,
         score=decision.score,
         pending_level=decision.state.pending_level,
         pending_since=decision.state.pending_since,
@@ -1585,7 +1629,9 @@ def _fast_start_status(
     previous_status: Mapping[str, Any],
     history: tuple[FastStartHistoryWindow, FastStartHistoryWindow] | None,
     now: datetime,
+    mechanism_decision: FastStartMechanismDecision,
     host_residency_pool_refs: set[str] | None = None,
+    host_residency_ready: bool | None = None,
 ) -> FastStartStatus | None:
     """Add what only observed runtime can tell to the deterministic policy outcome.
 
@@ -1596,19 +1642,23 @@ def _fast_start_status(
 
     if assessment is None:
         return None
+    mechanism_converged = converged and (
+        mechanism_decision.mechanism is not FastStartMechanism.HOST_MEMORY_RESIDENCY or host_residency_ready is True
+    )
     previous = _mapping(previous_status.get("fastStart"))
     assessment, automatic = _automatic_fast_start_assessment(
         spec=spec,
         envelope=envelope,
         assessment=assessment,
-        converged=converged,
+        converged=mechanism_converged,
         previous=previous,
         history=history,
         now=now,
+        mechanism_decision=mechanism_decision,
     )
     effective: FastStartLevel | None = None
     effective_identity_digest: str | None = None
-    if converged and assessment.assigned_level is not None:
+    if mechanism_converged and assessment.assigned_level is not None:
         effective = assessment.assigned_level
         effective_identity_digest = assessment.selected_identity_digest
     else:
@@ -1667,6 +1717,11 @@ def _fast_start_status(
             for pool_ref in sorted(spec.placement.pool_refs)
             if pool_ref in envelope.pools
         }
+        placement_pool_memory = {
+            pool_ref: envelope.pools[pool_ref].allocatable_memory_bytes
+            for pool_ref in sorted(spec.placement.pool_refs)
+            if pool_ref in envelope.pools and envelope.pools[pool_ref].allocatable_memory_bytes is not None
+        }
         storage_contract_digests = {
             item.pool_ref: item.storage_contract_digest
             for item in (qualification.fast_start_runtime_contracts if qualification is not None else [])
@@ -1680,11 +1735,13 @@ def _fast_start_status(
                 if declaration is not None:
                     declarations[candidate] = declaration
         cache_mechanisms = project_cache_mechanisms(
-            selected=spec.cache.mechanism,
+            selected=mechanism_decision.mechanism,
             declarations=declarations,
             pools=placement_pools,
+            pool_allocatable_memory_bytes=placement_pool_memory,
             pool_max_nodes=placement_pool_max_nodes,
             host_residency_pool_refs=host_residency_pool_refs,
+            host_residency_ready=host_residency_ready,
             storage_contract_digests=storage_contract_digests,
             converged=converged,
             configured_hot_replicas=effective_hot_floor(spec.availability, at=now),
@@ -1735,6 +1792,7 @@ def build_status(
         for item in (plan.render.resources if plan.render is not None else [])
     }
     observed_by_identity = {item.observed.identity: item.observed for item in discovery.resources}
+    snapshots_by_identity = {item.observed.identity: item for item in discovery.resources}
     converged = bool(desired_resources) and all(
         identity in observed_by_identity
         and observed_by_identity[identity].controller_owner_uid == owner_uid
@@ -1825,19 +1883,35 @@ def build_status(
             now=observed_at,
         )
     )
-    host_residency_pool_refs = None
+    host_residency_pool_refs: set[str] | None = None
+    host_residency_ready: bool | None = None
     if plan.render is not None:
-        host_residency_pool_refs = {
-            pool_ref
+        holder_resources = [
+            item
             for item in plan.render.resources
             if item.kind == "DaemonSet"
-            and isinstance(
+            and _mapping(_mapping(item.manifest.get("metadata")).get("annotations")).get(MECHANISM_ANNOTATION)
+            == FastStartMechanism.HOST_MEMORY_RESIDENCY.value
+        ]
+        host_residency_pool_refs = {
+            pool_ref
+            for item in holder_resources
+            if isinstance(
                 pool_ref := _mapping(_mapping(item.manifest.get("metadata")).get("annotations")).get(
                     WORKLOAD_POOL_ANNOTATION
                 ),
                 str,
             )
         }
+        if plan.validation.fast_start_mechanism.mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY:
+            host_residency_ready = (
+                host_residency_pool_refs == set(spec.placement.pool_refs)
+                and bool(holder_resources)
+                and all(
+                    _residency_holder_ready(item, snapshots_by_identity.get(_rendered_identity(item)), owner_uid)
+                    for item in holder_resources
+                )
+            )
     fast_start = _fast_start_status(
         spec=spec,
         envelope=envelope,
@@ -1847,7 +1921,9 @@ def build_status(
         previous_status=previous_status,
         history=fast_start_history,
         now=observed_at,
+        mechanism_decision=plan.validation.fast_start_mechanism,
         host_residency_pool_refs=host_residency_pool_refs,
+        host_residency_ready=host_residency_ready,
     )
     if fast_start is not None:
         satisfied = fast_start.qualification.state in {
@@ -2244,7 +2320,15 @@ class ModelDeploymentController:
         finalizers = _string_list(metadata.get("finalizers"))
         has_finalizer = FINALIZER in finalizers
 
-        validation = validate_model_deployment(spec, self.envelope)
+        evaluation_time = _utc_now()
+        validation = validate_model_deployment(
+            spec,
+            self.envelope,
+            evaluation_time=evaluation_time,
+            automatic_history=fast_start_history,
+            previous_status=_mapping(raw.get("status")),
+        )
+        plan: ReconcilePlan | None = None
         if validation.disposition is ValidationDisposition.ACCEPTED:
             assert validation.admitted_pool_ref is not None
             qualification = self.envelope.qualifications[spec.model_ref]
@@ -2256,14 +2340,33 @@ class ModelDeploymentController:
                 pool=self.envelope.pools[validation.admitted_pool_ref],
                 eligible_pools=[self.envelope.pools[pool_ref] for pool_ref in spec.placement.pool_refs],
                 prometheus_server_address=self.prometheus_server_address,
+                evaluation_time=evaluation_time,
+                fast_start_mechanism=validation.fast_start_mechanism,
                 model_express=qualification.model_express,
                 regional_cache=qualification.regional_cache,
                 host_memory_residency=qualification.host_memory_residency,
                 gpu_resident=qualification.gpu_resident,
                 residency_holder_image=self.envelope.residency_holder_image,
             )
-            render = self.renderer.render(spec, context)
-            discovery = await self.api.discover(key=key, owner_uid=uid, render=render)
+            try:
+                render = self.renderer.render(spec, context)
+            except ValueError as exc:
+                rejected = reject_validation_decision(
+                    validation,
+                    code="render_contract_invalid",
+                    path="$.spec",
+                    message=str(exc),
+                )
+                plan = ReconcilePlan(
+                    action=ReconcileAction.REJECT,
+                    target_generation=generation,
+                    spec_digest=rejected.spec_digest,
+                    validation=rejected,
+                )
+                discovery = Discovery(resources=[], complete=True)
+            else:
+                plan = None
+                discovery = await self.api.discover(key=key, owner_uid=uid, render=render)
         else:
             # The planner returns before rendering for invalid or
             # infrastructure-required revisions; an empty authoritative
@@ -2285,18 +2388,19 @@ class ModelDeploymentController:
         )
         if drain is not None and drain.preserve_runtime:
             context = context.model_copy(update={"hot_floor_override": _observed_hot_floor(discovery)})
-        plan = plan_reconciliation(
-            generation=generation,
-            deleting=deleting,
-            spec=spec,
-            envelope=self.envelope,
-            renderer=self.renderer,
-            render_context=context,
-            observed=discovery.observed(),
-            discovery_complete=discovery.complete,
-            drain_observation=drain,
-            adoption_verification=None,
-        )
+        if plan is None:
+            plan = plan_reconciliation(
+                generation=generation,
+                deleting=deleting,
+                spec=spec,
+                envelope=self.envelope,
+                renderer=self.renderer,
+                render_context=context,
+                observed=discovery.observed(),
+                discovery_complete=discovery.complete,
+                drain_observation=drain,
+                adoption_verification=None,
+            )
 
         if not self.writes_enabled:
             return ReconcileResult(

@@ -97,6 +97,7 @@ describe("ModelDeployment workspace", () => {
       "regional-cache",
       "host-memory-residency",
     ]);
+    expect(within(mechanism).getByRole("option", { name: "Default conventional loader" })).toBeInTheDocument();
     fireEvent.change(mechanism, { target: { value: "regional-cache" } });
     expect(screen.getByLabelText("Cache tier")).toHaveValue("SharedFilesystem");
     expect(screen.getByRole("button", { name: "Validate draft" })).toBeEnabled();
@@ -586,6 +587,28 @@ describe("ModelDeployment workspace", () => {
     await screen.findByRole("heading", { name: "qwen-live" });
     expect(await screen.findByText(/Mutation capabilities are unavailable/)).toBeInTheDocument();
     for (const action of ["Apply", "Drain", "Rollback", "Reconcile", "Delete"]) expect(screen.getByRole("button", { name: action })).toBeDisabled();
+  });
+
+  it("does not re-offer a stored mechanism when its authoritative option is unavailable", async () => {
+    mockReadSurface();
+    vi.mocked(adminApi.modelDeployment).mockResolvedValue(testEnvelope({
+      ...modelDeploymentRevisionFixture,
+      spec: {
+        ...modelDeploymentRevisionFixture.spec,
+        cache: { ...modelDeploymentRevisionFixture.spec.cache, mechanism: "host-memory-residency" },
+      },
+    }));
+    vi.mocked(adminApi.modelDeploymentCapabilities).mockRejectedValue(
+      new AdminApiError("capabilities unavailable", 503, "request-mechanism"),
+    );
+    renderPage();
+
+    await screen.findByRole("heading", { name: "qwen-live" });
+    const mechanism = screen.getByLabelText("Cold-start mechanism");
+    expect(mechanism).toBeDisabled();
+    expect(mechanism).toHaveValue("host-memory-residency");
+    expect(within(mechanism).getByRole("option", { name: "host-memory-residency" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent(/currently stored mechanism is unavailable/);
   });
 
   it("honors each advertised action capability independently", async () => {

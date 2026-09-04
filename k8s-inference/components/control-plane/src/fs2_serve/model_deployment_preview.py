@@ -238,10 +238,12 @@ class ModelDeploymentPreviewService:
         actor: OperatorPrincipal,
     ) -> ModelDeploymentRenderPreview:
         current = await self._current(proposal, actor, require_etag=True)
+        evaluation_time = datetime.now(UTC)
         decision = validate_model_deployment(
             proposal.spec,
             self.envelope,
             current=current.spec if current is not None else None,
+            evaluation_time=evaluation_time,
         )
         if decision.disposition is ValidationDisposition.REJECTED:
             live_issues = [issue for issue in decision.issues if issue.owner == "live-control-plane"]
@@ -271,6 +273,8 @@ class ModelDeploymentPreviewService:
                             self.envelope.pools[pool_ref] for pool_ref in proposal.spec.placement.pool_refs
                         ],
                         prometheus_server_address=self.prometheus_server_address,
+                        evaluation_time=evaluation_time,
+                        fast_start_mechanism=decision.fast_start_mechanism,
                         model_express=qualification.model_express,
                         regional_cache=qualification.regional_cache,
                         host_memory_residency=qualification.host_memory_residency,
@@ -285,7 +289,7 @@ class ModelDeploymentPreviewService:
                     "model_deployment_render_failed",
                     "qualified renderer could not produce a bounded preview",
                 ) from None
-        now = datetime.now(UTC)
+        now = evaluation_time
         preview = ModelDeploymentRenderPreview(
             preview_id=uuid4(),
             name=proposal.name,

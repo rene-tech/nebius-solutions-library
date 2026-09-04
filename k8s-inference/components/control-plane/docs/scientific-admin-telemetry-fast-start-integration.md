@@ -5,8 +5,9 @@ first live scientific run. It is deliberately limited to operator and
 attribution behavior: aggregate scientific workload profiles and execution
 maps remain owned by the first-live-run lane.
 
-The frozen baseline is `origin/main` at
-`76c26e179af1adb4931fa33601248a560cbf94bd`.
+The integration is replayed onto the current `origin/main` lineage. The exact
+baseline and gate evidence are recorded in the task-deck handoff rather than
+freezing a moving branch hash in this operator document.
 
 ## Exact source review
 
@@ -20,11 +21,15 @@ The frozen baseline is `origin/main` at
 | Workload telemetry `6c8ff4d7ae3e6e37b3d4a9c9afafccace6b8cb9c` | Equivalent append-only lifecycle subjects, correlations, signals and rollups are already present as migration `0018_workload_lifecycle_telemetry.sql`; no duplicate port. |
 | Fast-start mechanisms `ca57b2bb7b41e058159b676c20cea7ae17a31464` | Missing from current main and integrated by this successor. |
 
-The fast-start integration adds regional-cache, explicit host-memory
-residency, and GPU-resident mechanisms. A configured mechanism is operator
-detail and never grants a customer-facing level. `Off` remains the truthful
-level until the exact model, runtime, artifact, pool and mechanism identity has
-a failure-free measured cohort that satisfies the fast-start evidence policy.
+The fast-start integration declares regional-cache, explicit host-memory
+residency, and GPU-resident mechanisms. Only mechanisms backed by installed
+production actors are selectable: GPU residency and runtime sleep-offload are
+currently fail-closed and remain visible as unavailable operator evidence. A
+single validated mechanism decision drives both the rendered workload and its
+reported status. A configured mechanism is operator detail and never grants a
+customer-facing level. `Off` remains the truthful level until the exact model,
+runtime, artifact, pool and mechanism identity has a failure-free measured
+cohort that satisfies the fast-start evidence policy.
 
 ## Operator surfaces
 

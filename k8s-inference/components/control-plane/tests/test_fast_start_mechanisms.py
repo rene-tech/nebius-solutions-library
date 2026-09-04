@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
+import subprocess
+import sys
+import threading
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -28,6 +32,7 @@ from fs2_serve.fast_start_mechanisms import (
     configure_host_memory_residency,
     configure_regional_cache,
     parse_memory_quantity,
+    project_cache_mechanisms,
     residency_holder_manifests,
     unavailable_mechanisms,
 )
@@ -263,15 +268,58 @@ def test_host_memory_residency_states_its_ram_price_explicitly() -> None:
         _host_memory(reserved_bytes=16397461266)
     explicitly_large = _host_memory(reserved_bytes=1648745732096 // 2)
     assert explicitly_large.reserved_fraction_of_node == pytest.approx(0.5)
+    with pytest.raises(ValueError, match="cannot exceed declared node allocatable"):
+        _host_memory(reserved_bytes=1648745732097)
 
 
-def test_sleep_offload_residency_is_held_by_the_runtime() -> None:
+def test_status_projection_is_nonthrowing_for_oversized_external_host_state() -> None:
+    malformed = _host_memory().model_copy(update={"reserved_bytes": 2 * 1024**4, "node_allocatable_bytes": 1024**4})
+    projected = project_cache_mechanisms(
+        selected=FastStartMechanism.HOST_MEMORY_RESIDENCY,
+        declarations={FastStartMechanism.HOST_MEMORY_RESIDENCY: malformed},
+        pools={"h100-reserved-8x": H100_RESERVED_SELECTOR},
+        pool_allocatable_memory_bytes={"h100-reserved-8x": 1024**4},
+        pool_max_nodes={"h100-reserved-8x": 1},
+        host_residency_pool_refs={"h100-reserved-8x"},
+        host_residency_ready=False,
+        storage_contract_digests={},
+        converged=True,
+        configured_hot_replicas=0,
+        mechanism_config_digest=mechanism_config_digest,
+    )
+    host = projected["host-memory-residency"]
+    assert host.state == "Unavailable"
+    assert host.reason == "HostMemoryReservationExceedsPool"
+    assert host.reserved_host_memory_fraction is None
+
+
+def test_sleep_offload_declaration_still_states_its_ram_requirement() -> None:
     declaration = _host_memory(mode="runtime-sleep-offload")
     assert declaration.residency_mode == "runtime-sleep-offload"
     # The engine holds its own offloaded weights, so no holder headroom applies,
     # but the reservation must still cover them.
     with pytest.raises(ValueError, match="cover the offloaded weights"):
         _host_memory(mode="runtime-sleep-offload", reserved_bytes=1024)
+
+
+def test_sleep_offload_is_reported_unavailable_until_an_actor_exists() -> None:
+    declaration = _host_memory(mode="runtime-sleep-offload")
+    projected = project_cache_mechanisms(
+        selected=FastStartMechanism.HOST_MEMORY_RESIDENCY,
+        declarations={FastStartMechanism.HOST_MEMORY_RESIDENCY: declaration},
+        pools={"h100-reserved-8x": H100_RESERVED_SELECTOR},
+        pool_allocatable_memory_bytes={"h100-reserved-8x": declaration.node_allocatable_bytes},
+        storage_contract_digests={},
+        converged=True,
+        configured_hot_replicas=0,
+        mechanism_config_digest=mechanism_config_digest,
+    )
+    host = projected["host-memory-residency"]
+    assert (host.state, host.reason, host.selected) == (
+        "Unavailable",
+        "SleepWakeControllerNotInstalled",
+        False,
+    )
 
 
 def test_gpu_resident_states_its_accelerator_price_and_hot_floor() -> None:
@@ -431,6 +479,65 @@ def test_host_memory_residency_waits_for_the_holder_receipt_on_its_exact_node() 
     assert metadata["annotations"]["fast-start.fs2.nebius/reserved-host-memory-bytes"] == "19327352832"
 
 
+def test_runtime_admission_rejects_a_fresh_receipt_from_a_dead_holder(tmp_path: Path) -> None:
+    pod_spec, metadata = _conventional()
+    declaration = _host_memory()
+    configure_host_memory_residency(
+        pod_spec=pod_spec,
+        pod_metadata=metadata,
+        qualification=declaration,
+        runtime_image=QWEN_IMAGE,
+        model_ref="qwen3-8b",
+        holder_identity="fsm-hostmem-qwen3-8b",
+        runtime_container_name="vllm",
+    )
+    verify = next(item for item in pod_spec["initContainers"] if item["name"] == "fs2-verify-host-memory-residency")
+    receipt_root = tmp_path / "residency"
+    receipt_directory = receipt_root / "fsm-hostmem-qwen3-8b" / "node-a"
+    incarnation = "terminated-pod-uid"
+    lock_path = receipt_directory / "incarnations" / f"{incarnation}.lock"
+    lock_path.parent.mkdir(parents=True)
+    lock_path.touch()
+    (receipt_directory / "receipt.json").write_text(
+        json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/fast-start-host-memory-residency-receipt/v2",
+                "holder_id": "fsm-hostmem-qwen3-8b",
+                "holder_incarnation": incarnation,
+                "node_name": "node-a",
+                "config_digest": declaration.config_digest,
+                "payload_digest": declaration.payload_digest,
+                "content_digest_verified": True,
+                "resident_bytes": declaration.payload_bytes,
+                "refreshed_at_epoch": 4102444800.0,
+            }
+        )
+    )
+    environment = {
+        **os.environ,
+        "FS2_RESIDENCY_RECEIPT_ROOT": str(receipt_root),
+        "FS2_RESIDENCY_HOLDER_ID": "fsm-hostmem-qwen3-8b",
+        "FS2_RESIDENCY_CONFIG_DIGEST": declaration.config_digest,
+        "FS2_RESIDENCY_PAYLOAD_DIGEST": declaration.payload_digest,
+        "FS2_RESIDENCY_BYTES": str(declaration.payload_bytes),
+        "FS2_RESIDENCY_MAX_AGE_SECONDS": "180",
+        "FS2_RESIDENCY_WAIT_SECONDS": "0",
+        "FS2_NODE_NAME": "node-a",
+    }
+
+    result = subprocess.run(  # noqa: S603 - fixed interpreter and test-owned inline script
+        [sys.executable, "-c", verify["command"][2]],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+        timeout=5,
+    )
+
+    assert result.returncode == 1
+    assert "receipt_holder_incarnation_not_live" in result.stderr
+
+
 def test_the_residency_holder_schedules_the_ram_it_costs() -> None:
     declaration = _host_memory()
     manifests = residency_holder_manifests(
@@ -456,6 +563,8 @@ def test_the_residency_holder_schedules_the_ram_it_costs() -> None:
     assert container["resources"]["requests"]["memory"] == "19327352832"
     assert container["resources"]["limits"]["memory"] == "19327352832"
     assert container["securityContext"]["capabilities"]["add"] == ["IPC_LOCK"]
+    incarnation_ref = next(item for item in container["env"] if item["name"] == "FS2_RESIDENCY_HOLDER_INCARNATION")
+    assert incarnation_ref["valueFrom"]["fieldRef"]["fieldPath"] == "metadata.uid"
     assert (
         manifests[1]["spec"]["template"]["metadata"]["labels"]["fast-start.fs2.nebius/host-memory-residency"]
         == "qwen3-8b"
@@ -481,26 +590,23 @@ def test_a_mapped_residency_holder_does_not_ask_for_the_lock_capability() -> Non
     assert capabilities == {"drop": ["ALL"]}
 
 
-def test_sleep_offload_reserves_on_the_runtime_and_needs_no_holder() -> None:
+def test_sleep_offload_is_not_renderable_without_a_lifecycle_actor() -> None:
     pod_spec, metadata = _conventional()
     declaration = _host_memory(mode="runtime-sleep-offload")
-    configure_host_memory_residency(
-        pod_spec=pod_spec,
-        pod_metadata=metadata,
-        qualification=declaration,
-        runtime_image=QWEN_IMAGE,
-        model_ref="qwen3-8b",
-        holder_identity="fsm-hostmem-qwen3-8b",
-        runtime_container_name="vllm",
-    )
-    # The engine holds its own offloaded weights, so there is no holder
-    # handshake, but the runtime's own memory must cover the reservation.
+    with pytest.raises(FastStartMechanismError, match="sleep/wake controller"):
+        configure_host_memory_residency(
+            pod_spec=pod_spec,
+            pod_metadata=metadata,
+            qualification=declaration,
+            runtime_image=QWEN_IMAGE,
+            model_ref="qwen3-8b",
+            holder_identity="fsm-hostmem-qwen3-8b",
+            runtime_container_name="vllm",
+        )
     assert "initContainers" not in pod_spec
     assert "affinity" not in pod_spec
-    container = pod_spec["containers"][0]
-    assert container["resources"]["requests"]["memory"] == "19327352832"
-    environment = {item["name"]: item["value"] for item in container["env"]}
-    assert environment["FS2_FAST_START_RESIDENCY_MODE"] == "runtime-sleep-offload"
+    assert "resources" not in pod_spec["containers"][0]
+    assert metadata["annotations"] == {}
 
     with pytest.raises(FastStartMechanismError, match="held by the runtime"):
         residency_holder_manifests(
@@ -517,19 +623,7 @@ def test_sleep_offload_reserves_on_the_runtime_and_needs_no_holder() -> None:
         )
 
 
-def test_sleep_offload_adds_its_reservation_to_existing_runtime_memory() -> None:
-    pod_spec, metadata = _conventional()
-    pod_spec["containers"][0]["resources"] = {"requests": {"memory": "64Gi"}, "limits": {"memory": "160Gi"}}
-    configure_host_memory_residency(
-        pod_spec=pod_spec,
-        pod_metadata=metadata,
-        qualification=_host_memory(mode="runtime-sleep-offload"),
-        runtime_image=QWEN_IMAGE,
-        model_ref="qwen3-8b",
-        holder_identity="fsm-hostmem-qwen3-8b",
-        runtime_container_name="vllm",
-    )
-    assert pod_spec["containers"][0]["resources"]["requests"]["memory"] == "88046829568"
+def test_kubernetes_memory_quantities_used_by_reservations_are_exact() -> None:
     assert parse_memory_quantity("64Gi") == 68719476736
     assert parse_memory_quantity("1000M") == 1000000000
 
@@ -549,32 +643,117 @@ def test_the_residency_agent_holds_real_bytes_and_publishes_a_verifiable_receipt
         # mapped mode is the same code path minus the lock syscall.
         "FS2_RESIDENCY_MODE": "mapped-payload-residency",
         "FS2_RESIDENCY_PAYLOAD_ROOT": str(payload_root),
-        "FS2_RESIDENCY_PAYLOAD_DIGEST": "sha256:" + "5b" * 32,
+        "FS2_RESIDENCY_PAYLOAD_DIGEST": residency_agent.localized_content_digest(payload_root),
         "FS2_RESIDENCY_PAYLOAD_BYTES": "12288",
         "FS2_RESIDENCY_RESERVED_BYTES": "16384",
         "FS2_RESIDENCY_CONFIG_DIGEST": "sha256:" + "7c" * 32,
         "FS2_RESIDENCY_RECEIPT_ROOT": str(receipt_root),
         "FS2_RESIDENCY_REFRESH_SECONDS": "30",
         "FS2_NODE_NAME": "h100-node-a",
+        "FS2_RESIDENCY_HOLDER_INCARNATION": "holder-pod-uid-a",
     }
-    with mock.patch.dict(os.environ, environment, clear=False):
-        with mock.patch.object(residency_agent.time, "sleep", side_effect=StopIteration):
-            with pytest.raises(StopIteration):
-                residency_agent.hold()
-        receipt_path = receipt_root / "fsm-hostmem-qwen3-8b" / "h100-node-a" / "receipt.json"
-        receipt = json.loads(receipt_path.read_text())
-        assert receipt["resident_bytes"] == 12288
-        assert receipt["resident_files"] == 2
-        assert receipt["residency_guaranteed"] is False
-        assert receipt["node_name"] == "h100-node-a"
-        # The same receipt is what the readiness probe and the runtime's init
-        # container check, so the handshake is proved by one artefact.
-        assert residency_agent.check() == 0
+    receipt_ready = threading.Event()
+    release_holder = threading.Event()
+    holder_errors: list[Exception] = []
 
-        stale = json.loads(receipt_path.read_text())
-        stale["refreshed_at_epoch"] = 0.0
-        receipt_path.write_text(json.dumps(stale))
+    def block_while_holder_is_live(_seconds: float) -> None:
+        receipt_ready.set()
+        assert release_holder.wait(timeout=5)
+        raise StopIteration
+
+    def run_holder() -> None:
+        try:
+            residency_agent.hold()
+        except Exception as exc:  # The thread carries the intentional StopIteration to the test.
+            holder_errors.append(exc)
+
+    with mock.patch.dict(os.environ, environment, clear=False):
+        with mock.patch.object(residency_agent.time, "sleep", side_effect=block_while_holder_is_live):
+            holder = threading.Thread(target=run_holder)
+            holder.start()
+            assert receipt_ready.wait(timeout=5)
+            receipt_path = receipt_root / "fsm-hostmem-qwen3-8b" / "h100-node-a" / "receipt.json"
+            receipt = json.loads(receipt_path.read_text())
+            assert receipt["resident_bytes"] == 12288
+            assert receipt["resident_files"] == 2
+            assert receipt["content_digest_verified"] is True
+            assert receipt["residency_guaranteed"] is False
+            assert receipt["holder_incarnation"] == "holder-pod-uid-a"
+            assert receipt["node_name"] == "h100-node-a"
+            # The same receipt is what the readiness probe and the runtime's
+            # init container check, including the holder's live incarnation.
+            assert residency_agent.check() == 0
+
+            stale = json.loads(receipt_path.read_text())
+            stale["refreshed_at_epoch"] = 0.0
+            receipt_path.write_text(json.dumps(stale))
+            assert residency_agent.check() == 1
+            receipt_path.write_text(json.dumps(receipt))
+            release_holder.set()
+            holder.join(timeout=5)
+            assert not holder.is_alive()
+        assert len(holder_errors) == 1 and isinstance(holder_errors[0], StopIteration)
+        # A fresh receipt from the terminated predecessor cannot make its
+        # replacement Ready because its exact incarnation lock is no longer held.
         assert residency_agent.check() == 1
+
+
+def test_localized_digest_is_the_existing_artifact_manifest_content_identity(tmp_path: Path) -> None:
+    payload_root = tmp_path / "payload"
+    payload_root.mkdir()
+    (payload_root / "a.bin").write_bytes(b"alpha")
+    nested = payload_root / "nested"
+    nested.mkdir()
+    (nested / "b.bin").write_bytes(b"beta")
+    inventory = [
+        {"path": "a.bin", "bytes": 5, "sha256": hashlib.sha256(b"alpha").hexdigest()},
+        {"path": "nested/b.bin", "bytes": 4, "sha256": hashlib.sha256(b"beta").hexdigest()},
+    ]
+    canonical = (
+        json.dumps(
+            inventory,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode()
+        + b"\n"
+    )
+
+    assert residency_agent.localized_content_digest(payload_root) == f"sha256:{hashlib.sha256(canonical).hexdigest()}"
+
+
+def test_restarted_holder_invalidates_its_predecessor_receipt_before_hashing(tmp_path: Path) -> None:
+    payload_root = tmp_path / "payload"
+    payload_root.mkdir()
+    (payload_root / "shard.bin").write_bytes(b"payload")
+    receipt_root = tmp_path / "residency"
+    receipt_path = receipt_root / "holder" / "node" / "receipt.json"
+    receipt_path.parent.mkdir(parents=True)
+    receipt_path.write_text('{"refreshed_at_epoch":9999999999}\n')
+    environment = {
+        "FS2_RESIDENCY_MODEL_REF": "qwen3-8b",
+        "FS2_RESIDENCY_HOLDER_ID": "holder",
+        "FS2_RESIDENCY_MODE": "mapped-payload-residency",
+        "FS2_RESIDENCY_PAYLOAD_ROOT": str(payload_root),
+        "FS2_RESIDENCY_PAYLOAD_DIGEST": "sha256:" + "5b" * 32,
+        "FS2_RESIDENCY_PAYLOAD_BYTES": "7",
+        "FS2_RESIDENCY_RESERVED_BYTES": "4096",
+        "FS2_RESIDENCY_CONFIG_DIGEST": "sha256:" + "7c" * 32,
+        "FS2_RESIDENCY_RECEIPT_ROOT": str(receipt_root),
+        "FS2_NODE_NAME": "node",
+        "FS2_RESIDENCY_HOLDER_INCARNATION": "holder-pod-uid-b",
+    }
+
+    def stop_after_invalidation(_root: Path) -> str:
+        assert not receipt_path.exists()
+        raise residency_agent.ResidencyError("stop after receipt invalidation")
+
+    with mock.patch.dict(os.environ, environment, clear=False):
+        with mock.patch.object(residency_agent, "localized_content_digest", side_effect=stop_after_invalidation):
+            with pytest.raises(residency_agent.ResidencyError, match="stop after receipt invalidation"):
+                residency_agent.hold()
+    assert not receipt_path.exists()
 
 
 def test_the_residency_agent_refuses_to_understate_what_it_holds(tmp_path: Path) -> None:
@@ -586,17 +765,60 @@ def test_the_residency_agent_refuses_to_understate_what_it_holds(tmp_path: Path)
         "FS2_RESIDENCY_HOLDER_ID": "fsm-hostmem-qwen3-8b",
         "FS2_RESIDENCY_MODE": "mapped-payload-residency",
         "FS2_RESIDENCY_PAYLOAD_ROOT": str(payload_root),
-        "FS2_RESIDENCY_PAYLOAD_DIGEST": "sha256:" + "5b" * 32,
+        "FS2_RESIDENCY_PAYLOAD_DIGEST": residency_agent.localized_content_digest(payload_root),
         # The declaration claims more bytes than the tree actually holds.
         "FS2_RESIDENCY_PAYLOAD_BYTES": "99999",
         "FS2_RESIDENCY_RESERVED_BYTES": "200000",
         "FS2_RESIDENCY_CONFIG_DIGEST": "sha256:" + "7c" * 32,
         "FS2_RESIDENCY_RECEIPT_ROOT": str(tmp_path / "residency"),
         "FS2_NODE_NAME": "node",
+        "FS2_RESIDENCY_HOLDER_INCARNATION": "holder-pod-uid-c",
     }
     with mock.patch.dict(os.environ, environment, clear=False):
         with pytest.raises(residency_agent.ResidencyError, match="of the declared"):
             residency_agent.hold()
+
+
+def test_the_residency_agent_rejects_same_size_wrong_content(tmp_path: Path) -> None:
+    payload_root = tmp_path / "payload"
+    payload_root.mkdir()
+    shard = payload_root / "shard.bin"
+    shard.write_bytes(b"a" * 4096)
+    expected_digest = residency_agent.localized_content_digest(payload_root)
+    shard.write_bytes(b"b" * 4096)
+    receipt_root = tmp_path / "residency"
+    environment = {
+        "FS2_RESIDENCY_MODEL_REF": "qwen3-8b",
+        "FS2_RESIDENCY_HOLDER_ID": "fsm-hostmem-qwen3-8b",
+        "FS2_RESIDENCY_MODE": "mapped-payload-residency",
+        "FS2_RESIDENCY_PAYLOAD_ROOT": str(payload_root),
+        "FS2_RESIDENCY_PAYLOAD_DIGEST": expected_digest,
+        "FS2_RESIDENCY_PAYLOAD_BYTES": "4096",
+        "FS2_RESIDENCY_RESERVED_BYTES": "8192",
+        "FS2_RESIDENCY_CONFIG_DIGEST": "sha256:" + "7c" * 32,
+        "FS2_RESIDENCY_RECEIPT_ROOT": str(receipt_root),
+        "FS2_NODE_NAME": "node",
+        "FS2_RESIDENCY_HOLDER_INCARNATION": "holder-pod-uid-d",
+    }
+    with mock.patch.dict(os.environ, environment, clear=False):
+        with pytest.raises(residency_agent.ResidencyError, match="does not match declared"):
+            residency_agent.hold()
+    assert not (receipt_root / "fsm-hostmem-qwen3-8b" / "node" / "receipt.json").exists()
+
+
+def test_the_residency_probe_fails_closed_when_the_receipt_is_missing(tmp_path: Path) -> None:
+    environment = {
+        "FS2_RESIDENCY_MODEL_REF": "qwen3-8b",
+        "FS2_RESIDENCY_HOLDER_ID": "fsm-hostmem-qwen3-8b",
+        "FS2_RESIDENCY_PAYLOAD_DIGEST": "sha256:" + "5b" * 32,
+        "FS2_RESIDENCY_PAYLOAD_BYTES": "4096",
+        "FS2_RESIDENCY_CONFIG_DIGEST": "sha256:" + "7c" * 32,
+        "FS2_RESIDENCY_RECEIPT_ROOT": str(tmp_path / "missing"),
+        "FS2_NODE_NAME": "node",
+        "FS2_RESIDENCY_HOLDER_INCARNATION": "holder-pod-uid-e",
+    }
+    with mock.patch.dict(os.environ, environment, clear=False):
+        assert residency_agent.check() == 1
 
 
 def test_gpu_resident_parks_a_standby_engine_behind_a_readiness_gate() -> None:

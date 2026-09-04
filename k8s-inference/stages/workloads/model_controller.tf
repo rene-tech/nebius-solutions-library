@@ -79,10 +79,24 @@ locals {
     ])),
     false,
   )
+  model_controller_fast_start_host_memory_valid = try(
+    alltrue(flatten([
+      for model_id, declarations in local.model_controller_fast_start_mechanism_declarations : [
+        for mechanism, declaration in declarations :
+        mechanism != "hostMemoryResidency" || alltrue([
+          for pool_ref in declaration.poolRefs :
+          contains(keys(var.accelerator_node_schedulable_capacity), pool_ref) &&
+          declaration.reservedBytes <= var.accelerator_node_schedulable_capacity[pool_ref].memory_mib * 1048576
+        ])
+      ]
+    ])),
+    false,
+  )
   model_controller_fast_start_mechanisms_valid = (
     local.model_controller_fast_start_mechanism_names_valid &&
     local.model_controller_fast_start_mechanism_digests_valid &&
-    local.model_controller_fast_start_mechanism_pools_valid
+    local.model_controller_fast_start_mechanism_pools_valid &&
+    local.model_controller_fast_start_host_memory_valid
   )
   model_controller_fast_start_environment_qualifications_valid = try(
     local.model_controller_fast_start_environment_qualifications.schema == "fs2-serve.nebius.ai/runtime-environment-qualification-set/v1" &&
@@ -819,6 +833,7 @@ locals {
       resourceName                 = pool.resource_api.resource_name
       capacityType                 = pool.capacity.type
       acceleratorsPerNode          = pool.node.gpus_per_node
+      allocatableMemoryBytes       = try(var.accelerator_node_schedulable_capacity[pool_id].memory_mib * 1048576, null)
       minNodes                     = pool.capacity.min_nodes
       maxNodes                     = pool.capacity.max_nodes
       nodeSelector                 = pool.scheduling.stable_node_labels
@@ -996,7 +1011,7 @@ resource "terraform_data" "model_controller_contract" {
 
     precondition {
       condition     = local.model_controller_fast_start_mechanisms_valid
-      error_message = "Each fast-start mechanism declaration must carry a matching configDigest and only reference selected accelerator pools."
+      error_message = "Each fast-start mechanism declaration must carry a matching configDigest and only reference selected accelerator pools; host-memory reservations must fit every pool's measured schedulable RAM."
     }
 
     precondition {

@@ -30,21 +30,27 @@ from __future__ import annotations
 import argparse
 import ctypes
 import ctypes.util
+import errno
+import fcntl
+import hashlib
 import json
 import mmap
 import os
+import re
 import resource
+import stat
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
-RECEIPT_SCHEMA = "fs2-serve.nebius.ai/fast-start-host-memory-residency-receipt/v1"
+RECEIPT_SCHEMA = "fs2-serve.nebius.ai/fast-start-host-memory-residency-receipt/v2"
 LOCKED_MODE = "locked-payload-residency"
 MAPPED_MODE = "mapped-payload-residency"
 SUPPORTED_MODES = (LOCKED_MODE, MAPPED_MODE)
 TOUCH_STRIDE = mmap.PAGESIZE
 CAP_IPC_LOCK_BIT = 1 << 14
+INCARNATION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 
 class ResidencyError(RuntimeError):
@@ -184,10 +190,88 @@ class _Residency:
         return self._mode == LOCKED_MODE
 
 
+def localized_content_digest(root: Path) -> str:
+    """Recompute the catalog artifact-manifest/v1 digest from localized bytes."""
+
+    if not root.is_dir() or root.is_symlink():
+        raise ResidencyError("the retained payload root must be a non-symlink directory")
+    inventory: list[dict[str, Any]] = []
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root).as_posix()
+        info = path.lstat()
+        if stat.S_ISDIR(info.st_mode):
+            continue
+        if not stat.S_ISREG(info.st_mode) or path.is_symlink():
+            raise ResidencyError(f"the retained payload contains a non-regular entry: {relative}")
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while chunk := handle.read(8 * 1024 * 1024):
+                digest.update(chunk)
+        inventory.append({"path": relative, "bytes": info.st_size, "sha256": digest.hexdigest()})
+    if not inventory:
+        raise ResidencyError("the retained payload contains no regular files")
+    canonical = (
+        json.dumps(
+            inventory,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+        + b"\n"
+    )
+    return f"sha256:{hashlib.sha256(canonical).hexdigest()}"
+
+
 def _receipt_path(receipt_root: Path, holder_id: str, node_name: str) -> Path:
     """Keep one receipt per holder and node on the shared RWX claim."""
 
     return receipt_root / holder_id / node_name / "receipt.json"
+
+
+def _coordination_lock_path(receipt_root: Path, holder_id: str, node_name: str) -> Path:
+    return receipt_root / holder_id / node_name / "holder.lock"
+
+
+def _incarnation_lock_path(receipt_root: Path, holder_id: str, node_name: str, incarnation: str) -> Path:
+    if INCARNATION_PATTERN.fullmatch(incarnation) is None:
+        raise ResidencyError("the holder incarnation is not a safe Kubernetes identity")
+    return receipt_root / holder_id / node_name / "incarnations" / f"{incarnation}.lock"
+
+
+def _acquire_lock(path: Path) -> int:
+    """Acquire one process-lifetime lock and fail closed when locking is unsupported."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(path, flags, 0o600)
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+    except OSError as exc:
+        if descriptor is not None:
+            os.close(descriptor)
+        raise ResidencyError(f"the residency holder lock is unavailable: {path.name}") from exc
+    return descriptor
+
+
+def _incarnation_is_live(path: Path) -> bool:
+    """Prove the exact receipt-producing holder still owns its process lock."""
+
+    flags = os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return False
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            return exc.errno in {errno.EACCES, errno.EAGAIN}
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        return False
+    finally:
+        os.close(descriptor)
 
 
 def _write_receipt(path: Path, payload: dict[str, Any]) -> None:
@@ -195,6 +279,17 @@ def _write_receipt(path: Path, payload: dict[str, Any]) -> None:
     temporary = path.with_name(f".{path.name}.partial")
     temporary.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="ascii")
     os.replace(temporary, path)
+
+
+def _invalidate_receipt(path: Path) -> None:
+    """Remove a prior holder epoch before hashing or acquiring any payload page."""
+
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise ResidencyError("the previous residency receipt could not be invalidated") from exc
 
 
 def _environment(name: str) -> str:
@@ -214,6 +309,7 @@ def check(argv_max_age: float | None = None) -> int:
     expected_digest = _environment("FS2_RESIDENCY_PAYLOAD_DIGEST")
     config_digest = _environment("FS2_RESIDENCY_CONFIG_DIGEST")
     node_name = _environment("FS2_NODE_NAME")
+    expected_incarnation = _environment("FS2_RESIDENCY_HOLDER_INCARNATION")
     refresh_seconds = float(os.environ.get("FS2_RESIDENCY_REFRESH_SECONDS", "30"))
     max_age = argv_max_age if argv_max_age is not None else refresh_seconds * 4
     try:
@@ -230,14 +326,25 @@ def check(argv_max_age: float | None = None) -> int:
         problems.append("holder_id")
     if receipt.get("node_name") != node_name:
         problems.append("node")
+    if receipt.get("holder_incarnation") != expected_incarnation:
+        problems.append("holder_incarnation")
     if receipt.get("config_digest") != config_digest:
         problems.append("config_digest")
     if receipt.get("payload_digest") != expected_digest:
         problems.append("payload_digest")
+    if receipt.get("content_digest_verified") is not True:
+        problems.append("content_digest_verified")
     if int(receipt.get("resident_bytes", -1)) < expected_bytes:
         problems.append("resident_bytes")
     if time.time() - float(receipt.get("refreshed_at_epoch", 0.0)) > max_age:
         problems.append("freshness")
+    try:
+        incarnation_lock = _incarnation_lock_path(receipt_root, holder_id, node_name, expected_incarnation)
+    except ResidencyError:
+        problems.append("holder_incarnation")
+    else:
+        if not _incarnation_is_live(incarnation_lock):
+            problems.append("holder_incarnation_liveness")
     if problems:
         sys.stderr.write(f"residency receipt is not admissible: {','.join(problems)}\n")
         return 1
@@ -257,38 +364,53 @@ def hold() -> int:
     config_digest = _environment("FS2_RESIDENCY_CONFIG_DIGEST")
     receipt_root = Path(_environment("FS2_RESIDENCY_RECEIPT_ROOT"))
     node_name = _environment("FS2_NODE_NAME")
+    holder_incarnation = _environment("FS2_RESIDENCY_HOLDER_INCARNATION")
     refresh_seconds = float(os.environ.get("FS2_RESIDENCY_REFRESH_SECONDS", "30"))
-
-    started = time.monotonic()
-    residency = _Residency(root=payload_root, mode=mode)
-    residency.acquire()
-    acquire_seconds = time.monotonic() - started
-    if residency.resident_bytes < payload_bytes:
-        raise ResidencyError(f"held {residency.resident_bytes} of the declared {payload_bytes} payload bytes")
     receipt_path = _receipt_path(receipt_root, holder_id, node_name)
-    while True:
-        residency.refresh()
-        _write_receipt(
-            receipt_path,
-            {
-                "schema": RECEIPT_SCHEMA,
-                "model_ref": model_ref,
-                "holder_id": holder_id,
-                "node_name": node_name,
-                "config_digest": config_digest,
-                "payload_digest": payload_digest,
-                "payload_root": str(payload_root),
-                "residency_mode": mode,
-                "residency_guaranteed": residency.guaranteed,
-                "resident_bytes": residency.resident_bytes,
-                "resident_files": residency.file_count,
-                "reserved_bytes": reserved_bytes,
-                "acquire_seconds": round(acquire_seconds, 3),
-                "refreshed_at_epoch": round(time.time(), 3),
-                "refresh_seconds": refresh_seconds,
-            },
-        )
-        time.sleep(refresh_seconds)
+    coordination_lock = _acquire_lock(_coordination_lock_path(receipt_root, holder_id, node_name))
+    incarnation_lock = _acquire_lock(_incarnation_lock_path(receipt_root, holder_id, node_name, holder_incarnation))
+    try:
+        _invalidate_receipt(receipt_path)
+
+        started = time.monotonic()
+        localized_digest = localized_content_digest(payload_root)
+        if localized_digest != payload_digest:
+            raise ResidencyError(
+                f"localized payload digest {localized_digest} does not match declared {payload_digest}"
+            )
+        residency = _Residency(root=payload_root, mode=mode)
+        residency.acquire()
+        acquire_seconds = time.monotonic() - started
+        if residency.resident_bytes < payload_bytes:
+            raise ResidencyError(f"held {residency.resident_bytes} of the declared {payload_bytes} payload bytes")
+        while True:
+            residency.refresh()
+            _write_receipt(
+                receipt_path,
+                {
+                    "schema": RECEIPT_SCHEMA,
+                    "model_ref": model_ref,
+                    "holder_id": holder_id,
+                    "holder_incarnation": holder_incarnation,
+                    "node_name": node_name,
+                    "config_digest": config_digest,
+                    "payload_digest": localized_digest,
+                    "content_digest_verified": True,
+                    "payload_root": str(payload_root),
+                    "residency_mode": mode,
+                    "residency_guaranteed": residency.guaranteed,
+                    "resident_bytes": residency.resident_bytes,
+                    "resident_files": residency.file_count,
+                    "reserved_bytes": reserved_bytes,
+                    "acquire_seconds": round(acquire_seconds, 3),
+                    "refreshed_at_epoch": round(time.time(), 3),
+                    "refresh_seconds": refresh_seconds,
+                },
+            )
+            time.sleep(refresh_seconds)
+    finally:
+        os.close(incarnation_lock)
+        os.close(coordination_lock)
 
 
 def main(argv: list[str] | None = None) -> int:
