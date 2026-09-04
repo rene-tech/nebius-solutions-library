@@ -257,6 +257,7 @@ def pod_observation(
         pod_name="fs2-design-target-a1-abcde",
         node_name="h100-node-1",
         node_uid="node-uid-1",
+        created_at=NOW,
         observed_at=observed_at,
         scheduled_at=at(2),
         gpu_count=1,
@@ -379,6 +380,8 @@ def test_running_pod_is_not_active_compute_until_every_init_container_succeeds()
     )
 
     assert initializing is not None and active is not None
+    assert initializing.created_at == NOW
+    assert active.created_at == NOW
     assert LifecyclePhase.RESTORING in {value.phase for value in initializing.phases}
     assert LifecyclePhase.ACTIVE_COMPUTE not in {value.phase for value in initializing.phases}
     assert LifecyclePhase.ACTIVE_COMPUTE in {value.phase for value in active.phases}
@@ -411,6 +414,54 @@ def test_running_init_does_not_synthesize_future_init_phase_evidence() -> None:
     assert with_future_init == baseline
     identities = [(value.phase, value.started_at) for value in with_future_init.phases]
     assert len(identities) == len(set(identities))
+
+
+@pytest.mark.asyncio
+async def test_pod_correlations_are_stable_across_unscheduled_to_scheduled_enrichment() -> None:
+    state, attempt = terminal_state(AttemptOutcome.SUCCEEDED)
+    scheduled = pod_observation(attempt, observed_at=at(10))
+    scheduled_pod = scheduled.pod_lifecycle[0]
+    unscheduled_pod = replace(
+        scheduled_pod,
+        observed_at=at(1),
+        scheduled_at=None,
+        phases=(),
+    )
+    unscheduled = replace(scheduled, phases=(), pod_lifecycle=(unscheduled_pod,))
+    repository = MemoryLifecycleRepository()
+    bridge = ScientificLifecycleBridge(
+        lifecycle=repository,
+        batches=EventSource(lifecycle_events(state, attempt, preempted=False)),
+        operations=OperationSource(operation(state.operation_id, status=OperationStatus.SUCCEEDED)),
+        cluster="k8s-inference-h100",
+    )
+
+    await bridge.observe(state, attempt, unscheduled)
+    await bridge.observe(state, attempt, scheduled)
+    await bridge.observe(
+        state,
+        attempt,
+        replace(
+            scheduled,
+            pod_lifecycle=(replace(scheduled_pod, observed_at=at(20)),),
+        ),
+    )
+
+    detail = await repository.get_workload(attempt.attempt_id, tenant_id=state.tenant_id)
+    assert detail is not None
+    pod_key = f"scientific:{attempt.attempt_id}:pod:{scheduled_pod.pod_uid}"
+    correlations = {value.correlation_key: value for value in detail.correlations}
+    assert correlations[pod_key].observed_at == scheduled_pod.created_at
+    assert correlations[f"{pod_key}:node:{scheduled_pod.node_uid}"].observed_at == scheduled_pod.scheduled_at
+    assert correlations[f"{pod_key}:device:{GPU_UUID}:0"].observed_at == scheduled_pod.scheduled_at
+    assert len(correlations) == 3
+
+    changed_identity = replace(
+        scheduled,
+        pod_lifecycle=(replace(scheduled_pod, pod_name="fs2-design-target-a1-different"),),
+    )
+    with pytest.raises(ValueError, match="correlation key is already bound to different facts"):
+        await bridge.observe(state, attempt, changed_identity)
 
 
 @pytest.mark.asyncio

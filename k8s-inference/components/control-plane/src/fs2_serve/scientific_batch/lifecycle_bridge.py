@@ -517,15 +517,14 @@ class ScientificLifecycleBridge:
         pod: PodLifecycleObservation,
     ) -> list[LifecycleCorrelation]:
         prefix = f"scientific:{attempt.attempt_id}:pod:{pod.pod_uid}"
-        observed_at = pod.scheduled_at or min(
-            (phase.started_at for phase in pod.phases),
-            default=pod.observed_at,
-        )
         result = [
             LifecycleCorrelation(
                 correlation_key=prefix,
                 subject_id=attempt.attempt_id,
-                observed_at=observed_at,
+                # The API-server creation timestamp is immutable for a Pod
+                # UID. A controller poll timestamp is not: replaying the same
+                # Pod after scheduling would otherwise change this fact.
+                observed_at=pod.created_at,
                 source=LifecycleSource.KUBERNETES,
                 attempt=attempt.attempt_number,
                 cluster=self.cluster,
@@ -536,12 +535,19 @@ class ScientificLifecycleBridge:
                 pod_uid=pod.pod_uid,
             )
         ]
+        # A node or device is not allocated while the Pod is unscheduled.
+        # Publish these correlations only after Kubernetes exposes its
+        # immutable PodScheduled transition, and use that transition for
+        # replay-stable correlation time even when enrichment arrives later.
+        if pod.scheduled_at is None:
+            return result
+        allocation_observed_at = pod.scheduled_at
         if pod.node_uid is not None:
             result.append(
                 LifecycleCorrelation(
                     correlation_key=f"{prefix}:node:{pod.node_uid}",
                     subject_id=attempt.attempt_id,
-                    observed_at=observed_at,
+                    observed_at=allocation_observed_at,
                     source=LifecycleSource.KUBERNETES,
                     attempt=attempt.attempt_number,
                     cluster=self.cluster,
@@ -559,7 +565,7 @@ class ScientificLifecycleBridge:
                 LifecycleCorrelation(
                     correlation_key=f"{prefix}:device:{gpu_uuid}:{rank}",
                     subject_id=attempt.attempt_id,
-                    observed_at=observed_at,
+                    observed_at=allocation_observed_at,
                     source=LifecycleSource.KUBELET,
                     attempt=attempt.attempt_number,
                     cluster=self.cluster,
@@ -800,14 +806,9 @@ class ScientificLifecycleBridge:
         if detail is None:
             await self.lifecycle.append_signals(signals)
             return
-        persisted = {
-            signal.event_key: signal.model_copy(update={"sequence": None})
-            for signal in detail.signals
-        }
+        persisted = {signal.event_key: signal.model_copy(update={"sequence": None}) for signal in detail.signals}
         correlated_job_uids = {
-            correlation.job_uid
-            for correlation in detail.correlations
-            if correlation.job_uid is not None
+            correlation.job_uid for correlation in detail.correlations if correlation.job_uid is not None
         }
         replay: list[LifecycleSignal] = []
         for signal in signals:
@@ -841,9 +842,7 @@ class ScientificLifecycleBridge:
                 LifecyclePhase.TEARDOWN,
             )
             terminal = (
-                attempt.outcome is not AttemptOutcome.ACTIVE
-                and attempt.resource_released
-                and teardown_at is not None
+                attempt.outcome is not AttemptOutcome.ACTIVE and attempt.resource_released and teardown_at is not None
             )
             if terminal:
                 assert teardown_at is not None

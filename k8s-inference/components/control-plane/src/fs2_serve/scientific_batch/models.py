@@ -1810,6 +1810,7 @@ class PodLifecycleObservation:
     pod_name: str | None
     node_name: str | None
     node_uid: str | None
+    created_at: datetime
     observed_at: datetime
     scheduled_at: datetime | None
     gpu_count: int
@@ -1825,6 +1826,8 @@ class PodLifecycleObservation:
         ):
             if value is not None and (not value or len(value) > maximum):
                 raise ValueError(f"observed {label} is invalid")
+        if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
+            raise ValueError("Pod creation time must be timezone-aware")
         if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
             raise ValueError("Pod lifecycle observation time must be timezone-aware")
         if self.scheduled_at is not None and (

@@ -2684,12 +2684,24 @@ def _staged_pod(
     ]
     status: dict[str, object] = {
         "phase": phase,
-        "conditions": [{"type": "PodScheduled", "status": "True"}],
+        "conditions": [
+            {
+                "type": "PodScheduled",
+                "status": "True",
+                "lastTransitionTime": "2026-09-03T03:00:00Z",
+            }
+        ],
         "containerStatuses": statuses,
     }
     if pod_reason is not None:
         status["reason"] = pod_reason
-    return {"metadata": {"uid": "collecting-pod-uid"}, "status": status}
+    return {
+        "metadata": {
+            "uid": "collecting-pod-uid",
+            "creationTimestamp": "2026-09-03T02:59:59Z",
+        },
+        "status": status,
+    }
 
 
 def _collection_cluster(
