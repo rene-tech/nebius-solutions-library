@@ -1,0 +1,257 @@
+{
+  "schema": "fs2.nebius.ai/structure-secondary-live-artifact-bindings/v1",
+  "state": "partial",
+  "observed_at": "2026-09-04T16:13:24Z",
+  "source_commit": "5cb7cad6a372db1fbe44407778b618a014592727",
+  "scope": {
+    "cluster": "k8s-inference-h100",
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "public_routes": "closed",
+    "note": "This is an intermediate, evidence-backed handoff. OpenFold3/OpenBind is complete at the artifact-binding layer. ESMFold2 awaits esmc-6b, Protenix awaits composite materialization, and AlphaFold3 uses its separate private/reference contracts. No missing digest is inferred."
+  },
+  "public_storage": {
+    "kind": "nebius-shared-filesystem-host-path",
+    "filesystem_id": "computefilesystem-e00smrbs2e9zanhv56",
+    "filesystem_size_gib": 2048,
+    "host_path": "/mnt/fs2-reference-data/data",
+    "cache_subpath": "model-artifacts/public/v1",
+    "runtime_security_context": {
+      "run_as_user": 10001,
+      "run_as_group": 10001,
+      "supplemental_groups": [
+        1000
+      ],
+      "fs_group": null
+    },
+    "mount_policy": "Each content-addressed object subPath below is mounted read-only at its declared runtime path."
+  },
+  "models": {
+    "openfold3-openbind": {
+      "artifact_binding_state": "complete",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de",
+      "variant_id": "upstream-openbind-v0-5-0",
+      "stage_id": "inference",
+      "resources": {
+        "accelerator_class": "nvidia-h100-sxm5-80gb",
+        "gpu": 1,
+        "runtime_uid": 10001,
+        "runtime_gid": 10001
+      },
+      "artifacts": [
+        {
+          "artifact_id": "openfold3-openbind-0",
+          "content_digest": "sha256:f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
+          "manifest_digest": "sha256:8afc057f877ae42aecbaeb56c0be74987e920dcf016c3d7a12dc7ea2370df806",
+          "localization_receipt_digest": "sha256:fd39c6ef471c575f0b797e5e7777c948d04151d59b31c5c32f4f0ede728a780c",
+          "receipt_file_sha256": "7db32466d1eeea2d9723ddbbf585b494778a1af22520a4461ca0fb8d644ed1f5",
+          "receipt_sub_path": "model-artifacts/public/v1/receipts/openfold3-openbind-0/8afc057f877ae42aecbaeb56c0be74987e920dcf016c3d7a12dc7ea2370df806.json",
+          "object_sub_path": "model-artifacts/public/v1/objects/openfold3-openbind-0/sha256/f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
+          "mount_path": "/models/openfold3",
+          "read_only": true,
+          "expanded_bytes": 2287872989,
+          "staging_job": {
+            "name": "artifact-openfold3-openbind-0-8afc057f877a",
+            "uid": "0813c354-2939-4c6c-a9ca-d86d179de9ab",
+            "started_at": "2026-09-04T16:04:50Z",
+            "completed_at": "2026-09-04T16:04:56Z",
+            "state": "complete"
+          }
+        },
+        {
+          "artifact_id": "openfold3-components-bcif",
+          "content_digest": "sha256:ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
+          "manifest_digest": "sha256:1b5e78ab84e9cf8c3807554cd7cf6af15668046bc5031b7d234cd1330c7ba055",
+          "localization_receipt_digest": "sha256:c8195ee346b3bffad1940c0ff600e52bb2e1ba3046e579627f3ad0329ee0fcc6",
+          "receipt_file_sha256": "75f56bc77f99f85715adebff60170a79e5221b8f4faf5e4f9414cc3ac979c5e2",
+          "receipt_sub_path": "model-artifacts/public/v1/receipts/openfold3-components-bcif/1b5e78ab84e9cf8c3807554cd7cf6af15668046bc5031b7d234cd1330c7ba055.json",
+          "object_sub_path": "model-artifacts/public/v1/objects/openfold3-components-bcif/sha256/ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
+          "mount_path": "/databases/openfold3",
+          "read_only": true,
+          "expanded_bytes": 63393643,
+          "staging_job": {
+            "name": "artifact-openfold3-components-bcif-1b5e78ab84e9",
+            "uid": "ad496994-7090-4d34-9177-a412265de4fd",
+            "started_at": "2026-09-04T16:04:50Z",
+            "completed_at": "2026-09-04T16:04:53Z",
+            "state": "complete"
+          }
+        }
+      ]
+    },
+    "esmfold2": {
+      "artifact_binding_state": "partial-awaiting-esmc-6b",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
+      "variant_id": "biohub-v3-4-0",
+      "stage_id": "fold",
+      "resources": {
+        "accelerator_class": "nvidia-h100-sxm5-80gb",
+        "gpu": 1,
+        "runtime_uid": 10001,
+        "runtime_gid": 10001
+      },
+      "artifacts": [
+        {
+          "artifact_id": "esmfold2-trunk",
+          "content_digest": "sha256:136a3580c01cc055ae5a1278bae056e5150a5441ddb89dfbafb9f4e88d763a0c",
+          "manifest_digest": "sha256:103423fd907155f868b85cc303f236a6c56a342cd3aa94187ce19ab8ed818b12",
+          "localization_receipt_digest": "sha256:9e3ea9f8efb36e5df66e9be4f48beee1107478e96d007a9b7f63b76249dd15e3",
+          "receipt_file_sha256": "2943283500cb895e47e066d85afeff145f1f8b190cb89c1b81e74961f8989025",
+          "receipt_sub_path": "model-artifacts/public/v1/receipts/esmfold2-trunk/103423fd907155f868b85cc303f236a6c56a342cd3aa94187ce19ab8ed818b12.json",
+          "object_sub_path": "model-artifacts/public/v1/objects/esmfold2-trunk/sha256/136a3580c01cc055ae5a1278bae056e5150a5441ddb89dfbafb9f4e88d763a0c",
+          "mount_path": "/models/esmfold2",
+          "read_only": true,
+          "expanded_bytes": 939507565,
+          "staging_job": {
+            "name": "artifact-esmfold2-trunk-103423fd9071",
+            "uid": "70fa3508-936e-4c3b-a011-4bb42427afbf",
+            "started_at": "2026-09-04T16:04:50Z",
+            "completed_at": "2026-09-04T16:04:54Z",
+            "state": "complete"
+          }
+        },
+        {
+          "artifact_id": "esmfold2-ccd",
+          "content_digest": "sha256:b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+          "manifest_digest": "sha256:4b701f8db3ca2d75353db710e0f6624fec6e1cb48f86cf435ec1bfa191b5bf4c",
+          "localization_receipt_digest": "sha256:e1584e950890ca2be08bfb385148c7a66d3078d9b35cc42ef40a2e6b45b3cad8",
+          "receipt_file_sha256": "bf9402b023385cb75e0ea247d2097f0b7833dd7ec4d4e6a2b11251a9d6b2b598",
+          "receipt_sub_path": "model-artifacts/public/v1/receipts/esmfold2-ccd/4b701f8db3ca2d75353db710e0f6624fec6e1cb48f86cf435ec1bfa191b5bf4c.json",
+          "object_sub_path": "model-artifacts/public/v1/objects/esmfold2-ccd/sha256/b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+          "mount_path": "/databases/esmfold2",
+          "read_only": true,
+          "expanded_bytes": 417306584,
+          "staging_job": {
+            "name": "artifact-esmfold2-ccd-4b701f8db3ca",
+            "uid": "211db9b2-96c6-4602-a4e5-9a5ad4d2af81",
+            "started_at": "2026-09-04T16:04:49Z",
+            "completed_at": "2026-09-04T16:04:53Z",
+            "state": "complete"
+          }
+        },
+        {
+          "artifact_id": "esmc-6b",
+          "content_digest": "sha256:8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+          "manifest_digest": "sha256:b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454",
+          "localization_receipt_digest": null,
+          "state": "staging-in-progress"
+        }
+      ]
+    },
+    "esmfold2-fast": {
+      "artifact_binding_state": "partial-awaiting-esmc-6b",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
+      "variant_id": "biohub-v3-4-0",
+      "stage_id": "fold",
+      "resources": {
+        "accelerator_class": "nvidia-h100-sxm5-80gb",
+        "gpu": 1,
+        "runtime_uid": 10001,
+        "runtime_gid": 10001
+      },
+      "artifacts": [
+        {
+          "artifact_id": "esmfold2-fast-trunk",
+          "content_digest": "sha256:19ceaffb5860acf160ea199599fb719b0566519e4cc2fa7a7aa5ef547942ad63",
+          "manifest_digest": "sha256:f1db1f446c521e65b69dd93a8f05441c4b9d1367d11b81d966be4c116bbe679b",
+          "localization_receipt_digest": "sha256:a74aed10ce5a80d8406c3869f15166c59a28b59c666ca852057ab37b7dc18685",
+          "receipt_file_sha256": "79d8e66d2aad8c86b11b6ac361bf0198f3647fb05ea596dc479414173d548e61",
+          "receipt_sub_path": "model-artifacts/public/v1/receipts/esmfold2-fast-trunk/f1db1f446c521e65b69dd93a8f05441c4b9d1367d11b81d966be4c116bbe679b.json",
+          "object_sub_path": "model-artifacts/public/v1/objects/esmfold2-fast-trunk/sha256/19ceaffb5860acf160ea199599fb719b0566519e4cc2fa7a7aa5ef547942ad63",
+          "mount_path": "/models/esmfold2-fast",
+          "read_only": true,
+          "expanded_bytes": 755419262,
+          "staging_job": {
+            "name": "artifact-esmfold2-fast-trunk-f1db1f446c52",
+            "uid": "61fe24b1-dd0d-49c9-b3ec-ad6c885e41f7",
+            "started_at": "2026-09-04T16:04:49Z",
+            "completed_at": "2026-09-04T16:04:54Z",
+            "state": "complete"
+          }
+        },
+        {
+          "artifact_id": "esmfold2-ccd",
+          "content_digest": "sha256:b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+          "localization_receipt_digest": "sha256:e1584e950890ca2be08bfb385148c7a66d3078d9b35cc42ef40a2e6b45b3cad8",
+          "mount_path": "/databases/esmfold2",
+          "read_only": true,
+          "source_record": "models.esmfold2.artifacts[1]"
+        },
+        {
+          "artifact_id": "esmc-6b",
+          "content_digest": "sha256:8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+          "manifest_digest": "sha256:b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454",
+          "localization_receipt_digest": null,
+          "state": "staging-in-progress"
+        }
+      ]
+    },
+    "protenix-v2": {
+      "artifact_binding_state": "staging-and-materialization-in-progress",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
+      "variant_id": "upstream-v2-0-0",
+      "stage_id": "sample-structure",
+      "resources": {
+        "accelerator_class": "nvidia-h100-sxm5-80gb",
+        "gpu": 1,
+        "runtime_uid": 10001,
+        "runtime_gid": 10001
+      },
+      "artifacts": [
+        {
+          "artifact_id": "protenix-v2",
+          "source_content_digest": "sha256:8e14bb809d37db806159b7d277577abc692aec81d8899fbc84915d23ebe12eca",
+          "content_digest": "sha256:5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
+          "expected_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+          "localization_receipt_digest": null,
+          "mount_path": "/models/protenix-v2",
+          "read_only": true,
+          "state": "awaiting-composite-localization-receipt"
+        }
+      ]
+    }
+  },
+  "alphafold3_external_bindings": {
+    "artifact_binding_state": "exact-identities-present-separate-contracts",
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3@sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
+    "runtime_security_context": {
+      "run_as_user": 12345,
+      "run_as_group": 12345,
+      "supplemental_groups": [
+        65532
+      ],
+      "fs_group": null
+    },
+    "parameters": {
+      "artifact_id": "alphafold3-parameters",
+      "content_digest": "sha256:74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+      "size_bytes": 1020545840,
+      "claim_namespace": "fs2-academic-poc",
+      "claim": "academic-assets-runtime-rwx",
+      "claim_uid": "4d074d97-3391-46b9-9eea-ae57abc85d06",
+      "sub_path": "alphafold3/af3.bin.zst",
+      "mount_path": "/models/af3.bin.zst",
+      "read_only": true,
+      "authorization_document_sha256": "3a3d5d77a7f58d7875e33e78defe0dcb482dbe590e18380704594c4c1c3a8155",
+      "localization_receipt_digest": null,
+      "note": "The private plane has exact staged bytes and an exact authorization document, but this intermediate handoff does not relabel either as a generic public localization receipt."
+    },
+    "public_reference_data": {
+      "bundle_id": "alphafold3-public-databases-v3.0",
+      "revision": "v3.0-paper-snapshot-2022-09-28",
+      "tree_digest": "sha256:d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
+      "inventory_sha256": "38af3baa89a66cd24dec785279670a2e37597f98d206f555a04c138c6be71579",
+      "manifest_sha256": "aa585259ce05393cd38db1693299ed9ec7f9c421aa4e1159f8d5aa0eb0ba9748",
+      "localization_receipt_digest": "sha256:3c7d4176a31f9b7f413bbebd0259652f496e96154ae89e3a48ef4710b0e28874",
+      "receipt_sub_path": "receipts/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28.json",
+      "object_sub_path": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
+      "expanded_bytes": 672435030513,
+      "file_count": 195867,
+      "staging_job": {
+        "name": "fs2-stage-af3-f2342477991d",
+        "uid": "a02fa4d3-f2b4-421c-bc2c-3d4a3d89a54e",
+        "state": "complete"
+      }
+    }
+  }
+}
