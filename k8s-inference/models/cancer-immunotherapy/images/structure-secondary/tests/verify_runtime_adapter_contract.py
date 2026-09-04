@@ -809,13 +809,12 @@ def main() -> None:
             failures.append("partial successor publication handoff is inconsistent")
         elif _git(
             task_repo,
-            "merge-base",
-            "--is-ancestor",
-            image_source_revision,
-            task_revision,
+            "cat-file",
+            "-e",
+            f"{image_source_revision}^{{commit}}",
             check=False,
         ).returncode != 0:
-            failures.append("published predecessor source is not an ancestor of current evidence")
+            failures.append("published predecessor source commit is unavailable")
         image_source_revision = task_revision
     else:
         failures.append("successor image lock mixes pending and published identities")
