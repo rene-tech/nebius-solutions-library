@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parents[3]
@@ -476,6 +477,45 @@ class CpuEnvelopeDriftTests(unittest.TestCase):
 
 
 class ReceiptTests(unittest.TestCase):
+    def test_emit_publishes_a_complete_receipt_by_atomic_rename(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            receipt = root / "data-runtime-receipt.json"
+            receipt.write_text('{"generation":"old"}\n', encoding="utf-8")
+            document = {"schema": af3.RECEIPT_SCHEMA, "mode": "data", "status": "PASS"}
+            expected = json.dumps(document, indent=2, sort_keys=True) + "\n"
+            real_replace = os.replace
+
+            def observe_replace(source, destination):
+                self.assertEqual(Path(destination), receipt)
+                self.assertEqual(receipt.read_text(encoding="utf-8"), '{"generation":"old"}\n')
+                self.assertEqual(Path(source).read_text(encoding="utf-8"), expected)
+                real_replace(source, destination)
+
+            with mock.patch.object(af3.os, "replace", side_effect=observe_replace):
+                af3.emit(document, receipt)
+            self.assertEqual(receipt.read_text(encoding="utf-8"), expected)
+            self.assertFalse(any(root.glob(".*.partial")))
+
+    def test_data_handoff_content_bound_is_inclusive_and_rejects_one_byte_over(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            source = output / "fixture" / "fixture_data.json"
+            source.parent.mkdir()
+            source.write_bytes(b"x" * 257)
+            with mock.patch.object(af3, "MAX_DATA_HANDOFF_BYTES", 16 * 1024):
+                af3.build_data_handoff(output)
+            index = output / af3.DATA_HANDOFF_DIRNAME / af3.DATA_HANDOFF_INDEX
+            exact_total = source.stat().st_size + index.stat().st_size
+
+            with mock.patch.object(af3, "MAX_DATA_HANDOFF_BYTES", exact_total):
+                handoff = af3.build_data_handoff(output)
+            self.assertEqual(handoff["count"], 1)
+
+            with mock.patch.object(af3, "MAX_DATA_HANDOFF_BYTES", exact_total - 1):
+                with self.assertRaisesRegex(af3.ContractError, "handoff plus index"):
+                    af3.build_data_handoff(output)
+
     def test_a_failure_receipt_matches_the_published_schema(self) -> None:
         from jsonschema import Draft202012Validator
 

@@ -56,6 +56,8 @@ MODEL_FILE_SHA256 = "bd43301c011d5f87580d3e8b548658869433e4488399feb03035ba248f8
 MODEL_SIZE_BYTES = 2_287_872_989
 CCD_MANIFEST_SHA256 = "ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b"
 CCD_FILE_SHA256 = "473d845c8b250b188dbed9bf505ae206692a178a2a7c4869bf8f9de707ffcc0c"
+RUNNER_BASE_SHA256 = "c42271cdfc4c9dd01ceca7a9e0c2d0a207c2d8106a2bb03146d491d54b601469"
+HANDOFF_LANE_ID = "openfold3-openbind-0-none"
 PREPARE_COLLECTOR_ID = "openfold3-data-collector-v1"
 PREPARE_VALIDATOR_ID = "openfold3-data-validator-v1"
 RESULT_COLLECTOR_ID = "openfold3-result-collector-v1"
@@ -299,6 +301,13 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
     if invocation.collector_id == PREPARE_COLLECTOR_ID:
         if invocation.stage_id != "data-pipeline" or invocation.validator_id != PREPARE_VALIDATOR_ID:
             raise ScientificAdapterError("OpenFold3 OpenBind data collector received another stage contract")
+        raw_seeds = _argument(invocation, "--model-seeds").split(",")
+        try:
+            prepared_seeds = [int(value) for value in raw_seeds]
+        except ValueError as error:
+            raise ScientificAdapterError("OpenFold3 OpenBind invocation seeds are invalid") from error
+        if not 1 <= len(prepared_seeds) <= 16 or len(set(prepared_seeds)) != len(prepared_seeds):
+            raise ScientificAdapterError("OpenFold3 OpenBind invocation seeds are invalid")
         return collect_handoff_stage(
             workspace,
             filename="handoff.tar.zst",
@@ -308,6 +317,15 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
             compression="zstd",
             maximum_bytes=64 * 1024 * 1024,
             validator_id=invocation.validator_id,
+            expected_provenance={
+                "artifact_id": invocation.produces,
+                "raw_input_sha256": _argument(invocation, "--raw-input-sha256"),
+                "model_seeds": prepared_seeds,
+                "msa_mode": _argument(invocation, "--msa-mode"),
+                "runner_base_sha256": RUNNER_BASE_SHA256,
+                "lane_id": HANDOFF_LANE_ID,
+                "source_revision": SOURCE_REVISION,
+            },
         )
     if invocation.collector_id == RESULT_COLLECTOR_ID:
         if invocation.stage_id != "inference" or invocation.validator_id != VALIDATOR_ID:

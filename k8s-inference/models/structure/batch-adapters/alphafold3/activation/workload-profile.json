@@ -133,7 +133,7 @@
       "commercial_use": "prohibited",
       "non_clinical": true,
       "limitations": [
-        "The exact r6 image is H100-qualified, but this route stays closed until one raw-input run completes through the public path and the integrated renderer is live-qualified.",
+        "The exact r6 image has H100 semantic evidence but predates atomic terminal receipts and the aligned 256 MiB handoff protocol. Activation requires a newly built immutable successor plus a raw-input run through the public path and live-qualified renderer.",
         "The licensed parameter file remains tenant-private and is authorized once by the deployment; callers do not provide a per-request license receipt. Formal institutional licence acceptance is still pending.",
         "Raw-input preprocessing runs only in the 16 CPU, 64 GiB reference-data class; the live reference pool nodes are 8 vCPU / 32 GiB and cannot admit it until a larger reference class exists.",
         "OpenFold3 is an independent operational alternative and never satisfies an alphafold3 request."

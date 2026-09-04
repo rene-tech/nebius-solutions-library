@@ -60,6 +60,11 @@ LOCALIZED_TREE_CONTENT_SHA256 = "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab
 WEIGHTS_SHA256 = "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599"
 WEIGHTS_SIZE_BYTES = 1_859_785_497
 COMPOSITE_SIZE_BYTES = 2_514_897_184
+COMPOSITE_ARTIFACT_REVISION = (
+    "code-2475421477ab414b571149ad4a875c390ff8a35d_"
+    "checkpoint-653edab28103133512575365130916e3fd23ecc3_"
+    "common-2026-01-29"
+)
 MANDATORY_FILES = (
     ".fs2-manifest-sha256",
     "checkpoint/protenix-v2.pt",
@@ -333,6 +338,15 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
             compression="zstd",
             maximum_bytes=64 * 1024 * 1024,
             validator_id=invocation.validator_id,
+            expected_provenance={
+                "artifact_id": invocation.produces,
+                "msa_mode": _argument(invocation, "--msa-mode"),
+                "composite_artifact_id": MODEL_ARTIFACT,
+                "composite_artifact_revision": COMPOSITE_ARTIFACT_REVISION,
+                "localized_content_digest_sha256": LOCALIZED_TREE_CONTENT_SHA256,
+                "composite_manifest_sha256": LOCALIZATION_MANIFEST_SHA256,
+                "source_revision": SOURCE_REVISION,
+            },
         )
     if invocation.collector_id == RESULT_COLLECTOR_ID:
         if invocation.stage_id != "sample-structure" or invocation.validator_id != VALIDATOR_ID:

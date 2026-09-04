@@ -361,8 +361,8 @@ class ImageLockTests(unittest.TestCase):
         self.assertGreater(hygiene["layer_inspection"]["layers_inspected"], 0)
         self.assertGreater(hygiene["layer_inspection"]["entries_inspected"], 0)
 
-    def test_it_tracks_the_current_build_definition(self) -> None:
-        """A stale lock must not describe a Dockerfile or entrypoint that changed."""
+    def test_lock_is_historical_when_a_protocol_successor_is_required(self) -> None:
+        """Never relabel the published r6 lock as evidence for repaired source."""
         import hashlib
 
         def digest(path: Path) -> str:
@@ -370,9 +370,18 @@ class ImageLockTests(unittest.TestCase):
 
         source = self.lock["source"]
         self.assertEqual(digest(ROOT / "Dockerfile"), source["dockerfile_sha256"])
-        self.assertEqual(
-            digest(ROOT / "runtime" / "af3_runtime.py"), source["entrypoint_sha256"]
+        handoff = json.loads(
+            (ROOT / "contracts" / "af3-runtime-handoff.json").read_text(encoding="utf-8")
         )
+        if handoff["image"]["production_protocol_compatible"]:
+            self.assertEqual(
+                digest(ROOT / "runtime" / "af3_runtime.py"), source["entrypoint_sha256"]
+            )
+        else:
+            self.assertNotEqual(
+                digest(ROOT / "runtime" / "af3_runtime.py"), source["entrypoint_sha256"]
+            )
+            self.assertIn("successor", handoff["image"]["successor_required"].lower())
         self.assertEqual(
             digest(ROOT / "contracts" / "af3-parameter-binding.json"),
             source["parameter_binding_sha256"],

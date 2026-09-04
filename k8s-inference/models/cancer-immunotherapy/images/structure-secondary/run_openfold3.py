@@ -31,6 +31,7 @@ CANONICAL_CCD = Path("/databases/openfold3/components.bcif")
 CANONICAL_BASE_RUNNER = Path("/opt/fs2/runtime/openfold3/runner-base.yaml")
 BASE_RUNNER_SHA256 = "c42271cdfc4c9dd01ceca7a9e0c2d0a207c2d8106a2bb03146d491d54b601469"
 OPENFOLD_HANDOFF_SCHEMA = "fs2.nebius.ai/openfold3-query-handoff/v1"
+PUBLIC_MODEL_ID = "openfold3-openbind"
 SOURCE_REVISION = "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86"
 LANE_ID = "openfold3-openbind-0-none"
 VARIANT_ID = "upstream-openbind-v0-5-0"
@@ -76,7 +77,7 @@ def _validate_runtime_localization_args(
         raise SystemExit(f"{command} does not consume OpenFold3 runtime artifacts")
     return validate_runtime_localization(
         args.runtime_localization_marker,
-        model_id="openfold3",
+        model_id=PUBLIC_MODEL_ID,
         variant_id=VARIANT_ID,
         stage_id="inference",
         artifacts=(

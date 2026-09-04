@@ -1272,6 +1272,11 @@ DATA_HANDOFF_SCHEMA = "fs2-serve.nebius.ai/alphafold3-data-handoff/v1"
 DATA_HANDOFF_DIRNAME = "fs2-af3-handoff"
 DATA_HANDOFF_INDEX = "index.json"
 DATA_OUTPUT_SUFFIX = "_data.json"
+MAX_DATA_HANDOFF_FILES = 64
+# The controller reserves the final MiB of its 256 MiB materializer contract
+# for deterministic tar headers, padding and end records (at most 65 members).
+MAX_DATA_HANDOFF_BYTES = 255 * 1024 * 1024
+MAX_DATA_HANDOFF_METADATA_BYTES = 1024 * 1024
 
 
 def build_data_handoff(output_dir: Path) -> dict[str, Any]:
@@ -1304,19 +1309,33 @@ def build_data_handoff(output_dir: Path) -> dict[str, Any]:
             f"the data stage produced no {DATA_OUTPUT_SUFFIX} output under {output_dir}; "
             "there is nothing for the inference stage to consume"
         )
+    if len(produced) > MAX_DATA_HANDOFF_FILES:
+        raise ContractError(
+            f"the data stage produced {len(produced)} fold jobs; "
+            f"the handoff limit is {MAX_DATA_HANDOFF_FILES}"
+        )
 
     if handoff_dir.exists():
         shutil.rmtree(handoff_dir)
     handoff_dir.mkdir(parents=True)
 
     entries: list[dict[str, Any]] = []
+    payload_bytes = 0
     for path in produced:
         fold_job = path.name[: -len(DATA_OUTPUT_SUFFIX)]
         relative = f"{fold_job}/{path.name}"
         destination = handoff_dir / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
+        source_size = path.stat().st_size
+        if source_size < 1 or payload_bytes + source_size > MAX_DATA_HANDOFF_BYTES:
+            raise ContractError(
+                f"the data handoff payload exceeds the {MAX_DATA_HANDOFF_BYTES}-byte bound"
+            )
         shutil.copyfile(path, destination)
         digest, size = sha256_of_file(destination)
+        if size != source_size:
+            raise ContractError(f"data handoff payload changed while copied: {path}")
+        payload_bytes += size
         entries.append(
             {
                 "fold_job": fold_job,
@@ -1341,6 +1360,13 @@ def build_data_handoff(output_dir: Path) -> dict[str, Any]:
         "paths_are_relative_to": "the directory containing this index",
     }
     payload = json.dumps(index, indent=2, sort_keys=True) + "\n"
+    payload_size = len(payload.encode("utf-8"))
+    if payload_size > MAX_DATA_HANDOFF_METADATA_BYTES:
+        raise ContractError("the data handoff index exceeds the metadata byte bound")
+    if payload_bytes + payload_size > MAX_DATA_HANDOFF_BYTES:
+        raise ContractError(
+            f"the data handoff plus index exceeds the {MAX_DATA_HANDOFF_BYTES}-byte bound"
+        )
     (handoff_dir / DATA_HANDOFF_INDEX).write_text(payload, encoding="utf-8")
 
     return {
@@ -1437,7 +1463,26 @@ def emit(document: dict[str, Any], destination: Path | None) -> None:
     sys.stdout.write(payload)
     if destination is not None:
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(payload, encoding="utf-8")
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", prefix=f".{destination.name}.",
+                suffix=".partial", dir=destination.parent, delete=False,
+            ) as temporary:
+                temporary_path = Path(temporary.name)
+                temporary.write(payload)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            os.replace(temporary_path, destination)
+            temporary_path = None
+            directory_fd = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
 
 def base_receipt(mode: str) -> dict[str, Any]:

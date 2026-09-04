@@ -4,6 +4,8 @@
   "image_source_commit": "e6d20c7cb3abf5e172852f17a20c7e100daa1245",
   "semantic_h100_qualification": false,
   "route_activation_allowed": false,
+  "production_protocol_compatible": false,
+  "successor_requirement": "All four r4 images predate atomic final-output publication. Build and semantically qualify immutable successors from the repaired source; OpenFold also requires the corrected runtime UID and public model identity.",
   "images": [
     {
       "model_id": "esmfold2",

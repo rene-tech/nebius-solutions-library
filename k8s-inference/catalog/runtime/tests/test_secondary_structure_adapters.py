@@ -41,6 +41,8 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
         self.assertEqual(self.handoff["state"], "build-only-not-activated")
         self.assertIs(self.handoff["semantic_h100_qualification"], False)
         self.assertIs(self.handoff["route_activation_allowed"], False)
+        self.assertIs(self.handoff["production_protocol_compatible"], False)
+        self.assertIn("atomic", str(self.handoff["successor_requirement"]))
         self.assertRegex(str(self.handoff["image_source_commit"]), r"^[0-9a-f]{40}$")
         for image in self.images.values():
             self.assertTrue(str(image["tag"]).endswith("-h100-r4"))

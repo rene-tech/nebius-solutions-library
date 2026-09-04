@@ -16,6 +16,7 @@ import hashlib
 import io
 import json
 import math
+import os
 import tarfile
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -105,7 +106,12 @@ RUNTIME_RECEIPT_SCHEMA = "fs2-serve.nebius.ai/alphafold3-runtime-receipt/v1"
 
 MAX_INPUT_BYTES = 64 * 1024 * 1024
 MAX_HANDOFF_FILES = 64
-MAX_HANDOFF_BYTES = 1024 * 1024 * 1024
+# The companion materializer accepts at most 256 MiB compressed and expanded.
+# Keeping the producer contract identical bounds the collector's two resident
+# copies (validated members plus canonical tar) to about 512 MiB, below the
+# 2 GiB artifact-sidecar memory envelope.
+MAX_HANDOFF_BYTES = 256 * 1024 * 1024
+MAX_HANDOFF_CONTENT_BYTES = MAX_HANDOFF_BYTES - 1024 * 1024
 MAX_METADATA_BYTES = 1024 * 1024
 MAX_RESULT_BYTES = 8 * 1024 * 1024 * 1024
 FORBIDDEN_ARGV_TOKENS = (
@@ -457,7 +463,7 @@ def collect_data(invocation: StageInvocation, workspace: Path) -> CollectedStage
         ):
             raise ScientificAdapterError(f"AlphaFold 3 handoff entry {position} digest or size is invalid")
         total_bytes += len(content)
-        if total_bytes > MAX_HANDOFF_BYTES:
+        if total_bytes > MAX_HANDOFF_CONTENT_BYTES:
             raise ScientificAdapterError("AlphaFold 3 data handoff exceeds the byte bound")
         archived.append((relative, content))
 
@@ -466,8 +472,19 @@ def collect_data(invocation: StageInvocation, workspace: Path) -> CollectedStage
         raise ScientificAdapterError("AlphaFold 3 data handoff archive exceeds the byte bound")
     package = root / HANDOFF_PACKAGE
     pending = root / f".{HANDOFF_PACKAGE}.partial"
-    pending.write_bytes(archive_bytes)
-    pending.replace(package)
+    try:
+        with pending.open("wb") as stream:
+            stream.write(archive_bytes)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(pending, package)
+        directory_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        pending.unlink(missing_ok=True)
     return CollectedStageOutput(
         artifacts=(
             CollectedArtifactFile(

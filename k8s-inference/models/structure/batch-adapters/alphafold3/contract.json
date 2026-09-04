@@ -11,6 +11,8 @@
   },
   "runtime": {
     "image_digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
+    "production_protocol_compatible": false,
+    "successor_required": "Build and qualify a new immutable image from the atomic-receipt, bounded-handoff source before route activation.",
     "command_io_contract": "models/cancer-immunotherapy/images/alphafold3/contracts/af3-command-io-contract.json",
     "command": [
       "/alphafold3_venv/bin/python3",
@@ -67,8 +69,13 @@
         "collector_requires_terminal_receipt": "data-runtime-receipt.json",
         "collector_limits": {
           "files": 64,
-          "bytes": 1073741824
-        }
+          "content_bytes": 267386880,
+          "package_bytes": 268435456,
+          "materializer_compressed_bytes": 268435456,
+          "materializer_expanded_bytes": 268435456
+        },
+        "publication": "The runtime publishes its terminal receipt with temp-file fsync plus atomic rename. The collector treats an absent final receipt as pending and invalid terminal content as failure.",
+        "memory_reasoning": "The collector may retain at most 255 MiB of validated content and a 256 MiB canonical tar at once (about 511 MiB); the artifact sidecar limit is 2 GiB."
       }
     },
     {

@@ -57,6 +57,18 @@ reason to read them.
 The runtime refuses a stage that declares both bindings, a CPU stage with
 parameters mounted, or a GPU stage with a reference tree mounted.
 
+The portable handoff contract is bounded end to end. Data payloads plus the
+index may occupy at most 255 MiB; the final 1 MiB of the companion's 256 MiB
+compressed/expanded materializer limit is reserved for deterministic tar
+headers, padding, and end records for at most 65 members. Terminal receipts are
+written to a same-directory temporary file, flushed and fsynced, then atomically
+renamed and followed by a directory fsync. A collector can therefore interpret
+an absent final receipt as in-progress without ever accepting partial JSON.
+
+The published r6 digest predates this protocol repair. It remains useful H100
+semantic evidence but must not be activated with the repaired adapter. Publish
+and qualify a new immutable successor before opening the route.
+
 ## Parameter binding
 
 `academic-assets` owns the parameter identity; this runtime consumes it and

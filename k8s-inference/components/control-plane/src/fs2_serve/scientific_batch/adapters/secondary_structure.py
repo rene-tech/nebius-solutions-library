@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import math
+import tarfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+import zstandard
 
 from .common import (
     ARTIFACT_MANIFEST_SCHEMA,
@@ -39,6 +44,211 @@ _STRUCTURE_TYPES = {
     ".cif": ("chemical/x-mmcif", "protein-structure-mmcif/v1"),
     ".mmcif": ("chemical/x-mmcif", "protein-structure-mmcif/v1"),
 }
+_OPENFOLD_HANDOFF_SCHEMA = "fs2.nebius.ai/openfold3-query-handoff/v1"
+_PROTENIX_HANDOFF_SCHEMA = "fs2.nebius.ai/protenix-v2-prepared-handoff/v1"
+_HANDOFF_ARCHIVES = {
+    "openfold3-prepared-input/v1": (
+        "query.json",
+        _OPENFOLD_HANDOFF_SCHEMA,
+        frozenset(
+            {
+                "schema",
+                "artifact_id",
+                "member",
+                "sha256",
+                "raw_input_sha256",
+                "model_seeds",
+                "msa_mode",
+                "runner_base_sha256",
+                "lane_id",
+                "source_revision",
+            }
+        ),
+    ),
+    "protenix-processed-input/v1": (
+        "processed.json",
+        _PROTENIX_HANDOFF_SCHEMA,
+        frozenset(
+            {
+                "schema",
+                "artifact_id",
+                "member",
+                "sha256",
+                "raw_input_sha256",
+                "msa_mode",
+                "composite_artifact_id",
+                "composite_artifact_revision",
+                "localized_content_digest_sha256",
+                "composite_manifest_sha256",
+                "source_revision",
+            }
+        ),
+    ),
+}
+
+
+def _sha256_bytes(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def _json_object(content: bytes, *, label: str) -> dict[str, object]:
+    try:
+        document = json.loads(content.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise ScientificAdapterError(f"{label} is not valid UTF-8 JSON") from error
+    if not isinstance(document, dict):
+        raise ScientificAdapterError(f"{label} must be a JSON object")
+    return document
+
+
+def _validate_esm_prepared(content: bytes) -> None:
+    document = _json_object(content, label="ESMFold prepared handoff")
+    sequences = document.get("sequences")
+    if not isinstance(sequences, list) or not 1 <= len(sequences) <= 256:
+        raise ScientificAdapterError("ESMFold prepared handoff must contain sequences")
+    seen_ids: set[str] = set()
+    for chain in sequences:
+        if (
+            not isinstance(chain, dict)
+            or not isinstance(chain.get("type"), str)
+            or not chain["type"]
+            or not isinstance(chain.get("id"), str)
+            or not chain["id"]
+            or chain["id"] in seen_ids
+            or not isinstance(chain.get("sequence"), str)
+            or not chain["sequence"]
+        ):
+            raise ScientificAdapterError("ESMFold prepared handoff contains an invalid chain")
+        seen_ids.add(chain["id"])
+
+
+def _validate_archive_handoff(
+    content: bytes,
+    *,
+    semantic_type: str,
+    maximum_bytes: int,
+    expected_provenance: Mapping[str, object] | None,
+) -> None:
+    try:
+        expanded = zstandard.ZstdDecompressor().decompress(
+            content,
+            max_output_size=maximum_bytes,
+        )
+    except zstandard.ZstdError as error:
+        raise ScientificAdapterError("stage handoff is not valid bounded zstd data") from error
+    if not 1 <= len(expanded) <= maximum_bytes:
+        raise ScientificAdapterError("stage handoff expanded size is outside the adapter bound")
+    payload_name, schema, provenance_fields = _HANDOFF_ARCHIVES[semantic_type]
+    try:
+        with tarfile.open(fileobj=io.BytesIO(expanded), mode="r:") as archive:
+            members = archive.getmembers()
+            if (
+                len(members) != 2
+                or {member.name for member in members} != {payload_name, "provenance.json"}
+                or any(
+                    not member.isfile() or member.name.startswith("/") or ".." in Path(member.name).parts
+                    for member in members
+                )
+            ):
+                raise ScientificAdapterError("stage handoff archive member set is invalid")
+            contents: dict[str, bytes] = {}
+            for member in members:
+                if member.size < 1 or member.size > maximum_bytes:
+                    raise ScientificAdapterError("stage handoff archive member size is outside the bound")
+                source = archive.extractfile(member)
+                if source is None:
+                    raise ScientificAdapterError("stage handoff archive member has no payload")
+                payload = source.read(maximum_bytes + 1)
+                if len(payload) != member.size:
+                    raise ScientificAdapterError("stage handoff archive member size differs")
+                contents[member.name] = payload
+    except tarfile.TarError as error:
+        raise ScientificAdapterError("stage handoff is not a valid tar archive") from error
+    payload_document = _json_object(contents[payload_name], label="stage handoff payload")
+    if not payload_document:
+        raise ScientificAdapterError("stage handoff payload must not be empty")
+    provenance = _json_object(contents["provenance.json"], label="stage handoff provenance")
+    if (
+        set(provenance) != provenance_fields
+        or provenance.get("schema") != schema
+        or provenance.get("member") != payload_name
+        or provenance.get("sha256") != _sha256_bytes(contents[payload_name])
+        or not isinstance(provenance.get("artifact_id"), str)
+        or not provenance["artifact_id"]
+    ):
+        raise ScientificAdapterError("stage handoff provenance identity is invalid")
+    for digest_field in ("sha256", "raw_input_sha256"):
+        digest = provenance.get(digest_field)
+        if not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+            raise ScientificAdapterError("stage handoff provenance digest is invalid")
+    if schema == _OPENFOLD_HANDOFF_SCHEMA:
+        seeds = provenance.get("model_seeds")
+        queries = payload_document.get("queries")
+        if (
+            provenance.get("msa_mode") != "none"
+            or not isinstance(seeds, list)
+            or not 1 <= len(seeds) <= 16
+            or any(isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 2**31 - 1 for seed in seeds)
+            or len(set(seeds)) != len(seeds)
+            or payload_document.get("seeds") != seeds
+            or not isinstance(queries, dict)
+            or len(queries) != 1
+        ):
+            raise ScientificAdapterError("OpenFold handoff provenance parameters are invalid")
+        query = next(iter(queries.values()))
+        if (
+            not isinstance(query, dict)
+            or query.get("use_msas") is not False
+            or query.get("use_main_msas") is not False
+            or query.get("use_paired_msas") is not False
+            or not isinstance(query.get("chains"), list)
+            or not query["chains"]
+            or any(not isinstance(chain, dict) or not chain for chain in query["chains"])
+        ):
+            raise ScientificAdapterError("OpenFold prepared query contract is invalid")
+        for field in ("runner_base_sha256",):
+            digest = provenance.get(field)
+            if (
+                not isinstance(digest, str)
+                or len(digest) != 64
+                or any(char not in "0123456789abcdef" for char in digest)
+            ):
+                raise ScientificAdapterError("OpenFold handoff provenance digest is invalid")
+    elif schema == _PROTENIX_HANDOFF_SCHEMA:
+        if provenance.get("msa_mode") != "none":
+            raise ScientificAdapterError("Protenix handoff provenance parameters are invalid")
+        for field in ("localized_content_digest_sha256", "composite_manifest_sha256"):
+            digest = provenance.get(field)
+            if (
+                not isinstance(digest, str)
+                or len(digest) != 64
+                or any(char not in "0123456789abcdef" for char in digest)
+            ):
+                raise ScientificAdapterError("Protenix handoff provenance digest is invalid")
+    if expected_provenance is not None and any(
+        provenance.get(field) != expected for field, expected in expected_provenance.items()
+    ):
+        raise ScientificAdapterError("stage handoff provenance differs from the frozen invocation")
+
+
+def _validate_handoff_content(
+    content: bytes,
+    *,
+    semantic_type: str,
+    maximum_bytes: int,
+    expected_provenance: Mapping[str, object] | None = None,
+) -> None:
+    if semantic_type in {"esmfold2-prepared-input/v1", "esmfold2-fast-prepared-input/v1"}:
+        _validate_esm_prepared(content)
+    elif semantic_type in _HANDOFF_ARCHIVES:
+        _validate_archive_handoff(
+            content,
+            semantic_type=semantic_type,
+            maximum_bytes=maximum_bytes,
+            expected_provenance=expected_provenance,
+        )
+    else:
+        raise ScientificAdapterError(f"no semantic handoff validator exists for {semantic_type!r}")
 
 
 def _contained_file(root: Path, relative: str, *, label: str) -> Path:
@@ -64,6 +274,7 @@ def collect_handoff(
     media_type: str,
     maximum_bytes: int,
     compression: str | None = None,
+    expected_provenance: Mapping[str, object] | None = None,
 ) -> CollectedOutput:
     """Collect one bounded handoff without relying on mutable directory order."""
 
@@ -71,7 +282,13 @@ def collect_handoff(
     content = output.read_bytes()
     if not 1 <= len(content) <= maximum_bytes:
         raise ScientificAdapterError("stage handoff size is outside the adapter bound")
-    digest = hashlib.sha256(content).hexdigest()
+    _validate_handoff_content(
+        content,
+        semantic_type=semantic_type,
+        maximum_bytes=maximum_bytes,
+        expected_provenance=expected_provenance,
+    )
+    digest = _sha256_bytes(content)
     artifact_id = f"result.{hashlib.sha256(name.encode()).hexdigest()[:16]}.{digest[:32]}"
     pointer = ArtifactPointer(
         artifact_id=artifact_id,
@@ -100,6 +317,7 @@ def collect_handoff_stage(
     maximum_bytes: int,
     validator_id: str,
     compression: str | None = None,
+    expected_provenance: Mapping[str, object] | None = None,
 ) -> CollectedStageOutput:
     """Return one file-backed handoff for the production companion."""
 
@@ -111,6 +329,15 @@ def collect_handoff_stage(
     size = output.stat().st_size
     if not 1 <= size <= maximum_bytes:
         raise ScientificAdapterError("stage handoff size is outside the adapter bound")
+    content = output.read_bytes()
+    if len(content) != size:
+        raise ScientificAdapterError("stage handoff changed while it was collected")
+    _validate_handoff_content(
+        content,
+        semantic_type=semantic_type,
+        maximum_bytes=maximum_bytes,
+        expected_provenance=expected_provenance,
+    )
     return CollectedStageOutput(
         artifacts=(
             CollectedArtifactFile(
@@ -124,7 +351,7 @@ def collect_handoff_stage(
         validation={
             "validator_id": validator_id,
             "status": "passed",
-            "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+            "sha256": _sha256_bytes(content),
             "size_bytes": size,
         },
     )

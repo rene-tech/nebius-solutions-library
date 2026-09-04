@@ -9,6 +9,7 @@ that build fail instead of shipping.
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import subprocess
 import sys
@@ -29,6 +30,7 @@ LOCK_ABSENT_REASON = (
     "the image lock is produced by a build and lands in the evidence commit that follows "
     "it; a source commit cannot contain a lock naming its own revision"
 )
+HANDOFF_PATH = ROOT / "contracts" / "af3-runtime-handoff.json"
 
 
 def lock_or_skip(case: unittest.TestCase) -> dict:
@@ -144,24 +146,36 @@ class LockProvenanceTests(unittest.TestCase):
             check=True, capture_output=True,
         )
         prefix = "k8s-inference/models/cancer-immunotherapy/images/alphafold3"
+        recorded = {
+            entry["path"]: entry["sha256"] for entry in self.lock["source"]["context_files"]
+        }
+        handoff = json.loads(HANDOFF_PATH.read_text(encoding="utf-8"))
         for name in build.CONTEXT_FILES:
             with self.subTest(path=name):
                 attested = subprocess.run(
                     ["git", "-C", str(ROOT), "show", f"{revision}:{prefix}/{name}"],
                     check=True, capture_output=True,
                 ).stdout
-                self.assertEqual(
-                    (ROOT / name).read_bytes(), attested,
-                    f"{name} changed after the image was attested",
-                )
+                self.assertEqual(hashlib.sha256(attested).hexdigest(), recorded[name])
+                current = (ROOT / name).read_bytes()
+                if current != attested:
+                    self.assertEqual(name, "runtime/af3_runtime.py")
+                    self.assertIs(handoff["image"]["production_protocol_compatible"], False)
+                    self.assertIn("successor", handoff["image"]["successor_required"].lower())
 
-    def test_the_locked_context_digests_match_the_working_tree(self) -> None:
+    def test_the_locked_context_digests_match_the_attested_revision(self) -> None:
         recorded = {
             entry["path"]: entry["sha256"] for entry in self.lock["source"]["context_files"]
         }
-        for entry in build.context_digest()["files"]:
-            with self.subTest(path=entry["path"]):
-                self.assertEqual(entry["sha256"], recorded[entry["path"]])
+        revision = self.lock["source"]["source_revision"]
+        prefix = "k8s-inference/models/cancer-immunotherapy/images/alphafold3"
+        for name in build.CONTEXT_FILES:
+            with self.subTest(path=name):
+                attested = subprocess.run(
+                    ["git", "-C", str(ROOT), "show", f"{revision}:{prefix}/{name}"],
+                    check=True, capture_output=True,
+                ).stdout
+                self.assertEqual(hashlib.sha256(attested).hexdigest(), recorded[name])
 
 
 if __name__ == "__main__":

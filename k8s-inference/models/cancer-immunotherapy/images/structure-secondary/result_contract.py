@@ -6,7 +6,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
+import tempfile
 from typing import Mapping
 
 
@@ -25,6 +27,31 @@ METRIC_BOUNDS = {
     "ranking_score": (-100.0, 2.0),
     "sample_ranking_score": (-100.0, 2.0),
 }
+
+
+def atomic_write_text(path: Path, content: str) -> None:
+    """Durably publish UTF-8 text only after the complete document is written."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", prefix=f".{path.name}.", suffix=".partial",
+            dir=path.parent, delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            temporary.write(content)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_path, path)
+        temporary_path = None
+        directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def sha256_file(path: Path) -> str:
@@ -203,7 +230,7 @@ def write_confidence_envelope(
         separators=(",", ":"),
         sort_keys=True,
     )
-    (output_dir / "confidence.json").write_text(encoded + "\n", encoding="utf-8")
+    atomic_write_text(output_dir / "confidence.json", encoded + "\n")
     return envelope
 
 

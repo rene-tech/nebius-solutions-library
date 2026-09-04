@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import sys
 
-from result_contract import finite_metric, write_confidence_envelope
+from result_contract import atomic_write_text, finite_metric, write_confidence_envelope
 from runtime_localization import (
     RuntimeArtifactExpectation,
     validate_runtime_localization,
@@ -107,9 +107,9 @@ def _prepare(args: argparse.Namespace) -> None:
     if not output.is_absolute():
         raise SystemExit("output must be an absolute path")
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
+    atomic_write_text(
+        output,
         json.dumps(serialize_structure_prediction_input(request), sort_keys=True) + "\n",
-        encoding="utf-8",
     )
 
 

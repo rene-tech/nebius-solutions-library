@@ -11,6 +11,8 @@
     "platform": "linux/amd64",
     "tag": "3.0.4-85c4d205-r6",
     "digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
+    "production_protocol_compatible": false,
+    "successor_required": "The published r6 digest predates atomic terminal receipts and the bounded 256 MiB handoff protocol; build and qualify a new immutable digest before activation.",
     "digest_state": "published",
     "digest_note": "This is the authoritative identity; consume the image by digest. Do not substitute sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887 or sha256:bead2e68627c1aa7d5fa80243b1164a18160f48cf3a1867090d72ff2b9270e37, which are stock upstream images retained only as historical semantic evidence and are not this runtime.",
     "gpu_family": "agnostic",
@@ -124,6 +126,14 @@
         "the academic parameter claim"
       ],
       "produces": "AlphaFold 3 data-pipeline output JSON plus the reference manifest digests recorded in the receipt",
+      "handoff_publication": {
+        "terminal_receipt": "temp file, file fsync, atomic rename, directory fsync",
+        "maximum_files": 64,
+        "maximum_content_and_index_bytes": 267386880,
+        "maximum_tar_and_materializer_bytes": 268435456,
+        "tar_headroom_bytes": 1048576,
+        "memory_reasoning": "At most about 511 MiB is resident while the collector holds validated content and its canonical tar; the artifact sidecar has 2 GiB."
+      },
       "reference_receipt": {
         "role": "producer-generated terminal reference-data receipt",
         "schema": "fs2-serve.nebius.ai/reference-data-terminal-receipt/v1",
@@ -270,12 +280,13 @@
     "rule": "No L2 or higher level and no GPU snapshot may be claimed for this runtime without measured evidence produced by the fast-start qualification task."
   },
   "readiness": {
-    "state": "runtime-qualified",
+    "state": "not-ready",
     "blocking": [
+      "a new immutable runtime image is built from the atomic-receipt and bounded-handoff source and qualified on H100",
       "reference-data worker publishes the AlphaFold 3 bundle and generates its terminal receipt for a real CPU data stage",
       "controller route and submission wiring landed by their owning tasks"
     ],
-    "rule": "The runtime is qualified on H100. AlphaFold 3 as a platform model is still not servable until the reference bundle and the controller route land.",
+    "rule": "The historical r6 runtime has H100 evidence but is not production-protocol compatible. AlphaFold 3 is not servable until its immutable successor, reference bundle, and controller route land.",
     "completed": [
       "runtime image built from a clean committed source revision, with SPDX and SLSA provenance whose vcs:revision equals that commit, proven free of licensed and reference-database payload by a layer walk, and published to the project registry by immutable digest",
       "real H100 semantic acceptance on the exact published digest: parameter identity verified, 405 parameter arrays loaded on cuda:0, and three no-data-pipeline inferences completed with exit code 0, two of them driven from a relocated packaged handoff"

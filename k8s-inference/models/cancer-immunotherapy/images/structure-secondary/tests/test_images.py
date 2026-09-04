@@ -490,6 +490,33 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                             artifacts=expected,
                         )
 
+    def test_openfold_successor_accepts_the_public_model_identity(self) -> None:
+        module = load_module("run_openfold3")
+        with tempfile.TemporaryDirectory() as temporary:
+            marker_path = write_runtime_localization_marker(
+                Path(temporary) / "runtime-localization.json",
+                model_id="openfold3-openbind",
+                variant_id=module.VARIANT_ID,
+                stage_id="inference",
+                artifacts=[
+                    {"artifact_id": "openfold3-openbind-0", "mount_path": "/models/openfold3",
+                     "content_sha256": module.CHECKPOINT_CONTENT_SHA256},
+                    {"artifact_id": "openfold3-components-bcif", "mount_path": "/databases/openfold3",
+                     "content_sha256": module.CCD_CONTENT_SHA256},
+                ],
+            )
+            environment = {
+                "FS2_OPERATION_ID": "00000000-0000-4000-8000-000000000010",
+                "FS2_ATTEMPT_ID": "00000000-0000-4000-8000-000000000011",
+                "FS2_TENANT_ID": "test-tenant", "FS2_VARIANT_ID": module.VARIANT_ID,
+                "FS2_STAGE_ID": "inference", "FS2_RUNTIME_LOCALIZATION_MARKER": str(marker_path),
+                "FS2_ARTIFACT_ACCESS_RECEIPT_DIGEST": "",
+            }
+            args = types.SimpleNamespace(runtime_localization_marker=str(marker_path))
+            with mock.patch.dict(os.environ, environment, clear=False):
+                marker = module._validate_runtime_localization_args("predict", args)
+            self.assertEqual(marker["model_id"], "openfold3-openbind")
+
     def test_sources_tags_and_base_images_are_immutable(self) -> None:
         expected = {
             "esmfold2": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
@@ -1307,6 +1334,48 @@ for seed in seeds:
             )
             self.assertFalse(hasattr(handoff, "write_handoff"))
             self.assertFalse(hasattr(handoff, "validate_handoff"))
+
+    def test_handoff_archive_is_published_by_durable_atomic_rename(self) -> None:
+        handoff = load_module("handoff_contract")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            payload, provenance = root / "processed.json", root / "provenance.json"
+            output = root / "handoff.tar.zst"
+            payload.write_text('{"input":"complete"}\n', encoding="utf-8")
+            provenance.write_text('{"schema":"fixture"}\n', encoding="utf-8")
+            output.write_bytes(b"previous-generation")
+            real_run = subprocess.run
+
+            def observe_compressor(argv, **kwargs):
+                compressed = Path(argv[argv.index("-o") + 1])
+                self.assertNotEqual(compressed, output)
+                self.assertEqual(output.read_bytes(), b"previous-generation")
+                return real_run(argv, **kwargs)
+
+            with mock.patch.object(handoff.subprocess, "run", side_effect=observe_compressor):
+                handoff.write_archive(output, {"processed.json": payload, "provenance.json": provenance})
+            self.assertNotEqual(output.read_bytes(), b"previous-generation")
+            self.assertFalse(any(root.glob(".*.partial")))
+
+    def test_shared_json_publication_never_exposes_a_partial_document(self) -> None:
+        contract = load_module("result_contract")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "prepared-input.json"
+            output.write_text('{"generation":"old"}\n', encoding="utf-8")
+            replacement = '{"sequences":[{"id":"A","sequence":"ACDE","type":"protein"}]}\n'
+            real_replace = os.replace
+
+            def observe_replace(source, destination):
+                self.assertEqual(Path(destination), output)
+                self.assertEqual(output.read_text(encoding="utf-8"), '{"generation":"old"}\n')
+                self.assertEqual(Path(source).read_text(encoding="utf-8"), replacement)
+                real_replace(source, destination)
+
+            with mock.patch.object(contract.os, "replace", side_effect=observe_replace):
+                contract.atomic_write_text(output, replacement)
+            self.assertEqual(output.read_text(encoding="utf-8"), replacement)
+            self.assertFalse(any(root.glob(".*.partial")))
 
     def test_openfold_prepare_emits_exact_materialized_query_handoff(self) -> None:
         module = load_module("run_openfold3")

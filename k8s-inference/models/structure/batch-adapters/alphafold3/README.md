@@ -12,7 +12,11 @@ scheduler:
    `.fs2-manifest-sha256` marker, and the sibling `manifests/sha256` document.
    After a terminal runtime PASS, the adapter collector verifies every indexed
    handoff file by path, size, and SHA-256, rejects symlinks and traversal, and
-   writes a deterministic bounded tar artifact for the next stage.
+   writes a deterministic bounded tar artifact for the next stage. Payloads
+   plus the index are capped at 255 MiB; deterministic tar framing gets the
+   remaining 1 MiB of the companion materializer's 256 MiB compressed and
+   expanded limit. The collector therefore holds at most about 511 MiB while
+   validating members and constructing the tar, within its 2 GiB sidecar.
 2. `inference` consumes the relocatable tar handoff and one H100 from the
    deployment-resolved `academic-scientific` GPU lane. It mounts only the
    private `af3.bin.zst` object from `academic-assets-runtime-rwx`; it never
@@ -29,7 +33,11 @@ receipt, token, credential, path, or URI. The profile must project the live
 `Granted` / `Authorized` state as `academic` + `verified`; removing that
 operator-owned state makes compilation fail closed.
 
-The route remains closed even though the r6 image has real H100 evidence. The
+The route remains closed. The r6 image has real H100 semantic evidence, but it
+predates atomic receipt publication and the aligned 256 MiB handoff contract;
+it is historical evidence, not a production-protocol-compatible image. A new
+immutable successor must be built, inspected, and H100-qualified from this
+source before activation. The
 candidate profile intentionally contains no invented public-reference digest;
 promotion must add the producer-generated terminal receipt and its exact tree,
 manifest, and inventory identities to the trusted execution map. The exact

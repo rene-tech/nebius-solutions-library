@@ -6,11 +6,13 @@ import copy
 import hashlib
 import importlib.util
 import inspect
+import io
 import json
 import os
 import shutil
 import subprocess
 import sys
+import tarfile
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,6 +21,7 @@ from unittest import mock
 from uuid import UUID, uuid4
 
 import pytest
+import zstandard
 from scientific_batch_fakes import FakeScientificBatchCluster, FakeScientificBatchRepository
 
 from fs2_serve.crypto import KeyedHasher
@@ -147,6 +150,94 @@ def compile_fixture(model_id: str, name: str):
         operation_id=f"op-{model_id}-contract",
         input_artifacts=(verified_input(model_id),),
     )
+
+
+def _valid_prepared_handoff(model_id: str, invocation=None) -> tuple[str, bytes]:
+    if model_id in {"esmfold2", "esmfold2-fast"}:
+        return (
+            "prepared-input.json",
+            json.dumps(
+                {"sequences": [{"type": "protein", "id": "A", "sequence": "ACDE", "msa": None}]},
+                sort_keys=True,
+            ).encode()
+            + b"\n",
+        )
+
+    payload_name = "processed.json" if model_id == "protenix-v2" else "query.json"
+    artifact_id = invocation.produces if invocation is not None else "fixture-stage-artifact"
+    if model_id == "protenix-v2":
+        payload = (
+            json.dumps(
+                {"name": "collector-fixture", "sequences": [{"proteinChain": {"sequence": "ACDE"}}]},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+            + b"\n"
+        )
+        provenance = {
+            "schema": "fs2.nebius.ai/protenix-v2-prepared-handoff/v1",
+            "artifact_id": artifact_id,
+            "member": payload_name,
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "raw_input_sha256": "a" * 64,
+            "msa_mode": "none",
+            "composite_artifact_id": protenix_v2.MODEL_ARTIFACT,
+            "composite_artifact_revision": protenix_v2.COMPOSITE_ARTIFACT_REVISION,
+            "localized_content_digest_sha256": protenix_v2.LOCALIZED_TREE_CONTENT_SHA256,
+            "composite_manifest_sha256": protenix_v2.LOCALIZATION_MANIFEST_SHA256,
+            "source_revision": protenix_v2.SOURCE_REVISION,
+        }
+    else:
+        seeds = [13, 31]
+        raw_input_sha256 = "b" * 64
+        if invocation is not None:
+            seeds = [int(value) for value in _argument(invocation.argv, "--model-seeds").split(",")]
+            raw_input_sha256 = _argument(invocation.argv, "--raw-input-sha256")
+        payload = (
+            json.dumps(
+                {
+                    "queries": {
+                        "collector-fixture": {
+                            "chains": [{"molecule_type": "protein", "chain_ids": ["A"], "sequence": "ACDE"}],
+                            "use_msas": False,
+                            "use_main_msas": False,
+                            "use_paired_msas": False,
+                        }
+                    },
+                    "seeds": seeds,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+            + b"\n"
+        )
+        provenance = {
+            "schema": "fs2.nebius.ai/openfold3-query-handoff/v1",
+            "artifact_id": artifact_id,
+            "member": payload_name,
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "raw_input_sha256": raw_input_sha256,
+            "model_seeds": seeds,
+            "msa_mode": "none",
+            "runner_base_sha256": openfold3.RUNNER_BASE_SHA256,
+            "lane_id": openfold3.HANDOFF_LANE_ID,
+            "source_revision": openfold3.SOURCE_REVISION,
+        }
+    tar_stream = io.BytesIO()
+    with tarfile.open(fileobj=tar_stream, mode="w", format=tarfile.PAX_FORMAT) as archive:
+        for name, content in (
+            (payload_name, payload),
+            (
+                "provenance.json",
+                json.dumps(provenance, sort_keys=True, separators=(",", ":")).encode() + b"\n",
+            ),
+        ):
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            info.mode = 0o444
+            info.mtime = 0
+            archive.addfile(info, io.BytesIO(content))
+    return "handoff.tar.zst", zstandard.ZstdCompressor().compress(tar_stream.getvalue())
 
 
 def scheduling() -> SchedulingContractResolver:
@@ -832,24 +923,13 @@ def _marker_artifacts(model_id: str, invocation) -> list[dict[str, object]]:
     ]
 
 
-@pytest.mark.skipif(
-    not os.environ.get(WRAPPER_ROOT_ENV),
-    reason=f"set {WRAPPER_ROOT_ENV} to the exact r4 wrapper source",
-)
 def test_every_generated_argv_cross_runs_through_exact_r4_parsers_and_markers(tmp_path: Path) -> None:
-    root = Path(os.environ[WRAPPER_ROOT_ENV]).resolve()
+    root = tmp_path / "exact-r4-wrapper-source"
+    root.mkdir()
     source_commit = json.loads(IMAGE_HANDOFF.read_text(encoding="utf-8"))["image_source_commit"]
     git = shutil.which("git")
     assert git is not None
-    repository = Path(
-        subprocess.run(  # noqa: S603 - fixed git executable and an operator-supplied local path
-            [git, "-C", str(root), "rev-parse", "--show-toplevel"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-    )
-    relative = root.relative_to(repository)
+    repository = SOLUTION_ROOT.parent
     parser_sources = (
         "run_esmfold2.py",
         "run_protenix.py",
@@ -858,19 +938,14 @@ def test_every_generated_argv_cross_runs_through_exact_r4_parsers_and_markers(tm
         "result_contract.py",
         "runtime_localization.py",
     )
-    subprocess.run(  # noqa: S603 - fixed git executable and validated immutable revision
-        [
-            git,
-            "-C",
-            str(repository),
-            "diff",
-            "--quiet",
-            source_commit,
-            "--",
-            *(str(relative / filename) for filename in parser_sources),
-        ],
-        check=True,
-    )
+    source_prefix = "k8s-inference/models/cancer-immunotherapy/images/structure-secondary"
+    for filename in parser_sources:
+        source = subprocess.run(  # noqa: S603 - fixed git executable and immutable pinned revision
+            [git, "-C", str(repository), "show", f"{source_commit}:{source_prefix}/{filename}"],
+            check=True,
+            capture_output=True,
+        ).stdout
+        (root / filename).write_bytes(source)
     wrappers = {
         "esmfold2": _load_wrapper(root, "run_esmfold2"),
         "esmfold2-fast": _load_wrapper(root, "run_esmfold2"),
@@ -889,7 +964,11 @@ def test_every_generated_argv_cross_runs_through_exact_r4_parsers_and_markers(tm
                 "operation_id": "00000000-0000-4000-8000-000000000010",
                 "attempt_id": "00000000-0000-4000-8000-000000000011",
                 "tenant_id": "adapter-contract-tenant",
-                "model_id": model_id,
+                # The immutable r4 OpenFold image predated the public identity
+                # correction. It is exercised exactly here, while the repaired
+                # successor source uses openfold3-openbind and remains closed
+                # until a new immutable digest is published.
+                "model_id": "openfold3" if model_id == "openfold3-openbind" else model_id,
                 "variant_id": plan.variant_id,
                 "stage_id": invocation.stage_id,
                 "artifacts": _marker_artifacts(model_id, invocation),
@@ -907,7 +986,7 @@ def test_every_generated_argv_cross_runs_through_exact_r4_parsers_and_markers(tm
             }
             with mock.patch.dict(os.environ, environment, clear=False):
                 validated = wrapper._validate_runtime_localization_args(invocation.argv[1], parsed)
-            assert validated["model_id"] == model_id
+            assert validated["model_id"] == marker["model_id"]
 
 
 def _mmcif(seed: int, sample: int) -> bytes:
@@ -1018,10 +1097,7 @@ def test_prepare_collectors_are_deterministic_and_unknown_ids_fail(model_id: str
     request = fixture(model_id, POSITIVE_FIXTURES[model_id][0])
     workspace = tmp_path / model_id
     workspace.mkdir()
-    if model_id in {"esmfold2", "esmfold2-fast"}:
-        filename, content = "prepared-input.json", b'{"sequences":[]}\n'
-    else:
-        filename, content = "handoff.tar.zst", b"deterministic-stage-handoff"
+    filename, content = _valid_prepared_handoff(model_id)
     (workspace / filename).write_bytes(content)
     first = module.collect_stage_output(module.PREPARE_COLLECTOR_ID, request, workspace)
     second = module.collect_stage_output(module.PREPARE_COLLECTOR_ID, request, workspace)
@@ -1039,10 +1115,7 @@ def test_companion_registry_collects_frozen_prepare_and_result_invocations(model
 
     prepare_workspace = tmp_path / f"{model_id}-prepare"
     prepare_workspace.mkdir()
-    if model_id in {"esmfold2", "esmfold2-fast"}:
-        filename, content = "prepared-input.json", b'{"sequences":[]}\n'
-    else:
-        filename, content = "handoff.tar.zst", b"deterministic-stage-handoff"
+    filename, content = _valid_prepared_handoff(model_id, prepare)
     (prepare_workspace / filename).write_bytes(content)
     prepared = collect_registered_stage_output(prepare, prepare_workspace)
     assert isinstance(prepared, CollectedStageOutput)
@@ -1074,6 +1147,63 @@ def test_companion_registry_collects_frozen_prepare_and_result_invocations(model
     missing.mkdir()
     with pytest.raises(CollectionPendingError):
         collect_registered_stage_output(prepare, missing)
+
+
+@pytest.mark.parametrize("model_id", tuple(MODULES))
+def test_prepare_collector_waits_for_atomic_publication_and_rejects_terminal_invalid_content(
+    model_id: str, tmp_path: Path
+) -> None:
+    prepare = compile_fixture(model_id, POSITIVE_FIXTURES[model_id][0]).invocations[0]
+    filename, content = _valid_prepared_handoff(model_id, prepare)
+    workspace = tmp_path / model_id
+    workspace.mkdir()
+    partial = workspace / f".{filename}.writer.partial"
+    partial.write_bytes(content[: max(1, len(content) // 2)])
+
+    with pytest.raises(CollectionPendingError):
+        collect_registered_stage_output(prepare, workspace)
+
+    partial.write_bytes(content)
+    os.replace(partial, workspace / filename)
+    collected = collect_registered_stage_output(prepare, workspace)
+    assert collected.validation["status"] == "passed"
+
+    (workspace / filename).write_bytes(b'{"terminal":"but-invalid"}\n')
+    with pytest.raises(ScientificAdapterError, match="(handoff|zstd)"):
+        collect_registered_stage_output(prepare, workspace)
+
+
+@pytest.mark.parametrize("model_id", tuple(MODULES))
+def test_result_collector_waits_while_confidence_terminal_marker_is_partial(model_id: str, tmp_path: Path) -> None:
+    module = MODULES[model_id]
+    request_value = fixture(model_id, POSITIVE_FIXTURES[model_id][0])
+    result = compile_fixture(model_id, POSITIVE_FIXTURES[model_id][0]).invocations[1]
+    if model_id in {"esmfold2", "esmfold2-fast"}:
+        parameters = esmfold2.Parameters.parse(request_value["parameters"], fast=model_id.endswith("-fast"))
+        seeds, samples, revision = (parameters.seed,), 1, module.MODEL_REVISION
+    elif model_id == "protenix-v2":
+        parameters = protenix_v2.Parameters.parse(request_value["parameters"])
+        seeds, samples, revision = parameters.seeds, parameters.sample_count, module.OUTPUT_MODEL_REVISION
+    else:
+        parameters = openfold3.Parameters.parse(request_value["parameters"])
+        seeds, samples, revision = parameters.seeds, 1, module.SOURCE_REVISION
+    workspace = _write_confidence_workspace(
+        tmp_path,
+        runtime_id=getattr(module, "RUNTIME_ID", model_id),
+        model_revision=revision,
+        seeds=seeds,
+        samples=samples,
+    )
+    final = workspace / "outputs/confidence.json"
+    complete = final.read_bytes()
+    partial = workspace / "outputs/.confidence.json.writer.partial"
+    final.replace(partial)
+    partial.write_bytes(complete[: len(complete) // 2])
+    with pytest.raises(CollectionPendingError):
+        collect_registered_stage_output(result, workspace)
+    partial.write_bytes(complete)
+    os.replace(partial, final)
+    assert collect_registered_stage_output(result, workspace).validation["status"] == "passed"
 
 
 @pytest.mark.parametrize("model_id", tuple(MODULES))

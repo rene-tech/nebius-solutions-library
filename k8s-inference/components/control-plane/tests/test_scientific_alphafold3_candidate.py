@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
+import os
 from pathlib import Path
 from uuid import UUID
 
@@ -15,6 +17,7 @@ from fs2_serve.scientific_batch import (
     ResourceClass,
     ScientificAdapterError,
     ScientificInputArtifact,
+    companion,
     compile_adapter_run,
 )
 from fs2_serve.scientific_batch.adapters import CollectionPendingError, collect_stage_output
@@ -247,6 +250,57 @@ def _inference_workspace(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _data_workspace(tmp_path: Path, *, publish_receipt: bool = True) -> tuple[Path, bytes]:
+    handoff = tmp_path / af3.DATA_OUTPUT_DIR / af3.HANDOFF_DIR_NAME
+    payload = b'{"name":"pdl1-binder","sequences":[{"proteinChain":{"sequence":"ACDE"}}]}\n'
+    relative = "pdl1-binder/pdl1-binder_data.json"
+    payload_path = handoff / relative
+    payload_path.parent.mkdir(parents=True)
+    payload_path.write_bytes(payload)
+    entry = {
+        "fold_job": "pdl1-binder",
+        "relative_path": relative,
+        "bytes": len(payload),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }
+    index = {
+        "schema": af3.HANDOFF_SCHEMA,
+        "count": 1,
+        "fold_jobs": ["pdl1-binder"],
+        "entries": [entry],
+        "paths_are_relative_to": "the directory containing this index",
+    }
+    index_bytes = (json.dumps(index, indent=2, sort_keys=True) + "\n").encode()
+    (handoff / af3.HANDOFF_INDEX).write_bytes(index_bytes)
+    receipt = load(RUNTIME_FIXTURES / "data-stage-receipt.json")
+    receipt.update(
+        {
+            "image": {
+                "runtime_id": af3.MODEL_ID,
+                "upstream_commit": af3.SOURCE_REVISION,
+                "parameters_embedded": False,
+                "reference_databases_embedded": False,
+            },
+            "status": "PASS",
+            "execution": {
+                "upstream": "/app/alphafold/run_alphafold.py",
+                "exit_code": 0,
+                "terminal_state": "succeeded",
+            },
+            "handoff": {
+                **index,
+                "handoff_dirname": af3.HANDOFF_DIR_NAME,
+                "index_sha256": hashlib.sha256(index_bytes).hexdigest(),
+                "note": "portable fixture",
+            },
+        }
+    )
+    receipt_bytes = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    if publish_receipt:
+        (tmp_path / af3.DATA_RECEIPT_FILENAME).write_bytes(receipt_bytes)
+    return tmp_path, receipt_bytes
+
+
 def test_result_collector_is_registered_once_in_the_global_companion_registry(tmp_path: Path) -> None:
     invocation = compile_plan().invocation(af3.INFERENCE_STAGE_ID, "main")
     collected = collect_stage_output(invocation, _inference_workspace(tmp_path / "result"))
@@ -255,6 +309,30 @@ def test_result_collector_is_registered_once_in_the_global_companion_registry(tm
     assert collected.validation["validator_id"] == af3.VALIDATOR_ID
     with pytest.raises(CollectionPendingError):
         collect_stage_output(compile_plan().invocation(af3.DATA_STAGE_ID, "main"), tmp_path / "pending")
+
+
+def test_data_collector_waits_for_atomic_terminal_receipt_publication(tmp_path: Path) -> None:
+    invocation = compile_plan().invocation(af3.DATA_STAGE_ID, "main")
+    workspace, receipt = _data_workspace(tmp_path / "data", publish_receipt=False)
+    partial = workspace / f".{af3.DATA_RECEIPT_FILENAME}.writer.partial"
+    partial.write_bytes(receipt[: len(receipt) // 2])
+    with pytest.raises(CollectionPendingError):
+        collect_stage_output(invocation, workspace)
+
+    partial.write_bytes(receipt)
+    os.replace(partial, workspace / af3.DATA_RECEIPT_FILENAME)
+    collected = collect_stage_output(invocation, workspace)
+    assert collected.validation["status"] == "passed"
+    assert collected.artifacts[0].path.stat().st_size <= companion._MAX_ARCHIVE_BYTES
+    (workspace / af3.DATA_RECEIPT_FILENAME).write_bytes(b'{"terminal":"invalid"}\n')
+    with pytest.raises(ScientificAdapterError, match="terminal PASS"):
+        collect_stage_output(invocation, workspace)
+
+
+def test_af3_handoff_package_limit_matches_the_materializer_and_has_safe_headroom() -> None:
+    assert af3.MAX_HANDOFF_BYTES == companion._MAX_ARCHIVE_BYTES == 256 * 1024 * 1024
+    assert af3.MAX_HANDOFF_CONTENT_BYTES == 255 * 1024 * 1024
+    assert af3.MAX_HANDOFF_BYTES - af3.MAX_HANDOFF_CONTENT_BYTES >= ((af3.MAX_HANDOFF_FILES + 1) * 1024 + 10 * 1024)
 
 
 def test_profile_does_not_accept_caller_supplied_license_receipts() -> None:
