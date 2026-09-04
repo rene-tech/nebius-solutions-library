@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2.nebius.ai/schemas/structure-secondary-image-lock.schema.json",
+  "title": "FS2 secondary-structure runtime image lock",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema", "platform", "registry_default", "publication_policy", "superseded_publications", "images"],
+  "properties": {
+    "$schema": {"const": "./image-lock.schema.json"},
+    "schema": {"const": "fs2.nebius.ai/structure-secondary-image-lock/v2"},
+    "platform": {"const": "linux/amd64"},
+    "registry_default": {"$ref": "#/$defs/registryRoot"},
+    "publication_policy": {"const": "explicit-non-overwriting-build-checked-tags"},
+    "superseded_publications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "target", "digest", "deployable", "reason"],
+        "properties": {
+          "id": {"type": "string"},
+          "target": {"type": "string"},
+          "digest": {"$ref": "#/$defs/digest"},
+          "deployable": {"const": false},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "images": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "dockerfile", "repository", "tag", "source", "base_images", "build_args", "external_artifacts", "runtime_contract", "fast_start", "accelerator_support", "smoke", "published_digest", "deployable"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+          "dockerfile": {"type": "string", "pattern": "^Dockerfile\\."},
+          "repository": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*$"},
+          "tag": {"type": "string", "pattern": "^[0-9a-f]{40}-h100-r[1-9][0-9]*$"},
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["repository", "revision", "tag", "source_date_epoch"],
+            "properties": {
+              "repository": {"type": "string", "format": "uri"},
+              "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+              "tag": {"type": "string", "pattern": "^v[0-9]"},
+              "source_date_epoch": {"type": "integer", "minimum": 1}
+            }
+          },
+          "base_images": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"}},
+          "build_args": {"type": "object", "additionalProperties": {"type": "string"}},
+          "external_artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/artifact"}},
+          "runtime_contract": {"$ref": "#/$defs/runtimeContract"},
+          "fast_start": {"$ref": "#/$defs/fastStart"},
+          "accelerator_support": {"$ref": "#/$defs/acceleratorSupport"},
+          "smoke": {"type": "string", "pattern": "^/"},
+          "published_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+          "deployable": {"const": false}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "registryRoot": {"type": "string", "pattern": "^[a-z0-9.-]+/[a-z0-9][a-z0-9._/-]*[a-z0-9]$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state", "mount", "revision", "baked_into_image"],
+      "allOf": [
+        {
+          "if": {"properties": {"id": {"const": "protenix-v2"}}, "required": ["id"]},
+          "then": {"required": ["localized_content_digest_sha256", "localization_manifest_sha256", "manifest", "ready_marker", "checkpoint", "common", "expected_paths"]}
+        }
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "state": {"enum": ["available-external", "promotion-pending", "operator-staged-private", "third-party-mirror-verified-not-publisher-byte-compared"]},
+        "mount": {"type": "string", "pattern": "^/"},
+        "runtime_path": {"type": "string", "pattern": "^/"},
+        "source_sub_path": {"type": "string", "pattern": "^[^/]"},
+        "revision": {"type": "string", "minLength": 1},
+        "content_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "source_revision": {"type": "string", "minLength": 1},
+        "localized_content_digest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "localization_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "manifest_layout": {"type": "string", "minLength": 1},
+        "tree_ready_marker": {"type": "string", "pattern": "^/"},
+        "manifest_digest_state": {"const": "required-from-accepted-localization-receipt"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "manifest": {"type": "string", "pattern": "^/"},
+        "ready_marker": {"type": "string", "pattern": "^/"},
+        "checkpoint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "revision", "sha256", "md5", "bytes", "parameter_count"],
+          "properties": {
+            "path": {"type": "string", "pattern": "^[^/]"},
+            "revision": {"type": "string", "minLength": 1},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "md5": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+            "bytes": {"type": "integer", "minimum": 1},
+            "parameter_count": {"type": "integer", "minimum": 1}
+          }
+        },
+        "common": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["artifact_id", "revision", "archive_url", "archive_bytes", "archive_sha256"],
+          "properties": {
+            "artifact_id": {"const": "protenix-v2-inference-data-2026-01-29"},
+            "revision": {"type": "string", "minLength": 1},
+            "archive_url": {"type": "string", "pattern": "^https://"},
+            "archive_bytes": {"type": "integer", "minimum": 1},
+            "archive_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }
+        },
+        "expected_paths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[^/]"}
+        },
+        "baked_into_image": {"const": false}
+      }
+    },
+    "runtimeContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entrypoint", "subcommands", "network_policy", "required_mounts", "commands"],
+      "properties": {
+        "entrypoint": {"type": "string", "pattern": "^/"},
+        "preprocess_entrypoint": {"type": "string", "pattern": "^/"},
+        "subcommands": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "network_policy": {"type": "string", "minLength": 1},
+        "required_mounts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^/"}
+        },
+        "writable_cache_mounts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^/"}
+        },
+        "runtime_compilation": {"type": "string", "minLength": 1},
+        "cache_environment": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"type": "string", "pattern": "^/cache/"},
+          "propertyNames": {"pattern": "^[A-Z][A-Z0-9_]*$"}
+        },
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^/"}
+        }
+      }
+    },
+    "fastStart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maximum_candidate_level", "qualified_level", "qualification_state", "level_states", "compiler_cache_optimization"],
+      "properties": {
+        "maximum_candidate_level": {"const": "L1"},
+        "qualified_level": {"type": "null"},
+        "qualification_state": {"const": "evidence-collected-pending-independent-acceptance"},
+        "level_states": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["L1", "L2", "L3", "L4"],
+          "properties": {
+            "L1": {"const": "candidate-evidence-collected-pending-independent-acceptance"},
+            "L2": {"const": "unavailable-no-shared-storage-gpu-process-snapshot"},
+            "L3": {"const": "unavailable-no-local-disk-cached-snapshot"},
+            "L4": {"const": "unavailable-no-system-ram-retained-model"}
+          }
+        },
+        "compiler_cache_optimization": {
+          "enum": [
+            "none-proven-l1-image-plus-external-artifacts",
+            "auxiliary-l1-plus-persistent-cache-pending-first-vs-warm-h100-timing"
+          ]
+        }
+      }
+    },
+    "acceleratorSupport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["h100", "blackwell"],
+      "properties": {
+        "h100": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["compute_capability", "status"],
+          "properties": {
+            "compute_capability": {"const": "9.0"},
+            "status": {"type": "string"},
+            "extension": {"type": "string"}
+          }
+        },
+        "blackwell": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "scope", "native_targets"],
+          "properties": {
+            "status": {"enum": ["not-qualified", "unsupported"]},
+            "scope": {"type": "string"},
+            "native_targets": {"type": "array", "maxItems": 0}
+          }
+        }
+      }
+    }
+  }
+}
