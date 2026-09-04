@@ -402,6 +402,8 @@ def _production_renderer(
                             }
                         ],
                         "service_account_name": "scientific-runner",
+                        "workspace_uid": 10001,
+                        "workspace_gid": 10001,
                         "resources": {
                             "requests": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "100Gi"},
                             "limits": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "100Gi"},

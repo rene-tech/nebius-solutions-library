@@ -9,6 +9,7 @@ import json
 import re
 import subprocess
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,34 @@ FORBIDDEN_AGGREGATES = {
     "catalog/runtime/contracts/scientific-execution-map.json",
 }
 PROVIDER_ID = re.compile(r"(?:computeinstance|mk8scluster|project|tenant)-e00[0-9a-z]+")
+REPOSITORY_PREFIX = "k8s-inference/"
+# Values that are computed from the shared recipe inputs rather than authored.
+# A model lane may not add, remove or edit anything else in a shared aggregate.
+DERIVED_IDENTITY_FIELDS = frozenset(
+    {
+        "runtime_recipe_sha256",
+        "workload_recipe_sha256",
+        "execution_identity_sha256",
+        "execution_map_sha256",
+    }
+)
+# This one aggregate cleanup is owned by the serialized production repair, not
+# by any model activation lane.  The old execution map declared the entire
+# reference-data plane in addition to two exact BoltzGen generation mounts.
+# The renderer correctly rejects that unbound broad declaration.  Permit only
+# its all-stage removal while continuing to reject every other authored leaf.
+BOLTZGEN_GPU_STAGES = frozenset(
+    {"configure", "design", "inverse-folding", "folding", "design-folding", "affinity"}
+)
+BOLTZGEN_LEGACY_BROAD_MOUNT = {
+    "name": "reference-data",
+    "kind": "reference",
+    "claim_name": None,
+    "host_path": "/mnt/fs2-reference-data/data",
+    "mount_path": "/reference-data",
+    "sub_path": None,
+    "read_only": True,
+}
 INTEGRATION_SOURCE_REVISION = "003064c440c4ab198bf96957e435a7aac8da6800"
 SHARED_RUNTIME_RECIPE_PATHS = frozenset(
     {
@@ -147,11 +176,23 @@ def _identity_is_present(document: Any, value: str) -> bool:
 
 
 def validate_fragment(path: Path) -> tuple[dict[str, Any], list[str]]:
+    """Validate the fragment on disk at ``path``."""
+
     fragment = load_json(path)
+    return fragment, validate_fragment_document(fragment, path)
+
+
+def validate_fragment_document(fragment: dict[str, Any], path: Path) -> list[str]:
+    """Validate an in-memory fragment, so a test can probe a hypothetical one.
+
+    ``path`` is still needed because a fragment names its own model by directory
+    when it omits ``model_id``; nothing is read from it.
+    """
+
     model_id = fragment.get("model_id", path.parent.parent.name)
     errors = validate_schema(fragment, HERE / "fragment.schema.json", model_id)
     if errors:
-        return fragment, errors
+        return errors
 
     accepted = fragment["accepted_evidence"]
     profile = fragment["profile_projection"]["profile"]
@@ -457,7 +498,127 @@ def validate_fragment(path: Path) -> tuple[dict[str, Any], list[str]]:
     serialized = json.dumps(fragment, sort_keys=True, separators=(",", ":"))
     if PROVIDER_ID.search(serialized):
         errors.append(f"{model_id}: provider-specific resource id found")
-    return fragment, errors
+    return errors
+
+
+def _json_leaves(
+    value: Any, path: tuple[Any, ...] = ()
+) -> Iterator[tuple[tuple[Any, ...], Any]]:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield from _json_leaves(item, path + (key,))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from _json_leaves(item, path + (index,))
+    else:
+        yield path, value
+
+
+def _aggregate_at_baseline(relative: str) -> Any:
+    completed = subprocess.run(
+        ["git", "show", f"{INTEGRATION_SOURCE_REVISION}:{REPOSITORY_PREFIX}{relative}"],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    )
+    return json.loads(completed.stdout)
+
+
+def _normalize_serialized_boltzgen_mount_cleanup(
+    relative: str, baseline: dict[str, Any], current: dict[str, Any]
+) -> None:
+    """Normalize only the reviewed all-GPU-stage removal of one inert broad mount."""
+
+    if relative != "catalog/runtime/contracts/scientific-execution-map.json":
+        return
+    baseline_models = {
+        item.get("model_id"): item
+        for item in baseline.get("models", [])
+        if isinstance(item, dict)
+    }
+    current_models = {
+        item.get("model_id"): item
+        for item in current.get("models", [])
+        if isinstance(item, dict)
+    }
+    baseline_model = baseline_models.get("boltzgen")
+    current_model = current_models.get("boltzgen")
+    if not isinstance(baseline_model, dict) or not isinstance(current_model, dict):
+        return
+    baseline_stages = {
+        item.get("stage_id"): item
+        for item in baseline_model.get("stages", [])
+        if isinstance(item, dict)
+    }
+    current_stages = {
+        item.get("stage_id"): item
+        for item in current_model.get("stages", [])
+        if isinstance(item, dict)
+    }
+    if not all(
+        isinstance(baseline_stages.get(stage_id), dict)
+        and isinstance(current_stages.get(stage_id), dict)
+        and BOLTZGEN_LEGACY_BROAD_MOUNT in baseline_stages[stage_id].get("mounts", [])
+        and BOLTZGEN_LEGACY_BROAD_MOUNT
+        not in current_stages[stage_id].get("mounts", [])
+        for stage_id in BOLTZGEN_GPU_STAGES
+    ):
+        return
+    for stage_id in BOLTZGEN_GPU_STAGES:
+        baseline_stages[stage_id]["mounts"].remove(BOLTZGEN_LEGACY_BROAD_MOUNT)
+
+
+def _derived_identity_refresh_only(relative: str) -> list[str]:
+    """Classify a change to a shared aggregate as derived-only, or report why not.
+
+    The guard exists so a model lane cannot activate itself by writing its own
+    profile or execution-map entry. It is not meant to forbid the derived
+    identity digests, which are a pure function of the shared recipe inputs: any
+    change to those inputs, such as integrating a new localization transform,
+    makes every pinned digest stale, and the repository's own
+    ``scripts/refresh_scientific_recipes.py`` is what recomputes them. So a
+    change is accepted only when no leaf is added or removed and every differing
+    leaf is one of the derived digests. Whether the new digests are *correct* is
+    proven separately, by
+    ``components/control-plane/tests/test_scientific_primary_adapters.py``.
+    """
+    try:
+        baseline_document = _aggregate_at_baseline(relative)
+    except (subprocess.CalledProcessError, json.JSONDecodeError):
+        return [f"forbidden shared aggregate changed: {relative}"]
+    current_document = load_json(repository_path(relative))
+    if not isinstance(baseline_document, dict) or not isinstance(
+        current_document, dict
+    ):
+        return [f"forbidden shared aggregate changed: {relative}"]
+    _normalize_serialized_boltzgen_mount_cleanup(
+        relative, baseline_document, current_document
+    )
+    baseline = dict(_json_leaves(baseline_document))
+    current = dict(_json_leaves(current_document))
+    added = sorted(set(current) - set(baseline))
+    removed = sorted(set(baseline) - set(current))
+    changed = sorted(
+        key for key in set(baseline) & set(current) if baseline[key] != current[key]
+    )
+    errors = []
+    for key in added:
+        errors.append(
+            f"shared aggregate {relative} adds authored content: {_leaf_name(key)}"
+        )
+    for key in removed:
+        errors.append(f"shared aggregate {relative} removes content: {_leaf_name(key)}")
+    for key in changed:
+        if key[-1] not in DERIVED_IDENTITY_FIELDS:
+            errors.append(
+                f"shared aggregate {relative} changes authored content: {_leaf_name(key)}"
+            )
+    return errors
+
+
+def _leaf_name(key: tuple[Any, ...]) -> str:
+    return ".".join(str(part) for part in key)
 
 
 def validate_no_aggregate_edits() -> list[str]:
@@ -476,10 +637,10 @@ def validate_no_aggregate_edits() -> list[str]:
         stdout=subprocess.PIPE,
     )
     changed = set(completed.stdout.splitlines())
-    return [
-        f"forbidden shared aggregate changed: {path}"
-        for path in sorted(changed & FORBIDDEN_AGGREGATES)
-    ]
+    errors: list[str] = []
+    for path in sorted(changed & FORBIDDEN_AGGREGATES):
+        errors.extend(_derived_identity_refresh_only(path))
+    return errors
 
 
 def render(fragment: dict[str, Any]) -> dict[str, Any]:

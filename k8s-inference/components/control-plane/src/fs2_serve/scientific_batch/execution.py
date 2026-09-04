@@ -152,6 +152,8 @@ class StageExecution:
     validator_id: str
     mounts: tuple[StageMount, ...]
     service_account_name: str
+    workspace_uid: int
+    workspace_gid: int
     request_cpu: str
     request_memory: str
     request_ephemeral_storage: str
@@ -433,6 +435,8 @@ class FileScientificManifestRenderer:
                     "validator_id",
                     "mounts",
                     "service_account_name",
+                    "workspace_uid",
+                    "workspace_gid",
                     "resources",
                     "active_deadline_seconds",
                     "termination_grace_seconds",
@@ -624,6 +628,12 @@ class FileScientificManifestRenderer:
                         "reference-data host path requires the canonical storage placement label"
                     )
                 service_account_name = _service_account(stage["service_account_name"])
+                workspace_uid = _positive_integer(
+                    stage["workspace_uid"], "scientific workspace UID", maximum=2_147_483_647
+                )
+                workspace_gid = _positive_integer(
+                    stage["workspace_gid"], "scientific workspace GID", maximum=2_147_483_647
+                )
                 if model_id == "bindcraft":
                     by_path = {mount.mount_path: mount for mount in mounts}
                     required_paths = {
@@ -639,6 +649,8 @@ class FileScientificManifestRenderer:
                     validator_id=validator_id,
                     mounts=tuple(mounts),
                     service_account_name=service_account_name,
+                    workspace_uid=workspace_uid,
+                    workspace_gid=workspace_gid,
                     request_cpu=request_cpu,
                     request_memory=request_memory,
                     request_ephemeral_storage=request_ephemeral_storage,
@@ -868,6 +880,8 @@ class FileScientificManifestRenderer:
                 for mount in execution.mounts
             ),
             service_account_name=execution.service_account_name,
+            workspace_uid=execution.workspace_uid,
+            workspace_gid=execution.workspace_gid,
             request_cpu=execution.request_cpu,
             request_memory=execution.request_memory,
             request_ephemeral_storage=execution.request_ephemeral_storage,
@@ -882,6 +896,10 @@ class FileScientificManifestRenderer:
 
     @staticmethod
     def _thaw_stage_execution(binding: StageExecutionBinding) -> StageExecution:
+        if binding.workspace_uid is None or binding.workspace_gid is None:
+            raise ScientificExecutionMapError(
+                "legacy frozen stage has no exact shared workspace UID/GID and cannot be rendered"
+            )
         return StageExecution(
             image=binding.image,
             collector_id=binding.collector_id,
@@ -899,6 +917,8 @@ class FileScientificManifestRenderer:
                 for mount in binding.mounts
             ),
             service_account_name=binding.service_account_name,
+            workspace_uid=binding.workspace_uid,
+            workspace_gid=binding.workspace_gid,
             request_cpu=binding.request_cpu,
             request_memory=binding.request_memory,
             request_ephemeral_storage=binding.request_ephemeral_storage,
@@ -1405,6 +1425,8 @@ class FileScientificManifestRenderer:
             "allowPrivilegeEscalation": False,
             "capabilities": {"drop": ["ALL"]},
             "readOnlyRootFilesystem": True,
+            "runAsUser": execution.workspace_uid,
+            "runAsGroup": execution.workspace_gid,
         }
         init_containers = [
             {
@@ -1570,6 +1592,8 @@ class FileScientificManifestRenderer:
                     "securityContext": {
                         "allowPrivilegeEscalation": False,
                         "capabilities": {"drop": ["ALL"]},
+                        "runAsUser": execution.workspace_uid,
+                        "runAsGroup": execution.workspace_gid,
                     },
                 },
                 collector,

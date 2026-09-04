@@ -1,0 +1,143 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-workload-profile-projection/v1",
+  "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
+  "profile": {
+    "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+    "model_id": "openfold3-openbind",
+    "display_name": "OpenFold3 OpenBind v0.5.0",
+    "execution_mode": "scientific-batch",
+    "state": "candidate-unqualified",
+    "route_exposed": false,
+    "source": {
+      "kind": "git",
+      "repository": "aqlaboratory/openfold-3",
+      "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+      "review_url": "https://github.com/aqlaboratory/openfold-3/tree/c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+      "classification": "candidate-input"
+    },
+    "execution_identity": {
+      "model_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+      "runtime_image_digest": null,
+      "runtime_recipe_sha256": null,
+      "workload_recipe_sha256": null,
+      "artifact_manifest_digest": null,
+      "execution_identity_sha256": null
+    },
+    "interface": {
+      "protocol": "scientific-batch-v1",
+      "submit_endpoint": "/v1/models/openfold3-openbind:submit",
+      "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+      "parameter_schema": "fs2-serve.nebius.ai/openfold3-upstream-openbind-v0-5-0-parameters/v1",
+      "operations": [
+        "predict-complex-structure"
+      ],
+      "service_classes": [
+        "customer-batch"
+      ],
+      "mcp": {
+        "discoverable": true,
+        "invocable": false,
+        "tool_name": "submit_openfold3_openbind",
+        "description": "Submit an OpenFold3 complex structure prediction; an independent backend that never satisfies an alphafold3 request."
+      }
+    },
+    "access": {
+      "profile": "standard",
+      "state": "not-required",
+      "receipt_digest": null,
+      "credentials_embedded": false
+    },
+    "resources": {
+      "gpu_count": 1,
+      "gpu_topology": "single-gpu",
+      "host_architectures": [
+        "amd64"
+      ],
+      "compatible_pool_ids": [
+        "h100-1x",
+        "h100-reserved-8x"
+      ],
+      "required_node_labels": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+      }
+    },
+    "workload": {
+      "stages": [
+        {
+          "id": "data-pipeline",
+          "needs": [],
+          "resource_class": "cpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 32,
+          "checkpoint_mode": "none",
+          "preemption_mode": "non_preemptible",
+          "placement": {
+            "class": "general-cpu"
+          },
+          "resources": {
+            "cpu_millis": 4000,
+            "memory_bytes": 17179869184,
+            "ephemeral_storage_bytes": 34359738368,
+            "limits": {
+              "cpu_millis": 8000,
+              "memory_bytes": 34359738368,
+              "ephemeral_storage_bytes": 68719476736
+            }
+          }
+        },
+        {
+          "id": "inference",
+          "needs": [
+            "data-pipeline"
+          ],
+          "resource_class": "gpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 32,
+          "checkpoint_mode": "restart",
+          "preemption_mode": "restartable",
+          "placement": {
+            "class": "accelerator"
+          },
+          "resources": {
+            "cpu_millis": 8000,
+            "memory_bytes": 103079215104,
+            "ephemeral_storage_bytes": 34359738368,
+            "limits": {
+              "cpu_millis": 32000,
+              "memory_bytes": 274877906944,
+              "ephemeral_storage_bytes": 137438953472
+            }
+          }
+        }
+      ],
+      "retry": {
+        "max_attempts": 2,
+        "retryable_exit_codes": [
+          137,
+          143
+        ]
+      },
+      "cancellation": {
+        "mode": "terminate-attempt",
+        "grace_seconds": 60
+      }
+    },
+    "semantic_validation": {
+      "validator_id": "openfold3-upstream-openbind-v0-5-0",
+      "state": "candidate-unqualified"
+    },
+    "policy": {
+      "commercial_use": "allowed",
+      "non_clinical": true,
+      "limitations": [
+        "The published h100-r4 image is intentionally rejected because its runtime files are unreadable by UID 10001; activation requires the independently corrected r5 digest.",
+        "OpenFold3 is an independent, non-equivalent backend to AlphaFold 3: distinct code, weights, license and results; it is never reported as AlphaFold 3.",
+        "The public scientific identity is openfold3-openbind so it cannot collide with the existing openfold3 HTTP catalog record; the legacy runtime-emitted openfold3 label is accepted only inside this adapter's output-validation boundary.",
+        "The OpenBind-0 checkpoint and components.bcif are catalog manifests without a localization generation or node admission receipt."
+      ]
+    }
+  }
+}

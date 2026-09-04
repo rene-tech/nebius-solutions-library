@@ -1,0 +1,36 @@
+{
+  "manifest_digest": "abd2a8127d0bd1b3cbd51d5ffc14a3351f805e15f593c8224ee94de57e3e4599",
+  "marker": {
+    "artifact_id": "rfdiffusion-base-checkpoint",
+    "artifact_kind": "rfdiffusion-base-checkpoint",
+    "claim": "",
+    "consumer_paths": [
+      "/opt/fs2/artifacts/rfdiffusion-base-checkpoint"
+    ],
+    "directory_count": 0,
+    "entry_count": 1,
+    "generation": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+    "generator_identity": [],
+    "host_root": "/mnt/fs2-reference-data/data",
+    "inventory_algorithm": "fs2-raw-file/v1",
+    "inventory_sha256": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+    "license_id": "BSD-3-Clause",
+    "namespace": "",
+    "read_only": true,
+    "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1",
+    "source_bytes": 483616107,
+    "source_filename": "Base_ckpt.pt",
+    "source_kind": "file",
+    "source_media_type": "application/octet-stream",
+    "source_present_in_mount": true,
+    "source_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+    "source_sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+    "source_uri": "https://files.ipd.uw.edu/pub/RFdiffusion/6f5902ac237024bdd0c176cb93063dc4/Base_ckpt.pt",
+    "sub_path": "scientific-localization/public/generations/rfdiffusion-base-checkpoint/sha256/7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+    "symlink_count": 0,
+    "total_bytes": 483616107,
+    "visibility": "public",
+    "volume_kind": "host-path"
+  },
+  "state": "admitted"
+}

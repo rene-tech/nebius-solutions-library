@@ -19,6 +19,7 @@ import zstandard
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from .adapters import CollectedArtifactFile, CollectionPendingError, collect_stage_output
+from .adapters.production_registry import install_production_adapters
 from .models import (
     ArtifactMaterialization,
     MaterializationMode,
@@ -29,15 +30,93 @@ from .models import (
     StageWorkspaceDocument,
 )
 
+install_production_adapters()
+
 _ROOT = Path("/mnt/fs2-scientific")
 _MAX_ARCHIVE_FILES = 4096
 _MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
+# The only qualified live BoltzGen envelope is deliberately smaller than the
+# generic handoff ceiling, leaving deterministic member/byte headroom for the
+# files the upstream stages add before the next snapshot.
+_BOLTZGEN_INPUT_MAX_FILES = 128
+_BOLTZGEN_INPUT_MAX_BYTES = 16 * 1024 * 1024
 _MAX_RUNTIME_MARKER_BYTES = 64 * 1024
 RUNTIME_LOCALIZATION_SCHEMA = "fs2-serve.nebius.ai/runtime-localization-marker/v1"
 RUNTIME_TREE_IDENTITY_SCHEMA = "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
 RUNTIME_TREE_IDENTITY_FILE = ".fs2-runtime-tree.json"
 REFERENCE_DATA_MANIFEST_SCHEMA = "fs2-serve.nebius.ai/reference-data-manifest/v1"
 REFERENCE_DATA_TREE_MARKER = ".fs2-manifest-sha256"
+STAGE_RUNNER_RELATIVE_PATH = ".fs2/stage-runner.py"
+STAGE_COMPLETION_SCHEMA = "fs2-serve.nebius.ai/scientific-stage-completion/v1"
+
+_STAGE_RUNNER_SOURCE = f'''#!/usr/bin/env python3
+"""Run one controller-frozen argv and atomically publish successful completion."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+SCHEMA = {STAGE_COMPLETION_SCHEMA!r}
+
+
+def main() -> int:
+    if len(sys.argv) < 3 or sys.argv[1] != "--":
+        raise SystemExit("stage runner requires an exec-form argv after --")
+    command = sys.argv[2:]
+    marker = Path.cwd() / ".fs2" / "stage-complete.json"
+    if marker.exists() or marker.is_symlink():
+        raise SystemExit("stage completion marker already exists")
+    completed = subprocess.run(command, check=False)
+    if completed.returncode != 0:
+        return completed.returncode
+    values = {{
+        "stage_id": os.environ.get("FS2_STAGE_ID", ""),
+        "shard_id": os.environ.get("FS2_SHARD_ID", ""),
+        "logical_output_id": os.environ.get("FS2_LOGICAL_OUTPUT_ID", ""),
+        "collector_id": os.environ.get("FS2_COLLECTOR_ID", ""),
+        "validator_id": os.environ.get("FS2_VALIDATOR_ID", ""),
+    }}
+    if any(not value or len(value) > 256 or "\\x00" in value for value in values.values()):
+        raise SystemExit("stage completion identity is absent or invalid")
+    argv_payload = json.dumps(command, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    payload = json.dumps(
+        {{
+            "schema": SCHEMA,
+            "status": "passed",
+            "argv_sha256": hashlib.sha256(argv_payload).hexdigest(),
+            **values,
+        }},
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode()
+    temporary = marker.with_name(f".{{marker.name}}.{{os.getpid()}}.partial")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(payload)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, marker)
+        directory = os.open(marker.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''.encode()
 
 
 class CollectionDeadlineError(RuntimeError):
@@ -186,6 +265,10 @@ def prepare_workspace(
     canonical = json.dumps(marker, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     marker_directory = target / ".fs2"
     marker_directory.mkdir(mode=0o700)
+    _write_exclusive(
+        target.joinpath(*PurePosixPath(STAGE_RUNNER_RELATIVE_PATH).parts),
+        _STAGE_RUNNER_SOURCE,
+    )
     receipt_directory = marker_directory / "runtime-artifacts"
     receipts = [
         (artifact["artifact_id"], artifact["verification_receipt"])
@@ -402,8 +485,16 @@ def _safe_relative(value: str) -> PurePosixPath:
     return path
 
 
-def _extract_tar(payload: bytes, destination: Path, *, compression: str | None, overlay: bool) -> None:
-    if len(payload) > _MAX_ARCHIVE_BYTES:
+def _extract_tar(
+    payload: bytes,
+    destination: Path,
+    *,
+    compression: str | None,
+    overlay: bool,
+    max_files: int = _MAX_ARCHIVE_FILES,
+    max_bytes: int = _MAX_ARCHIVE_BYTES,
+) -> None:
+    if len(payload) > max_bytes:
         raise ValueError("scientific input archive exceeds its compressed bound")
     destination = _contained(destination)
     destination.mkdir(parents=True, exist_ok=True)
@@ -411,24 +502,26 @@ def _extract_tar(payload: bytes, destination: Path, *, compression: str | None, 
         raise ValueError("scientific input archive requires an empty destination")
     if compression == "zstd":
         try:
-            payload = zstandard.ZstdDecompressor().decompress(payload, max_output_size=_MAX_ARCHIVE_BYTES)
+            payload = zstandard.ZstdDecompressor().decompress(payload, max_output_size=max_bytes)
         except zstandard.ZstdError as error:
             raise ValueError("scientific input is not valid zstd data") from error
     mode: Literal["r:gz", "r:"] = "r:gz" if compression == "gzip" else "r:"
     try:
         with tarfile.open(fileobj=io.BytesIO(payload), mode=mode) as archive:
             members = archive.getmembers()
-            if not 1 <= len(members) <= _MAX_ARCHIVE_FILES:
+            if not 1 <= len(members) <= max_files:
                 raise ValueError("scientific input archive member count is outside the bound")
             total = 0
             seen: set[PurePosixPath] = set()
             for member in members:
                 relative = _safe_relative(member.name.rstrip("/"))
+                if relative.parts[0] == ".fs2":
+                    raise ValueError("scientific input archive targets the reserved control namespace")
                 if relative in seen or not (member.isdir() or member.isfile()):
                     raise ValueError("scientific input archive contains duplicate or unsupported entries")
                 seen.add(relative)
                 total += member.size
-                if member.size < 0 or total > _MAX_ARCHIVE_BYTES:
+                if member.size < 0 or total > max_bytes:
                     raise ValueError("scientific input archive exceeds its extracted bound")
                 target = _contained(destination.joinpath(*relative.parts))
                 if target.exists() and not overlay:
@@ -441,7 +534,7 @@ def _extract_tar(payload: bytes, destination: Path, *, compression: str | None, 
                 source = archive.extractfile(member)
                 if source is None:
                     raise ValueError("scientific input archive member has no payload")
-                content = source.read(_MAX_ARCHIVE_BYTES + 1)
+                content = source.read(max_bytes + 1)
                 if len(content) != member.size:
                     raise ValueError("scientific input archive member size differs")
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -584,6 +677,8 @@ def materialize_artifact(
         destination,
         compression=compression,
         overlay=mode in {MaterializationMode.OVERLAY_TAR, MaterializationMode.BOLTZGEN_INPUT},
+        max_files=_BOLTZGEN_INPUT_MAX_FILES if mode is MaterializationMode.BOLTZGEN_INPUT else _MAX_ARCHIVE_FILES,
+        max_bytes=_BOLTZGEN_INPUT_MAX_BYTES if mode is MaterializationMode.BOLTZGEN_INPUT else _MAX_ARCHIVE_BYTES,
     )
     if mode is MaterializationMode.BOLTZGEN_INPUT:
         if yaml_name is None:

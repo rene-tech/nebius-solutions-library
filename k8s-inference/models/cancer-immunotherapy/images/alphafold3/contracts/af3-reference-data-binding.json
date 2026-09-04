@@ -171,7 +171,7 @@
   "cpu_to_gpu_handoff": {
     "packaged_directory": "fs2-af3-handoff",
     "index": "index.json",
-    "schema": "fs2-serve.nebius.ai/alphafold3-data-handoff/v1",
+    "schema": "fs2-serve.nebius.ai/alphafold3-data-handoff/v2",
     "layout": "<handoff>/<fold_job>/<fold_job>_data.json",
     "paths": "relative to the handoff directory only",
     "portability_rule": "A CPU pod's absolute output path is meaningless in the GPU pod, so no absolute producer path is recorded or reused. The GPU stage mounts the packaged directory and reconstructs every path under its own mount, verifying each payload digest.",

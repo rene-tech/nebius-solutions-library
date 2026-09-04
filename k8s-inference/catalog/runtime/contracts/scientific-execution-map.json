@@ -5,7 +5,7 @@
       "model_id": "boltzgen",
       "variant_id": "upstream-v0-3-2",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "ad894520846cf2c5dad109023f893fac31f43f5fe63ba930726480c32b068590",
+      "execution_identity_sha256": "ecc726237a6f7d2d88359a44947e01d5f7018d5ea598ab47fd4d39b78986977e",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -65,15 +65,6 @@
               "read_only": false
             },
             {
-              "name": "reference-data",
-              "kind": "reference",
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "mount_path": "/reference-data",
-              "sub_path": null,
-              "read_only": true
-            },
-            {
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
               "kind": "reference",
@@ -93,6 +84,8 @@
             }
           ],
           "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
             "requests": {
               "cpu": "8000m",
@@ -129,15 +122,6 @@
               "read_only": false
             },
             {
-              "name": "reference-data",
-              "kind": "reference",
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "mount_path": "/reference-data",
-              "sub_path": null,
-              "read_only": true
-            },
-            {
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
               "kind": "reference",
@@ -157,6 +141,8 @@
             }
           ],
           "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
             "requests": {
               "cpu": "8000m",
@@ -193,15 +179,6 @@
               "read_only": false
             },
             {
-              "name": "reference-data",
-              "kind": "reference",
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "mount_path": "/reference-data",
-              "sub_path": null,
-              "read_only": true
-            },
-            {
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
               "kind": "reference",
@@ -221,6 +198,8 @@
             }
           ],
           "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
             "requests": {
               "cpu": "8000m",
@@ -257,15 +236,6 @@
               "read_only": false
             },
             {
-              "name": "reference-data",
-              "kind": "reference",
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "mount_path": "/reference-data",
-              "sub_path": null,
-              "read_only": true
-            },
-            {
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
               "kind": "reference",
@@ -285,6 +255,8 @@
             }
           ],
           "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
             "requests": {
               "cpu": "8000m",
@@ -321,15 +293,6 @@
               "read_only": false
             },
             {
-              "name": "reference-data",
-              "kind": "reference",
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "mount_path": "/reference-data",
-              "sub_path": null,
-              "read_only": true
-            },
-            {
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
               "kind": "reference",
@@ -349,6 +312,8 @@
             }
           ],
           "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
             "requests": {
               "cpu": "8000m",
@@ -385,15 +350,6 @@
               "read_only": false
             },
             {
-              "name": "reference-data",
-              "kind": "reference",
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "mount_path": "/reference-data",
-              "sub_path": null,
-              "read_only": true
-            },
-            {
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
               "kind": "reference",
@@ -413,6 +369,8 @@
             }
           ],
           "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
             "requests": {
               "cpu": "8000m",
@@ -450,6 +408,8 @@
             }
           ],
           "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
             "requests": {
               "cpu": "2000m",
@@ -484,6 +444,8 @@
             }
           ],
           "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
             "requests": {
               "cpu": "2000m",

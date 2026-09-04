@@ -1,0 +1,238 @@
+{
+  "artifact_delivery": {
+    "artifacts": [
+      {
+        "admission_state": "admitted",
+        "artifact_id": "boltzgen-inference-molecules",
+        "bind_kind": "generation-directory-bind",
+        "entry_count": 45227,
+        "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "localization_receipt": {
+          "note": "published earlier by the public-generation promotion lane; this task only added a second declared mount and a mosaic consumer",
+          "state": "verified"
+        },
+        "marker_manifest_digest": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+        "published_by_this_task": false,
+        "runtime_path": "/opt/fs2/artifacts/mosaic/boltz/mols",
+        "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+        "total_bytes": 1820698819
+      },
+      {
+        "admission_state": "admitted",
+        "artifact_id": "mosaic-boltz2-conf",
+        "bind_kind": "single-entry-file-bind",
+        "entry_count": 1,
+        "generation": "e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
+        "inventory_algorithm": "fs2-raw-file/v1",
+        "localization_receipt": {
+          "duration_seconds": 211.597,
+          "marker_sha256": "89c9316d5b723dd266e508ac41479aa03dc4de8158e1cf946be2f1efc56c9ebf",
+          "observed_at": "2026-09-04T10:29:33Z",
+          "state": "verified"
+        },
+        "marker_manifest_digest": "89c9316d5b723dd266e508ac41479aa03dc4de8158e1cf946be2f1efc56c9ebf",
+        "published_by_this_task": true,
+        "runtime_path": "/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt",
+        "sub_path": "scientific-localization/public/generations/mosaic-boltz2-conf/sha256/e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
+        "total_bytes": 2286561469
+      },
+      {
+        "admission_state": "admitted",
+        "artifact_id": "mosaic-components",
+        "bind_kind": "generation-directory-bind",
+        "entry_count": 3,
+        "generation": "d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6",
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "localization_receipt": {
+          "duration_seconds": 2.995,
+          "marker_sha256": "a2f5f436771705ecb1e57eb4d447c3343573ef7596a8fca1dbc67541ecfe701e",
+          "observed_at": "2026-09-04T10:29:40Z",
+          "state": "verified"
+        },
+        "marker_manifest_digest": "a2f5f436771705ecb1e57eb4d447c3343573ef7596a8fca1dbc67541ecfe701e",
+        "published_by_this_task": true,
+        "runtime_path": "/opt/fs2/artifacts/mosaic/proteinmpnn",
+        "sub_path": "scientific-localization/public/generations/mosaic-components/sha256/d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6",
+        "total_bytes": 33423545
+      }
+    ],
+    "host_root": "/mnt/fs2-reference-data/data",
+    "kind": "canonical-localization-generations",
+    "mount_composition": "Three separate generations meet the runtime's fixed layout under FS2_ARTIFACT_ROOT. The checkpoint is bound as a single entry at mosaic/boltz/boltz2_conf.ckpt and its sibling molecule directory at mosaic/boltz/mols, so the intermediate mosaic/boltz directory is a kubelet-created mount point rather than a mount, and neither bind nests inside the other's read-only mount.",
+    "read_only": true
+  },
+  "claim": "The immutable adapter-v5 digest ran the full single-shard binder-design workflow and its aggregate on real H100 capacity with every model byte supplied by an accepted content-addressed localization generation, each admitted by its own in-generation marker inside the consuming pod. This closes the lock's transitional-task-scoped artifact delivery: the earlier semantic run read a copy on a shared qualification claim.",
+  "cleanup": {
+    "autoscaled_node": "The h100-1x node the first attempt triggered was left to the cluster autoscaler to reclaim rather than deleted by hand.",
+    "removed_after_collection": [
+      "pod/fs2-mosaic-canon-reader",
+      "pod/fs2-mosaic-canon-export",
+      "job/fs2-mosaic-identity-r20260904b",
+      "job/fs2-mosaic-mols-r20260904",
+      "job/fs2-localize-stage-r20260904m1",
+      "configmap/fs2-mosaic-compute",
+      "configmap/fs2-mosaic-compute-mols",
+      "configmap/fs2-mosaic-loc-verifier",
+      "configmap/fs2-mosaic-canon-inputs",
+      "configmap/fs2-loc-verifier-r20260904m1"
+    ],
+    "retained": "The two published generations and their in-generation markers are the deliverable and stay on the public plane. The 4.2 GiB of verified upstream downloads under downloads/mosaic-localization are removed; the generations no longer need them."
+  },
+  "findings": [
+    {
+      "detail": "The first attempt was admitted by Kueue onto the inference-h100-1x flavor, which has nominal quota for two GPUs but no Ready node. The pod was injected with that flavor's node labels, could not schedule, and triggered a 0->1 scale-up of a node group. Pinning accelerator.fs2.nebius/pool-id=h100-reserved-8x makes Kueue choose the flavor whose nodes exist. The job was deleted as soon as this was observed.",
+      "id": "kueue-flavor-h100-1x-has-quota-but-no-ready-node"
+    },
+    {
+      "detail": "With pod fsGroup 10001 and the shared run claim mounted at its root, the kubelet chowned the whole claim before any container started: 92 s and 51,679 files, delaying marker admission and the GPU stage. Setting fsGroupChangePolicy OnRootMismatch and mounting a per-run subdirectory removed the delay entirely; the successful attempt reached Running in 46 s.",
+      "id": "recursive-volume-ownership-on-the-run-claim"
+    },
+    {
+      "detail": "The plan derives the shard output path from the request digest, so a re-run against the same claim collides with the historical run. The runtime refuses it with exist_ok=False, which is correct behaviour and not a defect; a per-run subdirectory is the fix. The first attempt failed this way after completing all 20 optimizer steps on GPU.",
+      "id": "runtime-refuses-a-dirty-shard-output-directory"
+    }
+  ],
+  "model_id": "mosaic",
+  "observed_at": "2026-09-04T10:47:00Z",
+  "outputs": {
+    "candidate_sequence": "VGLALYCLWPELFDGDAEEHHDEEALSEGKLPNEAYLAIG",
+    "candidate_structure_sha256": "a7b4117987a6d8ab64544ebe2df10400c8a2d3415503023d77fd880977bda084",
+    "distinct_residue_types": 16,
+    "iptm": 0.7796646952629089,
+    "mean_plddt": 0.9200683832168579,
+    "note": "16 distinct residue types on 40 residues, so the designed sequence is recoverable from the PDB. The UNK-residue defect that superseded adapter-v2 and adapter-v4 does not recur.",
+    "output_manifest_sha256": "bdccbe6a096e6782855a00da2a4c47ac6cf0a6ff120ca7244415a963e9c31d2b",
+    "residues": 40
+  },
+  "owner_task": "localize-and-qualify-mosaic-and-rfdiffusion-_yvnptl",
+  "route_state": "closed",
+  "runs": [
+    {
+      "admission_init_exit_codes": {
+        "admit-boltzgen-inference-molecules": 0,
+        "admit-mosaic-boltz2-conf": 0,
+        "admit-mosaic-components": 0
+      },
+      "annotations": {
+        "fs2.nebius.ai/artifact-delivery": "canonical-localization-generations",
+        "fs2.nebius.ai/backend-id": "mosaic-boltz2-proteinmpnn-v1",
+        "fs2.nebius.ai/localization-generations": "boltzgen-inference-molecules=8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc,mosaic-boltz2-conf=e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6,mosaic-components=d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6",
+        "fs2.nebius.ai/operation-id": "op.mosaic.h100.r20260903",
+        "fs2.nebius.ai/recipe-sha256": "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe",
+        "fs2.nebius.ai/request-sha256": "24154c23d916f411ff687bc426771ff1fa6dd1cbcb75ad55d6d5a81472c246ff",
+        "fs2.nebius.ai/source-revision": "70fec525423f5f87156a1a957b4a4048f9f8e676"
+      },
+      "completed_at": "2026-09-04T10:45:31Z",
+      "duration_seconds": 224,
+      "exit_code": 0,
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "job": "mosaic-b0e973476007f483-s000",
+      "job_uid": "a025f263-d24f-4afa-a4a0-dffd78ca28dd",
+      "node_digest": "5e3ad019c6df4d8b",
+      "pod": "mosaic-b0e973476007f483-s000-2drtf",
+      "pod_uid": "b38ba462-b053-4aca-b376-d5e11c23ec77",
+      "security_context": {
+        "fsGroup": 10001,
+        "fsGroupChangePolicy": "OnRootMismatch",
+        "runAsGroup": 10001,
+        "runAsNonRoot": true,
+        "runAsUser": 10001,
+        "seccompProfile": {
+          "type": "RuntimeDefault"
+        }
+      },
+      "shard_result": {
+        "backend_id": "mosaic-boltz2-proteinmpnn-v1",
+        "index": 0,
+        "recipe_sha256": "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe",
+        "seed": 7300,
+        "source_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+        "status": "succeeded"
+      },
+      "stage": "design",
+      "started_at": "2026-09-04T10:41:47Z"
+    },
+    {
+      "aggregate": {
+        "atomic_commit": true,
+        "backend_id": "mosaic-boltz2-proteinmpnn-v1",
+        "expected_shards": 1,
+        "recipe_sha256": "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe",
+        "request_sha256": "24154c23d916f411ff687bc426771ff1fa6dd1cbcb75ad55d6d5a81472c246ff",
+        "runtime_image_digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+        "source_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+        "succeeded_shards": 1
+      },
+      "duration_seconds": 8,
+      "job": "mosaic-b0e973476007f483-aggregate",
+      "note": "The canonical plan renders no env for this stage, so the admitted image digest is injected here. That defect stays recorded against the adapter owner.",
+      "resource_class": "cpu",
+      "runtime_image_digest_env": "FS2_RUNTIME_IMAGE_DIGEST",
+      "stage": "aggregate"
+    }
+  ],
+  "runtime_image": {
+    "digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+    "kubelet_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+    "kubelet_image_id_matches_lock": true,
+    "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69"
+  },
+  "schema": "fs2.nebius.ai/mosaic-canonical-generation-qualification/v1",
+  "scope": "One bounded single-shard minibinder design workflow plus its aggregate, once. No throughput, fast-start, snapshot, elasticity or contention measurement, and no cold-start measurement: the design stage landed on a node that already held the layers.",
+  "semantic_validation": {
+    "binder_structure": {
+      "atoms": 200,
+      "bytes": 16204,
+      "distinct_residue_types": 16,
+      "dominant_residue_fraction": 0.175,
+      "max_extent_angstrom": 29.985,
+      "residues": 40,
+      "sha256": "a7b4117987a6d8ab64544ebe2df10400c8a2d3415503023d77fd880977bda084",
+      "three_letter_length": 40
+    },
+    "candidate_metrics": {
+      "candidate_id": "design-000",
+      "iptm": 0.7796646952629089,
+      "mean_plddt": 0.9200683832168579,
+      "objective": 12.294319152832031,
+      "seed": 7300,
+      "sequence": "VGLALYCLWPELFDGDAEEHHDEEALSEGKLPNEAYLAIG",
+      "shard_index": 0
+    },
+    "canonical_adapter": {
+      "commit": "6551d8708c829fe99d229d1f547b8bd8cab0231e",
+      "receipt": {
+        "candidate_count": 1,
+        "output_manifest_sha256": "bdccbe6a096e6782855a00da2a4c47ac6cf0a6ff120ca7244415a963e9c31d2b",
+        "qualification_effect": "none-offline-validation-only",
+        "request_sha256": "24154c23d916f411ff687bc426771ff1fa6dd1cbcb75ad55d6d5a81472c246ff",
+        "shard_count": 1,
+        "status": "passed",
+        "validator_id": "mosaic-boltz2-proteinmpnn-v1"
+      },
+      "validator": "validate_output_manifest"
+    },
+    "runtime_image_digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+    "schema": "fs2.nebius.ai/mosaic-h100-semantic-qualification/v1",
+    "status": "passed"
+  },
+  "state": "passed",
+  "target": {
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "accelerator_pool": "h100-reserved-8x",
+    "b300_touched": false,
+    "capacity": "existing-reserved-capacity-block, on-demand; no quota or limit change",
+    "cluster_context": "k8s-inference-h100",
+    "gpu_per_design_shard": 1,
+    "local_queue": "inference-models",
+    "namespace": "fs2-models",
+    "node_selection": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+      "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
+      "storage.fs2.nebius/reference-data": "true"
+    },
+    "project": "project-e00rene",
+    "region": "eu-north1"
+  }
+}

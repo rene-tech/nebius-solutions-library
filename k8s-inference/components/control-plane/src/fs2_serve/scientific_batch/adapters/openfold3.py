@@ -5,11 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..models import (
     AdapterExecutionPlan,
     ArtifactMaterialization,
     MaterializationMode,
+    ScientificInputArtifact,
     StageInvocation,
 )
 from .common import (
@@ -23,13 +25,28 @@ from .common import (
     run_workspace,
     strict_object,
 )
-from .secondary_structure import collect_confidence_envelope, collect_handoff
+from .secondary_structure import (
+    collect_confidence_envelope,
+    collect_confidence_stage,
+    collect_handoff,
+    collect_handoff_stage,
+)
+from .verified_input import verified_manifest_entry
 
-MODEL_ID = "openfold3"
+if TYPE_CHECKING:
+    from . import CollectedStageOutput
+
+MODEL_ID = "openfold3-openbind"
+RUNTIME_ID = "openfold3"
 VARIANT_ID = "upstream-openbind-v0-5-0"
 SOURCE_REPOSITORY = "aqlaboratory/openfold-3"
 SOURCE_REVISION = "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86"
 PARAMETER_SCHEMA = "fs2-serve.nebius.ai/openfold3-upstream-openbind-v0-5-0-parameters/v1"
+INPUT_ARTIFACT_ID = "openfold3-input"
+INPUT_SEMANTIC_TYPE = "openfold3-input-json/v1"
+INPUT_MEDIA_TYPE = "application/json"
+MAX_INPUT_BYTES = 256 * 1024 * 1024
+REQUIRES_VERIFIED_INPUT_ARTIFACTS = True
 MODEL_ARTIFACT = "openfold3-openbind-0"
 REFERENCE_ARTIFACT = "openfold3-components-bcif"
 VALIDATOR_ID = "openfold3-upstream-openbind-v0-5-0"
@@ -39,6 +56,8 @@ MODEL_FILE_SHA256 = "bd43301c011d5f87580d3e8b548658869433e4488399feb03035ba248f8
 MODEL_SIZE_BYTES = 2_287_872_989
 CCD_MANIFEST_SHA256 = "ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b"
 CCD_FILE_SHA256 = "473d845c8b250b188dbed9bf505ae206692a178a2a7c4869bf8f9de707ffcc0c"
+RUNNER_BASE_SHA256 = "c42271cdfc4c9dd01ceca7a9e0c2d0a207c2d8106a2bb03146d491d54b601469"
+HANDOFF_LANE_ID = "openfold3-openbind-0-none"
 PREPARE_COLLECTOR_ID = "openfold3-data-collector-v1"
 PREPARE_VALIDATOR_ID = "openfold3-data-validator-v1"
 RESULT_COLLECTOR_ID = "openfold3-result-collector-v1"
@@ -80,9 +99,22 @@ def compile_run(
     request_value: object,
     *,
     operation_id: str,
+    input_artifacts: tuple[ScientificInputArtifact, ...] | None = None,
 ) -> AdapterExecutionPlan:
-    request = parse_public_request(request_value, maximum_input_bytes=256 * 1024 * 1024)
+    request = parse_public_request(request_value, maximum_input_bytes=MAX_INPUT_BYTES)
     parameters = Parameters.parse(request.parameters)
+    model_input = verified_manifest_entry(
+        request,
+        input_artifacts,
+        logical_artifact_id=INPUT_ARTIFACT_ID,
+        semantic_type=INPUT_SEMANTIC_TYPE,
+        media_type=INPUT_MEDIA_TYPE,
+        compressions=frozenset({None, "none"}),
+        maximum_bytes=MAX_INPUT_BYTES,
+        label="OpenFold3 OpenBind",
+    )
+    raw_input_sha256 = model_input.digest.removeprefix("sha256:")
+    raw_input_artifact_id = str(model_input.artifact_id)
     assert_profile_identity(
         profile,
         model_id=MODEL_ID,
@@ -119,7 +151,9 @@ def compile_run(
                 "--output-artifact-id",
                 prepared,
                 "--raw-input-sha256",
-                request.input_manifest.sha256,
+                raw_input_sha256,
+                "--raw-input-artifact-id",
+                raw_input_artifact_id,
                 "--msa-mode",
                 "none",
                 "--model-seeds",
@@ -132,11 +166,19 @@ def compile_run(
                 ("FS2_SCIENTIFIC_VALIDATOR_ID", PREPARE_VALIDATOR_ID),
             ),
             working_directory=data_root,
-            consumes=(request.input_manifest.artifact_id,),
+            consumes=(model_input.logical_artifact_id,),
             produces=prepared,
+            collector_id=PREPARE_COLLECTOR_ID,
+            validator_id=PREPARE_VALIDATOR_ID,
+            handoff_name="prepared-input",
+            max_output_artifacts=1,
+            max_output_bytes=64 * 1024 * 1024,
             materializations=(
                 ArtifactMaterialization(
-                    request.input_manifest.artifact_id, f"{data_root}/input.json", MaterializationMode.COPY_FILE
+                    model_input.logical_artifact_id,
+                    f"{data_root}/input.json",
+                    MaterializationMode.COPY_FILE,
+                    compression=model_input.compression,
                 ),
             ),
         ),
@@ -153,7 +195,9 @@ def compile_run(
                 "--input-artifact-id",
                 prepared,
                 "--expected-raw-input-sha256",
-                request.input_manifest.sha256,
+                raw_input_sha256,
+                "--expected-raw-input-artifact-id",
+                raw_input_artifact_id,
                 "--output-dir",
                 f"{inference_root}/outputs",
                 "--checkpoint",
@@ -190,6 +234,10 @@ def compile_run(
             working_directory=inference_root,
             consumes=(prepared,),
             produces=result,
+            collector_id=RESULT_COLLECTOR_ID,
+            validator_id=VALIDATOR_ID,
+            max_output_artifacts=len(parameters.seeds) * 2 + 1,
+            max_output_bytes=8 * 1024 * 1024 * 1024,
             materializations=(
                 ArtifactMaterialization(
                     prepared, f"{inference_root}/input", MaterializationMode.EXTRACT_TAR, compression="zstd"
@@ -228,7 +276,7 @@ def collect_result(request_value: object, workspace: Path) -> CollectedOutput:
     return collect_confidence_envelope(
         workspace,
         validator_id=VALIDATOR_ID,
-        expected_runtime_id=MODEL_ID,
+        expected_runtime_id=RUNTIME_ID,
         expected_model_revision=SOURCE_REVISION,
         expected_seeds=seeds,
         expected_samples_per_seed=1,
@@ -244,3 +292,68 @@ def collect_stage_output(collector_id: str, request_value: object, workspace: Pa
     if collector_id == RESULT_COLLECTOR_ID:
         return collect_result(request_value, workspace)
     raise ScientificAdapterError(f"unsupported OpenFold3 collector identity {collector_id!r}")
+
+
+def _argument(invocation: StageInvocation, name: str) -> str:
+    if invocation.argv.count(name) != 1 or invocation.argv.index(name) + 1 >= len(invocation.argv):
+        raise ScientificAdapterError(f"OpenFold3 OpenBind invocation has no exact {name} argument")
+    return invocation.argv[invocation.argv.index(name) + 1]
+
+
+def collect_companion_output(invocation: StageInvocation, workspace: Path) -> CollectedStageOutput:
+    """Collect from the immutable invocation used by the production companion."""
+
+    if invocation.collector_id == PREPARE_COLLECTOR_ID:
+        if invocation.stage_id != "data-pipeline" or invocation.validator_id != PREPARE_VALIDATOR_ID:
+            raise ScientificAdapterError("OpenFold3 OpenBind data collector received another stage contract")
+        raw_seeds = _argument(invocation, "--model-seeds").split(",")
+        try:
+            prepared_seeds = [int(value) for value in raw_seeds]
+        except ValueError as error:
+            raise ScientificAdapterError("OpenFold3 OpenBind invocation seeds are invalid") from error
+        if not 1 <= len(prepared_seeds) <= 16 or len(set(prepared_seeds)) != len(prepared_seeds):
+            raise ScientificAdapterError("OpenFold3 OpenBind invocation seeds are invalid")
+        return collect_handoff_stage(
+            workspace,
+            filename="handoff.tar.zst",
+            name="prepared-input",
+            semantic_type="openfold3-prepared-input/v1",
+            media_type="application/x-tar",
+            compression="zstd",
+            maximum_bytes=64 * 1024 * 1024,
+            validator_id=invocation.validator_id,
+            expected_provenance={
+                "artifact_id": invocation.produces,
+                "raw_input_sha256": _argument(invocation, "--raw-input-sha256"),
+                "raw_input_artifact_id": _argument(invocation, "--raw-input-artifact-id"),
+                "model_seeds": prepared_seeds,
+                "msa_mode": _argument(invocation, "--msa-mode"),
+                "runner_base_sha256": RUNNER_BASE_SHA256,
+                "lane_id": HANDOFF_LANE_ID,
+                "source_revision": SOURCE_REVISION,
+            },
+        )
+    if invocation.collector_id == RESULT_COLLECTOR_ID:
+        if invocation.stage_id != "inference" or invocation.validator_id != VALIDATOR_ID:
+            raise ScientificAdapterError("OpenFold3 OpenBind result collector received another stage contract")
+        raw_seeds = _argument(invocation, "--model-seeds").split(",")
+        try:
+            seeds = tuple(int(value) for value in raw_seeds)
+        except ValueError as error:
+            raise ScientificAdapterError("OpenFold3 OpenBind invocation seeds are invalid") from error
+        if not 1 <= len(seeds) <= 16 or len(set(seeds)) != len(seeds):
+            raise ScientificAdapterError("OpenFold3 OpenBind invocation seeds are invalid")
+        for seed in seeds:
+            bounded_int(seed, minimum=0, maximum=2**31 - 1, label="model seed")
+        return collect_confidence_stage(
+            workspace,
+            validator_id=invocation.validator_id,
+            expected_runtime_id=RUNTIME_ID,
+            expected_model_revision=SOURCE_REVISION,
+            expected_seeds=seeds,
+            expected_samples_per_seed=1,
+            expected_input_artifact_id=_argument(invocation, "--expected-raw-input-artifact-id"),
+            expected_raw_input_sha256=_argument(invocation, "--expected-raw-input-sha256"),
+            maximum_total_bytes=invocation.max_output_bytes,
+        )
+    raise ScientificAdapterError(f"unsupported OpenFold3 OpenBind collector identity {invocation.collector_id!r}")

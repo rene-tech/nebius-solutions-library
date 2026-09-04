@@ -11,6 +11,8 @@
     "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2",
     "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r4",
     "digest": "sha256:e8fb269ff17e752ed8dd8f6c4689eaa55c0efc7adaffc156ccd9357bd075463d",
+    "workspace_uid": 10001,
+    "workspace_gid": 10001,
     "state": "build-only-not-semantic-qualified"
   },
   "activation": {

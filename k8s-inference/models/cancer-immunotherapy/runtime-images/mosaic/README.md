@@ -104,19 +104,52 @@ the canonical renderer produces. `qualification/submit_plan.py` applies that
 plan, rewriting only the cluster wiring the scientific batch plane has not
 provisioned yet and recording every deviation in its receipt.
 
-Artifact delivery is explicitly transitional. The canonical regional artifact
-plane does not publish a Mosaic root yet, so qualification reads a task-scoped
-copy on the preserved qualification claim. The runtime resolves everything by
-SHA-256, so it binds to the canonical plane unchanged once that plane exists.
+### Canonical artifact delivery
 
-Production controller Jobs keep immutable model assets and tenant request
+Artifact delivery is canonical as of 2026-09-04. Every model byte comes from an
+accepted content-addressed localization generation on the public reference-data
+host plane, and `qualification/adapt_canonical.py` is the renderer that binds
+them. It reads each generation digest out of
+`catalog/runtime/contracts/scientific-artifact-localization.json` rather than
+accepting one from the command line, mounts each generation read-only at the
+path the immutable runtime actually reads, and runs one marker-admission init
+container per artifact in the same pod that consumes the bytes, so a rejected
+marker fails the pod before any GPU work.
+
+| Artifact | Generation | Read at |
+| --- | --- | --- |
+| `mosaic-boltz2-conf` | `e83af548…f6a6` | `$FS2_ARTIFACT_ROOT/mosaic/boltz/boltz2_conf.ckpt` |
+| `boltzgen-inference-molecules` | `8ab1a59c…ecdc` | `$FS2_ARTIFACT_ROOT/mosaic/boltz/mols` |
+| `mosaic-components` | `d66b5854…3cb6` | `$FS2_ARTIFACT_ROOT/mosaic/proteinmpnn` |
+
+Two of the three were published by this work. The molecule dictionary was not:
+Boltz-2 ships it as `mols.tar` and BoltzGen ships it as `mols.zip`, and the two
+expand to one identical flat tree of 45,227 entries and 1,820,698,819 bytes, so
+content addressing makes them one generation and Mosaic binds the existing one
+instead of republishing 1.8 GiB under a second identity. The comparison is
+recorded entry by entry in
+`../../artifact-localization/evidence/mosaic-molecule-tree-equivalence-20260904.json`.
+
+The runtime resolves three fixed locations under one root, so the checkpoint is
+bound as a single file and its two siblings as directories. The intermediate
+`mosaic/boltz` directory is a kubelet-created mount point rather than a mount,
+which is what lets a file and a directory sit beside each other without either
+nesting inside the other's read-only mount.
+
+`qualification/submit_plan.py` remains the historical path, reading the
+task-scoped copy on the preserved qualification claim. It is kept for audit and
+is no longer a delivery path.
+
+Production controller Jobs keep those immutable model assets and tenant request
 bytes on separate mounts. `FS2_ARTIFACT_ROOT` names the read-only model plane;
 `FS2_INPUT_ARTIFACT_ROOT` names the stage workspace containing
 `inputs/<artifact-id>`. Direct historical Jobs that omit the latter retain the
 single-root behavior, while an explicitly supplied input root never falls back
 to the model plane.
 
-`evidence/` holds the live H100 receipt. Run the offline suite with:
+`evidence/` holds the live H100 receipts, including
+`h100-canonical-generation-run-20260904.json` for the canonical run. Run the
+offline suite with:
 
 ```bash
 ./run_checks.sh

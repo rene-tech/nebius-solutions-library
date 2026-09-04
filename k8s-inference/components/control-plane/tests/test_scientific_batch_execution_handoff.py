@@ -324,6 +324,8 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
                             },
                         ],
                         "service_account_name": "scientific-runner",
+                        "workspace_uid": 10001,
+                        "workspace_gid": 10001,
                         "resources": {
                             "requests": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "20Gi"},
                             "limits": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "20Gi"},
@@ -359,6 +361,8 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
                             },
                         ],
                         "service_account_name": "scientific-runner",
+                        "workspace_uid": 10001,
+                        "workspace_gid": 10001,
                         "resources": {
                             "requests": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "20Gi"},
                             "limits": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "20Gi"},
@@ -591,6 +595,9 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
     assert pod["securityContext"]["supplementalGroups"] == [10001]
     assert "fsGroup" not in pod["securityContext"]
     assert "fsGroupChangePolicy" not in pod["securityContext"]
+    for container in (*pod["initContainers"], *pod["containers"]):
+        assert container["securityContext"]["runAsUser"] == 10001
+        assert container["securityContext"]["runAsGroup"] == 10001
     runtime_env = next(item["value"] for item in model["env"] if item["name"] == "FS2_RUNTIME_ARTIFACTS_JSON")
     marker = json.loads(runtime_env)
     assert marker["schema"] == companion.RUNTIME_LOCALIZATION_SCHEMA
@@ -871,6 +878,8 @@ def _bindcraft_renderer(
                         "validator_id": "bindcraft-v1",
                         "mounts": physical_mounts,
                         "service_account_name": "fs2-academic-runner",
+                        "workspace_uid": 10001,
+                        "workspace_gid": 10001,
                         "resources": {
                             "requests": {"cpu": "16", "memory": "96Gi", "ephemeral_storage": "64Gi"},
                             "limits": {"cpu": "16", "memory": "96Gi", "ephemeral_storage": "64Gi"},
@@ -1208,6 +1217,8 @@ def _academic_af3_renderer(
                             },
                         ],
                         "service_account_name": "fs2-academic-runner",
+                        "workspace_uid": 1001,
+                        "workspace_gid": 1001,
                         "resources": {
                             "requests": {"cpu": "16", "memory": "64Gi", "ephemeral_storage": "64Gi"},
                             "limits": {"cpu": "32", "memory": "192Gi", "ephemeral_storage": "64Gi"},
@@ -1243,6 +1254,8 @@ def _academic_af3_renderer(
                             },
                         ],
                         "service_account_name": "fs2-academic-runner",
+                        "workspace_uid": 1001,
+                        "workspace_gid": 1001,
                         "resources": {
                             "requests": {"cpu": "8", "memory": "64Gi", "ephemeral_storage": "64Gi"},
                             "limits": {"cpu": "32", "memory": "192Gi", "ephemeral_storage": "64Gi"},
@@ -1494,6 +1507,9 @@ def test_af3_academic_v3_map_binds_exact_params_and_content_addressed_database(t
     assert cpu_pod["nodeSelector"] == {"storage.fs2.nebius/reference-data": "true"}
     assert cpu_pod["securityContext"]["supplementalGroups"] == [1000]
     assert "fsGroup" not in cpu_pod["securityContext"]
+    for container in (*cpu_pod["initContainers"], *cpu_pod["containers"]):
+        assert container["securityContext"]["runAsUser"] == 1001
+        assert container["securityContext"]["runAsGroup"] == 1001
     cpu_volumes = {item["name"]: item for item in cpu_pod["volumes"]}
     assert set(cpu_volumes) == {"artifact-workspace", "alphafold3-databases"}
     assert cpu_volumes["alphafold3-databases"]["hostPath"] == {
@@ -1513,6 +1529,9 @@ def test_af3_academic_v3_map_binds_exact_params_and_content_addressed_database(t
     assert command[command.index("--cpu-request") + 1] == "16"
 
     gpu_pod = renderer.render(gpu_resource)["spec"]["template"]["spec"]  # type: ignore[index]
+    for container in (*gpu_pod["initContainers"], *gpu_pod["containers"]):
+        assert container["securityContext"]["runAsUser"] == 1001
+        assert container["securityContext"]["runAsGroup"] == 1001
     gpu_volumes = {item["name"]: item for item in gpu_pod["volumes"]}
     assert set(gpu_volumes) == {"artifact-workspace", "alphafold3-parameters"}
     assert gpu_volumes["alphafold3-parameters"]["persistentVolumeClaim"] == {

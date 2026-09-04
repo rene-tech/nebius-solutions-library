@@ -548,11 +548,101 @@
         "read_only": true,
         "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f"
       }
+    },
+    {
+      "artifact_id": "rfdiffusion-base-checkpoint",
+      "consumers": [
+        {
+          "binding_kind": "argv-option",
+          "binding_name": "--artifact-root",
+          "model_id": "rfdiffusion",
+          "mount_path": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint"
+        }
+      ],
+      "externally_installed": false,
+      "file_provenance": {
+        "bytes": 483616107,
+        "filename": "Base_ckpt.pt",
+        "license_id": "BSD-3-Clause",
+        "media_type": "application/octet-stream",
+        "present_in_mount": true,
+        "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+        "source_revision": "9273ef67335acaf91df0150473a274759229cdf6"
+      },
+      "generated_entries": [],
+      "generation": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+      "marker": {
+        "document": {
+          "artifact_id": "rfdiffusion-base-checkpoint",
+          "artifact_kind": "rfdiffusion-base-checkpoint",
+          "claim": "",
+          "consumer_paths": [
+            "/opt/fs2/artifacts/rfdiffusion-base-checkpoint"
+          ],
+          "directory_count": 0,
+          "entry_count": 1,
+          "generation": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+          "generator_identity": [],
+          "host_root": "/mnt/fs2-reference-data/data",
+          "inventory_algorithm": "fs2-raw-file/v1",
+          "inventory_sha256": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+          "license_id": "BSD-3-Clause",
+          "namespace": "",
+          "read_only": true,
+          "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1",
+          "source_bytes": 483616107,
+          "source_filename": "Base_ckpt.pt",
+          "source_kind": "file",
+          "source_media_type": "application/octet-stream",
+          "source_present_in_mount": true,
+          "source_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+          "source_sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+          "source_uri": "https://files.ipd.uw.edu/pub/RFdiffusion/6f5902ac237024bdd0c176cb93063dc4/Base_ckpt.pt",
+          "sub_path": "scientific-localization/public/generations/rfdiffusion-base-checkpoint/sha256/7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+          "symlink_count": 0,
+          "total_bytes": 483616107,
+          "visibility": "public",
+          "volume_kind": "host-path"
+        },
+        "in_generation": true,
+        "manifest_digest": "abd2a8127d0bd1b3cbd51d5ffc14a3351f805e15f593c8224ee94de57e3e4599",
+        "path": "scientific-localization/public/generations/rfdiffusion-base-checkpoint/sha256/7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c/.fs2-runtime-tree.json",
+        "relative_path": ".fs2-runtime-tree.json",
+        "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
+      },
+      "mounts": [
+        {
+          "mount_path": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
+          "read_only": true
+        }
+      ],
+      "tree_identity": {
+        "directory_count": 0,
+        "entry_count": 1,
+        "inventory_algorithm": "fs2-raw-file/v1",
+        "inventory_sha256": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+        "total_bytes": 483616107
+      },
+      "visibility": "public",
+      "volume": {
+        "binding_state": "qualified",
+        "host_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/rfdiffusion-base-checkpoint/sha256/7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "immutable": true,
+        "kind": "host-path",
+        "node_selector": {
+          "storage.fs2.nebius/reference-data": "true"
+        },
+        "plane": "reference-data-host",
+        "plane_state": "provisioned",
+        "read_only": true,
+        "sub_path": "scientific-localization/public/generations/rfdiffusion-base-checkpoint/sha256/7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c"
+      }
     }
   ],
   "evidence": {
     "generations_published": false,
-    "meaning": "Five public generations are atomically published on the reference-data host plane and admitted on both H100 nodes. Model-native loaders then consumed the exact mounts. generations_published remains false because this six-artifact handoff also declares the tenant-private PyRosetta generation, which is still rendered rather than published.",
+    "meaning": "Six public generations are atomically published on the reference-data host plane and admitted by model-side H100-node checks. The original five archive-backed generations were admitted on both H100 nodes; the RFdiffusion raw-file generation was admitted and deserialized on one H100 node. generations_published remains false because this seven-artifact handoff also declares the tenant-private PyRosetta generation, which is still rendered rather than published.",
     "node_probes": [
       {
         "artifact_id": "alphafold2-params",
@@ -598,6 +688,15 @@
         ],
         "model_native_probe_job": "fs2-localize-qualify-bindcraft-public-r20260903pub2-bindcraft",
         "path": "public-generation-node-qualification-20260903.json"
+      },
+      {
+        "artifact_id": "rfdiffusion-base-checkpoint",
+        "marker_admission_jobs": [
+          "fs2-localize-qualify-rfdiffusion-sfraw-probe-r1"
+        ],
+        "model_native_probe_job": "fs2-localize-qualify-rfdiffusion-sfraw-probe-r1",
+        "marker_path": "node-admit-rfdiffusion-base-checkpoint-h100-20260903.json",
+        "path": "rfdiffusion-checkpoint-probe-h100-20260903.json"
       }
     ],
     "pending_artifacts": [
@@ -638,6 +737,13 @@
         "marker_sha256": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8",
         "path": "public-generation-publication-20260903.json",
         "receipt_selector": "colabdesign-mpnn-weights-vanilla"
+      },
+      {
+        "artifact_id": "rfdiffusion-base-checkpoint",
+        "generation": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+        "marker_sha256": "abd2a8127d0bd1b3cbd51d5ffc14a3351f805e15f593c8224ee94de57e3e4599",
+        "path": "rfdiffusion-base-checkpoint-stage-20260903.json",
+        "receipt_selector": "rfdiffusion-base-checkpoint"
       }
     ],
     "public_generations_published": true,
@@ -647,7 +753,8 @@
       "alphafold2-params-bindcraft",
       "boltzgen-inference-molecules",
       "colabdesign-mpnn-weights-soluble",
-      "colabdesign-mpnn-weights-vanilla"
+      "colabdesign-mpnn-weights-vanilla",
+      "rfdiffusion-base-checkpoint"
     ],
     "state": "public-qualified-private-rendered"
   },
@@ -663,6 +770,9 @@
     ],
     "proteina-complexa": [
       "alphafold2-params"
+    ],
+    "rfdiffusion": [
+      "rfdiffusion-base-checkpoint"
     ]
   },
   "note": "Every runtime binding is an immutable generation at <prefix>/generations/<artifact_id>/sha256/<tree digest>, so a consumer binds content rather than a mutable path. The marker named here lives inside that generation and is its single admission authority; manifest_digest is the SHA-256 of exactly the bytes of document. Storage authority is per artifact: public bytes belong on the dedicated public reference plane and a licensed tree only on the tenant-private academic claim.",

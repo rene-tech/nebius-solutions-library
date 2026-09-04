@@ -175,12 +175,14 @@ profiles; it is not a property this image asserts.
 The image carries no model weights. The upstream v1.1.0 archive ships none either,
 so nothing has to be deleted after extraction.
 
-The checkpoint is mounted from the artifact plane and located through the input
-manifest's *relative* path under `--artifact-root`. That is how the mount-path
-conflict is resolved rather than papered over: the artifact catalog binds
-`rfdiffusion-checkpoints` at `/models/rfdiffusion-checkpoints`, while the superseded
-images hard-coded `FS2_ARTIFACT_ROOT=/models/rfdiffusion`. This image hard-codes
-neither and works at whatever mount point the plane chooses.
+The shared localization contract publishes the checkpoint as the one-file
+`rfdiffusion-base-checkpoint` generation on the public reference-data host plane. It
+uses `verified-copy`, not an archive transform: source SHA-256 and byte count are
+verified before `Base_ckpt.pt` is copied into private staging, the one-file
+`fs2-raw-file/v1` identity is reverified, and the sealed generation is published by
+atomic rename. The canonical mount is
+`/opt/fs2/artifacts/rfdiffusion-base-checkpoint`, passed directly as
+`--artifact-root`; the input manifest names `Base_ckpt.pt` relative to it.
 
 Tenant input structures can be materialized into a separate stage workspace.
 `--input-artifact-root` (or `FS2_INPUT_ARTIFACT_ROOT`) is used only for those
@@ -188,32 +190,44 @@ request artifacts; it defaults to `--artifact-root` for historical direct
 Jobs. Supplying it explicitly is fail-closed: request bytes are not searched
 under the model checkpoint root.
 
-**Checkpoint localization is not this runtime's to claim.** Raw single-file artifact
-localization is owned by `fs2-single-file-model-artifact-localization-r20260903`. This
-runtime publishes no generation, writes no `.fs2-runtime-tree.json` marker and emits no
-localization receipt. An earlier revision of `stage_checkpoint.py` did mimic the plane's
-marker schema; that was a task-local substitute for another task's contract and was
-removed rather than left to be mistaken for it. The exact object identity, licence,
-visibility and argv binding were handed to that owner, and this runtime will consume the
-accepted contract once it lands.
+The exact generation is
+`7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c` and its
+in-generation marker is
+`abd2a8127d0bd1b3cbd51d5ffc14a3351f805e15f593c8224ee94de57e3e4599`.
+On the live H100 cluster, the r12 image admitted that marker, re-hashed all
+483,616,107 bytes and deserialized the checkpoint with PyTorch 2.3.0. The evidence
+is under `../../artifact-localization/evidence/`.
 
-What remains here is run-input staging: fetch the exact bytes, refuse them unless both
-sha256 and byte count match the accepted catalog, and place them at
-`<root>/inputs/sha256/<object sha256>/Base_ckpt.pt`. The digest in that path is the
-object's own catalog digest, not a tree-inventory generation, and it retires the moment
-the localization contract is accepted. This helper is retained as an archival byte
-verification utility only: `render_job.py` and the committed input manifests do not
-consume its new path, so it must not be used to claim a repeatable qualification rerun.
-New reruns wait for the canonical single-file localization contract.
-
-Delivery is mixed-plane *capable* — `render_job.py` takes repeatable `--plane` and
-refuses to run with none, so the single-claim assumption is gone — but no plane binding
-is claimed for this checkpoint. The accepted foundation carries no rfdiffusion artifact,
-has published nothing to either plane, and cannot yet express a raw single-file object
-at all.
+The broader eight-file `rfdiffusion-checkpoints` artifact remains a separate catalog
+identity. The historical `qualification/stage_checkpoint.py` helper and qualification
+claim remain only to explain the already-recorded r12 semantic runs; new localization
+checks use the canonical generation.
 
 **The route is closed.** `route_exposed` is `false` and this runtime is not servable
 until the adapter/controller execution contract is reconciled (see `contract/`).
+
+### Canonical generation runs
+
+`qualification/render_job.py` takes `--generation-plane NAME=ARTIFACT_ID`, which
+is the canonical form and the one an activation run must use. It resolves the
+artifact's accepted generation from
+`catalog/runtime/contracts/scientific-artifact-localization.json`, mounts exactly
+that immutable generation read-only from the public reference-data host plane,
+and adds the reference-data node label to the selector because that plane is a
+host path. With `--verifier-config-map` it also runs one marker-admission init
+container per generation, in the same pod that consumes the bytes.
+
+`--plane NAME=CLAIM[:SUBPATH]` remains for the historical task-owned claim and
+claims nothing about localization. `--input-plane NAME=CONFIGMAP` supplies
+request-scoped bytes, such as the scaffold-motif target structure, which are run
+inputs and never localized model artifacts.
+
+On 2026-09-04 both qualified operations ran this way against generation
+`7f34c945…4c03c` and reproduced the committed structures byte for byte:
+`design_8100.pdb` at `78600be2…9806` and `design_9100.pdb` at `ed7d8d33…20d4`.
+Because those structures were originally produced from the historical claim,
+that equality is what proves the localized generation delivers the qualified
+bytes. See `evidence/h100-canonical-generation-run-20260904.json`.
 
 ## Cache level
 

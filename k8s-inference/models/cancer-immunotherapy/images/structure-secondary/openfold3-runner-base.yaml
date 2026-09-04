@@ -1,0 +1,6 @@
+experiment_settings:
+  mode: predict
+  seeds:
+    - 42
+  use_msa_server: false
+  use_templates: false

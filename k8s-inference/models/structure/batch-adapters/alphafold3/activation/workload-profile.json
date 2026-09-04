@@ -1,0 +1,172 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-workload-profile-projection/v1",
+  "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
+  "profile": {
+    "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+    "model_id": "alphafold3",
+    "display_name": "AlphaFold 3 v3.0.4",
+    "execution_mode": "scientific-batch",
+    "state": "candidate-unqualified",
+    "route_exposed": false,
+    "source": {
+      "kind": "git",
+      "repository": "google-deepmind/alphafold3",
+      "revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+      "review_url": "https://github.com/google-deepmind/alphafold3/tree/85c4d20505fd5cef05eac22b534d4e793971ae69",
+      "classification": "candidate-input"
+    },
+    "execution_identity": {
+      "model_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+      "runtime_image_digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
+      "runtime_recipe_sha256": null,
+      "workload_recipe_sha256": null,
+      "artifact_manifest_digest": null,
+      "execution_identity_sha256": null
+    },
+    "interface": {
+      "protocol": "scientific-batch-v1",
+      "submit_endpoint": "/v1/models/alphafold3:submit",
+      "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+      "parameter_schema": "fs2-serve.nebius.ai/alphafold3-upstream-v3-0-4-parameters/v1",
+      "operations": [
+        "predict-complex-structure"
+      ],
+      "service_classes": [
+        "customer-batch"
+      ],
+      "mcp": {
+        "discoverable": true,
+        "invocable": false,
+        "tool_name": "submit_alphafold3",
+        "description": "Submit a deployment-authorized AlphaFold 3 structure prediction from a raw fold input."
+      }
+    },
+    "access": {
+      "profile": "academic",
+      "state": "verified",
+      "receipt_digest": null,
+      "credentials_embedded": false
+    },
+    "resources": {
+      "gpu_count": 1,
+      "gpu_topology": "single-gpu",
+      "host_architectures": [
+        "amd64"
+      ],
+      "compatible_pool_ids": [
+        "h100-1x",
+        "h100-reserved-8x"
+      ],
+      "required_node_labels": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+      }
+    },
+    "workload": {
+      "stages": [
+        {
+          "id": "data-pipeline",
+          "needs": [],
+          "resource_class": "cpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 1,
+          "checkpoint_mode": "none",
+          "preemption_mode": "non_preemptible",
+          "placement": {
+            "class": "reference-data"
+          },
+          "resources": {
+            "cpu_millis": 16000,
+            "memory_bytes": 68719476736,
+            "ephemeral_storage_bytes": 34359738368,
+            "limits": {
+              "cpu_millis": 16000,
+              "memory_bytes": 68719476736,
+              "ephemeral_storage_bytes": 34359738368
+            }
+          }
+        },
+        {
+          "id": "inference",
+          "needs": [
+            "data-pipeline"
+          ],
+          "resource_class": "gpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 1,
+          "checkpoint_mode": "restart",
+          "preemption_mode": "restartable",
+          "placement": {
+            "class": "accelerator"
+          },
+          "resources": {
+            "cpu_millis": 8000,
+            "memory_bytes": 103079215104,
+            "ephemeral_storage_bytes": 34359738368,
+            "limits": {
+              "cpu_millis": 32000,
+              "memory_bytes": 274877906944,
+              "ephemeral_storage_bytes": 137438953472
+            }
+          }
+        }
+      ],
+      "retry": {
+        "max_attempts": 2,
+        "retryable_exit_codes": [
+          137,
+          143
+        ]
+      },
+      "cancellation": {
+        "mode": "terminate-attempt",
+        "grace_seconds": 60
+      }
+    },
+    "semantic_validation": {
+      "validator_id": "alphafold3-upstream-v3-0-4",
+      "state": "candidate-unqualified"
+    },
+    "policy": {
+      "commercial_use": "prohibited",
+      "non_clinical": true,
+      "limitations": [
+        "The exact r6 image has H100 semantic evidence but predates atomic terminal receipts and the aligned 256 MiB handoff protocol. Activation requires a newly built immutable successor plus a raw-input run through the public path and live-qualified renderer.",
+        "The licensed parameter file remains tenant-private and is authorized once by the deployment; callers do not provide a per-request license receipt. Formal institutional licence acceptance is still pending.",
+        "Raw-input preprocessing runs only in the 16 CPU, 64 GiB reference-data class; the live reference pool nodes are 8 vCPU / 32 GiB and cannot admit it until a larger reference class exists.",
+        "OpenFold3 is an independent operational alternative and never satisfies an alphafold3 request."
+      ]
+    },
+    "runtime_artifacts": [
+      {
+        "artifact_id": "alphafold3-parameters",
+        "content_identity": {
+          "digest_sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+          "size_bytes": 1020545840
+        },
+        "file_manifest": [
+          {
+            "path": "af3.bin.zst",
+            "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+            "size_bytes": 1020545840
+          }
+        ],
+        "required_files": [
+          "af3.bin.zst"
+        ]
+      },
+      {
+        "artifact_id": "alphafold3-public-databases-v3.0",
+        "content_identity": {
+          "digest_sha256": "d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
+          "size_bytes": 672435030513
+        },
+        "file_manifest": [],
+        "required_files": [],
+        "readiness_manifest_sha256": "aa585259ce05393cd38db1693299ed9ec7f9c421aa4e1159f8d5aa0eb0ba9748"
+      }
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/esmfold2-fast-biohub-v3-4-0-parameters/v1",
+  "title": "ESMFold2-Fast (Biohub esm v3.4.0) scientific run parameters",
+  "description": "Mirrors fs2_serve.scientific_batch.adapters.esmfold2_fast: the fast trunk accepts single-sequence input only, so every MSA mode is rejected before any GPU is allocated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sequence",
+    "mode"
+  ],
+  "properties": {
+    "sequence": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^[ACDEFGHIKLMNPQRSTVWYX]+$"
+    },
+    "mode": {
+      "const": "single-sequence"
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    }
+  }
+}

@@ -444,6 +444,8 @@ class FakeExecutionBinding:
                         ),
                     ),
                     service_account_name="scientific-runner",
+                    workspace_uid=10001,
+                    workspace_gid=10001,
                     request_cpu="4",
                     request_memory="32Gi",
                     request_ephemeral_storage="100Gi",
@@ -3643,6 +3645,8 @@ def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path,
                             },
                         ],
                         "service_account_name": "scientific-runner",
+                        "workspace_uid": 10001,
+                        "workspace_gid": 10001,
                         "resources": {
                             "requests": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "100Gi"},
                             "limits": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "100Gi"},
@@ -3750,6 +3754,10 @@ def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path,
     assert container["image"].endswith("@sha256:" + "a" * 64)
     assert container["command"] == ["python", "-m", "adapter", "run"]
     assert "args" not in container
+    pod_spec = manifest["spec"]["template"]["spec"]  # type: ignore[index]
+    for pod_container in (*pod_spec["initContainers"], *pod_spec["containers"]):
+        assert pod_container["securityContext"]["runAsUser"] == 10001
+        assert pod_container["securityContext"]["runAsGroup"] == 10001
     assert {item["name"] for item in container["volumeMounts"]} == {"artifact-workspace"}
     environment = {item["name"]: item["value"] for item in container["env"]}
     assert environment["FS2_VARIANT_ID"] == "protein-design-h100"
@@ -3784,6 +3792,17 @@ def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path,
     execution["models"][0]["stages"][0]["active_deadline_seconds"] = True
     path.write_text(json.dumps(execution))
     with pytest.raises(ScientificExecutionMapError, match="active deadline"):
+        FileScientificManifestRenderer(path=path, profiles=profile_catalog())
+
+    execution["models"][0]["stages"][0]["active_deadline_seconds"] = 3600
+    execution["models"][0]["stages"][0].pop("workspace_uid")
+    path.write_text(json.dumps(execution))
+    with pytest.raises(ScientificExecutionMapError, match="stage fields differ"):
+        FileScientificManifestRenderer(path=path, profiles=profile_catalog())
+
+    execution["models"][0]["stages"][0]["workspace_uid"] = 0
+    path.write_text(json.dumps(execution))
+    with pytest.raises(ScientificExecutionMapError, match="workspace UID"):
         FileScientificManifestRenderer(path=path, profiles=profile_catalog())
 
 

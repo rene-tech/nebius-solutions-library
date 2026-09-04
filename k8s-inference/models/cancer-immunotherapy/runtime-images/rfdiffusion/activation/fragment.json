@@ -2,7 +2,11 @@
   "schema": "fs2.nebius.ai/primary-scientific-activation-fragment/v1",
   "model_id": "rfdiffusion",
   "accepted_evidence": {
-    "source": {"repository": "https://github.com/RosettaCommons/RFdiffusion", "revision": "9273ef67335acaf91df0150473a274759229cdf6", "license": "BSD-3-Clause"},
+    "source": {
+      "repository": "https://github.com/RosettaCommons/RFdiffusion",
+      "revision": "9273ef67335acaf91df0150473a274759229cdf6",
+      "license": "BSD-3-Clause"
+    },
     "runtime_image": {
       "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
       "digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
@@ -33,8 +37,20 @@
         "models/cancer-immunotherapy/runtime-images/rfdiffusion/runtime_entrypoint.py"
       ]
     },
-    "h100": {"state": "semantic-qualified-route-disabled", "accelerator_class": "nvidia-h100-sxm5-80gb", "evidence_paths": ["models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-run-receipt.json", "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-semantic-qualification-design-backbone.json", "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-semantic-qualification-scaffold-motif.json"]},
-    "main_commits": ["349e26fc", "00a8b062"]
+    "h100": {
+      "state": "semantic-qualified-route-disabled",
+      "accelerator_class": "nvidia-h100-sxm5-80gb",
+      "evidence_paths": [
+        "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-canonical-generation-run-20260904.json",
+        "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-run-receipt.json",
+        "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-semantic-qualification-design-backbone.json",
+        "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-semantic-qualification-scaffold-motif.json"
+      ]
+    },
+    "main_commits": [
+      "349e26fc",
+      "00a8b062"
+    ]
   },
   "profile_projection": {
     "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
@@ -45,31 +61,197 @@
       "execution_mode": "scientific-batch",
       "state": "candidate-unqualified",
       "route_exposed": false,
-      "source": {"kind": "git", "repository": "RosettaCommons/RFdiffusion", "revision": "9273ef67335acaf91df0150473a274759229cdf6", "review_url": "https://github.com/RosettaCommons/RFdiffusion/tree/9273ef67335acaf91df0150473a274759229cdf6", "classification": "candidate-input"},
-      "execution_identity": {"model_revision": "9273ef67335acaf91df0150473a274759229cdf6", "runtime_image_digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8", "runtime_recipe_sha256": "9ddb01ac49042023ebaa7effb25c71d864e396dba1782fb023b04ad13f7f110c", "workload_recipe_sha256": "548da3b7c5dd5868d7e8adaf64b4dcc0bb2e89b3611f324eb6701478bb76cb5e", "artifact_manifest_digest": null, "execution_identity_sha256": null},
-      "interface": {"protocol": "scientific-batch-v1", "submit_endpoint": "/v1/models/rfdiffusion:submit", "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1", "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1", "parameter_schema": "fs2-serve.nebius.ai/rfdiffusion-parameters/v1", "operations": ["design-backbone", "scaffold-motif"], "service_classes": ["customer-batch", "bulk-backfill"], "mcp": {"discoverable": true, "invocable": false, "tool_name": "submit_rfdiffusion", "description": "Submit a bounded RFdiffusion backbone or motif-scaffolding run."}},
-      "access": {"profile": "standard", "state": "not-required", "receipt_digest": null, "credentials_embedded": false},
-      "resources": {"gpu_count": 1, "gpu_topology": "single-gpu", "host_architectures": ["amd64"], "compatible_pool_ids": ["h100-1x", "h100-reserved-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb", "storage.fs2.nebius/reference-data": "true"}},
-      "workload": {"stages": [{"id": "inference", "needs": [], "resource_class": "gpu", "admission_mode": "independent-jobs", "min_parallelism": 1, "max_parallelism": 64, "checkpoint_mode": "restart", "preemption_mode": "restartable"}, {"id": "collect", "needs": ["inference"], "resource_class": "cpu", "admission_mode": "independent-jobs", "min_parallelism": 1, "max_parallelism": 1, "checkpoint_mode": "none", "preemption_mode": "non_preemptible"}], "retry": {"max_attempts": 2, "retryable_exit_codes": [137, 143]}, "cancellation": {"mode": "terminate-attempt", "grace_seconds": 60}},
-      "semantic_validation": {"validator_id": "rfdiffusion-v1-1-0", "state": "candidate-unqualified"},
-      "policy": {"commercial_use": "allowed", "non_clinical": true, "limitations": ["The accepted digest passed design-backbone and scaffold-motif semantic tests on H100.", "Current main has no canonical RFdiffusion checkpoint generation; the historical qualification input is not localization evidence and cannot activate this route."]}
+      "source": {
+        "kind": "git",
+        "repository": "RosettaCommons/RFdiffusion",
+        "revision": "9273ef67335acaf91df0150473a274759229cdf6",
+        "review_url": "https://github.com/RosettaCommons/RFdiffusion/tree/9273ef67335acaf91df0150473a274759229cdf6",
+        "classification": "candidate-input"
+      },
+      "execution_identity": {
+        "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+        "runtime_image_digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+        "runtime_recipe_sha256": "a43cb088e08278e089433bdd8816b14ac94d7cc490dfb7ec9a771498da0941dc",
+        "workload_recipe_sha256": "548da3b7c5dd5868d7e8adaf64b4dcc0bb2e89b3611f324eb6701478bb76cb5e",
+        "artifact_manifest_digest": null,
+        "execution_identity_sha256": null
+      },
+      "interface": {
+        "protocol": "scientific-batch-v1",
+        "submit_endpoint": "/v1/models/rfdiffusion:submit",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "parameter_schema": "fs2-serve.nebius.ai/rfdiffusion-parameters/v1",
+        "operations": [
+          "design-backbone",
+          "scaffold-motif"
+        ],
+        "service_classes": [
+          "customer-batch",
+          "bulk-backfill"
+        ],
+        "mcp": {
+          "discoverable": true,
+          "invocable": false,
+          "tool_name": "submit_rfdiffusion",
+          "description": "Submit a bounded RFdiffusion backbone or motif-scaffolding run."
+        }
+      },
+      "access": {
+        "profile": "standard",
+        "state": "not-required",
+        "receipt_digest": null,
+        "credentials_embedded": false
+      },
+      "resources": {
+        "gpu_count": 1,
+        "gpu_topology": "single-gpu",
+        "host_architectures": [
+          "amd64"
+        ],
+        "compatible_pool_ids": [
+          "h100-1x",
+          "h100-reserved-8x"
+        ],
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+          "storage.fs2.nebius/reference-data": "true"
+        }
+      },
+      "workload": {
+        "stages": [
+          {
+            "id": "inference",
+            "needs": [],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 64,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          },
+          {
+            "id": "collect",
+            "needs": [
+              "inference"
+            ],
+            "resource_class": "cpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 1,
+            "checkpoint_mode": "none",
+            "preemption_mode": "non_preemptible"
+          }
+        ],
+        "retry": {
+          "max_attempts": 2,
+          "retryable_exit_codes": [
+            137,
+            143
+          ]
+        },
+        "cancellation": {
+          "mode": "terminate-attempt",
+          "grace_seconds": 60
+        }
+      },
+      "semantic_validation": {
+        "validator_id": "rfdiffusion-v1-1-0",
+        "state": "candidate-unqualified"
+      },
+      "policy": {
+        "commercial_use": "allowed",
+        "non_clinical": true,
+        "limitations": [
+          "The accepted digest passed design-backbone and scaffold-motif semantic tests on H100 against the canonical rfdiffusion-base-checkpoint generation, reproducing both committed structures byte for byte.",
+          "Route activation remains disabled until the serialized platform controller run succeeds; this fragment claims localization and semantics only."
+        ]
+      }
     }
   },
   "execution_projection": {
     "merge_target": "catalog/runtime/contracts/scientific-execution-map.json",
-    "state": "blocked-missing-canonical-generation",
+    "state": "ready-for-serialized-integration",
     "variant_id": "rfdiffusion-v1-1-0",
     "namespace": "fs2-models",
     "runtime_artifacts": [
-      {"artifact_id": "rfdiffusion-checkpoints", "state": "blocked-missing-canonical-generation", "mount_path": "/models/rfdiffusion-checkpoints", "content_digest": null, "generation": null, "source": {"kind": "unresolved", "root": null, "sub_path": null, "read_only": true, "required_node_labels": {"storage.fs2.nebius/reference-data": "true"}}, "evidence_path": "models/cancer-immunotherapy/runtime-images/rfdiffusion/image-lock.json"}
+      {
+        "artifact_id": "rfdiffusion-base-checkpoint",
+        "state": "ready",
+        "mount_path": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
+        "content_digest": "sha256:7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+        "generation": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+        "source": {
+          "kind": "reference-host-path",
+          "root": "/mnt/fs2-reference-data/data",
+          "sub_path": "scientific-localization/public/generations/rfdiffusion-base-checkpoint/sha256/7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+          "read_only": true,
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        "evidence_path": "models/cancer-immunotherapy/runtime-images/rfdiffusion/image-lock.json"
+      }
     ],
-    "artifact_identity_inputs": ["a6f25ea4df457270825f01fd0477bf2b9dcc17f817b59ab06ad9d640de8e1540"],
+    "artifact_identity_inputs": [
+      "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca"
+    ],
     "stages": [
-      {"id": "inference", "resource_class": "gpu", "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8", "runtime_artifacts": ["rfdiffusion-checkpoints"], "placement": {"accelerator_classes": ["nvidia-h100-sxm5-80gb"], "eligible_pool_ids": ["h100-1x", "h100-reserved-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb", "storage.fs2.nebius/reference-data": "true"}}},
-      {"id": "collect", "resource_class": "cpu", "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8", "runtime_artifacts": [], "placement": {"accelerator_classes": [], "eligible_pool_ids": [], "required_node_labels": {}}}
+      {
+        "id": "inference",
+        "resource_class": "gpu",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+        "runtime_artifacts": [
+          "rfdiffusion-base-checkpoint"
+        ],
+        "placement": {
+          "accelerator_classes": [
+            "nvidia-h100-sxm5-80gb"
+          ],
+          "eligible_pool_ids": [
+            "h100-1x",
+            "h100-reserved-8x"
+          ],
+          "required_node_labels": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        }
+      },
+      {
+        "id": "collect",
+        "resource_class": "cpu",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+        "runtime_artifacts": [],
+        "placement": {
+          "accelerator_classes": [],
+          "eligible_pool_ids": [],
+          "required_node_labels": {}
+        }
+      }
     ],
-    "blockers": ["Current main contains the exact public checkpoint manifest and a raw-file localization mechanism but no accepted canonical RFdiffusion generation or localization receipt; the task-owned qualification PVC must not be promoted by reference."]
+    "blockers": []
   },
-  "public_fixtures": {"request": "models/cancer-immunotherapy/runtime-images/rfdiffusion/activation/public-request.json", "result": "models/cancer-immunotherapy/runtime-images/rfdiffusion/activation/public-result.example.json", "semantic_validator": "models/cancer-immunotherapy/runtime-images/rfdiffusion/qualification/validate_result.py", "supporting_inputs": [{"role": "request-input-manifest", "path": "models/cancer-immunotherapy/runtime-images/rfdiffusion/activation/input-manifest.json", "encoding": "canonical-json-newline"}, {"role": "manifest-artifact", "path": "models/cancer-immunotherapy/runtime-images/rfdiffusion/activation/unconditional-target.txt", "encoding": "raw"}]},
-  "activation_gate": {"route_exposed": false, "ready_for_route": false, "public_platform_run_required": true}
+  "public_fixtures": {
+    "request": "models/cancer-immunotherapy/runtime-images/rfdiffusion/activation/public-request.json",
+    "result": "models/cancer-immunotherapy/runtime-images/rfdiffusion/activation/public-result.example.json",
+    "semantic_validator": "models/cancer-immunotherapy/runtime-images/rfdiffusion/qualification/validate_result.py",
+    "supporting_inputs": [
+      {
+        "role": "request-input-manifest",
+        "path": "models/cancer-immunotherapy/runtime-images/rfdiffusion/activation/input-manifest.json",
+        "encoding": "canonical-json-newline"
+      },
+      {
+        "role": "manifest-artifact",
+        "path": "models/cancer-immunotherapy/runtime-images/rfdiffusion/activation/unconditional-target.txt",
+        "encoding": "raw"
+      }
+    ]
+  },
+  "activation_gate": {
+    "route_exposed": false,
+    "ready_for_route": false,
+    "public_platform_run_required": true
+  }
 }

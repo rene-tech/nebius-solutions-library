@@ -5,11 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..models import (
     AdapterExecutionPlan,
     ArtifactMaterialization,
     MaterializationMode,
+    ScientificInputArtifact,
     StageInvocation,
 )
 from .common import (
@@ -23,13 +25,27 @@ from .common import (
     run_workspace,
     strict_object,
 )
-from .secondary_structure import collect_confidence_envelope, collect_handoff
+from .secondary_structure import (
+    collect_confidence_envelope,
+    collect_confidence_stage,
+    collect_handoff,
+    collect_handoff_stage,
+)
+from .verified_input import verified_manifest_entry
+
+if TYPE_CHECKING:
+    from . import CollectedStageOutput
 
 MODEL_ID = "esmfold2"
 VARIANT_ID = "biohub-v3-4-0"
 SOURCE_REPOSITORY = "Biohub/esm"
 SOURCE_REVISION = "827ec128e4cdaf80f7d6f95fb367a08980b34918"
 PARAMETER_SCHEMA = "fs2-serve.nebius.ai/esmfold2-biohub-v3-4-0-parameters/v1"
+INPUT_ARTIFACT_ID = "esmfold2-input"
+INPUT_SEMANTIC_TYPE = "esmfold2-input-json/v1"
+INPUT_MEDIA_TYPE = "application/json"
+MAX_INPUT_BYTES = 256 * 1024 * 1024
+REQUIRES_VERIFIED_INPUT_ARTIFACTS = True
 MODEL_ARTIFACT = "esmfold2-trunk"
 ESMC_ARTIFACT = "esmc-6b"
 CCD_ARTIFACT = "esmfold2-ccd"
@@ -94,9 +110,22 @@ def compile_run(
     request_value: object,
     *,
     operation_id: str,
+    input_artifacts: tuple[ScientificInputArtifact, ...] | None = None,
 ) -> AdapterExecutionPlan:
-    request = parse_public_request(request_value, maximum_input_bytes=256 * 1024 * 1024)
+    request = parse_public_request(request_value, maximum_input_bytes=MAX_INPUT_BYTES)
     parameters = Parameters.parse(request.parameters)
+    model_input = verified_manifest_entry(
+        request,
+        input_artifacts,
+        logical_artifact_id=INPUT_ARTIFACT_ID,
+        semantic_type=INPUT_SEMANTIC_TYPE,
+        media_type=INPUT_MEDIA_TYPE,
+        compressions=frozenset({None, "none"}),
+        maximum_bytes=MAX_INPUT_BYTES,
+        label="ESMFold2",
+    )
+    raw_input_artifact_id = str(model_input.artifact_id)
+    raw_input_sha256 = model_input.digest.removeprefix("sha256:")
     assert_profile_identity(
         profile,
         model_id=MODEL_ID,
@@ -121,6 +150,16 @@ def compile_run(
                 f"{prepare_root}/input-manifest.json",
                 "--output",
                 f"{prepare_root}/prepared-input.json",
+                "--output-artifact-id",
+                prepared,
+                "--raw-input-artifact-id",
+                raw_input_artifact_id,
+                "--raw-input-sha256",
+                raw_input_sha256,
+                "--variant",
+                MODEL_ID,
+                "--source-revision",
+                SOURCE_REVISION,
                 "--sequence",
                 parameters.sequence,
                 "--mode",
@@ -134,13 +173,19 @@ def compile_run(
                 ("FS2_SCIENTIFIC_VALIDATOR_ID", PREPARE_VALIDATOR_ID),
             ),
             working_directory=prepare_root,
-            consumes=(request.input_manifest.artifact_id,),
+            consumes=(model_input.logical_artifact_id,),
             produces=prepared,
+            collector_id=PREPARE_COLLECTOR_ID,
+            validator_id=PREPARE_VALIDATOR_ID,
+            handoff_name="prepared-input",
+            max_output_artifacts=1,
+            max_output_bytes=16 * 1024 * 1024,
             materializations=(
                 ArtifactMaterialization(
-                    request.input_manifest.artifact_id,
+                    model_input.logical_artifact_id,
                     f"{prepare_root}/input-manifest.json",
                     MaterializationMode.COPY_FILE,
+                    compression=model_input.compression,
                 ),
             ),
         ),
@@ -152,6 +197,16 @@ def compile_run(
                 "fold",
                 "--input",
                 f"{fold_root}/prepared-input.json",
+                "--input-artifact-id",
+                prepared,
+                "--expected-raw-input-artifact-id",
+                raw_input_artifact_id,
+                "--expected-raw-input-sha256",
+                raw_input_sha256,
+                "--expected-mode",
+                parameters.mode,
+                "--source-revision",
+                SOURCE_REVISION,
                 "--output-dir",
                 f"{fold_root}/outputs",
                 "--model-dir",
@@ -190,6 +245,10 @@ def compile_run(
             working_directory=fold_root,
             consumes=(prepared,),
             produces=result,
+            collector_id=RESULT_COLLECTOR_ID,
+            validator_id=VALIDATOR_ID,
+            max_output_artifacts=3,
+            max_output_bytes=2 * 1024 * 1024 * 1024,
             materializations=(
                 ArtifactMaterialization(prepared, f"{fold_root}/prepared-input.json", MaterializationMode.COPY_FILE),
             ),
@@ -241,3 +300,57 @@ def collect_stage_output(collector_id: str, request_value: object, workspace: Pa
     if collector_id == RESULT_COLLECTOR_ID:
         return collect_result(request_value, workspace)
     raise ScientificAdapterError(f"unsupported ESMFold2 collector identity {collector_id!r}")
+
+
+def _argument(invocation: StageInvocation, name: str) -> str:
+    if invocation.argv.count(name) != 1 or invocation.argv.index(name) + 1 >= len(invocation.argv):
+        raise ScientificAdapterError(f"ESMFold2 invocation has no exact {name} argument")
+    return invocation.argv[invocation.argv.index(name) + 1]
+
+
+def collect_companion_output(invocation: StageInvocation, workspace: Path) -> CollectedStageOutput:
+    """Collect from the immutable invocation used by the production companion."""
+
+    if invocation.collector_id == PREPARE_COLLECTOR_ID:
+        if invocation.stage_id != "prepare-input" or invocation.validator_id != PREPARE_VALIDATOR_ID:
+            raise ScientificAdapterError("ESMFold2 prepare collector received another stage contract")
+        return collect_handoff_stage(
+            workspace,
+            filename="prepared-input.json",
+            name="prepared-input",
+            semantic_type="esmfold2-prepared-input/v1",
+            media_type="application/json",
+            maximum_bytes=16 * 1024 * 1024,
+            validator_id=invocation.validator_id,
+            expected_provenance={
+                "artifact_id": invocation.produces,
+                "raw_input_artifact_id": _argument(invocation, "--raw-input-artifact-id"),
+                "raw_input_sha256": _argument(invocation, "--raw-input-sha256"),
+                "variant": _argument(invocation, "--variant"),
+                "mode": _argument(invocation, "--mode"),
+                "seed": int(_argument(invocation, "--seed")),
+                "source_revision": _argument(invocation, "--source-revision"),
+            },
+        )
+    if invocation.collector_id == RESULT_COLLECTOR_ID:
+        if invocation.stage_id != "fold" or invocation.validator_id != VALIDATOR_ID:
+            raise ScientificAdapterError("ESMFold2 result collector received another stage contract")
+        try:
+            seed = int(_argument(invocation, "--seed"))
+        except ValueError as error:
+            raise ScientificAdapterError("ESMFold2 invocation seed is invalid") from error
+        bounded_int(seed, minimum=0, maximum=2**31 - 1, label="seed")
+        if _argument(invocation, "--variant") != MODEL_ID:
+            raise ScientificAdapterError("ESMFold2 invocation variant differs")
+        return collect_confidence_stage(
+            workspace,
+            validator_id=invocation.validator_id,
+            expected_runtime_id=MODEL_ID,
+            expected_model_revision=MODEL_REVISION,
+            expected_seeds=(seed,),
+            expected_samples_per_seed=1,
+            expected_input_artifact_id=_argument(invocation, "--expected-raw-input-artifact-id"),
+            expected_raw_input_sha256=_argument(invocation, "--expected-raw-input-sha256"),
+            maximum_total_bytes=invocation.max_output_bytes,
+        )
+    raise ScientificAdapterError(f"unsupported ESMFold2 collector identity {invocation.collector_id!r}")

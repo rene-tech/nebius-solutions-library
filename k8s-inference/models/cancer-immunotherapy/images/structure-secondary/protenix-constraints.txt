@@ -1,0 +1,9 @@
+# Resolve every range left open by upstream's v2.0.0 requirements.txt. The
+# PyTorch/CUDA stack is already fixed by the digest-pinned upstream base image.
+annotated-types==0.8.0
+networkx==3.6.1
+pydantic==2.13.5
+pydantic-core==2.46.5
+scipy==1.17.1
+typing-extensions==4.16.0
+typing-inspection==0.4.4

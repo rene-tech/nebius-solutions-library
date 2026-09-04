@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -229,6 +230,16 @@ class PortableHandoffTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.output = Path(self.tmp.name) / "output"
         self.output.mkdir()
+        build = af3.build_data_handoff
+        patcher = mock.patch.object(
+            af3,
+            "build_data_handoff",
+            side_effect=lambda output: build(
+                output, {"artifact_id": "fold-input", "sha256": "a" * 64}
+            ),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def _job(self, name: str, body: str | None = None) -> Path:
         directory = self.output / name
@@ -402,10 +413,22 @@ class GpuStageHandoffConsumptionTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.dir = Path(self.tmp.name)
+        build = af3.build_data_handoff
+        patcher = mock.patch.object(
+            af3,
+            "build_data_handoff",
+            side_effect=lambda output: build(
+                output, {"artifact_id": "fold-input", "sha256": "a" * 64}
+            ),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
         self.parameter = self.dir / "af3.bin.zst"
         payload = bytes.fromhex("28b52ffd") + b"body"
         self.parameter.write_bytes(payload)
+        self.fold_input = self.dir / "fold_input_data.json"
+        self.fold_input.write_text('{"name":"fixture"}\n', encoding="utf-8")
         import hashlib as _hashlib
 
         self.binding = self.dir / "binding.json"
@@ -458,6 +481,8 @@ class GpuStageHandoffConsumptionTests(unittest.TestCase):
                     "--handoff-dir", str(self.mount),
                     "--parameter-path", str(self.parameter),
                     "--output-dir", str(self.dir / "out"),
+                    "--expected-raw-input-artifact-id", "fold-input",
+                    "--expected-raw-input-sha256", "a" * 64,
                     "--receipt", str(receipt_path),
                     "--dry-run",
                     *extra_args,
@@ -502,6 +527,8 @@ class TerminalReceiptTests(unittest.TestCase):
         self.parameter = self.dir / "af3.bin.zst"
         payload = bytes.fromhex("28b52ffd") + b"body"
         self.parameter.write_bytes(payload)
+        self.fold_input = self.dir / "fold_input_data.json"
+        self.fold_input.write_text('{"name":"fixture"}\n', encoding="utf-8")
         self.binding = self.dir / "binding.json"
         self.binding.write_text(
             json.dumps(
@@ -551,7 +578,7 @@ class TerminalReceiptTests(unittest.TestCase):
         code, receipt, calls = self._run(
             [
                 "inference",
-                "--json-path", "/handoff/f.json",
+                "--json-path", str(self.fold_input),
                 "--parameter-path", str(self.parameter),
                 "--output-dir", str(self.dir / "out"),
             ],
@@ -568,7 +595,7 @@ class TerminalReceiptTests(unittest.TestCase):
         code, receipt, _ = self._run(
             [
                 "inference",
-                "--json-path", "/handoff/f.json",
+                "--json-path", str(self.fold_input),
                 "--parameter-path", str(self.parameter),
                 "--output-dir", str(self.dir / "out"),
             ],
@@ -584,7 +611,7 @@ class TerminalReceiptTests(unittest.TestCase):
         _, receipt, calls = self._run(
             [
                 "inference",
-                "--json-path", "/handoff/f.json",
+                "--json-path", str(self.fold_input),
                 "--parameter-path", str(self.parameter),
                 "--output-dir", str(self.dir / "out"),
                 "--dry-run",
@@ -607,7 +634,7 @@ class TerminalReceiptTests(unittest.TestCase):
                 _, receipt, _ = self._run(
                     [
                         "inference",
-                        "--json-path", "/handoff/f.json",
+                        "--json-path", str(self.fold_input),
                         "--parameter-path", str(self.parameter),
                         "--output-dir", str(self.dir / "out"),
                     ],

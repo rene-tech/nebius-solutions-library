@@ -356,7 +356,10 @@ class TfvarsSurfaceTests(ArtifactStoreContractTests):
         declared = re.findall(r'"([^"]+)"', body)
         self.assertEqual(declared, sorted(declared))
         self.assertIn("application/json", declared)
+        self.assertIn("application/x-tar", declared)
+        self.assertIn("chemical/x-mmcif", declared)
         self.assertIn("chemical/x-pdb", declared)
+        self.assertIn("text/csv", declared)
         self.assertNotIn("*/*", declared)
 
     def test_an_enabled_store_cannot_have_an_empty_egress_allowlist(self) -> None:

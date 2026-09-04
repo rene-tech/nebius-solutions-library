@@ -24,7 +24,10 @@ import runtime_entrypoint as rt  # noqa: E402
 
 # The paths the rendered Job mounts. Held constant so the golden argv is stable.
 CONTAINER = {
-    "artifact_root": Path("/opt/fs2/artifacts"),
+    # The shared localization contract mounts the exact Base_ckpt.pt generation
+    # here. The image receives this directory as --artifact-root and resolves
+    # the manifest's Base_ckpt.pt path beneath it.
+    "artifact_root": Path("/opt/fs2/artifacts/rfdiffusion-base-checkpoint"),
     "upstream_home": Path("/opt/rfdiffusion"),
     "scratch": Path("/tmp/fs2-rfdiffusion"),
     "output": Path("/workspace/run"),

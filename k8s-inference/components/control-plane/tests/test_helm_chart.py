@@ -859,6 +859,8 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "stages": [
             {
                 "service_account_name": "fs2-academic-runner",
+                "workspace_uid": 10001,
+                "workspace_gid": 10001,
                 "mounts": [
                     {
                         "kind": "private",
@@ -3215,6 +3217,11 @@ def test_enabled_scientific_artifacts_render_settings_the_runtime_accepts() -> N
     assert settings.scientific_artifacts_enabled is True
     assert settings.artifact_max_bytes == 1099511627776
     assert "chemical/x-pdb" in settings.artifact_media_types_set()
+    assert {
+        "application/x-tar",
+        "chemical/x-mmcif",
+        "text/csv",
+    }.issubset(settings.artifact_media_types_set())
 
 
 def test_object_storage_egress_is_opt_in_and_scoped_to_tls() -> None:

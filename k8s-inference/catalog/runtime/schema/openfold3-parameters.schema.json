@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/openfold3-upstream-openbind-v0-5-0-parameters/v1",
+  "title": "OpenFold3 OpenBind v0.5.0 scientific run parameters",
+  "description": "Mirrors fs2_serve.scientific_batch.adapters.openfold3.Parameters.parse. OpenFold3 is an independent, non-equivalent backend: an msa_mode naming another model is rejected and never satisfies an alphafold3 request.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "model_seeds",
+    "msa_mode"
+  ],
+  "properties": {
+    "model_seeds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      }
+    },
+    "msa_mode": {
+      "const": "none"
+    }
+  }
+}

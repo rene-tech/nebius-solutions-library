@@ -1268,13 +1268,29 @@ def load_parameters_semantically(model_dir: Path, expect: ParameterExpectation) 
     }
 
 
-DATA_HANDOFF_SCHEMA = "fs2-serve.nebius.ai/alphafold3-data-handoff/v1"
+DATA_HANDOFF_SCHEMA = "fs2-serve.nebius.ai/alphafold3-data-handoff/v2"
 DATA_HANDOFF_DIRNAME = "fs2-af3-handoff"
 DATA_HANDOFF_INDEX = "index.json"
 DATA_OUTPUT_SUFFIX = "_data.json"
+MAX_DATA_HANDOFF_FILES = 64
+# The controller reserves the final MiB of its 256 MiB materializer contract
+# for deterministic tar headers, padding and end records (at most 65 members).
+MAX_DATA_HANDOFF_BYTES = 255 * 1024 * 1024
+MAX_DATA_HANDOFF_METADATA_BYTES = 1024 * 1024
 
 
-def build_data_handoff(output_dir: Path) -> dict[str, Any]:
+def _input_identity(artifact_id: str | None, digest: str | None) -> dict[str, str]:
+    if (
+        not isinstance(artifact_id, str)
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", artifact_id) is None
+        or not isinstance(digest, str)
+        or SHA256_RE.fullmatch(digest) is None
+    ):
+        raise ContractError("the frozen fold-input artifact identity is invalid")
+    return {"artifact_id": artifact_id, "sha256": digest}
+
+
+def build_data_handoff(output_dir: Path, input_identity: dict[str, str]) -> dict[str, Any]:
     """Package the data pipeline's outputs into one portable handoff directory.
 
     Upstream writes ``<output_dir>/<sanitized_name>/<sanitized_name>_data.json``
@@ -1304,19 +1320,33 @@ def build_data_handoff(output_dir: Path) -> dict[str, Any]:
             f"the data stage produced no {DATA_OUTPUT_SUFFIX} output under {output_dir}; "
             "there is nothing for the inference stage to consume"
         )
+    if len(produced) > MAX_DATA_HANDOFF_FILES:
+        raise ContractError(
+            f"the data stage produced {len(produced)} fold jobs; "
+            f"the handoff limit is {MAX_DATA_HANDOFF_FILES}"
+        )
 
     if handoff_dir.exists():
         shutil.rmtree(handoff_dir)
     handoff_dir.mkdir(parents=True)
 
     entries: list[dict[str, Any]] = []
+    payload_bytes = 0
     for path in produced:
         fold_job = path.name[: -len(DATA_OUTPUT_SUFFIX)]
         relative = f"{fold_job}/{path.name}"
         destination = handoff_dir / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
+        source_size = path.stat().st_size
+        if source_size < 1 or payload_bytes + source_size > MAX_DATA_HANDOFF_BYTES:
+            raise ContractError(
+                f"the data handoff payload exceeds the {MAX_DATA_HANDOFF_BYTES}-byte bound"
+            )
         shutil.copyfile(path, destination)
         digest, size = sha256_of_file(destination)
+        if size != source_size:
+            raise ContractError(f"data handoff payload changed while copied: {path}")
+        payload_bytes += size
         entries.append(
             {
                 "fold_job": fold_job,
@@ -1335,12 +1365,22 @@ def build_data_handoff(output_dir: Path) -> dict[str, Any]:
 
     index = {
         "schema": DATA_HANDOFF_SCHEMA,
+        "input_identity": _input_identity(
+            input_identity.get("artifact_id"), input_identity.get("sha256")
+        ),
         "count": len(entries),
         "fold_jobs": names,
         "entries": entries,
         "paths_are_relative_to": "the directory containing this index",
     }
     payload = json.dumps(index, indent=2, sort_keys=True) + "\n"
+    payload_size = len(payload.encode("utf-8"))
+    if payload_size > MAX_DATA_HANDOFF_METADATA_BYTES:
+        raise ContractError("the data handoff index exceeds the metadata byte bound")
+    if payload_bytes + payload_size > MAX_DATA_HANDOFF_BYTES:
+        raise ContractError(
+            f"the data handoff plus index exceeds the {MAX_DATA_HANDOFF_BYTES}-byte bound"
+        )
     (handoff_dir / DATA_HANDOFF_INDEX).write_text(payload, encoding="utf-8")
 
     return {
@@ -1375,6 +1415,12 @@ def load_data_handoff(handoff_dir: Path, fold_job: str | None = None) -> dict[st
             f"{DATA_HANDOFF_SCHEMA!r}"
         )
     entries = index.get("entries")
+    input_identity = index.get("input_identity")
+    if not isinstance(input_identity, dict):
+        raise ContractError(f"{index_path} has no frozen fold-input identity")
+    verified_input_identity = _input_identity(
+        input_identity.get("artifact_id"), input_identity.get("sha256")
+    )
     if not isinstance(entries, list) or not entries:
         raise ContractError(f"{index_path} lists no data-pipeline output")
 
@@ -1424,6 +1470,7 @@ def load_data_handoff(handoff_dir: Path, fold_job: str | None = None) -> dict[st
         "bytes": size,
         "available_fold_jobs": sorted(by_job),
         "selected_from": str(index_path),
+        "input_identity": verified_input_identity,
     }
 
 
@@ -1437,7 +1484,26 @@ def emit(document: dict[str, Any], destination: Path | None) -> None:
     sys.stdout.write(payload)
     if destination is not None:
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(payload, encoding="utf-8")
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", prefix=f".{destination.name}.",
+                suffix=".partial", dir=destination.parent, delete=False,
+            ) as temporary:
+                temporary_path = Path(temporary.name)
+                temporary.write(payload)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            os.replace(temporary_path, destination)
+            temporary_path = None
+            directory_fd = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
 
 def base_receipt(mode: str) -> dict[str, Any]:
@@ -1559,6 +1625,22 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--raw-input-artifact-id",
+        help="Controller-frozen UUID/logical identity of the data-stage fold input",
+    )
+    parser.add_argument(
+        "--raw-input-sha256",
+        help="Controller-frozen SHA-256 of the data-stage fold input",
+    )
+    parser.add_argument(
+        "--expected-raw-input-artifact-id",
+        help="Controller-frozen original fold-input identity expected in the handoff",
+    )
+    parser.add_argument(
+        "--expected-raw-input-sha256",
+        help="Controller-frozen original fold-input SHA-256 expected in the handoff",
+    )
+    parser.add_argument(
         "--handoff-dir",
         help=(
             "Directory the data stage packaged, mounted into this pod. Paths are "
@@ -1627,6 +1709,13 @@ def _plan_data_stage(args: argparse.Namespace, expect: ParameterExpectation) -> 
     ).enforce()
     if not args.json_path:
         raise ContractError("the data stage requires --json-path")
+    input_path = Path(args.json_path)
+    if not input_path.is_file():
+        raise ContractError("the data stage fold input is not an existing file")
+    input_digest, _input_bytes = sha256_of_file(input_path)
+    input_identity = _input_identity(args.raw_input_artifact_id, args.raw_input_sha256)
+    if input_digest != input_identity["sha256"]:
+        raise ContractError("the localized fold input differs from the frozen verified digest")
     if args.threads is None:
         raise ContractError(
             "the CPU data stage requires --threads, the controller-frozen MSA thread count. "
@@ -1644,6 +1733,7 @@ def _plan_data_stage(args: argparse.Namespace, expect: ParameterExpectation) -> 
         extra=args.extra_arg,
     )
     result = {
+        "input_identity": input_identity,
         "reference_data": binding.as_receipt(),
         "cache": cache.as_receipt(),
         "plan": plan.as_receipt(),
@@ -1692,6 +1782,21 @@ def _plan_inference_stage(
     else:
         json_path = Path(args.json_path)
 
+    if handoff is not None:
+        expected_input_identity = _input_identity(
+            args.expected_raw_input_artifact_id, args.expected_raw_input_sha256
+        )
+        if handoff.get("input_identity") != expected_input_identity:
+            raise ContractError("the data handoff differs from the frozen fold-input identity")
+    else:
+        if not json_path.is_file():
+            raise ContractError("the direct enriched fold input is not an existing file")
+        direct_digest, _direct_bytes = sha256_of_file(json_path)
+        expected_input_identity = {
+            "artifact_id": f"direct-json:{direct_digest[:32]}",
+            "sha256": direct_digest,
+        }
+
     parameters = verify_parameter_artifact(parameter_path, expect, deep=args.deep_verify)
     model_dir, candidates = resolve_model_dir(parameter_path)
     cache = prepare_caches()
@@ -1704,6 +1809,7 @@ def _plan_inference_stage(
         extra=args.extra_arg,
     )
     result = {
+        "input_identity": expected_input_identity,
         "parameters": parameters,
         "model_dir": {"path": str(model_dir), "candidates": candidates},
         "cache": cache.as_receipt(),
@@ -1816,7 +1922,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return exit_code
 
         if stage == "data":
-            receipt["handoff"] = build_data_handoff(_output_dir(args))
+            receipt["handoff"] = build_data_handoff(
+                _output_dir(args), receipt["input_identity"]
+            )
 
         receipt["status"] = "PASS"
         emit(receipt, receipt_path)

@@ -917,6 +917,8 @@ class StageExecutionBinding:
     validator_id: str
     mounts: tuple[StageVolumeBinding, ...]
     service_account_name: str
+    workspace_uid: int | None
+    workspace_gid: int | None
     request_cpu: str
     request_memory: str
     request_ephemeral_storage: str
@@ -933,6 +935,12 @@ class StageExecutionBinding:
         if not self.image or len(self.image) > 1024 or "@sha256:" not in self.image:
             raise ValueError("stage execution image must use an immutable digest")
         _check_name(self.service_account_name, "stage execution service account")
+        if (self.workspace_uid is None) != (self.workspace_gid is None):
+            raise ValueError("stage workspace UID and GID must be frozen together")
+        if self.workspace_uid is not None and not 1 <= self.workspace_uid <= 2_147_483_647:
+            raise ValueError("stage workspace UID is outside the Kubernetes numeric identity bound")
+        if self.workspace_gid is not None and not 1 <= self.workspace_gid <= 2_147_483_647:
+            raise ValueError("stage workspace GID is outside the Kubernetes numeric identity bound")
         if not self.mounts or len({item.name for item in self.mounts}) != len(self.mounts):
             raise ValueError("stage execution mounts must be non-empty and uniquely named")
         if len(dict(self.environment)) != len(self.environment) or len(dict(self.required_node_labels)) != len(

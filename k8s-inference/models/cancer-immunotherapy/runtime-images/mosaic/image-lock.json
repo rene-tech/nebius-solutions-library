@@ -174,10 +174,51 @@
     }
   ],
   "artifact_delivery": {
-    "state": "transitional-task-scoped",
-    "canonical_plane": "unavailable",
-    "detail": "The canonical regional artifact plane owned by fs2-cancer-model-artifact-cache-ingestion-r20260902 does not yet publish a Mosaic artifact root. Qualification therefore reads an explicitly transitional copy on the shared qualification PVC. This copy is evidence, not artifact delivery: the runtime resolves every checkpoint by SHA-256, so it will bind to the canonical plane unchanged once that plane publishes.",
-    "transitional_claim": "fs2-runtime-qualification-artifacts-r20260902"
+    "state": "canonical-localized-generation-consumed-and-qualified",
+    "canonical_plane": "available",
+    "detail": "The canonical regional artifact plane now publishes every Mosaic model byte as an accepted content-addressed generation on the public reference-data host plane, and a real H100 run has consumed them. The transitional copy on the shared qualification claim is retained only as an archival record of the original semantic run and is no longer a delivery path. Because the runtime resolves each checkpoint by SHA-256, the binding needed no image change, exactly as this lock predicted.",
+    "transitional_claim": "historical qualification only: fs2-runtime-qualification-artifacts-r20260902",
+    "canonical_generations": [
+      {
+        "artifact_id": "mosaic-boltz2-conf",
+        "transform": "verified-copy",
+        "inventory_algorithm": "fs2-raw-file/v1",
+        "generation": "e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
+        "marker_sha256": "89c9316d5b723dd266e508ac41479aa03dc4de8158e1cf946be2f1efc56c9ebf",
+        "sub_path": "scientific-localization/public/generations/mosaic-boltz2-conf/sha256/e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
+        "runtime_path": "/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt",
+        "entry_count": 1,
+        "total_bytes": 2286561469,
+        "published_by_this_task": true
+      },
+      {
+        "artifact_id": "boltzgen-inference-molecules",
+        "transform": "safe-extract-zip",
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+        "marker_sha256": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+        "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+        "runtime_path": "/opt/fs2/artifacts/mosaic/boltz/mols",
+        "entry_count": 45227,
+        "total_bytes": 1820698819,
+        "published_by_this_task": false,
+        "note": "This lock's boltz2-mols entry pins the Boltz-2 mols.tar archive. That archive and BoltzGen's mols.zip expand to one identical flat tree, proven entry by entry on 2026-09-04, so Mosaic binds the already-published generation instead of a duplicate identity. Evidence: models/cancer-immunotherapy/artifact-localization/evidence/mosaic-molecule-tree-equivalence-20260904.json."
+      },
+      {
+        "artifact_id": "mosaic-components",
+        "transform": "safe-extract-tar-gz",
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "generation": "d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6",
+        "marker_sha256": "a2f5f436771705ecb1e57eb4d447c3343573ef7596a8fca1dbc67541ecfe701e",
+        "sub_path": "scientific-localization/public/generations/mosaic-components/sha256/d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6",
+        "runtime_path": "/opt/fs2/artifacts/mosaic/proteinmpnn",
+        "entry_count": 3,
+        "total_bytes": 33423545,
+        "published_by_this_task": true,
+        "note": "All three upstream ProteinMPNN checkpoints are localized as one indivisible weights directory. The r12 runtime reads only v_48_020.pt today."
+      }
+    ],
+    "mount_composition": "The runtime resolves three fixed locations under FS2_ARTIFACT_ROOT and they are three separate generations, so the checkpoint is bound as a single file and its two siblings as directories. The intermediate mosaic/boltz directory is created by the kubelet and is never itself a mount, which is what lets a file and a directory sit beside each other without either nesting inside the other's read-only mount."
   },
   "upstream_contract_defects": [
     {
@@ -188,7 +229,7 @@
       "actual": "models/bionemo/boltz2/artifact-manifest.json hashes to 6e837710a2a1dd619d1a5405eba98cafcb529cc36d180e4469c138c54aa2dfe3, identically at 6551d870, at main c83b97c6 and at the integration base main b77ccfa7",
       "impact": "any consumer that verifies the referenced manifest by its pinned digest fails closed. The referenced content digest 9459dd0c... and the checkpoint digest 090e82ac... are correct, so this is a stale pin on the pointer, not on the artifact.",
       "resolution": "reported to the primary adapter owner; this runtime verifies the checkpoint and molecule identities directly and does not consume the stale manifest pin.",
-      "reconfirmed_at": "b77ccfa7"
+      "reconfirmed_at": "0bdfc244; still stale in the adapter candidate"
     },
     {
       "id": "aggregate-cannot-learn-admitted-image-digest",
@@ -251,8 +292,39 @@
     ],
     "owned_by_adapter": [
       "aggregate-cannot-learn-admitted-image-digest",
-      "artifact-plane-mount-absent-from-canonical-job",
       "boltz2-artifact-manifest-sha256-drift"
+    ],
+    "closed_here": [
+      {
+        "id": "artifact-plane-mount-absent-from-canonical-job",
+        "detail": "Closed for the canonical path by qualification/adapt_canonical.py, which binds every accepted generation read-only at the exact path the immutable runtime reads, reads each generation digest out of the localization contract rather than accepting it from the command line, and admits each in-generation marker in the consuming pod. The canonical batch adapter itself still renders no artifact mount, so the adapter owner's change is still needed for controller-driven runs."
+      }
     ]
-  }
+  },
+  "follow_ups": [
+    {
+      "id": "recursive-volume-ownership-on-the-run-claim",
+      "owner": "fast-start / volume-ownership workstream",
+      "blocking": false,
+      "observed": "The canonical plan sets pod fsGroup 10001 and mounts the shared run claim, so the kubelet chowns the whole claim before any container starts. Observed live on 2026-09-04: VolumePermissionChangeInProgress for 92 s, 51,679 files processed, delaying the marker admission and the GPU stage by about two minutes.",
+      "proposal": "Set fsGroupChangePolicy OnRootMismatch on the plan's pod security context, or give the run claim its own per-run subdirectory. The read-only generation mounts are not affected because the kubelet does not chown a read-only bind mount.",
+      "not_a_gpu_snapshot": true
+    },
+    {
+      "id": "consumer-model-cannot-express-a-fixed-sub-path-of-one-root",
+      "owner": "scientific artifact localization owner",
+      "blocking": false,
+      "observed": "The contract's consumer model pairs one binding name with one mount path, and the receipt reports the mount path as the binding value. Mosaic has no per-artifact lever: the runtime derives three fixed sub-paths from a single FS2_ARTIFACT_ROOT, so each of the three consumers has to name FS2_ARTIFACT_ROOT while its recorded binding value is the resolved mount rather than the root itself.",
+      "impact": "A reader of the receipt alone could take the binding value for the environment variable's value. The entries' notes state the exact resolution rule, but the shape cannot express it.",
+      "proposal": "Allow a consumer to declare a root binding plus a relative path, for example binding_name FS2_ARTIFACT_ROOT with binding_root /opt/fs2/artifacts and binding_relative_path mosaic/boltz/mols, so the receipt can report both."
+    },
+    {
+      "id": "tree-mount-paths-are-sealed-into-the-published-marker",
+      "owner": "scientific artifact localization owner",
+      "blocking": false,
+      "observed": "generation_marker projects tree.mount_paths into the generation's consumer_paths, and the marker is sealed inside the generation and immutable once published. Adding a second mount path to an already-published artifact therefore changes the marker digest the contract expects while the marker on the plane keeps the old one, so a strict admission that pins --expect-manifest-digest fails against bytes that are perfectly valid.",
+      "impact": "A new consumer of an existing generation cannot declare its own mount without either republishing the generation or weakening admission. Observed on 2026-09-04 when Mosaic was given a second mount on boltzgen-inference-molecules: the expected marker digest moved from 7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4 to 19b676f959acb6187978c663daa6ea0a21d8078279d8317ad9227cdb098bac91.",
+      "resolution": "Mosaic's consumer declares the artifact's existing mount and its Job binds the same content-addressed generation at the path the immutable runtime reads. The durable fix is to keep consumer paths out of the marker, since they describe how a tree is consumed rather than what it contains, and the marker's job is to identify content."
+    }
+  ]
 }

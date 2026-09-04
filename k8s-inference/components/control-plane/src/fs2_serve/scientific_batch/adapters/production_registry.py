@@ -16,12 +16,14 @@ from . import (
     _DEFAULT_VARIANTS,
     AdapterCompiler,
     StageCollector,
+    bindcraft,
     boltzgen,
     esmfold2,
     esmfold2_fast,
     mosaic,
     openfold3,
     protenix_v2,
+    proteina_complexa,
     rfdiffusion,
 )
 
@@ -43,18 +45,31 @@ def _secondary_collectors() -> Mapping[str, tuple[AdapterCompiler, str, Mapping[
 def _primary_collectors() -> Mapping[str, tuple[AdapterCompiler, str, Mapping[str, StageCollector]]]:
     """Return only primary models carried by the production execution map.
 
-    Proteina-Complexa and BindCraft retain their legacy compilers, but their
-    companion collectors land in a separate reviewed successor.  BoltzGen is
-    active. Mosaic and RFdiffusion remain route-disabled candidates, but their
-    exact compilers and collectors are installed now so serialized execution-
-    map integration cannot fall back to an unregistered runtime surface.
+    Every primary compiler with a production collector is installed through
+    this one bootstrap. Route exposure is still controlled independently by
+    the qualified workload profile and execution map.
     """
 
     return {
+        proteina_complexa.MODEL_ID: (
+            _COMPILERS[proteina_complexa.MODEL_ID],
+            proteina_complexa.VARIANT_ID,
+            {
+                proteina_complexa.COLLECTOR_ID: proteina_complexa.collect_companion_output,
+            },
+        ),
         boltzgen.MODEL_ID: (
             _COMPILERS[boltzgen.MODEL_ID],
             boltzgen.VARIANT_ID,
             {"boltzgen-v0-3-2": boltzgen.collect_companion_output},
+        ),
+        bindcraft.MODEL_ID: (
+            _COMPILERS[bindcraft.MODEL_ID],
+            bindcraft.VARIANT_ID,
+            {
+                bindcraft.DESIGN_COLLECTOR_ID: bindcraft.collect_companion_output,
+                bindcraft.AGGREGATE_COLLECTOR_ID: bindcraft.collect_companion_output,
+            },
         ),
         mosaic.MODEL_ID: (
             _COMPILERS[mosaic.MODEL_ID],

@@ -1,0 +1,15 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "predict-complex-structure",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "33333333-3333-4333-8333-333333333333",
+    "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+    "size_bytes": 1024,
+    "media_type": "application/vnd.fs2.scientific-manifest+json"
+  },
+  "parameters": {
+    "input_mode": "raw",
+    "license_receipt": "caller-must-not-authorize-itself"
+  }
+}
