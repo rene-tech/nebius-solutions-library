@@ -45,6 +45,8 @@ from .model_deployment import (
     InfrastructureEnvelope,
     LifecycleSpec,
     ModelDeploymentSpec,
+    ModelRenderer,
+    RenderContext,
     ValidationDisposition,
     spec_digest,
     validate_model_deployment,
@@ -448,12 +450,82 @@ class ModelDeploymentMutationService:
         repository: StoreModelDeploymentRepository,
         writer: ModelDeploymentDesiredWriter,
         envelope: InfrastructureEnvelope,
+        renderer: ModelRenderer | None = None,
+        prometheus_server_address: str | None = None,
         namespace: str = "fs2-models",
     ) -> None:
         self.repository = repository
         self.writer = writer
         self.envelope = envelope
+        self.renderer = renderer
+        self.prometheus_server_address = prometheus_server_address
         self.namespace = namespace
+
+    def _host_memory_pool_is_renderable(
+        self,
+        *,
+        default_spec: ModelDeploymentSpec,
+        pool_ref: str,
+    ) -> bool:
+        """Prove a host-memory choice with the installed runtime template.
+
+        Kubernetes may pack one runtime Pod into every accelerator slot on a
+        node.  The admin API has no separate per-node Pod-density control, so a
+        pool is safe to advertise only when the holder plus that full packing
+        renders within measured allocatable RAM.  Reusing the qualified
+        renderer keeps this capability check identical to the apply path and
+        includes init containers, Pod overhead and mechanism-specific mounts.
+        """
+
+        if self.renderer is None or self.prometheus_server_address is None:
+            return False
+        pool = self.envelope.pools[pool_ref]
+        runtime_pods_per_node = pool.accelerators_per_node // default_spec.placement.accelerators_per_replica
+        if runtime_pods_per_node < 1:
+            return False
+        candidate = default_spec.model_copy(
+            update={
+                "placement": default_spec.placement.model_copy(update={"pool_refs": [pool_ref]}),
+                "availability": default_spec.availability.model_copy(update={"max_replicas": runtime_pods_per_node}),
+                "cache": default_spec.cache.model_copy(
+                    update={
+                        "tier": CacheTier.SHARED_FILESYSTEM,
+                        "mechanism": FastStartMechanism.HOST_MEMORY_RESIDENCY,
+                    }
+                ),
+            }
+        )
+        decision = validate_model_deployment(candidate, self.envelope)
+        if (
+            decision.disposition is not ValidationDisposition.ACCEPTED
+            or not decision.fast_start_mechanism.renderable
+            or decision.fast_start_mechanism.mechanism is not FastStartMechanism.HOST_MEMORY_RESIDENCY
+        ):
+            return False
+        qualification = self.envelope.qualifications[candidate.model_ref]
+        try:
+            self.renderer.render(
+                candidate,
+                RenderContext(
+                    name=_dns_safe_name(candidate.model_ref),
+                    namespace=self.namespace,
+                    uid=None,
+                    generation=1,
+                    pool=pool,
+                    eligible_pools=[pool],
+                    prometheus_server_address=self.prometheus_server_address,
+                    fast_start_mechanism=decision.fast_start_mechanism,
+                    model_express=qualification.model_express,
+                    regional_cache=qualification.regional_cache,
+                    host_memory_residency=qualification.host_memory_residency,
+                    gpu_resident=qualification.gpu_resident,
+                    residency_holder_image=self.envelope.residency_holder_image,
+                    preview=True,
+                ),
+            )
+        except ValueError:
+            return False
+        return True
 
     def configuration_options(self) -> list[ModelDeploymentConfigurationOption]:
         """Return only complete defaults accepted by the installed envelope."""
@@ -653,6 +725,21 @@ class ModelDeploymentMutationService:
                         "fastStart": {"mode": "Fixed", "level": "Off", "fallbackPolicy": "AllowLowerLevel"},
                     }
                 )
+                renderable_mechanism_choices: list[ModelDeploymentFastStartMechanismChoice] = []
+                for choice in mechanism_choices:
+                    if choice.mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY:
+                        renderable_pool_refs = [
+                            pool_ref
+                            for pool_ref in choice.pool_refs
+                            if self._host_memory_pool_is_renderable(
+                                default_spec=default_spec,
+                                pool_ref=pool_ref,
+                            )
+                        ]
+                        if not renderable_pool_refs:
+                            continue
+                        choice = choice.model_copy(update={"pool_refs": renderable_pool_refs})
+                    renderable_mechanism_choices.append(choice)
                 decision = validate_model_deployment(default_spec, self.envelope)
                 if decision.disposition is not ValidationDisposition.ACCEPTED or decision.fast_start is None:
                     continue
@@ -667,7 +754,7 @@ class ModelDeploymentMutationService:
                         priority_class_choices=valid_priorities,
                         tenant_choices=valid_tenants,
                         scale_to_zero_qualified=qualification.scale_to_zero_qualified,
-                        fast_start_mechanism_choices=mechanism_choices,
+                        fast_start_mechanism_choices=renderable_mechanism_choices,
                         fast_start_qualified_level=decision.fast_start.qualified_level,
                     )
                 )

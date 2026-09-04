@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import fcntl
 import hashlib
 import json
 import os
@@ -475,6 +476,9 @@ def test_host_memory_residency_waits_for_the_holder_receipt_on_its_exact_node() 
     assert environment["FS2_RESIDENCY_HOLDER_ID"] == "fsm-hostmem-qwen3-8b"
     node_ref = next(item for item in verify["env"] if item["name"] == "FS2_NODE_NAME")
     assert node_ref["valueFrom"]["fieldRef"]["fieldPath"] == "spec.nodeName"
+    receipt_volume = next(item for item in pod_spec["volumes"] if item["name"] == "residency-receipt")
+    assert receipt_volume["persistentVolumeClaim"]["readOnly"] is True
+    assert verify["volumeMounts"] == [{"name": "residency-receipt", "mountPath": "/residency", "readOnly": True}]
     compile(verify["command"][2], "residency-verify", "exec")
     assert metadata["annotations"]["fast-start.fs2.nebius/reserved-host-memory-bytes"] == "19327352832"
 
@@ -536,6 +540,76 @@ def test_runtime_admission_rejects_a_fresh_receipt_from_a_dead_holder(tmp_path: 
 
     assert result.returncode == 1
     assert "receipt_holder_incarnation_not_live" in result.stderr
+
+
+def test_runtime_admission_accepts_a_live_holder_through_a_read_only_lock_file(tmp_path: Path) -> None:
+    """Exercise the exact read-only access mode rendered into serving Pods."""
+
+    pod_spec, metadata = _conventional()
+    declaration = _host_memory()
+    configure_host_memory_residency(
+        pod_spec=pod_spec,
+        pod_metadata=metadata,
+        qualification=declaration,
+        runtime_image=QWEN_IMAGE,
+        model_ref="qwen3-8b",
+        holder_identity="fsm-hostmem-qwen3-8b",
+        runtime_container_name="vllm",
+    )
+    verify = next(item for item in pod_spec["initContainers"] if item["name"] == "fs2-verify-host-memory-residency")
+    receipt_root = tmp_path / "residency"
+    receipt_directory = receipt_root / "fsm-hostmem-qwen3-8b" / "node-a"
+    incarnation = "live-holder-pod-uid"
+    lock_path = receipt_directory / "incarnations" / f"{incarnation}.lock"
+    lock_path.parent.mkdir(parents=True)
+    lock_path.touch()
+    descriptor = os.open(lock_path, os.O_RDWR)
+    fcntl.flock(descriptor, fcntl.LOCK_EX)
+    # A Kubernetes readOnly volume denies O_RDWR even when the file itself was
+    # created by the holder.  Mode 0400 gives the subprocess the same relevant
+    # file-access boundary without requiring a privileged test mount.
+    lock_path.chmod(0o400)
+    (receipt_directory / "receipt.json").write_text(
+        json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/fast-start-host-memory-residency-receipt/v2",
+                "holder_id": "fsm-hostmem-qwen3-8b",
+                "holder_incarnation": incarnation,
+                "node_name": "node-a",
+                "config_digest": declaration.config_digest,
+                "payload_digest": declaration.payload_digest,
+                "content_digest_verified": True,
+                "resident_bytes": declaration.payload_bytes,
+                "refreshed_at_epoch": 4102444800.0,
+            }
+        )
+    )
+    environment = {
+        **os.environ,
+        "FS2_RESIDENCY_RECEIPT_ROOT": str(receipt_root),
+        "FS2_RESIDENCY_HOLDER_ID": "fsm-hostmem-qwen3-8b",
+        "FS2_RESIDENCY_CONFIG_DIGEST": declaration.config_digest,
+        "FS2_RESIDENCY_PAYLOAD_DIGEST": declaration.payload_digest,
+        "FS2_RESIDENCY_BYTES": str(declaration.payload_bytes),
+        "FS2_RESIDENCY_MAX_AGE_SECONDS": "180",
+        "FS2_RESIDENCY_WAIT_SECONDS": "0",
+        "FS2_NODE_NAME": "node-a",
+    }
+    try:
+        result = subprocess.run(  # noqa: S603 - fixed interpreter and test-owned inline script
+            [sys.executable, "-c", verify["command"][2]],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=environment,
+            timeout=5,
+        )
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["admitted"] is True
 
 
 def test_the_residency_holder_schedules_the_ram_it_costs() -> None:

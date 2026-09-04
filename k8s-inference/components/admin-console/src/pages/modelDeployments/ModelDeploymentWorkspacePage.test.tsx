@@ -133,6 +133,30 @@ describe("ModelDeployment workspace", () => {
     })));
   });
 
+  it("enforces the server-authoritative pool set for an explicit cold-start mechanism", async () => {
+    const capabilities = structuredClone(modelDeploymentMutationCapabilitiesFixture);
+    const option = capabilities.configuration_options[0]!;
+    const hostMemory = option.fast_start_mechanism_choices.find(
+      (choice) => choice.mechanism === "host-memory-residency",
+    )!;
+    hostMemory.pool_refs = ["reserved-h100"];
+    vi.spyOn(adminApi, "modelDeploymentCapabilities").mockResolvedValue(testEnvelope(capabilities));
+    renderCreatePage();
+
+    const model = await screen.findByRole("combobox", { name: "Qualified model" });
+    await waitFor(() => expect(model).toBeEnabled());
+    fireEvent.change(model, { target: { value: "qwen3-8b" } });
+    fireEvent.click(screen.getByText("Operator mechanism details"));
+    fireEvent.change(screen.getByLabelText("Cold-start mechanism"), {
+      target: { value: "host-memory-residency" },
+    });
+
+    expect(screen.getByRole("checkbox", { name: "Use reserved-h100" })).toBeChecked();
+    const incompatiblePool = screen.getByRole("checkbox", { name: "Use preemptible-h100" });
+    expect(incompatiblePool).not.toBeChecked();
+    expect(incompatiblePool).toBeDisabled();
+  });
+
   it("preserves operator policy while replacing qualified model material on an explicit switch", async () => {
     const qwen = modelDeploymentMutationCapabilitiesFixture.configuration_options[0]!;
     const cosmos: ModelDeploymentConfigurationOption = {

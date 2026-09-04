@@ -178,7 +178,12 @@ def test_configuration_options_publish_only_declared_mechanisms_and_their_depend
             },
         }
     )
-    installed = installed.model_copy(update={"qualifications": {qualification.model_ref: qualification}})
+    installed = installed.model_copy(
+        update={
+            "qualifications": {qualification.model_ref: qualification},
+            "residency_holder_image": qualification.runtime_images[0],
+        }
+    )
     service = ModelDeploymentMutationService(
         repository=StoreModelDeploymentRepository(
             MemoryStore(
@@ -188,6 +193,8 @@ def test_configuration_options_publish_only_declared_mechanisms_and_their_depend
         ),
         writer=FakeWriter(),
         envelope=installed,
+        renderer=renderer(),
+        prometheus_server_address="http://prometheus.fs2-observability.svc:9090",
     )
 
     option = service.configuration_options()[0]
@@ -200,6 +207,15 @@ def test_configuration_options_publish_only_declared_mechanisms_and_their_depend
     assert choices[FastStartMechanism.REGIONAL_CACHE].required_cache_tier.value == "SharedFilesystem"
     assert choices[FastStartMechanism.HOST_MEMORY_RESIDENCY].required_cache_tier.value == "SharedFilesystem"
     assert all(choice.pool_refs == ["pool-a"] for choice in choices.values())
+
+    unproven = ModelDeploymentMutationService(
+        repository=service.repository,
+        writer=FakeWriter(),
+        envelope=installed,
+    ).configuration_options()[0]
+    assert FastStartMechanism.HOST_MEMORY_RESIDENCY not in {
+        choice.mechanism for choice in unproven.fast_start_mechanism_choices
+    }
 
     for mechanism, choice in choices.items():
         selected = option.default_spec.model_copy(
@@ -226,6 +242,67 @@ def test_configuration_options_publish_only_declared_mechanisms_and_their_depend
             }
         )
         assert validate_model_deployment(selected, installed).disposition is ValidationDisposition.ACCEPTED
+
+
+def test_configuration_options_prove_host_memory_fit_with_the_qualified_runtime_template() -> None:
+    gib = 1024**3
+    installed = envelope()
+    base_qualification = installed.qualifications["qwen.3-8b"]
+    host_memory = render_host_memory(
+        pool_refs=("pool-a",),
+        reserved_bytes=18 * gib,
+        node_allocatable_bytes=24 * gib,
+    )
+    qualification = base_qualification.model_copy(
+        update={
+            "max_accelerators_per_replica": 1,
+            "host_memory_residency": host_memory,
+            "template_cache_tiers": {
+                digest: CacheTier.SHARED_FILESYSTEM for digest in base_qualification.template_digests
+            },
+        }
+    )
+    installed = installed.model_copy(
+        update={
+            "pools": {
+                **installed.pools,
+                "pool-a": installed.pools["pool-a"].model_copy(update={"allocatable_memory_bytes": 24 * gib}),
+            },
+            "qualifications": {qualification.model_ref: qualification},
+            "residency_holder_image": qualification.runtime_images[0],
+        }
+    )
+    repository = StoreModelDeploymentRepository(
+        MemoryStore(
+            PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+            KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+        )
+    )
+
+    cannot_fill_node = ModelDeploymentMutationService(
+        repository=repository,
+        writer=FakeWriter(),
+        envelope=installed,
+        renderer=renderer(runtime_memory_request="1Gi"),
+        prometheus_server_address="http://prometheus.fs2-observability.svc:9090",
+    ).configuration_options()[0]
+    assert FastStartMechanism.HOST_MEMORY_RESIDENCY not in {
+        choice.mechanism for choice in cannot_fill_node.fast_start_mechanism_choices
+    }
+
+    fills_node = ModelDeploymentMutationService(
+        repository=repository,
+        writer=FakeWriter(),
+        envelope=installed,
+        renderer=renderer(runtime_memory_request="512Mi"),
+        prometheus_server_address="http://prometheus.fs2-observability.svc:9090",
+    ).configuration_options()[0]
+    host_choice = next(
+        choice
+        for choice in fills_node.fast_start_mechanism_choices
+        if choice.mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY
+    )
+    assert host_choice.pool_refs == ["pool-a"]
 
 
 def test_configuration_options_hide_sleep_offload_without_a_runtime_actor() -> None:

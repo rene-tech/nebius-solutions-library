@@ -669,14 +669,19 @@ def incarnation_is_live(value):
     if not isinstance(value, str) or incarnation_pattern.fullmatch(value) is None:
         return False
     lock_path = os.path.join(root, holder_id, node, "incarnations", value + ".lock")
-    flags = os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    # The receipt claim is deliberately mounted read-only in serving Pods.  A
+    # shared-lock probe only needs read access: it is refused while the holder's
+    # process-lifetime exclusive lock is live and succeeds after that holder
+    # exits.  Opening O_RDWR here makes every real read-only Kubernetes mount
+    # look like a dead holder before flock is even attempted.
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(lock_path, flags)
     except OSError:
         return False
     try:
         try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(descriptor, fcntl.LOCK_SH | fcntl.LOCK_NB)
         except OSError as exc:
             return exc.errno in (errno.EACCES, errno.EAGAIN)
         fcntl.flock(descriptor, fcntl.LOCK_UN)

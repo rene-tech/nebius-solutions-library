@@ -1944,6 +1944,78 @@ def test_automatic_mechanism_decision_is_the_renderer_and_status_decision() -> N
     assert status["fastStart"]["cacheMechanisms"]["regional-cache"]["selected"] is True
 
 
+def test_automatic_require_target_uses_qualified_mechanism_when_demand_history_is_missing() -> None:
+    spec, installed = _automatic_declared_evidence(mechanism="regional-cache", seconds=45.0)
+    spec = with_fast_start(
+        spec,
+        mode="Automatic",
+        minimum_level="L2",
+        maximum_level="L4",
+        fallback_policy="RequireTarget",
+    )
+    now = datetime(2026, 9, 4, 10, tzinfo=UTC)
+    context = _mechanism_context(spec, installed).model_copy(update={"evaluation_time": now})
+
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=installed,
+        renderer=renderer(),
+        render_context=context,
+        observed=[],
+        discovery_complete=True,
+    )
+
+    assert plan.action.value == "apply"
+    assert plan.validation.fast_start_mechanism.mechanism.value == "regional-cache"
+    assert plan.validation.fast_start_mechanism.reason == "MissingDemandDataQualifiedFallback"
+    assert plan.validation.fast_start is not None
+    assert plan.validation.fast_start.qualification.state.value == "Qualified"
+    assert plan.render is not None
+    runtime_pods = [item.manifest["spec"]["template"] for item in plan.render.resources if item.kind == "Deployment"]
+    assert runtime_pods
+    assert {pod["metadata"]["annotations"].get("fast-start.fs2.nebius/mechanism") for pod in runtime_pods} == {
+        "regional-cache"
+    }
+
+    status = build_status(
+        spec=spec,
+        owner_uid="cr-uid-1",
+        generation=1,
+        plan=plan,
+        discovery=Discovery(resources=[snapshot(item, ready=True) for item in plan.render.resources], complete=True),
+        previous_status={},
+        drain=None,
+        envelope=installed,
+        fast_start_history=None,
+        now=now,
+    )
+    assert status["fastStart"]["automatic"]["mechanismId"] == "regional-cache"
+    assert status["fastStart"]["qualification"]["state"] == "Qualified"
+    assert status["fastStart"]["effectiveLevel"] == "L2"
+
+
+def test_automatic_allow_lower_level_keeps_the_highest_qualified_mechanism() -> None:
+    spec, installed = _automatic_declared_evidence(mechanism="regional-cache", seconds=45.0)
+    spec = with_fast_start(
+        spec,
+        mode="Automatic",
+        minimum_level="L4",
+        maximum_level="L4",
+        fallback_policy="AllowLowerLevel",
+    )
+
+    decision = validate_model_deployment(spec, installed, evaluation_time=datetime(2026, 9, 4, 10, tzinfo=UTC))
+
+    assert decision.disposition.value == "accepted"
+    assert decision.fast_start_mechanism.mechanism.value == "regional-cache"
+    assert decision.fast_start_mechanism.reason == "MissingDemandDataQualifiedFallback"
+    assert decision.fast_start is not None
+    assert decision.fast_start.assigned_level.value == "L3"
+    assert decision.fast_start.qualification.state.value == "Fallback"
+
+
 def test_automatic_mechanism_cost_changes_with_observed_activation_rate() -> None:
     spec, installed = _automatic_declared_evidence(mechanism="regional-cache", seconds=30.0)
     qualification = installed.qualifications[spec.model_ref]
@@ -2096,6 +2168,41 @@ def test_host_residency_waits_for_every_receipt_backed_holder() -> None:
         envelope=installed,
     )
     assert configured["fastStart"]["cacheMechanisms"]["host-memory-residency"]["state"] == "Configured"
+
+
+def test_host_residency_configures_every_selected_pool_when_runtime_fits_in_one_pool() -> None:
+    spec, installed = _all_mechanism_envelope("host-memory-residency")
+    spec = spec.model_copy(update={"availability": spec.availability.model_copy(update={"max_replicas": 4})})
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=installed,
+        renderer=renderer(),
+        render_context=_mechanism_context(spec, installed),
+        observed=[],
+        discovery_complete=True,
+    )
+
+    assert plan.render is not None
+    holders = [item for item in plan.render.resources if item.kind == "DaemonSet"]
+    assert {
+        item.manifest["metadata"]["annotations"]["fs2-serve.nebius.ai/workload-pool-ref"] for item in holders
+    } == set(spec.placement.pool_refs)
+    status = build_status(
+        spec=spec,
+        owner_uid="cr-uid-1",
+        generation=1,
+        plan=plan,
+        discovery=Discovery(
+            resources=[snapshot(item, ready=True) for item in plan.render.resources],
+            complete=True,
+        ),
+        previous_status={},
+        drain=None,
+        envelope=installed,
+    )
+    assert status["fastStart"]["cacheMechanisms"]["host-memory-residency"]["state"] == "Configured"
 
 
 def test_production_snapshot_maps_daemonset_node_and_probe_readiness() -> None:

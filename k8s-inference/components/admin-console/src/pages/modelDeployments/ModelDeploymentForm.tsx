@@ -84,13 +84,23 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
   const presetLocked = Boolean(configurationOption);
   const fastStart = normalizeFastStartPolicy(spec.fastStart);
   const configuredMechanisms = configurationOption?.fast_start_mechanism_choices.map((choice) => choice.mechanism) ?? [];
-  const selectedMechanismUnavailable = Boolean(
+  const selectedMechanismChoice = configurationOption?.fast_start_mechanism_choices.find(
+    (choice) => choice.mechanism === spec.cache.mechanism,
+  );
+  const selectedMechanismMissing = Boolean(
     spec.cache.mechanism && !configuredMechanisms.includes(spec.cache.mechanism),
+  );
+  const selectedMechanismHasInvalidPools = Boolean(
+    selectedMechanismChoice
+    && spec.placement.poolRefs.some((poolRef) => !selectedMechanismChoice.pool_refs.includes(poolRef)),
+  );
+  const selectedMechanismUnavailable = Boolean(
+    selectedMechanismMissing || selectedMechanismHasInvalidPools,
   );
   const selectableMechanisms: Array<ModelDeploymentFastStartMechanism | ""> = [
     "",
     ...configuredMechanisms,
-    ...(selectedMechanismUnavailable ? [spec.cache.mechanism!] : []),
+    ...(selectedMechanismMissing ? [spec.cache.mechanism!] : []),
   ];
   function update(change: (next: ModelDeploymentSpec) => void) {
     const next = structuredClone(spec);
@@ -142,6 +152,11 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
                   <input
                     aria-label={`Use ${choice.pool_ref}`}
                     checked={spec.placement.poolRefs.includes(choice.pool_ref)}
+                    disabled={Boolean(
+                      selectedMechanismChoice
+                      && !selectedMechanismChoice.pool_refs.includes(choice.pool_ref)
+                      && !spec.placement.poolRefs.includes(choice.pool_ref)
+                    )}
                     onChange={(event) => update((next) => {
                       const selected = new Set(next.placement.poolRefs);
                       if (event.target.checked) selected.add(choice.pool_ref);
@@ -156,7 +171,7 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
                 </label>
               ))}
             </div>
-            <small>Only pools qualified for this exact model/runtime tuple are offered.</small>
+            <small>Only pools qualified for this exact model/runtime tuple are offered; an explicit cold-start mechanism can narrow that set further.</small>
           </fieldset>
         ) : (
           <TextField hint="Comma-separated Terraform pool IDs." label="Accelerator pools" onChange={(value) => update((next) => { next.placement.poolRefs = uniqueCsv(value); })} required value={spec.placement.poolRefs.join(", ")} />

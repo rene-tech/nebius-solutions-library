@@ -143,6 +143,16 @@ variables {
     nebius-b300-preemptible-1x = {
       cpu_millicores = 22000
       memory_mib     = 344064
+      # The root handoff includes measurement provenance.  The workloads
+      # variable deliberately narrows to the two schedulable quantities; this
+      # production-shaped value proves Terraform object conversion accepts and
+      # discards the additional evidence rather than dropping the whole map.
+      evidence = {
+        pool_id        = "nebius-b300-preemptible-1x"
+        source         = "fixture:utf8:nebius-b300-preemptible-1x"
+        captured_at    = "2026-09-03T06:00:00Z"
+        payload_sha256 = "85cae37a96eff77ba331fdb643f4ba282e3f4f945ec19297ab22dadef7157663"
+      }
     }
   }
 

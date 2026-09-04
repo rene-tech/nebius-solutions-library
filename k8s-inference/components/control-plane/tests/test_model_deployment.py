@@ -1891,6 +1891,10 @@ def test_the_renderer_owns_the_host_memory_holder_it_depends_on() -> None:
     )
     holders = [item for item in plan.resources if "hostmem" in item.name]
     assert {item.kind for item in holders} == {"ConfigMap", "DaemonSet"}
+    daemonsets = [item.manifest for item in holders if item.kind == "DaemonSet"]
+    assert {item["metadata"]["annotations"]["fs2-serve.nebius.ai/workload-pool-ref"] for item in daemonsets} == set(
+        _pinned("host-memory-residency").placement.pool_refs
+    )
     holder = next(item for item in holders if item.kind == "DaemonSet").manifest
     container = holder["spec"]["template"]["spec"]["containers"][0]
     assert container["resources"]["requests"]["memory"] == str(declaration.reserved_bytes)
@@ -1960,6 +1964,127 @@ def test_host_memory_fit_accounts_for_every_gpu_limited_runtime_pod_per_node() -
 
     assert plan.action is ReconcileAction.REJECT
     assert "render_contract_invalid" in {issue.code for issue in plan.validation.issues}
+
+
+def test_host_memory_fit_aggregates_hot_and_burst_segments_on_the_same_node() -> None:
+    gib = 1024**3
+    regular = PoolEnvelope(
+        pool_id="regular-a",
+        accelerator_class="nvidia-h100-sxm",
+        resource_name="nvidia.com/gpu",
+        capacity_type="regular",
+        accelerators_per_node=8,
+        allocatable_memory_bytes=31 * gib,
+        min_nodes=1,
+        max_nodes=1,
+        node_selector={"accelerator.fs2.nebius/pool-id": "regular-a"},
+    )
+    preemptible = PoolEnvelope(
+        pool_id="preempt-b",
+        accelerator_class="nvidia-h100-sxm",
+        resource_name="nvidia.com/gpu",
+        capacity_type="preemptible",
+        accelerators_per_node=1,
+        allocatable_memory_bytes=31 * gib,
+        min_nodes=0,
+        max_nodes=1,
+        node_selector={"accelerator.fs2.nebius/pool-id": "preempt-b"},
+    )
+    base_spec = model_spec()
+    spec = base_spec.model_copy(
+        update={
+            "placement": base_spec.placement.model_copy(update={"pool_refs": [regular.pool_id, preemptible.pool_id]}),
+            "availability": base_spec.availability.model_copy(update={"min_replicas": 1, "max_replicas": 8}),
+            "cache": base_spec.cache.model_copy(
+                update={
+                    "mechanism": FastStartMechanism.HOST_MEMORY_RESIDENCY,
+                    "tier": CacheTier.SHARED_FILESYSTEM,
+                }
+            ),
+        }
+    )
+    declaration = render_host_memory(
+        pool_refs=(regular.pool_id, preemptible.pool_id),
+        reserved_bytes=18 * gib,
+        node_allocatable_bytes=31 * gib,
+    )
+    base = envelope()
+    qualification = base.qualifications[spec.model_ref].model_copy(
+        update={
+            "host_memory_residency": declaration,
+            "template_cache_tiers": {
+                digest_value: CacheTier.SHARED_FILESYSTEM
+                for digest_value in base.qualifications[spec.model_ref].template_digests
+            },
+        }
+    )
+    installed = base.model_copy(
+        update={
+            "pools": {regular.pool_id: regular, preemptible.pool_id: preemptible},
+            "qualifications": {qualification.model_ref: qualification},
+            "residency_holder_image": spec.runtime.image,
+        }
+    )
+    context = RenderContext(
+        name="qwen-live",
+        namespace="fs2-models",
+        uid="cr-uid-1",
+        generation=1,
+        pool=regular,
+        eligible_pools=[regular, preemptible],
+        prometheus_server_address="http://prometheus:9090",
+        host_memory_residency=declaration,
+        residency_holder_image=spec.runtime.image,
+    )
+
+    # The regular node can host hot=1 plus burst=6 by GPU count.  Each
+    # individual segment appears to fit with the 18 GiB holder, but their
+    # co-located maximum is 18 + (1 + 6) * 2 = 32 GiB > 31 GiB.
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=installed,
+        renderer=renderer(runtime_memory_request="2Gi"),
+        render_context=context,
+        observed=[],
+        discovery_complete=True,
+    )
+
+    assert plan.action is ReconcileAction.REJECT
+    assert [(issue.code, issue.message) for issue in plan.validation.issues] == [
+        (
+            "render_contract_invalid",
+            "host-memory holder and runtime Pods cannot fit in the pool's allocatable RAM",
+        )
+    ]
+
+
+def test_a_missing_pool_remains_terraform_owned_with_an_explicit_mechanism() -> None:
+    base = envelope()
+    declaration = render_regional_cache(pool_refs=("pool-a",))
+    qualification = base.qualifications["qwen.3-8b"].model_copy(
+        update={
+            "regional_cache": declaration,
+            "template_cache_tiers": {
+                digest_value: CacheTier.SHARED_FILESYSTEM
+                for digest_value in base.qualifications["qwen.3-8b"].template_digests
+            },
+        }
+    )
+    installed = base.model_copy(update={"qualifications": {qualification.model_ref: qualification}})
+    spec = _pinned("regional-cache").model_copy(
+        update={
+            "placement": _pinned("regional-cache").placement.model_copy(update={"pool_refs": ["pool-a", "future-pool"]})
+        }
+    )
+
+    decision = validate_model_deployment(spec, installed)
+
+    assert decision.disposition is ValidationDisposition.INFRASTRUCTURE_REQUIRED
+    assert decision.fast_start_mechanism.reason == "PoolOutsideEnvelope"
+    assert [(issue.owner, issue.code) for issue in decision.issues] == [("terraform", "pool_infrastructure_required")]
+    assert decision.terraform_inputs == ["accelerator_pools.future-pool"]
 
 
 def test_gpu_resident_is_not_selectable_without_a_promotion_controller() -> None:
