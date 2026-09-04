@@ -21,14 +21,14 @@
     "deployment.scheduling.general_cpu": {
       "cluster_queue": "general-cpu",
       "local_queue": "general-cpu",
-      "namespace": "fs2-academic-poc"
+      "namespace": "fs2-models"
     }
   },
   "cpu_classes": {
     "general-cpu": {
       "local_queue": "general-cpu",
       "cluster_queue": "general-cpu",
-      "namespace": "fs2-academic-poc",
+      "namespace": "fs2-models",
       "resource_flavor": "general-cpu",
       "pool_resolution": {
         "mode": "per-pool-flavor",
@@ -63,7 +63,7 @@
   "kueue_objects_owned_by_this_producer": {
     "resource_flavor": "general-cpu",
     "cluster_queue": "general-cpu",
-    "local_queue": "general-cpu in fs2-academic-poc",
+    "local_queue": "general-cpu in fs2-models",
     "note": "The assembler must not render these; it consumes the class entry only. The general lane owns them, the reference-data plane owns its own, and no object has two owners."
   },
   "handshake": {

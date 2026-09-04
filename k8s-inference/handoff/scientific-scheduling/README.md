@@ -102,7 +102,8 @@ The class shape is `catalog/runtime/schema/cpu-stage-classes.schema.json`
 | Class | Stage it serves | Contributor |
 | --- | --- | --- |
 | `reference-data` | AlphaFold 3's raw data pipeline, on the tainted pool that mounts the shared reference databases | this branch, `stages/workloads/queue.tf` |
-| `general-cpu` | BindCraft's CPU stages, and collector or aggregation work, on untainted general capacity | `modules/general-cpu-scheduling`, through its canonical `cpu_classes` contribution |
+| `general-cpu` | Ordinary collector or aggregation work on untainted general capacity | `modules/general-cpu-scheduling`, through its canonical `cpu_classes` contribution |
+| `academic-cpu` | BindCraft aggregate in the academic claim namespace, over the exact general-cpu backing | `stages/workloads/queue.tf`, through `academic-general-cpu` |
 
 Three rules the assembler enforces, because no single contributor can:
 
@@ -110,8 +111,10 @@ Three rules the assembler enforces, because no single contributor can:
    name, so the same name in two namespaces is unrepresentable. A class names
    one namespace, and an owner that runs the same lane in several namespaces
    contributes one class per namespace.
-2. **One owner per LocalQueue and per cpu/memory ResourceFlavor.** A name
-   claimed twice cannot be resolved back to one placement.
+2. **One owner and unique name per LocalQueue.** Namespace-specific classes may
+   share a cpu/memory ResourceFlavor only when ClusterQueue, eligible pool,
+   resolution, selectors, tolerations, and schedulable capacity are identical;
+   the frozen class and queue identify the placement.
 3. **Expected pools are not the actual pool.** `eligible_pool_ids` is the set a
    stage may land on. `pool_resolution.mode` says how the one it landed on
    becomes knowable: `per-pool-flavor` when the class has a single pool whose
@@ -198,25 +201,26 @@ both lanes are enabled. The root facade derives the corresponding fit facts
 from `deployment.cpu_pools`; there is no second operator-authored class or
 capacity map that can drift.
 
-Absence still means refusal, not substitution. If the general CPU lane is not
-configured, `general-cpu` is absent and a BindCraft CPU stage cannot borrow the
-tainted reference-data class. A consumer must read the content-addressed
-document, verify its raw bytes, and fail any stage whose named class is absent.
+Absence still means refusal, not substitution. If the general CPU lane or
+academic execution is not configured, `academic-cpu` is absent and a BindCraft
+CPU stage cannot borrow the ordinary or tainted reference-data class. A
+consumer must read the content-addressed document, verify its raw bytes, and
+fail any stage whose named class is absent.
 
 ### Mapping an observed admission back to a class
 
 A CPU admission reports a cpu/memory ResourceFlavor, and
-`resource_flavor_pool_ids` covers accelerator flavors only, so it cannot
-resolve one. Each class therefore publishes `resource_flavor`, and that value
-is the only key that maps an observation back to a class:
+`resource_flavor_pool_ids` covers accelerator flavors only. The controller has
+already frozen the profile's class and its uniquely named LocalQueue, so the
+observed flavor verifies that decision and resolves the actual pool; it is not
+a reverse-map key for class identity:
 
 1. Read `status.admission.podSetAssignments[*].flavors` for the `cpu` and
    `memory` resources.
-2. Find the single `cpu_classes` entry whose `resource_flavor` equals it.
-3. If none matches, or more than one does, refuse the capture and record the
-   observed flavor verbatim. Do not fall back to the frozen class, and do not
-   guess from the ClusterQueue: an operator can move a class between queues,
-   and two classes can share a queue.
+2. Compare it with the frozen class's `resource_flavor`; refuse a mismatch.
+3. Resolve the actual pool using that class's `pool_resolution`. Never infer a
+   different class from a flavor alone: `general-cpu` and `academic-cpu`
+   deliberately share one physical backing.
 
 A mismatch between the frozen class and the observed flavor is a real event
 worth surfacing, in the same way a differing `actual_cluster_queue` is. It

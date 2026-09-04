@@ -84,6 +84,7 @@ locals {
     for queue_name in concat(
       keys(local.academic_scheduling_local_queues),
       keys(local.academic_cpu_local_queues),
+      keys(local.academic_general_cpu_local_queues),
     ) : queue_name
     if contains(keys(var.scheduling.local_queues), queue_name)
   ])
@@ -164,6 +165,38 @@ locals {
     }
   } : {}
 
+  # BindCraft's licensed design stage is namespace-bound to the academic claim.
+  # Its small aggregate stage needs the same namespace even though it runs on
+  # the elastic general CPU pool. A distinct class and LocalQueue keep that
+  # namespace identity explicit while reusing the existing general-cpu
+  # ClusterQueue, ResourceFlavor, quota, selectors, tolerations, and pool.
+  academic_general_cpu_lane_enabled = (
+    local.academic_execution_enabled &&
+    local.general_cpu_enabled
+  )
+  academic_general_cpu_local_queue_name = "academic-general-cpu"
+  academic_general_cpu_local_queues = local.academic_general_cpu_lane_enabled ? {
+    (local.academic_general_cpu_local_queue_name) = {
+      namespace           = var.academic_assets.namespace
+      cluster_queue       = var.general_cpu_lane.cluster_queue
+      fair_sharing_weight = var.general_cpu_lane.fair_sharing_weight
+      # CPU stage classes, not route bindings, select this lane.
+      model_ids       = toset([])
+      tenant_ids      = toset([])
+      service_classes = toset([])
+    }
+  } : {}
+  academic_general_cpu_classes = local.academic_general_cpu_lane_enabled ? {
+    academic-cpu = merge(local.general_cpu_contract.cpu_classes["general-cpu"], {
+      local_queue = local.academic_general_cpu_local_queue_name
+      namespace   = var.academic_assets.namespace
+    })
+  } : {}
+  bindcraft_aggregate_cpu_request = {
+    cpu_millicores = 2000
+    memory_mib     = 8192
+  }
+
   # Named CPU stage classes. Only a class with a real pool, selector,
   # toleration, and advertised per-node capacity is published: an executable
   # class with null placement would let a CPU stage land on arbitrary system or
@@ -184,7 +217,7 @@ locals {
   # time. Ownership stays with the module that renders the manifests.
   contributed_external_cluster_queues = local.general_cpu_enabled ? {
     (local.general_cpu_contract.external_lane_facts.cluster_queue) = {
-      namespaces = [local.general_cpu_contract.external_lane_facts.namespace]
+      namespaces = local.general_cpu_contract.external_lane_facts.namespaces
       core_quota = {
         cpu_millicores = local.general_cpu_contract.capacity.cpu_millicores
         memory_mib     = local.general_cpu_contract.capacity.memory_mib
@@ -257,6 +290,9 @@ locals {
     # a stage whose class is missing is refused rather than approximated onto
     # the reference-data pool, which is tainted and holds licensed databases.
     local.contributed_cpu_classes,
+    # One class per namespace: the class reuses the exact general lane backing
+    # but freezes BindCraft's aggregate beside its academic claim.
+    local.academic_general_cpu_classes,
   )
   # Which CPU class each model's CPU-only stage belongs to. A raw AlphaFold 3
   # data stage reads the shared reference databases on the tainted pool; an
@@ -288,6 +324,7 @@ locals {
     var.scheduling.local_queues,
     local.academic_scheduling_local_queues,
     local.academic_cpu_local_queues,
+    local.academic_general_cpu_local_queues,
   )
 
   scheduling_required_namespaces = merge(
@@ -296,6 +333,9 @@ locals {
     } : {},
     local.academic_cpu_lane_enabled ? {
       (var.reference_data.queue.cluster_queue) = [var.academic_assets.namespace]
+    } : {},
+    local.academic_general_cpu_lane_enabled ? {
+      (var.general_cpu_lane.cluster_queue) = [var.academic_assets.namespace]
     } : {},
   )
 
@@ -414,7 +454,11 @@ module "kueue_scheduling" {
   # described but not created. The CPU lane is new and has no prior owner or
   # state, so this module creates it.
   scheduling = merge(var.scheduling, {
-    local_queues = merge(var.scheduling.local_queues, local.academic_cpu_local_queues)
+    local_queues = merge(
+      var.scheduling.local_queues,
+      local.academic_cpu_local_queues,
+      local.academic_general_cpu_local_queues,
+    )
   })
   external_local_queues = merge(
     local.academic_scheduling_local_queues,
@@ -438,6 +482,9 @@ module "kueue_scheduling" {
   cpu_stage_requests = {
     for class_name, request in merge(
       local.academic_cpu_lane_enabled ? { reference-data = local.raw_af3_cpu_request } : {},
+      local.academic_general_cpu_lane_enabled ? {
+        academic-cpu = local.bindcraft_aggregate_cpu_request
+      } : {},
       var.scheduling.cpu_stage_requests,
       ) : class_name => class_name != "reference-data" ? request : {
       cpu_millicores = max(request.cpu_millicores, local.raw_af3_cpu_request.cpu_millicores)
@@ -717,6 +764,7 @@ resource "kubernetes_manifest" "additional_local_queue" {
     # graph edge, so this is safe when either feature is disabled.
     module.academic_assets,
     module.reference_data,
+    kubernetes_manifest.general_cpu_cluster_queue,
   ]
 }
 

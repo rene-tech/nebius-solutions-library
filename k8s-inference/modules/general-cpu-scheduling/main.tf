@@ -1,8 +1,9 @@
 # General CPU admission lane.
 #
 # One ResourceFlavor, one ClusterQueue that budgets cpu and memory, and one
-# LocalQueue in the single execution namespace. This module owns exactly those
-# three objects for the general lane and nothing else.
+# LocalQueue for the ordinary general-cpu class. The ClusterQueue may admit an
+# additional stack-owned namespace whose distinct LocalQueue and class are
+# assembled elsewhere; this module owns exactly its three objects and no more.
 #
 # It contributes one thing to scheduling: the canonical general-cpu class entry
 # and its digest. The scheduling workstream remains the sole producer of the
@@ -61,12 +62,16 @@ locals {
     effect   = var.pool_contract.taint.effect
   }]
 
-  # v1 is deliberately single-namespace. The assembled contract maps a class to
-  # one LocalQueue by bare name and the controller freezes every stage of a run
-  # into one namespace, so a second namespace could not be resolved or frozen.
-  # Advertising it would be a promise the consumer cannot keep; a second lane
-  # needs namespace-qualified identities end to end, which v1 does not have.
+  # Every class remains single-namespace, but a ClusterQueue may admit several
+  # classes through distinct LocalQueue names. The primary general-cpu class
+  # keeps the configured namespace; the workloads assembler may contribute an
+  # academic-cpu class for the licensed namespace while reusing this exact
+  # flavor, quota, and pool.
   execution_namespace = local.enabled ? var.lane.namespace : null
+  admitted_namespaces = local.enabled ? sort(distinct(concat(
+    [var.lane.namespace],
+    tolist(var.lane.admitted_namespaces),
+  ))) : []
 
   # v1 binds one class to exactly one pool. Kueue reports the flavor it admitted
   # through, so a flavor that spans several pools could not tell a consumer
@@ -153,7 +158,11 @@ locals {
     }
     spec = {
       namespaceSelector = {
-        matchLabels = { "kubernetes.io/metadata.name" = var.lane.namespace }
+        matchExpressions = [{
+          key      = "kubernetes.io/metadata.name"
+          operator = "In"
+          values   = local.admitted_namespaces
+        }]
       }
       queueingStrategy = var.lane.queueing_strategy
       # Without this, withinClusterQueue defaults to Never and a presentation
@@ -213,12 +222,14 @@ locals {
     }
     pool_ids            = local.pool_ids
     execution_namespace = local.execution_namespace
+    admitted_namespaces = local.admitted_namespaces
     # The Kueue objects this producer owns, so the assembler can describe them
     # without ever becoming their owner.
     external_lane_facts = !local.enabled ? null : {
       cluster_queue  = var.lane.cluster_queue
       local_queue    = var.lane.local_queue
       namespace      = local.execution_namespace
+      namespaces     = local.admitted_namespaces
       nominal_cpu    = local.nominal_cpu
       nominal_memory = local.nominal_memory
       owner          = "modules/general-cpu-scheduling"
@@ -247,12 +258,13 @@ resource "terraform_data" "contract" {
     }
 
     precondition {
-      condition = !local.enabled || (
-        var.lane.namespace != null &&
-        can(regex("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", var.lane.namespace)) &&
-        length(var.lane.namespace) <= 63
-      )
-      error_message = "The general CPU lane needs exactly one DNS-label execution namespace; a ClusterQueue whose namespace selector matches nothing would never admit."
+      condition = !local.enabled || alltrue([
+        for namespace in local.admitted_namespaces :
+        namespace != null &&
+        can(regex("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", namespace)) &&
+        length(namespace) <= 63
+      ])
+      error_message = "The general CPU lane needs DNS-label admitted namespaces; a ClusterQueue whose namespace selector matches nothing would never admit."
     }
 
     # Every entry must carry the shared required fields, so a controller reading
@@ -287,9 +299,9 @@ resource "terraform_data" "contract" {
       condition = !local.enabled || var.reference_data_lane == null || (
         local.cpu_classes["general-cpu"].cluster_queue != var.reference_data_lane.cluster_queue &&
         local.cpu_classes["general-cpu"].resource_flavor != var.reference_data_lane.resource_flavor &&
-        local.cpu_classes["general-cpu"].namespace != var.reference_data_lane.namespace
+        !contains(local.admitted_namespaces, var.reference_data_lane.namespace)
       )
-      error_message = "The general CPU lane must not reuse the reference-data ClusterQueue, ResourceFlavor or namespace; reference-database capacity is never lent to general aggregation."
+      error_message = "The general CPU lane must not reuse the reference-data ClusterQueue, ResourceFlavor or admit its namespace; reference-database capacity is never lent to general aggregation."
     }
 
     precondition {

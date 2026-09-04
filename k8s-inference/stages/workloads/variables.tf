@@ -785,7 +785,7 @@ variable "scheduling" {
 }
 
 variable "general_cpu_lane" {
-  description = "Operator policy for the general CPU admission lane. Its single execution namespace is already resolved by the facade, defaulting to the academic tenant when that tenant exists."
+  description = "Operator policy for the general CPU admission lane. The facade resolves the ordinary general-cpu class to fs2-models by default; academic execution derives its own academic-cpu class and LocalQueue in the claim namespace over the same backing lane."
   type = object({
     enabled             = bool
     cluster_queue       = string

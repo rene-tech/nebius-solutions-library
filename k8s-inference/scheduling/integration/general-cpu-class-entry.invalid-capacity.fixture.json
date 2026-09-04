@@ -8,7 +8,7 @@
     "general-cpu": {
       "local_queue": "general-cpu",
       "cluster_queue": "general-cpu",
-      "namespace": "fs2-academic-poc",
+      "namespace": "fs2-models",
       "resource_flavor": "general-cpu",
       "pool_resolution": {
         "mode": "per-pool-flavor",

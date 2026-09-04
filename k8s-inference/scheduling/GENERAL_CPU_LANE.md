@@ -4,10 +4,11 @@ An elastic, entirely tfvars-driven CPU pool for scientific preprocessing and
 aggregation that does not need the dedicated reference-data nodes, plus the
 Kueue lane that admits work onto it.
 
-The lane exists so a BindCraft aggregation never waits behind a GPU queue and
+The lane exists so scientific aggregation never waits behind a GPU queue and
 never lands on the storage-attached nodes that AlphaFold 3 raw preprocessing
-depends on. Keeping those two CPU planes separate is the whole point, so the
-separation is enforced rather than documented.
+depends on. BindCraft reaches this backing through an academic namespace-local
+queue; keeping both general classes separate from the reference-data plane is
+enforced rather than merely documented.
 
 ## Configuring it
 
@@ -35,10 +36,10 @@ deployment = {
     general_cpu = {
       cluster_queue = "general-cpu"
       local_queue   = "general-cpu"
-      # Defaults to the academic tenant namespace when academic assets are
-      # enabled, otherwise fs2-models. Only a namespace this stack provisions
-      # is accepted.
-      namespace = "fs2-academic-poc"
+      # The ordinary class defaults to fs2-models. When academic execution is
+      # enabled, Terraform derives academic-cpu and academic-general-cpu in the
+      # claim namespace over this exact ClusterQueue/flavor/pool.
+      namespace = "fs2-models"
     }
   }
 }
@@ -68,10 +69,11 @@ the only mechanism this queue has.
 
 Two limits are real constraints of the consumers, not simplifications:
 
-* **One execution namespace.** The assembled scheduling contract maps a class to
-  one LocalQueue by bare name, and the controller freezes every stage of a run
-  into one namespace. A second namespace could not be resolved or frozen, so
-  declaring one is rejected rather than silently unreachable.
+* **One execution namespace per class.** The assembled scheduling contract maps
+  each class to one uniquely named LocalQueue, and the controller freezes every
+  stage of a run into one namespace. Reusing a physical lane in another
+  namespace therefore requires a second class and LocalQueue; `academic-cpu`
+  is that explicit projection for BindCraft.
 * **One pool per class.** Kueue reports the ResourceFlavor it admitted through.
   A flavor whose selector spanned several pools could not tell a consumer which
   node group actually ran a stage, so the flavor selector pins exactly one pool
@@ -81,7 +83,8 @@ Two limits are real constraints of the consumers, not simplifications:
 
 | Object | Owner |
 | --- | --- |
-| `general-cpu` ResourceFlavor, ClusterQueue, LocalQueue | this lane |
+| `general-cpu` ResourceFlavor, ClusterQueue, and `fs2-models` LocalQueue | this lane |
+| `academic-general-cpu` LocalQueue in `fs2-academic-poc` | the scheduling workstream |
 | `reference-data-cpu` flavor and queue, `reference-data` LocalQueue | the reference-data plane |
 | the assembled scheduling contract and its ConfigMap | the scheduling workstream |
 
@@ -91,6 +94,12 @@ This lane contributes one canonical `general-cpu` entry under
 `scheduling/integration/general-cpu-class-entry.fixture.json` is the exact entry
 the assembler merges; the `.invalid-capacity.` fixture beside it is an entry the
 canonical gate must reject.
+
+The scheduling assembler derives `academic-cpu` by changing only `namespace`
+and `local_queue` from that canonical entry. Its ClusterQueue, ResourceFlavor,
+pool resolution, selectors, tolerations, and measured capacity remain byte-for-
+byte equivalent. The derived LocalQueue carries no model or tenant routes; the
+catalog stage selects it only through `placement.class = "academic-cpu"`.
 
 ## Global core admission
 

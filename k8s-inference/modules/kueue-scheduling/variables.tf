@@ -142,10 +142,10 @@ variable "cpu_classes" {
     local_queue   = string
     cluster_queue = string
     namespace     = string
-    # The ResourceFlavor a CPU admission reports for cpu and memory. The
-    # accelerator reverse map does not cover it, so a collector maps an actual
-    # cpu/memory flavor back to this class through this value and refuses a
-    # mismatch instead of guessing. It identifies the class, not the pool.
+    # The ResourceFlavor a CPU admission reports for cpu and memory. The class
+    # is already frozen from the profile and LocalQueue; this value verifies
+    # the admission and identifies node placement. Two namespace-specific
+    # classes may share it only when every backing placement fact is identical.
     resource_flavor = string
     # Every pool a stage of this class may land on: the expected set, never
     # the outcome.
@@ -290,10 +290,20 @@ variable "cpu_classes" {
     # namespaces is unrepresentable rather than merely confusing.
     condition = length(distinct([
       for class in values(var.cpu_classes) : class.local_queue
-      ])) == length(var.cpu_classes) && length(distinct([
-      for class in values(var.cpu_classes) : class.resource_flavor
-    ])) == length(var.cpu_classes)
-    error_message = "Each CPU stage class must own its LocalQueue name and its cpu/memory ResourceFlavor outright; a name shared by two classes cannot be resolved back to one placement."
+      ])) == length(var.cpu_classes) && alltrue(flatten([
+      for class_name, class in var.cpu_classes : [
+        for peer_name, peer in var.cpu_classes :
+        class_name == peer_name || class.resource_flavor != peer.resource_flavor || (
+          class.cluster_queue == peer.cluster_queue &&
+          class.eligible_pool_ids == peer.eligible_pool_ids &&
+          class.pool_resolution == peer.pool_resolution &&
+          class.node_selector == peer.node_selector &&
+          class.tolerations == peer.tolerations &&
+          class.schedulable_capacity == peer.schedulable_capacity
+        )
+      ]
+    ]))
+    error_message = "Each CPU stage class must own a distinct LocalQueue name. Namespace-specific classes may share a cpu/memory ResourceFlavor only when they also share the exact ClusterQueue, eligible pools, resolution, selector, tolerations, and schedulable capacity."
   }
 }
 

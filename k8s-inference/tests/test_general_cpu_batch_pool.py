@@ -1,10 +1,11 @@
 """Root-to-infrastructure-to-workloads contract for the general CPU batch pool.
 
 The lane exists so scientific preprocessing and aggregation scale independently
-of the dedicated reference-data nodes. These tests hold that separation: the two
-CPU lanes must never share a pool, a flavor, a queue or a namespace, and the
-general lane must stay fully tfvars driven with no project, region, accelerator
-or live node identity anywhere in its source.
+of the dedicated reference-data nodes. These tests hold that separation: the
+general CPU backing must never share a pool, flavor, queue, or namespace with
+reference-data, while namespace-specific general and academic classes may reuse
+that exact backing through distinct LocalQueues. The lane stays fully tfvars
+driven with no project, region, accelerator, or live node identity in its source.
 """
 
 from __future__ import annotations
@@ -568,8 +569,9 @@ class GeneralCpuPoolTests(unittest.TestCase):
             "fs2-models",
         )
 
-        # Implicit, with the academic tenant enabled: the lane follows the
-        # licensed claim its BindCraft stage mounts.
+        # Implicit, with the academic tenant enabled: the ordinary class stays
+        # in fs2-models. Workloads Terraform derives a separate academic-cpu
+        # class and LocalQueue beside the licensed claim.
         academic = self._write(
             "academic-namespace",
             {
@@ -642,7 +644,7 @@ class GeneralCpuPoolTests(unittest.TestCase):
         planned = json.loads(shown.stdout)["planned_values"]["outputs"]
         self.assertEqual(
             planned["effective_configuration"]["value"]["general_cpu"]["namespace"],
-            "fs2-academic-poc",
+            "fs2-models",
         )
 
     def test_the_shipped_examples_carry_no_removed_lane_knobs(self) -> None:
@@ -951,13 +953,19 @@ class GeneralCpuSourceTests(unittest.TestCase):
         self.assertIn('local.enabled ? { "general-cpu" = local.general_cpu_class }', self.module)
         self.assertNotIn('"reference-data" =', self.module)
 
-    def test_bindcraft_aggregation_is_bound_to_the_general_cpu_class(self) -> None:
+    def test_bindcraft_aggregation_has_an_academic_cpu_class_over_general_backing(self) -> None:
         general = self.contract["classes"]["general-cpu"]
-        bound = {
+        general_bound = {
             (entry["model_id"], entry["stage"]) for entry in general["bound_workloads"]
         }
-        self.assertIn(("bindcraft", "aggregation"), bound)
-        self.assertIn(("freebindcraft", "aggregation"), bound)
+        academic = self.contract["classes"]["academic-cpu"]
+        academic_bound = {
+            (entry["model_id"], entry["stage"])
+            for entry in academic["bound_workloads"]
+        }
+        self.assertEqual(academic_bound, {("bindcraft", "aggregation")})
+        self.assertIn(("freebindcraft", "aggregation"), general_bound)
+        self.assertNotIn(("bindcraft", "aggregation"), general_bound)
 
         reference = self.contract["classes"]["reference-data"]
         reference_bound = {
@@ -965,7 +973,8 @@ class GeneralCpuSourceTests(unittest.TestCase):
         }
         self.assertIn(("alphafold3", "raw-input"), reference_bound)
         # Neither class may claim the other's work.
-        self.assertNotIn(("alphafold3", "raw-input"), bound)
+        self.assertNotIn(("alphafold3", "raw-input"), general_bound)
+        self.assertNotIn(("alphafold3", "raw-input"), academic_bound)
         self.assertNotIn(("bindcraft", "aggregation"), reference_bound)
 
     def test_resolution_is_documented_as_fail_closed(self) -> None:

@@ -769,6 +769,7 @@
               "enum": [
                 "reference-data",
                 "general-cpu",
+                "academic-cpu",
                 "accelerator"
               ]
             },
