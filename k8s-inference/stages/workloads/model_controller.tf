@@ -834,6 +834,7 @@ locals {
     priorityClasses               = sort(keys(module.kueue_scheduling.contract.workload_priority_classes))
     tenantIds                     = [local.selected_target.tenant_id]
     maxAcceleratorsPerModel       = sum([for pool in values(local.selected_queue_pools) : pool.node.gpus_per_node * pool.capacity.max_nodes])
+    residencyHolderImage          = "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
     fastStartWaitSecondValue      = var.model_controller.fast_start_wait_second_value
     fastStartMechanismHourlyCosts = var.model_controller.fast_start_mechanism_hourly_costs
   }
@@ -996,6 +997,11 @@ resource "terraform_data" "model_controller_contract" {
     precondition {
       condition     = local.model_controller_fast_start_mechanisms_valid
       error_message = "Each fast-start mechanism declaration must carry a matching configDigest and only reference selected accelerator pools."
+    }
+
+    precondition {
+      condition     = local.fast_start_claim_declarations_valid
+      error_message = "Fast-start compile-cache and residency-receipt claims must be distinct, bounded RWX infrastructure dependencies in the model runtime namespace."
     }
     precondition {
       condition     = local.model_controller_fast_start_environment_qualifications_valid

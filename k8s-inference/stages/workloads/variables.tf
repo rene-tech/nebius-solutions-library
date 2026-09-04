@@ -849,6 +849,42 @@ variable "general_cpu_pools" {
   }
 }
 
+variable "fast_start_claims" {
+  description = <<-EOT
+    Deployment-wide realization policy for compile-cache and host-residency
+    receipt claims declared by model_controller.fast_start_mechanisms_file.
+    Claim names, namespaces and compile-cache byte requirements stay in that
+    reviewed declaration; this input selects Terraform ownership and the RWX
+    shared-filesystem class. Set manage=false when adopting claims owned by a
+    pre-existing installation.
+  EOT
+  type = object({
+    manage                     = optional(bool, true)
+    storage_class              = optional(string, "csi-mounted-fs-path-sc")
+    compile_cache_min_size_gib = optional(number, 16)
+    residency_receipt_size_gib = optional(number, 1)
+  })
+  default = {}
+
+  validation {
+    condition = try(
+      length(var.fast_start_claims.storage_class) <= 253 &&
+      can(regex(
+        "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$",
+        var.fast_start_claims.storage_class,
+      )) &&
+      floor(var.fast_start_claims.compile_cache_min_size_gib) == var.fast_start_claims.compile_cache_min_size_gib &&
+      var.fast_start_claims.compile_cache_min_size_gib >= 1 &&
+      var.fast_start_claims.compile_cache_min_size_gib <= 65536 &&
+      floor(var.fast_start_claims.residency_receipt_size_gib) == var.fast_start_claims.residency_receipt_size_gib &&
+      var.fast_start_claims.residency_receipt_size_gib >= 1 &&
+      var.fast_start_claims.residency_receipt_size_gib <= 1024,
+      false,
+    )
+    error_message = "fast_start_claims requires a DNS-subdomain storage class, a whole 1-65536 GiB compile-cache minimum, and a whole 1-1024 GiB residency-receipt claim."
+  }
+}
+
 variable "model_controller" {
   description = "Feature-gated dynamic ModelDeployment controller. Internal envelopes and renderer bundles are derived from the selected catalog, effective accelerator pools, queue, tenant, images, and scaling inputs."
   type = object({
@@ -919,6 +955,7 @@ variable "model_controller" {
         for path in [
           var.model_controller.fast_start_environment_qualifications_file,
           var.model_controller.fast_start_measurement_contracts_file,
+          var.model_controller.fast_start_mechanisms_file,
         ] : path == null ? true : startswith(pathexpand(path), "/") && can(jsondecode(file(pathexpand(path))))
       ]) &&
       var.model_controller.fast_start_wait_second_value >= 0 &&
@@ -938,7 +975,7 @@ variable "model_controller" {
       ]),
       false,
     )
-    error_message = "model_controller must preserve one owner; controller mode requires writes, KEDA, a valid bootstrap/handoff; fast-start evidence and qualification contracts must be readable JSON at absolute paths; and bounded economic inputs must be valid."
+    error_message = "model_controller must preserve one owner; controller mode requires writes, KEDA, a valid bootstrap/handoff; fast-start evidence, qualification, measurement, and mechanism contracts must be readable JSON at absolute paths; and bounded economic inputs must be valid."
   }
 }
 

@@ -1020,6 +1020,7 @@ locals {
     # facade refuses an enabled general CPU lane without core_capacity, so the
     # two can never disagree.
     budget_core_resources = local.root_core_admission_enabled
+    fast_start_claims     = var.deployment.storage.fast_start_claims
     reference_data = {
       enabled    = var.deployment.storage.reference_data.enabled
       namespace  = var.deployment.storage.reference_data.namespace
