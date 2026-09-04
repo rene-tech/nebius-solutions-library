@@ -12,7 +12,7 @@
     "tag": "3.0.4-85c4d205-r6",
     "digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
     "production_protocol_compatible": false,
-    "successor_required": "The published r6 digest predates atomic terminal receipts and the bounded 256 MiB handoff protocol; build and qualify a new immutable digest before activation.",
+    "successor_required": "The published r6 digest predates atomic terminal receipts and the bounded 256 MiB handoff protocol; build and qualify a new immutable successor digest before activation.",
     "digest_state": "published",
     "digest_note": "This is the authoritative identity; consume the image by digest. Do not substitute sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887 or sha256:bead2e68627c1aa7d5fa80243b1164a18160f48cf3a1867090d72ff2b9270e37, which are stock upstream images retained only as historical semantic evidence and are not this runtime.",
     "gpu_family": "agnostic",
