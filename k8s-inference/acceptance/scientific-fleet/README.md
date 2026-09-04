@@ -117,6 +117,36 @@ wall-clock timestamps. Failed rows contain only the model/input identity and a
 stable non-secret failure code. Reusing a run ID fails before any network call
 unless `--overwrite` is explicit.
 
+The customer operation/result contract does not currently return the exact
+per-attempt lifecycle rollup. The operator summary at
+`GET /admin/api/v1/scientific-runs/{operation_id}` is useful for joining the
+run, but its GPU measurements correctly remain unavailable until that admin
+projection is connected to the lifecycle ledger. The authoritative existing
+PostgreSQL join for post-run enrichment is:
+
+```sql
+SELECT subject.operation_id, subject.attempt_id, rollup.terminal,
+       rollup.reconciled, rollup.quality, rollup.data_gaps,
+       rollup.scheduler_occupied_gpu_seconds,
+       rollup.device_allocated_gpu_seconds,
+       rollup.active_gpu_seconds,
+       rollup.occupied_idle_gpu_seconds,
+       rollup.phase_gpu_seconds,
+       rollup.reconciliation_delta_seconds
+FROM fs2_telemetry_subjects AS subject
+JOIN fs2_reporting_lifecycle_latest AS rollup USING (subject_id)
+WHERE subject.operation_id = ANY ($1::uuid[])
+ORDER BY subject.operation_id, subject.attempt_id;
+```
+
+Supply the operation IDs from `aggregate.json`; sum attempt rows per operation
+only when every row is terminal and reconciled and `data_gaps` is empty.
+Prometheus exposes the fleet-level equivalents as
+`fs2_serve_lifecycle_clock_gpu_seconds_total{clock="scheduler_occupied"}` and
+`fs2_serve_lifecycle_gpu_seconds_total` (with `phase="active_compute"` for
+active time and non-active phases for occupied-idle analysis). These metrics
+are cumulative by tenant/model, so use pre/post deltas for one fleet run.
+
 ## Secondary structure fleet inputs
 
 The five secondary/academic structure lanes have model-owned public acceptance
