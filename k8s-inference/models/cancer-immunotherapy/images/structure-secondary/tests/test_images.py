@@ -555,7 +555,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             with self.subTest(image=image["id"]):
                 revision = expected[image["id"]]
                 self.assertEqual(image["source"]["revision"], revision)
-                generation = "r6" if image["id"] == "openfold3" else "r5"
+                generation = "r7" if image["id"] == "openfold3" else "r6"
                 self.assertEqual(image["tag"], f"{revision}-h100-{generation}")
                 self.assertRegex(image["source"]["tag"], r"^v[0-9]")
                 for base in image["base_images"]:
@@ -583,12 +583,12 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertNotIn(phrase, reviewed_text)
 
-    def test_current_publication_digests_are_immutable_candidates(self) -> None:
+    def test_successor_publication_is_pending_and_fail_closed(self) -> None:
         expected = {
-            "esmfold2": "sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
-            "esmfold2-fast": "sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
-            "protenix-v2": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
-            "openfold3": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
+            "esmfold2": None,
+            "esmfold2-fast": None,
+            "protenix-v2": None,
+            "openfold3": None,
         }
         self.assertEqual(
             {image["id"]: image["published_digest"] for image in LOCK["images"]},
@@ -600,7 +600,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 "esmfold2": False,
                 "esmfold2-fast": False,
                 "protenix-v2": False,
-                "openfold3": True,
+                "openfold3": False,
             },
         )
 
@@ -612,7 +612,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             "esmfold2": "pending-exact-artifact-semantic-test",
             "esmfold2-fast": "pending-exact-artifact-semantic-test",
             "protenix-v2": "pending-exact-checkpoint-semantic-test",
-            "openfold3": "qualified-exact-artifact-semantic",
+            "openfold3": "pending-exact-artifact-semantic-test",
         }
         for image in LOCK["images"]:
             with self.subTest(image=image["id"]):
@@ -703,7 +703,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
     ) -> None:
         images = {image["id"]: image for image in LOCK["images"]}
         expected_level_states = {
-            "L1": "candidate-published-build-only-not-semantic-qualified",
+            "L1": "candidate-evidence-collected-pending-independent-acceptance",
             "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
             "L3": "unavailable-no-local-disk-cached-snapshot",
             "L4": "unavailable-no-system-ram-retained-model",
@@ -711,26 +711,12 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
         for image in images.values():
             fast_start = image["fast_start"]
             self.assertEqual(fast_start["maximum_candidate_level"], "L1")
-            if image["id"] == "openfold3":
-                self.assertEqual(fast_start["qualified_level"], "L1")
-                self.assertEqual(
-                    fast_start["qualification_state"],
-                    "qualified-exact-artifact-h100-semantic",
-                )
-                self.assertEqual(
-                    fast_start["level_states"],
-                    {
-                        **expected_level_states,
-                        "L1": "qualified-regional-image-and-exact-artifact-h100-semantic",
-                    },
-                )
-            else:
-                self.assertIsNone(fast_start["qualified_level"])
-                self.assertEqual(
-                    fast_start["qualification_state"],
-                    "published-build-only-not-semantic-qualified",
-                )
-                self.assertEqual(fast_start["level_states"], expected_level_states)
+            self.assertIsNone(fast_start["qualified_level"])
+            self.assertEqual(
+                fast_start["qualification_state"],
+                "evidence-collected-pending-independent-acceptance",
+            )
+            self.assertEqual(fast_start["level_states"], expected_level_states)
 
         for model_id in ("esmfold2", "esmfold2-fast"):
             contract = images[model_id]["runtime_contract"]
@@ -2327,7 +2313,7 @@ for seed in seeds:
 
     def test_preliminary_publications_remain_explicitly_non_deployable(self) -> None:
         superseded = LOCK["superseded_publications"]
-        self.assertEqual(len(superseded), 7)
+        self.assertEqual(len(superseded), 11)
         self.assertTrue(all(item["deployable"] is False for item in superseded))
         self.assertTrue(
             all(item["digest"].startswith("sha256:") for item in superseded)
