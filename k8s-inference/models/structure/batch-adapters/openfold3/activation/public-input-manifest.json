@@ -1,0 +1,17 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+  "manifest_id": "acceptance.openfold3-openbind.single-chain.v1",
+  "entries": [
+    {
+      "name": "openfold3-input",
+      "semantic_type": "openfold3-input-json/v1",
+      "artifact": {
+        "artifact_id": "fixture.openfold3-openbind.h100-semantic-input.v1",
+        "sha256": "4a8e99838cfaa512cd9d0af26172535739a678fe45296446044c17e2382d61cf",
+        "size_bytes": 239,
+        "media_type": "application/json",
+        "compression": "none"
+      }
+    }
+  ]
+}

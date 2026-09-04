@@ -1,0 +1,41 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-public-acceptance-input/v1",
+  "model_id": "protenix-v2",
+  "profile_projection": {
+    "profile": {
+      "execution_identity": {
+        "model_revision": "2475421477ab414b571149ad4a875c390ff8a35d"
+      }
+    }
+  },
+  "execution_projection": {
+    "variant_id": "upstream-v2-0-0"
+  },
+  "public_fixtures": {
+    "request": "models/structure/batch-adapters/protenix-v2/activation/public-request.json",
+    "supporting_inputs": [
+      {
+        "role": "request-input-manifest",
+        "path": "models/structure/batch-adapters/protenix-v2/activation/public-input-manifest.json",
+        "encoding": "canonical-json-newline"
+      },
+      {
+        "role": "manifest-artifact",
+        "name": "protenix-input",
+        "path": "model-artifacts/smoke/protenix-v2-minimal.json",
+        "encoding": "raw"
+      }
+    ]
+  },
+  "semantic_input": {
+    "source_contract": "models/cancer-immunotherapy/images/structure-secondary/qualification/render_secondary_semantic_job.py#PROTENIX_FIXTURE",
+    "payload_path": "model-artifacts/smoke/protenix-v2-minimal.json",
+    "sha256": "616cbd11f2c07e57c4e0c6ac121bfc891e593ec072946a577f921993c2e9f50e",
+    "size_bytes": 215,
+    "h100_evidence": "models/cancer-immunotherapy/images/structure-secondary/evidence/live-h100-20260904/protenix-v2-h100-semantic-qualification.json"
+  },
+  "activation_gate": {
+    "route_exposed": false,
+    "public_platform_run_required": true
+  }
+}

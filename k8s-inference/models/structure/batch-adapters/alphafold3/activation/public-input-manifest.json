@@ -1,0 +1,17 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+  "manifest_id": "acceptance.alphafold3.single-chain.v1",
+  "entries": [
+    {
+      "name": "fold-input",
+      "semantic_type": "alphafold3-fold-input/v1",
+      "artifact": {
+        "artifact_id": "fixture.alphafold3.h100-semantic-fold-input.v1",
+        "sha256": "f0af83bd3c5f30213c9deba15d4657fd53a7f27e46de2bd95794739774795077",
+        "size_bytes": 328,
+        "media_type": "application/json",
+        "compression": "none"
+      }
+    }
+  ]
+}

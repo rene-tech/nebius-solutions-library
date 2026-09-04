@@ -1,0 +1,22 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "predict-protein-structure",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "fixture.esmfold2-fast.acceptance-manifest.v1",
+    "sha256": "d3041fb80a0f2aef8ef453c5f43771b215d9e3dbf91a4587666898ff846e42b6",
+    "size_bytes": 434,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
+  },
+  "parameters": {
+    "sequence": "MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFP",
+    "mode": "single-sequence",
+    "seed": 101
+  },
+  "client_context": {
+    "batch_id": "acceptance.esmfold2-fast.h100.v1",
+    "correlation_id": "secondary-fleet.h100.acceptance",
+    "display_name": "ESMFold2-Fast single-sequence acceptance canary"
+  }
+}

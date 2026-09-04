@@ -1,0 +1,15 @@
+{
+  "queries": {
+    "qualification": {
+      "chains": [
+        {
+          "chain_ids": [
+            "A"
+          ],
+          "molecule_type": "protein",
+          "sequence": "MKTIIALSYIFCLVFADYKDDDDK"
+        }
+      ]
+    }
+  }
+}
