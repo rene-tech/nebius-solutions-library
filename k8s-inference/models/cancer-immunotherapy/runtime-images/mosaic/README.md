@@ -109,6 +109,13 @@ plane does not publish a Mosaic root yet, so qualification reads a task-scoped
 copy on the preserved qualification claim. The runtime resolves everything by
 SHA-256, so it binds to the canonical plane unchanged once that plane exists.
 
+Production controller Jobs keep immutable model assets and tenant request
+bytes on separate mounts. `FS2_ARTIFACT_ROOT` names the read-only model plane;
+`FS2_INPUT_ARTIFACT_ROOT` names the stage workspace containing
+`inputs/<artifact-id>`. Direct historical Jobs that omit the latter retain the
+single-root behavior, while an explicitly supplied input root never falls back
+to the model plane.
+
 `evidence/` holds the live H100 receipt. Run the offline suite with:
 
 ```bash

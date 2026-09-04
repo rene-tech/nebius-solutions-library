@@ -19,6 +19,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 
 HERE = Path(__file__).resolve().parent
@@ -331,6 +332,48 @@ class AggregateOutputContract(unittest.TestCase):
 
 
 class ExternalArtifactPolicy(unittest.TestCase):
+    def test_request_input_root_is_independent_from_model_artifact_root(self) -> None:
+        pointer = INPUT_MANIFEST["entries"][0]["artifact"]
+        with tempfile.TemporaryDirectory() as handle:
+            root = Path(handle)
+            model_root = root / "model"
+            input_root = root / "request"
+            model_root.mkdir()
+            target = input_root / "inputs" / pointer["artifact_id"]
+            target.parent.mkdir(parents=True)
+            target.write_bytes(TARGET_FASTA)
+            with patch.dict(
+                os.environ,
+                {
+                    "FS2_ARTIFACT_ROOT": str(model_root),
+                    "FS2_INPUT_ARTIFACT_ROOT": str(input_root),
+                },
+                clear=False,
+            ):
+                expected = "".join(TARGET_FASTA.decode("ascii").splitlines()[1:])
+                self.assertEqual(RUNTIME._target_sequence(INPUT_MANIFEST), expected)
+
+    def test_explicit_input_root_does_not_fall_back_to_the_model_plane(self) -> None:
+        pointer = INPUT_MANIFEST["entries"][0]["artifact"]
+        with tempfile.TemporaryDirectory() as handle:
+            root = Path(handle)
+            model_root = root / "model"
+            input_root = root / "request"
+            target = model_root / "inputs" / pointer["artifact_id"]
+            target.parent.mkdir(parents=True)
+            target.write_bytes(TARGET_FASTA)
+            input_root.mkdir()
+            with patch.dict(
+                os.environ,
+                {
+                    "FS2_ARTIFACT_ROOT": str(model_root),
+                    "FS2_INPUT_ARTIFACT_ROOT": str(input_root),
+                },
+                clear=False,
+            ):
+                with self.assertRaises(SystemExit):
+                    RUNTIME._target_sequence(INPUT_MANIFEST)
+
     def test_dockerfile_deletes_every_upstream_checkpoint_before_install(self) -> None:
         dockerfile = (MOSAIC / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn("src/mosaic/proteinmpnn/weights", dockerfile)

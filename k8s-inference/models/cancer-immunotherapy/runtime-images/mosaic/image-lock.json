@@ -29,6 +29,7 @@
     ],
     "required_environment": {
       "FS2_ARTIFACT_ROOT": "root of the external artifact plane; defaults to /opt/fs2/artifacts",
+      "FS2_INPUT_ARTIFACT_ROOT": "root containing controller-materialized request artifacts; defaults to FS2_ARTIFACT_ROOT for backward-compatible direct runs",
       "FS2_RUNTIME_IMAGE_DIGEST": "aggregate stage only; binds the committed manifest to the admitted image digest"
     }
   },
@@ -37,8 +38,8 @@
     "platform": "linux/amd64",
     "registry": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models",
     "repository": "mosaic",
-    "tag_suffix": "adapter-v5",
-    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic:70fec525423f5f87156a1a957b4a4048f9f8e676-adapter-v5",
+    "tag_suffix": "adapter-v6",
+    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic:70fec525423f5f87156a1a957b4a4048f9f8e676-adapter-v6",
     "build_context": "..",
     "dockerfile": "Dockerfile",
     "python": "3.12",
@@ -60,7 +61,7 @@
     "runtime_entrypoint": {
       "path": "runtime_entrypoint.py",
       "container_path": "/opt/fs2/mosaic/runtime_entrypoint.py",
-      "sha256": "9ae9af6d7d64a0c046957363ffba6c838f337b93522807b6a09eb95f6b47ae12"
+      "sha256": "0e2202468e4f5a27d077378ce2bf1748b5a29ef9b5d0051acfc04b47ef2cf35b"
     },
     "smoke": [
       [
@@ -75,8 +76,14 @@
         "--help"
       ]
     ],
-    "published_digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+    "published_digest": null,
     "supersedes": [
+      {
+        "tag_suffix": "adapter-v5",
+        "digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+        "deployable": false,
+        "reason": "H100 semantic-qualified for the historical one-root Job, but it cannot read controller-materialized request bytes separately from the immutable model-artifact root. The v6 successor adds that production split-root contract; evidence does not transfer across image digests."
+      },
       {
         "tag_suffix": "adapter-v1",
         "digest": "sha256:dc4dfa564eaa56507a598d9f3527e468be9f6466ca453f1d704ce5fc29f3378d",
@@ -114,13 +121,15 @@
       }
     },
     "qualification": {
-      "state": "h100-semantic-qualified",
+      "state": "successor-awaiting-h100-controller-qualification",
       "evidence": [
         "evidence/h100-run-receipt.json",
         "evidence/h100-semantic-qualification.json"
       ],
+      "historical_predecessor_digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+      "evidence_transfer_policy": "The listed evidence belongs to adapter-v5 and demonstrates the unchanged scientific path only; adapter-v6 requires a new immutable-image controller run before route exposure.",
       "canonical_output_validator": "passed",
-      "scope": "one bounded single-shard minibinder design workflow; no throughput, fast-start, snapshot, elasticity or contention measurement",
+      "scope": "successor adds only independent request/model artifact roots; no semantic, throughput, fast-start, snapshot, elasticity or contention claim until the new digest is run",
       "route_exposed": false
     }
   },

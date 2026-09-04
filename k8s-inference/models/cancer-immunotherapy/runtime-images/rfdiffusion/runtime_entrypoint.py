@@ -1103,6 +1103,11 @@ def command_run(args: argparse.Namespace) -> int:
     request_path = Path(args.request)
     manifest_path = Path(args.input_manifest)
     artifact_root = Path(args.artifact_root).resolve()
+    input_artifact_root = (
+        artifact_root
+        if args.input_artifact_root is None
+        else Path(args.input_artifact_root).resolve()
+    )
     upstream_home = Path(args.upstream_home).resolve()
 
     envelope: dict[str, Any] = {
@@ -1161,7 +1166,10 @@ def command_run(args: argparse.Namespace) -> int:
         input_pdb: Path | None = None
         if parameters.input_pdb_artifact_id:
             reference = resolve_artifact(
-                parameters.input_pdb_artifact_id, artifacts, artifact_root, verify_digest=True
+                parameters.input_pdb_artifact_id,
+                artifacts,
+                input_artifact_root,
+                verify_digest=True,
             )
             input_pdb = reference.path
             reference_residues = parse_pdb_residues(input_pdb)
@@ -1321,6 +1329,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--input-manifest", required=True)
     run.add_argument("--output", required=True)
     run.add_argument("--artifact-root", default=os.environ.get("FS2_ARTIFACT_ROOT", "/opt/fs2/artifacts"))
+    run.add_argument(
+        "--input-artifact-root",
+        default=os.environ.get("FS2_INPUT_ARTIFACT_ROOT"),
+        help="root of controller-materialized request artifacts; defaults to --artifact-root",
+    )
     run.add_argument("--upstream-home", default=os.environ.get("FS2_RFDIFFUSION_HOME", "/opt/rfdiffusion"))
     run.add_argument("--checkpoint-artifact-id", default="artifact.rfdiffusion.base-ckpt")
     run.add_argument("--scratch", default="/tmp/fs2-rfdiffusion")

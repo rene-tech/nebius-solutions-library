@@ -104,7 +104,8 @@ run_checks.sh                       every offline check
 ```
 python /opt/fs2/runtime_entrypoint.py run \
   --request <request.json> --input-manifest <input-manifest.json> \
-  --output <dir> [--artifact-root <dir>] [--checkpoint-artifact-id <id>] \
+  --output <dir> [--artifact-root <model-dir>] [--input-artifact-root <request-dir>] \
+  [--checkpoint-artifact-id <id>] \
   [--cache-level <level>] [--timeout-seconds <int>]
 
 python /opt/fs2/runtime_entrypoint.py probe [--allow-cpu]
@@ -180,6 +181,12 @@ conflict is resolved rather than papered over: the artifact catalog binds
 `rfdiffusion-checkpoints` at `/models/rfdiffusion-checkpoints`, while the superseded
 images hard-coded `FS2_ARTIFACT_ROOT=/models/rfdiffusion`. This image hard-codes
 neither and works at whatever mount point the plane chooses.
+
+Tenant input structures can be materialized into a separate stage workspace.
+`--input-artifact-root` (or `FS2_INPUT_ARTIFACT_ROOT`) is used only for those
+request artifacts; it defaults to `--artifact-root` for historical direct
+Jobs. Supplying it explicitly is fail-closed: request bytes are not searched
+under the model checkpoint root.
 
 **Checkpoint localization is not this runtime's to claim.** Raw single-file artifact
 localization is owned by `fs2-single-file-model-artifact-localization-r20260903`. This

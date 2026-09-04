@@ -59,15 +59,29 @@ def _artifact_root() -> Path:
     return Path(os.environ.get("FS2_ARTIFACT_ROOT", "/opt/fs2/artifacts"))
 
 
+def _input_artifact_root() -> Path:
+    """Return the writable controller materialization root.
+
+    Older direct qualification Jobs used one artifact plane for both model
+    weights and request bytes.  Production Jobs mount immutable model trees at
+    ``FS2_ARTIFACT_ROOT`` and materialize tenant inputs in the stage workspace,
+    so those roots must be independently selectable.  Falling back preserves
+    the old direct-run contract without weakening an explicitly supplied root.
+    """
+
+    return Path(os.environ.get("FS2_INPUT_ARTIFACT_ROOT", str(_artifact_root())))
+
+
 def _target_sequence(manifest: dict[str, Any]) -> str:
     entries = manifest.get("entries", [])
     if len(entries) != 1 or entries[0].get("name") != "target_sequence":
         raise SystemExit("input manifest must contain exactly target_sequence")
     pointer = entries[0]["artifact"]
     artifact_id = pointer["artifact_id"]
+    input_root = _input_artifact_root()
     candidates = [
-        _artifact_root() / "inputs" / artifact_id,
-        _artifact_root() / artifact_id,
+        input_root / "inputs" / artifact_id,
+        input_root / artifact_id,
     ]
     path = next((candidate for candidate in candidates if candidate.is_file()), None)
     if path is None:

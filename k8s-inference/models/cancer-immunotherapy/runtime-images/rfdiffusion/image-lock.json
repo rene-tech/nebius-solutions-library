@@ -24,8 +24,8 @@
     "platform": "linux/amd64",
     "registry": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models",
     "repository": "rfdiffusion",
-    "tag_suffix": "-cuda121-r12",
-    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion:9273ef67335acaf91df0150473a274759229cdf6-cuda121-r12",
+    "tag_suffix": "-cuda121-r13",
+    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion:9273ef67335acaf91df0150473a274759229cdf6-cuda121-r13",
     "dockerfile": "Dockerfile",
     "build_context": ".",
     "python": "3.10.14",
@@ -43,7 +43,7 @@
     "runtime_inputs": {
       "Dockerfile": "1126ee31a234fa6424ee0396120df5de5c9618a7db1a7005e4ceacae67bcb034",
       "requirements.lock": "11c21670e7d55838dda6eb41ed18deb325e8f996938cf8b03959ecda10307ff6",
-      "runtime_entrypoint.py": "4f304961981345c4fb0c4b3cb27839223380d332fec12ffe44ab388a361a614b",
+      "runtime_entrypoint.py": "90250fe1b9a153ec87152426dae8e57ff86d8ae4b4d74173a977bc883841b7dd",
       "fetch_verified.py": "a13a92f56907bf8d6f3b2301f2aea420a3a82c1a7eacaab5a0b4a40ce7a0ee96"
     },
     "runtime_input_policy": "Every file that enters the image is sha256-pinned here and re-verified by build_rfdiffusion.py before the build starts, so the published layers can be tied back to the checked-in runtime.",
@@ -58,13 +58,19 @@
       "other_families": "unqualified-pending-per-family-evidence",
       "architecture_policy": "Qualified on H100 (sm90) only. torch 2.3.0/cu121 and the prebuilt DGL cu121 wheel ship a fixed set of compiled kernels and this runtime has audited neither the cubin nor the PTX they carry, so no portability claim is made for any other GPU family. Nothing in the image hard-codes a device selector, so another family needs per-family evidence rather than a code change; until that evidence exists it is unqualified. Accelerator breadth belongs in the Terraform resource profiles, not in a binary property of this image."
     },
-    "published_digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
-    "published_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+    "published_digest": null,
+    "published_reference": null,
     "attestation_predicate_types": [
       "https://slsa.dev/provenance/v1",
       "https://spdx.dev/Document"
     ],
     "supersedes": [
+      {
+        "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r12",
+        "digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+        "deployable": false,
+        "reason": "H100 semantic-qualified for a historical single artifact root, but the production controller mounts the immutable checkpoint separately from a tenant motif input. The r13 successor adds an explicit fail-closed request-input root; evidence cannot transfer across the new image digest."
+      },
       {
         "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r11",
         "digest": "sha256:1c0dce764297a605dda24883256d7d540b28e7b8766628d7e6ed49ee8e25698f",
@@ -120,12 +126,13 @@
       "scaffold-motif"
     ],
     "argv_contract": [
-      "python /opt/fs2/runtime_entrypoint.py run --request <request.json> --input-manifest <input-manifest.json> --output <dir> [--artifact-root <dir>] [--checkpoint-artifact-id <id>] [--cache-level <level>] [--timeout-seconds <int>]",
+      "python /opt/fs2/runtime_entrypoint.py run --request <request.json> --input-manifest <input-manifest.json> --output <dir> [--artifact-root <model-dir>] [--input-artifact-root <request-dir>] [--checkpoint-artifact-id <id>] [--cache-level <level>] [--timeout-seconds <int>]",
       "python /opt/fs2/runtime_entrypoint.py probe [--upstream-home <dir>] [--allow-cpu]"
     ],
     "shell_free": true,
     "required_environment": {
       "FS2_ARTIFACT_ROOT": "root of the mounted artifact plane; defaults to /opt/fs2/artifacts",
+      "FS2_INPUT_ARTIFACT_ROOT": "root of controller-materialized request artifacts; defaults to FS2_ARTIFACT_ROOT for backward-compatible direct runs",
       "FS2_RFDIFFUSION_HOME": "upstream tree; defaults to /opt/rfdiffusion"
     },
     "bounds": {
@@ -266,8 +273,9 @@
     "conflict": "The artifact catalog's consumer layout binds rfdiffusion-checkpoints at /models/rfdiffusion-checkpoints, while the superseded r6/r7 images hard-coded FS2_ARTIFACT_ROOT=/models/rfdiffusion. This runtime resolves the conflict by not hard-coding either: the checkpoint is located through the input manifest's relative path under --artifact-root, so the same image works at any mount point the plane chooses."
   },
   "qualification": {
-    "state": "h100-semantic-qualified",
-    "qualified_digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+    "state": "successor-awaiting-h100-controller-qualification",
+    "qualified_digest": null,
+    "historical_predecessor_digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
     "qualified_operations": [
       "design-backbone",
       "scaffold-motif"
@@ -284,8 +292,8 @@
       "evidence/design/design_9100_motif.pdb",
       "evidence/superseded/r10-scaffold-motif-failed-result.json"
     ],
-    "evidence_transfer_policy": "Evidence is bound to an exact image digest. Nothing from r6-r11 transfers to this image.",
-    "kubelet_image_id_verified": true,
+    "evidence_transfer_policy": "The listed evidence belongs to r12 and demonstrates the unchanged scientific path only. Nothing transfers to r13 until its immutable digest completes a production-controller run.",
+    "kubelet_image_id_verified": false,
     "criteria_met": {
       "cuda_execution": "upstream .trb recorded NVIDIA H100 80GB HBM3 on both runs",
       "parseable_structure": "complete N/CA/C backbone on every residue in both designs",
@@ -296,7 +304,7 @@
       "terminal_success_after_upstream": "the envelope reports succeeded only after marker verification",
       "determinism": "seed 8100 reproduced byte-identically across three independently built images and four nodes"
     },
-    "scope": "One design-backbone and one scaffold-motif run, each once. No throughput, contention, elasticity, multi-design fan-out or snapshot measurement, and no cold-start measurement for this digest: both runs landed on nodes that already held the layers. Checkpoint localization is explicitly out of scope and unqualified here.",
+    "scope": "r13 changes only checkpoint/request root separation; no semantic, throughput, contention, elasticity, multi-design, snapshot, or cold-start claim exists for the successor until it is published and run.",
     "localization_state": "not-claimed; owned by fs2-single-file-model-artifact-localization-r20260903"
   },
   "upstream_contract_defects": [

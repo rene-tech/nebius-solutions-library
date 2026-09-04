@@ -160,8 +160,8 @@ class ExecutedArgvMatchesGoldenTests(unittest.TestCase):
         (home / "scripts" / "run_inference.py").write_text(STUB, encoding="utf-8")
         return home
 
-    def _materialise_artifacts(self, name: str, root: Path) -> None:
-        """Lay the fixture's declared artifacts out under the artifact root.
+    def _materialise_artifacts(self, name: str, model_root: Path, input_root: Path | None = None) -> None:
+        """Lay fixture artifacts out under one root or split model/input roots.
 
         The checkpoint is huge, so a placeholder stands in and the manifest is
         rewritten to its real digest. The point of this test is the argv and the
@@ -173,6 +173,11 @@ class ExecutedArgvMatchesGoldenTests(unittest.TestCase):
         )
         for entry in manifest["entries"]:
             artifact = entry["artifact"]
+            root = (
+                model_root
+                if artifact["artifact_id"] == "artifact.rfdiffusion.base-ckpt"
+                else (input_root or model_root)
+            )
             target = root / artifact["path"]
             target.parent.mkdir(parents=True, exist_ok=True)
             source = FIXTURES / name / Path(artifact["path"]).name
@@ -182,31 +187,47 @@ class ExecutedArgvMatchesGoldenTests(unittest.TestCase):
                 target.write_bytes(b"placeholder checkpoint")
             artifact["sha256"] = rt.sha256_file(target)
             artifact["size_bytes"] = target.stat().st_size
-        (root.parent / f"{name}-manifest.json").write_text(
+        (model_root.parent / f"{name}-manifest.json").write_text(
             json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
         )
 
-    def _run_fixture(self, name: str, tmp: Path) -> tuple[int, dict, dict, dict]:
+    def _run_fixture(
+        self,
+        name: str,
+        tmp: Path,
+        *,
+        split_input_root: bool = False,
+    ) -> tuple[int, dict, dict, dict]:
         golden = json.loads((FIXTURES / name / "golden-argv.json").read_text(encoding="utf-8"))
         artifact_root = tmp / "artifacts"
         artifact_root.mkdir()
-        self._materialise_artifacts(name, artifact_root)
+        input_root = tmp / "request-artifacts" if split_input_root else artifact_root
+        if split_input_root:
+            input_root.mkdir()
+        self._materialise_artifacts(name, artifact_root, input_root)
 
         record = tmp / "argv.json"
         output = tmp / "out"
         os.environ["FS2_TEST_ARGV_RECORD"] = str(record)
         try:
-            code = rt.main(
-                [
-                    "run",
-                    "--request", str(FIXTURES / name / "request.json"),
-                    "--input-manifest", str(tmp / f"{name}-manifest.json"),
-                    "--output", str(output),
-                    "--artifact-root", str(artifact_root),
-                    "--upstream-home", str(self._stub_upstream(tmp)),
-                    "--scratch", str(tmp / "scratch"),
-                ]
-            )
+            command = [
+                "run",
+                "--request",
+                str(FIXTURES / name / "request.json"),
+                "--input-manifest",
+                str(tmp / f"{name}-manifest.json"),
+                "--output",
+                str(output),
+                "--artifact-root",
+                str(artifact_root),
+                "--upstream-home",
+                str(self._stub_upstream(tmp)),
+                "--scratch",
+                str(tmp / "scratch"),
+            ]
+            if split_input_root:
+                command.extend(("--input-artifact-root", str(input_root)))
+            code = rt.main(command)
         finally:
             os.environ.pop("FS2_TEST_ARGV_RECORD", None)
         envelope = json.loads((output / "result.json").read_text(encoding="utf-8"))
@@ -264,6 +285,18 @@ class ExecutedArgvMatchesGoldenTests(unittest.TestCase):
             self.assertEqual(envelope["operation"], "scaffold-motif")
             self.assertEqual(design["residue_count"], 32)
 
+    def test_checkpoint_and_motif_input_can_use_distinct_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            code, envelope, _, _ = self._run_fixture(
+                "scaffold-motif",
+                tmp,
+                split_input_root=True,
+            )
+            self.assertEqual(code, 0, envelope.get("error"))
+            self.assertTrue(envelope["checkpoint"]["path"].startswith(str(tmp / "artifacts")))
+            self.assertEqual(envelope["input_pdb"]["artifact_id"], "artifact.rfdiffusion.target.1ubq")
+
     def test_design_indices_match_golden(self) -> None:
         for name in fixture_names():
             with self.subTest(fixture=name):
@@ -283,7 +316,7 @@ class FrozenContractTests(unittest.TestCase):
         parser = rt.build_parser()
         actions = {a.dest for a in parser._subparsers._group_actions[0].choices["run"]._actions}
         for required in (
-            "request", "input_manifest", "output", "artifact_root", "upstream_home",
+            "request", "input_manifest", "output", "artifact_root", "input_artifact_root", "upstream_home",
             "checkpoint_artifact_id", "scratch", "timeout_seconds", "cache_level",
             "skip_checkpoint_digest",
         ):
