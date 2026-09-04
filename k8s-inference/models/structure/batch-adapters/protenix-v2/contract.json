@@ -9,8 +9,8 @@
   },
   "runtime_image": {
     "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2",
-    "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r5",
-    "digest": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
+    "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r6",
+    "digest": "sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
     "workspace_uid": 10001,
     "workspace_gid": 10001,
     "state": "build-only-not-semantic-qualified"

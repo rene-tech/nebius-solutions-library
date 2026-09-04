@@ -10,8 +10,8 @@
   },
   "runtime_image": {
     "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream",
-    "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r6",
-    "digest": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
+    "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r7",
+    "digest": "sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
     "workspace_uid": 10001,
     "workspace_gid": 10001,
     "state": "build-only-not-semantic-qualified"

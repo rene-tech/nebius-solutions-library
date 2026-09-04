@@ -74,6 +74,31 @@ identity, bounded collectors, and shared workspace protocol. Their adapter
 contracts remain `build-only-not-semantic-qualified` and every route remains
 closed pending exact-artifact H100 inference.
 
+The controller's production artifact localizer subsequently enriched each v1
+runtime marker record with manifest, readiness, authorization, and localization
+receipt identities. The r5 ESMFold2/Fast/Protenix images and the semantically
+tested r6 OpenFold image rejected those additional fields before inference.
+That qualification does not transfer across a runtime protocol change. Exact
+clean pushed source `a25251748608f3f437277e3c1c3c91896d5dc482` therefore
+published four new non-overwriting successors whose shared marker validator
+accepts both the legacy eight-field and current enriched eleven-field v1 shapes
+while retaining exact artifact, mount, content, manifest, file, and receipt
+checks:
+
+| Runtime | Immutable localization-compatible successor |
+|---|---|
+| ESMFold2 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3` |
+| ESMFold2-Fast | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35` |
+| Protenix v2 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e` |
+| OpenFold3 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4` |
+
+All four passed the publisher's offline network-disabled non-root smoke, direct
+CLI check, exact generated-adapter-argv contract, registry readback, and SPDX
+generation. They remain `build-only-not-semantic-qualified`, non-deployable in
+the image lock, and require fresh exact-digest H100 semantic receipts before
+their activation projections may move to these identities. Evidence is in
+`evidence/localization-marker-successor-publication-20260904.json`.
+
 Publication alone does not qualify semantic H100 readiness, Blackwell
 portability, or any numbered fast-start level. Those states remain pending
 exact artifact-backed H100 evidence below.
@@ -334,15 +359,13 @@ database-promotion, stable-selector storage, academic namespace, and nonroot
 persistent-cache gates; passing this four-image publisher never substitutes for
 those independent gates.
 
-The post-publication cross-contract gate passed against exact clean pushed
-adapter successor `0ad6ffe9126c6e70fe3dbdff6e0936e0544dd9b2`, one narrow commit
-on frozen main `a1ecc219f5e319be87cfa20d5a79af1e3674c6f0` and integrated by
-main `3f8f4b4e8f0a03b0e7fbf0091dc17354a914ae32`. It executed every
-generated ESMFold2, ESMFold2-Fast, Protenix v2, and OpenFold3 argv through
-the actual image parsers and returned `failures=[]`. The verifier also
-byte-compared every runtime launcher, wrapper, and helper to published source
-`e6d20c7c`; no image bytes or public CLI changed, so the existing r4 digests
-remain immutable non-deployable candidates.
+The current post-publication cross-contract gate passed against exact clean
+pushed image and adapter source `a25251748608f3f437277e3c1c3c91896d5dc482`.
+It executed every generated ESMFold2, ESMFold2-Fast, Protenix v2, and OpenFold3
+argv through the actual image parsers and returned `failures=[]`. The verifier
+also byte-compared every runtime launcher, wrapper, and helper to that exact
+published source, including shared `runtime_localization.py` SHA-256
+`1288717c61207ff53a46cb791dc734dbb1c2dc7d91089be6c2ff53c54ba65a44`.
 
 The Protenix and OpenFold model-owned contracts declare their exact cache mount
 roots and environment, and generated argv carries those environment values.
@@ -421,12 +444,10 @@ No model endpoint or shared service is deployed by this image task.
 
 ## Superseded preliminary publications
 
-Seven task-owned historical or rejected manifests are retained under
-`superseded_publications`; all have `deployable: false`. The final four entries
-are the `-h100-r3` manifests rejected by direct-command H100 testing. The
-historical AF3 image evidence is owned by the dedicated AF3 successor and is not
-repeated here. The corrected `-h100-r4` publication passed the direct-executable,
-build, no-runtime-nvcc, and layer-history gates. These immutable digests remain
-non-deployable candidates after the narrow adapter gate passed; live
-localization/cache activation and exact-artifact offline semantic H100 runs
-remain required before deployment or admission.
+Eleven task-owned historical or rejected manifests are retained under
+`superseded_publications`; all have `deployable: false`. The four newest entries
+are the prior production candidates that reject the current enriched
+localization-marker fields. The historical AF3 image evidence is owned by the
+dedicated AF3 successor and is not repeated here. The corrected earlier
+publications remain immutable evidence; the current successor digests still
+require exact-artifact offline semantic H100 runs before activation.

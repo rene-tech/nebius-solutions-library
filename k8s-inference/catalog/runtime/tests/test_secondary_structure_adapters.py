@@ -14,12 +14,18 @@ ADAPTER_DIRECTORIES = {
     for model_id in MODEL_IDS
 }
 SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
-SEMANTICALLY_H100_QUALIFIED = {"openfold3-openbind"}
+SEMANTICALLY_H100_QUALIFIED: set[str] = set()
 IMAGE_GENERATIONS = {
-    "esmfold2": "h100-r5",
-    "esmfold2-fast": "h100-r5",
-    "protenix-v2": "h100-r5",
-    "openfold3-openbind": "h100-r6",
+    "esmfold2": "h100-r6",
+    "esmfold2-fast": "h100-r6",
+    "protenix-v2": "h100-r6",
+    "openfold3-openbind": "h100-r7",
+}
+PREDECESSOR_ACTIVATION_DIGESTS = {
+    "esmfold2": "sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
+    "esmfold2-fast": "sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
+    "protenix-v2": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
+    "openfold3-openbind": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
 }
 
 
@@ -100,7 +106,12 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
                 self.assertEqual(profile["model_id"], model_id)
                 self.assertEqual(
                     profile["execution_identity"]["runtime_image_digest"],
+                    PREDECESSOR_ACTIVATION_DIGESTS[model_id],
+                )
+                self.assertNotEqual(
+                    profile["execution_identity"]["runtime_image_digest"],
                     image["digest"],
+                    "a predecessor H100 receipt must not qualify a successor image",
                 )
                 seam = str(contract["seam"])
                 self.assertIn("scheduler", seam)

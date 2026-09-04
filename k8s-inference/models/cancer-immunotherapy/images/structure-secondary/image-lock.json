@@ -146,9 +146,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "evidence-collected-pending-independent-acceptance",
+        "qualification_state": "published-build-only-not-semantic-qualified",
         "level_states": {
-          "L1": "candidate-evidence-collected-pending-independent-acceptance",
+          "L1": "candidate-published-build-only-not-semantic-qualified",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -160,7 +160,7 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-only-sdpa-dispatch", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": null,
+      "published_digest": "sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
       "deployable": false
     },
     {
@@ -225,9 +225,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "evidence-collected-pending-independent-acceptance",
+        "qualification_state": "published-build-only-not-semantic-qualified",
         "level_states": {
-          "L1": "candidate-evidence-collected-pending-independent-acceptance",
+          "L1": "candidate-published-build-only-not-semantic-qualified",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -239,7 +239,7 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-only-sdpa-dispatch", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": null,
+      "published_digest": "sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
       "deployable": false
     },
     {
@@ -316,9 +316,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "evidence-collected-pending-independent-acceptance",
+        "qualification_state": "published-build-only-not-semantic-qualified",
         "level_states": {
-          "L1": "candidate-evidence-collected-pending-independent-acceptance",
+          "L1": "candidate-published-build-only-not-semantic-qualified",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -330,7 +330,7 @@
         "blackwell": {"status": "unsupported", "scope": "pinned-pytorch-2.7.1-cu126-libtorch-has-no-blackwell-cubin-or-ptx", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": null,
+      "published_digest": "sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
       "deployable": false
     },
     {
@@ -393,9 +393,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "evidence-collected-pending-independent-acceptance",
+        "qualification_state": "published-build-only-not-semantic-qualified",
         "level_states": {
-          "L1": "candidate-evidence-collected-pending-independent-acceptance",
+          "L1": "candidate-published-build-only-not-semantic-qualified",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -407,7 +407,7 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-not-readiness", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": null,
+      "published_digest": "sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
       "deployable": false
     }
   ]
