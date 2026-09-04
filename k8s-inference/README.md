@@ -413,6 +413,16 @@ identity that differs from that profile. Regenerate and review the execution map
 and profiles together before using the override; hand-editing generated fields
 is intentionally not a supported activation path.
 
+`scientific_batch.runtime_cache` optionally provisions one Terraform-owned
+ReadWriteMany claim named `fs2-scientific-runtime-cache`. It contains only
+disposable runtime data such as JAX/XLA compiled kernels; immutable model
+artifacts and customer inputs remain on their dedicated read-only and
+content-addressed planes. A stage can consume the cache only through the
+generated, writable `/cache` binding. Terraform rejects enabling the claim with
+no declared consumer, using a different claim/path, or declaring a consumer
+while the feature is disabled. The claim is not assigned a pod `fsGroup`, so a
+large cache does not trigger a recursive ownership walk on every cold start.
+
 ### Live model ownership and bootstrap
 
 For a new cluster, `dynamic_models.workload_owner = "controller"` makes

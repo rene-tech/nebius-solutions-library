@@ -487,6 +487,14 @@ deployment = {
   #   enabled        = false
   #   writes_enabled = false
   #   namespace      = "fs2-models"
+  #   # Optional disposable RWX cache for runtime-owned compiled kernels. The
+  #   # generated execution map must contain at least one matching
+  #   # runtime-cache mount; immutable weights and tenant inputs never use it.
+  #   runtime_cache = {
+  #     enabled            = false
+  #     storage_class_name = "csi-mounted-fs-path-sc"
+  #     size_gib           = 128
+  #   }
   #   # execution_map is intentionally omitted. Terraform loads the exact
   #   # generated catalog/runtime/contracts/scientific-execution-map.json
   #   # contract. Advanced overrides must be regenerated with matching
