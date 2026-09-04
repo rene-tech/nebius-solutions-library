@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 from argparse import Namespace
+from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -18,7 +19,7 @@ from fs2_serve.scientific_batch import ResourceClass, ScientificAdapterError, co
 from fs2_serve.scientific_batch.adapters import bindcraft
 from fs2_serve.scientific_batch.adapters.materialization import safe_extract_tar
 from fs2_serve.scientific_batch.adapters.staged_workspace import STAGE_COMPLETION_SCHEMA
-from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer
+from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer, ScientificExecutionMapError
 from fs2_serve.scientific_batch.models import (
     ArtifactAccessContext,
     RuntimeArtifactAggregateTree,
@@ -268,6 +269,59 @@ def test_execution_verifier_accepts_the_exact_stage_specific_bindcraft_mount_set
     FileScientificManifestRenderer._verify_bindcraft_runtime(plan, (af2, pyrosetta))
 
 
+def test_execution_verifier_accepts_the_published_bindcraft_af2_aggregate_tree() -> None:
+    """The immutable 17-file inventory proves manifest.json without enumeration."""
+
+    plan = compile_fixture("positive-default-lane")
+    af2_digest = "sha256:" + bindcraft.AF2_INVENTORY_SHA256
+    af2_tree = RuntimeArtifactAggregateTree(
+        tree_digest=af2_digest,
+        manifest_digest="sha256:25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0",
+        inventory_digest=af2_digest,
+        file_count=17,
+        directory_count=0,
+        expanded_bytes=5_587_959_437,
+        canonical_path=f"bindcraft/alphafold2/sha256/{bindcraft.AF2_INVENTORY_SHA256}",
+        storage_kind=RuntimeArtifactTreeKind.LOCALIZATION_GENERATION,
+        manifest_algorithm="fs2-flat-tree-inventory/v1",
+        marker_relative_path=".fs2-runtime-tree.json",
+    )
+    af2 = RuntimeArtifactLocalization(
+        logical_artifact_id=bindcraft.AF2_ARTIFACT,
+        mount_path=bindcraft.AF2_PATH,
+        content_digest=af2_digest,
+        files=(),
+        localization_receipt_digest="sha256:" + "3" * 64,
+        aggregate_tree=af2_tree,
+    )
+    pyrosetta_digest = "sha256:" + bindcraft.PYROSETTA_INVENTORY_SHA256
+    pyrosetta = RuntimeArtifactLocalization(
+        logical_artifact_id=bindcraft.PYROSETTA_ARTIFACT,
+        mount_path=bindcraft.PYROSETTA_PATH,
+        content_digest=pyrosetta_digest,
+        files=(),
+        localization_receipt_digest="sha256:" + "4" * 64,
+        aggregate_tree=RuntimeArtifactAggregateTree(
+            tree_digest=pyrosetta_digest,
+            manifest_digest="sha256:" + "5" * 64,
+            inventory_digest=pyrosetta_digest,
+            file_count=8_697,
+            directory_count=779,
+            expanded_bytes=3_287_122_494,
+            canonical_path=f"bindcraft/pyrosetta/sha256/{bindcraft.PYROSETTA_INVENTORY_SHA256}",
+            storage_kind=RuntimeArtifactTreeKind.LOCALIZATION_GENERATION,
+            manifest_algorithm="fs2-tree-inventory/v2",
+            marker_relative_path=".fs2-runtime-tree.json",
+        ),
+    )
+
+    FileScientificManifestRenderer._verify_bindcraft_runtime(plan, (af2, pyrosetta))
+
+    wrong_marker = replace(af2, aggregate_tree=replace(af2_tree, manifest_digest="sha256:" + "6" * 64))
+    with pytest.raises(ScientificExecutionMapError, match="require manifest.json"):
+        FileScientificManifestRenderer._verify_bindcraft_runtime(plan, (wrong_marker, pyrosetta))
+
+
 def test_every_bound_tree_is_reachable_through_the_plan() -> None:
     """A localized tree nobody names is a mount the model cannot find."""
 
@@ -452,9 +506,7 @@ def test_the_default_mpnn_lane_is_vanilla_and_soluble_is_never_implicit() -> Non
     request = fixture("positive-soluble-lane")
     request["parameters"]["mpnn_lane"] = "SOLUBLE"
     with pytest.raises(ScientificAdapterError, match="mpnn_lane"):
-        bindcraft.compile_run(
-            granted(), request, operation_id="op-bindcraft-01", input_artifacts=(verified_target(),)
-        )
+        bindcraft.compile_run(granted(), request, operation_id="op-bindcraft-01", input_artifacts=(verified_target(),))
 
 
 def test_the_adapter_refuses_what_the_native_schema_cannot_express() -> None:
