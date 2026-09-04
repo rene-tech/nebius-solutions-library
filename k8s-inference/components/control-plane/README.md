@@ -187,16 +187,17 @@ reviewed activation child and are merged only by the later integration lane.
 `fs2-serve postgresql-release-contract` emits the non-secret cross-lane receipt
 inputs. The committed contract under `contracts/` hash-binds the exact ordered
 set through additive
-`0022_scientific_admission_outbox_lock_privilege.sql` (including the immutable
+`0023_scientific_batch_scheduling_digest_privilege.sql` (including the immutable
 activation lineage, additive maintenance boundary, admin
 configuration, ModelDeployment ledger, scientific artifact/controller state,
 append-only GPU lifecycle accounting, deployment-bound scientific access, and
 the recoverable scientific-admission outbox and its versioned runtime grants,
-including the privilege PostgreSQL requires for its locking read), the
+including the privileges PostgreSQL requires for locking reads and complete
+fenced state transitions), the
 `fs2-data` database-resource versus `fs2-system` credential-Secret namespace split, and
 the sole migration/group-role owner. Migration and schema-wait paths reject
 missing, extra, reordered, or changed source and applied-ledger entries.
-Migrations `0014` through `0022` are the integrated additive scientific
+Migrations `0014` through `0023` are the integrated additive scientific
 artifact, controller, state-compatibility, lifecycle, and deployment-access
 lineage; their recorded bytes must be preserved by later rollouts.
 The lifecycle schema, exact correlation model, reconciliation tolerance, safe

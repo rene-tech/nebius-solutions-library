@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import ast
 import copy
 import inspect
 import json
+import re
 import shutil
+import textwrap
 from pathlib import Path
 
 import pytest
 from conftest import CONTROL_ROOT
 
-from fs2_serve.postgres import PostgresStore
+import fs2_serve.scientific_artifacts as scientific_artifacts
+from fs2_serve.postgres import SCIENTIFIC_RUNTIME_UPDATE_COLUMNS, PostgresStore
 from fs2_serve.postgresql_release import (
     EXPECTED_MIGRATIONS,
     build_postgresql_release_contract,
@@ -17,6 +21,7 @@ from fs2_serve.postgresql_release import (
     validate_migration_set,
     validate_postgresql_release_contract,
 )
+from fs2_serve.scientific_batch.postgres_repository import PostgresScientificBatchRepository
 
 MIGRATIONS = CONTROL_ROOT / "migrations"
 CONTRACT = CONTROL_ROOT / "contracts" / "postgresql-release-contract.json"
@@ -32,9 +37,9 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0022_scientific_admission_outbox_lock_privilege.sql",
-        "migration_count": 22,
-        "migration_set_sha256": "ddf67d0975ed9546d5e333b9436d70713f31d81b78ecaeda6f82ea62080958fb",
+        "last_migration_version": "0023_scientific_batch_scheduling_digest_privilege.sql",
+        "migration_count": 23,
+        "migration_set_sha256": "1459b5ce45c9de22301c5d0ada0cfed8527e7f802a58d607e4078afcb62fda66",
         "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
@@ -44,30 +49,82 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     assert [migration["ordinal"] for migration in migrations] == list(range(1, receipt["migration_count"] + 1))
 
 
-def test_outbox_runtime_grant_repairs_are_additive_and_readiness_checked() -> None:
-    base_sql = (MIGRATIONS / "0021_scientific_admission_outbox_runtime_grant.sql").read_text(
-        encoding="utf-8"
-    )
+def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -> None:
+    base_sql = (MIGRATIONS / "0021_scientific_admission_outbox_runtime_grant.sql").read_text(encoding="utf-8")
     base_normalized = " ".join(base_sql.split())
     assert "IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'fs2_serve_runtime')" in base_normalized
     assert (
-        "GRANT SELECT, INSERT, DELETE ON TABLE fs2_scientific_admission_outbox TO fs2_serve_runtime"
-        in base_normalized
+        "GRANT SELECT, INSERT, DELETE ON TABLE fs2_scientific_admission_outbox TO fs2_serve_runtime" in base_normalized
     )
-    lock_sql = (MIGRATIONS / "0022_scientific_admission_outbox_lock_privilege.sql").read_text(
-        encoding="utf-8"
-    )
+    lock_sql = (MIGRATIONS / "0022_scientific_admission_outbox_lock_privilege.sql").read_text(encoding="utf-8")
     lock_normalized = " ".join(lock_sql.split())
     assert "IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'fs2_serve_runtime')" in lock_normalized
     assert "GRANT UPDATE ON TABLE fs2_scientific_admission_outbox TO fs2_serve_runtime" in lock_normalized
+    batch_sql = (MIGRATIONS / "0023_scientific_batch_scheduling_digest_privilege.sql").read_text(encoding="utf-8")
+    batch_normalized = " ".join(batch_sql.split())
+    assert "IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'fs2_serve_runtime')" in batch_normalized
+    assert "GRANT UPDATE (scheduling_digest) ON TABLE fs2_scientific_batches TO fs2_serve_runtime" in batch_normalized
 
     wait_source = inspect.getsource(PostgresStore.wait_for_schema)
     assert "has_table_privilege('fs2_serve_runtime'" in wait_source
     assert "has_table_privilege(current_user" in wait_source
     for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
         assert wait_source.count(f"fs2_scientific_admission_outbox','{privilege}'") == 2
+    assert wait_source.count("fs2_scientific_batches','scheduling_digest','UPDATE'") == 2
     assert "SELECT,INSERT" not in wait_source
     assert "database schema runtime privileges are incomplete" in wait_source
+
+
+def _updated_columns(source: str, table: str) -> set[str]:
+    statements = re.findall(
+        rf"\bUPDATE\s+{re.escape(table)}(?:\s+[a-z_][a-z0-9_]*)?\s+SET\s+(.*?)"
+        rf"(?=\s+(?:FROM|WHERE|RETURNING)\b)",
+        source,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return {
+        column.lower()
+        for statement in statements
+        for column in re.findall(r"(?:^|,)\s*([a-z_][a-z0-9_]*)\s*=", statement, flags=re.IGNORECASE)
+    }
+
+
+def _sql_literals(source: str) -> list[str]:
+    return [
+        node.value
+        for node in ast.walk(ast.parse(textwrap.dedent(source)))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    ]
+
+
+def test_scientific_runtime_update_grants_cover_every_repository_statement() -> None:
+    """Fail closed when repository SQL grows beyond its restricted-role ACL."""
+
+    batch_source = inspect.getsource(PostgresScientificBatchRepository)
+    artifact_source = inspect.getsource(scientific_artifacts)
+    actual = {
+        "fs2_scientific_stage_attempts": _updated_columns(artifact_source, "fs2_scientific_stage_attempts"),
+        "fs2_scientific_uploads": _updated_columns(artifact_source, "fs2_scientific_uploads"),
+        "fs2_scientific_batches": _updated_columns(batch_source, "fs2_scientific_batches"),
+    }
+    assert actual == {table: set(columns) for table, columns in SCIENTIFIC_RUNTIME_UPDATE_COLUMNS.items()}
+
+    # PostgreSQL row-locking reads require UPDATE privilege. These are all the
+    # restricted scientific tables read with FOR UPDATE/FOR SHARE; each is in
+    # the audited column-grant map. The outbox has a dedicated table-level
+    # grant because it is also deleted after materialization.
+    locked_scientific_tables = {
+        match.lower()
+        for source in (batch_source, artifact_source)
+        for literal in _sql_literals(source)
+        for match in re.findall(
+            r"\bFROM\s+(fs2_scientific_[a-z0-9_]+)[^;]*?\bFOR\s+(?:UPDATE|SHARE)\b",
+            literal,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+    }
+    assert locked_scientific_tables == set(SCIENTIFIC_RUNTIME_UPDATE_COLUMNS)
+    assert "FOR SHARE" in inspect.getsource(PostgresStore._stage_scientific_admission)
 
 
 @pytest.mark.parametrize("mutation", ["missing", "extra", "renamed", "changed", "symlink"])

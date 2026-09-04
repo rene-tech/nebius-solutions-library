@@ -13,7 +13,7 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, NoReturn, ParamSpec, TypeVar, cast
+from typing import Any, Final, NoReturn, ParamSpec, TypeVar, cast
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -93,6 +93,39 @@ from .store import (
     RateLimitExceededError,
     StaleLeaseError,
 )
+
+# Keep the least-privilege grant surface reviewable beside the migrator and
+# machine-checkable against every UPDATE emitted by the scientific
+# repositories. Row-locking SELECTs on these tables are covered by the same
+# column UPDATE privileges.
+SCIENTIFIC_RUNTIME_UPDATE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
+    "fs2_scientific_stage_attempts": (
+        "status",
+        "completed_at",
+        "resolved_pool_id",
+        "admitted_resource_flavor",
+        "accelerator_resource_name",
+        "accelerator_count",
+        "admitted_at",
+        "kueue_workload_uid",
+        "k8s_job_uid",
+        "pod_uids",
+        "node_uids",
+        "gpu_uuids",
+    ),
+    "fs2_scientific_uploads": ("artifact_id", "finalized_at"),
+    "fs2_scientific_batches": (
+        "status",
+        "revision",
+        "cancel_requested",
+        "state",
+        "controller_id",
+        "fencing_token",
+        "lease_expires_at",
+        "updated_at",
+        "scheduling_digest",
+    ),
+}
 
 _TERMINAL = {"succeeded", "failed", "cancelled", "preempted", "expired"}
 _CLAIM_BATCH_SIZE = 16
@@ -532,20 +565,9 @@ class PostgresStore:
                 f"fs2_scientific_stage_commit_attempts,fs2_scientific_run_results,"
                 f"fs2_scientific_artifact_events,fs2_scientific_retention_ledger TO {quoted_runtime}"
             )
-            await connection.execute(
-                f"GRANT UPDATE (status,completed_at,resolved_pool_id,admitted_resource_flavor,"
-                f"accelerator_resource_name,accelerator_count,admitted_at,kueue_workload_uid,"
-                f"k8s_job_uid,pod_uids,node_uids,gpu_uuids) "
-                f"ON fs2_scientific_stage_attempts TO {quoted_runtime}"
-            )
-            await connection.execute(
-                f"GRANT UPDATE (artifact_id,finalized_at) ON fs2_scientific_uploads TO {quoted_runtime}"
-            )
             await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_batches TO {quoted_runtime}")
-            await connection.execute(
-                f"GRANT UPDATE (status,revision,cancel_requested,state,controller_id,"
-                f"fencing_token,lease_expires_at,updated_at) ON fs2_scientific_batches TO {quoted_runtime}"
-            )
+            for table, columns in SCIENTIFIC_RUNTIME_UPDATE_COLUMNS.items():
+                await connection.execute(f"GRANT UPDATE ({','.join(columns)}) ON {table} TO {quoted_runtime}")
             await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_batch_events TO {quoted_runtime}")
             await connection.execute(
                 f"GRANT SELECT,INSERT,UPDATE,DELETE ON fs2_scientific_admission_outbox TO {quoted_runtime}"
@@ -706,6 +728,10 @@ class PostgresStore:
                             "'public.fs2_scientific_admission_outbox','UPDATE') AND "
                             "has_table_privilege(current_user,"
                             "'public.fs2_scientific_admission_outbox','DELETE')"
+                            " AND has_column_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_batches','scheduling_digest','UPDATE')"
+                            " AND has_column_privilege(current_user,"
+                            "'public.fs2_scientific_batches','scheduling_digest','UPDATE')"
                         )
                     if not runtime_privileges_ready:
                         raise RuntimeError("database schema runtime privileges are incomplete")
