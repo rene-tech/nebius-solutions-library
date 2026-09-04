@@ -35,6 +35,7 @@ from ..models import (
     RuntimeArtifactAdmissionSpec,
     RuntimeArtifactMount,
     RuntimeTreeBinding,
+    ScientificInputArtifact,
     StageInvocation,
     StageWorkspaceDocument,
 )
@@ -58,6 +59,7 @@ from .common import (
     structure_atom_count,
 )
 from .staged_workspace import completion_marker, materialize_collected_output, wrap_stage_argv
+from .verified_input import SCIENTIFIC_MANIFEST_MEDIA_TYPE, verified_manifest_entry
 
 if TYPE_CHECKING:
     from . import CollectedStageOutput
@@ -79,8 +81,13 @@ DESIGN_COLLECTOR_ID = "bindcraft-design-output-v1"
 AGGREGATE_COLLECTOR_ID = "bindcraft-aggregate-output-v1"
 VALIDATOR_ID = "bindcraft-v1"
 PUBLIC_REQUEST_DOCUMENT = ".fs2/public-request.json"
+TARGET_INPUT_ID = "target_structure"
+TARGET_SEMANTIC_TYPE = "protein-structure-pdb/v1"
+TARGET_MEDIA_TYPE = "chemical/x-pdb"
+NATIVE_INPUT_MANIFEST_ID = "manifest.bindcraft.controller-input"
 REFERENCE_DATA_SUPPLEMENTAL_GROUP = 1000
 ACADEMIC_ASSET_SUPPLEMENTAL_GROUP = 65532
+REQUIRES_VERIFIED_INPUT_ARTIFACTS = True
 
 # The reviewed outer entrypoint is the artifact gate. It verifies the AlphaFold2
 # manifest and binds PyRosetta on every non-smoke command before it execs the
@@ -147,6 +154,7 @@ MAX_HOTSPOTS = 64
 MIN_BINDER_LENGTH = 40
 MAX_BINDER_LENGTH = 200
 MAX_INPUT_BYTES = 256 * 1024 * 1024
+MAX_MANIFEST_BYTES = 1 << 20
 MAX_OUTPUT_BYTES = 32 * 1024 * 1024 * 1024
 MAX_BUNDLE_BYTES = 256 * 1024 * 1024
 MAX_BUNDLE_MEMBERS = 4_096
@@ -349,11 +357,11 @@ class BindCraftParameters:
 
 
 def _request(value: object) -> tuple[PublicRunRequest, BindCraftParameters]:
-    request = parse_public_request(value, maximum_input_bytes=MAX_INPUT_BYTES)
-    if request.input_manifest.media_type != "chemical/x-pdb":
-        raise ScientificAdapterError("BindCraft input_manifest must point to one chemical/x-pdb target")
+    request = parse_public_request(value, maximum_input_bytes=MAX_MANIFEST_BYTES)
+    if request.input_manifest.media_type != SCIENTIFIC_MANIFEST_MEDIA_TYPE:
+        raise ScientificAdapterError("BindCraft input_manifest must identify a scientific manifest")
     if request.input_manifest.compression not in {None, "none"}:
-        raise ScientificAdapterError("BindCraft target PDB must be an uncompressed artifact")
+        raise ScientificAdapterError("BindCraft input manifest must not be compressed")
     return request, BindCraftParameters.parse(request.parameters)
 
 
@@ -382,15 +390,17 @@ def _canonical_json(value: object) -> str:
 def _workspace_documents(
     request: PublicRunRequest,
     parameters: BindCraftParameters,
+    input_manifest: Mapping[str, object],
     *,
     shard_index: int,
 ) -> tuple[StageWorkspaceDocument, ...]:
     return (
         StageWorkspaceDocument(PUBLIC_REQUEST_DOCUMENT, _canonical_json(request.to_dict())),
         StageWorkspaceDocument(
-            ".fs2/request.json", _canonical_json(native_request(request, parameters, shard_index=shard_index))
+            ".fs2/request.json",
+            _canonical_json(native_request(request, parameters, input_manifest, shard_index=shard_index)),
         ),
-        StageWorkspaceDocument(".fs2/input-manifest.json", _canonical_json(native_input_manifest(request))),
+        StageWorkspaceDocument(".fs2/input-manifest.json", _canonical_json(input_manifest)),
     )
 
 
@@ -409,17 +419,23 @@ def _load_public_request(workspace: Path) -> Mapping[str, object]:
     return value
 
 
-def native_input_manifest(request: PublicRunRequest) -> dict[str, object]:
-    """Project the public target pointer into the manifest r18 consumes."""
+def native_input_manifest(target: ScientificInputArtifact) -> dict[str, object]:
+    """Project the artifact-service-verified target into the manifest r18 consumes."""
 
     return {
         "schema": ARTIFACT_MANIFEST_SCHEMA,
-        "manifest_id": f"manifest.bindcraft.input.{request.input_manifest.sha256[:24]}",
+        "manifest_id": NATIVE_INPUT_MANIFEST_ID,
         "entries": [
             {
-                "name": "target_structure",
-                "semantic_type": "protein-structure-pdb/v1",
-                "artifact": request.input_manifest.to_dict(),
+                "name": TARGET_INPUT_ID,
+                "semantic_type": TARGET_SEMANTIC_TYPE,
+                "artifact": {
+                    "artifact_id": str(target.artifact_id),
+                    "sha256": target.digest.removeprefix("sha256:"),
+                    "size_bytes": target.size_bytes,
+                    "media_type": target.media_type,
+                    "compression": target.compression or "none",
+                },
             }
         ],
     }
@@ -428,6 +444,7 @@ def native_input_manifest(request: PublicRunRequest) -> dict[str, object]:
 def native_request(
     request: PublicRunRequest,
     parameters: BindCraftParameters,
+    input_manifest: Mapping[str, object],
     *,
     shard_index: int,
 ) -> dict[str, object]:
@@ -442,16 +459,17 @@ def native_request(
 
     if not 0 <= shard_index < parameters.shard_count:
         raise ScientificAdapterError("BindCraft native request shard index is outside the plan")
-    manifest_bytes = _canonical_json(native_input_manifest(request)).encode("ascii")
+    _native_manifest_target(input_manifest)
+    manifest_bytes = _canonical_json(input_manifest).encode("ascii")
     value: dict[str, object] = {
         "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
         "operation": request.operation,
         "service_class": request.service_class.value,
         "input_manifest": {
-            "artifact_id": native_input_manifest(request)["manifest_id"],
+            "artifact_id": input_manifest["manifest_id"],
             "sha256": hashlib.sha256(manifest_bytes).hexdigest(),
             "size_bytes": len(manifest_bytes),
-            "media_type": "application/vnd.fs2.scientific-manifest+json",
+            "media_type": SCIENTIFIC_MANIFEST_MEDIA_TYPE,
             "compression": "none",
         },
         "parameters": {
@@ -501,6 +519,7 @@ def materialize_runtime_documents(invocation: StageInvocation, workspace: Path) 
         raise ScientificAdapterError("BindCraft invocation runtime documents are not canonical")
     if not isinstance(request_value, Mapping) or not isinstance(manifest_value, Mapping):
         raise ScientificAdapterError("BindCraft invocation runtime documents must be JSON objects")
+    _native_manifest_target(manifest_value)
     pointer = ArtifactPointer.parse(
         request_value.get("input_manifest"),
         label="BindCraft native input_manifest",
@@ -510,6 +529,8 @@ def materialize_runtime_documents(invocation: StageInvocation, workspace: Path) 
         pointer.artifact_id != manifest_value.get("manifest_id")
         or pointer.sha256 != hashlib.sha256(manifest_bytes).hexdigest()
         or pointer.size_bytes != len(manifest_bytes)
+        or pointer.media_type != SCIENTIFIC_MANIFEST_MEDIA_TYPE
+        or pointer.compression not in {None, "none"}
     ):
         raise ScientificAdapterError("BindCraft native request does not bind its input manifest bytes")
     expected_request = f"{invocation.working_directory}/.fs2/request.json"
@@ -582,6 +603,7 @@ def external_tree_roles() -> dict[str, object]:
 def _environment(
     request: PublicRunRequest,
     parameters: BindCraftParameters,
+    input_manifest: Mapping[str, object],
     accepted_designs: int,
     *,
     shard_index: int,
@@ -605,14 +627,14 @@ def _environment(
         ("FS2_BINDCRAFT_BINDER_LENGTH_MIN", str(parameters.minimum_length)),
         ("FS2_BINDCRAFT_EXTERNAL_TREE_ROLES", _canonical_bytes(external_tree_roles()).decode("ascii")),
         ("FS2_BINDCRAFT_EXTERNAL_TREES", f"{workspace}/.fs2/external-trees.json"),
-        ("FS2_BINDCRAFT_INPUT_MANIFEST_JSON", _canonical_json(native_input_manifest(request))),
+        ("FS2_BINDCRAFT_INPUT_MANIFEST_JSON", _canonical_json(input_manifest)),
         ("FS2_BINDCRAFT_MPNN_SOLUBLE_TREE", MPNN_SOLUBLE_PATH),
         ("FS2_BINDCRAFT_MPNN_VANILLA_TREE", MPNN_VANILLA_PATH),
         ("FS2_BINDCRAFT_MPNN_WEIGHTS", MPNN_WEIGHTS_SETTING[parameters.mpnn_lane]),
         ("FS2_BINDCRAFT_PYROSETTA_TREE", PYROSETTA_PATH),
         (
             "FS2_BINDCRAFT_REQUEST_JSON",
-            _canonical_json(native_request(request, parameters, shard_index=shard_index)),
+            _canonical_json(native_request(request, parameters, input_manifest, shard_index=shard_index)),
         ),
         ("FS2_SCIENTIFIC_COLLECTOR_ID", collector_id),
         ("FS2_SCIENTIFIC_VALIDATOR_ID", VALIDATOR_ID),
@@ -683,7 +705,13 @@ def _aggregate_argv(workspace: str, expected_shards: int) -> tuple[str, ...]:
     )
 
 
-def compile_run(profile: Mapping[str, object], request_value: object, *, operation_id: str) -> AdapterExecutionPlan:
+def compile_run(
+    profile: Mapping[str, object],
+    request_value: object,
+    *,
+    operation_id: str,
+    input_artifacts: tuple[ScientificInputArtifact, ...] | None = None,
+) -> AdapterExecutionPlan:
     """Compile one authorized academic request into an executable plan."""
 
     request, parameters = _request(request_value)
@@ -696,6 +724,17 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
         request=request,
     )
     assert_deployment_authorized(profile)
+    target = verified_manifest_entry(
+        request,
+        input_artifacts,
+        logical_artifact_id=TARGET_INPUT_ID,
+        semantic_type=TARGET_SEMANTIC_TYPE,
+        media_type=TARGET_MEDIA_TYPE,
+        compressions=frozenset({None, "none"}),
+        maximum_bytes=MAX_INPUT_BYTES,
+        label="BindCraft",
+    )
+    input_manifest = native_input_manifest(target)
 
     quotas = tuple(parameters.accepted_designs(index) for index in range(parameters.shard_count))
     if sum(quotas) != parameters.designs:
@@ -722,6 +761,7 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
                 environment=_environment(
                     request,
                     parameters,
+                    input_manifest,
                     parameters.accepted_designs(index),
                     shard_index=index,
                     workspace=workspace,
@@ -729,7 +769,7 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
                     collector_id=DESIGN_COLLECTOR_ID,
                 ),
                 working_directory=workspace,
-                consumes=(request.input_manifest.artifact_id,),
+                consumes=(target.logical_artifact_id,),
                 produces=produces,
                 collector_id=DESIGN_COLLECTOR_ID,
                 validator_id=VALIDATOR_ID,
@@ -738,16 +778,16 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
                 max_output_bytes=MAX_BUNDLE_BYTES,
                 materializations=(
                     ArtifactMaterialization(
-                        artifact_id=request.input_manifest.artifact_id,
+                        artifact_id=target.logical_artifact_id,
                         destination=f"{workspace}/inputs/target_structure.pdb",
                         mode=MaterializationMode.COPY_FILE,
-                        compression=request.input_manifest.compression,
+                        compression=target.compression,
                     ),
                 ),
                 runtime_artifacts=DESIGN_RUNTIME_ARTIFACTS,
                 runtime_trees=design_trees,
                 runtime_mounts=_mounts_for(DESIGN_RUNTIME_ARTIFACTS),
-                workspace_documents=_workspace_documents(request, parameters, shard_index=index),
+                workspace_documents=_workspace_documents(request, parameters, input_manifest, shard_index=index),
                 runtime_admission=_admission_for(DESIGN_RUNTIME_ARTIFACTS),
             )
         )
@@ -764,6 +804,7 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
             environment=_environment(
                 request,
                 parameters,
+                input_manifest,
                 parameters.designs,
                 shard_index=0,
                 workspace=aggregate_workspace,
@@ -789,7 +830,7 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
             runtime_artifacts=AGGREGATE_RUNTIME_ARTIFACTS,
             runtime_trees=aggregate_trees,
             runtime_mounts=_mounts_for(AGGREGATE_RUNTIME_ARTIFACTS),
-            workspace_documents=_workspace_documents(request, parameters, shard_index=0),
+            workspace_documents=_workspace_documents(request, parameters, input_manifest, shard_index=0),
         )
     )
 
@@ -829,6 +870,34 @@ def _entry(value: object, *, label: str, maximum_bytes: int) -> tuple[str, str, 
         raise ScientificAdapterError(f"{label}.semantic_type is invalid")
     pointer = ArtifactPointer.parse(item["artifact"], label=f"{label}.artifact", maximum_bytes=maximum_bytes)
     return name, semantic_type, pointer
+
+
+def _native_manifest_target(value: object) -> ArtifactPointer:
+    """Validate the controller-written one-target manifest consumed by r18."""
+
+    manifest = strict_object(
+        value,
+        required=frozenset({"schema", "manifest_id", "entries"}),
+        label="BindCraft native input manifest",
+    )
+    if (
+        manifest["schema"] != ARTIFACT_MANIFEST_SCHEMA
+        or manifest["manifest_id"] != NATIVE_INPUT_MANIFEST_ID
+    ):
+        raise ScientificAdapterError("BindCraft native input manifest identity is unsupported")
+    entries = manifest["entries"]
+    if not isinstance(entries, list) or len(entries) != 1:
+        raise ScientificAdapterError("BindCraft native input manifest must contain exactly one target")
+    name, semantic_type, pointer = _entry(
+        entries[0],
+        label="BindCraft native target entry",
+        maximum_bytes=MAX_INPUT_BYTES,
+    )
+    if name != TARGET_INPUT_ID or semantic_type != TARGET_SEMANTIC_TYPE:
+        raise ScientificAdapterError("BindCraft native target entry identity is unsupported")
+    if pointer.media_type != TARGET_MEDIA_TYPE or pointer.compression not in {None, "none"}:
+        raise ScientificAdapterError("BindCraft native target entry must be one uncompressed PDB")
+    return pointer
 
 
 def _contained_artifact(root: Path, relative: object, *, label: str) -> Path:
@@ -1153,6 +1222,46 @@ def _runtime_document(workspace: Path, relative: str, expected: bytes, *, label:
     return content
 
 
+def _validated_runtime_documents(
+    request: PublicRunRequest,
+    parameters: BindCraftParameters,
+    workspace: Path,
+    *,
+    shard_index: int,
+) -> tuple[Mapping[str, object], dict[str, object]]:
+    """Reload and verify the controller projection without trusting the public pointer."""
+
+    manifest_path = _contained_artifact(
+        workspace,
+        ".fs2/input-manifest.json",
+        label="BindCraft native input manifest",
+    )
+    manifest_bytes = manifest_path.read_bytes()
+    try:
+        manifest_value = json.loads(manifest_bytes)
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise ScientificAdapterError("BindCraft native input manifest is unreadable") from error
+    if not isinstance(manifest_value, Mapping):
+        raise ScientificAdapterError("BindCraft native input manifest must be a JSON object")
+    _native_manifest_target(manifest_value)
+    expected_manifest_bytes = _canonical_json(manifest_value).encode("ascii")
+    if manifest_bytes != expected_manifest_bytes:
+        raise ScientificAdapterError("BindCraft native input manifest is not canonical")
+    projected_request = native_request(
+        request,
+        parameters,
+        manifest_value,
+        shard_index=shard_index,
+    )
+    _runtime_document(
+        workspace,
+        ".fs2/request.json",
+        _canonical_json(projected_request).encode("ascii"),
+        label="BindCraft native request",
+    )
+    return manifest_value, projected_request
+
+
 def collect_aggregate_output(
     request_value: object,
     workspace: Path,
@@ -1164,11 +1273,13 @@ def collect_aggregate_output(
     public, parameters = _request(request_value)
     if _DIGEST_REFERENCE.fullmatch(runtime_image_digest) is None:
         raise ScientificAdapterError("BindCraft aggregate requires an immutable runtime image digest")
-    input_bytes = _canonical_json(native_input_manifest(public)).encode("ascii")
-    request_document_bytes = _canonical_json(native_request(public, parameters, shard_index=0)).encode("ascii")
-    request_identity_bytes = _canonical_bytes(native_request(public, parameters, shard_index=0))
-    _runtime_document(workspace, ".fs2/input-manifest.json", input_bytes, label="BindCraft native input manifest")
-    _runtime_document(workspace, ".fs2/request.json", request_document_bytes, label="BindCraft native request")
+    _input_manifest, projected_request = _validated_runtime_documents(
+        public,
+        parameters,
+        workspace,
+        shard_index=0,
+    )
+    request_identity_bytes = _canonical_bytes(projected_request)
     marker_path = _contained_artifact(
         workspace,
         ".fs2/runtime-localization.json",
@@ -1396,6 +1507,18 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
     if invocation.collector_id == DESIGN_COLLECTOR_ID:
         if invocation.stage_id != DESIGN_STAGE or invocation.handoff_name is None:
             raise ScientificAdapterError("BindCraft design collector received another stage contract")
+        match = re.fullmatch(r"design-([0-9]{3})", invocation.shard_id)
+        if match is None:
+            raise ScientificAdapterError("BindCraft design collector received an invalid shard identity")
+        shard_index = int(match.group(1))
+        if shard_index >= parameters.shard_count or parameters.shard_ids[shard_index] != invocation.shard_id:
+            raise ScientificAdapterError("BindCraft design collector shard is outside the request plan")
+        _validated_runtime_documents(
+            public,
+            parameters,
+            workspace,
+            shard_index=shard_index,
+        )
         collected = collect_design_output(request, workspace)
         return materialize_collected_output(
             invocation,

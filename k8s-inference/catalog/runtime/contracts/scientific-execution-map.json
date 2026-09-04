@@ -1081,17 +1081,26 @@
           "collector_id": "mosaic-boltz2-proteinmpnn-v1",
           "validator_id": "mosaic-boltz2-proteinmpnn-v1",
           "mounts": [
-            {
-              "name": "artifact-workspace",
-              "kind": "artifact-workspace",
-              "claim_name": null,
-              "host_path": null,
-              "mount_path": "/mnt/fs2-scientific",
-              "sub_path": null,
-              "read_only": false
-            },
-            {
-              "name": "mosaic-boltz2-conf",
+        {
+          "name": "artifact-workspace",
+          "kind": "artifact-workspace",
+          "claim_name": null,
+          "host_path": null,
+          "mount_path": "/mnt/fs2-scientific",
+          "sub_path": null,
+          "read_only": false
+        },
+        {
+          "name": "runtime-cache",
+          "kind": "runtime-cache",
+          "claim_name": "fs2-scientific-runtime-cache",
+          "host_path": null,
+          "mount_path": "/cache",
+          "sub_path": null,
+          "read_only": false
+        },
+        {
+          "name": "mosaic-boltz2-conf",
               "kind": "reference",
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
@@ -1135,7 +1144,10 @@
           },
           "active_deadline_seconds": 43200,
           "termination_grace_seconds": 90,
-          "environment": {},
+      "environment": {
+        "JAX_COMPILATION_CACHE_DIR": "/cache/mosaic/jax",
+        "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS": "0"
+      },
           "required_node_labels": {
             "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
             "storage.fs2.nebius/reference-data": "true"

@@ -39,12 +39,15 @@ def compile_fragment(fragment_path: str, compiler: Any, operation_id: str) -> No
     execution = fragment["execution_projection"]
     overlay(profile, execution.get("adapter_profile_overlay", {}))
     compiler_arguments: dict[str, object] = {}
-    if fragment["model_id"] == "proteina-complexa":
-        manifest_declaration = next(
+    manifest_declaration = next(
+        (
             item
-            for item in fragment["public_fixtures"]["supporting_inputs"]
+            for item in fragment["public_fixtures"].get("supporting_inputs", [])
             if item["role"] == "request-input-manifest"
-        )
+        ),
+        None,
+    )
+    if manifest_declaration is not None:
         manifest = load(manifest_declaration["path"])
         compiler_arguments["input_artifacts"] = tuple(
             ScientificInputArtifact(

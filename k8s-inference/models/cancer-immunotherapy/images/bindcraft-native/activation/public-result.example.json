@@ -64,10 +64,10 @@
     ]
   },
   "input_manifest": {
-    "artifact_id": "bindcraft.pdl1.target.01",
-    "sha256": "5e949950d8255ec3bf390b8bf24f5c71c6ac8fc65bc553d7e477563c9599b93e",
-    "size_bytes": 74614,
-    "media_type": "chemical/x-pdb",
+    "artifact_id": "manifest.bindcraft.pdl1.01",
+    "sha256": "9b652d670a286044c42556183906be45ca2fb1ee5af36919f724d642b7e22e00",
+    "size_bytes": 391,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
     "compression": "none"
   },
   "output_manifest": null,

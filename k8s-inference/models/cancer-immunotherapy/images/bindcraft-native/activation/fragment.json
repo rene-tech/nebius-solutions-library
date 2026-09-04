@@ -28,6 +28,7 @@
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/localization.py",
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/materialization.py",
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/primitives.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/verified_input.py",
         "components/control-plane/src/fs2_serve/scientific_batch/catalog_adapter.py",
         "components/control-plane/src/fs2_serve/scientific_batch/controller.py",
         "components/control-plane/src/fs2_serve/scientific_batch/models.py",
@@ -306,6 +307,11 @@
     "supporting_inputs": [
       {
         "role": "request-input-manifest",
+        "path": "models/cancer-immunotherapy/images/bindcraft-native/activation/input-manifest.json",
+        "encoding": "canonical-json-newline"
+      },
+      {
+        "role": "manifest-artifact",
         "path": "models/cancer-immunotherapy/runtime-images/proteina-complexa/tests/fixtures/PD-L1.pdb",
         "encoding": "raw"
       }

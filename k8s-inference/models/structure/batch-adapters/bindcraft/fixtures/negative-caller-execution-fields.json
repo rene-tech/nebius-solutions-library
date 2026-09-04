@@ -6,10 +6,11 @@
     "receipt_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
   },
   "input_manifest": {
-    "artifact_id": "bindcraft.pdl1.target.03",
+    "artifact_id": "manifest.bindcraft.pdl1.03",
     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-    "size_bytes": 24576,
-    "media_type": "chemical/x-pdb"
+    "size_bytes": 391,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
   },
   "parameters": {
     "target": {
