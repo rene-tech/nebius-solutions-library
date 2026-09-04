@@ -187,7 +187,7 @@
       ]
     },
     "protenix-v2": {
-      "artifact_binding_state": "staging-and-materialization-in-progress",
+    "artifact_binding_state": "complete",
       "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
       "variant_id": "upstream-v2-0-0",
       "stage_id": "sample-structure",
@@ -203,10 +203,28 @@
           "source_content_digest": "sha256:8e14bb809d37db806159b7d277577abc692aec81d8899fbc84915d23ebe12eca",
           "content_digest": "sha256:5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
           "expected_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
-          "localization_receipt_digest": null,
-          "mount_path": "/models/protenix-v2",
-          "read_only": true,
-          "state": "awaiting-composite-localization-receipt"
+        "localization_receipt_digest": "sha256:ea301407e2ac427bf87d4617136629f178a75d55f67e3aea882de4bc19ce04b4",
+        "source_receipt_digest": "sha256:28af8bf591d0731a332569110e0b8d32a241dab367a395eb7c89646d9260f8ab",
+        "receipt_file_sha256": "ec1ef0f8f348b4efd91bc4e74f675abd472296c3e87358e92d9a2be647348f86",
+        "receipt_sub_path": "model-artifacts/public/v1/localization-receipts/protenix-v2/5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48.json",
+        "object_sub_path": "scientific-localization/public/generations/protenix-v2/sha256/5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
+        "mount_path": "/models/protenix-v2",
+        "read_only": true,
+        "expanded_bytes": 2514897184,
+        "staging_job": {
+          "name": "artifact-protenix-v2-26e95a135abe",
+          "uid": "964bd127-142c-4b95-8761-c634f8b74112",
+          "started_at": "2026-09-04T16:04:50Z",
+          "completed_at": "2026-09-04T16:24:35Z",
+          "state": "complete"
+        },
+        "materialization_job": {
+          "name": "localization-protenix-v2-5e1c3b548af4",
+          "uid": "4d1a279d-76ec-469c-aa19-32cc7f4bfd05",
+          "started_at": "2026-09-04T16:26:11Z",
+          "completed_at": "2026-09-04T16:26:22Z",
+          "state": "complete"
+        }
         }
       ]
     }
