@@ -1,9 +1,9 @@
-"""Focused coverage for archive-to-tree localization and adapter preflight.
+"""Focused coverage for immutable-source localization and adapter preflight.
 
-The property under test throughout is that a compressed archive is never a
-usable runtime directory: archive provenance and extracted-tree identity stay
-separate, and a mount that is an archive, a partial tree, a different tree, or a
-tampered tree fails closed before any model argv runs.
+Archives and raw files have truthful, distinct semantics: an archive is never a
+usable runtime directory, while a verified raw file is the runtime content.
+Source provenance and runtime-tree identity stay separate, and partial,
+different, or tampered trees fail closed before any model argv runs.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tarfile
@@ -30,6 +31,7 @@ import pytest
 from fs2_serve.scientific_batch import ScientificAdapterError, profile_from_catalog
 from fs2_serve.scientific_batch.adapters import boltzgen, preflight_stage_trees, proteina_complexa
 from fs2_serve.scientific_batch.adapters.localization import (
+    RAW_FILE_ALGORITHM,
     RECURSIVE_INVENTORY_ALGORITHM,
     RUNTIME_MARKER_NAME,
     STAGING_PREFIX,
@@ -47,11 +49,14 @@ from fs2_serve.scientific_batch.adapters.localization import (
     load_localization_contracts,
     load_localization_contracts_from_path,
     localize_archive,
+    localize_file,
     marker_bytes,
     marker_sha256,
     node_digest,
     prepare_staging_directory,
     promote_generation,
+    raw_file_inventory_bytes,
+    raw_file_inventory_sha256,
     recursive_inventory_sha256,
     scan_localized_tree,
     scan_recursive_tree,
@@ -82,6 +87,7 @@ BINDCRAFT_PARAMS_ID = "alphafold2-params-bindcraft"
 PARAMS_ID = "alphafold2-params"
 VANILLA_MPNN_ID = "colabdesign-mpnn-weights-vanilla"
 SOLUBLE_MPNN_ID = "colabdesign-mpnn-weights-soluble"
+RFDIFFUSION_BASE_ID = "rfdiffusion-base-checkpoint"
 COLABDESIGN_SITE_PACKAGES = "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn"
 
 # The real molecule dictionary is 45,227 flat entries whose Chemical Component
@@ -206,6 +212,43 @@ def _document(
     }
 
 
+def _raw_document(payload: bytes, *, filename: str = "Base_ckpt.pt") -> dict[str, Any]:
+    digest = hashlib.sha256(payload).hexdigest()
+    return {
+        "artifact_id": RFDIFFUSION_BASE_ID,
+        "transform": "verified-copy",
+        "file": {
+            "filename": filename,
+            "media_type": "application/octet-stream",
+            "bytes": len(payload),
+            "sha256": digest,
+            "source_uri": f"https://example.invalid/{filename}",
+            "source_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+            "license_id": "BSD-3-Clause",
+        },
+        "tree": {
+            "mount_paths": [f"/opt/fs2/artifacts/{RFDIFFUSION_BASE_ID}"],
+            "entry_count": 1,
+            "directory_count": 0,
+            "symlink_count": 0,
+            "total_bytes": len(payload),
+            "entry_path_pattern": rf"^{re.escape(filename)}$",
+            "inventory_algorithm": RAW_FILE_ALGORITHM,
+            "inventory_sha256": raw_file_inventory_sha256(filename, len(payload), digest),
+            "complete_entry_digests": True,
+            "probe_entries": [{"path": filename, "bytes": len(payload), "sha256": digest}],
+        },
+        "consumers": [
+            {
+                "model_id": "rfdiffusion",
+                "binding_kind": "argv-option",
+                "binding_name": "--artifact-root",
+                "mount_path": f"/opt/fs2/artifacts/{RFDIFFUSION_BASE_ID}",
+            }
+        ],
+    }
+
+
 def _binding(contract: LocalizationContract) -> RuntimeTreeBinding:
     return RuntimeTreeBinding(
         artifact_id=contract.artifact_id,
@@ -245,7 +288,7 @@ def boltzgen_configure() -> StageInvocation:
 # ---------------------------------------------------------------------------
 
 
-def test_checked_in_contract_declares_both_primary_runtime_trees() -> None:
+def test_checked_in_contract_declares_every_runtime_tree() -> None:
     contracts = load_localization_contracts_from_path(CONTRACT_PATH)
     assert set(contracts) == {
         MOLECULES_ID,
@@ -254,6 +297,7 @@ def test_checked_in_contract_declares_both_primary_runtime_trees() -> None:
         VANILLA_MPNN_ID,
         SOLUBLE_MPNN_ID,
         PYROSETTA_ID,
+        RFDIFFUSION_BASE_ID,
     }
 
     # The one tree this plane verifies but never stages: another plane installed
@@ -282,13 +326,38 @@ def test_checked_in_contract_declares_both_primary_runtime_trees() -> None:
     assert params.archive.filename == "alphafold_params_2022-12-06.tar"
     assert params.binding_for("proteina-complexa").binding_name == "AF2_DIR"
 
+    checkpoint = contracts[RFDIFFUSION_BASE_ID]
+    assert checkpoint.raw_file
+    assert checkpoint.source.kind == "file"
+    assert checkpoint.file.filename == "Base_ckpt.pt"
+    assert checkpoint.file.size_bytes == 483_616_107
+    assert checkpoint.file.sha256 == "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca"
+    assert checkpoint.tree.inventory_algorithm == RAW_FILE_ALGORITHM
+    assert checkpoint.tree.inventory_sha256 == "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c"
+    assert checkpoint.binding_for("rfdiffusion").binding_name == "--artifact-root"
+
 
 def test_archive_provenance_is_never_the_extracted_tree_identity() -> None:
     for contract in load_localization_contracts_from_path(CONTRACT_PATH).values():
+        if contract.raw_file:
+            continue
         assert contract.archive.sha256 != contract.tree.inventory_sha256
         # The archive is also a different size from the tree it carries, so a
         # byte count cannot stand in for either identity.
         assert contract.archive.size_bytes != contract.tree.total_bytes
+
+
+def test_raw_file_source_and_runtime_generation_are_distinct_but_exact() -> None:
+    contract = load_localization_contracts_from_path(CONTRACT_PATH)[RFDIFFUSION_BASE_ID]
+    assert contract.source.sha256 != contract.tree.inventory_sha256
+    assert contract.source.size_bytes == contract.tree.total_bytes
+    assert contract.tree.probe_entries == (
+        type(contract.tree.probe_entries[0])(
+            "Base_ckpt.pt",
+            483_616_107,
+            "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+        ),
+    )
 
 
 def test_the_molecule_entry_pattern_accepts_one_to_five_character_codes() -> None:
@@ -340,6 +409,39 @@ def test_an_unknown_contract_field_is_rejected() -> None:
     document["artifacts"][0]["tree"]["extraction_root"] = "/var/unexpected"
     with pytest.raises(ScientificAdapterError, match="unknown"):
         load_localization_contracts(document)
+
+
+def test_raw_file_inventory_is_versioned_and_deterministic() -> None:
+    payload = b"checkpoint-bytes"
+    digest = hashlib.sha256(payload).hexdigest()
+    canonical = raw_file_inventory_bytes("Base_ckpt.pt", len(payload), digest)
+    assert canonical == (
+        b'{"algorithm":"fs2-raw-file/v1","entry":{"bytes":16,"path":"Base_ckpt.pt",'
+        + f'"sha256":"{digest}"'.encode()
+        + b"}}\n"
+    )
+    assert raw_file_inventory_sha256("Base_ckpt.pt", len(payload), digest) == hashlib.sha256(canonical).hexdigest()
+    assert (
+        raw_file_inventory_sha256("ActiveSite_ckpt.pt", len(payload), digest) != hashlib.sha256(canonical).hexdigest()
+    )
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda value: value.update({"archive": value["file"]}), "exactly one"),
+        (lambda value: value.pop("file"), "exactly one"),
+        (lambda value: value["file"].update({"filename": "ActiveSite_ckpt.pt"}), "exactly bind"),
+        (lambda value: value["file"].update({"bytes": value["file"]["bytes"] + 1}), "exactly bind"),
+        (lambda value: value["tree"].update({"inventory_sha256": "0" * 64}), "inventory digest"),
+        (lambda value: value["tree"].update({"directory_count": 1}), "exactly one regular file"),
+    ],
+)
+def test_raw_file_contract_mismatches_fail_closed(mutate: Any, message: str) -> None:
+    document = _raw_document(b"checkpoint-bytes")
+    mutate(document)
+    with pytest.raises(ArtifactLocalizationError, match=message):
+        LocalizationContract.parse(document)
 
 
 # ---------------------------------------------------------------------------
@@ -704,6 +806,130 @@ def test_localization_refuses_to_expand_into_the_archives_own_directory(
     archive, contract = synthetic_zip
     with pytest.raises(ArtifactLocalizationError):
         localize_archive(archive, archive.parent, contract)
+
+
+# ---------------------------------------------------------------------------
+# Raw uncompressed file staging
+# ---------------------------------------------------------------------------
+
+
+def _raw_fixture(tmp_path: Path, payload: bytes = b"immutable checkpoint bytes") -> tuple[Path, Path, Any]:
+    source = tmp_path / "source" / "Base_ckpt.pt"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(payload)
+    artifact = _raw_document(payload)
+    contract_path = tmp_path / "raw-localization.json"
+    contract_path.write_text(
+        json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/scientific-artifact-localization/v1",
+                "generated_at": "2026-09-03T00:00:00Z",
+                "artifacts": [artifact],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return source, contract_path, LocalizationContract.parse(artifact)
+
+
+def _raw_stage_argv(source: Path, contract_path: Path, root: Path, receipt: Path, generation: str) -> list[str]:
+    return [
+        "stage",
+        "--contract",
+        str(contract_path),
+        "--artifact-id",
+        RFDIFFUSION_BASE_ID,
+        "--file",
+        str(source),
+        "--artifact-root",
+        str(root),
+        "--sub-path",
+        f"scientific-localization/public/generations/{RFDIFFUSION_BASE_ID}/sha256/{generation}",
+        "--volume-kind",
+        "host-path",
+        "--host-root",
+        "/mnt/fs2-reference-data/data",
+        "--visibility",
+        "public",
+        "--receipt",
+        str(receipt),
+    ]
+
+
+def test_raw_file_localization_copies_and_verifies_the_exact_file(tmp_path: Path) -> None:
+    source, _, contract = _raw_fixture(tmp_path)
+    receipt = localize_file(source, tmp_path / "mount", contract).to_dict()
+    assert receipt["state"] == "verified"
+    assert "archive_provenance" not in receipt
+    assert receipt["file_provenance"] == {
+        "filename": "Base_ckpt.pt",
+        "media_type": "application/octet-stream",
+        "bytes": source.stat().st_size,
+        "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        "source_uri": "https://example.invalid/Base_ckpt.pt",
+        "source_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+        "license_id": "BSD-3-Clause",
+        "present_in_mount": True,
+    }
+    assert receipt["tree_identity"]["inventory_algorithm"] == RAW_FILE_ALGORITHM
+    assert receipt["tree_identity"]["inventory_sha256"] == contract.tree.inventory_sha256
+    assert receipt["observation"] == {
+        "files_linked": 0,
+        "files_copied": 1,
+        "bytes_linked": 0,
+        "bytes_copied": source.stat().st_size,
+    }
+
+
+def test_same_sized_different_raw_file_is_rejected_before_publication(tmp_path: Path) -> None:
+    source, contract_path, contract = _raw_fixture(tmp_path, b"right bytes")
+    source.write_bytes(b"wrong bytes")
+    root = tmp_path / "artifact"
+    receipt_path = tmp_path / "receipt.json"
+    assert (
+        localization_main(_raw_stage_argv(source, contract_path, root, receipt_path, contract.tree.inventory_sha256))
+        == 1
+    )
+    receipt = _assert_valid_receipt(receipt_path)
+    assert receipt["state"] == "rejected"
+    assert "SHA-256" in receipt["rejection_reason"]
+    assert not list(root.glob(f"{STAGING_PREFIX}*"))
+    assert not (root / "sha256").exists()
+
+
+def test_raw_file_stage_publishes_atomically_and_reuses_the_generation(tmp_path: Path) -> None:
+    source, contract_path, contract = _raw_fixture(tmp_path)
+    root = tmp_path / "artifact"
+    receipt_path = tmp_path / "receipt.json"
+    argv = _raw_stage_argv(source, contract_path, root, receipt_path, contract.tree.inventory_sha256)
+
+    assert localization_main(argv) == 0
+    first = _assert_valid_receipt(receipt_path)
+    published = root / "sha256" / contract.tree.inventory_sha256
+    assert first["observation"]["generation_reused"] is False
+    assert first["observation"]["files_copied"] == 1
+    assert (published / "Base_ckpt.pt").read_bytes() == source.read_bytes()
+    marker = load_generation_marker(published / RUNTIME_MARKER_NAME)
+    assert marker["source_kind"] == "file"
+    assert marker["source_present_in_mount"] is True
+    assert marker["source_sha256"] == contract.source.sha256
+
+    assert localization_main(argv) == 0
+    second = _assert_valid_receipt(receipt_path)
+    assert second["observation"]["generation_reused"] is True
+    assert second["observation"]["marker_sha256"] == first["observation"]["marker_sha256"]
+    assert not list(root.glob(f"{STAGING_PREFIX}*"))
+
+
+def test_invalid_raw_stage_arguments_create_no_staging_directory(tmp_path: Path) -> None:
+    source, contract_path, contract = _raw_fixture(tmp_path)
+    root = tmp_path / "artifact"
+    argv = _raw_stage_argv(source, contract_path, root, tmp_path / "receipt.json", contract.tree.inventory_sha256)
+    argv[argv.index("--file")] = "--archive"
+
+    with pytest.raises(SystemExit, match="verified-copy stage requires"):
+        localization_main(argv)
+    assert not root.exists(), "CLI validation must run before allocating private staging"
 
 
 # ---------------------------------------------------------------------------
@@ -1825,6 +2051,91 @@ def test_render_stage_and_qualify_round_trip_on_the_argv_they_render(tmp_path: P
     other.mkdir()
     (other / RUNTIME_MARKER_NAME).write_bytes((published / RUNTIME_MARKER_NAME).read_bytes())
     assert localization_main([part.replace(str(published), str(other)) for part in resolved]) == 1
+
+
+def test_raw_file_renderer_uses_file_flags_and_mounts_the_exact_generation(tmp_path: Path) -> None:
+    renderer = _renderer()
+    source, contract_path, contract = _raw_fixture(tmp_path)
+    artifact = _raw_document(source.read_bytes())
+    prefix = "scientific-localization/public"
+    trees = tmp_path / "plane-root"
+    trees.mkdir()
+    (trees / prefix / ".receipts").mkdir(parents=True)
+
+    stage = renderer.stage_job(
+        name="stage-raw",
+        namespace="fs2-models",
+        run_id="raw",
+        artifacts=[artifact],
+        image="registry.invalid/rfdiffusion@sha256:" + "0" * 64,
+        python="/usr/bin/python3",
+        config_map="raw-contract",
+        plane={"kind": "host-path", "host_root": str(trees)},
+        node_selector={"storage.fs2.nebius/reference-data": "true"},
+        tolerations=[],
+        resources={},
+        security_context={},
+        tree_prefix=prefix,
+    )
+    argv = _localize_argv(stage, "stage-rfdiffusion-base-checkpoint")
+    assert "--fetch-file-to" in argv
+    assert "--fetch-archive-to" not in argv and "--archive" not in argv
+
+    def rewrite(part: str) -> str:
+        if part == renderer.CONTRACT_MOUNT:
+            return str(contract_path)
+        if part.startswith(renderer.TREE_ROOT + "/"):
+            return str(trees) + part[len(renderer.TREE_ROOT) :]
+        return part
+
+    local = [rewrite(part) for part in argv]
+    fetch = local.index("--fetch-file-to")
+    local[fetch : fetch + 2] = ["--file", str(source)]
+    assert localization_main(local) == 0
+
+    generation = contract.tree.inventory_sha256
+    published = trees / prefix / "generations" / RFDIFFUSION_BASE_ID / "sha256" / generation
+    assert (published / "Base_ckpt.pt").is_file()
+    probe = [
+        "python",
+        "/opt/fs2/runtime_entrypoint.py",
+        "run",
+        "--artifact-root",
+        contract.tree.canonical_mount_path,
+    ]
+    qualify = renderer.qualify_job(
+        name="qualify-raw",
+        namespace="fs2-models",
+        run_id="raw",
+        model_id="rfdiffusion",
+        artifacts=[artifact],
+        image="registry.invalid/rfdiffusion@sha256:" + "0" * 64,
+        python="/usr/bin/python3",
+        config_map="raw-contract",
+        planes={"public": {"kind": "host-path", "host_root": str(trees)}},
+        queue=None,
+        probe=probe,
+        node_selector={},
+        tolerations=[],
+        gpu_resource="nvidia.com/gpu",
+        gpu_count=1,
+        security_context={},
+        resources={"requests": {}, "limits": {}},
+        tree_prefix=prefix,
+    )
+    pod = qualify["spec"]["template"]["spec"]
+    mount = next(
+        item for item in pod["containers"][0]["volumeMounts"] if item["mountPath"] == contract.tree.canonical_mount_path
+    )
+    assert mount == {
+        "name": "trees",
+        "mountPath": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
+        "subPath": renderer.generation_sub_path(prefix, RFDIFFUSION_BASE_ID, generation),
+        "readOnly": True,
+    }
+    verify_argv = _localize_argv(qualify, "verify-rfdiffusion-base-checkpoint")
+    assert verify_argv[verify_argv.index("--expect-algorithm") + 1] == RAW_FILE_ALGORITHM
+    assert pod["containers"][0]["command"] == probe
 
 
 # ---------------------------------------------------------------------------
@@ -3002,7 +3313,7 @@ def _published_marker(contract: LocalizationContract, *, sub_path: str, **volume
         inventory_algorithm=contract.tree.inventory_algorithm,
         sub_path=sub_path,
         visibility=contract.visibility,
-        archive=contract.archive,
+        archive=contract.source,
         generated_entries=contract.tree.generated_entries,
         consumer_paths=contract.tree.mount_paths,
         **volume,

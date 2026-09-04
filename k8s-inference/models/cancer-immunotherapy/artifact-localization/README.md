@@ -1,28 +1,34 @@
 # Runtime artifact localization
 
-A scientific runtime consumes a **directory**. Upstream publishes an **archive**.
-Confusing the two is what broke both primary adapters: BoltzGen was given
+A scientific runtime consumes a **directory**. Upstream may publish an archive
+or one raw immutable file. Confusing archive and tree is what broke both primary
+adapters: BoltzGen was given
 `--moldir` pointing at a mount holding `mols.zip`, and Proteina-Complexa was
 given `AF2_DIR` pointing at a mount holding `alphafold_params_2022-12-06.tar`.
 Neither model opens an archive, so both failed at artifact load rather than at
 startup, which is the worst place to find out.
 
-This directory turns the archive into the tree, and proves the result.
+This directory turns an upstream source into a tree and proves the result. A raw
+file such as RFdiffusion `Base_ckpt.pt` uses `verified-copy`: the object itself
+is placed under its immutable filename and is never described as an archive or
+an extraction.
 
 ## Two identities, never one
 
-| | Archive provenance | Extracted-tree identity |
+| | Source provenance | Runtime-tree identity |
 | --- | --- | --- |
 | Answers | where the bytes came from | what the runtime will read |
 | Recorded as | filename, byte size, SHA-256, source URI, upstream revision, license | entry count, total bytes, entry pattern, inventory digest |
-| Computed from | the compressed object | the localized filesystem |
+| Computed from | the upstream object | the localized filesystem and path identity |
 | Qualifies a mount | never | always |
 
 `catalog/runtime/contracts/scientific-artifact-localization.json` declares both
-for every artifact. The two digests are separate fields, and `RuntimeTreeBinding`
-rejects them being equal, so no caller can quietly substitute one for the other.
+for every artifact. Archive-backed entries use `archive`; raw entries use
+`file`, and schema/runtime parsing require exactly one. The source digest and
+generation digest are separate fields, so no caller can quietly substitute one
+for the other.
 
-The tree digest is `fs2-flat-tree-inventory/v1`: a path-sorted JSON array of
+Legacy flat archive trees use `fs2-flat-tree-inventory/v1`: a path-sorted JSON array of
 `{"bytes", "crc32", "path"}` with sorted keys, no whitespace, and one trailing
 newline. It contains no host path, mount root, timestamp, owner, or permission,
 so the same tree hashes identically wherever it is localized. That is what makes
@@ -39,6 +45,8 @@ one verified identity safe to mount at several consumer paths.
 - holds the right count and size but different bytes (identity mismatch);
 - contains a symbolic link, a nested directory, or a non-regular entry;
 - fails a content spot check against a bound probe entry.
+- for a raw-file contract, does not contain exactly the contracted filename,
+  byte count, and SHA-256 as its only content entry.
 
 Extraction refuses traversal, absolute and nested member names, duplicates,
 symlinks and non-regular members, and verifies the archive digest before writing
@@ -79,25 +87,29 @@ and cross-checks the mount with a recursive file and directory count, which
 walks the tree but reads no content: affordable on gigabytes, where rehashing is
 not.
 
-### Three identity algorithms
+### Four identity algorithms
 
 | Algorithm | Covers | Used by |
 | --- | --- | --- |
 | `fs2-flat-tree-inventory/v1` | flat files, CRC-32 | the four public trees |
 | `fs2-tree-inventory/v2` | recursion and directories | a nested tree we stage |
 | `fs2-tree-manifest/v1` | every file by SHA-256, every symlink by target | PyRosetta |
+| `fs2-raw-file/v1` | one filename, byte count, and content SHA-256 | RFdiffusion `Base_ckpt.pt` |
 
 The third is not ours. The academic-assets plane already identifies its
 installed trees that way, so this module reproduces that algorithm exactly
 rather than publishing a second, weaker name for bytes that already have one; a
 cross-contract test runs both implementations over one fixture and requires the
 same digest. The marker always names which algorithm produced its digest.
+The fourth serializes `{algorithm, filename, bytes, sha256}` canonically, so the
+runtime-tree generation remains distinct from the source object's digest while
+still being reproducible from the mounted file alone.
 
 ## What exists and what does not
 
-The five public generations are atomically published on the reference-data host
-plane and qualified for read-only model use. The exact producer Jobs and
-terminal receipts are in
+Six public generations are atomically published on the reference-data host
+plane and qualified for read-only model use. The original five archive-backed
+producer Jobs and terminal receipts are in
 [`evidence/public-generation-publication-20260903.json`](evidence/public-generation-publication-20260903.json);
 two-node marker admission and model-native loader results are in
 [`evidence/public-generation-node-qualification-20260903.json`](evidence/public-generation-node-qualification-20260903.json).
@@ -111,12 +123,15 @@ The checked-in handoff joins those records and marks only these public entries
 | `boltzgen-inference-molecules` | `8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc` | `7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4` |
 | `colabdesign-mpnn-weights-soluble` | `54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146` | `471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660` |
 | `colabdesign-mpnn-weights-vanilla` | `2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f` | `07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8` |
+| `rfdiffusion-base-checkpoint` | `7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c` | `abd2a8127d0bd1b3cbd51d5ffc14a3351f805e15f593c8224ee94de57e3e4599` |
 
-Both existing H100 nodes admitted all five in-generation markers. The immutable
-Proteina-Complexa, BindCraft and BoltzGen images then loaded their exact mounts;
-these were CPU-only artifact checks scheduled on the H100 nodes, so they created
-no GPU allocation or quota change. Source archives were absent from every
-runtime mount.
+Both existing H100 nodes admitted the original five in-generation markers. The
+immutable Proteina-Complexa, BindCraft and BoltzGen images then loaded their exact
+mounts. The RFdiffusion r12 image separately admitted the raw-file marker on one
+H100 node, re-hashed the entire checkpoint and deserialized it with PyTorch.
+These were CPU-only artifact checks scheduled on H100 nodes, so they created no
+GPU allocation or quota change. Source archives were absent from archive-backed
+runtime mounts; the raw source file was truthfully present in its one-file mount.
 
 The installed PyRosetta tree at the academic claim's
 `pyrosetta-bindcraft/site-packages` predates this work. It is the promotion
@@ -125,7 +140,7 @@ is not evidence that the content-addressed generation has been published.
 
 A binding becomes `promoted` only when a terminal promotion receipt exists for
 that artifact, and `qualified` only when node admission and its model-native
-probe pass. The five public entries now meet that rule. The tenant-private
+probe pass. The six public entries now meet that rule. The tenant-private
 PyRosetta generation does not: it remains `rendered`, and the aggregate
 `generations_published` field therefore remains false.
 
@@ -134,7 +149,8 @@ PyRosetta generation does not: it remains `rendered`, and the aggregate
 Storage authority is chosen **per artifact**, not per run:
 
 - **Public** artifacts (BoltzGen molecules, both AlphaFold2 parameter trees, both
-  ColabDesign MPNN weight sets) live on the Terraform-managed public
+  ColabDesign MPNN weight sets, and RFdiffusion `Base_ckpt.pt`) live on the
+  Terraform-managed public
   model-artifact plane: the host root `/mnt/fs2-reference-data/data`, mounted on
   every node labelled `storage.fs2.nebius/reference-data=true`, the H100s
   included. A consumer reaches it by node label, not by claim.
@@ -209,6 +225,17 @@ python render_localization_jobs.py stage \
   --namespace fs2-models --run-id "${RUN_ID}" \
   --image "${REGISTRY}/boltzgen@sha256:..." --python /opt/venv/bin/python \
   --config-map "${CONFIG_MAP}" --claim "${ACADEMIC_CLAIM}" \
+  --plane host-path --host-root /mnt/fs2-reference-data/data \
+  --tree-prefix scientific-localization/public \
+  --node-selector storage.fs2.nebius/reference-data=true | kubectl apply -f -
+
+# A raw file uses the same Job and generation layout. The renderer emits
+# --fetch-file-to/--file, never archive flags or extraction semantics.
+python render_localization_jobs.py stage \
+  --artifact-id rfdiffusion-base-checkpoint \
+  --namespace fs2-models --run-id "${RUN_ID}" \
+  --image "${REGISTRY}/rfdiffusion@sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8" \
+  --python python --config-map "${CONFIG_MAP}" --claim "${ACADEMIC_CLAIM}" \
   --plane host-path --host-root /mnt/fs2-reference-data/data \
   --tree-prefix scientific-localization/public \
   --node-selector storage.fs2.nebius/reference-data=true | kubectl apply -f -
@@ -313,9 +340,13 @@ it, which is a different claim and the one that was silently false before:
 - `probes/proteina_af2dir_probe.py` calls ColabDesign's own
   `get_model_haiku_params` against `AF2_DIR`, taking the same resolution path
   and the same multimer parameter set an evaluate stage selects.
+- `probes/rfdiffusion_checkpoint_probe.py` hashes the exact raw-file generation,
+  verifies its marker, and deserializes `Base_ckpt.pt` with the RFdiffusion
+  image's PyTorch runtime.
 
-Both refuse a directory that still contains an archive before doing anything
-else, so a regression cannot pass by loading from somewhere unexpected.
+The archive-backed probes refuse a directory that still contains an archive
+before doing anything else, so a regression cannot pass by loading from
+somewhere unexpected.
 
 Every probe reports `node_digest` rather than the node. The downward API gives a
 pod the opaque Nebius instance ID, and these receipts are checked into a public
@@ -323,6 +354,32 @@ repository, so the raw value may not appear here; `tests/test_public_export.py`
 enforces that. A truncated SHA-256 of the node name still tells a reader whether
 two receipts came from the same machine, which is all this field was ever for.
 The instance ID stays in the private run record.
+
+### RFdiffusion raw-file live evidence
+
+On 2026-09-03, task-owned Job `fs2-localize-stage-sfraw-r1` in namespace
+`fs2-models`, cluster context `k8s-inference-h100`, project `project-e00rene`,
+region `eu-north1`, ran the immutable RFdiffusion r12 image
+`sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8`.
+It fetched and verified the exact 483,616,107-byte `Base_ckpt.pt`, copied one
+file and 483,616,107 bytes (zero links), and atomically published generation
+`7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c`
+with marker `abd2a8127d0bd1b3cbd51d5ffc14a3351f805e15f593c8224ee94de57e3e4599`
+in 36.704 seconds.
+
+Task-owned Job `fs2-localize-qualify-rfdiffusion-sfraw-probe-r1` then ran on a
+regular capacity-block node from the `h100-reserved-8x` pool, selected as
+`nvidia-h100-sxm5-80gb` with reference-data storage. It requested no GPU. The
+init container admitted the exact in-generation marker; the model-side probe
+re-hashed the full file and deserialized `config_dict`, `final_state_dict` and
+`model_state_dict` with PyTorch 2.3.0 in 1.893 seconds. Its privacy-safe node
+identity is `5e3ad019c6df4d8b`. The stage receipt, marker admission and probe
+report are in `evidence/`.
+
+Both Jobs and both ConfigMaps were deleted after evidence capture. The immutable
+public generation remains intentionally available for RFdiffusion consumers.
+No GPU quota, shared service, deployment or B300 resource was changed; the
+existing Qwen and Cosmos deployment image digests were unchanged after cleanup.
 
 ## Binding handoff
 
@@ -337,7 +394,7 @@ The renderer itself still emits `rendered` only: it cannot claim readiness it
 did not establish. The checked-in handoff is promoted beyond that generated
 baseline only by joining the exact terminal receipts and probes above. Its
 evidence block deliberately keeps the still-pending private PyRosetta generation
-separate from the five qualified public generations.
+separate from the six qualified public generations.
 
 ## The BindCraft AlphaFold2 mount is a second tree, not the same one
 

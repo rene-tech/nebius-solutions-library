@@ -1,0 +1,20 @@
+{
+  "checkpoint": {
+    "bytes": 483616107,
+    "filename": "Base_ckpt.pt",
+    "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca"
+  },
+  "checkpoint_root": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
+  "checkpoint_top_level_keys": [
+    "config_dict",
+    "final_state_dict",
+    "model_state_dict"
+  ],
+  "duration_seconds": 1.893,
+  "generation": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+  "inventory_algorithm": "fs2-raw-file/v1",
+  "node_digest": "5e3ad019c6df4d8b",
+  "schema": "fs2-serve.nebius.ai/rfdiffusion-checkpoint-probe/v1",
+  "state": "passed",
+  "torch_version": "2.3.0"
+}

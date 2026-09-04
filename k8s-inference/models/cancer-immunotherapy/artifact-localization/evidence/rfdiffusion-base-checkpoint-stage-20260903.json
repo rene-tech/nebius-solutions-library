@@ -1,0 +1,44 @@
+{
+  "artifact_id": "rfdiffusion-base-checkpoint",
+  "file_provenance": {
+    "bytes": 483616107,
+    "filename": "Base_ckpt.pt",
+    "license_id": "BSD-3-Clause",
+    "media_type": "application/octet-stream",
+    "present_in_mount": true,
+    "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+    "source_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+    "source_uri": "https://files.ipd.uw.edu/pub/RFdiffusion/6f5902ac237024bdd0c176cb93063dc4/Base_ckpt.pt"
+  },
+  "mount_path": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
+  "observation": {
+    "bytes_copied": 483616107,
+    "bytes_linked": 0,
+    "duration_seconds": 36.704,
+    "files_copied": 1,
+    "files_linked": 0,
+    "generation": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+    "generation_reused": false,
+    "generation_sub_path": "scientific-localization/public/generations/rfdiffusion-base-checkpoint/sha256/7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+    "marker_sha256": "abd2a8127d0bd1b3cbd51d5ffc14a3351f805e15f593c8224ee94de57e3e4599"
+  },
+  "observed_at": "2026-09-03T06:32:53Z",
+  "runtime_bindings": [
+    {
+      "binding_kind": "argv-option",
+      "binding_name": "--artifact-root",
+      "binding_value": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
+      "model_id": "rfdiffusion"
+    }
+  ],
+  "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+  "state": "verified",
+  "tree_identity": {
+    "entry_count": 1,
+    "inventory_algorithm": "fs2-raw-file/v1",
+    "inventory_sha256": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+    "probe_entries_verified": 1,
+    "symlink_count": 0,
+    "total_bytes": 483616107
+  }
+}

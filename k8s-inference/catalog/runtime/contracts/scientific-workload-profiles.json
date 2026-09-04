@@ -18,10 +18,10 @@
       "execution_identity": {
         "model_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
         "runtime_image_digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
-        "runtime_recipe_sha256": "f7b76b6cf62bc6f213ffd950d0fe6d758fc3c44afb2ceb0381c17e0b13883446",
+        "runtime_recipe_sha256": "12c3b975d3ee2212405e76b50850f044eb567c45e44cc6c321e186d0b40a3177",
         "workload_recipe_sha256": "223b796e10fbf933d591817163086bc2830d0e54212b6a7d8e27624aae24d336",
         "artifact_manifest_digest": "8305400f8711388cbc5d9937a120d7ca4de390170082047511e859f636a2dd66",
-        "execution_identity_sha256": "ad894520846cf2c5dad109023f893fac31f43f5fe63ba930726480c32b068590"
+        "execution_identity_sha256": "d00ab061576c21a47803df687cf9c9651af10ff837f62f5394eb8980033ce4d8"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -215,7 +215,7 @@
         "h100_semantic_receipt_sha256": "f4a36ad7b8367e3383f584f96377313d39a26b5a08343d789311a41b04b79a46",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "7bf68647e94028aafd63ff0dffd3612e8ce4d693ed9481fe816ffb0c0242d0b6",
+        "execution_map_sha256": "7c67d68aaf5383ef9187a210ebe03d3bf0236d26250b7fa9bd79480ffdc940b0",
         "qualified_at": "2026-09-03T07:34:56Z"
       },
       "runtime_artifacts": [
@@ -258,7 +258,7 @@
       "execution_identity": {
         "model_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
         "runtime_image_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
-        "runtime_recipe_sha256": "89fa4d7b273c85db5e60c792d12a11f8f2590936e1aa6331d47197055e19647f",
+        "runtime_recipe_sha256": "99af39bc79ec2d531f991fdad1263587c4d67dc58cc85f8de58d4191e2955191",
         "workload_recipe_sha256": "f614aa8507bb31c70d9e9316e4a2a9eb297922cc06555af3a801f0240e9b5797",
         "artifact_manifest_digest": null,
         "execution_identity_sha256": null

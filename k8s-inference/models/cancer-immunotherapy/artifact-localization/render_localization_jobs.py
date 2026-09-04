@@ -4,9 +4,9 @@
 Two workloads come out of one contract:
 
 ``stage``
-    A CPU Job that downloads each declared archive, proves its digest, expands
-    it into a per-artifact directory on a shared regional volume, and writes a
-    localization receipt beside it. The archive is never left in the tree.
+    A CPU Job that downloads each declared source, proves its digest and size,
+    then either safely expands an archive or places one raw file into a private
+    generation before atomic publication.
 
 ``qualify``
     A GPU Job that mounts those trees read-only at the exact paths the runtime
@@ -287,7 +287,7 @@ def stage_job(
     volumes, mounts = _verifier_volumes(config_map, plane, tree_prefix)
     receipts = tree_path(tree_prefix, RECEIPTS_DIR)
     steps: list[dict[str, Any]] = []
-    # Two artifacts can share one upstream archive; fetch it once and let the
+    # Two artifacts can share one upstream object; fetch it once and let the
     # later step localize from the copy already on disk.
     fetched: dict[str, str] = {}
     for artifact in artifacts:
@@ -297,9 +297,13 @@ def stage_job(
             # would duplicate a licensed tree and move the identity its owner
             # published, so this tool only ever verifies it in place.
             raise SystemExit(f"{artifact_id} is an externally installed tree and must not be staged")
-        digest = artifact["archive"]["sha256"]
-        scratch = f"/scratch/{digest}-{artifact['archive']['filename']}"
-        source = ["--fetch-archive-to", scratch] if digest not in fetched else ["--archive", fetched[digest]]
+        raw_file = artifact["transform"] == "verified-copy"
+        provenance = artifact["file"] if raw_file else artifact["archive"]
+        digest = provenance["sha256"]
+        scratch = f"/scratch/{digest}-{provenance['filename']}"
+        fetch_flag = "--fetch-file-to" if raw_file else "--fetch-archive-to"
+        local_flag = "--file" if raw_file else "--archive"
+        source = [fetch_flag, scratch] if digest not in fetched else [local_flag, fetched[digest]]
         fetched.setdefault(digest, scratch)
         generation = artifact["tree"]["inventory_sha256"]
         sub_path = generation_sub_path(tree_prefix, artifact_id, generation)
@@ -771,13 +775,6 @@ def binding_handoff(
             },
             "mounts": [{"mount_path": path, "read_only": True} for path in tree["mount_paths"]],
             "consumers": artifact["consumers"],
-            "archive_provenance": {
-                "filename": artifact["archive"]["filename"],
-                "sha256": artifact["archive"]["sha256"],
-                "bytes": artifact["archive"]["bytes"],
-                "source_revision": artifact["archive"]["source_revision"],
-                "license_id": artifact["archive"]["license_id"],
-            },
             "tree_identity": {
                 "entry_count": tree["entry_count"],
                 "directory_count": tree.get("directory_count", 0),
@@ -787,6 +784,19 @@ def binding_handoff(
             },
             "generated_entries": tree.get("generated_entries", []),
         }
+        provenance_key = "file_provenance" if contract.raw_file else "archive_provenance"
+        provenance: dict[str, Any] = {
+            "filename": contract.source.filename,
+            "sha256": contract.source.sha256,
+            "bytes": contract.source.size_bytes,
+            "source_revision": contract.source.source_revision,
+            "license_id": contract.source.license_id,
+        }
+        if contract.raw_file:
+            provenance.update(
+                {"media_type": contract.source.media_type, "present_in_mount": True}
+            )
+        entry[provenance_key] = provenance
         proven = (established or {}).get(artifact["artifact_id"])
         if proven is not None:
             # A real document raised this state, so the document is named beside
@@ -902,7 +912,7 @@ def marker_document(
         claim=plane.get("claim", "") if plane["kind"] == "persistent-volume-claim" else "",
         host_root=plane.get("host_root", "") if plane["kind"] == "host-path" else "",
         visibility=contract.visibility,
-        archive=contract.archive,
+        archive=contract.source,
         generated_entries=contract.tree.generated_entries,
         consumer_paths=contract.tree.mount_paths,
     )

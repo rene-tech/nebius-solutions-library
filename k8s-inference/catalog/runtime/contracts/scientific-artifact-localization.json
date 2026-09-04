@@ -505,6 +505,48 @@
         }
       ],
       "notes": "ColabDesign selects vanilla weights with mk_mpnn_model(weights=\"original\"), which imports colabdesign.mpnn.weights and joblib-loads <model_name>.pkl beside its __init__.py. The BindCraft image deletes both weight directories after installing ColabDesign, so this tree is supplied at runtime. It is a different tree from the soluble one: every .pkl differs and each vanilla file is 6,650,698 bytes against 6,650,310 soluble. The catalog proteinmpnn-checkpoints artifact is NOT a substitute; those are torch .pt tensors under vanilla_model_weights/ and soluble_model_weights/, not joblib .pkl, and cannot be mounted here without a declared conversion."
+    },
+    {
+      "artifact_id": "rfdiffusion-base-checkpoint",
+      "transform": "verified-copy",
+      "file": {
+        "filename": "Base_ckpt.pt",
+        "media_type": "application/octet-stream",
+        "bytes": 483616107,
+        "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+        "source_uri": "https://files.ipd.uw.edu/pub/RFdiffusion/6f5902ac237024bdd0c176cb93063dc4/Base_ckpt.pt",
+        "source_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+        "license_id": "BSD-3-Clause"
+      },
+      "tree": {
+        "mount_paths": [
+          "/opt/fs2/artifacts/rfdiffusion-base-checkpoint"
+        ],
+        "entry_count": 1,
+        "directory_count": 0,
+        "symlink_count": 0,
+        "total_bytes": 483616107,
+        "entry_path_pattern": "^Base_ckpt\\.pt$",
+        "inventory_algorithm": "fs2-raw-file/v1",
+        "inventory_sha256": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+        "complete_entry_digests": true,
+        "probe_entries": [
+          {
+            "path": "Base_ckpt.pt",
+            "bytes": 483616107,
+            "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca"
+          }
+        ]
+      },
+      "consumers": [
+        {
+          "model_id": "rfdiffusion",
+          "binding_kind": "argv-option",
+          "binding_name": "--artifact-root",
+          "mount_path": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint"
+        }
+      ],
+      "notes": "One immutable raw checkpoint, not an archive. verified-copy hashes and byte-counts the downloaded object, places it under its exact filename in a private staging generation, verifies fs2-raw-file/v1, seals the in-generation marker, and publishes by atomic rename. ActiveSite_ckpt.pt has exactly the same byte count and a different SHA-256, so size alone is never accepted. The source belongs to the public reference-data host plane and the RFdiffusion r12 runtime reads Base_ckpt.pt relative to this exact mount."
     }
   ]
 }

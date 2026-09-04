@@ -40,9 +40,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
 
     def test_checked_in_request_result_and_artifact_examples_validate(self) -> None:
         cases = {
-            "scientific-artifact-manifest.schema.json": (
-                "scientific-artifact-manifest.example.json"
-            ),
+            "scientific-artifact-manifest.schema.json": ("scientific-artifact-manifest.example.json"),
             "scientific-run-request.schema.json": "scientific-run-request.example.json",
             "scientific-run-result.schema.json": "scientific-run-result.example.json",
         }
@@ -82,22 +80,15 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                 self.assertTrue(list(validator.iter_errors(candidate)))
 
     def test_embedded_artifact_reference_shapes_do_not_drift(self) -> None:
-        canonical = self.load(
-            SCHEMA_ROOT / "scientific-artifact-pointer.schema.json"
-        )
-        canonical_shape = {
-            key: canonical[key]
-            for key in ("type", "additionalProperties", "required", "properties")
-        }
+        canonical = self.load(SCHEMA_ROOT / "scientific-artifact-pointer.schema.json")
+        canonical_shape = {key: canonical[key] for key in ("type", "additionalProperties", "required", "properties")}
         for schema_name in (
             "scientific-artifact-manifest.schema.json",
             "scientific-run-request.schema.json",
             "scientific-run-result.schema.json",
         ):
             with self.subTest(schema=schema_name):
-                embedded = self.load(SCHEMA_ROOT / schema_name)["$defs"][
-                    "artifact_ref"
-                ]
+                embedded = self.load(SCHEMA_ROOT / schema_name)["$defs"]["artifact_ref"]
                 self.assertEqual(canonical_shape, embedded)
 
     def test_terminal_success_requires_output_and_semantic_pass(self) -> None:
@@ -147,21 +138,15 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         self.assertFalse(list(validator.iter_errors(result)))
 
         unknown_stage_field = copy.deepcopy(result)
-        unknown_stage_field["scheduling_snapshot"]["stages"][0][
-            "provider_instance_type"
-        ] = "gpu-vendor-specific"
+        unknown_stage_field["scheduling_snapshot"]["stages"][0]["provider_instance_type"] = "gpu-vendor-specific"
         self.assertTrue(list(validator.iter_errors(unknown_stage_field)))
 
         unknown_admission_field = copy.deepcopy(result)
-        unknown_admission_field["attempts"][0]["scheduling_admission"][
-            "provider_instance_id"
-        ] = "instance-secret"
+        unknown_admission_field["attempts"][0]["scheduling_admission"]["provider_instance_id"] = "instance-secret"
         self.assertTrue(list(validator.iter_errors(unknown_admission_field)))
 
         invalid_gpu_stage = copy.deepcopy(result)
-        invalid_gpu_stage["scheduling_snapshot"]["stages"][1][
-            "accelerator_resource_name"
-        ] = None
+        invalid_gpu_stage["scheduling_snapshot"]["stages"][1]["accelerator_resource_name"] = None
         invalid_gpu_stage["scheduling_snapshot"]["stages"][1]["accelerator_count"] = 0
         self.assertTrue(list(validator.iter_errors(invalid_gpu_stage)))
 
@@ -195,12 +180,8 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         self.assertTrue(list(validator.iter_errors(academic)))
 
     def test_source_observations_are_exactly_candidate_and_unqualified(self) -> None:
-        receipts = self.load(
-            CONTRACT_ROOT / "scientific-source-candidate-receipts.json"
-        )
-        self.assert_valid(
-            "scientific-source-candidate-receipts.schema.json", receipts
-        )
+        receipts = self.load(CONTRACT_ROOT / "scientific-source-candidate-receipts.json")
+        self.assert_valid("scientific-source-candidate-receipts.schema.json", receipts)
         expected = {
             "alphafold3": "c0f97eda2f1f482fd94d3a38bece18c7069b4a5c",
             "bindcraft": "efb5bfeb8b4b1a5944256f979c34e0c8e6a82d9d",
@@ -212,26 +193,12 @@ class ScientificWorkloadContractTests(unittest.TestCase):
             "protenix-v2": "4c355be4553512f72453ecbfb65e69f4c35d1413",
             "rfdiffusion-upstream": "86507b6538f51fce57b5a72477165f03999ed7ae",
         }
-        actual = {
-            item["model_id"]: item["source"]["revision"]
-            for item in receipts["receipts"]
-        }
+        actual = {item["model_id"]: item["source"]["revision"] for item in receipts["receipts"]}
         self.assertEqual(expected, actual)
         self.assertEqual(len(actual), len(receipts["receipts"]))
-        self.assertTrue(
-            all(item["status"] == "candidate" for item in receipts["receipts"])
-        )
-        self.assertTrue(
-            all(
-                item["qualification_state"] == "unqualified"
-                for item in receipts["receipts"]
-            )
-        )
-        academic = {
-            item["model_id"]
-            for item in receipts["receipts"]
-            if item["access_profile"] == "academic"
-        }
+        self.assertTrue(all(item["status"] == "candidate" for item in receipts["receipts"]))
+        self.assertTrue(all(item["qualification_state"] == "unqualified" for item in receipts["receipts"]))
+        academic = {item["model_id"] for item in receipts["receipts"] if item["access_profile"] == "academic"}
         self.assertEqual({"alphafold3", "bindcraft"}, academic)
 
     # BoltzGen is dispatchable on real H100 and localization evidence. It is active, not
@@ -267,12 +234,8 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                     }[profile["model_id"]],
                     profile["execution_identity"]["runtime_image_digest"],
                 )
-                self.assertIsNone(
-                    profile["execution_identity"]["artifact_manifest_digest"]
-                )
-                self.assertIsNone(
-                    profile["execution_identity"]["execution_identity_sha256"]
-                )
+                self.assertIsNone(profile["execution_identity"]["artifact_manifest_digest"])
+                self.assertIsNone(profile["execution_identity"]["execution_identity_sha256"])
 
     def test_qualified_profile_requires_complete_runnable_identity(self) -> None:
         profile = copy.deepcopy(
@@ -330,13 +293,11 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         cases = (
             (
                 "proteina-complexa-parameters.schema.json",
-                ROOT
-                / "models/structure/batch-adapters/proteina-complexa/fixtures/positive-protein.json",
+                ROOT / "models/structure/batch-adapters/proteina-complexa/fixtures/positive-protein.json",
             ),
             (
                 "boltzgen-parameters.schema.json",
-                ROOT
-                / "models/structure/batch-adapters/boltzgen/fixtures/positive-design.json",
+                ROOT / "models/structure/batch-adapters/boltzgen/fixtures/positive-design.json",
             ),
         )
         request_validator = self.validator("scientific-run-request.schema.json")
@@ -344,9 +305,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
             with self.subTest(schema=schema_name):
                 request = self.load(fixture_path)
                 self.assertEqual([], list(request_validator.iter_errors(request)))
-                self.assertEqual(
-                    [], list(self.validator(schema_name).iter_errors(request["parameters"]))
-                )
+                self.assertEqual([], list(self.validator(schema_name).iter_errors(request["parameters"])))
 
     def test_artifact_localization_contract_matches_its_schema(self) -> None:
         contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
@@ -360,6 +319,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                 "colabdesign-mpnn-weights-vanilla",
                 "colabdesign-mpnn-weights-soluble",
                 "bindcraft-pyrosetta-installed-tree",
+                "rfdiffusion-base-checkpoint",
             },
             set(artifacts),
         )
@@ -368,6 +328,8 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
         for artifact in contract["artifacts"]:
             with self.subTest(artifact=artifact["artifact_id"]):
+                if artifact["transform"] == "verified-copy":
+                    continue
                 archive = artifact["archive"]
                 tree = artifact["tree"]
                 self.assertNotEqual(archive["sha256"], tree["inventory_sha256"])
@@ -377,14 +339,28 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                     # artifact's own directory; an installed-package tree lives
                     # where the package is installed instead.
                     if mount.startswith("/opt/fs2/artifacts/"):
-                        self.assertEqual(
-                            "/opt/fs2/artifacts/" + artifact["artifact_id"], mount
-                        )
+                        self.assertEqual("/opt/fs2/artifacts/" + artifact["artifact_id"], mount)
                 # A runtime mount is a directory of content, so the archive name
                 # must never be something the tree could legitimately contain.
-                self.assertIsNone(
-                    re.compile(tree["entry_path_pattern"]).fullmatch(archive["filename"])
-                )
+                self.assertIsNone(re.compile(tree["entry_path_pattern"]).fullmatch(archive["filename"]))
+
+    def test_rfdiffusion_raw_file_identity_matches_the_artifact_and_runtime_catalogs(self) -> None:
+        contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
+        localized = next(item for item in contract["artifacts"] if item["artifact_id"] == "rfdiffusion-base-checkpoint")
+        artifact_manifest = self.load(ROOT / "model-artifacts/manifest-rfdiffusion-checkpoints.json")
+        catalog_file = next(item for item in artifact_manifest["content"]["files"] if item["path"] == "Base_ckpt.pt")
+        image_lock = self.load(ROOT / "models/cancer-immunotherapy/runtime-images/rfdiffusion/image-lock.json")
+        runtime_file = next(item for item in image_lock["external_artifacts"] if item["file"] == "Base_ckpt.pt")
+
+        self.assertEqual("verified-copy", localized["transform"])
+        self.assertNotIn("archive", localized)
+        for field, runtime_name in (("sha256", "sha256"), ("bytes", "bytes")):
+            self.assertEqual(catalog_file[field], localized["file"][field])
+            self.assertEqual(runtime_file[runtime_name], localized["file"][field])
+        self.assertEqual(runtime_file["source"], localized["file"]["source_uri"])
+        self.assertEqual("fs2-raw-file/v1", localized["tree"]["inventory_algorithm"])
+        self.assertNotEqual(localized["file"]["sha256"], localized["tree"]["inventory_sha256"])
+        self.assertEqual(localized["file"]["bytes"], localized["tree"]["total_bytes"])
 
     def test_localization_contract_rejects_a_tree_holding_its_own_archive(self) -> None:
         contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
@@ -424,6 +400,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                     "colabdesign.mpnn.weights_soluble",
                 ),
                 ("bindcraft-pyrosetta-installed-tree", "bindcraft", "PYTHONPATH"),
+                ("rfdiffusion-base-checkpoint", "rfdiffusion", "--artifact-root"),
             },
             observed,
         )
@@ -447,9 +424,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         self.assertNotEqual(vanilla["total_bytes"], soluble["total_bytes"])
         self.assertNotEqual(vanilla["mount_paths"], soluble["mount_paths"])
         self.assertTrue(vanilla["mount_paths"][0].endswith("/colabdesign/mpnn/weights"))
-        self.assertTrue(
-            soluble["mount_paths"][0].endswith("/colabdesign/mpnn/weights_soluble")
-        )
+        self.assertTrue(soluble["mount_paths"][0].endswith("/colabdesign/mpnn/weights_soluble"))
         vanilla_digests = {entry["sha256"] for entry in vanilla["probe_entries"]}
         soluble_digests = {entry["sha256"] for entry in soluble["probe_entries"]}
         # Only the shared one-byte package marker may coincide.
@@ -458,8 +433,12 @@ class ScientificWorkloadContractTests(unittest.TestCase):
     def test_localized_subtrees_declare_the_prefix_they_are_lifted_from(self) -> None:
         contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
         for artifact in contract["artifacts"]:
-            prefix = artifact["archive"].get("member_prefix")
             with self.subTest(artifact=artifact["artifact_id"]):
+                if artifact["transform"] == "verified-copy":
+                    self.assertNotIn("archive", artifact)
+                    self.assertNotIn("member_prefix", artifact["file"])
+                    continue
+                prefix = artifact["archive"].get("member_prefix")
                 if artifact["artifact_id"].startswith("colabdesign-mpnn-weights-"):
                     self.assertIsNotNone(prefix)
                     self.assertTrue(prefix.endswith("/"))
@@ -502,6 +481,10 @@ class ScientificWorkloadContractTests(unittest.TestCase):
             "bindcraft-pyrosetta-installed-tree": (
                 "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
                 "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+            ),
+            "rfdiffusion-base-checkpoint": (
+                "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+                "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
             ),
         }
         contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
@@ -583,6 +566,33 @@ class ScientificWorkloadContractTests(unittest.TestCase):
             del candidate[field]
             self.assertTrue(list(validator.iter_errors(candidate)))
 
+    def test_raw_file_receipt_requires_truthful_presence_semantics(self) -> None:
+        contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
+        artifact = next(item for item in contract["artifacts"] if item["artifact_id"] == "rfdiffusion-base-checkpoint")
+        receipt = {
+            "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+            "artifact_id": artifact["artifact_id"],
+            "observed_at": "2026-09-03T06:30:00Z",
+            "mount_path": artifact["tree"]["mount_paths"][0],
+            "state": "verified",
+            "file_provenance": {
+                **artifact["file"],
+                "present_in_mount": True,
+            },
+            "tree_identity": {
+                "entry_count": 1,
+                "directory_count": 0,
+                "symlink_count": 0,
+                "total_bytes": artifact["tree"]["total_bytes"],
+                "inventory_algorithm": "fs2-raw-file/v1",
+                "inventory_sha256": artifact["tree"]["inventory_sha256"],
+                "probe_entries_verified": 1,
+            },
+        }
+        self.assert_valid("scientific-localization-receipt.schema.json", receipt)
+        receipt["file_provenance"]["present_in_mount"] = False
+        self.assertTrue(list(self.validator("scientific-localization-receipt.schema.json").iter_errors(receipt)))
+
     def test_probes_correlate_nodes_by_digest_and_never_publish_the_node_name(self) -> None:
         """These receipts are checked into a public repository.
 
@@ -594,7 +604,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
 
         localization = ROOT / "models/cancer-immunotherapy/artifact-localization"
         probes = sorted((localization / "probes").glob("*_probe.py"))
-        self.assertEqual(3, len(probes))
+        self.assertEqual(4, len(probes))
         for probe in probes:
             with self.subTest(probe=probe.name):
                 source = probe.read_text(encoding="utf-8")
@@ -625,9 +635,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         the marker digests are pinned here rather than left to a renderer run.
         """
 
-        handoff = self.load(
-            ROOT / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json"
-        )
+        handoff = self.load(ROOT / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json")
         self.assertEqual(
             [
                 "alphafold2-params-bindcraft",
@@ -665,9 +673,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         non-bindable input.
         """
 
-        handoff = self.load(
-            ROOT / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json"
-        )
+        handoff = self.load(ROOT / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json")
         for entry in handoff["artifacts"]:
             with self.subTest(artifact=entry["artifact_id"]):
                 sub_path = entry["volume"]["sub_path"]
@@ -700,9 +706,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         provisioned for one licence chain into a general cache.
         """
 
-        handoff = self.load(
-            ROOT / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json"
-        )
+        handoff = self.load(ROOT / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json")
         public = handoff["volumes"]["public"]
         private = handoff["volumes"]["tenant-private"]
         self.assertEqual("host-path", public["kind"])
@@ -738,9 +742,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
     def test_the_marker_addresses_the_plane_its_generation_actually_lives_on(self) -> None:
         """A claim for a host directory, or a host root for a claim, names nothing."""
 
-        handoff = self.load(
-            ROOT / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json"
-        )
+        handoff = self.load(ROOT / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json")
         for entry in handoff["artifacts"]:
             with self.subTest(artifact=entry["artifact_id"]):
                 document = entry["marker"]["document"]
@@ -781,12 +783,8 @@ class ScientificWorkloadContractTests(unittest.TestCase):
 
         evidence_root = ROOT / "models/cancer-immunotherapy/artifact-localization/evidence"
         handoff = self.load(evidence_root / "binding-handoff.json")
-        publication = self.load(
-            evidence_root / "public-generation-publication-20260903.json"
-        )
-        qualification = self.load(
-            evidence_root / "public-generation-node-qualification-20260903.json"
-        )
+        publication = self.load(evidence_root / "public-generation-publication-20260903.json")
+        qualification = self.load(evidence_root / "public-generation-node-qualification-20260903.json")
         evidence = handoff["evidence"]
         self.assertEqual("public-qualified-private-rendered", evidence["state"])
         self.assertFalse(evidence["generations_published"])
@@ -800,39 +798,29 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         self.assertTrue(publication["cleanup"]["immutable_generations_retained"])
         self.assertTrue(qualification["cleanup"]["immutable_generations_retained"])
 
-        public_ids = {
-            entry["artifact_id"]
-            for entry in handoff["artifacts"]
-            if entry["visibility"] == "public"
-        }
+        public_ids = {entry["artifact_id"] for entry in handoff["artifacts"] if entry["visibility"] == "public"}
+        raw_artifact_id = "rfdiffusion-base-checkpoint"
+        original_public_ids = public_ids - {raw_artifact_id}
         self.assertEqual(public_ids, set(evidence["qualified_artifacts"]))
-        self.assertEqual(
-            {"bindcraft-pyrosetta-installed-tree"}, set(evidence["pending_artifacts"])
-        )
+        self.assertEqual({"bindcraft-pyrosetta-installed-tree"}, set(evidence["pending_artifacts"]))
 
-        receipts = {
-            item["receipt"]["artifact_id"]: item["receipt"]
-            for item in publication["artifacts"]
-        }
+        receipts = {item["receipt"]["artifact_id"]: item["receipt"] for item in publication["artifacts"]}
+        receipts[raw_artifact_id] = self.load(evidence_root / "rfdiffusion-base-checkpoint-stage-20260903.json")
         receipt_refs = {item["artifact_id"]: item for item in evidence["promotion_receipts"]}
         probe_refs = {item["artifact_id"]: item for item in evidence["node_probes"]}
+        self.assertEqual(
+            original_public_ids,
+            {item["receipt"]["artifact_id"] for item in publication["artifacts"]},
+        )
         self.assertEqual(public_ids, set(receipts))
         self.assertEqual(public_ids, set(receipt_refs))
         self.assertEqual(public_ids, set(probe_refs))
 
-        admission_jobs = [
-            job for job in qualification["jobs"] if job["kind"] == "all-public-marker-admission"
-        ]
+        admission_jobs = [job for job in qualification["jobs"] if job["kind"] == "all-public-marker-admission"]
         self.assertEqual(2, len(admission_jobs))
         self.assertEqual(2, len({job["node_digest"] for job in admission_jobs}))
-        model_jobs = {
-            job["job"]: job
-            for job in qualification["jobs"]
-            if job["kind"] == "model-native-loader"
-        }
-        receipt_validator = self.validator(
-            "scientific-localization-receipt.schema.json"
-        )
+        model_jobs = {job["job"]: job for job in qualification["jobs"] if job["kind"] == "model-native-loader"}
+        receipt_validator = self.validator("scientific-localization-receipt.schema.json")
         by_id = {entry["artifact_id"]: entry for entry in handoff["artifacts"]}
 
         for artifact_id in public_ids:
@@ -842,9 +830,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                 self.assertFalse(list(receipt_validator.iter_errors(receipt)))
                 self.assertEqual("qualified", entry["volume"]["binding_state"])
                 self.assertEqual("verified", receipt["state"])
-                self.assertEqual(
-                    entry["generation"], receipt["tree_identity"]["inventory_sha256"]
-                )
+                self.assertEqual(entry["generation"], receipt["tree_identity"]["inventory_sha256"])
                 self.assertEqual(entry["generation"], receipt["observation"]["generation"])
                 self.assertEqual(
                     entry["volume"]["sub_path"],
@@ -854,44 +840,47 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                     entry["marker"]["manifest_digest"],
                     receipt["observation"]["marker_sha256"],
                 )
-                self.assertFalse(receipt["archive_provenance"]["present_in_mount"])
+                if artifact_id == raw_artifact_id:
+                    self.assertNotIn("archive_provenance", receipt)
+                    self.assertTrue(receipt["file_provenance"]["present_in_mount"])
+                else:
+                    self.assertFalse(receipt["archive_provenance"]["present_in_mount"])
                 self.assertEqual(entry["generation"], receipt_refs[artifact_id]["generation"])
                 self.assertEqual(
                     entry["marker"]["manifest_digest"],
                     receipt_refs[artifact_id]["marker_sha256"],
                 )
 
-                for job in admission_jobs:
-                    admitted = {
-                        item["artifact_id"]: item for item in job["marker_admissions"]
-                    }[artifact_id]
-                    self.assertEqual("admitted", admitted["state"])
-                    self.assertEqual(entry["generation"], admitted["generation"])
-                    self.assertEqual(
-                        entry["marker"]["manifest_digest"], admitted["manifest_digest"]
-                    )
+                if artifact_id in original_public_ids:
+                    for job in admission_jobs:
+                        admitted = {item["artifact_id"]: item for item in job["marker_admissions"]}[artifact_id]
+                        self.assertEqual("admitted", admitted["state"])
+                        self.assertEqual(entry["generation"], admitted["generation"])
+                        self.assertEqual(entry["marker"]["manifest_digest"], admitted["manifest_digest"])
 
-                model_job = model_jobs[probe_refs[artifact_id]["model_native_probe_job"]]
-                self.assertEqual("passed", model_job["result"]["state"])
-                self.assertEqual([0], model_job["exit_codes"])
+                    model_job = model_jobs[probe_refs[artifact_id]["model_native_probe_job"]]
+                    self.assertEqual("passed", model_job["result"]["state"])
+                    self.assertEqual([0], model_job["exit_codes"])
+
+        raw_admission = self.load(evidence_root / "node-admit-rfdiffusion-base-checkpoint-h100-20260903.json")
+        raw_probe = self.load(evidence_root / "rfdiffusion-checkpoint-probe-h100-20260903.json")
+        self.assertEqual("admitted", raw_admission["state"])
+        self.assertEqual(receipts[raw_artifact_id]["observation"]["marker_sha256"], raw_admission["manifest_digest"])
+        self.assertEqual("passed", raw_probe["state"])
+        self.assertEqual(receipts[raw_artifact_id]["file_provenance"]["sha256"], raw_probe["checkpoint"]["sha256"])
+        self.assertEqual(receipts[raw_artifact_id]["tree_identity"]["inventory_sha256"], raw_probe["generation"])
 
         private = by_id["bindcraft-pyrosetta-installed-tree"]
         self.assertEqual("rendered", private["volume"]["binding_state"])
         self.assertNotIn(private["artifact_id"], receipts)
 
-        proteina = model_jobs[
-            "fs2-localize-qualify-proteina-complexa-r20260903pub2-proteina"
-        ]
+        proteina = model_jobs["fs2-localize-qualify-proteina-complexa-r20260903pub2-proteina"]
         self.assertEqual(16, len(proteina["result"]["entries"]))
-        bindcraft = model_jobs[
-            "fs2-localize-qualify-bindcraft-public-r20260903pub2-bindcraft"
-        ]
+        bindcraft = model_jobs["fs2-localize-qualify-bindcraft-public-r20260903pub2-bindcraft"]
         for weight in bindcraft["result"]["mpnn_weights"].values():
             self.assertEqual(5, len(weight["entries"]))
             self.assertNotIn(".fs2-runtime-tree.json", weight["entries"])
-        boltzgen = model_jobs[
-            "fs2-localize-qualify-boltzgen-r20260903pub2-boltzgen"
-        ]
+        boltzgen = model_jobs["fs2-localize-qualify-boltzgen-r20260903pub2-boltzgen"]
         self.assertEqual(45227, boltzgen["result"]["entry_count"])
 
     def test_no_checked_in_localization_evidence_claims_an_unproven_live_state(self) -> None:
