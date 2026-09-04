@@ -1469,8 +1469,20 @@ class FileScientificManifestRenderer:
                     physical_source = {"hostPath": {"path": source.host_path, "type": "Directory"}}
                 volumes.append({"name": source.name, **physical_source})
                 volume_names.add(source.name)
-        declared_sources = {mount.name for mount in execution.mounts if mount.kind in {"reference", "private"}}
-        if declared_sources != used_sources:
+        # A stage map may enumerate several mutually-exclusive, content-addressed
+        # variant generations (Proteina-Complexa is one example). Only sources
+        # selected by the bound invocation are emitted into this Pod. Keeping an
+        # unused exact subPath candidate is safe; keeping an unused whole PVC or
+        # host plane is not, because a later renderer change could accidentally
+        # widen the bytes exposed to a workload.
+        unbound_broad_sources = {
+            mount.name
+            for mount in execution.mounts
+            if mount.kind in {"reference", "private"}
+            and mount.name not in used_sources
+            and mount.sub_path is None
+        }
+        if unbound_broad_sources:
             raise ScientificExecutionMapError("stage declares an unbound broad runtime artifact volume")
         if self.tools_image is None or self.internal_api_url is None or self.capability_authority is None:
             raise ScientificExecutionMapError("scientific artifact companion runtime is not configured")

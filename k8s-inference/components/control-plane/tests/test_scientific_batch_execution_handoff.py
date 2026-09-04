@@ -276,6 +276,8 @@ def runtime_execution_map(
     omit_file: bool = False,
     runtime_cache: bool = False,
     runtime_cache_claim: str = "fs2-scientific-runtime-cache",
+    include_unused_variant_source: bool = False,
+    unused_variant_source: str | None = None,
 ) -> FileScientificManifestRenderer:
     profile = runtime_profile()
     file_names = (
@@ -334,6 +336,21 @@ def runtime_execution_map(
                                 "sub_path": None,
                                 "read_only": True,
                             },
+                            *(
+                                [
+                                    {
+                                        "name": "unused-variant",
+                                        "kind": "reference",
+                                        "claim_name": "scientific-model-artifacts",
+                                        "host_path": None,
+                                        "mount_path": "/models/unused-variant",
+                                        "sub_path": unused_variant_source,
+                                        "read_only": True,
+                                    }
+                                ]
+                                if include_unused_variant_source
+                                else []
+                            ),
                             *(
                                 [
                                     {
@@ -656,6 +673,64 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
     tampered = replace(resource, runtime_artifacts=(replace(localized[0], mount_path="/models/changed"),))
     with pytest.raises(ScientificExecutionMapError, match="lost its verified localization"):
         renderer.render(tampered)
+
+
+@pytest.mark.parametrize(
+    ("unused_variant_source", "allowed"),
+    [
+        ("variants/unused/sha256/" + "d" * 64, True),
+        (None, False),
+    ],
+)
+def test_runtime_binding_emits_only_the_selected_exact_variant_source(
+    tmp_path: Path,
+    unused_variant_source: str | None,
+    allowed: bool,
+) -> None:
+    plan = runtime_plan()
+    renderer = runtime_execution_map(
+        tmp_path,
+        include_unused_variant_source=True,
+        unused_variant_source=unused_variant_source,
+    )
+    access = ArtifactAccessContext(profile="public", receipt_digest=None, tenant_id="tenant-a")
+    localized = renderer.verify_runtime_artifacts(runtime_profile(), plan, access)
+    bound = renderer.bind_runtime_artifacts(runtime_profile(), plan, access, localized)
+    snapshot = scheduling(bound.controller_plan)
+    resource = WorkloadResource(
+        operation_id=uuid4(),
+        batch_id=uuid4(),
+        workload_id=uuid4(),
+        attempt_id=uuid4(),
+        stage_id="prepare",
+        shard_id="main",
+        attempt_number=1,
+        tenant_id="tenant-a",
+        model_id="protenix-v2",
+        variant_id="upstream-v2-0-0",
+        input_artifact_id=uuid4(),
+        service_class=ServiceClass.CUSTOMER_BATCH,
+        scheduling_snapshot_digest=snapshot.digest,
+        namespace="fs2-models",
+        name="protenix-prepare-exact-variant",
+        kind=WorkloadKind.JOB,
+        scheduling=snapshot.stage("prepare"),
+        invocation=bound.invocation("prepare", "main"),
+        access_context=access,
+        runtime_artifacts=localized,
+        execution_map_sha256=bound.execution_map_sha256,
+        execution_binding=bound.execution_binding("prepare"),
+    )
+
+    if not allowed:
+        with pytest.raises(ScientificExecutionMapError, match="unbound broad runtime artifact volume"):
+            renderer.render(resource)
+        return
+
+    pod = renderer.render(resource)["spec"]["template"]["spec"]  # type: ignore[index]
+    assert "unused-variant" not in {item["name"] for item in pod["volumes"]}
+    for container in (*pod["initContainers"], *pod["containers"]):
+        assert "unused-variant" not in {item["name"] for item in container["volumeMounts"]}
 
 
 def test_runtime_cache_is_terraform_owned_model_only_and_never_triggers_recursive_chown(tmp_path: Path) -> None:
