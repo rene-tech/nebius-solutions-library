@@ -687,6 +687,15 @@ class PostgresStore:
                 if changed:
                     raise RuntimeError("an applied migration does not match this immutable image")
                 if applied == expected:
+                    async with pool.acquire() as connection:
+                        runtime_privileges_ready = await connection.fetchval(
+                            "SELECT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_admission_outbox','SELECT,INSERT,DELETE') "
+                            "AND has_table_privilege(current_user,"
+                            "'public.fs2_scientific_admission_outbox','SELECT,INSERT,DELETE')"
+                        )
+                    if not runtime_privileges_ready:
+                        raise RuntimeError("database schema runtime privileges are incomplete")
                     return
                 remaining = deadline - asyncio.get_running_loop().time()
                 if remaining <= 0:
