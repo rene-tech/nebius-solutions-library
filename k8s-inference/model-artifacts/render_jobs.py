@@ -95,14 +95,51 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
         raise ContractError(f"selected artifacts are not available: {sorted(unknown)}")
     catalog_digest = sha256_bytes(canonical_json(load_json(args.catalog)))
     config_name = _dns(f"public-artifacts-{catalog_digest[:12]}", "ConfigMap name")
-    data = {
+    projected_files = {
         "artifact-catalog.json": args.catalog.read_text(encoding="utf-8"),
         "public_artifacts.py": Path(__file__).with_name("public_artifacts.py").read_text(encoding="utf-8"),
     }
+    support_files: set[str] = set()
     for entry in available.values():
         manifest_path = Path(entry["_manifest_path"])
         relative = manifest_path.relative_to(args.catalog.parent.resolve()).as_posix()
-        data[relative.replace("/", "__")] = manifest_path.read_text(encoding="utf-8")
+        projected_files[relative] = manifest_path.read_text(encoding="utf-8")
+        provenance = entry.get("provenance")
+        if isinstance(provenance, dict):
+            verification = provenance.get("verification")
+            if isinstance(verification, dict) and isinstance(verification.get("evidence"), str):
+                support_files.add(verification["evidence"])
+    for handoff in catalog.get("runtime_handoffs", {}).values():
+        if not isinstance(handoff, dict):
+            continue
+        smoke = handoff.get("semantic_smoke")
+        if not isinstance(smoke, dict):
+            continue
+        fixture = smoke.get("fixture")
+        if isinstance(fixture, dict) and isinstance(fixture.get("path"), str):
+            support_files.add(fixture["path"])
+    for section in ("runtime_constraints", "private_layouts"):
+        for contract in catalog.get(section, {}).values():
+            if isinstance(contract, dict) and isinstance(contract.get("evidence"), str):
+                support_files.add(contract["evidence"])
+    for relative in sorted(support_files):
+        support_relative = Path(relative)
+        support_path = (args.catalog.parent / support_relative).resolve()
+        if (
+            args.catalog.parent.resolve() not in support_path.parents
+            or not support_path.is_file()
+        ):
+            raise ContractError(f"catalog support file is absent or escapes its directory: {relative}")
+        projected_files[support_relative.as_posix()] = support_path.read_text(encoding="utf-8")
+
+    data: dict[str, str] = {}
+    program_items: list[dict[str, str]] = []
+    for relative, contents in sorted(projected_files.items()):
+        key = relative.replace("/", "__")
+        if key in data:
+            raise ContractError(f"projected artifact program key collides: {relative}")
+        data[key] = contents
+        program_items.append({"key": key, "path": relative})
     resources: list[dict[str, Any]] = [
         {
             "apiVersion": "v1",
@@ -218,7 +255,14 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
                                 }
                             ],
                             "volumes": [
-                                {"name": "program", "configMap": {"name": config_name, "defaultMode": 292}},
+                                {
+                                    "name": "program",
+                                    "configMap": {
+                                        "name": config_name,
+                                        "defaultMode": 292,
+                                        "items": program_items,
+                                    },
+                                },
                                 {
                                     "name": "reference-data",
                                     "hostPath": {
