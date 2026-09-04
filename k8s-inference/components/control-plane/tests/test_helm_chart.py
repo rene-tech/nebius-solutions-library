@@ -1049,6 +1049,7 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "schema": "fs2-serve.nebius.ai/kueue-scheduling/v1",
         "sha256": "c" * 64,
     }
+    runtime_selector = named[("Service", "fs2-serve-control-plane")]["spec"]["selector"]
     for workload_namespace in ("fs2-models", "fs2-academic-poc"):
         workload_network = namespaced[
             ("NetworkPolicy", "fs2-serve-control-plane-scientific-workloads", workload_namespace)
@@ -1056,6 +1057,33 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         assert workload_network["spec"]["podSelector"]["matchExpressions"] == [
             {"key": "fs2.nebius.ai/workload-id", "operator": "Exists"}
         ]
+        internal_api_egress = next(
+            rule
+            for rule in workload_network["spec"]["egress"]
+            if rule.get("ports") == [{"port": 8080, "protocol": "TCP"}]
+        )
+        assert internal_api_egress["to"] == [
+            {
+                "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}},
+                "podSelector": {"matchLabels": runtime_selector},
+            }
+        ]
+    scientific_artifact_service = named[("Service", "fs2-serve-control-plane-scientific-artifacts")]
+    assert scientific_artifact_service["spec"] == {
+        "type": "ClusterIP",
+        "publishNotReadyAddresses": True,
+        "selector": runtime_selector,
+        "ports": [{"name": "http", "port": 8080, "targetPort": "http", "protocol": "TCP"}],
+    }
+    gateway_env = {
+        item["name"]: item
+        for item in named[("Deployment", "fs2-serve-control-plane")]["spec"]["template"]["spec"]["containers"][0][
+            "env"
+        ]
+    }
+    assert gateway_env["FS2_SCIENTIFIC_BATCH_INTERNAL_API_URL"]["value"] == (
+        "http://fs2-serve-control-plane-scientific-artifacts.fs2-system.svc:8080"
+    )
     flavor_role = named[("ClusterRole", "fs2-serve-control-plane-scientific-batch-flavors")]
     assert flavor_role["rules"] == [
         {"apiGroups": ["kueue.x-k8s.io"], "resources": ["resourceflavors"], "verbs": ["get"]},

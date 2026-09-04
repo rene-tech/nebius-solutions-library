@@ -13,3 +13,28 @@ spec:
       port: {{ .Values.service.port }}
       targetPort: http
       protocol: TCP
+{{- if .Values.scientificBatch.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-scientific-artifacts
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scientific-artifacts
+spec:
+  type: ClusterIP
+  # Artifact materialization must remain reachable while worker readiness is
+  # degraded. Otherwise a failed reconciliation removes every Service backend,
+  # which prevents the already-admitted Jobs from fetching their exact inputs
+  # and creates a readiness deadlock. This internal-only Service is still
+  # bounded by the workload and gateway NetworkPolicies.
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "fs2-serve.runtimeSelectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+{{- end }}

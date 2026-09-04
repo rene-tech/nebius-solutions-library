@@ -352,7 +352,7 @@ app.kubernetes.io/component: model-controller
 - name: FS2_SCIENTIFIC_BATCH_TOOLS_IMAGE
   value: {{ include "fs2-serve.image" . }}
 - name: FS2_SCIENTIFIC_BATCH_INTERNAL_API_URL
-  value: http://{{ include "fs2-serve.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+  value: http://{{ include "fs2-serve.fullname" . }}-scientific-artifacts.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
 - name: FS2_SCIENTIFIC_BATCH_WORKERS
   value: {{ .Values.scientificBatch.workers | quote }}
 - name: FS2_SCIENTIFIC_BATCH_POLL_SECONDS
