@@ -17,6 +17,7 @@ import pytest
 from scientific_batch_fakes import FakeScientificBatchCluster, FakeScientificBatchRepository
 
 from fs2_serve.scientific_batch import (
+    ArtifactAccessContext,
     CheckpointMode,
     MaterializationMode,
     PreemptionMode,
@@ -36,6 +37,8 @@ from fs2_serve.scientific_batch import (
 from fs2_serve.scientific_batch.adapters import boltzgen, proteina_complexa
 from fs2_serve.scientific_batch.adapters.common import runtime_recipe_sha256
 from fs2_serve.scientific_batch.adapters.materialization import materialize_boltzgen_input
+from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer
+from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog
 
 SOLUTION_ROOT = Path(__file__).resolve().parents[3]
 ADAPTER_ROOT = SOLUTION_ROOT / "models/structure/batch-adapters"
@@ -549,6 +552,35 @@ def test_boltzgen_uses_one_gpu_shard_commands_and_every_exact_checkpoint_identit
     for item in reuse.invocations[1:]:
         assert item.argv[:2] == ("boltzgen", "execute")
         assert "--reuse" not in item.argv
+
+
+def test_boltzgen_public_execution_binding_accepts_a_canonical_optional_stage_subset() -> None:
+    """A protocol may omit an optional catalog stage without changing stage order."""
+
+    catalog = ScientificProfileCatalog.load(SOLUTION_ROOT / "catalog/runtime")
+    renderer = FileScientificManifestRenderer(
+        path=SOLUTION_ROOT / "catalog/runtime/contracts/scientific-execution-map.json",
+        profiles=catalog,
+    )
+    request = boltzgen_manifest_request()
+
+    plan = renderer.plan(
+        catalog.get("boltzgen"),
+        request,
+        access_context=ArtifactAccessContext(profile="public", receipt_digest=None),
+        input_artifacts=(boltzgen_verified_input(),),
+    )
+
+    assert tuple(stage.stage_id for stage in plan.controller_plan.stages) == (
+        "configure",
+        "design",
+        "inverse-folding",
+        "folding",
+        "design-folding",
+        "analysis",
+        "filtering",
+    )
+    assert "affinity" not in {stage.stage_id for stage in plan.controller_plan.stages}
 
 
 def test_public_requests_reject_duplicate_unknown_path_and_execution_fields() -> None:
