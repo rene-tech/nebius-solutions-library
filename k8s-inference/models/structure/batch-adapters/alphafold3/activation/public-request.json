@@ -1,0 +1,20 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "predict-complex-structure",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "fixture.alphafold3.acceptance-manifest.v1",
+    "sha256": "b95539e48b80b8f919b378c4cbc07e8383bd82b19edb143ea131cef9e62d7823",
+    "size_bytes": 418,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
+  },
+  "parameters": {
+    "input_mode": "raw"
+  },
+  "client_context": {
+    "batch_id": "acceptance.alphafold3.h100.v1",
+    "correlation_id": "secondary-fleet.h100.acceptance",
+    "display_name": "AlphaFold 3 single-chain academic acceptance canary"
+  }
+}

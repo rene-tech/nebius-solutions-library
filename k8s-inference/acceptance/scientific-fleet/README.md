@@ -81,3 +81,52 @@ Run the offline fake-HTTP acceptance suite with:
 ```bash
 acceptance/scientific-fleet/run_checks.sh
 ```
+
+## Secondary structure fleet inputs
+
+The five secondary/academic structure lanes have model-owned public acceptance
+inputs under `models/structure/batch-adapters/*/activation/public-acceptance.json`:
+
+- `esmfold2`
+- `esmfold2-fast`
+- `protenix-v2`
+- `openfold3-openbind` (directory `openfold3`)
+- `alphafold3`
+
+Each record declares one canonical scientific manifest and one small public
+payload. The payload bytes are the exact bounded input consumed by the H100
+qualification renderer. AlphaFold 3 uploads only its public fold input; model
+parameters remain deployment-owned and are never present in these records.
+All records remain route-closed and require a completed public platform run.
+
+Validate paths, schemas, digests, qualification-input equivalence, and runner
+loading without contacting a cluster:
+
+```bash
+python3 acceptance/scientific-fleet/validate_secondary_inputs.py
+```
+
+In the control-plane development environment, also compile every request and
+verified manifest entry through the production adapter registry:
+
+```bash
+uv run --project components/control-plane \
+  python acceptance/scientific-fleet/validate_secondary_inputs.py \
+  --compile-adapters
+```
+
+Once a profile and route have been activated by the serialized integration
+owner, pass its record directly to `run_acceptance.py`, for example:
+
+```bash
+python3 acceptance/scientific-fleet/run_acceptance.py \
+  --endpoint https://inference.example \
+  --activation-fragment models/structure/batch-adapters/esmfold2/activation/public-acceptance.json \
+  --run-id esmfold2-public-qualification-01 \
+  --receipt /secure/run/esmfold2-public-qualification-01.json
+```
+
+The records pin the stable upstream model revision. The terminal receipt still
+records the full runtime image, recipe, artifact-manifest, and execution
+identity returned by the active profile; no candidate route is opened by these
+fixtures.

@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/scientific-public-acceptance-input/v1",
+  "title": "Scientific public acceptance activation input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "model_id",
+    "profile_projection",
+    "execution_projection",
+    "public_fixtures",
+    "semantic_input",
+    "activation_gate"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/scientific-public-acceptance-input/v1"
+    },
+    "model_id": {
+      "$ref": "#/$defs/k8s_name"
+    },
+    "profile_projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile"
+      ],
+      "properties": {
+        "profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "execution_identity"
+          ],
+          "properties": {
+            "execution_identity": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "model_revision"
+              ],
+              "properties": {
+                "model_revision": {
+                  "$ref": "#/$defs/sha256_or_revision"
+                },
+                "runtime_image_digest": {
+                  "$ref": "#/$defs/nullable_tagged_sha256"
+                },
+                "runtime_recipe_sha256": {
+                  "$ref": "#/$defs/nullable_sha256"
+                },
+                "workload_recipe_sha256": {
+                  "$ref": "#/$defs/nullable_sha256"
+                },
+                "artifact_manifest_digest": {
+                  "$ref": "#/$defs/nullable_sha256"
+                },
+                "execution_identity_sha256": {
+                  "$ref": "#/$defs/nullable_sha256"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "execution_projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "variant_id"
+      ],
+      "properties": {
+        "variant_id": {
+          "$ref": "#/$defs/k8s_name"
+        }
+      }
+    },
+    "public_fixtures": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request",
+        "supporting_inputs"
+      ],
+      "properties": {
+        "request": {
+          "$ref": "#/$defs/repository_path"
+        },
+        "supporting_inputs": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "role",
+              "path",
+              "encoding"
+            ],
+            "properties": {
+              "role": {
+                "enum": [
+                  "request-input-manifest",
+                  "manifest-artifact"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+              },
+              "path": {
+                "$ref": "#/$defs/repository_path"
+              },
+              "encoding": {
+                "enum": [
+                  "raw",
+                  "canonical-json-newline"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "semantic_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_contract",
+        "payload_path",
+        "sha256",
+        "size_bytes",
+        "h100_evidence"
+      ],
+      "properties": {
+        "source_contract": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*\\.\\.)[A-Za-z0-9._/-]+#[A-Z0-9_]+$"
+        },
+        "payload_path": {
+          "$ref": "#/$defs/repository_path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 268435456
+        },
+        "h100_evidence": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/repository_path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "activation_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route_exposed",
+        "public_platform_run_required"
+      ],
+      "properties": {
+        "route_exposed": {
+          "const": false
+        },
+        "public_platform_run_required": {
+          "const": true
+        }
+      }
+    }
+  },
+  "$defs": {
+    "k8s_name": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "repository_path": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*\\.\\.)[A-Za-z0-9._/-]+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sha256_or_revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40,64}$"
+    },
+    "nullable_sha256": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nullable_tagged_sha256": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}
