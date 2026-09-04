@@ -229,6 +229,7 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
         "0020_scientific_atomic_admission.sql",
         "0021_scientific_admission_outbox_runtime_grant.sql",
         "0022_scientific_admission_outbox_lock_privilege.sql",
+        "0023_scientific_batch_scheduling_digest_privilege.sql",
     ]
     assert hashlib.sha256((migration_dir / "0005_terminal_accounting.sql").read_bytes()).hexdigest() == (
         "fedb6789a4839d42645c5ffb6905ce46525c213d81f15d9d987eacc109614197"
@@ -273,7 +274,7 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
     assert dockerfile.count("WORKDIR /workspace/k8s-inference/components/control-plane") == 2
     assert "COPY k8s-inference/components/control-plane/migrations ./migrations" in dockerfile
     assert "Settings.model_fields['migrations_dir'].default" in dockerfile
-    assert "migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 22" in dockerfile
+    assert "migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 23" in dockerfile
     assert "store.migrate" not in inspect.getsource(cli.build_runtime)
     assert "store.migrate" not in inspect.getsource(cli.maintain)
     assert "PostgresStore.migrate_database" in inspect.getsource(cli.migrate)
@@ -349,6 +350,7 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
             "fs2_serve/migrations/0020_scientific_atomic_admission.sql",
             "fs2_serve/migrations/0021_scientific_admission_outbox_runtime_grant.sql",
             "fs2_serve/migrations/0022_scientific_admission_outbox_lock_privilege.sql",
+            "fs2_serve/migrations/0023_scientific_batch_scheduling_digest_privilege.sql",
         ]
         entry_point_files = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
         assert len(entry_point_files) == 1
@@ -414,7 +416,7 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
                 "assert pathlib.Path(fs2_serve_catalog.__file__).resolve().is_relative_to(root);"
                 "migration_dir=Settings.model_fields['migrations_dir'].default;"
                 "assert migration_dir.parent == pathlib.Path(fs2_serve.__file__).resolve().parent;"
-                "assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 22;"
+                "assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 23;"
                 "assert Registry and load_gateway_catalog"
             ),
         ],

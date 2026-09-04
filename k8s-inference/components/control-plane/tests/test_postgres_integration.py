@@ -236,6 +236,28 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
         await store.close()
 
 
+@pytest_asyncio.fixture
+async def scientific_runtime_pool(postgres_store: PostgresStore) -> asyncpg.Pool:
+    """Exercise scientific repositories through the production runtime role."""
+
+    database_url = os.environ["FS2_TEST_DATABASE_URL"]
+
+    async def assume_runtime_role(connection: asyncpg.Connection) -> None:
+        await connection.execute("SET ROLE fs2_serve_runtime")
+
+    pool = await asyncpg.create_pool(
+        dsn=database_url,
+        min_size=2,
+        max_size=4,
+        init=assume_runtime_role,
+    )
+    assert pool is not None
+    try:
+        yield pool
+    finally:
+        await pool.close()
+
+
 @pytest.mark.postgres
 @pytest.mark.asyncio
 async def test_real_postgres_lifecycle_ledger_is_append_only_and_reconciles_exact_gpu_ranks(
@@ -848,7 +870,7 @@ async def test_migration_and_schema_wait_entrypoints_need_only_database_credenti
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
-async def test_outbox_grant_migration_repairs_drift_and_runtime_wait_checks_effective_acl(
+async def test_scientific_grant_migrations_repair_drift_and_runtime_wait_checks_effective_acl(
     postgres_store: PostgresStore,
 ) -> None:
     del postgres_store
@@ -863,8 +885,7 @@ async def test_outbox_grant_migration_repairs_drift_and_runtime_wait_checks_effe
     try:
         await admin.execute(f'CREATE DATABASE "{database_name}"')
         await admin.execute(
-            f'CREATE ROLE "{runtime_login}" LOGIN PASSWORD \'{runtime_password}\' '
-            'IN ROLE "fs2_serve_runtime"'
+            f'CREATE ROLE "{runtime_login}" LOGIN PASSWORD \'{runtime_password}\' IN ROLE "fs2_serve_runtime"'
         )
         runtime_role_created = True
         upgrade_url = f"{admin_url}/{database_name}"
@@ -894,7 +915,9 @@ async def test_outbox_grant_migration_repairs_drift_and_runtime_wait_checks_effe
                 )
                 """
             )
-            for version, digest in EXPECTED_MIGRATIONS[:-1]:
+            for version, digest in EXPECTED_MIGRATIONS:
+                if version == "0022_scientific_admission_outbox_lock_privilege.sql":
+                    break
                 await before.execute((CONTROL_ROOT / "migrations" / version).read_text(encoding="utf-8"))
                 await before.execute(
                     "INSERT INTO fs2_schema_migrations(version,sha256) VALUES($1,$2)",
@@ -903,22 +926,16 @@ async def test_outbox_grant_migration_repairs_drift_and_runtime_wait_checks_effe
                 )
             for privilege in ("SELECT", "INSERT", "DELETE"):
                 assert await before.fetchval(
-                    "SELECT has_table_privilege('fs2_serve_runtime',"
-                    "'fs2_scientific_admission_outbox',$1)",
+                    "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_admission_outbox',$1)",
                     privilege,
                 )
             assert not await before.fetchval(
-                "SELECT has_table_privilege('fs2_serve_runtime',"
-                "'fs2_scientific_admission_outbox','UPDATE')"
+                "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_admission_outbox','UPDATE')"
             )
             await before.execute("SET ROLE fs2_serve_runtime")
-            await before.fetch(
-                "SELECT payload FROM fs2_scientific_admission_outbox WHERE false"
-            )
+            await before.fetch("SELECT payload FROM fs2_scientific_admission_outbox WHERE false")
             with pytest.raises(asyncpg.InsufficientPrivilegeError):
-                await before.fetch(
-                    "SELECT payload FROM fs2_scientific_admission_outbox WHERE false FOR SHARE"
-                )
+                await before.fetch("SELECT payload FROM fs2_scientific_admission_outbox WHERE false FOR SHARE")
             await before.execute("RESET ROLE")
         finally:
             await before.close()
@@ -926,9 +943,10 @@ async def test_outbox_grant_migration_repairs_drift_and_runtime_wait_checks_effe
         await PostgresStore.migrate_database(upgrade_url, CONTROL_ROOT / "migrations")
         migrated = await asyncpg.connect(upgrade_url)
         try:
-            assert await migrated.fetchval(
-                "SELECT version FROM fs2_schema_migrations ORDER BY applied_at DESC LIMIT 1"
-            ) == "0022_scientific_admission_outbox_lock_privilege.sql"
+            assert (
+                await migrated.fetchval("SELECT version FROM fs2_schema_migrations ORDER BY applied_at DESC LIMIT 1")
+                == "0023_scientific_batch_scheduling_digest_privilege.sql"
+            )
             for role in ("fs2_serve_runtime", runtime_login):
                 for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
                     assert await migrated.fetchval(
@@ -940,16 +958,31 @@ async def test_outbox_grant_migration_repairs_drift_and_runtime_wait_checks_effe
                     "SELECT has_table_privilege($1,'fs2_scientific_admission_outbox','TRUNCATE')",
                     role,
                 )
+                assert await migrated.fetchval(
+                    "SELECT has_column_privilege($1,'fs2_scientific_batches','scheduling_digest','UPDATE')",
+                    role,
+                )
+                assert not await migrated.fetchval(
+                    "SELECT has_table_privilege($1,'fs2_scientific_batches','UPDATE')",
+                    role,
+                )
             await migrated.execute("SET ROLE fs2_serve_runtime")
-            await migrated.fetch(
-                "SELECT payload FROM fs2_scientific_admission_outbox WHERE false FOR SHARE"
-            )
+            await migrated.fetch("SELECT payload FROM fs2_scientific_admission_outbox WHERE false FOR SHARE")
+            await migrated.execute("UPDATE fs2_scientific_batches SET scheduling_digest=scheduling_digest WHERE false")
             await migrated.execute("RESET ROLE")
-            await migrated.execute(
-                "REVOKE UPDATE ON fs2_scientific_admission_outbox FROM fs2_serve_runtime"
-            )
+            await migrated.execute("REVOKE UPDATE (scheduling_digest) ON fs2_scientific_batches FROM fs2_serve_runtime")
         finally:
             await migrated.close()
+
+        with pytest.raises(RuntimeError, match="database schema runtime privileges are incomplete"):
+            await PostgresStore.wait_for_schema(runtime_url, CONTROL_ROOT / "migrations", timeout_seconds=1)
+
+        await PostgresStore.migrate_database(upgrade_url, CONTROL_ROOT / "migrations")
+        repaired = await asyncpg.connect(upgrade_url)
+        try:
+            await repaired.execute("REVOKE UPDATE ON fs2_scientific_admission_outbox FROM fs2_serve_runtime")
+        finally:
+            await repaired.close()
 
         with pytest.raises(RuntimeError, match="database schema runtime privileges are incomplete"):
             await PostgresStore.wait_for_schema(runtime_url, CONTROL_ROOT / "migrations", timeout_seconds=1)
@@ -3508,6 +3541,7 @@ async def test_scientific_admission_outbox_recovers_after_committed_operation_wi
 @pytest.mark.asyncio
 async def test_scientific_batch_repository_is_durable_fenced_and_excluded_from_generic_claims(
     postgres_store: PostgresStore,
+    scientific_runtime_pool: asyncpg.Pool,
 ) -> None:
     principal = await add_token(postgres_store)
     operation = await postgres_store.append_operation(
@@ -3552,7 +3586,7 @@ async def test_scientific_batch_repository_is_durable_fenced_and_excluded_from_g
             ),
         ),
     )
-    batches = PostgresScientificBatchRepository(postgres_store.pool)
+    batches = PostgresScientificBatchRepository(scientific_runtime_pool)
     input_artifact_id = uuid4()
     input_attempt_id = uuid4()
     input_digest = "sha256:" + "1" * 64
@@ -3593,6 +3627,9 @@ async def test_scientific_batch_repository_is_durable_fenced_and_excluded_from_g
         )
         assert await connection.fetchval(
             "SELECT has_column_privilege('fs2_serve_runtime','fs2_scientific_batches','status','UPDATE')"
+        )
+        assert await connection.fetchval(
+            "SELECT has_column_privilege('fs2_serve_runtime','fs2_scientific_batches','scheduling_digest','UPDATE')"
         )
         assert not await connection.fetchval(
             "SELECT has_column_privilege('fs2_serve_runtime','fs2_scientific_batches','tenant_id','UPDATE')"
