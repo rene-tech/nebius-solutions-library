@@ -78,14 +78,20 @@ _PAYLOAD_SHAPE_TYPES = frozenset(
 )
 _SAFE_DETAIL_KEYS = frozenset(
     {
+        "accelerator_count",
+        "accelerator_resource_name",
         "artifact_digest",
         "capacity_type",
         "checkpoint_digest",
+        "cluster_queue",
         "image_digest",
+        "local_queue",
         "outcome",
         "reason_code",
+        "resolved_pool_id",
         "resource_flavor",
         "resource_version",
+        "result_digest",
         "service_class",
         "source_event_uid",
     }
@@ -842,9 +848,16 @@ def reconcile_lifecycle(
 
     if subject.trace_id is None:
         gaps.append("trace_context_missing")
-    if scheduler > 0 and device_lanes == 0:
+    admitted_gpu = any(
+        signal.clock is LifecycleClock.LIFECYCLE
+        and signal.phase is LifecyclePhase.ADMIT
+        and signal.edge is LifecycleEdge.INSTANT
+        and signal.gpu_count > 0
+        for signal in ordered
+    )
+    if (scheduler > 0 or admitted_gpu) and device_lanes == 0:
         gaps.append("device_allocation_clock_missing")
-    if device > 0 and scheduler_lanes == 0:
+    if (device > 0 or admitted_gpu) and scheduler_lanes == 0:
         gaps.append("scheduler_occupancy_clock_missing")
     if device - scheduler > tolerance and scheduler > 0:
         gaps.append("device_allocation_exceeds_scheduler_occupancy")

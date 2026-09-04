@@ -1,0 +1,102 @@
+{
+  "access_admission": {
+    "profile": "standard",
+    "receipt_digest": null,
+    "state": "not-required"
+  },
+  "attempts": [
+    {
+      "attempt_id": "44444444-4444-4444-8444-444444444444",
+      "attempt_number": 1,
+      "checkpoint_input": null,
+      "checkpoint_output": null,
+      "completed_at": "2026-09-02T20:09:00Z",
+      "gpu_uuids": [
+        "GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+      ],
+      "k8s_job_uid": "job-uid-1",
+      "kueue_workload_uid": "kueue-uid-1",
+      "node_uids": [
+        "node-uid-1"
+      ],
+      "pod_uids": [
+        "pod-uid-1"
+      ],
+      "scheduling_admission": {
+        "accelerator_count": 1,
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "admitted_at": "2026-09-02T20:01:00Z",
+        "admitted_resource_flavor": "h100-capacity-block",
+        "resolved_pool_id": "h100-capacity-block"
+      },
+      "shard_id": "main",
+      "stage_id": "design",
+      "started_at": "2026-09-02T20:00:30Z",
+      "status": "succeeded"
+    }
+  ],
+  "batch_id": "22222222-2222-4222-8222-222222222222",
+  "completed_at": "2026-09-02T20:10:00Z",
+  "error": null,
+  "execution_identity": {
+    "execution_identity_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "model_artifact_manifest_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "model_id": "protein-design",
+    "model_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "runtime_image_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "runtime_recipe_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "workload_recipe_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "input_manifest": {
+    "artifact_id": "input-manifest",
+    "compression": "none",
+    "media_type": "application/json",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "size_bytes": 128
+  },
+  "operation_id": "11111111-1111-4111-8111-111111111111",
+  "output_manifest": {
+    "artifact_id": "output-manifest",
+    "compression": "none",
+    "media_type": "application/json",
+    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "size_bytes": 256
+  },
+  "scheduling_snapshot": {
+    "captured_at": "2026-09-02T20:00:00Z",
+    "model_lane": "protein-design",
+    "policy_revision": "scheduling-v1",
+    "route_namespace": "fs2-models",
+    "service_class": "customer-batch",
+    "stages": [
+      {
+        "accelerator_count": 1,
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "checkpoint_mode": "restart",
+        "max_execution_seconds": 3600,
+        "max_queue_seconds": 900,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "inference-accelerators",
+        "resolved_local_queue": "tenant-a-protein-design",
+        "resolved_pool_preference": [
+          "h100-preemptible"
+        ],
+        "resource_class": "gpu",
+        "stage_id": "design",
+        "workload_priority_class": "customer-batch",
+        "workload_priority_value": 500
+      }
+    ],
+    "tenant_queue": "tenant-a-protein-design",
+    "workload_namespace": "fs2-models"
+  },
+  "schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+  "semantic_validation": {
+    "receipt_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "status": "passed",
+    "validator_id": "protein-design-v1"
+  },
+  "submitted_at": "2026-09-02T20:00:00Z",
+  "terminal_status": "succeeded",
+  "workload_id": "33333333-3333-4333-8333-333333333333"
+}

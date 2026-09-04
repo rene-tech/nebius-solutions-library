@@ -186,15 +186,17 @@ reviewed activation child and are merged only by the later integration lane.
 
 `fs2-serve postgresql-release-contract` emits the non-secret cross-lane receipt
 inputs. The committed contract under `contracts/` hash-binds the exact ordered
-set through additive `0016_workload_lifecycle_telemetry.sql` (including the
+set through additive `0019_scientific_deployment_authorization.sql` (including the
 immutable activation lineage, additive maintenance boundary, admin
 configuration, ModelDeployment ledger, and append-only GPU lifecycle
 accounting), the `fs2-data`
 database-resource versus `fs2-system` credential-Secret namespace split, and
 the sole migration/group-role owner. Migration and schema-wait paths reject
 missing, extra, reordered, or changed source and applied-ledger entries.
-Migration numbers 0014 and 0015 remain reserved for the active artifact and
-scientific-controller branches; integrate them before any shared rollout.
+The combined chain preserves artifact results at `0014`, controller state at
+`0015`-`0017`, workload lifecycle telemetry at `0018`, and deployment-bound
+scientific authorization at `0019`; upgrade tests exercise that sequence on
+real PostgreSQL without weakening the pre-telemetry boundary.
 The lifecycle schema, exact correlation model, reconciliation tolerance, safe
 application spans, and operator projections are documented in
 [`docs/workload-lifecycle-telemetry.md`](docs/workload-lifecycle-telemetry.md).

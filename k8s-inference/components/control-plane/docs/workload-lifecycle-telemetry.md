@@ -83,6 +83,22 @@ The scientific controller integrates through `LifecycleRepository`:
 These calls are additive and do not give the telemetry lane ownership of
 controller, artifact or scientific-admin state.
 
+The terminal artifact bridge additionally passes the typed canonical
+`ScientificRunResult` to `ScientificResultLifecycleProjector`. That projection
+is the authority for effective `service_class`, frozen ClusterQueue/LocalQueue,
+and the per-attempt Kueue pool, ResourceFlavor, accelerator resource/count and
+admission timestamp. It does not accept a look-alike scheduling DTO. These
+facts are stored on an immutable admission signal and mirrored onto bounded
+OpenTelemetry attributes. Result projection never turns `started_at` /
+`completed_at` into quota, scheduler, device or phase duration: missing
+controller/DCGM clocks remain explicit reconciliation gaps.
+
+The canonical result exposes Pod, node and GPU identity sets. A single-Pod
+attempt can therefore retain an exact Pod/GPU/rank correlation. For a
+multi-Pod attempt the projector keeps every Pod and node identity but does not
+pair GPU UUIDs by tuple order; PodResources/DCGM enrichment must supply that
+join.
+
 ## Security, retention and cardinality
 
 Raw prompts, sequences, images, request/response values, credentials, bearer
@@ -139,7 +155,10 @@ cd ../../observability
 ./scripts/test.sh
 ```
 
-Migration `0016_workload_lifecycle_telemetry.sql` intentionally reserves 0014
-and 0015 for the active artifact and scientific-controller branches. Before a
-shared control-plane rollout, integrate those migrations and regenerate the
-PostgreSQL release contract from the combined branch.
+Migration `0018_workload_lifecycle_telemetry.sql` follows the integrated
+artifact migration `0014`, scientific-controller migration `0015`, and its v7
+and v8 state upgrades (`0016`/`0017`). Deployment authorization is `0019`.
+Upgrade tests freeze both legacy controller state versions before `0018`, then
+apply the complete ordered chain and prove prior migration digests and durable
+rows are unchanged. The PostgreSQL release contract is generated once from
+that combined chain; no isolated migration list is accepted.

@@ -23,6 +23,7 @@ from fs2_serve.admission import AdmissionService
 from fs2_serve.api import AppRuntime, create_app
 from fs2_serve.auth import OperatorSessionService, PepperRing, TokenService
 from fs2_serve.crypto import KeyedHasher
+from fs2_serve.lifecycle import MemoryLifecycleRepository
 from fs2_serve.mcp_server import PATTokenVerifier, build_mcp_server
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.models import Principal, Scope, TokenCreate
@@ -113,6 +114,7 @@ from fs2_serve.scientific_batch.service import (
 )
 from fs2_serve.scientific_batch.worker import ScientificBatchWorker
 from fs2_serve.scientific_batch.workload_routes import scientific_workload_artifact_router
+from fs2_serve.scientific_lifecycle import ScientificResultLifecycleProjector
 from fs2_serve.settings import Settings
 from fs2_serve.telemetry import Metrics
 
@@ -3147,6 +3149,7 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
     runtime.scientific_batches.artifacts = FakeArtifactAccess(
         input_manifest.to_public_ref().model_dump(mode="json", exclude_none=True)
     )
+    lifecycle_repository = MemoryLifecycleRepository()
     bridge = ArtifactServiceBridge(
         artifacts=artifact_repository,
         batches=batches,
@@ -3154,6 +3157,7 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
         store=runtime.store,
         content_reader=reader,
         service=artifact_service,
+        result_lifecycle=ScientificResultLifecycleProjector(lifecycle_repository),
     )
     controller = ScientificBatchController(
         repository=batches,
@@ -3255,3 +3259,8 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
     assert result["semantic_validation"]["status"] == "passed"  # type: ignore[index]
     assert result["attempts"][0]["scheduling_admission"]["admitted_resource_flavor"] == "inference-h100-1x"  # type: ignore[index]
     assert "storage_key" not in json.dumps(result)
+    lifecycle_detail = await lifecycle_repository.get_workload(attempt.attempt_id, tenant_id="tenant-a")
+    assert lifecycle_detail is not None
+    admission_signal = next(item for item in lifecycle_detail.signals if item.phase.value == "admit")
+    assert admission_signal.detail["service_class"] == "customer-batch"
+    assert admission_signal.detail["resource_flavor"] == "inference-h100-1x"

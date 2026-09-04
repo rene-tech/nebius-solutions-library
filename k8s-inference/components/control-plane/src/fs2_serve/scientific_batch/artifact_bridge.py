@@ -27,6 +27,7 @@ from ..scientific_artifacts import (
 from ..scientific_artifacts import (
     AttemptStatus as ArtifactAttemptStatus,
 )
+from ..scientific_lifecycle import ScientificResultLifecycleSink
 from ..store import ConflictError, Store
 from .models import (
     ArtifactAccessContext,
@@ -124,6 +125,7 @@ class ArtifactServiceBridge:
         store: Store,
         content_reader: ArtifactContentReader | None = None,
         service: ScientificArtifactControllerPort | None = None,
+        result_lifecycle: ScientificResultLifecycleSink | None = None,
     ) -> None:
         self.artifacts = artifacts
         self.batches = batches
@@ -131,6 +133,7 @@ class ArtifactServiceBridge:
         self.store = store
         self.content_reader = content_reader
         self.service = service
+        self.result_lifecycle = result_lifecycle
 
     async def validate_input(self, pointer: Mapping[str, Any], *, tenant_id: str) -> ScientificInputAdmission:
         try:
@@ -483,7 +486,7 @@ class ArtifactServiceBridge:
         error_code = None
         if state.status is BatchStatus.FAILED:
             error_code = _ERROR.sub("_", (state.failure_code or "SCIENTIFIC_RUN_FAILED").upper()).strip("_")
-        await self._require_service().commit_run_result(
+        record = await self._require_service().commit_run_result(
             RunResultDraft(
                 operation_id=state.operation_id,
                 tenant_id=state.tenant_id,
@@ -517,6 +520,8 @@ class ArtifactServiceBridge:
                 error_retryable=False if error_code is not None else None,
             )
         )
+        if self.result_lifecycle is not None:
+            await self.result_lifecycle.project(operation, record.result)
 
     async def result_response(self, operation_id: UUID, *, tenant_id: str) -> Mapping[str, Any]:
         state = await self.batches.get(operation_id, tenant_id=tenant_id)

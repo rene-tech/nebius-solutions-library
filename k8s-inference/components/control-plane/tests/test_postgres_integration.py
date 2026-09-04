@@ -68,6 +68,7 @@ from fs2_serve.models import (
     AdmissionRequest,
     ModalityUsage,
     OperationStatus,
+    OperationView,
     Principal,
     ReportedUsage,
     RuntimeIdentity,
@@ -91,6 +92,8 @@ from fs2_serve.scientific_batch.models import (
 )
 from fs2_serve.scientific_batch.postgres_repository import PostgresScientificBatchRepository
 from fs2_serve.scientific_batch.protocols import BatchFenceLostError
+from fs2_serve.scientific_lifecycle import ScientificResultLifecycleProjector
+from fs2_serve.scientific_run_result import ScientificRunResult
 from fs2_serve.settings import Settings
 from fs2_serve.store import (
     ConcurrencyExceededError,
@@ -362,6 +365,7 @@ async def test_real_postgres_lifecycle_ledger_is_append_only_and_reconciles_exac
     assert rollup.active_gpu_seconds == 12
     assert rollup.occupied_idle_gpu_seconds == 8
     assert rollup.phase_gpu_seconds["active_compute"] == 12
+
     assert rollup.phase_gpu_seconds["cooldown_grace"] == 4
     assert rollup.phase_gpu_seconds["image_pull"] == 4
     assert sum(rollup.phase_gpu_seconds.values()) == 20
@@ -402,6 +406,65 @@ async def test_real_postgres_lifecycle_ledger_is_append_only_and_reconciles_exac
         "reporting_read": True,
         "reporting_raw": False,
     }
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_real_postgres_projects_canonical_scientific_result_admission_without_parallel_schema(
+    postgres_store: PostgresStore,
+) -> None:
+    repository = PostgresLifecycleRepository(postgres_store.pool)
+    result = ScientificRunResult.model_validate_json(
+        (CONTROL_ROOT / "tests/fixtures/scientific-lifecycle-result-v1.json").read_text(encoding="utf-8")
+    )
+    operation = OperationView(
+        id=UUID(result.operation_id),
+        tenant_id="tenant-a",
+        principal_id="scientist-a",
+        token_id=UUID("55555555-5555-4555-8555-555555555555"),
+        model_id=result.execution_identity.model_id,
+        model_revision=result.execution_identity.model_revision,
+        protocol="scientific-batch-v1",
+        operation="design",
+        idempotency_key="scientific-lifecycle-postgres-0001",
+        status=OperationStatus.SUCCEEDED,
+        accepted_at=result.submitted_at,
+        available_at=result.submitted_at,
+        completed_at=result.completed_at,
+        outcome="succeeded",
+        semantic_outcome="passed",
+        result_available=True,
+    )
+    projector = ScientificResultLifecycleProjector(repository, cluster="k8s-inference-h100")
+
+    first = await projector.project(operation, result)
+    second = await projector.project(operation, result)
+
+    assert first == second
+    subject_id = UUID(result.attempts[0].attempt_id)
+    detail = await repository.get_workload(subject_id, tenant_id="tenant-a")
+    assert detail is not None
+    admission = next(signal for signal in detail.signals if signal.phase is LifecyclePhase.ADMIT)
+    assert admission.detail["service_class"] == "customer-batch"
+    assert admission.detail["cluster_queue"] == "inference-accelerators"
+    assert admission.detail["local_queue"] == "tenant-a-protein-design"
+    assert admission.detail["resolved_pool_id"] == "h100-capacity-block"
+    assert admission.detail["resource_flavor"] == "h100-capacity-block"
+    async with postgres_store.pool.acquire() as connection:
+        assert (
+            await connection.fetchval(
+                "SELECT count(*) FROM fs2_lifecycle_signals WHERE subject_id=$1",
+                subject_id,
+            )
+            == 1
+        )
+        assert (
+            await connection.fetchval(
+                "SELECT count(*) FROM fs2_telemetry_correlations WHERE subject_id=$1",
+                subject_id,
+            )
+            == 4
+        )
 
 
 @pytest.mark.postgres

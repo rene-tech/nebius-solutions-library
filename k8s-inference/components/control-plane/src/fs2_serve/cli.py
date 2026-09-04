@@ -90,6 +90,7 @@ from .scientific_batch.profile_catalog import ScientificProfileCatalog
 from .scientific_batch.scheduling import SchedulingContractResolver
 from .scientific_batch.service import ScientificBatchService
 from .scientific_batch.worker import ScientificBatchWorker
+from .scientific_lifecycle import ScientificResultLifecycleProjector
 from .scientific_object_store import ObjectStoreConfig, S3ArtifactObjectStore
 from .settings import Settings
 from .store import ConflictError
@@ -376,6 +377,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             store=store,
             content_reader=artifact_content_reader,
             service=artifact_service,
+            result_lifecycle=ScientificResultLifecycleProjector(lifecycle),
         )
         scientific_controller = ScientificBatchController(
             repository=scientific_repository,
