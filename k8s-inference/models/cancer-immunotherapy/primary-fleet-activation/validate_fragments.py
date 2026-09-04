@@ -78,7 +78,7 @@ BOLTZGEN_LEGACY_BROAD_MOUNT = {
     "sub_path": None,
     "read_only": True,
 }
-INTEGRATION_SOURCE_REVISION = "003064c440c4ab198bf96957e435a7aac8da6800"
+INTEGRATION_SOURCE_REVISION = "3c90524baa8f6f1068e11bd192711d664ea1b05c"
 SHARED_RUNTIME_RECIPE_PATHS = frozenset(
     {
         "components/control-plane/src/fs2_serve/scientific_batch/__init__.py",
