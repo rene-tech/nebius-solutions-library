@@ -10,6 +10,7 @@ canonical artifact manifest has been verified in full.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import datetime as dt
 import fcntl
 import hashlib
@@ -37,6 +38,8 @@ SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 ID_RE = re.compile(r"^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$")
 COMMIT_RE = re.compile(r"^[a-f0-9]{8,64}$")
 BUFFER_BYTES = 4 * 1024 * 1024
+DEFAULT_DOWNLOAD_CONCURRENCY = 4
+MAX_DOWNLOAD_CONCURRENCY = 8
 
 
 class ContractError(RuntimeError):
@@ -1107,8 +1110,14 @@ def validate_catalog(value: Any, catalog_path: Path) -> dict[str, Any]:
 def _download(source: Mapping[str, Any], target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     expected_bytes = source["bytes"]
-    if target.exists() and target.stat().st_size > expected_bytes:
-        target.unlink()
+    if target.exists():
+        actual_bytes = target.stat().st_size
+        if actual_bytes == expected_bytes:
+            if sha256_file(target) == source["sha256"]:
+                return
+            target.unlink()
+        elif actual_bytes > expected_bytes:
+            target.unlink()
     offset = target.stat().st_size if target.exists() else 0
     headers = {"User-Agent": "fs2-public-artifact-ingester/1"}
     if offset:
@@ -1580,7 +1589,16 @@ def stage_artifact(
     artifact_id: str,
     cache_root: Path,
     metadata: Mapping[str, Any],
+    download_concurrency: int = DEFAULT_DOWNLOAD_CONCURRENCY,
 ) -> dict[str, Any]:
+    if (
+        isinstance(download_concurrency, bool)
+        or not isinstance(download_concurrency, int)
+        or not 1 <= download_concurrency <= MAX_DOWNLOAD_CONCURRENCY
+    ):
+        raise ContractError(
+            f"download concurrency must be an integer between 1 and {MAX_DOWNLOAD_CONCURRENCY}"
+        )
     storage = validate_storage_metadata(metadata)
     catalog = validate_catalog(load_json(catalog_path), catalog_path)
     if artifact_id not in catalog["artifacts"]:
@@ -1602,16 +1620,28 @@ def stage_artifact(
         else:
             payload = staging / "payload"
             payload.mkdir(parents=True, exist_ok=True)
-            for source in entry["sources"]:
+
+            def stage_source(source: Mapping[str, Any]) -> None:
                 final_path = payload / source["path"]
                 if final_path.exists():
                     if final_path.stat().st_size == source["bytes"] and sha256_file(final_path) == source["sha256"]:
-                        continue
+                        return
                     final_path.unlink()
                 partial = staging / "downloads" / f"{source['path']}.part"
                 _download(source, partial)
                 final_path.parent.mkdir(parents=True, exist_ok=True)
                 os.replace(partial, final_path)
+
+            sources = entry["sources"]
+            workers = min(download_concurrency, len(sources))
+            with ThreadPoolExecutor(
+                max_workers=workers,
+                thread_name_prefix=f"artifact-{artifact_id[:24]}",
+            ) as executor:
+                # Resolve in catalog order so the reported first failure is deterministic.
+                futures = [executor.submit(stage_source, source) for source in sources]
+                for future in futures:
+                    future.result()
             verify_tree(payload, manifest)
             destination.parent.mkdir(parents=True, exist_ok=True)
             try:
@@ -1878,6 +1908,15 @@ def build_parser() -> argparse.ArgumentParser:
     ):
         stage.add_argument(f"--{name}", required=True)
     stage.add_argument("--filesystem-size-gib", type=int, required=True)
+    stage.add_argument(
+        "--download-concurrency",
+        type=int,
+        default=DEFAULT_DOWNLOAD_CONCURRENCY,
+        help=(
+            "number of source objects downloaded concurrently "
+            f"(1-{MAX_DOWNLOAD_CONCURRENCY}; default: {DEFAULT_DOWNLOAD_CONCURRENCY})"
+        ),
+    )
     verify = subparsers.add_parser("verify")
     verify.add_argument("--catalog", type=Path, required=True)
     verify.add_argument("--artifact", required=True)
@@ -1905,7 +1944,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "available": sum(entry["state"] == "available" for entry in catalog["artifacts"].values()),
             }
         elif args.command == "stage":
-            result = stage_artifact(args.catalog, args.artifact, args.cache_root, _metadata(args))
+            result = stage_artifact(
+                args.catalog,
+                args.artifact,
+                args.cache_root,
+                _metadata(args),
+                download_concurrency=args.download_concurrency,
+            )
         elif args.command == "verify":
             catalog = validate_catalog(load_json(args.catalog), args.catalog)
             entry = catalog["artifacts"].get(args.artifact)

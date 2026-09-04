@@ -26,6 +26,8 @@ sys.path.insert(0, str(ROOT.parent / "catalog" / "runtime"))
 
 from public_artifacts import (  # noqa: E402
     ContractError,
+    MAX_DOWNLOAD_CONCURRENCY,
+    _download,
     artifact_consumer_bindings,
     artifact_destination,
     artifact_runtime_handoffs,
@@ -232,6 +234,114 @@ class PublicArtifactTests(unittest.TestCase):
             destination = artifact_destination(root / "cache", manifest)
             self.assertEqual(payload, (destination / "config.json").read_bytes())
             self.assertTrue((root / "cache/receipts/fixture").is_dir())
+
+    def test_complete_verified_partial_is_reused_without_network(self) -> None:
+        payload = b"already complete and verified"
+        source = {
+            "path": "model.bin",
+            "url": "https://invalid.example/model.bin",
+            "bytes": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "model.bin.part"
+            target.write_bytes(payload)
+            import public_artifacts
+            original = public_artifacts.request.urlopen
+            public_artifacts.request.urlopen = lambda *_args, **_kwargs: self.fail(
+                "a complete verified partial must not issue a network request"
+            )
+            try:
+                _download(source, target)
+            finally:
+                public_artifacts.request.urlopen = original
+            self.assertEqual(payload, target.read_bytes())
+
+    def test_source_downloads_are_parallel_and_bounded(self) -> None:
+        payloads = {
+            "config.json": b'{"model":"fixture"}\n',
+            "weights-1.bin": b"weights-one",
+            "weights-2.bin": b"weights-two",
+            "weights-3.bin": b"weights-three",
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            catalog_path, _ = fixture(
+                root,
+                "https://invalid.example/config.json",
+                payloads["config.json"],
+            )
+            catalog = validate_catalog(load_json(catalog_path), catalog_path)
+            files = [
+                {
+                    "path": path,
+                    "bytes": len(payload),
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                }
+                for path, payload in payloads.items()
+            ]
+            entry = catalog["artifacts"]["fixture"]
+            entry["sources"] = [
+                {**item, "url": f"https://invalid.example/{item['path']}"}
+                for item in files
+            ]
+            entry["_manifest"]["content"] = {
+                "digest": sha256_bytes(canonical_json(files)),
+                "expanded_bytes": sum(item["bytes"] for item in files),
+                "files": files,
+            }
+            guard = threading.Lock()
+            pair_started = threading.Barrier(2)
+            active = 0
+            max_active = 0
+
+            def fake_download(source: dict[str, object], target: Path) -> None:
+                nonlocal active, max_active
+                with guard:
+                    active += 1
+                    max_active = max(max_active, active)
+                pair_started.wait(timeout=5)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(payloads[str(source["path"])])
+                with guard:
+                    active -= 1
+
+            import public_artifacts
+            original_validate = public_artifacts.validate_catalog
+            original_download = public_artifacts._download
+            public_artifacts.validate_catalog = lambda *_args: catalog
+            public_artifacts._download = fake_download
+            try:
+                receipt = stage_artifact(
+                    catalog_path,
+                    "fixture",
+                    root / "cache",
+                    self.metadata(),
+                    download_concurrency=2,
+                )
+            finally:
+                public_artifacts._download = original_download
+                public_artifacts.validate_catalog = original_validate
+            self.assertEqual("verified", receipt["state"])
+            self.assertEqual(2, max_active)
+
+    def test_download_concurrency_is_strictly_bounded(self) -> None:
+        payload = b'{"model":"fixture"}\n'
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            catalog_path, _ = fixture(
+                root, "https://invalid.example/fixture.json", payload
+            )
+            for invalid in (False, 0, MAX_DOWNLOAD_CONCURRENCY + 1):
+                with self.subTest(invalid=invalid):
+                    with self.assertRaisesRegex(ContractError, "download concurrency"):
+                        stage_artifact(
+                            catalog_path,
+                            "fixture",
+                            root / "cache",
+                            self.metadata(),
+                            download_concurrency=invalid,
+                        )
 
     def test_checksum_failure_never_publishes(self) -> None:
         payload = b'{"model":"fixture"}\n'
@@ -689,6 +799,7 @@ class PublicArtifactTests(unittest.TestCase):
                     "value": "true", "effect": "NoSchedule",
                 }),
                 active_deadline_seconds=3600, ttl_seconds=86400,
+                download_concurrency=4,
             )
             result = render(args)
             job = next(item for item in result["items"] if item["kind"] == "Job")
@@ -709,6 +820,72 @@ class PublicArtifactTests(unittest.TestCase):
                 "public-source-staging",
                 job["spec"]["template"]["metadata"]["labels"]["reference-data.fs2.nebius.ai/network-mode"],
             )
+            self.assertIn("--download-concurrency", container["command"])
+            self.assertEqual(
+                "4",
+                container["command"][container["command"].index("--download-concurrency") + 1],
+            )
+            config_map = next(item for item in result["items"] if item["kind"] == "ConfigMap")
+            projected = {
+                item["path"]: config_map["data"][item["key"]]
+                for item in next(
+                    volume["configMap"]
+                    for volume in pod["volumes"]
+                    if volume["name"] == "program"
+                )["items"]
+            }
+            program_digest = sha256_bytes(canonical_json(projected))
+            self.assertEqual(
+                f"public-artifacts-{program_digest[:12]}",
+                config_map["metadata"]["name"],
+            )
+            self.assertEqual(
+                config_map["metadata"]["labels"]["fs2.nebius.ai/program-digest"],
+                job["metadata"]["annotations"]["fs2.nebius.ai/program-digest"][:63],
+            )
+
+    def test_renderer_projects_catalog_provenance_evidence_at_declared_path(self) -> None:
+        args = argparse.Namespace(
+            catalog=ROOT / "artifact-catalog.json", artifact=["esmfold2-trunk"],
+            namespace="fs2-reference-data", local_queue="reference-data",
+            service_account="fs2-reference-data",
+            shared_filesystem_host_path="/mnt/reference-data",
+            cache_subpath="model-artifacts/public/v1", image=DEFAULT_IMAGE,
+            project_id="project-test", region="region-test", cluster="cluster-test",
+            filesystem_id="computefilesystem-test", filesystem_size_gib=2048,
+            cpu_pool_id="computenodegroup-test", cpu_pool_name="reference-data-cpu",
+            reference_plane_source_commit="abcdef0123456789",
+            source_commit="0123456789abcdef",
+            node_selector=json.dumps({
+                "workload.fs2.nebius/reference-data": "true",
+                "capacity.fs2.nebius/type": "regular",
+                "capacity.fs2.nebius/pool": "reference-data",
+                "storage.fs2.nebius/reference-data": "true",
+            }),
+            node_toleration=json.dumps({
+                "key": "workload.fs2.nebius/reference-data", "operator": "Equal",
+                "value": "true", "effect": "NoSchedule",
+            }),
+            active_deadline_seconds=3600, ttl_seconds=86400,
+            download_concurrency=4,
+        )
+        rendered = render(args)
+        config_map = next(item for item in rendered["items"] if item["kind"] == "ConfigMap")
+        job = next(item for item in rendered["items"] if item["kind"] == "Job")
+        program = next(
+            volume["configMap"]
+            for volume in job["spec"]["template"]["spec"]["volumes"]
+            if volume["name"] == "program"
+        )
+        for support_path in (
+            "evidence/protenix-v2-mirror-verification-20260902.json",
+            "evidence/esm-af3-external-runtime-contract-20260902.json",
+            "smoke/protenix-v2-minimal.json",
+        ):
+            support_item = next(
+                item for item in program["items"] if item["path"] == support_path
+            )
+            self.assertIn(support_item["key"], config_map["data"])
 
     def test_renderer_rejects_old_shared_system_pool_and_small_filesystem(self) -> None:
         payload = b'{"model":"fixture"}\n'
@@ -728,6 +905,7 @@ class PublicArtifactTests(unittest.TestCase):
                     "value": "true", "effect": "NoSchedule",
                 }),
                 active_deadline_seconds=3600, ttl_seconds=86400,
+                download_concurrency=4,
             )
             base["node_selector"] = json.dumps({
                 "workload.fs2.nebius/reference-data": "true",

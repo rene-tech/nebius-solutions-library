@@ -77,7 +77,17 @@
             "state": "complete"
           }
         }
-      ]
+      ],
+      "semantic_qualification": {
+        "state": "passed-with-explicit-runner-base-projection",
+        "evidence_file": "openfold3-openbind-h100-semantic-qualification.json",
+        "evidence_file_sha256": "695428c786ce9555d69095a074764d5312596ed30610c353a5988ca7e2777784",
+        "qualification_result_sha256": "8c0bcab9e32b003f2900652c5f89e76bb20e42e5df57ac8e033ed22d577f5292",
+        "job": "secondary-openfold3-e29d9a3de048",
+        "job_uid": "5a9357a2-663c-4ab9-8188-d84068ab0754",
+        "completed_at": "2026-09-04T16:32:24Z",
+        "activation_dependency": "Project canonical runner-base.yaml at /opt/fs2/runtime/openfold3 or publish a successor image with the file baked in."
+      }
     },
     "esmfold2": {
       "artifact_binding_state": "partial-awaiting-esmc-6b",
@@ -226,7 +236,16 @@
           "state": "complete"
         }
         }
-      ]
+      ],
+      "semantic_qualification": {
+        "state": "passed",
+        "evidence_file": "protenix-v2-h100-semantic-qualification.json",
+        "evidence_file_sha256": "33a54067af682bef43b282e12a46067b6891115a9e198eb214c9df46e1437f0a",
+        "qualification_result_sha256": "d4c47515965880bae58ddfcd52a835e54d6a8133782eb23966a910e82d5ddf6c",
+        "job": "secondary-protenix-v2-c398bf358067",
+        "job_uid": "3be3ff0d-c1cd-42d7-a1bf-b1926f078299",
+        "completed_at": "2026-09-04T16:49:30Z"
+      }
     }
   },
   "alphafold3_external_bindings": {
@@ -306,6 +325,18 @@
         "uid": "a02fa4d3-f2b4-421c-bc2c-3d4a3d89a54e",
         "state": "complete"
       }
+    },
+    "semantic_qualification": {
+      "state": "passed",
+      "evidence_file": "alphafold3-h100-semantic-qualification.json",
+      "evidence_file_sha256": "095e4d8da54621329d65a1bdae0e9f5b70d9bb305165d7d3f8e26315fe604b75",
+      "parameter_localization_receipt_sha256": "9c89f122ea3616efe70e07c2c27dddf236d347cab4002498c4dab9677d138bd4",
+      "params_load_receipt_sha256": "1cd06976127d70803164068884363e2cbd109024396c2a3d62f5d194a1ac6148",
+      "inference_receipt_sha256": "9e960f31dc05cbe9f657b82d552314261be1823b6e4195311c2296064f7c108c",
+      "qualification_result_sha256": "45e1bd3b001b89553717c1a0a2f2ec98cbe27a4b43ed633ab87270b22e77418a",
+      "job": "secondary-alphafold3-3d2b97942b20",
+      "job_uid": "019ef5f2-c7fe-479b-9426-9766e920b038",
+      "completed_at": "2026-09-04T16:57:43Z"
     }
   }
 }

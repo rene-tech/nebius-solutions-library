@@ -21,11 +21,10 @@ mode before GPU admission. Protenix prepares an immutable compressed handoff bef
 sampling. OpenFold3 is an independent, non-equivalent backend and never satisfies
 an `alphafold3` request.
 
-All four r5 successors passed offline image and protocol checks and remain
-`build-only-not-semantic-qualified`. Their candidate profiles deliberately pin the
-published runtime-image digests while keeping `route_exposed: false`; artifact and
-execution identity digests remain absent until exact artifact localization, declared
-runtime-cache delivery, and semantic inference on H100 have all produced promotion evidence. In particular,
+All four r5 successors passed offline image and protocol checks. The image handoff
+retains its historical `build-only-not-semantic-qualified` publication state, while
+activation profiles independently pin the published image, artifact, recipe, and
+H100 semantic-evidence identities before becoming dispatchable. In particular,
 the successor OpenFold image runs as runtime UID/GID `10001:10001` and validates
 the public `openfold3-openbind` identity. The canonical machine-readable
 activation gate and current image tuples remain in the historically named

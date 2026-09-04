@@ -1,0 +1,140 @@
+{
+  "schema": "fs2.nebius.ai/alphafold3-h100-semantic-evidence/v1",
+  "terminal_state": "PASS",
+  "observed_at": "2026-09-04T16:57:43Z",
+  "scope": {
+    "cluster": "k8s-inference-h100",
+    "namespace": "fs2-academic-poc",
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "routes": "unchanged-closed"
+  },
+  "job": {
+    "name": "secondary-alphafold3-3d2b97942b20",
+    "uid": "019ef5f2-c7fe-479b-9426-9766e920b038",
+    "pod": "secondary-alphafold3-3d2b97942b20-jskb7",
+    "pod_uid": "df2caedb-0c13-4c49-9429-ac26dbc7bed3",
+    "node": "computeinstance-e00m0hsph76ajt9sdb",
+    "created_at": "2026-09-04T16:56:41Z",
+    "container_started_at": "2026-09-04T16:56:43Z",
+    "container_finished_at": "2026-09-04T16:57:41Z",
+    "completed_at": "2026-09-04T16:57:43Z",
+    "exit_code": 0
+  },
+  "runtime": {
+    "model_id": "alphafold3",
+    "variant_id": "upstream-v3-0-4",
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3@sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
+    "kubelet_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3@sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
+    "resources": {
+      "cpu_request": "8",
+      "cpu_limit": "16",
+      "memory_request": "64Gi",
+      "memory_limit": "112Gi",
+      "gpu": 1,
+      "accelerator_class": "nvidia-h100-sxm5-80gb"
+    },
+    "identity": {
+      "uid": 12345,
+      "gid": 12345,
+      "supplemental_groups": [44, 992, 12345, 65532],
+      "fs_group": null
+    }
+  },
+  "artifact_access": {
+    "artifact_id": "alphafold3-parameters",
+    "content_digest": "sha256:74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+    "size_bytes": 1020545840,
+    "localization_receipt": {
+      "path": "/var/run/fs2-source/parameter-localization-receipt.json",
+      "sha256": "9c89f122ea3616efe70e07c2c27dddf236d347cab4002498c4dab9677d138bd4"
+    },
+    "authorization_document_sha256": "3a3d5d77a7f58d7875e33e78defe0dcb482dbe590e18380704594c4c1c3a8155",
+    "authorization_is_localization_receipt": false,
+    "claim_namespace": "fs2-academic-poc",
+    "claim": "academic-assets-runtime-rwx",
+    "claim_uid": "4d074d97-3391-46b9-9eea-ae57abc85d06",
+    "sub_path": "alphafold3/af3.bin.zst",
+    "mount_path": "/models/af3.bin.zst",
+    "read_only": true,
+    "deep_verified_by_both_runtime_stages": true
+  },
+  "receipts": {
+    "params_load": {
+      "path": "/output/params-load-receipt.json",
+      "sha256": "1cd06976127d70803164068884363e2cbd109024396c2a3d62f5d194a1ac6148",
+      "status": "PASS"
+    },
+    "inference": {
+      "path": "/output/inference-receipt.json",
+      "sha256": "9e960f31dc05cbe9f657b82d552314261be1823b6e4195311c2296064f7c108c",
+      "status": "PASS",
+      "exit_code": 0,
+      "terminal_state": "succeeded"
+    },
+    "qualification": {
+      "path": "/output/qualification-result.json",
+      "bytes": 2072,
+      "sha256": "45e1bd3b001b89553717c1a0a2f2ec98cbe27a4b43ed633ab87270b22e77418a",
+      "recovery": "The exact pretty JSON bytes are deterministically reconstructed from the retained FS2_QUALIFICATION_RESULT log envelope."
+    }
+  },
+  "result": {
+    "duration_seconds": 58.027,
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3@sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
+    "inference": {
+      "execution": {
+        "exit_code": 0,
+        "terminal_state": "succeeded",
+        "upstream": "/app/alphafold/run_alphafold.py"
+      },
+      "receipt_sha256": "9e960f31dc05cbe9f657b82d552314261be1823b6e4195311c2296064f7c108c",
+      "structures": [
+        {
+          "atom_records": 128,
+          "bytes": 16960,
+          "path": "inference/fs2_faststart_af3_minimal/fs2_faststart_af3_minimal_model.cif",
+          "sha256": "c9cf81c1f6cfaa324f67340721b4d5c0b3cc0c75264955a5011b09a90d82b26a"
+        },
+        {
+          "atom_records": 128,
+          "bytes": 16960,
+          "path": "inference/fs2_faststart_af3_minimal/seed-1_sample-0/fs2_faststart_af3_minimal_seed-1_sample-0_model.cif",
+          "sha256": "c9cf81c1f6cfaa324f67340721b4d5c0b3cc0c75264955a5011b09a90d82b26a"
+        }
+      ]
+    },
+    "parameter_content_sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+    "parameter_localization_receipt_sha256": "9c89f122ea3616efe70e07c2c27dddf236d347cab4002498c4dab9677d138bd4",
+    "params_load": {
+      "devices": {
+        "device_count": 1,
+        "devices": [
+          {
+            "device_kind": "NVIDIA H100 80GB HBM3",
+            "id": 0,
+            "kind": "gpu"
+          }
+        ],
+        "gpu_present": true,
+        "jax_version": "0.10.2"
+      },
+      "receipt_sha256": "1cd06976127d70803164068884363e2cbd109024396c2a3d62f5d194a1ac6148",
+      "semantic": {
+        "compressed": true,
+        "loaded_parameter_arrays": 405,
+        "loaded_parameter_elements": 368384602,
+        "loaded_scopes": 329,
+        "parameter_devices": ["cuda:0"],
+        "selected_files": ["af3.bin.zst"]
+      }
+    },
+    "runtime_identity": {
+      "gid": 12345,
+      "supplemental_groups": [44, 992, 12345, 65532],
+      "uid": 12345
+    },
+    "schema": "fs2.nebius.ai/alphafold3-h100-semantic-qualification/v1",
+    "terminal_state": "PASS"
+  }
+}

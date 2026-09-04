@@ -1,0 +1,99 @@
+{
+  "schema": "fs2.nebius.ai/structure-secondary-h100-semantic-evidence/v1",
+  "status": "passed",
+  "observed_at": "2026-09-04T16:49:30Z",
+  "scope": {
+    "cluster": "k8s-inference-h100",
+    "namespace": "fs2-academic-poc",
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "routes": "unchanged-closed"
+  },
+  "job": {
+    "name": "secondary-protenix-v2-c398bf358067",
+    "uid": "3be3ff0d-c1cd-42d7-a1bf-b1926f078299",
+    "pod": "secondary-protenix-v2-c398bf358067-76nq8",
+    "pod_uid": "002fbccf-1b99-4b20-b1b9-75f8db2884fc",
+    "node": "computeinstance-e00m0hsph76ajt9sdb",
+    "created_at": "2026-09-04T16:47:54Z",
+    "container_started_at": "2026-09-04T16:47:57Z",
+    "container_finished_at": "2026-09-04T16:49:27Z",
+    "completed_at": "2026-09-04T16:49:30Z",
+    "exit_code": 0
+  },
+  "runtime": {
+    "model_id": "protenix-v2",
+    "variant_id": "upstream-v2-0-0",
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
+    "kubelet_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
+    "resources": {
+      "cpu_request": "8",
+      "cpu_limit": "16",
+      "memory_request": "64Gi",
+      "memory_limit": "112Gi",
+      "gpu": 1,
+      "accelerator_class": "nvidia-h100-sxm5-80gb"
+    },
+    "identity": {
+      "uid": 10001,
+      "gid": 10001,
+      "supplemental_groups": [44, 992, 1000, 10001]
+    }
+  },
+  "artifact_access": {
+    "artifact_id": "protenix-v2",
+    "content_digest": "sha256:5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
+    "localization_receipt_digest": "sha256:ea301407e2ac427bf87d4617136629f178a75d55f67e3aea882de4bc19ce04b4",
+    "expected_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+    "host_path": "/mnt/fs2-reference-data/data",
+    "sub_path": "scientific-localization/public/generations/protenix-v2/sha256/5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
+    "mount_path": "/models/protenix-v2",
+    "read_only": true,
+    "runtime_marker": {
+      "path": "/var/run/fs2-runtime-sample-structure.json",
+      "bytes": 908,
+      "sha256": "89c30714e375149a244dd4b2c78e51e36ff4e9f2c92cc145dbaba2942cb9b784"
+    }
+  },
+  "qualification_result_file": {
+    "path": "/outputs/qualification-result.json",
+    "bytes": 1369,
+    "sha256": "d4c47515965880bae58ddfcd52a835e54d6a8133782eb23966a910e82d5ddf6c",
+    "recovery": "The exact pretty JSON bytes are deterministically reconstructed from the retained FS2_QUALIFICATION_RESULT log envelope."
+  },
+  "result": {
+    "accelerator": {
+      "compute_capability": [9, 0],
+      "cuda_runtime": "12.6",
+      "device_name": "NVIDIA H100 80GB HBM3",
+      "torch": "2.7.1+cu126"
+    },
+    "attempt_id": "c7eb5e8a-7b5f-586e-9a03-26590f558662",
+    "confidence": {
+      "path": "confidence.json",
+      "result_count": 1,
+      "sha256": "f63adf0558036d7c357073107314fdbbfefb5c47115da01d2d1e26d28ed631f7"
+    },
+    "duration_seconds": 90.286,
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
+    "operation_id": "1c09e7f3-389d-5551-8591-d46d6dfbc6a4",
+    "runtime_id": "protenix-v2",
+    "runtime_identity": {
+      "gid": 10001,
+      "supplemental_groups": [44, 992, 1000, 10001],
+      "uid": 10001
+    },
+    "runtime_localization_marker_sha256": "89c30714e375149a244dd4b2c78e51e36ff4e9f2c92cc145dbaba2942cb9b784",
+    "schema": "fs2.nebius.ai/structure-secondary-h100-semantic-result/v1",
+    "source_commit": "5cb7cad6a372db1fbe44407778b618a014592727",
+    "status": "passed",
+    "structures": [
+      {
+        "atom_records": 321,
+        "bytes": 32475,
+        "path": "fs2-protenix-v2-h100-smoke/seed_101/predictions/fs2-protenix-v2-h100-smoke_sample_0.cif",
+        "sha256": "3280869bc52cbbf2169185fbeb2a6a3fe5df568dcebf27f5da1e5e6acef42cef"
+      }
+    ]
+  }
+}

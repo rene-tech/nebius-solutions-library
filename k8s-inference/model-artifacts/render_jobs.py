@@ -10,7 +10,15 @@ import re
 import sys
 from typing import Any, Sequence
 
-from public_artifacts import ContractError, canonical_json, load_json, sha256_bytes, validate_catalog
+from public_artifacts import (
+    ContractError,
+    DEFAULT_DOWNLOAD_CONCURRENCY,
+    MAX_DOWNLOAD_CONCURRENCY,
+    canonical_json,
+    load_json,
+    sha256_bytes,
+    validate_catalog,
+)
 
 
 DNS_LABEL = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$")
@@ -80,6 +88,14 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
         raise ContractError("the integrated regional reference filesystem must be at least 2048 GiB")
     if not args.shared_filesystem_host_path.startswith("/mnt/") or ".." in args.shared_filesystem_host_path:
         raise ContractError("shared filesystem host path must be a safe absolute path below /mnt")
+    if (
+        isinstance(args.download_concurrency, bool)
+        or not isinstance(args.download_concurrency, int)
+        or not 1 <= args.download_concurrency <= MAX_DOWNLOAD_CONCURRENCY
+    ):
+        raise ContractError(
+            f"download concurrency must be an integer between 1 and {MAX_DOWNLOAD_CONCURRENCY}"
+        )
     cache_parts = Path(args.cache_subpath).parts
     if not cache_parts or args.cache_subpath.startswith("/") or ".." in cache_parts:
         raise ContractError("cache subpath must be a safe relative path")
@@ -94,15 +110,53 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
     if unknown:
         raise ContractError(f"selected artifacts are not available: {sorted(unknown)}")
     catalog_digest = sha256_bytes(canonical_json(load_json(args.catalog)))
-    config_name = _dns(f"public-artifacts-{catalog_digest[:12]}", "ConfigMap name")
-    data = {
+    projected_files = {
         "artifact-catalog.json": args.catalog.read_text(encoding="utf-8"),
         "public_artifacts.py": Path(__file__).with_name("public_artifacts.py").read_text(encoding="utf-8"),
     }
+    support_files: set[str] = set()
     for entry in available.values():
         manifest_path = Path(entry["_manifest_path"])
         relative = manifest_path.relative_to(args.catalog.parent.resolve()).as_posix()
-        data[relative.replace("/", "__")] = manifest_path.read_text(encoding="utf-8")
+        projected_files[relative] = manifest_path.read_text(encoding="utf-8")
+        provenance = entry.get("provenance")
+        if isinstance(provenance, dict):
+            verification = provenance.get("verification")
+            if isinstance(verification, dict) and isinstance(verification.get("evidence"), str):
+                support_files.add(verification["evidence"])
+    for handoff in catalog.get("runtime_handoffs", {}).values():
+        if not isinstance(handoff, dict):
+            continue
+        smoke = handoff.get("semantic_smoke")
+        if not isinstance(smoke, dict):
+            continue
+        fixture = smoke.get("fixture")
+        if isinstance(fixture, dict) and isinstance(fixture.get("path"), str):
+            support_files.add(fixture["path"])
+    for section in ("runtime_constraints", "private_layouts"):
+        for contract in catalog.get(section, {}).values():
+            if isinstance(contract, dict) and isinstance(contract.get("evidence"), str):
+                support_files.add(contract["evidence"])
+    for relative in sorted(support_files):
+        support_relative = Path(relative)
+        support_path = (args.catalog.parent / support_relative).resolve()
+        if (
+            args.catalog.parent.resolve() not in support_path.parents
+            or not support_path.is_file()
+        ):
+            raise ContractError(f"catalog support file is absent or escapes its directory: {relative}")
+        projected_files[support_relative.as_posix()] = support_path.read_text(encoding="utf-8")
+
+    data: dict[str, str] = {}
+    program_items: list[dict[str, str]] = []
+    for relative, contents in sorted(projected_files.items()):
+        key = relative.replace("/", "__")
+        if key in data:
+            raise ContractError(f"projected artifact program key collides: {relative}")
+        data[key] = contents
+        program_items.append({"key": key, "path": relative})
+    program_digest = sha256_bytes(canonical_json(projected_files))
+    config_name = _dns(f"public-artifacts-{program_digest[:12]}", "ConfigMap name")
     resources: list[dict[str, Any]] = [
         {
             "apiVersion": "v1",
@@ -114,6 +168,7 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
                     "app.kubernetes.io/name": "public-artifact-ingestion",
                     "app.kubernetes.io/managed-by": "fs2-task-branch",
                     "fs2.nebius.ai/catalog-digest": catalog_digest[:63],
+                    "fs2.nebius.ai/program-digest": program_digest[:63],
                 },
             },
             "immutable": True,
@@ -141,6 +196,7 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
             "--cpu-pool-label", cpu_pool_label,
             "--shared-filesystem-host-path", args.shared_filesystem_host_path,
             "--cache-subpath", args.cache_subpath,
+            "--download-concurrency", str(args.download_concurrency),
             "--reference-plane-source-commit", args.reference_plane_source_commit,
             "--source-commit", args.source_commit,
         ]
@@ -161,6 +217,8 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
                     "annotations": {
                         "fs2.nebius.ai/source-commit": args.source_commit,
                         "fs2.nebius.ai/catalog-digest": catalog_digest,
+                        "fs2.nebius.ai/program-digest": program_digest,
+                        "fs2.nebius.ai/download-concurrency": str(args.download_concurrency),
                         "fs2.nebius.ai/reference-plane-source-commit": args.reference_plane_source_commit,
                         "fs2.nebius.ai/filesystem-id": args.filesystem_id,
                         "fs2.nebius.ai/cpu-pool-id": args.cpu_pool_id,
@@ -218,7 +276,14 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
                                 }
                             ],
                             "volumes": [
-                                {"name": "program", "configMap": {"name": config_name, "defaultMode": 292}},
+                                {
+                                    "name": "program",
+                                    "configMap": {
+                                        "name": config_name,
+                                        "defaultMode": 292,
+                                        "items": program_items,
+                                    },
+                                },
                                 {
                                     "name": "reference-data",
                                     "hostPath": {
@@ -259,6 +324,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--node-toleration", required=True)
     result.add_argument("--active-deadline-seconds", type=int, default=21600)
     result.add_argument("--ttl-seconds", type=int, default=86400)
+    result.add_argument(
+        "--download-concurrency",
+        type=int,
+        default=DEFAULT_DOWNLOAD_CONCURRENCY,
+    )
     return result
 
 
