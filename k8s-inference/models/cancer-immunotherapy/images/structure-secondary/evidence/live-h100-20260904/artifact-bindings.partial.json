@@ -226,7 +226,16 @@
           "state": "complete"
         }
         }
-      ]
+      ],
+      "semantic_qualification": {
+        "state": "passed",
+        "evidence_file": "protenix-v2-h100-semantic-qualification.json",
+        "evidence_file_sha256": "33a54067af682bef43b282e12a46067b6891115a9e198eb214c9df46e1437f0a",
+        "qualification_result_sha256": "d4c47515965880bae58ddfcd52a835e54d6a8133782eb23966a910e82d5ddf6c",
+        "job": "secondary-protenix-v2-c398bf358067",
+        "job_uid": "3be3ff0d-c1cd-42d7-a1bf-b1926f078299",
+        "completed_at": "2026-09-04T16:49:30Z"
+      }
     }
   },
   "alphafold3_external_bindings": {
