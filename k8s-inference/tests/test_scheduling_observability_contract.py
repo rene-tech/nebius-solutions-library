@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
@@ -304,7 +305,115 @@ class SchedulingObservabilityContractTests(unittest.TestCase):
         self.assertRegex(foundation, re.compile(r'version\s+=\s+local\.chart_versions\.tempo'))
         self.assertIn('grafana_datasource = "1"', foundation)
         self.assertIn('port     = "3200"', workload_network)
-        self.assertRegex(control_plane, re.compile(r"tempo\s+=\s+true"))
+        self.assertIn(
+            "tempo        = local.observability_operator.tempo.enabled",
+            control_plane,
+        )
+
+    def test_alertmanager_terraform_contract_is_persistent_private_and_grafana_discoverable(
+        self,
+    ) -> None:
+        releases = (ROOT / "stages/foundation/releases.tf").read_text(
+            encoding="utf-8"
+        )
+        backends = (
+            ROOT / "stages/foundation/observability_backends.tf"
+        ).read_text(encoding="utf-8")
+        workloads = (ROOT / "stages/workloads/observability.tf").read_text(
+            encoding="utf-8"
+        )
+
+        for expected in (
+            "enabled = var.alertmanager.enabled",
+            "retention = var.alertmanager.retention",
+            "storageClassName = var.alertmanager.storage.storage_class_name",
+            'storage = "${var.alertmanager.storage.size_gib}Gi"',
+            'whenDeleted = "Retain"',
+            'whenScaled  = "Retain"',
+        ):
+            self.assertIn(expected, releases)
+        self.assertIn(
+            'resource "kubernetes_config_map_v1" "grafana_alertmanager_datasource"',
+            backends,
+        )
+        self.assertIn('type      = "alertmanager"', backends)
+        self.assertIn('implementation             = "prometheus"', backends)
+        self.assertIn("raw_backends_public = false", backends)
+        self.assertIn('port     = "9093"', workloads)
+
+    def test_pinned_monitoring_chart_wires_persistent_alertmanager_to_prometheus(
+        self,
+    ) -> None:
+        helm = shutil.which("helm")
+        if helm is None:
+            self.skipTest("helm is required for monitoring chart render test")
+        result = subprocess.run(
+            [
+                helm,
+                "template",
+                "fs2-r0123456789-monitoring",
+                "prometheus-community/kube-prometheus-stack",
+                "--version",
+                "88.5.4",
+                "--namespace",
+                "fs2-observability",
+                "--set",
+                "fullnameOverride=fs2-r0123456789-monitoring",
+                "--set",
+                "alertmanager.enabled=true",
+                "--set",
+                "alertmanager.alertmanagerSpec.retention=240h",
+                "--set",
+                "alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.storageClassName=compute-csi-default-sc",
+                "--set",
+                "alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.accessModes[0]=ReadWriteOnce",
+                "--set",
+                "alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.resources.requests.storage=20Gi",
+                "--set",
+                "alertmanager.alertmanagerSpec.persistentVolumeClaimRetentionPolicy.whenDeleted=Retain",
+                "--set",
+                "alertmanager.alertmanagerSpec.persistentVolumeClaimRetentionPolicy.whenScaled=Retain",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        documents = [
+            item for item in yaml.safe_load_all(result.stdout) if isinstance(item, dict)
+        ]
+        alertmanager = next(
+            item for item in documents if item.get("kind") == "Alertmanager"
+        )
+        self.assertEqual(alertmanager["spec"]["retention"], "240h")
+        self.assertEqual(
+            alertmanager["spec"]["persistentVolumeClaimRetentionPolicy"],
+            {"whenDeleted": "Retain", "whenScaled": "Retain"},
+        )
+        self.assertEqual(
+            alertmanager["spec"]["storage"]["volumeClaimTemplate"]["spec"],
+            {
+                "accessModes": ["ReadWriteOnce"],
+                "resources": {"requests": {"storage": "20Gi"}},
+                "storageClassName": "compute-csi-default-sc",
+            },
+        )
+        prometheus = next(
+            item for item in documents if item.get("kind") == "Prometheus"
+        )
+        self.assertEqual(
+            prometheus["spec"]["alerting"]["alertmanagers"],
+            [
+                {
+                    "namespace": "fs2-observability",
+                    "name": "fs2-r0123456789-monitoring-alertmanager",
+                    "port": "http-web",
+                    "pathPrefix": "/",
+                    "apiVersion": "v2",
+                }
+            ],
+        )
 
 
 if __name__ == "__main__":

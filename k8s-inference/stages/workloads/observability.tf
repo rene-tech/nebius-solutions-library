@@ -23,7 +23,8 @@ resource "kubernetes_network_policy_v1" "grafana_observability_egress" {
 
   # Grafana is the only public observability pane. Its data plane and datasource
   # sidecar need only DNS, the canonical in-cluster Kubernetes API Service,
-  # the reporting database, Prometheus, Loki, and Tempo.
+  # the reporting database, Prometheus, Loki, Tempo, and the optional private
+  # Alertmanager datasource.
   spec {
     pod_selector {
       match_labels = {
@@ -139,6 +140,24 @@ resource "kubernetes_network_policy_v1" "grafana_observability_egress" {
       ports {
         port     = "3200"
         protocol = "TCP"
+      }
+    }
+
+    dynamic "egress" {
+      for_each = local.observability_operator.alertmanager.enabled ? [1] : []
+
+      content {
+        to {
+          pod_selector {
+            match_labels = {
+              alertmanager = local.observability_operator.alertmanager.service_name
+            }
+          }
+        }
+        ports {
+          port     = "9093"
+          protocol = "TCP"
+        }
       }
     }
   }

@@ -1,6 +1,12 @@
 {{- if .Values.adminReadAdapters.observability.enabled }}
 {{- $links := dict }}
+{{- $datasourceUids := dict }}
 {{- $linkValues := .Values.adminReadAdapters.observability.links }}
+{{- range $component, $uid := .Values.adminReadAdapters.observability.datasourceUids }}
+{{- if $uid }}
+{{- $_ := set $datasourceUids $component $uid }}
+{{- end }}
+{{- end }}
 {{- range $component := list "grafana" "prometheus" "loki" "otel" "dcgm" "kueue" "keda" "alertmanager" "tempo" }}
 {{- $link := index $linkValues $component }}
 {{- if and $link.url (not $link.verifiedExternalRoute) }}
@@ -32,5 +38,5 @@ metadata:
     app.kubernetes.io/component: admin-observability
 data:
   config.json: |-
-    {{- dict "allowed_hosts" $linkValues.allowedHosts "installed" .Values.adminReadAdapters.observability.installed "links" $links | toPrettyJson | nindent 4 }}
+    {{- dict "allowed_hosts" $linkValues.allowedHosts "datasource_uids" $datasourceUids "installed" .Values.adminReadAdapters.observability.installed "links" $links | toPrettyJson | nindent 4 }}
 {{- end }}

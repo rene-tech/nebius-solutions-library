@@ -148,12 +148,14 @@ must join the PostgreSQL activation ledger and semantic-health evidence.
 ## Observability launches
 
 Launch URLs are runtime configuration returned by the observability projection;
-none are committed here. Grafana, Prometheus, and Loki are verified and may be
-enabled. The selected cluster/model/operation/time context is encoded only in
-allow-listed variables or query templates. OTel has no operator UI. DCGM is
-deployed but its series are not currently ingested. Kueue has a visibility API
-but no verified operator UI. Alertmanager and Tempo are absent. All five remain
-disabled until their individual discovery checks pass.
+none are committed here. Grafana is the authenticated public pane while raw
+Prometheus, Loki, Alertmanager, and Tempo endpoints remain private. The selected
+cluster/model/operation/time context is encoded only in allow-listed variables
+or query templates. Terraform can provision Alertmanager and its Grafana
+datasource; the card launches Grafana Alerting only after live target, health,
+and data probes pass. Tempo launches Grafana Explore with the exact provisioned
+datasource UID and time range. Tempo is not presented as a standalone UI. OTel,
+DCGM, Kueue, and KEDA use verified Grafana dashboard routes when available.
 
 ## Interaction and accessibility acceptance
 

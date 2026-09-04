@@ -102,8 +102,12 @@ locals {
         enabled       = true
         prometheusUrl = local.prometheus_server_address
         installed = {
-          alertmanager = false
-          tempo        = true
+          alertmanager = local.observability_operator.alertmanager.enabled
+          tempo        = local.observability_operator.tempo.enabled
+        }
+        datasourceUids = {
+          alertmanager = coalesce(local.observability_operator.alertmanager.grafana_datasource_uid, "")
+          tempo        = local.observability_operator.tempo.grafana_datasource_uid
         }
         links = {
           allowedHosts = sort(tolist(var.admin_observability_links.allowed_hosts))
@@ -215,6 +219,23 @@ resource "helm_release" "control_plane" {
   ]
 
   lifecycle {
+    precondition {
+      condition = (
+        local.observability_operator.schema == "fs2-serve.nebius.ai/observability-operator/v1" &&
+        local.observability_operator.tempo.enabled &&
+        local.observability_operator.tempo.service_port == 3200 &&
+        length(local.observability_operator.tempo.grafana_datasource_uid) > 0 &&
+        local.observability_operator.alertmanager.service_port == 9093 &&
+        (
+          !local.observability_operator.alertmanager.enabled ||
+          try(length(local.observability_operator.alertmanager.grafana_datasource_uid) > 0, false)
+        ) &&
+        !local.observability_operator.raw_backends_public &&
+        local.observability_operator.operator_surface == "grafana-native-auth"
+      )
+      error_message = "The foundation observability handoff must retain private raw backends and the reviewed Grafana-native Alertmanager/Tempo operator surface."
+    }
+
     precondition {
       condition     = length(local.admin_scientific_namespaces) <= 32
       error_message = "The admin capacity projection supports at most 32 distinct non-model queue namespaces; reduce or consolidate scheduling.local_queues, scientific_batch.namespace, and reference_data.namespace."

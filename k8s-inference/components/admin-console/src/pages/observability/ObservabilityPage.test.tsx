@@ -37,8 +37,9 @@ describe("Observability page", () => {
     expect(screen.getByRole("link", { name: /Open Prometheus/ })).toHaveAttribute("href", "https://console.example.test/admin/observability/grafana/explore");
     expect(screen.getByRole("link", { name: /Open Loki/ })).toHaveAttribute("href", expect.stringContaining("/grafana/explore"));
     expect(screen.getByRole("link", { name: /Open OpenTelemetry/ })).toHaveAttribute("href", "https://console.example.test/admin/observability/grafana/dashboards");
+    expect(screen.getByRole("link", { name: /Open Alertmanager/ })).toHaveAttribute("href", "https://console.example.test/admin/observability/grafana/alerting/silences?alertmanager=fs2-r0123456789-alertmanager");
+    expect(screen.getByRole("link", { name: /Open Tempo/ })).toHaveAttribute("href", expect.stringContaining("/grafana/explore?panes="));
     expect(screen.getAllByText("Absent").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Unknown").length).toBeGreaterThan(0);
     expect(screen.getAllByText("0 items/second")).toHaveLength(2);
     expect(screen.getAllByText("—")).toHaveLength(2);
   });

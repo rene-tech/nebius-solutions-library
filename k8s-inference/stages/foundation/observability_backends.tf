@@ -1,3 +1,10 @@
+locals {
+  alertmanager_service_name       = "fs2-${var.run_id}-monitoring-alertmanager"
+  alertmanager_grafana_datasource = "fs2-${var.run_id}-alertmanager"
+  tempo_service_name              = "fs2-tempo"
+  tempo_grafana_datasource        = "fs2-${var.run_id}-tempo"
+}
+
 # Single-binary Tempo is deliberately sized for the cluster-local seven-day
 # trace/debug window. Durable accounting remains a workloads-stage database
 # concern; Tempo is the raw correlation plane for request and Job attempts.
@@ -61,12 +68,12 @@ resource "kubernetes_config_map_v1" "grafana_tempo_datasource" {
       apiVersion = 1
       prune      = false
       datasources = [{
-        name      = "fs2-${var.run_id}-tempo"
-        uid       = "fs2-${var.run_id}-tempo"
+        name      = local.tempo_grafana_datasource
+        uid       = local.tempo_grafana_datasource
         type      = "tempo"
         access    = "proxy"
         orgId     = 1
-        url       = "http://fs2-tempo.fs2-observability.svc.cluster.local:3200"
+        url       = "http://${local.tempo_service_name}.fs2-observability.svc.cluster.local:3200"
         isDefault = false
         editable  = false
         version   = 1
@@ -91,4 +98,73 @@ resource "kubernetes_config_map_v1" "grafana_tempo_datasource" {
     helm_release.monitoring,
     helm_release.tempo,
   ]
+}
+
+# Alertmanager itself remains cluster-private. Grafana proxies this provisioned
+# datasource behind its existing authenticated same-origin publication and
+# gives operators the supported Alerting UI instead of a second raw endpoint.
+resource "kubernetes_config_map_v1" "grafana_alertmanager_datasource" {
+  count = var.alertmanager.enabled ? 1 : 0
+
+  metadata {
+    name      = "fs2-alertmanager-grafana-datasource"
+    namespace = kubernetes_namespace_v1.platform["fs2-observability"].metadata[0].name
+    labels = merge(local.common_labels, {
+      grafana_datasource = "1"
+    })
+  }
+
+  data = {
+    "datasource.yaml" = yamlencode({
+      apiVersion = 1
+      # Removing this optional Terraform-owned provisioning file also removes
+      # its datasource; it does not leave a disabled Alertmanager looking live.
+      prune = true
+      datasources = [{
+        name      = local.alertmanager_grafana_datasource
+        uid       = local.alertmanager_grafana_datasource
+        type      = "alertmanager"
+        access    = "proxy"
+        orgId     = 1
+        url       = "http://${local.alertmanager_service_name}.fs2-observability.svc.cluster.local:9093"
+        isDefault = false
+        editable  = false
+        version   = 1
+        jsonData = {
+          implementation             = "prometheus"
+          handleGrafanaManagedAlerts = false
+        }
+      }]
+    })
+  }
+
+  depends_on = [helm_release.monitoring]
+}
+
+output "observability_operator_contract" {
+  description = "Non-secret installed services and Grafana datasource identities consumed by the workloads admin projection."
+  value = {
+    schema = "fs2-serve.nebius.ai/observability-operator/v1"
+    alertmanager = {
+      enabled                = var.alertmanager.enabled
+      service_name           = local.alertmanager_service_name
+      service_port           = 9093
+      grafana_datasource_uid = var.alertmanager.enabled ? local.alertmanager_grafana_datasource : null
+      retention              = var.alertmanager.retention
+      storage = {
+        class_name   = var.alertmanager.storage.storage_class_name
+        size_gib     = var.alertmanager.storage.size_gib
+        when_deleted = "Retain"
+        when_scaled  = "Retain"
+      }
+    }
+    tempo = {
+      enabled                = true
+      service_name           = local.tempo_service_name
+      service_port           = 3200
+      grafana_datasource_uid = local.tempo_grafana_datasource
+    }
+    raw_backends_public = false
+    operator_surface    = "grafana-native-auth"
+  }
 }

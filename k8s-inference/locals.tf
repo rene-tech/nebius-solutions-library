@@ -980,6 +980,7 @@ locals {
       enabled           = local.grafana_external_enabled
       external_base_url = ""
     }
+    alertmanager = var.deployment.observability.alertmanager
   }
 
   academic_assets_contract = {

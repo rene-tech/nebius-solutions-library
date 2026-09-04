@@ -335,7 +335,7 @@ The top-level variable is `deployment`:
 | `artifacts.external_registry_ids` | Same-tenant registries whose immutable images need run-scoped node-pull viewer access. Terraform creates a project-scoped reader group beside each registry, including registries in another project or region. |
 | `artifacts.registry_policy` | Defaults to `regional-mirror`; optional prefix controls the target repository namespace. `direct-source` is an explicit opt-out that leaves runtime pulls pointed at upstream registries. |
 | `edge` | `internal-only` or bounded public ingress configuration, including an optional per-cluster loopback port tuple. |
-| `observability` | DCGM cold-start campaign and optional external Grafana publication. |
+| `observability` | DCGM cold-start campaign, optional external Grafana publication, and persistent Alertmanager enablement/retention/storage. |
 | `secrets` | Environment-variable names and Kubernetes Secret key references, never secret values. |
 | `acceptance` | Optional post-deployment probe job. |
 
@@ -345,6 +345,12 @@ For another project, add `project_name`, `network.network_name`,
 `system_update_strategy`. The infrastructure stage verifies those facts through
 the provider. Custom accelerator pools additionally go through the live
 platform and Managed Kubernetes compatibility preflight.
+
+Alertmanager and operator observability access are described in
+[`docs/ADMIN_OBSERVABILITY_ACCESS.md`](docs/ADMIN_OBSERVABILITY_ACCESS.md).
+Alertmanager enablement, retained storage, and retention are tfvars settings;
+authenticated Grafana remains the only public observability application and
+Tempo launches through a datasource-selected Grafana Explore link.
 
 ### Scientific result artifact store
 

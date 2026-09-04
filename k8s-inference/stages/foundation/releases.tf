@@ -303,8 +303,49 @@ resource "helm_release" "monitoring" {
   values = [
     yamlencode({
       fullnameOverride = "fs2-${var.run_id}-monitoring"
-      # No Alertmanager release or external link is part of this slice.
-      alertmanager = { enabled = false }
+      alertmanager = {
+        enabled = var.alertmanager.enabled
+        # This default receiver deliberately sends nothing outside the cluster.
+        # Operators can still inspect alerts and manage silences through the
+        # provisioned Grafana Alertmanager datasource without exposing port 9093.
+        config = {
+          global = { resolve_timeout = "5m" }
+          route = {
+            group_by        = ["namespace", "alertname"]
+            group_wait      = "30s"
+            group_interval  = "5m"
+            repeat_interval = "12h"
+            receiver        = "null"
+          }
+          receivers = [{ name = "null" }]
+        }
+        alertmanagerSpec = {
+          replicas  = 1
+          retention = var.alertmanager.retention
+          nodeSelector = {
+            "workload.fs2.nebius/system" = "true"
+          }
+          resources = {
+            requests = { cpu = "100m", memory = "128Mi" }
+            limits   = { cpu = "500m", memory = "512Mi" }
+          }
+          storage = {
+            volumeClaimTemplate = {
+              spec = {
+                storageClassName = var.alertmanager.storage.storage_class_name
+                accessModes      = ["ReadWriteOnce"]
+                resources = {
+                  requests = { storage = "${var.alertmanager.storage.size_gib}Gi" }
+                }
+              }
+            }
+          }
+          persistentVolumeClaimRetentionPolicy = {
+            whenDeleted = "Retain"
+            whenScaled  = "Retain"
+          }
+        }
+      }
       grafana = {
         admin = {
           existingSecret = var.grafana_admin_secret_ref.name

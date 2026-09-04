@@ -1232,9 +1232,7 @@ def test_academic_scientific_execution_requires_the_exact_namespace_local_contra
         ),
     ],
 )
-def test_scientific_batch_rejects_scheduling_ref_identity_drift(
-    extra: tuple[str, ...], expected: str
-) -> None:
+def test_scientific_batch_rejects_scheduling_ref_identity_drift(extra: tuple[str, ...], expected: str) -> None:
     arguments = [
         "--set",
         "scientificBatch.enabled=true",
@@ -3062,6 +3060,7 @@ def test_observability_adapter_has_explicit_prometheus_peer_and_optional_config(
     config = json.loads(config_map["data"]["config.json"])
     assert config == {
         "allowed_hosts": ["observe.example.invalid"],
+        "datasource_uids": {},
         "installed": {"alertmanager": False, "tempo": False},
         "links": {"grafana": "https://observe.example.invalid/observability/grafana/"},
     }
@@ -3087,6 +3086,8 @@ def test_observability_adapter_accepts_installed_tempo_from_workloads_values_mer
         "adminReadAdapters.observability.enabled=true",
         "--set",
         "adminReadAdapters.observability.installed.tempo=true",
+        "--set-string",
+        "adminReadAdapters.observability.datasourceUids.tempo=fs2-r0123456789-tempo",
     )
     config_map = next(
         item
@@ -3095,6 +3096,35 @@ def test_observability_adapter_accepts_installed_tempo_from_workloads_values_mer
     )
     config = json.loads(config_map["data"]["config.json"])
     assert config["installed"] == {"alertmanager": False, "tempo": True}
+    assert config["datasource_uids"] == {"tempo": "fs2-r0123456789-tempo"}
+
+
+def test_observability_adapter_accepts_installed_alertmanager_with_verified_grafana_route() -> None:
+    documents = render(
+        "-f",
+        str(WORKLOAD_VALUES),
+        "--set",
+        "adminReadAdapters.observability.enabled=true",
+        "--set",
+        "adminReadAdapters.observability.installed.alertmanager=true",
+        "--set-string",
+        "adminReadAdapters.observability.datasourceUids.alertmanager=fs2-r0123456789-alertmanager",
+        "--set-string",
+        "adminReadAdapters.observability.links.allowedHosts[0]=observe.example.invalid",
+        "--set-string",
+        "adminReadAdapters.observability.links.alertmanager.url=https://observe.example.invalid/admin/observability/grafana/alerting/silences",
+        "--set",
+        "adminReadAdapters.observability.links.alertmanager.verifiedExternalRoute=true",
+    )
+    config_map = next(
+        item
+        for item in documents
+        if item["kind"] == "ConfigMap" and item["metadata"]["name"] == "fs2-serve-control-plane-admin-observability"
+    )
+    config = json.loads(config_map["data"]["config.json"])
+    assert config["installed"]["alertmanager"] is True
+    assert config["datasource_uids"]["alertmanager"] == "fs2-r0123456789-alertmanager"
+    assert config["links"]["alertmanager"].endswith("/grafana/alerting/silences")
 
 
 def test_observability_link_requires_verified_allowlisted_https_route() -> None:
@@ -3208,6 +3238,7 @@ def test_object_storage_egress_is_opt_in_and_scoped_to_tls() -> None:
     ]
     assert len(rules) == 1
     assert rules[0]["ports"] == [{"port": 443, "protocol": "TCP"}]
+
 
 def test_extra_kueue_namespaces_grant_least_privilege_capacity_reads() -> None:
     """Scientific lanes need queue and pod allocation visibility only."""

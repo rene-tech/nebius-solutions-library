@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 import pytest
@@ -647,6 +649,115 @@ async def test_one_observability_probe_failure_is_partial_and_sanitized() -> Non
     assert components["kueue"].health == AdminCapabilityHealth.UNKNOWN
     assert components["kueue"].data_present is None
     assert "SENSITIVE_PROMETHEUS_DETAIL" not in snapshot.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_alertmanager_and_tempo_use_authenticated_grafana_surfaces() -> None:
+    class HealthyOperatorReader(FakePrometheusReader):
+        async def scalar(self, query: str, *, at: datetime) -> float | None:
+            if "alertmanager" in query or "tempo" in query:
+                assert at == FIXED_NOW
+                self.queries.append(query)
+                return 1
+            return await super().scalar(query, at=at)
+
+    operation_id = uuid4()
+    adapter = PrometheusObservabilityAdminAdapter(
+        HealthyOperatorReader(),
+        config=PrometheusObservabilityConfig(
+            links=ObservabilityLinkConfig(
+                component_urls={
+                    "alertmanager": "https://observe.example.invalid/admin/observability/grafana/alerting/silences",
+                    "tempo": "https://observe.example.invalid/admin/observability/grafana/explore",
+                },
+                allowed_hosts=frozenset({"observe.example.invalid"}),
+            ),
+            installed_overrides={"alertmanager": True, "tempo": True},
+            datasource_uids={
+                "alertmanager": "fs2-r0123456789-alertmanager",
+                "tempo": "fs2-r0123456789-tempo",
+            },
+        ),
+        clock=lambda: FIXED_NOW,
+    )
+
+    snapshot = await adapter.snapshot(context=_context(), model_id="qwen3-8b", operation_id=operation_id)
+    components = {component.id: component for component in snapshot.data.components}
+
+    alertmanager_url = components["alertmanager"].launch.url
+    assert components["alertmanager"].health == AdminCapabilityHealth.HEALTHY
+    assert alertmanager_url is not None
+    parsed_alertmanager = urlsplit(alertmanager_url)
+    assert parsed_alertmanager.path.endswith("/grafana/alerting/silences")
+    assert parse_qs(parsed_alertmanager.query)["alertmanager"] == ["fs2-r0123456789-alertmanager"]
+
+    tempo_url = components["tempo"].launch.url
+    assert components["tempo"].health == AdminCapabilityHealth.HEALTHY
+    assert tempo_url is not None
+    parsed = urlsplit(tempo_url)
+    assert parsed.path.endswith("/grafana/explore")
+    query = parse_qs(parsed.query)
+    assert query["schemaVersion"] == ["1"]
+    assert query["orgId"] == ["1"]
+    assert set(query) == {"orgId", "panes", "schemaVersion"}
+    pane = json.loads(query["panes"][0])["trace"]
+    assert pane["datasource"] == "fs2-r0123456789-tempo"
+    assert pane["queries"] == [
+        {
+            "datasource": {"type": "tempo", "uid": "fs2-r0123456789-tempo"},
+            "limit": 20,
+            "query": (f'{{ span."fs2.model.id" = "qwen3-8b" && span."fs2.operation.id" = "{operation_id}" }}'),
+            "queryType": "traceql",
+            "refId": "A",
+            "tableType": "traces",
+        }
+    ]
+    assert pane["range"] == {
+        "from": str(int(_context().from_at.timestamp() * 1000)),
+        "to": str(int(_context().to_at.timestamp() * 1000)),
+    }
+
+
+def test_datasource_backed_launch_requires_a_provisioned_identity() -> None:
+    config = PrometheusObservabilityConfig(
+        links=ObservabilityLinkConfig(
+            component_urls={
+                "alertmanager": "https://observe.example.invalid/admin/observability/grafana/alerting/silences",
+                "tempo": "https://observe.example.invalid/admin/observability/grafana/explore",
+            },
+            allowed_hosts=frozenset({"observe.example.invalid"}),
+        ),
+        installed_overrides={"tempo": True},
+    )
+    assert config.links is not None
+    assert (
+        config.links.contextual_url(
+            "tempo",
+            datasource_uid=None,
+            project="project-test",
+            cluster="cluster-test",
+            region="region-test",
+            from_at=_context().from_at,
+            to_at=_context().to_at,
+            model_id=None,
+            operation_id=None,
+        )
+        is None
+    )
+    assert (
+        config.links.contextual_url(
+            "alertmanager",
+            datasource_uid=None,
+            project="project-test",
+            cluster="cluster-test",
+            region="region-test",
+            from_at=_context().from_at,
+            to_at=_context().to_at,
+            model_id=None,
+            operation_id=None,
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio

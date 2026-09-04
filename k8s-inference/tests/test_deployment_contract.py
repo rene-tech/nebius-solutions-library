@@ -384,6 +384,67 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("at most 63 characters", result.stderr)
 
+    def test_alertmanager_is_a_tfvars_only_foundation_contract(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-alertmanager-contract",
+            "target": self.catalog_target(),
+            "observability": {
+                "grafana": {"publish_external": True},
+                "alertmanager": {
+                    "enabled": True,
+                    "retention": "240h",
+                    "storage": {
+                        "storage_class_name": "compute-csi-default-sc",
+                        "size_gib": 20,
+                    },
+                },
+            },
+            "edge": {
+                "mode": "public",
+                "source_cidrs": ["192.0.2.0/24"],
+                "acme_email": "operator@example.invalid",
+            },
+        }
+        variable_file = self._write_configuration("alertmanager-contract", deployment)
+        outputs = self._planned_outputs(variable_file, "alertmanager-contract")
+
+        expected = deployment["observability"]["alertmanager"]
+        self.assertEqual(
+            outputs["deployment_contract"]["stages"]["foundation"]["alertmanager"],
+            expected,
+        )
+        self.assertEqual(
+            outputs["effective_configuration"]["observability"]["alertmanager"],
+            {
+                "enabled": True,
+                "retention": "240h",
+                "storage_class_name": "compute-csi-default-sc",
+                "storage_size_gib": 20,
+            },
+        )
+
+    def test_invalid_alertmanager_storage_and_retention_are_rejected_at_root(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-alertmanager-invalid",
+            "target": self.catalog_target(),
+            "observability": {
+                "alertmanager": {
+                    "enabled": True,
+                    "retention": "forever",
+                    "storage": {
+                        "storage_class_name": "INVALID_CLASS",
+                        "size_gib": 0,
+                    },
+                }
+            },
+        }
+        variable_file = self._write_configuration("alertmanager-invalid", deployment)
+        result, _ = self._plan_file(variable_file, "alertmanager-invalid")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertRegex(result.stderr, r"positive bounded Go\s+duration")
+
     def test_root_rejects_forbidden_kueue_flavor_preference_before_stages(self) -> None:
         deployment = {
             "schema_version": 1,
