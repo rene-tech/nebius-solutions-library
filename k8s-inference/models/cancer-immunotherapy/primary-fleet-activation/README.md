@@ -22,18 +22,19 @@ The activation state is fail closed:
   those controller-only fields are intentionally outside the public profile
   projection because the current public schema cannot express them.
 * Mosaic and RFdiffusion have canonical public generations. Their activation
-  fragments still pin the previously accepted single-root images, while the
-  split-root successors are published and await serialized lock/profile
-  integration plus live controller qualification.
+  fragments and serialized candidate profiles pin the split-root v6 and r13
+  images that passed their bounded H100 image-level workflows. Public routes
+  remain closed until the same identities pass controller submission,
+  collection, and scheduler qualification.
 * Every projected profile is `candidate-unqualified`, every route and MCP
   invocation flag remains off, and a real public controller run is required
   before promotion.
 
-Mosaic and RFdiffusion now have canonical localization generations and reviewed
-controller compilers/collectors. The old accepted-image path mismatch, exact
-published successor identities, and remaining promotion gates are recorded in
+Mosaic and RFdiffusion now have canonical localization generations, reviewed
+controller compilers/collectors, and exact successor-image H100 evidence. The
+historical accepted-image mismatch and remaining public promotion gates are recorded in
 [`CONTROLLER_INTEGRATION_GAPS.md`](CONTROLLER_INTEGRATION_GAPS.md). They remain
-route-disabled; model-local semantic evidence is not a serialized companion run.
+route-disabled; image-level semantic evidence is not a public companion run.
 
 Every fragment also records the exact integration source revision and complete
 runtime-recipe path set. `fs2-path-set-sha256-v1` is byte-for-byte the control

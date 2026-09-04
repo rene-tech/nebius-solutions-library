@@ -8,7 +8,7 @@
   "completed_at": "2026-09-04T00:00:00Z",
   "execution_identity": {
     "model_id": "proteina-complexa",
-    "variant_id": "proteina-complexa-all-variants-v1",
+    "variant_id": "upstream-dev-20260827",
     "model_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
     "runtime_image_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
     "runtime_recipe_sha256": "3f28faf246dda24e2c13c6a9ffc9699ae261b5a594e5178c6519e5ca88bfd4e7",

@@ -8,10 +8,10 @@
       "license": "MIT"
     },
     "runtime_image": {
-      "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
-      "digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+      "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
+      "digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
       "lock_path": "models/cancer-immunotherapy/runtime-images/mosaic/image-lock.json",
-      "digest_evidence_path": "models/cancer-immunotherapy/runtime-images/mosaic/evidence/h100-semantic-qualification.json"
+      "digest_evidence_path": "models/cancer-immunotherapy/runtime-images/mosaic/image-lock.json"
     },
     "runtime_recipe": {
       "source_revision": "003064c440c4ab198bf96957e435a7aac8da6800",
@@ -41,6 +41,7 @@
       "state": "semantic-qualified-route-disabled",
       "accelerator_class": "nvidia-h100-sxm5-80gb",
       "evidence_paths": [
+        "models/cancer-immunotherapy/runtime-images/mosaic/evidence/h100-v6-split-root-qualification-20260904.json",
         "models/cancer-immunotherapy/runtime-images/mosaic/evidence/h100-canonical-generation-run-20260904.json",
         "models/cancer-immunotherapy/runtime-images/mosaic/evidence/h100-run-receipt.json",
         "models/cancer-immunotherapy/runtime-images/mosaic/evidence/h100-semantic-qualification.json"
@@ -68,7 +69,7 @@
       },
       "execution_identity": {
         "model_revision": "70fec525423f5e87156a1a957b4a4048f9f8e676",
-        "runtime_image_digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+        "runtime_image_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
         "runtime_recipe_sha256": "15fc35e486f39b4132029568ef0cbee0a9d345dac6f3f286517c96ffe9ce71c5",
         "workload_recipe_sha256": "601fa6b79b49ab517fa0d9c260733550e09f6fed25968046c88efe2a9c0b9d42",
         "artifact_manifest_digest": null,
@@ -160,8 +161,8 @@
         "commercial_use": "allowed",
         "non_clinical": true,
         "limitations": [
-          "The accepted image passed one bounded H100 semantic workflow against the canonical localization generations; earlier evidence read a transitional qualification claim.",
-          "Route activation remains disabled until the serialized platform controller run succeeds; this fragment claims localization and semantics only."
+          "The exact adapter-v6 successor digest passed its bounded design and aggregate workflow on a real H100 with independent request and model-artifact roots; adapter-v5 evidence remains only a separately reproduced baseline.",
+          "Route activation remains disabled until this serialized platform controller workflow completes public submission, collection, and scheduling qualification."
         ]
       }
     }
@@ -233,7 +234,7 @@
       {
         "id": "design",
         "resource_class": "gpu",
-        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
         "runtime_artifacts": [
           "mosaic-boltz2-conf",
           "boltzgen-inference-molecules",
@@ -256,7 +257,7 @@
       {
         "id": "aggregate",
         "resource_class": "cpu",
-        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
         "runtime_artifacts": [],
         "placement": {
           "accelerator_classes": [],

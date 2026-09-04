@@ -66,7 +66,12 @@
           "additionalProperties": false,
           "required": ["state", "accelerator_class", "evidence_paths"],
           "properties": {
-            "state": {"const": "semantic-qualified-route-disabled"},
+            "state": {
+              "enum": [
+                "semantic-qualified-route-disabled",
+                "published-successor-awaiting-h100-controller-qualification"
+              ]
+            },
             "accelerator_class": {"const": "nvidia-h100-sxm5-80gb"},
             "evidence_paths": {
               "type": "array",

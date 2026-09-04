@@ -193,7 +193,7 @@
   "execution_projection": {
     "merge_target": "catalog/runtime/contracts/scientific-execution-map.json",
     "state": "ready-for-serialized-integration",
-    "variant_id": "proteina-complexa-all-variants-v1",
+    "variant_id": "upstream-dev-20260827",
     "namespace": "fs2-models",
     "runtime_artifacts": [
       {
@@ -250,7 +250,7 @@
       {
         "artifact_id": "rosettafold3-checkpoint",
         "state": "ready",
-        "mount_path": "/opt/fs2/artifacts/rosettafold3",
+        "mount_path": "/opt/fs2/artifacts/rosettafold3-checkpoint",
         "content_digest": "sha256:d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
         "generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
         "source": {

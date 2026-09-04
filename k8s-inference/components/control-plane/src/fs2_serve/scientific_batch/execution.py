@@ -299,7 +299,13 @@ class FileScientificManifestRenderer:
             if module != "fs2_serve.scientific_batch.adapters" or function != "compile_adapter_run":
                 raise ScientificExecutionMapError("scientific plan adapter is outside the packaged adapter namespace")
             plan_adapters[model_id] = (module, function)
-            profile = profiles.get(model_id)
+            # A closed candidate may carry a fully rendered execution contract
+            # before it has the live receipts required to become runnable.  The
+            # service still resolves submission profiles with ``runnable=True``;
+            # loading the operator map here must not turn a candidate into a
+            # route, but it does let operators validate the exact future Job
+            # shape before promotion.
+            profile = profiles.get(model_id, runnable=False)
             profile_access = _object(profile.value["access"], "profile access identity")
             expected_access_profile = "academic" if profile_access.get("profile") == "academic" else "public"
             access_profile = model.get("access_profile", expected_access_profile)
@@ -321,10 +327,13 @@ class FileScientificManifestRenderer:
                     "localization_receipt_digest",
                 }
                 identity_fields = set(artifact) - {"verification_receipt"}
-                if identity_fields not in (
-                    base_fields | {"file_manifest"},
-                    base_fields | {"aggregate_tree"},
-                ) or set(artifact) - identity_fields not in (set(), {"verification_receipt"}):
+                evidence_fields = identity_fields - base_fields
+                if (
+                    not base_fields.issubset(identity_fields)
+                    or not evidence_fields
+                    or not evidence_fields.issubset({"file_manifest", "aggregate_tree"})
+                    or set(artifact) - identity_fields not in (set(), {"verification_receipt"})
+                ):
                     raise ScientificExecutionMapError("runtime artifact localization fields differ")
                 artifact_id = _bounded_string(artifact["artifact_id"], "runtime artifact ID", maximum=128)
                 key = (model_id, artifact_id)
@@ -450,7 +459,13 @@ class FileScientificManifestRenderer:
                     raise ScientificExecutionMapError("scientific execution stage identity is invalid")
                 image = stage["image"]
                 image_digest = identity["runtime_image_digest"]
-                if not isinstance(image, str) or len(image) > 1024 or not image.endswith(f"@{image_digest}"):
+                if (
+                    not isinstance(image_digest, str)
+                    or re.fullmatch(r"sha256:[a-f0-9]{64}", image_digest) is None
+                    or not isinstance(image, str)
+                    or len(image) > 1024
+                    or not image.endswith(f"@{image_digest}")
+                ):
                     raise ScientificExecutionMapError("execution image is not the profile's immutable digest")
                 collector_id = _bounded_string(stage["collector_id"], "scientific collector ID", maximum=128)
                 if re.fullmatch(r"[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?", collector_id) is None:
@@ -636,11 +651,11 @@ class FileScientificManifestRenderer:
                 )
                 if model_id == "bindcraft":
                     by_path = {mount.mount_path: mount for mount in mounts}
-                    required_paths = {
-                        "/models/alphafold2",
-                        BINDCRAFT_PYROSETTA_PATH,
-                        *BINDCRAFT_MPNN_TARGETS.values(),
-                    }
+                    required_paths = {"/models/alphafold2", BINDCRAFT_PYROSETTA_PATH}
+                    if stage_id == "design":
+                        required_paths.update(BINDCRAFT_MPNN_TARGETS.values())
+                    elif stage_id != "aggregate":
+                        raise ScientificExecutionMapError("BindCraft execution stage is unsupported")
                     if not required_paths.issubset(by_path):
                         raise ScientificExecutionMapError("BindCraft is missing an exact runtime artifact target")
                 executions[(model_id, stage_id)] = StageExecution(
@@ -668,6 +683,10 @@ class FileScientificManifestRenderer:
                     environment=cast(Mapping[str, str], environment),
                     required_node_labels=cast(Mapping[str, str], required_node_labels),
                 )
+        # Every serialized model, including a fail-closed candidate, must cover
+        # its own profile DAG exactly.  Separately, every runnable profile must
+        # be serialized.  This permits pre-promotion Job validation without
+        # weakening the public dispatch gate.
         expected: set[tuple[str, str]] = set()
         for profile in profiles.list():
             workload = _object(profile.value["workload"], "scientific profile workload")
@@ -680,8 +699,26 @@ class FileScientificManifestRenderer:
                 if not isinstance(stage_id, str):
                     raise ScientificExecutionMapError("scientific profile stage ID is invalid")
                 expected.add((profile.model_id, stage_id))
-        if set(executions) != expected:
+        if not expected.issubset(executions):
             raise ScientificExecutionMapError("execution map must cover every runnable profile stage exactly")
+        for model_id in variants:
+            profile = profiles.get(model_id, runnable=False)
+            workload = _object(profile.value["workload"], "scientific profile workload")
+            stages = workload.get("stages")
+            if not isinstance(stages, list):
+                raise ScientificExecutionMapError("scientific profile stages are invalid")
+            serialized = {
+                (candidate_model, stage_id)
+                for candidate_model, stage_id in executions
+                if candidate_model == model_id
+            }
+            declared: set[tuple[str, str]] = set()
+            for raw_stage in stages:
+                if not isinstance(raw_stage, Mapping) or not isinstance(raw_stage.get("id"), str):
+                    raise ScientificExecutionMapError("scientific profile stage ID is invalid")
+                declared.add((model_id, cast(str, raw_stage["id"])))
+            if len(declared) != len(stages) or serialized != declared:
+                raise ScientificExecutionMapError("execution map must cover each serialized profile stage exactly")
         self.executions = executions
         self.variants = MappingProxyType(variants)
         self.workload_namespaces = MappingProxyType(workload_namespaces)

@@ -154,18 +154,20 @@ class PrimaryActivationFragmentTests(unittest.TestCase):
             activation.PROFILE_SCHEMA.parent.parent
             / "contracts/scientific-workload-profiles.json"
         )
-        canonical = next(
-            item
-            for item in profiles["profiles"]
-            if item["model_id"] == "proteina-complexa"
-        )
-        fragment = activation.load_json(activation.FRAGMENTS["proteina-complexa"])
-        self.assertEqual(
-            fragment["profile_projection"]["profile"]["execution_identity"][
-                "runtime_recipe_sha256"
-            ],
-            canonical["execution_identity"]["runtime_recipe_sha256"],
-        )
+        canonical_by_id = {item["model_id"]: item for item in profiles["profiles"]}
+        for model_id, path in activation.FRAGMENTS.items():
+            with self.subTest(serialized_identity=model_id):
+                fragment = activation.load_json(path)
+                projected = fragment["profile_projection"]["profile"]["execution_identity"]
+                canonical = canonical_by_id[model_id]["execution_identity"]
+                self.assertEqual(
+                    projected["runtime_recipe_sha256"],
+                    canonical["runtime_recipe_sha256"],
+                )
+                self.assertEqual(
+                    projected["workload_recipe_sha256"],
+                    canonical["workload_recipe_sha256"],
+                )
 
     def test_shared_aggregates_carry_no_authored_change(self) -> None:
         self.assertEqual(activation.validate_no_aggregate_edits(), [])

@@ -168,7 +168,7 @@
   "execution_projection": {
     "merge_target": "catalog/runtime/contracts/scientific-execution-map.json",
     "state": "ready-for-serialized-integration",
-    "variant_id": "bindcraft-v1-5-3-pyrosetta-academic",
+    "variant_id": "v1-5-3-pyrosetta-academic",
     "namespace": "fs2-academic-poc",
     "runtime_artifacts": [
       {

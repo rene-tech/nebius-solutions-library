@@ -8,10 +8,10 @@
       "license": "BSD-3-Clause"
     },
     "runtime_image": {
-      "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
-      "digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+      "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+      "digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
       "lock_path": "models/cancer-immunotherapy/runtime-images/rfdiffusion/image-lock.json",
-      "digest_evidence_path": "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-run-receipt.json"
+      "digest_evidence_path": "models/cancer-immunotherapy/runtime-images/rfdiffusion/image-lock.json"
     },
     "runtime_recipe": {
       "source_revision": "003064c440c4ab198bf96957e435a7aac8da6800",
@@ -41,6 +41,7 @@
       "state": "semantic-qualified-route-disabled",
       "accelerator_class": "nvidia-h100-sxm5-80gb",
       "evidence_paths": [
+        "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-r13-split-root-qualification-20260904.json",
         "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-canonical-generation-run-20260904.json",
         "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-run-receipt.json",
         "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-semantic-qualification-design-backbone.json",
@@ -70,7 +71,7 @@
       },
       "execution_identity": {
         "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
-        "runtime_image_digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+        "runtime_image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
         "runtime_recipe_sha256": "a43cb088e08278e089433bdd8816b14ac94d7cc490dfb7ec9a771498da0941dc",
         "workload_recipe_sha256": "548da3b7c5dd5868d7e8adaf64b4dcc0bb2e89b3611f324eb6701478bb76cb5e",
         "artifact_manifest_digest": null,
@@ -163,8 +164,8 @@
         "commercial_use": "allowed",
         "non_clinical": true,
         "limitations": [
-          "The accepted digest passed design-backbone and scaffold-motif semantic tests on H100 against the canonical rfdiffusion-base-checkpoint generation, reproducing both committed structures byte for byte.",
-          "Route activation remains disabled until the serialized platform controller run succeeds; this fragment claims localization and semantics only."
+          "The exact r13 successor digest passed both operations on real H100 nodes with independent request and checkpoint roots; historical r12 evidence is retained only as a separately reproduced baseline.",
+          "Route activation remains disabled until this serialized platform controller workflow completes public submission, collection, and scheduling qualification."
         ]
       }
     }
@@ -200,7 +201,7 @@
       {
         "id": "inference",
         "resource_class": "gpu",
-        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
         "runtime_artifacts": [
           "rfdiffusion-base-checkpoint"
         ],
@@ -221,7 +222,7 @@
       {
         "id": "collect",
         "resource_class": "cpu",
-        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
         "runtime_artifacts": [],
         "placement": {
           "accelerator_classes": [],

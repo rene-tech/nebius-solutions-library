@@ -1087,9 +1087,15 @@ def test_committed_scientific_profile_binds_exact_helm_execution_map_bytes() -> 
     profiles_by_id = {item["model_id"]: item for item in profiles}
     for map_model in execution_map["models"]:
         profile = profiles_by_id[map_model["model_id"]]
-        assert profile["qualification"]["execution_map_sha256"] == rendered_sha256
-
         identity = profile["execution_identity"]
+        if profile["state"] == "candidate-unqualified":
+            assert "qualification" not in profile
+            assert identity["artifact_manifest_digest"] is None
+            assert identity["execution_identity_sha256"] is None
+            assert map_model["execution_identity_sha256"] is None
+            continue
+
+        assert profile["qualification"]["execution_map_sha256"] == rendered_sha256
         identity_payload = {key: value for key, value in identity.items() if key != "execution_identity_sha256"}
         expected_identity = hashlib.sha256(
             json.dumps(identity_payload, separators=(",", ":"), sort_keys=True).encode()

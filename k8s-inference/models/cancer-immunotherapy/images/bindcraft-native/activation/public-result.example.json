@@ -8,7 +8,7 @@
   "completed_at": "2026-09-04T00:00:00Z",
   "execution_identity": {
     "model_id": "bindcraft",
-    "variant_id": "bindcraft-v1-5-3-pyrosetta-academic",
+    "variant_id": "v1-5-3-pyrosetta-academic",
     "model_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
     "runtime_image_digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
     "runtime_recipe_sha256": "87242bab8728227eb1ff67ee14da22fdfb0b89f5a4a267efa37a00074edc917e",
