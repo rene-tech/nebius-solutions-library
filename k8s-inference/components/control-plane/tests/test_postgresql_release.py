@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import inspect
 import json
 import shutil
 from pathlib import Path
@@ -31,9 +32,9 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0020_scientific_atomic_admission.sql",
-        "migration_count": 20,
-        "migration_set_sha256": "e421f609ef10fe5c486f36d6f25a8cb803ce02d1fbb7b0e3ed660f9e1757eefa",
+        "last_migration_version": "0021_scientific_admission_outbox_runtime_grant.sql",
+        "migration_count": 21,
+        "migration_set_sha256": "e4bc9dd323d92fb1c7593f69359e96396f3e81ad142463031fad1106df34387c",
         "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
@@ -41,6 +42,22 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     assert migrations[0]["version"] == receipt["first_migration_version"]
     assert migrations[-1]["version"] == receipt["last_migration_version"]
     assert [migration["ordinal"] for migration in migrations] == list(range(1, receipt["migration_count"] + 1))
+
+
+def test_outbox_runtime_grant_repair_is_additive_and_readiness_checked() -> None:
+    sql = (MIGRATIONS / "0021_scientific_admission_outbox_runtime_grant.sql").read_text(encoding="utf-8")
+    normalized = " ".join(sql.split())
+    assert "IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'fs2_serve_runtime')" in normalized
+    assert (
+        "GRANT SELECT, INSERT, DELETE ON TABLE fs2_scientific_admission_outbox TO fs2_serve_runtime"
+        in normalized
+    )
+
+    wait_source = inspect.getsource(PostgresStore.wait_for_schema)
+    assert "has_table_privilege('fs2_serve_runtime'" in wait_source
+    assert "has_table_privilege(current_user" in wait_source
+    assert "fs2_scientific_admission_outbox','SELECT,INSERT,DELETE'" in wait_source
+    assert "database schema runtime privileges are incomplete" in wait_source
 
 
 @pytest.mark.parametrize("mutation", ["missing", "extra", "renamed", "changed", "symlink"])

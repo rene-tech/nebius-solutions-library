@@ -8,6 +8,7 @@ import shutil
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote, urlsplit, urlunsplit
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -843,6 +844,105 @@ async def test_migration_and_schema_wait_entrypoints_need_only_database_credenti
         PostgresStore.migrate_database(database_url, migrations_dir),
     )
     await PostgresStore.wait_for_schema(database_url, migrations_dir, timeout_seconds=1)
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_outbox_grant_migration_repairs_drift_and_runtime_wait_checks_effective_acl(
+    postgres_store: PostgresStore,
+) -> None:
+    del postgres_store
+    database_url = os.environ["FS2_TEST_DATABASE_URL"]
+    admin_url, _ = database_url.rsplit("/", 1)
+    suffix = uuid4().hex[:10]
+    database_name = f"fs2_outbox_grant_{suffix}"
+    runtime_login = f"fs2_outbox_runtime_{suffix}"
+    runtime_password = uuid4().hex
+    runtime_role_created = False
+    admin = await asyncpg.connect(database_url)
+    try:
+        await admin.execute(f'CREATE DATABASE "{database_name}"')
+        await admin.execute(
+            f'CREATE ROLE "{runtime_login}" LOGIN PASSWORD \'{runtime_password}\' '
+            'IN ROLE "fs2_serve_runtime"'
+        )
+        runtime_role_created = True
+        upgrade_url = f"{admin_url}/{database_name}"
+        parsed = urlsplit(upgrade_url)
+        hostname = parsed.hostname
+        assert hostname is not None
+        host = f"[{hostname}]" if ":" in hostname else hostname
+        port = f":{parsed.port}" if parsed.port is not None else ""
+        runtime_url = urlunsplit(
+            (
+                parsed.scheme,
+                f"{quote(runtime_login, safe='')}:{quote(runtime_password, safe='')}@{host}{port}",
+                parsed.path,
+                parsed.query,
+                parsed.fragment,
+            )
+        )
+
+        before = await asyncpg.connect(upgrade_url)
+        try:
+            await before.execute(
+                """
+                CREATE TABLE fs2_schema_migrations (
+                    version text PRIMARY KEY,
+                    sha256 char(64) NOT NULL,
+                    applied_at timestamptz NOT NULL DEFAULT clock_timestamp()
+                )
+                """
+            )
+            for version, digest in EXPECTED_MIGRATIONS[:-1]:
+                await before.execute((CONTROL_ROOT / "migrations" / version).read_text(encoding="utf-8"))
+                await before.execute(
+                    "INSERT INTO fs2_schema_migrations(version,sha256) VALUES($1,$2)",
+                    version,
+                    digest,
+                )
+            await before.execute(
+                "REVOKE ALL ON fs2_scientific_admission_outbox FROM fs2_serve_runtime"
+            )
+            assert not await before.fetchval(
+                "SELECT has_table_privilege('fs2_serve_runtime',"
+                "'fs2_scientific_admission_outbox','SELECT,INSERT,DELETE')"
+            )
+        finally:
+            await before.close()
+
+        await PostgresStore.migrate_database(upgrade_url, CONTROL_ROOT / "migrations")
+        migrated = await asyncpg.connect(upgrade_url)
+        try:
+            assert await migrated.fetchval(
+                "SELECT version FROM fs2_schema_migrations ORDER BY applied_at DESC LIMIT 1"
+            ) == "0021_scientific_admission_outbox_runtime_grant.sql"
+            for role in ("fs2_serve_runtime", runtime_login):
+                assert await migrated.fetchval(
+                    "SELECT has_table_privilege($1,'fs2_scientific_admission_outbox',"
+                    "'SELECT,INSERT,DELETE')",
+                    role,
+                )
+                assert not await migrated.fetchval(
+                    "SELECT has_table_privilege($1,'fs2_scientific_admission_outbox','UPDATE,TRUNCATE')",
+                    role,
+                )
+            await migrated.execute(
+                "REVOKE ALL ON fs2_scientific_admission_outbox FROM fs2_serve_runtime"
+            )
+        finally:
+            await migrated.close()
+
+        with pytest.raises(RuntimeError, match="database schema runtime privileges are incomplete"):
+            await PostgresStore.wait_for_schema(runtime_url, CONTROL_ROOT / "migrations", timeout_seconds=1)
+
+        await PostgresStore.migrate_database(upgrade_url, CONTROL_ROOT / "migrations")
+        await PostgresStore.wait_for_schema(runtime_url, CONTROL_ROOT / "migrations", timeout_seconds=1)
+    finally:
+        await admin.execute(f'DROP DATABASE IF EXISTS "{database_name}" WITH (FORCE)')
+        if runtime_role_created:
+            await admin.execute(f'DROP ROLE IF EXISTS "{runtime_login}"')
+        await admin.close()
 
 
 @pytest.mark.postgres
