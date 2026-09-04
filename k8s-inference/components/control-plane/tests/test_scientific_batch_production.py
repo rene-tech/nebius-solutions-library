@@ -679,6 +679,74 @@ async def test_wrapped_scheduling_failure_is_logged_with_its_chain_but_not_retur
 
 
 @pytest.mark.asyncio
+async def test_runtime_binding_failure_is_preflighted_logged_and_returned_as_sanitized_503(
+    registry,
+    cipher,
+    hasher,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    runtime, _, _, _, pointer = scientific_runtime(registry, cipher, hasher)
+    assert runtime.scientific_batches is not None
+    cause = "injected exact execution-map binding cause"
+
+    def reject_binding(*_: Any, **__: Any) -> AdapterExecutionPlan:
+        raise ScientificExecutionMapError(cause)
+
+    monkeypatch.setattr(runtime.scientific_batches.execution_binding, "bind_runtime_artifacts", reject_binding)
+    issued = await runtime.tokens.issue(
+        TokenCreate(
+            principal_id="scientist-a",
+            tenant_id="tenant-a",
+            scopes={Scope.INFERENCE_INVOKE},
+            models={"protein-design"},
+            max_concurrency=1,
+        ),
+        created_by="test",
+    )
+    request = {
+        "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "operation": "design",
+        "service_class": "customer-batch",
+        "input_manifest": pointer,
+        "parameters": {},
+    }
+    caplog.set_level(logging.WARNING, logger="fs2_serve.scientific_batch")
+    app = create_app(runtime)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="https://inference.test.invalid",
+            headers={"authorization": f"Bearer {issued.token}"},
+        ) as client:
+            response = await client.post(
+                "/v1/models/protein-design:submit",
+                headers={"idempotency-key": "scientific-binding-log-chain-0001"},
+                json=request,
+            )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "error": {
+            "type": "scientific_profile_unavailable",
+            "message": "scientific workload profile is unavailable",
+        }
+    }
+    assert cause not in response.text
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "fs2_serve.scientific_batch"
+        and record.getMessage().startswith("scientific profile unavailable method=POST")
+    ]
+    assert len(records) == 1
+    rendered_log = logging.Formatter("%(message)s").format(records[0])
+    assert cause in rendered_log
+    assert "ScientificExecutionMapError" in rendered_log
+    assert "ScientificProfileError: scientific runtime binding cannot admit this profile" in rendered_log
+
+
+@pytest.mark.asyncio
 async def test_scientific_discovery_is_submittability_and_token_policy_filtered(registry, cipher, hasher) -> None:
     runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
     assert runtime.scientific_batches is not None

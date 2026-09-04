@@ -478,11 +478,25 @@ class ScientificBatchService:
         except CatalogProfileAdapterError as error:
             raise ScientificProfileError("scientific workload profile cannot form an execution plan") from error
         plan = preflight.controller_plan if isinstance(preflight, AdapterExecutionPlan) else preflight
-        runtime_artifacts = (
-            self.execution_binding.verify_runtime_artifacts(profile, preflight, access_context)
-            if isinstance(preflight, AdapterExecutionPlan)
-            else ()
-        )
+        try:
+            runtime_artifacts = (
+                self.execution_binding.verify_runtime_artifacts(profile, preflight, access_context)
+                if isinstance(preflight, AdapterExecutionPlan)
+                else ()
+            )
+            if isinstance(preflight, AdapterExecutionPlan):
+                # Complete the operator-owned binding before durable admission.
+                # Repeating this with the real operation identity below proves
+                # that the adapter topology remains stable without allowing an
+                # expected execution-map contract error to escape as HTTP 500.
+                self.execution_binding.bind_runtime_artifacts(
+                    profile,
+                    preflight,
+                    access_context,
+                    runtime_artifacts,
+                )
+        except CatalogProfileAdapterError as error:
+            raise ScientificProfileError("scientific runtime binding cannot admit this profile") from error
         possible_attempts = sum(len(stage.workload_units) * stage.max_attempts for stage in plan.stages)
         if possible_attempts > self.profiles.max_result_attempts:
             raise ScientificProfileError("scientific plan exceeds the canonical public result attempt bound")
@@ -529,12 +543,15 @@ class ScientificBatchService:
             if isinstance(admitted_execution, AdapterExecutionPlan):
                 if admitted_execution.controller_plan != plan:
                     raise ScientificProfileError("adapter changed stage topology after durable admission")
-                execution_plan = self.execution_binding.bind_runtime_artifacts(
-                    profile,
-                    admitted_execution,
-                    access_context,
-                    runtime_artifacts,
-                )
+                try:
+                    execution_plan = self.execution_binding.bind_runtime_artifacts(
+                        profile,
+                        admitted_execution,
+                        access_context,
+                        runtime_artifacts,
+                    )
+                except CatalogProfileAdapterError as error:
+                    raise ScientificProfileError("scientific runtime binding changed during admission") from error
             else:
                 execution_plan = None
             return state_to_value(
