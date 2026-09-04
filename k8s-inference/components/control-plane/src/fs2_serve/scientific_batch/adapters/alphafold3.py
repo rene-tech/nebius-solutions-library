@@ -51,7 +51,7 @@ SOURCE_REVISION = "85c4d20505fd5cef05eac22b534d4e793971ae69"
 PARAMETER_SCHEMA = "fs2-serve.nebius.ai/alphafold3-upstream-v3-0-4-parameters/v1"
 VALIDATOR_ID = "alphafold3-upstream-v3-0-4"
 
-RUNTIME_IMAGE_DIGEST = "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e"
+RUNTIME_IMAGE_DIGEST = "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7"
 RUNTIME_COMMAND = ("/alphafold3_venv/bin/python3", "/opt/fs2/af3_runtime.py")
 
 PARAMETERS_ARTIFACT = "alphafold3-parameters"

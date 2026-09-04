@@ -17,7 +17,7 @@
     },
     "execution_identity": {
       "model_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
-      "runtime_image_digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
+      "runtime_image_digest": "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
       "runtime_recipe_sha256": null,
       "workload_recipe_sha256": null,
       "artifact_manifest_digest": null,
@@ -55,8 +55,8 @@
         "amd64"
       ],
       "compatible_pool_ids": [
-        "h100-1x",
-        "h100-reserved-8x"
+        "h100-reserved-8x",
+        "h100-1x"
       ],
       "required_node_labels": {
         "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
@@ -133,7 +133,7 @@
       "commercial_use": "prohibited",
       "non_clinical": true,
       "limitations": [
-        "The exact r6 image has H100 semantic evidence but predates atomic terminal receipts and the aligned 256 MiB handoff protocol. Activation requires a newly built immutable successor plus a raw-input run through the public path and live-qualified renderer.",
+        "Image sha256:ecc3e735...a85e7 is the published, production-protocol-compatible r7 successor; it remains unqualified until exact-digest H100 parameter-load and inference evidence, a raw-input run through the public path, and a live-qualified renderer exist.",
         "The licensed parameter file remains tenant-private and is authorized once by the deployment; callers do not provide a per-request license receipt. Formal institutional licence acceptance is still pending.",
         "Raw-input preprocessing runs only in the 16 CPU, 64 GiB reference-data class; the live reference pool nodes are 8 vCPU / 32 GiB and cannot admit it until a larger reference class exists.",
         "OpenFold3 is an independent operational alternative and never satisfies an alphafold3 request."

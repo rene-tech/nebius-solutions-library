@@ -17,7 +17,7 @@
     },
     "execution_identity": {
       "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
-      "runtime_image_digest": "sha256:ba55b9bb418d9714b21634c9fd6281f678529042bc3d0b8f06f184fa314a2577",
+      "runtime_image_digest": "sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
       "runtime_recipe_sha256": null,
       "workload_recipe_sha256": null,
       "artifact_manifest_digest": null,
@@ -57,8 +57,8 @@
         "amd64"
       ],
       "compatible_pool_ids": [
-        "h100-1x",
-        "h100-reserved-8x"
+        "h100-reserved-8x",
+        "h100-1x"
       ],
       "required_node_labels": {
         "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
@@ -135,7 +135,7 @@
       "commercial_use": "allowed",
       "non_clinical": true,
       "limitations": [
-        "Image sha256:ba55b9bb...a2577 is a build-only -h100-r4 candidate; it has no exact-artifact semantic H100 evidence.",
+        "Image sha256:fc7b8687...702e0 is the published, protocol-compatible -h100-r5 successor; it remains build-only and has no exact-artifact semantic H100 evidence.",
         "ESMFold2-Fast is a distinct model identity that shares code with ESMFold2 but not its trunk; every MSA mode is rejected before GPU admission.",
         "The fast trunk, ESMC-6B and CCD artifacts are catalog manifests without a localization generation or node admission receipt."
       ]

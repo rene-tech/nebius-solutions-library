@@ -17,7 +17,7 @@
     },
     "execution_identity": {
       "model_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
-      "runtime_image_digest": null,
+      "runtime_image_digest": "sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de",
       "runtime_recipe_sha256": null,
       "workload_recipe_sha256": null,
       "artifact_manifest_digest": null,
@@ -55,8 +55,8 @@
         "amd64"
       ],
       "compatible_pool_ids": [
-        "h100-1x",
-        "h100-reserved-8x"
+        "h100-reserved-8x",
+        "h100-1x"
       ],
       "required_node_labels": {
         "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
@@ -133,7 +133,7 @@
       "commercial_use": "allowed",
       "non_clinical": true,
       "limitations": [
-        "The published h100-r4 image is intentionally rejected because its runtime files are unreadable by UID 10001; activation requires the independently corrected r5 digest.",
+        "Image sha256:3686e530...93b1de is the published, protocol-compatible -h100-r5 successor and runs as UID/GID 10001:10001; it remains build-only and has no exact-artifact semantic H100 evidence.",
         "OpenFold3 is an independent, non-equivalent backend to AlphaFold 3: distinct code, weights, license and results; it is never reported as AlphaFold 3.",
         "The public scientific identity is openfold3-openbind so it cannot collide with the existing openfold3 HTTP catalog record; the legacy runtime-emitted openfold3 label is accepted only inside this adapter's output-validation boundary.",
         "The OpenBind-0 checkpoint and components.bcif are catalog manifests without a localization generation or node admission receipt."

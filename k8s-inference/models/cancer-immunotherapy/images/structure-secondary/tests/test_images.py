@@ -529,7 +529,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             with self.subTest(image=image["id"]):
                 revision = expected[image["id"]]
                 self.assertEqual(image["source"]["revision"], revision)
-                self.assertEqual(image["tag"], f"{revision}-h100-r4")
+                self.assertEqual(image["tag"], f"{revision}-h100-r5")
                 self.assertRegex(image["source"]["tag"], r"^v[0-9]")
                 for base in image["base_images"]:
                     self.assertRegex(base, r"@sha256:[0-9a-f]{64}$")
@@ -658,7 +658,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
     def test_fast_start_cache_contracts_are_auxiliary_and_numbered_level_is_l1(self) -> None:
         images = {image["id"]: image for image in LOCK["images"]}
         expected_level_states = {
-            "L1": "candidate-evidence-collected-pending-independent-acceptance",
+            "L1": "candidate-published-build-only-not-semantic-qualified",
             "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
             "L3": "unavailable-no-local-disk-cached-snapshot",
             "L4": "unavailable-no-system-ram-retained-model",
@@ -669,7 +669,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             self.assertIsNone(fast_start["qualified_level"])
             self.assertEqual(
                 fast_start["qualification_state"],
-                "evidence-collected-pending-independent-acceptance",
+                "published-build-only-not-semantic-qualified",
             )
             self.assertEqual(fast_start["level_states"], expected_level_states)
 

@@ -172,13 +172,13 @@
       "properties": {
         "maximum_candidate_level": {"const": "L1"},
         "qualified_level": {"type": "null"},
-        "qualification_state": {"const": "evidence-collected-pending-independent-acceptance"},
+        "qualification_state": {"const": "published-build-only-not-semantic-qualified"},
         "level_states": {
           "type": "object",
           "additionalProperties": false,
           "required": ["L1", "L2", "L3", "L4"],
           "properties": {
-            "L1": {"const": "candidate-evidence-collected-pending-independent-acceptance"},
+            "L1": {"const": "candidate-published-build-only-not-semantic-qualified"},
             "L2": {"const": "unavailable-no-shared-storage-gpu-process-snapshot"},
             "L3": {"const": "unavailable-no-local-disk-cached-snapshot"},
             "L4": {"const": "unavailable-no-system-ram-retained-model"}

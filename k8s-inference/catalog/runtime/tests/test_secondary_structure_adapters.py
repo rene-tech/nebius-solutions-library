@@ -8,7 +8,6 @@ from pathlib import Path
 SOLUTION_ROOT = Path(__file__).resolve().parents[3]
 ADAPTER_ROOT = SOLUTION_ROOT / "models/structure/batch-adapters"
 HANDOFF_PATH = ADAPTER_ROOT / "secondary-r4-image-handoff.json"
-PROFILE_PATH = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-workload-profiles.json"
 MODEL_IDS = ("esmfold2", "esmfold2-fast", "protenix-v2", "openfold3-openbind")
 ADAPTER_DIRECTORIES = {
     model_id: "openfold3" if model_id == "openfold3-openbind" else model_id for model_id in MODEL_IDS
@@ -32,6 +31,12 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
         }
         self.contracts = {
             model_id: load_json(ADAPTER_ROOT / ADAPTER_DIRECTORIES[model_id] / "contract.json")
+            for model_id in MODEL_IDS
+        }
+        self.profiles = {
+            model_id: load_json(
+                ADAPTER_ROOT / ADAPTER_DIRECTORIES[model_id] / "activation/workload-profile.json"
+            )["profile"]
             for model_id in MODEL_IDS
         }
 
@@ -71,6 +76,12 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
                         "route_exposed": False,
                         "semantic_h100_qualified": False,
                     },
+                )
+                profile = self.profiles[model_id]
+                self.assertEqual(profile["model_id"], model_id)
+                self.assertEqual(
+                    profile["execution_identity"]["runtime_image_digest"],
+                    image["digest"],
                 )
                 seam = str(contract["seam"])
                 self.assertIn("scheduler", seam)
@@ -114,15 +125,19 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
             "independent-non-equivalent-alternative-to-alphafold3",
         )
 
-    def test_no_public_workload_profile_is_accidentally_activated(self) -> None:
-        profiles = load_json(PROFILE_PATH)["profiles"]
-        for profile in profiles:
-            if profile["model_id"] not in MODEL_IDS:
-                continue
-            with self.subTest(model_id=profile["model_id"]):
+    def test_model_owned_profiles_prefer_reserved_capacity_but_remain_closed(self) -> None:
+        for model_id, profile in self.profiles.items():
+            with self.subTest(model_id=model_id):
                 self.assertEqual(profile["state"], "candidate-unqualified")
                 self.assertIs(profile["route_exposed"], False)
-                self.assertIsNone(profile["runtime_image_digest"])
+                self.assertEqual(
+                    profile["resources"]["compatible_pool_ids"],
+                    ["h100-reserved-8x", "h100-1x"],
+                )
+                self.assertEqual(
+                    profile["resources"]["required_node_labels"],
+                    {"accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"},
+                )
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@
     },
     "execution_identity": {
       "model_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
-      "runtime_image_digest": "sha256:27d816dc518b5dda205f9916205fbc4e2053a8109d9380b85628d9f0d968a644",
+      "runtime_image_digest": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
       "runtime_recipe_sha256": null,
       "workload_recipe_sha256": null,
       "artifact_manifest_digest": null,
@@ -55,8 +55,8 @@
         "amd64"
       ],
       "compatible_pool_ids": [
-        "h100-1x",
-        "h100-reserved-8x"
+        "h100-reserved-8x",
+        "h100-1x"
       ],
       "required_node_labels": {
         "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
@@ -133,7 +133,7 @@
       "commercial_use": "allowed",
       "non_clinical": true,
       "limitations": [
-        "Image sha256:27d816dc...8a644 is a build-only -h100-r4 candidate; it has no exact-artifact semantic H100 evidence.",
+        "Image sha256:b90a02bd...426af8 is the published, protocol-compatible -h100-r5 successor; it remains build-only and has no exact-artifact semantic H100 evidence.",
         "The v2 checkpoint was recovered from the immutable third-party mirror TMF001/protenix-v2-weights@653edab2 and is not yet byte-compared with the publisher CDN object.",
         "The source payload 8e14bb80...12eca is transformed by localization manifest a093d28e...cc6b7 into the mounted runtime tree 5e1c3b54...74d48; all three identities remain distinct and must match their own receipts.",
         "Only msa_mode none is admitted; precomputed MSA waits for a validated relocation contract and no mode contacts an MSA server."
