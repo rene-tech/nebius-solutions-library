@@ -19,18 +19,26 @@ import subprocess
 import sys
 import tempfile
 from unittest import mock
+from uuid import UUID
 
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW_SHA256 = "a" * 64
-PUBLISHED_IMAGE_SOURCE_REVISION = "e6d20c7cb3abf5e172852f17a20c7e100daa1245"
-EXPECTED_ADAPTER_REVISION = "0ad6ffe9126c6e70fe3dbdff6e0936e0544dd9b2"
-EXPECTED_ADAPTER_BASE_REVISION = "a1ecc219f5e319be87cfa20d5a79af1e3674c6f0"
-MODEL_CONTRACT_PATHS = {
-    "esmfold2": "models/structure/batch-adapters/esmfold2/contract.json",
-    "esmfold2-fast": "models/structure/batch-adapters/esmfold2-fast/contract.json",
-    "protenix-v2": "models/structure/batch-adapters/protenix-v2/contract.json",
-    "openfold3": "models/structure/batch-adapters/openfold3/contract.json",
+MINIMUM_REPAIR_REVISION = "cd4069927a447f21bee2b538bb9edb5c4c38266c"
+MODEL_CONTRACTS = {
+    "esmfold2": ("models/structure/batch-adapters/esmfold2/contract.json", "esmfold2"),
+    "esmfold2-fast": (
+        "models/structure/batch-adapters/esmfold2-fast/contract.json",
+        "esmfold2-fast",
+    ),
+    "protenix-v2": (
+        "models/structure/batch-adapters/protenix-v2/contract.json",
+        "protenix-v2",
+    ),
+    "openfold3": (
+        "models/structure/batch-adapters/openfold3/contract.json",
+        "openfold3-openbind",
+    ),
 }
 HANDOFF_PATH = "models/structure/batch-adapters/secondary-r4-image-handoff.json"
 RUNTIME_BYTE_FILES = (
@@ -88,15 +96,15 @@ def _read_object(path: Path, *, label: str) -> dict[str, object]:
 def _load_model_contracts(worktree: Path) -> dict[str, dict[str, object]]:
     root = worktree / "k8s-inference"
     contracts: dict[str, dict[str, object]] = {}
-    for model_id, relative in MODEL_CONTRACT_PATHS.items():
-        contract = _read_object(root / relative, label=f"{model_id} adapter contract")
+    for image_id, (relative, public_model_id) in MODEL_CONTRACTS.items():
+        contract = _read_object(root / relative, label=f"{image_id} adapter contract")
         if (
             contract.get("schema")
             != "fs2-serve.nebius.ai/scientific-adapter-identity/v1"
-            or contract.get("model_id") != model_id
+            or contract.get("model_id") != public_model_id
         ):
-            raise RuntimeError(f"{model_id} model-owned adapter contract identity is invalid")
-        contracts[model_id] = contract
+            raise RuntimeError(f"{image_id} model-owned adapter contract identity is invalid")
+        contracts[image_id] = contract
     return contracts
 
 
@@ -202,10 +210,10 @@ def _request(contract: dict[str, object], parameters: dict[str, object]) -> dict
         "operation": operations[0],
         "service_class": "customer-batch",
         "input_manifest": {
-            "artifact_id": "adapter-contract-manifest",
+            "artifact_id": "00000000-0000-4000-8000-000000000001",
             "sha256": "c" * 64,
             "size_bytes": 100,
-            "media_type": "application/json",
+            "media_type": "application/vnd.fs2.scientific-manifest+json",
             "compression": "none",
         },
         "parameters": parameters,
@@ -301,14 +309,31 @@ def _execute_runtime_marker(
 
 def _compile(module, profile, request, *, model_id: str):
     signature = inspect.signature(module.compile_run)
-    if tuple(signature.parameters) != ("profile", "request_value", "operation_id"):
+    if tuple(signature.parameters) != (
+        "profile",
+        "request_value",
+        "operation_id",
+        "input_artifacts",
+    ):
         raise RuntimeError(
             f"{model_id} adapter compile_run has an unexpected public signature"
         )
+    from fs2_serve.scientific_batch.models import ScientificInputArtifact
+
+    model_input = ScientificInputArtifact(
+        logical_artifact_id=module.INPUT_ARTIFACT_ID,
+        semantic_type=module.INPUT_SEMANTIC_TYPE,
+        artifact_id=UUID("00000000-0000-4000-8000-000000000002"),
+        digest=f"sha256:{RAW_SHA256}",
+        size_bytes=100,
+        media_type=module.INPUT_MEDIA_TYPE,
+        compression="none",
+    )
     return module.compile_run(
         profile,
         request,
         operation_id=f"adapter-contract-{model_id}",
+        input_artifacts=(model_input,),
     )
 
 
@@ -340,7 +365,7 @@ def _lock_content_sha256(item: dict[str, object]) -> object:
 
 
 def _validate_contract_and_plan(
-    model_id: str,
+    image_id: str,
     module,
     contract: dict[str, object],
     image: dict[str, object],
@@ -357,35 +382,37 @@ def _validate_contract_and_plan(
         isinstance(value, dict)
         for value in (source, interface, runtime_image, activation)
     ) or not isinstance(stages, list):
-        failures.append(f"{model_id} model-owned contract is incomplete")
+        failures.append(f"{image_id} model-owned contract is incomplete")
         return {}
+    public_model_id = contract.get("model_id")
     if (
-        module.MODEL_ID != model_id
+        module.MODEL_ID != public_model_id
         or module.VARIANT_ID != contract.get("variant_id")
         or module.SOURCE_REPOSITORY != source.get("repository")
         or module.SOURCE_REVISION != source.get("revision")
         or module.PARAMETER_SCHEMA != interface.get("parameter_schema")
     ):
-        failures.append(f"{model_id} adapter module differs from its model-owned contract")
+        failures.append(f"{image_id} adapter module differs from its model-owned contract")
     if image.get("source", {}).get("revision") != source.get("revision"):
-        failures.append(f"{model_id} image source revision differs from the adapter contract")
+        failures.append(f"{image_id} image source revision differs from the adapter contract")
 
     repository = runtime_image.get("repository")
     relative_repository = image.get("repository")
     repository_suffix = f"/{relative_repository}"
     if not isinstance(repository, str) or not repository.endswith(repository_suffix):
-        failures.append(f"{model_id} runtime image repository differs from the image lock")
+        failures.append(f"{image_id} runtime image repository differs from the image lock")
         registry_root = None
     else:
         registry_root = repository[: -len(repository_suffix)]
+    published_digest = image.get("published_digest")
     for field in ("tag", "digest"):
         lock_field = "published_digest" if field == "digest" else field
-        if runtime_image.get(field) != image.get(lock_field):
-            failures.append(f"{model_id} runtime image {field} differs from the image lock")
         if handoff_image.get(field) != image.get(lock_field):
-            failures.append(f"{model_id} handoff image {field} differs from the image lock")
+            failures.append(f"{image_id} handoff image {field} differs from the image lock")
+        if published_digest is not None and runtime_image.get(field) != image.get(lock_field):
+            failures.append(f"{image_id} runtime image {field} differs from the image lock")
     if handoff_image.get("repository") != repository:
-        failures.append(f"{model_id} handoff repository differs from its contract")
+        failures.append(f"{image_id} handoff repository differs from its contract")
     if (
         runtime_image.get("state") != "build-only-not-semantic-qualified"
         or activation.get("profile_state") != "candidate-unqualified"
@@ -393,7 +420,7 @@ def _validate_contract_and_plan(
         or activation.get("semantic_h100_qualified") is not False
         or image.get("deployable") is not False
     ):
-        failures.append(f"{model_id} contract overstates activation or deployability")
+        failures.append(f"{image_id} contract overstates activation or deployability")
 
     entrypoint = interface.get("entrypoint")
     subcommands = interface.get("subcommands")
@@ -401,15 +428,15 @@ def _validate_contract_and_plan(
         entrypoint != image.get("runtime_contract", {}).get("entrypoint")
         or subcommands != image.get("runtime_contract", {}).get("subcommands")
     ):
-        failures.append(f"{model_id} CLI identity differs from the image lock")
+        failures.append(f"{image_id} CLI identity differs from the image lock")
     actual_stage_ids = [item.stage_id for item in plan.invocations]
     contract_stage_ids = [
         item.get("stage_id") if isinstance(item, dict) else None for item in stages
     ]
     if actual_stage_ids != contract_stage_ids:
-        failures.append(f"{model_id} generated stages differ from its model-owned contract")
+        failures.append(f"{image_id} generated stages differ from its model-owned contract")
 
-    artifacts = _contract_artifacts(contract, model_id=model_id)
+    artifacts = _contract_artifacts(contract, model_id=image_id)
     declared_by_stage: dict[str, tuple[str, ...]] = {}
     for raw_stage in stages:
         if not isinstance(raw_stage, dict) or not isinstance(raw_stage.get("stage_id"), str):
@@ -418,21 +445,21 @@ def _validate_contract_and_plan(
         if not isinstance(raw_artifacts, list) or not all(
             isinstance(item, str) for item in raw_artifacts
         ):
-            failures.append(f"{model_id} stage runtime_artifacts are invalid")
+            failures.append(f"{image_id} stage runtime_artifacts are invalid")
             continue
         declared_by_stage[raw_stage["stage_id"]] = tuple(raw_artifacts)
     for invocation in plan.invocations:
         if invocation.argv[0] != entrypoint or invocation.argv[1] not in (subcommands or []):
-            failures.append(f"{model_id} generated argv escapes its wrapper contract")
+            failures.append(f"{image_id} generated argv escapes its wrapper contract")
         if invocation.runtime_artifacts != declared_by_stage.get(invocation.stage_id):
             failures.append(
-                f"{model_id}/{invocation.stage_id} runtime_artifacts seam differs from contract"
+                f"{image_id}/{invocation.stage_id} runtime_artifacts seam differs from contract"
             )
     module_stages = getattr(module, "STAGE_EXECUTION_CONTRACTS", {})
     for stage_id, declared in declared_by_stage.items():
         module_stage = module_stages.get(stage_id)
         if not isinstance(module_stage, dict) and not hasattr(module_stage, "get"):
-            failures.append(f"{model_id}/{stage_id} module stage contract is absent")
+            failures.append(f"{image_id}/{stage_id} module stage contract is absent")
             continue
         contract_stage = next(
             item for item in stages if isinstance(item, dict) and item.get("stage_id") == stage_id
@@ -442,7 +469,7 @@ def _validate_contract_and_plan(
             or module_stage.get("collector_id") != contract_stage.get("collector_id")
             or module_stage.get("validator_id") != contract_stage.get("validator_id")
         ):
-            failures.append(f"{model_id}/{stage_id} module stage identity differs")
+            failures.append(f"{image_id}/{stage_id} module stage identity differs")
 
     lock_artifacts = {
         item.get("id"): item
@@ -455,7 +482,7 @@ def _validate_contract_and_plan(
         for artifact_id in invocation.runtime_artifacts
     }
     if observed != set(artifacts) or set(lock_artifacts) != set(artifacts):
-        failures.append(f"{model_id} runtime artifact closure differs across contracts")
+        failures.append(f"{image_id} runtime artifact closure differs across contracts")
     for artifact_id, artifact in artifacts.items():
         lock_artifact = lock_artifacts.get(artifact_id, {})
         if (
@@ -463,16 +490,16 @@ def _validate_contract_and_plan(
             or _lock_content_sha256(lock_artifact) != artifact.get("content_sha256")
             or lock_artifact.get("runtime_path") != artifact.get("runtime_path")
         ):
-            failures.append(f"{model_id} artifact {artifact_id} differs from the image lock")
+            failures.append(f"{image_id} artifact {artifact_id} differs from the image lock")
         if artifact.get("localization_manifest_sha256") is not None and (
             lock_artifact.get("localization_manifest_sha256")
             != artifact.get("localization_manifest_sha256")
         ):
-            failures.append(f"{model_id} artifact {artifact_id} manifest digest differs")
+            failures.append(f"{image_id} artifact {artifact_id} manifest digest differs")
         if artifact.get("file_sha256") is not None and (
             lock_artifact.get("sha256") != artifact.get("file_sha256")
         ):
-            failures.append(f"{model_id} artifact {artifact_id} file digest differs")
+            failures.append(f"{image_id} artifact {artifact_id} file digest differs")
     return {
         "registry_root": registry_root,
         "artifact_contracts": artifacts,
@@ -547,8 +574,8 @@ def _validate_cache_contract(
     }
 
 
-def _validate_published_runtime_bytes(
-    repo: Path, failures: list[str]
+def _validate_committed_runtime_bytes(
+    repo: Path, source_revision: str, failures: list[str]
 ) -> dict[str, object]:
     runtime_root = ROOT.relative_to(repo)
     evidence: dict[str, object] = {}
@@ -556,22 +583,22 @@ def _validate_published_runtime_bytes(
         relative = (runtime_root / filename).as_posix()
         current = (ROOT / filename).read_bytes()
         result = subprocess.run(
-            ["git", "-C", str(repo), "show", f"{PUBLISHED_IMAGE_SOURCE_REVISION}:{relative}"],
+            ["git", "-C", str(repo), "show", f"{source_revision}:{relative}"],
             check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
         if result.returncode != 0:
-            failures.append(f"published runtime byte source is unavailable: {relative}")
+            failures.append(f"runtime source commit is unavailable: {relative}")
             continue
         current_sha256 = hashlib.sha256(current).hexdigest()
-        published_sha256 = hashlib.sha256(result.stdout).hexdigest()
+        committed_sha256 = hashlib.sha256(result.stdout).hexdigest()
         if current != result.stdout:
-            failures.append(f"published r4 runtime bytes changed without an image rebuild: {relative}")
+            failures.append(f"runtime bytes differ from image source commit: {relative}")
         evidence[filename] = {
             "sha256": current_sha256,
-            "published_sha256": published_sha256,
-            "unchanged": current == result.stdout,
+            "committed_sha256": committed_sha256,
+            "matches_image_source": current == result.stdout,
         }
     return evidence
 
@@ -586,7 +613,6 @@ def main() -> None:
         raise SystemExit("adapter-worktree does not contain the runtime control-plane")
 
     revision = _git(worktree, "rev-parse", "HEAD").stdout.strip()
-    parent_revision = _git(worktree, "rev-parse", "HEAD^").stdout.strip()
     dirty = _git(worktree, "status", "--porcelain").stdout
     branch = _git(worktree, "branch", "--show-current").stdout.strip()
     branch_remote = (
@@ -618,14 +644,26 @@ def main() -> None:
         if remote_result.returncode == 0 and remote_result.stdout.strip():
             remote_revision = remote_result.stdout.split()[0]
     task_repo = Path(_git(ROOT, "rev-parse", "--show-toplevel").stdout.strip())
+    task_revision = _git(task_repo, "rev-parse", "HEAD").stdout.strip()
     current_main = _git(task_repo, "rev-parse", "origin/main").stdout.strip()
-    adapter_integrated_in_current_main = (
+    main_integrated_into_task = (
         _git(
             worktree,
             "merge-base",
             "--is-ancestor",
-            revision,
             current_main,
+            revision,
+            check=False,
+        ).returncode
+        == 0
+    )
+    repair_is_ancestor = (
+        _git(
+            worktree,
+            "merge-base",
+            "--is-ancestor",
+            MINIMUM_REPAIR_REVISION,
+            revision,
             check=False,
         ).returncode
         == 0
@@ -662,16 +700,22 @@ def main() -> None:
     }
     handoff = _read_object(
         worktree / "k8s-inference" / HANDOFF_PATH,
-        label="secondary r4 image handoff",
+        label="secondary successor image handoff",
     )
     raw_handoff_images = handoff.get("images")
     if not isinstance(raw_handoff_images, list):
-        raise SystemExit("secondary r4 image handoff images must be an array")
-    handoff_images = {
-        item.get("model_id"): item
-        for item in raw_handoff_images
-        if isinstance(item, dict) and isinstance(item.get("model_id"), str)
+        raise SystemExit("secondary successor image handoff images must be an array")
+    public_to_image = {
+        public_model_id: image_id
+        for image_id, (_, public_model_id) in MODEL_CONTRACTS.items()
     }
+    handoff_images = {}
+    for item in raw_handoff_images:
+        if not isinstance(item, dict) or not isinstance(item.get("model_id"), str):
+            continue
+        image_id = public_to_image.get(item["model_id"])
+        if image_id is not None:
+            handoff_images[image_id] = item
     parameters = {
         "esmfold2": {"sequence": "ACDEFGHIK", "mode": "single-sequence", "seed": 11},
         "esmfold2-fast": {
@@ -688,15 +732,15 @@ def main() -> None:
         "openfold3": {"model_seeds": [11, 29], "msa_mode": "none"},
     }
     failures: list[str] = []
-    if revision != EXPECTED_ADAPTER_REVISION:
+    if revision != task_revision:
         failures.append(
-            "adapter worktree is not the exact accepted narrow successor "
-            f"(expected={EXPECTED_ADAPTER_REVISION}, actual={revision})"
+            "adapter worktree and image source are not the same exact commit "
+            f"(image={task_revision}, adapter={revision})"
         )
-    if parent_revision != EXPECTED_ADAPTER_BASE_REVISION:
+    if not repair_is_ancestor:
         failures.append(
-            "accepted adapter is not one commit on the frozen integration base "
-            f"(expected={EXPECTED_ADAPTER_BASE_REVISION}, actual={parent_revision})"
+            "adapter/image source does not contain the accepted production repair "
+            f"{MINIMUM_REPAIR_REVISION}"
         )
     if dirty:
         failures.append("adapter worktree is dirty; evidence needs a concrete commit")
@@ -705,15 +749,25 @@ def main() -> None:
             "adapter commit is not the exact clean pushed branch head "
             f"(local={revision}, remote={remote_revision or 'unavailable'})"
         )
-    if not adapter_integrated_in_current_main:
+    if not main_integrated_into_task:
         failures.append(
-            "adapter commit is not contained in current image-task origin/main "
-            f"{current_main}; integrate the narrow adapter before the image successor"
+            "image task does not contain current origin/main "
+            f"{current_main}; integrate main before publishing the successor"
         )
+    published_digests = [image.get("published_digest") for image in images.values()]
+    all_pending = bool(published_digests) and all(value is None for value in published_digests)
+    all_published = bool(published_digests) and all(
+        isinstance(value, str) and value.startswith("sha256:")
+        for value in published_digests
+    )
+    some_pending = any(value is None for value in published_digests)
+    some_published = any(
+        isinstance(value, str) and value.startswith("sha256:")
+        for value in published_digests
+    )
+    image_source_revision = handoff.get("image_source_commit")
     if (
-        handoff.get("schema") != "fs2.nebius.ai/secondary-r4-image-handoff/v1"
-        or handoff.get("state") != "build-only-not-activated"
-        or handoff.get("image_source_commit") != PUBLISHED_IMAGE_SOURCE_REVISION
+        handoff.get("schema") != "fs2.nebius.ai/secondary-successor-image-handoff/v1"
         or handoff.get("semantic_h100_qualification") is not False
         or handoff.get("route_activation_allowed") is not False
         or set(handoff_images) != set(modules)
@@ -745,6 +799,23 @@ def main() -> None:
             check=False,
         ).returncode != 0:
             failures.append("published image source is not an ancestor of current evidence")
+    elif some_pending and some_published:
+        if (
+            handoff.get("state") != "publication-partial-pending-not-activated"
+            or not isinstance(image_source_revision, str)
+            or len(image_source_revision) != 40
+            or handoff.get("production_protocol_compatible") is not False
+        ):
+            failures.append("partial successor publication handoff is inconsistent")
+        elif _git(
+            task_repo,
+            "cat-file",
+            "-e",
+            f"{image_source_revision}^{{commit}}",
+            check=False,
+        ).returncode != 0:
+            failures.append("published predecessor source commit is unavailable")
+        image_source_revision = task_revision
     else:
         failures.append("successor image lock mixes pending and published identities")
         image_source_revision = task_revision
@@ -774,20 +845,21 @@ def main() -> None:
     }
     evidence: dict[str, object] = {
         "adapter_revision": revision,
-        "expected_adapter_revision": EXPECTED_ADAPTER_REVISION,
-        "adapter_parent_revision": parent_revision,
-        "expected_adapter_base_revision": EXPECTED_ADAPTER_BASE_REVISION,
+        "image_task_revision": task_revision,
+        "minimum_repair_revision": MINIMUM_REPAIR_REVISION,
+        "repair_is_ancestor": repair_is_ancestor,
         "adapter_branch": branch,
         "adapter_remote_revision": remote_revision or None,
         "adapter_is_exact_pushed_head": remote_revision == revision,
         "required_main_revision": current_main,
-        "adapter_integrated_in_required_main": adapter_integrated_in_current_main,
+        "required_main_integrated_into_image_task": main_integrated_into_task,
+        "image_source_revision": image_source_revision,
         "profile_source": "model-owned-contract-derived-candidate-fixture",
         "shared_profile_required": False,
         "shared_execution_target_required": False,
         "localization_delivery_state": "pending-external-activation",
-        "published_runtime_bytes": _validate_published_runtime_bytes(
-            task_repo, failures
+        "committed_runtime_bytes": _validate_committed_runtime_bytes(
+            task_repo, image_source_revision, failures
         ),
         "models": {},
     }
@@ -822,7 +894,7 @@ def main() -> None:
                             wrappers[model_id],
                             invocation,
                             parsed_args,
-                            model_id=model_id,
+                            model_id=str(contracts[model_id]["model_id"]),
                             variant_id=plan.variant_id,
                             artifacts=contract_artifacts,
                             destination=marker_root,

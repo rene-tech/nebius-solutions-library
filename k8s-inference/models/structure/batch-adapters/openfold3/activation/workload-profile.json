@@ -17,7 +17,7 @@
     },
     "execution_identity": {
       "model_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
-      "runtime_image_digest": "sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de",
+      "runtime_image_digest": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
       "runtime_recipe_sha256": "11f0123107851f5c3d4c3aebb0fdb540924d12d0213f6393f5eaea03878e4403",
       "workload_recipe_sha256": "73a463f3d28d658780d6a52c10b7826301d9a510e6899e7d117ffaa1d800fcbe",
       "artifact_manifest_digest": "c4cc2c59313470ee7498f37d377485328785e09080ccb2136edfeef754a573bb",
@@ -130,20 +130,20 @@
       "state": "active"
     },
     "qualification": {
-      "h100_semantic_receipt_sha256": "695428c786ce9555d69095a074764d5312596ed30610c353a5988ca7e2777784",
+      "h100_semantic_receipt_sha256": "120aa9c48ab7108e23fd09e47943f9203aedd7d39e405727033a94bb986bdbef",
       "public_completion_receipt_sha256": null,
       "scheduler_eligibility_receipt_sha256": null,
       "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
-      "qualified_at": "2026-09-04T16:32:24Z"
+      "qualified_at": "2026-09-04T17:53:27Z"
     },
     "policy": {
       "commercial_use": "allowed",
       "non_clinical": true,
       "limitations": [
-        "Image sha256:3686e530...93b1de completed exact-digest semantic H100 inference as UID/GID 10001:10001 with its immutable localized artifacts; public completion and scheduler eligibility receipts remain pending.",
+        "The r5 image is superseded because its 0444 runner parent directory was not traversable by UID 10001; r6 bakes the exact 102-byte runner below a 0555 parent and passed exact-artifact H100 semantics without a runtime ConfigMap projection.",
         "OpenFold3 is an independent, non-equivalent backend to AlphaFold 3: distinct code, weights, license and results; it is never reported as AlphaFold 3.",
         "The public scientific identity is openfold3-openbind so it cannot collide with the existing openfold3 HTTP catalog record; the legacy runtime-emitted openfold3 label is accepted only inside this adapter's output-validation boundary.",
-        "The exact OpenBind-0 checkpoint and components.bcif objects have immutable manifests and successful shared-filesystem localization receipts; the H100 qualifier projected the canonical runner-base file explicitly, so a future image should bake that file to remove the projection."
+        "The OpenBind-0 checkpoint and components.bcif are bound to immutable localization receipts; public completion and scheduler-eligibility receipts remain pending."
       ]
     },
     "runtime_artifacts": [

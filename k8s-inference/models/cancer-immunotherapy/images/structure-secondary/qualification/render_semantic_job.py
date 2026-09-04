@@ -23,7 +23,6 @@ DEFAULT_BINDINGS = (
     ROOT / "evidence/live-h100-20260904/artifact-bindings.partial.json"
 )
 SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
-OPENFOLD_BASE_RUNNER = (ROOT / "openfold3-runner-base.yaml").read_text(encoding="utf-8")
 MODEL_ID = "openfold3-openbind"
 RUNTIME_ID = "openfold3"
 SEED = 101
@@ -307,11 +306,6 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
         {"name": "input", "mountPath": "/var/run/fs2-source", "readOnly": True},
         {
             "name": "input",
-            "mountPath": "/opt/fs2/runtime/openfold3",
-            "readOnly": True,
-        },
-        {
-            "name": "input",
             "mountPath": "/var/run/fs2-runtime-localization.json",
             "subPath": "runtime-localization.json",
             "readOnly": True,
@@ -333,11 +327,6 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
                 "data": {
                     "raw-input.json": raw_text,
                     "runtime-localization.json": canonical(marker),
-                    # The first published successor digest was built before the
-                    # canonical base runner was added to the image. Keep this
-                    # immutable input explicit so the exact digest can undergo
-                    # semantic qualification; the evidence records the mount.
-                    "runner-base.yaml": OPENFOLD_BASE_RUNNER,
                     "verify_outputs.py": VERIFY_OUTPUTS,
                 },
             },

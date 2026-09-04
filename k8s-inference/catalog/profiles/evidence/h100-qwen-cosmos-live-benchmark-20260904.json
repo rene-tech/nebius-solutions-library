@@ -1,0 +1,223 @@
+{
+  "schema": "fs2-serve.nebius.ai/live-serving-benchmark-summary/v1",
+  "authority": "fresh-live-public-endpoint-benchmark",
+  "observed_at": "2026-09-04T17:53:45Z",
+  "source_commit": "f80c40b2a4301ee657782eac5ac449c363035900",
+  "cluster": {
+    "id_sha256": "5edaaf892bc9b5969ab5cd93b4b2beec36397d77991afe355085451f33cc0c18",
+    "context": "k8s-inference-h100",
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "namespace": "fs2-models",
+    "public_base_url": "https://89.169.99.188",
+    "tls_verification": "verified",
+    "accelerator": {
+      "class": "nvidia-h100-sxm5-80gb",
+      "product": "NVIDIA H100 80GB HBM3",
+      "memory_bytes": 85520809984,
+      "compute_capability": "9.0",
+      "driver_version": "580.159.04",
+      "cuda_version": "13.0"
+    }
+  },
+  "models": [
+    {
+      "model_id": "qwen3-8b",
+      "result": "PASS",
+      "attempt_id": "qwen3-8b-8448ace3-af39-4c71-813e-2d803a6305a0",
+      "public_request": {
+        "path": "/v1/chat/completions",
+        "protocol": "openai-chat",
+        "http_status": 200,
+        "valid_semantic_output": true,
+        "input_tokens": 27,
+        "output_tokens": 9,
+        "request_seconds": 0.815998,
+        "first_byte_seconds": 0.815863,
+        "short_response_output_tokens_per_second": 11.029371215547002,
+        "streaming": false,
+        "ttft_state": "unavailable-nonstreaming-response"
+      },
+      "cold_activation": {
+        "scenario": "prepared-node-zero-pod",
+        "capacity_wait_seconds": 0.0,
+        "activation_to_model_ready_seconds": 114.324783,
+        "activation_to_first_semantic_output_seconds": 115.140785,
+        "image_pull": {
+          "outcome": "already-present-on-node",
+          "seconds": 0.0
+        }
+      },
+      "streaming_decode_benchmark": {
+        "classification": "supplementary-direct-runtime-streaming",
+        "client_placement": "same-pod-localhost",
+        "warmup_requests": 3,
+        "measured_requests": 30,
+        "failed_requests": 0,
+        "concurrency": 1,
+        "output_tokens_per_request": 64,
+        "aggregate_output_tokens_per_second": 152.07660851300085,
+        "per_request_decode_tokens_per_second_p50": 154.28762480409677,
+        "per_request_decode_tokens_per_second_p95": 154.37428914527263,
+        "ttft_seconds_p50": 0.012468041517422535,
+        "ttft_seconds_p95": 0.012869398194015957,
+        "total_latency_seconds_p50": 0.4207916214945726,
+        "total_latency_seconds_p95": 0.42114300364482915
+      },
+      "placement": {
+        "pool_ref": "h100-reserved-8x",
+        "capacity_type": "regular-capacity-block",
+        "gpu_count": 1,
+        "topology_policy": "SingleNode",
+        "node_name_sha256": "5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8"
+      },
+      "identity": {
+        "model_revision": "dynamic:sha256:d1da450072bb7002d46b234ba5842671e001e10f36eefc382c1c0195c6876add",
+        "model_content_digest": "sha256:5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d",
+        "artifact_manifest_digest": "sha256:2cf721c69d9e1b66860274de129f0dd486172ef1dad289483ea891dab5b80806",
+        "runtime_image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+        "runtime_template_digest": "sha256:b1819a115fcec15a97d20ed2d3580dab8c997e039ef2840e3298ba630fa3ceb8",
+        "evidence_identity_digest": "sha256:bc1ed1f7e954e833002232cdc2b2db0e6f4f3812a17dbec3012a180dc30a4404"
+      },
+      "restored_state": {
+        "lifecycle_desired_state": "Enabled",
+        "minimum_replicas": 1,
+        "phase": "Ready",
+        "desired_replicas": 1,
+        "ready_replicas": 1,
+        "hot_pool_ref": "h100-reserved-8x",
+        "burst_replicas": 0,
+        "keda_active": false,
+        "result": "PASS"
+      }
+    },
+    {
+      "model_id": "cosmos3-nano",
+      "result": "PASS",
+      "attempt_id": "cosmos3-nano-61a3ed43-28f4-47bc-bc89-31df0a16afdd",
+      "public_request": {
+        "path": "/v1/models/cosmos3-nano:invoke",
+        "protocol": "native",
+        "http_status": 200,
+        "valid_semantic_output": true,
+        "output_frames": 25,
+        "frames_per_second": 4.951533400766616,
+        "request_to_first_byte_seconds": 462.304216,
+        "request_to_semantic_completion_seconds": 462.577343,
+        "model_ready_to_semantic_completion_seconds": 5.048941
+      },
+      "cold_activation": {
+        "scenario": "fresh-node-zero-pod",
+        "capacity_wait_seconds": 160.808136,
+        "gpu_capacity_available_to_model_ready_seconds": 296.720267,
+        "activation_to_model_ready_seconds": 457.528402,
+        "activation_to_first_semantic_output_seconds": 462.577343,
+        "node_scale_up": {
+          "pool_ref": "h100-1x",
+          "from_nodes": 0,
+          "to_nodes": 1,
+          "capacity_type": "preemptible"
+        },
+        "image_pull": {
+          "bytes": 9186624472,
+          "seconds": 184.087,
+          "outcome": "pulled-from-regional-registry"
+        },
+        "runtime_container_start_to_model_ready_seconds_approx": 86.043
+      },
+      "placement": {
+        "pool_ref": "h100-1x",
+        "capacity_type": "preemptible",
+        "gpu_count": 1,
+        "topology_policy": "SingleNode",
+        "node_name_sha256": "3283606aed113ac6c4042bea95449d8fe87a1cb5ce2302ac853ddce50b36e3ea"
+      },
+      "identity": {
+        "model_revision": "dynamic:sha256:75828a96698fd6c756be732fc25b3c0563182fc143d2e9165165470de179d711",
+        "model_content_digest": "sha256:dfa7b03382ba78d7f80703652706c3cfa777cefac48634df49345c4302af2c95",
+        "artifact_manifest_digest": "sha256:49b4bf03d84857892b86366ef2f6c3b68ac575cb1a3f2de4122c41e638f4cc6e",
+        "runtime_image_digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+        "runtime_template_digest": "sha256:b2ce3b2351242330d1bb17f701968cc044bc244ff760567faaadbe915bb55214",
+        "evidence_identity_digest": "sha256:44989bffe21fcc3dfd1f241862725ac538c67c24eb8b5eeda73017a583151ee9"
+      },
+      "dcgm_window": {
+        "scope": "exclusive-one-gpu-autoscaled-node-plus-daemonsets",
+        "lookback": "20m",
+        "gpu_utilization_percent_max": 7.0,
+        "framebuffer_used_mib_max": 34032.0,
+        "graphics_engine_active_ratio_max": 0.107471,
+        "note": "Scrape-cadence maxima are supporting telemetry, not time-integrated model GPU accounting."
+      },
+      "restored_state": {
+        "lifecycle_desired_state": "Enabled",
+        "minimum_replicas": 0,
+        "phase": "Cold",
+        "desired_replicas": 0,
+        "ready_replicas": 0,
+        "burst_replicas": 0,
+        "keda_active": false,
+        "hpa_desired_replicas": 0,
+        "preemptible_node_scale_down": "in-progress-at-summary-capture",
+        "result": "PASS"
+      }
+    }
+  ],
+  "gpu_lifecycle_accounting": {
+    "prometheus_snapshot_at": "2026-09-04T17:52:02Z",
+    "per_model_phase_metric": "fs2_serve_lifecycle_gpu_seconds_total",
+    "phases": [
+      "active_compute",
+      "artifact_load",
+      "checkpoint_drain",
+      "compile",
+      "cooldown_grace",
+      "image_pull",
+      "resident_idle",
+      "restore",
+      "teardown",
+      "unclassified",
+      "warmup",
+      "workflow_wait"
+    ],
+    "qwen3-8b": {
+      "phase_values_gpu_seconds": 0,
+      "quality": "unavailable",
+      "clock_values_gpu_seconds": 0,
+      "clocks": ["quota_reserved", "scheduler_occupied", "device_allocated"],
+      "reconciled": false,
+      "admin_operation_estimated_gpu_seconds": 3600.0,
+      "admin_operation_gpu_count": 0
+    },
+    "cosmos3-nano": {
+      "phase_values_gpu_seconds": 0,
+      "quality": "unavailable",
+      "clock_values_gpu_seconds": 0,
+      "clocks": ["quota_reserved", "scheduler_occupied", "device_allocated"],
+      "reconciled": false,
+      "admin_operation_estimated_gpu_seconds": 3600.0,
+      "admin_operation_gpu_count": 0,
+      "kubernetes_gpu_capacity_available_to_scale_down_seconds_approx": 319.927
+    },
+    "interpretation": "The lifecycle metric families are exposed but current operation records do not carry pod, node, GPU count, or GPU UUID attribution. Prometheus therefore reports zero with quality=unavailable and reconciled=false. The 3600 GPU-second admin values are accounting estimates, not measured device use. Kubernetes single-pod lifecycle proof and DCGM samples are retained separately and must not be represented as reconciled per-model GPU-seconds."
+  },
+  "protected_receipts": {
+    "directory": "h100/run/live-serving-benchmark-20260904",
+    "mode": "0600",
+    "qwen_cold_receipt_sha256": "c0613f0978bea8aa3e959a32be81b1792b31600539e05712d2d42811ff76ff4c",
+    "qwen_raw_trace_sha256": "6040741b4d1024ea1d1694c87697ca64458b4bacf87d88d91aa26f186ba08106",
+    "qwen_runtime_log_sha256": "ab382eb07b41e2b82aaff8a64cd0db98de6413ee13a42b05fee15940b335e134",
+    "qwen_streaming_receipt_sha256": "fe46692610b49a53a25eefb7a6927b48cbbdcd4908861c2572a7642ad9f0c4e6",
+    "cosmos_cold_receipt_sha256": "f2c98291e559d3f112515c83ce95b243340b4694a6e9ecca935d6ad6f4bbc3aa",
+    "cosmos_raw_trace_sha256": "aff192c6a3051fe7f4a2d240ac2617e8b89e5c95b523845d7c4f59982f49df9a",
+    "cosmos_runtime_log_sha256": "6f15fa8488bb67f311af40eb81943c2be0b8e613df3d0b0d2b7b07801150a92b",
+    "admin_model_qwen_sha256": "5744f1fa6fdb414d3733fb8880a7d5e556ad00101315228c0ccb6d67ceab77a0",
+    "admin_model_cosmos_sha256": "bc835e898f060a46d3d861a183ae5aefd6fbfb69d6976a65e24c7ad5df071829",
+    "admin_operations_qwen_sha256": "1da68497a458d3f56839292b01279e3706679d59e2d5ed05e64f160bda594eab",
+    "admin_operations_cosmos_sha256": "9e39cbd7ccc3794bb4334dd2cb7887e31ae062b69e96edd5ad991389bbd05e97"
+  },
+  "limitations": [
+    "The public text route is nonstreaming, so public-gateway TTFT is unavailable; the streaming TTFT measurement is a clearly separated same-pod runtime benchmark.",
+    "The one-request public Qwen token rate is a short-response completion rate, not a steady decode qualification.",
+    "Per-model time-integrated GPU lifecycle accounting is not currently instrumented; no measured GPU-seconds are inferred from estimates or sampled utilization."
+  ]
+}

@@ -29,7 +29,7 @@
   "models": {
     "openfold3-openbind": {
       "artifact_binding_state": "complete",
-      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
       "variant_id": "upstream-openbind-v0-5-0",
       "stage_id": "inference",
       "resources": {
@@ -79,14 +79,14 @@
         }
       ],
       "semantic_qualification": {
-        "state": "passed-with-explicit-runner-base-projection",
-        "evidence_file": "openfold3-openbind-h100-semantic-qualification.json",
-        "evidence_file_sha256": "695428c786ce9555d69095a074764d5312596ed30610c353a5988ca7e2777784",
-        "qualification_result_sha256": "8c0bcab9e32b003f2900652c5f89e76bb20e42e5df57ac8e033ed22d577f5292",
-        "job": "secondary-openfold3-e29d9a3de048",
-        "job_uid": "5a9357a2-663c-4ab9-8188-d84068ab0754",
-        "completed_at": "2026-09-04T16:32:24Z",
-        "activation_dependency": "Project canonical runner-base.yaml at /opt/fs2/runtime/openfold3 or publish a successor image with the file baked in."
+        "state": "passed-runner-baked-no-runtime-configmap-projection",
+        "evidence_file": "openfold3-runner-baked-h100-semantic-qualification.json",
+        "evidence_file_sha256": "120aa9c48ab7108e23fd09e47943f9203aedd7d39e405727033a94bb986bdbef",
+        "qualification_result_sha256": "46191b8703d005bb57fdb58a34001997fb319bf27bd7642dbfaca9c0718e3cc3",
+        "job": "secondary-openfold3-be8641f7009d",
+        "job_uid": "74d5641d-8793-4601-979d-1ef18709cb27",
+        "completed_at": "2026-09-04T17:53:27Z",
+        "activation_dependency": null
       }
     },
     "esmfold2": {

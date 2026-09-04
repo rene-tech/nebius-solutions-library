@@ -309,7 +309,7 @@
       "id": "openfold3",
       "dockerfile": "Dockerfile.openfold3",
       "repository": "cancer-immunotherapy/openfold3-upstream",
-      "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r5",
+      "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r6",
       "source": {
         "repository": "https://github.com/aqlaboratory/openfold-3.git",
         "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
@@ -364,10 +364,10 @@
       },
       "fast_start": {
         "maximum_candidate_level": "L1",
-        "qualified_level": null,
-        "qualification_state": "published-build-only-not-semantic-qualified",
+        "qualified_level": "L1",
+        "qualification_state": "qualified-exact-artifact-h100-semantic",
         "level_states": {
-          "L1": "candidate-published-build-only-not-semantic-qualified",
+          "L1": "qualified-regional-image-and-exact-artifact-h100-semantic",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -375,12 +375,12 @@
         "compiler_cache_optimization": "auxiliary-l1-plus-persistent-cache-pending-first-vs-warm-h100-timing"
       },
       "accelerator_support": {
-        "h100": {"compute_capability": "9.0", "status": "pending-exact-artifact-semantic-test"},
+        "h100": {"compute_capability": "9.0", "status": "qualified-exact-artifact-semantic"},
         "blackwell": {"status": "not-qualified", "scope": "portability-not-readiness", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": "sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de",
-      "deployable": false
+      "published_digest": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
+      "deployable": true
     }
   ]
 }

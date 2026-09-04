@@ -1,0 +1,48 @@
+{
+  "schema": "fs2.nebius.ai/openfold3-runner-baked-publication-evidence/v1",
+  "status": "published",
+  "observed_at": "2026-09-04T17:51:00Z",
+  "source": {
+    "repository_revision": "a3317d34eb57d09cd82deefd715b1f3f6e7ec7f1",
+    "upstream_repository": "https://github.com/aqlaboratory/openfold-3.git",
+    "upstream_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+    "platform": "linux/amd64"
+  },
+  "supersedes": {
+    "digest": "sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de",
+    "reason": "The canonical runner file was 0444 below an implicitly created 0444 parent directory and was not traversable by runtime UID 10001."
+  },
+  "image": {
+    "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream:c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r6",
+    "digest": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
+    "default_uid": 10001,
+    "default_gid": 10001
+  },
+  "runner_base": {
+    "path": "/opt/fs2/runtime/openfold3/runner-base.yaml",
+    "bytes": 102,
+    "sha256": "c42271cdfc4c9dd01ceca7a9e0c2d0a207c2d8106a2bb03146d491d54b601469",
+    "file_mode": "0444",
+    "parent_directory_mode": "0555",
+    "read_as_uid": 10001,
+    "read_as_gid": 10001,
+    "state": "build-smoke-passed"
+  },
+  "publisher_receipt": {
+    "schema": "fs2.nebius.ai/structure-secondary-image-build-receipt/v2",
+    "sha256": "9d6d5d7e79ba607661d8e5f47b317dbe13902c858f6a66dd0b247b97fec3d8d7",
+    "mode": "publish",
+    "smoke_sha256": "e60b3615d8e299794ed1f7e93c567e0b165bcad7a773c82f3830f6088e5a2444"
+  },
+  "sbom": {
+    "format": "spdx-json",
+    "state": "generated",
+    "sha256": "95eb22c69cda69ee8c3ad06746219711420b81acec4bc583e7f97c88f680a4a8"
+  },
+  "provenance": {
+    "state": "source-bound-publisher-receipt",
+    "signed_attestation": false,
+    "slsa_attestation": false
+  },
+  "route_activation_allowed_by_publication_alone": false
+}
