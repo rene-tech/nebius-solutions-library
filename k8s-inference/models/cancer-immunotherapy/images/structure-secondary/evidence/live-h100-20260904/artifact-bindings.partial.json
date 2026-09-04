@@ -230,7 +230,7 @@
     }
   },
   "alphafold3_external_bindings": {
-    "artifact_binding_state": "exact-identities-present-separate-contracts",
+    "artifact_binding_state": "complete-exact-identities-separate-contracts",
     "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3@sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
     "runtime_security_context": {
       "run_as_user": 12345,
@@ -251,8 +251,19 @@
       "mount_path": "/models/af3.bin.zst",
       "read_only": true,
       "authorization_document_sha256": "3a3d5d77a7f58d7875e33e78defe0dcb482dbe590e18380704594c4c1c3a8155",
-      "localization_receipt_digest": null,
-      "note": "The private plane has exact staged bytes and an exact authorization document, but this intermediate handoff does not relabel either as a generic public localization receipt."
+      "localization_receipt_digest": "sha256:9c89f122ea3616efe70e07c2c27dddf236d347cab4002498c4dab9677d138bd4",
+      "localization_receipt_file": "alphafold3-parameter-localization-receipt.json",
+      "localization_receipt_file_sha256": "9c89f122ea3616efe70e07c2c27dddf236d347cab4002498c4dab9677d138bd4",
+      "localization_job": {
+        "name": "secondary-af3-parameter-receipt-74d025861691",
+        "uid": "764bae10-1c9f-4e30-a6c3-c187d2172788",
+        "pod_uid": "ff901bda-f863-4922-b268-9cea79c3b28b",
+        "node": "computeinstance-e00m0hsph76ajt9sdb",
+        "started_at": "2026-09-04T16:36:53Z",
+        "completed_at": "2026-09-04T16:36:58Z",
+        "state": "complete"
+      },
+      "note": "The contract-backed private localization receipt is distinct from the authorization document digest and attests the existing read-only PVC subPath without copying licensed bytes."
     },
     "public_reference_data": {
       "bundle_id": "alphafold3-public-databases-v3.0",
