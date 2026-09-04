@@ -19,6 +19,7 @@ from mechanism_arms import (  # noqa: E402
     render_arm,
     target,
 )
+from run_mechanism_campaign import summarise  # noqa: E402
 
 
 def _spec() -> dict:
@@ -74,6 +75,38 @@ class MechanismArmTests(unittest.TestCase):
         # The node is a run-time target passed with --node, so the checked-in
         # contract stays free of cluster-specific resource identities.
         self.assertNotIn("computeinstance-", json.dumps(load_contract()))
+
+    def test_campaign_summary_and_published_evidence_never_grant_a_level(self) -> None:
+        receipts = []
+        for arm, seconds in (("conventional", 100.0), ("regional-cache", 60.0)):
+            receipts.extend(
+                {
+                    "arm": arm,
+                    "mechanism": arm,
+                    "warmup": False,
+                    "succeeded": True,
+                    "model_start_seconds": seconds + index / 100,
+                    "capacity_preheld": False,
+                    "reserved_host_memory_bytes": None,
+                    "reserved_accelerators": None,
+                }
+                for index in range(20)
+            )
+
+        summary = summarise(receipts)
+        self.assertEqual(summary["arms"]["regional-cache"]["p95_saving_seconds_vs_conventional"], 40.0)
+        self.assertTrue(summary["arms"]["regional-cache"]["meets_minimum_samples"])
+        self.assertFalse(summary["arms"]["regional-cache"]["qualifies_a_level"])
+
+        published = json.loads((HERE.parent / "evidence/qwen3-8b-r1/comparison.json").read_text(encoding="utf-8"))
+        narrative = (HERE.parent / "evidence/qwen3-8b-r1/EVIDENCE.md").read_text(encoding="utf-8")
+        self.assertEqual(set(published["arms"]), set(ARMS))
+        for arm, result in published["arms"].items():
+            with self.subTest(arm=arm):
+                self.assertEqual(result["samples"], 20)
+                self.assertEqual(result["failed"], 0)
+                self.assertFalse(result["qualifies_a_level"])
+                self.assertIn(f"`{arm}`", narrative)
 
 
 if __name__ == "__main__":
