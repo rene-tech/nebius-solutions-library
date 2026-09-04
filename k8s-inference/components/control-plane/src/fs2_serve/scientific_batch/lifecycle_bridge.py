@@ -775,13 +775,67 @@ class ScientificLifecycleBridge:
             )
         await self.lifecycle.append_signals(closing)
 
+    async def _append_replayed_signals(
+        self,
+        state: ScientificBatchState,
+        attempt: ScientificAttemptState,
+        signals: Sequence[LifecycleSignal],
+    ) -> None:
+        """Keep a pre-apply event replay stable after its Job UID is known.
+
+        The first controller sync happens before Kubernetes creation and
+        therefore persists durable batch-event signals without a Job UID. A
+        later revision binds the immutable UID and adds its dedicated
+        correlation. Replaying those same event keys must retain their
+        original facts; the separate correlation carries the enrichment.
+
+        Only the exact NULL-to-one-correlated-UID enrichment is normalized.
+        Any other field change, or more than one Job UID for the attempt,
+        reaches the repository unchanged and retains its strict conflict.
+        """
+
+        if not signals:
+            return
+        detail = await self.lifecycle.get_workload(attempt.attempt_id, tenant_id=state.tenant_id)
+        if detail is None:
+            await self.lifecycle.append_signals(signals)
+            return
+        persisted = {
+            signal.event_key: signal.model_copy(update={"sequence": None})
+            for signal in detail.signals
+        }
+        correlated_job_uids = {
+            correlation.job_uid
+            for correlation in detail.correlations
+            if correlation.job_uid is not None
+        }
+        replay: list[LifecycleSignal] = []
+        for signal in signals:
+            existing = persisted.get(signal.event_key)
+            without_enrichment = signal.model_copy(update={"job_uid": None})
+            if (
+                existing is not None
+                and existing.job_uid is None
+                and signal.job_uid is not None
+                and without_enrichment == existing
+                and correlated_job_uids == {signal.job_uid}
+            ):
+                replay.append(without_enrichment)
+            else:
+                replay.append(signal)
+        await self.lifecycle.append_signals(replay)
+
     async def sync(self, state: ScientificBatchState) -> None:
         events = await self._events(state)
         operation = await self.operations.get_operation(state.operation_id, tenant_id=state.tenant_id)
         for attempt in self._attempts(state):
             await self._subject(state, attempt, operation)
             await self.lifecycle.append_correlations(self._correlations(state, attempt))
-            await self.lifecycle.append_signals(self._event_signals(state, attempt, events))
+            await self._append_replayed_signals(
+                state,
+                attempt,
+                self._event_signals(state, attempt, events),
+            )
             teardown_at = _event_time(
                 [event for event in events if event.draft.attempt_id == attempt.attempt_id],
                 LifecyclePhase.TEARDOWN,
