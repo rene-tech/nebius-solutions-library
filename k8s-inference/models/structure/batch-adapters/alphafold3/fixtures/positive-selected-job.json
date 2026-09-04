@@ -1,0 +1,15 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "predict-complex-structure",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "af3.request.multi",
+    "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "size_bytes": 1488,
+    "media_type": "application/json"
+  },
+  "parameters": {
+    "input_mode": "raw",
+    "fold_job": "pdl1-binder"
+  }
+}

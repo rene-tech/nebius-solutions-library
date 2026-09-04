@@ -1,0 +1,165 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-adapter-identity/v1",
+  "model_id": "alphafold3",
+  "variant_id": "upstream-v3-0-4",
+  "candidate_state": "unqualified",
+  "module": "fs2_serve.scientific_batch.adapters.alphafold3",
+  "registration": "fs2_serve.scientific_batch.adapters dispatches through its explicit module allow-list; adding \"alphafold3\" to that tuple is the one shared edit this model needs and is recorded in activation/integration-recipe.json rather than made here, because every edit to that file moves the recipe digests of the profiles already in the shared aggregate.",
+  "source": {
+    "repository": "google-deepmind/alphafold3",
+    "revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+    "revision_kind": "commit",
+    "release_tag": "v3.0.4"
+  },
+  "runtime_image": {
+    "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3",
+    "tag": "3.0.4-85c4d205-r6",
+    "digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
+    "state": "h100-runtime-qualified-route-closed",
+    "lock": "models/cancer-immunotherapy/images/alphafold3/contracts/af3-image-lock.json",
+    "command_io_contract": "models/cancer-immunotherapy/images/alphafold3/contracts/af3-command-io-contract.json",
+    "command": [
+      "/alphafold3_venv/bin/python3",
+      "/opt/fs2/af3_runtime.py"
+    ]
+  },
+  "activation": {
+    "profile_state": "candidate-unqualified",
+    "route_exposed": false,
+    "semantic_h100_qualified": false,
+    "blocked_until": "the data-pipeline lane has a 16 CPU / 64 GiB reference-data node class, the academic claim ownership is verified conforming, and one raw-input run completes through the public path"
+  },
+  "authorization": {
+    "scope": "deployment",
+    "access_profile": "academic",
+    "use_authorization_status": "Granted",
+    "execution_authorization_status": "Authorized",
+    "formal_license_status": "FormalAcceptancePending",
+    "serving_admission": "AdmittedNoPerRequestLicenseReceipt",
+    "request_time_license_receipt_required": false,
+    "source_of_truth": "catalog/runtime/contracts/academic-asset-readiness.json models[] where model_id == alphafold3"
+  },
+  "interface": {
+    "parameter_schema": "fs2-serve.nebius.ai/alphafold3-upstream-v3-0-4-parameters/v1",
+    "operations": ["predict-complex-structure"],
+    "entrypoint": "/alphafold3_venv/bin/python3 /opt/fs2/af3_runtime.py",
+    "subcommands": ["data", "inference"]
+  },
+  "execution_namespace": "fs2-academic-poc",
+  "service_account_name": "fs2-academic-runner",
+  "stages": [
+    {
+      "stage_id": "data-pipeline",
+      "resource_class": "cpu",
+      "collector_id": "alphafold3-data-collector-v1",
+      "validator_id": "alphafold3-data-validator-v1",
+      "max_parallelism": 1,
+      "runtime_artifacts": ["alphafold3-public-databases-v3.0"],
+      "forbidden_artifacts": ["alphafold3-parameters"],
+      "resources": {
+        "cpu": "16",
+        "memory": "64Gi",
+        "ephemeral_storage": "32Gi",
+        "gpu_count": 0
+      },
+      "scheduling": {
+        "cpu_class": "reference-data",
+        "local_queue": "academic-scientific-cpu",
+        "cluster_queue": "reference-data-cpu"
+      },
+      "produces": {
+        "handoff_name": "processed-input",
+        "format": "application/x-tar",
+        "directory": "fs2-af3-handoff",
+        "index": "index.json",
+        "schema": "fs2-serve.nebius.ai/alphafold3-data-handoff/v1",
+        "collector_requires_terminal_receipt": "data-runtime-receipt.json",
+        "collector_limits": {"files": 64, "bytes": 1073741824}
+      }
+    },
+    {
+      "stage_id": "inference",
+      "resource_class": "gpu",
+      "needs": ["data-pipeline"],
+      "collector_id": "alphafold3-result-collector-v1",
+      "validator_id": "alphafold3-upstream-v3-0-4",
+      "max_parallelism": 1,
+      "runtime_artifacts": ["alphafold3-parameters"],
+      "forbidden_artifacts": ["alphafold3-public-databases-v3.0"],
+      "resources": {
+        "cpu": "8",
+        "memory": "96Gi",
+        "ephemeral_storage": "32Gi",
+        "gpu_count": 1
+      },
+      "scheduling": {
+        "local_queue": "academic-scientific",
+        "cluster_queue": "inference-accelerators",
+        "pool_resolution": "deployment-contract"
+      },
+      "produces": {
+        "collector_requires_terminal_receipt": "inference-runtime-receipt.json",
+        "upstream_layout": "<outputs>/<fold_job>/{<fold_job>_model.cif,<fold_job>_summary_confidences.json,<fold_job>_confidences.json,ranking_scores.csv,seed-<s>_sample-<i>/{model.cif,summary_confidences.json}}",
+        "semantic_validation": "ptm, iptm, ranking_score and fraction_disordered inside their published ranges; every structure carries at least ten ATOM/HETATM records; the receipt binds the exact licensed parameter digest"
+      }
+    }
+  ],
+  "runtime_artifacts": [
+    {
+      "artifact_id": "alphafold3-public-databases-v3.0",
+      "state": "published-terminal-receipt",
+      "source_kind": "host-root",
+      "source": "/mnt/fs2-reference-data/data",
+      "source_sub_path": null,
+      "mount_path": "/reference-data",
+      "read_only": true,
+      "supplemental_group": 1000,
+      "terminal_receipt": "/reference-data/receipts/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28.json",
+      "terminal_receipt_evidence": "reference-data/evidence/af3-terminal-receipt-20260903.json",
+      "terminal_receipt_sha256": "b049e69846867caa75ef140e105a962fcf14e5c78ec8bfd97741cced32a8f6a6",
+      "tree_sha256": "d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
+      "manifest_sha256": "aa585259ce05393cd38db1693299ed9ec7f9c421aa4e1159f8d5aa0eb0ba9748",
+      "inventory_sha256": "38af3baa89a66cd24dec785279670a2e37597f98d206f555a04c138c6be71579",
+      "file_count": 195867,
+      "expanded_bytes": 672435030513,
+      "dataset_sub_path": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
+      "inventory_marker": ".fs2-manifest-sha256"
+    },
+    {
+      "artifact_id": "alphafold3-parameters",
+      "state": "tenant-private-verified",
+      "source_kind": "pvc-subpath-file",
+      "claim": "academic-assets-runtime-rwx",
+      "claim_namespace": "fs2-academic-poc",
+      "claim_mount_path": "/models",
+      "claim_sub_path": "alphafold3",
+      "source_sub_path": "alphafold3/af3.bin.zst",
+      "mount_path": "/models/af3.bin.zst",
+      "read_only": true,
+      "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+      "size_bytes": 1020545840,
+      "supplemental_group": 65532,
+      "fs_group_forbidden": true,
+      "embed_in_image": false,
+      "world_readable": false,
+      "general_shared_cache_allowed": false,
+      "source_of_truth": "academic-assets/contracts/academic-assets.json assets.alphafold3"
+    }
+  ],
+  "runtime_cache": {
+    "mount_path": "/cache/alphafold3",
+    "qualified_level": null,
+    "role": "xla-and-triton-compilation-cache",
+    "is_gpu_snapshot": false,
+    "environment": {
+      "TRITON_CACHE_DIR": "/cache/alphafold3/triton",
+      "XDG_CACHE_HOME": "/cache/alphafold3/xdg"
+    }
+  },
+  "alternative": {
+    "model_id": "openfold3",
+    "relationship": "independent-operational-alternative",
+    "equivalent": false
+  },
+  "seam": "Model-owned adapter, contract, fixtures and activation fragments only; the allow-list registration, scheduler, renderer, Terraform, Kueue, cache provisioning and activation remain external."
+}

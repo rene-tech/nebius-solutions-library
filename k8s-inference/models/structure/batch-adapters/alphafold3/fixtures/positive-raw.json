@@ -1,0 +1,18 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "predict-complex-structure",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "af3.request.pdl1",
+    "sha256": "9ac01a513d0659f3762797518b940e81597a92ffcfbd5037aa147c319211117e",
+    "size_bytes": 867,
+    "media_type": "application/json"
+  },
+  "parameters": {
+    "input_mode": "raw"
+  },
+  "client_context": {
+    "batch_id": "af3-pdl1-001",
+    "correlation_id": "cancer-immunotherapy-poc"
+  }
+}
