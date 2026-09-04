@@ -49,6 +49,29 @@ than estimated. A model that already has a Ready endpoint is shown as `Hot`.
 Its configured and qualified cold-start levels remain visible so an operator
 can predict recovery after scale-to-zero or preemption.
 
+### Volume ownership belongs to model start
+
+A pod that sets `fsGroup` makes the kubelet take ownership of its volumes before
+the first container starts, and the Kubernetes default rewrites owner and mode
+on every inode. That walk lands entirely inside model start, is invisible in
+container logs, and scales with the size of the mounted volume rather than the
+size of the model. On the shared 128 GiB scientific cache a recorded H100
+campaign measured 153-305 s of it per Job.
+
+`fsGroupChangePolicy: OnRootMismatch` reduces the check to the volume root, but
+it is only sound when the producer that wrote the tree and the consumer that
+mounts it agree exactly on group, on the mounted root, and on the producer
+owning every inode below it. A mismatch does not simply forfeit the saving: once
+some pod's walk stamps the root with the consumer's group, a later pod skips
+while the producer keeps writing under its own group, and those files become
+unreadable.
+
+**No pod in this platform is eligible today**, and the rollout is deferred
+rather than in progress. The state of every `fsGroup`-bearing template, and the
+identity alignment that has to happen first, is recorded in
+[`catalog/runtime/contracts/volume-ownership-authorities.json`](catalog/runtime/contracts/volume-ownership-authorities.json).
+Until then this cost is reported, not hidden.
+
 ## Desired, assigned, effective, and qualified state
 
 The admin API and `ModelDeployment` status distinguish four values:

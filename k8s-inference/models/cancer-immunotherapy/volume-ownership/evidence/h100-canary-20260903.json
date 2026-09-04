@@ -1,0 +1,329 @@
+{
+  "applicability": {
+    "does_not_measure": "any producer/consumer pair in this repository, none of which satisfies the ownership contract today",
+    "eligible_pods_in_repository_at_this_commit": 0,
+    "measures": "the kubelet's behaviour under OnRootMismatch on an already-adopted root"
+  },
+  "bootstrap_contract": {
+    "adoption_proof": {
+      "claim": "fsvo-bootstrap-proof",
+      "runs": [
+        {
+          "action": "adopted",
+          "gid": 10001,
+          "job": "fsvo-bootstrap-proof-r3",
+          "mode": "2775",
+          "required_mode": "2770"
+        },
+        {
+          "action": "already-adopted",
+          "gid": 10001,
+          "job": "fsvo-bootstrap-proof-r4",
+          "mode": "2775"
+        }
+      ],
+      "seeded_state": {
+        "gid": 0,
+        "inodes": 204,
+        "mode": "755",
+        "uid": 0
+      }
+    },
+    "defect_found_and_fixed_by_this_live_run": {
+      "cause": "The Job dropped CAP_FSETID, so the kernel silently cleared S_ISGID on chmod of a directory whose group the caller does not hold.",
+      "fix": "FSETID added to the bootstrap capability set, and the script now verifies the stamped root and exits non-zero instead of reporting success.",
+      "further_defects_found_in_review": [
+        "find -exec chgrp/chmod dereferenced symlinks, so a link inside the volume could rewrite a target outside it; a reproduction turned an external 0400 file into 0660.",
+        "The adopted root could be an arbitrary descendant, while the kubelet only ever compares the mounted volume root.",
+        "Rendering the bootstrap beside the stages ordered nothing, so stages could run before or concurrently with the adoption."
+      ],
+      "regression_tests": [
+        "catalog/runtime/tests/test_volume_ownership.py::BootstrapJobTests::test_fsetid_is_present_because_setgid_is_the_whole_marker",
+        "catalog/runtime/tests/test_volume_ownership.py::BootstrapScriptExecutionTests::test_a_root_the_kernel_refused_to_stamp_fails_the_job"
+      ],
+      "symptom": "Adoption left mode 775 instead of 2775 and re-adopted on every pass."
+    },
+    "renderer": "fs2_serve_catalog.volume_ownership.render_volume_root_bootstrap_job",
+    "shared_claim_run": {
+      "duration_seconds": 5,
+      "job": "fsvo-bootstrap-shared",
+      "note": "Idempotent no-op over 93,364 inodes / 21.5 GB.",
+      "result": {
+        "action": "already-adopted",
+        "gid": 10001,
+        "mode": "2775",
+        "root": "/workspace"
+      }
+    },
+    "status": "Superseded. The generic bootstrap renderer these runs exercised is not part of the shipped successor; a sequenced adoption with a terminal receipt is tracked as follow-up in volume-ownership-authorities.json."
+  },
+  "claim": "Under otherwise identical conditions, a scientific stage pod carrying fsGroupChangePolicy=OnRootMismatch over an already-adopted volume root started its container in 1-2 s where the same workload without the policy took 153-305 s. This measures the policy's effect on a warm root. It is not an acceptance of any shipped artifact.",
+  "cluster": {
+    "context": "k8s-inference-h100",
+    "csi_driver": "mounted-fs-path.csi.nebius.ai",
+    "csi_fs_group_policy": "File",
+    "kube_system_namespace_uid": "5e8135da-4a78-4669-863d-455840d0700b",
+    "namespace": "fs2-models",
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "shared_claim": "fs2-runtime-qualification-artifacts-r20260902",
+    "shared_claim_capacity": "128Gi",
+    "storage_class": "csi-mounted-fs-path-sc"
+  },
+  "image": {
+    "digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+    "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69"
+  },
+  "not_claimed": [
+    "This does not show any current fs2 pod becoming faster. The chain measured here used one gid (10001) end to end because the stage pods both wrote and read the tree. The serving path does not: its producer writes gid 10001 and its consumer mounts fsGroup 1000, so it is not eligible for the policy and the rollout is deferred.",
+    "This is not canonical acceptance of the Mosaic qualification plan. The checked-in plan is explicitly non-runnable (route_exposed false, transitional artifact plane, no aggregate runtime-image-digest env, no external artifact mounts), so the applied manifests were derived out of band from it and are recorded below by digest.",
+    "This does not certify the commit that ships the ownership library. The library was narrowed after these runs and no longer renders a bootstrap Job at all.",
+    "The volume root was already adopted before the first trial, so these are warm-root measurements. They say nothing about the cost or correctness of a first adoption.",
+    "No GPU-memory snapshot or restore is involved; this is volume ownership only.",
+    "No shared service, control plane, Helm release or Terraform state was deployed."
+  ],
+  "observed_at": "2026-09-03T04:50:00Z",
+  "owner_task": "fs2-volume-ownership-fast-start-remediation-r20260903",
+  "permission_regression_check": {
+    "observed_by": "fsvo-result-reader",
+    "outcome": "A separate pod under the same filesystem group read every committed artifact.",
+    "reader_identity": "uid=10001(fs2) gid=10001(fs2)",
+    "reader_policy": "OnRootMismatch",
+    "result_directory_mode": "2755",
+    "result_ownership": "fs2:fs2 for every committed run directory, artifact index and artifact"
+  },
+  "provenance": {
+    "adapter_commit": "6551d8708c829fe99d229d1f547b8bd8cab0231e",
+    "adapter_commit_reachable_from_main": false,
+    "applied_manifest_derivation": "models/cancer-immunotherapy/runtime-images/mosaic/qualification/render_plan.py at f09b1f5a, then submit_plan.adapt() from the same tree, then a pool-id override from h100-1x to the live h100-reserved-8x. The rendered plan inputs are digested below; the post-adapt manifests were applied directly and not retained.",
+    "rendered_plan_sha256": {
+      "c1": "a22f6b16b27b3e419a30421a18eb5dc1f1e6762a86831cdb5d30148fd4ffa7c8",
+      "c2": "aed3b487d0248f7714feb9dbbb9160fa249b15b1b8e5235839e8c75c293112e5",
+      "c3": "f6d40a67cd32a66b6327dc545f3d3c3b19ec399c41745e421e2d63eceb312585"
+    },
+    "source_commit": "f09b1f5a012990d16629a7f513c2d97b873ae049",
+    "source_commit_state": "Superseded. It contained a bootstrap Job renderer with a symlink-dereference defect and an unsequenced adoption, both removed from the shipped successor."
+  },
+  "recorded_baseline": {
+    "boltzgen_design_scheduled_to_container_seconds": [
+      153,
+      154,
+      305
+    ],
+    "mosaic_aggregate_scheduled_to_container_seconds": [
+      171
+    ],
+    "mosaic_design_container_seconds": [
+      217,
+      214,
+      215
+    ],
+    "mosaic_design_scheduled_to_container_seconds": [
+      154,
+      153,
+      305
+    ],
+    "policy": "absent, so the Kubernetes default of a recursive walk applied",
+    "same_claim": true,
+    "source": "fs2-qualified-model-fast-start-live-campaign-r20260903 pods observed in-cluster"
+  },
+  "schema": "fs2-serve.nebius.ai/volume-ownership-h100-measurement/v1",
+  "shared_claim_pre_state": {
+    "bytes": 21543811615,
+    "gid_histogram": {
+      "10001": 93364
+    },
+    "inodes": 93364,
+    "note": "Already fully adopted by earlier recursive walks before any trial ran: root gid 10001 mode 2775 and all 93,364 inodes group fs2. Every trial below is therefore a warm-root measurement.",
+    "observed_by": "fsvo-root-inspect",
+    "root": {
+      "gid": 10001,
+      "mode": "2775",
+      "uid": 0
+    }
+  },
+  "shared_service_impact": {
+    "detail": "Only task-owned Jobs, Pods, ConfigMaps and one task-owned PVC were created in fs2-models. No Deployment, Service, route, catalog entry, Helm release or Terraform state was touched, and B300 was not used.",
+    "mutated": "none"
+  },
+  "status": "measurement-not-acceptance",
+  "trials": [
+    {
+      "aggregate_stage": {
+        "exit_code": 0,
+        "fs_group_change_policy": "OnRootMismatch",
+        "job": "mosaic-918674e2b1874ba5-aggregate",
+        "node_name_sha256": "89d4e9197704f71277273877bbf6ce43fe6d64b192b831fe14003fa5c450efd6",
+        "note": "CPU stage on a system pool node, not on the accelerator",
+        "pod": "mosaic-918674e2b1874ba5-aggregate-zgmx9",
+        "pod_uid": "161bbbf6-126a-480e-b501-0758eee7f67c",
+        "scheduled_to_container_seconds": 1.0
+      },
+      "attempt_id": "fsvo-c1",
+      "design_stage": {
+        "accelerator": {
+          "capacity_type": "reserved-capacity-block",
+          "class": "nvidia-h100-sxm5-80gb",
+          "gpus_requested": 1,
+          "pool_id": "h100-reserved-8x"
+        },
+        "container_finished_at": "2026-09-03T04:44:50Z",
+        "container_seconds": 226.0,
+        "container_started_at": "2026-09-03T04:41:04Z",
+        "exit_code": 0,
+        "fs_group": 10001,
+        "fs_group_change_policy": "OnRootMismatch",
+        "job": "mosaic-918674e2b1874ba5-s000",
+        "node_name_sha256": "5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
+        "pod": "mosaic-918674e2b1874ba5-s000-zjc87",
+        "pod_uid": "f528b27f-3a68-4f2b-84f7-4527f3879684",
+        "scheduled_at": "2026-09-03T04:41:02Z",
+        "scheduled_to_container_seconds": 2.0
+      },
+      "run_token": "918674e2b1874ba5",
+      "semantic_validation": {
+        "binder_structure": {
+          "atoms": 200,
+          "bytes": 16204,
+          "distinct_residue_types": 15,
+          "dominant_residue_fraction": 0.225,
+          "max_extent_angstrom": 29.913,
+          "residues": 40,
+          "sha256": "55a537f067752f1a2a1346fbfc0b74890405d675dd70dd8ca76ec0b0905ce113",
+          "three_letter_length": 40
+        },
+        "candidate_metrics": {
+          "candidate_id": "design-000",
+          "iptm": 0.7174788117408752,
+          "mean_plddt": 0.9075248837471008,
+          "objective": 12.33897876739502,
+          "seed": 7300,
+          "sequence": "VGLALYCLWPELFDGDAEEHHDEEALSEGELPNEAFLLIL",
+          "shard_index": 0
+        },
+        "canonical_adapter_commit": "6551d8708c829fe99d229d1f547b8bd8cab0231e",
+        "status": "passed",
+        "validator": "models/cancer-immunotherapy/runtime-images/mosaic/qualification/validate_result.py"
+      },
+      "trial": "c1"
+    },
+    {
+      "aggregate_stage": {
+        "exit_code": 0,
+        "fs_group_change_policy": "OnRootMismatch",
+        "job": "mosaic-6405b6493094b3dd-aggregate",
+        "node_name_sha256": "89d4e9197704f71277273877bbf6ce43fe6d64b192b831fe14003fa5c450efd6",
+        "note": "CPU stage on a system pool node, not on the accelerator",
+        "pod": "mosaic-6405b6493094b3dd-aggregate-g7jnm",
+        "pod_uid": "60d718b7-2206-4e2f-b89f-f38159074495",
+        "scheduled_to_container_seconds": 1.0
+      },
+      "attempt_id": "fsvo-c2",
+      "design_stage": {
+        "accelerator": {
+          "capacity_type": "reserved-capacity-block",
+          "class": "nvidia-h100-sxm5-80gb",
+          "gpus_requested": 1,
+          "pool_id": "h100-reserved-8x"
+        },
+        "container_finished_at": "2026-09-03T04:44:43Z",
+        "container_seconds": 216.0,
+        "container_started_at": "2026-09-03T04:41:07Z",
+        "exit_code": 0,
+        "fs_group": 10001,
+        "fs_group_change_policy": "OnRootMismatch",
+        "job": "mosaic-6405b6493094b3dd-s000",
+        "node_name_sha256": "ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9",
+        "pod": "mosaic-6405b6493094b3dd-s000-nnnxn",
+        "pod_uid": "18f3f374-7838-4080-86c2-4fcd495ce5a4",
+        "scheduled_at": "2026-09-03T04:41:06Z",
+        "scheduled_to_container_seconds": 1.0
+      },
+      "run_token": "6405b6493094b3dd",
+      "semantic_validation": {
+        "binder_structure": {
+          "atoms": 200,
+          "bytes": 16204,
+          "distinct_residue_types": 16,
+          "dominant_residue_fraction": 0.2,
+          "max_extent_angstrom": 29.604,
+          "residues": 40,
+          "sha256": "b443afe16a48dcc418a218a6d5bb38845a5bcda72c0b34e08796907a289067b2",
+          "three_letter_length": 40
+        },
+        "candidate_metrics": {
+          "candidate_id": "design-000",
+          "iptm": 0.8429046869277954,
+          "mean_plddt": 0.9274345636367798,
+          "objective": 12.312546730041504,
+          "seed": 7300,
+          "sequence": "VGLALYCLWPYLFDGDAEEHHDEEALSEGKLPNEAYLAIL",
+          "shard_index": 0
+        },
+        "canonical_adapter_commit": "6551d8708c829fe99d229d1f547b8bd8cab0231e",
+        "status": "passed",
+        "validator": "models/cancer-immunotherapy/runtime-images/mosaic/qualification/validate_result.py"
+      },
+      "trial": "c2"
+    },
+    {
+      "aggregate_stage": {
+        "exit_code": 0,
+        "fs_group_change_policy": "OnRootMismatch",
+        "job": "mosaic-6c46ee065772e1bc-aggregate",
+        "node_name_sha256": "89d4e9197704f71277273877bbf6ce43fe6d64b192b831fe14003fa5c450efd6",
+        "note": "CPU stage on a system pool node, not on the accelerator",
+        "pod": "mosaic-6c46ee065772e1bc-aggregate-r2sh7",
+        "pod_uid": "822aa348-01e1-4fdf-ae35-d409f7912554",
+        "scheduled_to_container_seconds": 1.0
+      },
+      "attempt_id": "fsvo-c3",
+      "design_stage": {
+        "accelerator": {
+          "capacity_type": "reserved-capacity-block",
+          "class": "nvidia-h100-sxm5-80gb",
+          "gpus_requested": 1,
+          "pool_id": "h100-reserved-8x"
+        },
+        "container_finished_at": "2026-09-03T04:44:56Z",
+        "container_seconds": 225.0,
+        "container_started_at": "2026-09-03T04:41:11Z",
+        "exit_code": 0,
+        "fs_group": 10001,
+        "fs_group_change_policy": "OnRootMismatch",
+        "job": "mosaic-6c46ee065772e1bc-s000",
+        "node_name_sha256": "5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
+        "pod": "mosaic-6c46ee065772e1bc-s000-fppst",
+        "pod_uid": "0943abf2-ac75-473e-a2ac-ee5fede4e280",
+        "scheduled_at": "2026-09-03T04:41:09Z",
+        "scheduled_to_container_seconds": 2.0
+      },
+      "run_token": "6c46ee065772e1bc",
+      "semantic_validation": {
+        "binder_structure": {
+          "atoms": 200,
+          "bytes": 16204,
+          "distinct_residue_types": 16,
+          "dominant_residue_fraction": 0.175,
+          "max_extent_angstrom": 30.255,
+          "residues": 40,
+          "sha256": "162d7912a2a7b1256e4cebe77a020392870eb4a79abf6bfc8016eb09f98df85b",
+          "three_letter_length": 40
+        },
+        "candidate_metrics": {
+          "candidate_id": "design-000",
+          "iptm": 0.7546816468238831,
+          "mean_plddt": 0.9132570028305054,
+          "objective": 12.314228057861328,
+          "seed": 7300,
+          "sequence": "VGLALYCLWPELFDGDAEEHHDEEALSEGKLPNEAFLAIG",
+          "shard_index": 0
+        },
+        "canonical_adapter_commit": "6551d8708c829fe99d229d1f547b8bd8cab0231e",
+        "status": "passed",
+        "validator": "models/cancer-immunotherapy/runtime-images/mosaic/qualification/validate_result.py"
+      },
+      "trial": "c3"
+    }
+  ]
+}

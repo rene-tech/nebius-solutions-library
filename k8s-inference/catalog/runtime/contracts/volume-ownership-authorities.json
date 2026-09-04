@@ -1,0 +1,259 @@
+{
+  "schema": "fs2-serve.nebius.ai/volume-ownership-authorities/v1",
+  "policy": "OnRootMismatch",
+  "rationale": "fsGroupChangePolicy=OnRootMismatch lets the kubelet skip its recursive ownership walk when the volume root already carries the pod fsGroup, the setgid bit and group rwx. The measured saving on the shared 128 GiB scientific cache is 153-305 s of cold start per Job. The skip is only sound when the producer that wrote the tree and the consumer that mounts it agree exactly on gid, on the mounted volume root, and on the producer owning every inode below it. A group mismatch does not merely forfeit the saving: once some pod's walk stamps the root with the consumer's group, a later pod skips while the producer keeps writing under its own group, and those files become unreadable. This register records the state of every fsGroup-bearing template; entries marked unverified have a producer whose identity could not be established from this repository.",
+  "authorities": {
+    "sole-writer-in-pod": "An init container in the same pod creates the tree under the contracted uid/gid before the runtime container starts, so the ownership the kubelet would enforce is already the ownership the writer produced.",
+    "sole-writer-job": "A separate reviewed Job is the only writer of the claim and stages content under the same gid the consumer mounts with. No pair in this repository meets this today.",
+    "no-persistent-writable-tree": "The pod mounts no writable persistent claim, so there is no tree for the walk to own and no state for a skip to miss.",
+    "hostpath-not-kubelet-managed": "The pod's only non-ephemeral volume is a hostPath, whose mounter reports Managed: false, so the kubelet runs no ownership pass over it at all. There is no walk to remove and the policy would change nothing either way.",
+    "unverified-external-writer": "The template already carries the policy but its producer is outside this repository, so producer/consumer agreement could not be verified here. Recorded, not endorsed.",
+    "uniform-consumer-group-on-dedicated-claim": "Every pod that mounts the claim uses the same fsGroup and no other writer exists, so the first pod's walk adopts the tree and every later pod matches it. Sound only while the claim stays dedicated to consumers that share one group."
+  },
+  "registered": [
+    {
+      "path": "models/general-media/k8s/qwen3-8b.yaml",
+      "subject": "qwen3-8b runtime Deployment",
+      "authority": "sole-writer-in-pod",
+      "writer": "localize-model init container"
+    },
+    {
+      "path": "models/general-media/k8s/cosmos3-nano.yaml",
+      "subject": "cosmos3-nano runtime Deployment",
+      "authority": "sole-writer-in-pod",
+      "writer": "localize-model init container"
+    },
+    {
+      "path": "models/general-media/k8s/glm-5-2-fp8.yaml",
+      "subject": "glm-5-2-fp8 runtime Deployment",
+      "authority": "sole-writer-in-pod",
+      "writer": "localize-model init container"
+    },
+    {
+      "path": "models/general-media/k8s/evo2-40b.yaml",
+      "subject": "evo2-40b runtime Deployment",
+      "authority": "sole-writer-in-pod",
+      "writer": "prepare-runtime-cache init container"
+    },
+    {
+      "path": "models/general-media/k8s/nv-reason-cxr-3b.yaml",
+      "subject": "nv-reason-cxr-3b runtime Deployment",
+      "authority": "sole-writer-in-pod",
+      "writer": "prepare-runtime-cache init container"
+    },
+    {
+      "path": "models/general-media/k8s/nv-segment-ct.yaml",
+      "subject": "nv-segment-ct runtime Deployment",
+      "authority": "sole-writer-in-pod",
+      "writer": "prepare-runtime-cache init container"
+    },
+    {
+      "path": "models/general-media/k8s/sdxl.yaml",
+      "subject": "sdxl runtime Deployment",
+      "authority": "sole-writer-in-pod",
+      "writer": "prepare-runtime-cache init container"
+    },
+    {
+      "path": "models/qwen3-8b-b300/runtime.yaml",
+      "subject": "qwen3-8b B300 runtime Deployment",
+      "authority": "sole-writer-in-pod",
+      "writer": "localize-model init container"
+    },
+    {
+      "path": "models/structure/manifests/openfold-nims.yaml",
+      "subject": "openfold2 and openfold3 NIM Deployments",
+      "authority": "unverified-external-writer",
+      "writer": "the NIM Operator cache Job that populates openfold2-nim-cache and openfold3-nim-cache",
+      "note": "Carries the policy already. The NIM Operator cache Job that populates openfold2-nim-cache and openfold3-nim-cache is external to this repository, so its gid could not be checked against the pods' fsGroup 1000. Pre-existing state, recorded rather than endorsed."
+    },
+    {
+      "path": "charts/control-plane/fs2-serve-control-plane/templates/deployment.yaml",
+      "subject": "control plane Deployment",
+      "authority": "no-persistent-writable-tree",
+      "writer": null,
+      "verified_by": "components/control-plane/tests/test_helm_chart.py",
+      "note": "Catalog and evidence claims are mounted readOnly; the only writable volume is an emptyDir."
+    },
+    {
+      "path": "charts/control-plane/fs2-serve-control-plane/templates/model-controller-deployment.yaml",
+      "subject": "model controller Deployment",
+      "authority": "no-persistent-writable-tree",
+      "writer": null,
+      "verified_by": "components/control-plane/tests/test_helm_chart.py",
+      "note": "Projected token, config maps and the database CA secret only, all readOnly."
+    },
+    {
+      "path": "charts/control-plane/fs2-serve-control-plane/templates/admin-console-deployment.yaml",
+      "subject": "admin console Deployment",
+      "authority": "no-persistent-writable-tree",
+      "writer": null,
+      "verified_by": "components/control-plane/tests/test_helm_chart.py",
+      "note": "One in-memory emptyDir and no claim."
+    },
+    {
+      "path": "reference-data/render_job.py",
+      "subject": "reference-data preprocessing Jobs",
+      "authority": "hostpath-not-kubelet-managed",
+      "writer": null,
+      "note": "Carries the policy already, but its reference-data volume is a hostPath and its work volume an emptyDir, so no kubelet ownership pass applies. It is a standalone script outside the catalog package and so states the policy literally rather than importing the contract."
+    },
+    {
+      "path": "catalog/runtime/fs2_serve_catalog/kubernetes.py",
+      "subject": "artifact acquisition Job",
+      "authority": "sole-writer-job",
+      "writer": "the acquisition helper itself, uid/gid/fsGroup all 10001",
+      "note": "Pre-existing on main and untouched by this commit. The helper is the first and only consumer of the claim it writes, so producer and consumer are the same pod under one gid. It is not a caller of this contract.",
+      "contract_caller": false
+    },
+    {
+      "path": "models/cancer-immunotherapy/runtime-images/proteina-complexa/qualification/render_plan.py",
+      "subject": "Proteina-Complexa promotion Jobs",
+      "authority": "uniform-consumer-group-on-dedicated-claim",
+      "writer": "the three promotion Jobs themselves, all at gid 10001 on the dedicated output claim",
+      "contract_caller": false,
+      "note": "Arrived with main's scientific merge and is untouched here. The large shared plane is a hostPath, which the kubelet never applies fsGroup to; only the dedicated output claim carries the policy, and its writers share one group. The pods mount a subPath of that claim, so the authority rests on the uniform writer group rather than on anything the pod can see."
+    },
+    {
+      "path": "models/cancer-immunotherapy/runtime-images/proteina-complexa/qualification/generated-plan.json",
+      "subject": "rendered Proteina-Complexa promotion plan",
+      "authority": "uniform-consumer-group-on-dedicated-claim",
+      "writer": "as above; this is the checked-in output of render_plan.py",
+      "contract_caller": false
+    }
+  ],
+  "deferred": [
+    {
+      "path": "models/bionemo/boltz2/kubernetes.yaml",
+      "reason": "boltz2-model-cache is writable and no reviewed sole writer or adoption is proven for it yet."
+    },
+    {
+      "path": "models/bionemo/genmol/kubernetes.yaml",
+      "reason": "genmol-model-cache is writable and no reviewed sole writer or adoption is proven for it yet."
+    },
+    {
+      "path": "models/bionemo/msa-search-pdb70/kubernetes.yaml",
+      "reason": "msa-search-pdb70-cache is writable and no reviewed sole writer or adoption is proven for it yet."
+    },
+    {
+      "path": "models/bionemo/msa-search-pdb70/kubernetes-nim.yaml",
+      "reason": "msa-search-pdb70-nim-cache is writable and no reviewed sole writer or adoption is proven for it yet."
+    },
+    {
+      "path": "models/structure/manifests/rfdiffusion.yaml",
+      "reason": "No persistent claim, so the walk costs nothing and adding the policy would buy nothing."
+    },
+    {
+      "path": "models/structure/manifests/diffdock.yaml",
+      "reason": "No persistent claim, so the walk costs nothing and adding the policy would buy nothing."
+    },
+    {
+      "path": "models/structure/manifests/proteinmpnn.yaml",
+      "reason": "No persistent claim, so the walk costs nothing and adding the policy would buy nothing."
+    },
+    {
+      "path": "charts/control-plane/fs2-serve-control-plane/templates/bootstrap-access-job.yaml",
+      "reason": "Secret volumes only; the walk is negligible and the chart owner has not reviewed a policy change.",
+      "verified_by": "components/control-plane/tests/test_helm_chart.py"
+    },
+    {
+      "path": "charts/control-plane/fs2-serve-control-plane/templates/migration-job.yaml",
+      "reason": "One database CA secret; the walk is negligible and the chart owner has not reviewed a policy change.",
+      "verified_by": "components/control-plane/tests/test_helm_chart.py"
+    },
+    {
+      "path": "charts/control-plane/fs2-serve-control-plane/templates/maintenance-cronjob.yaml",
+      "reason": "One database CA secret; the walk is negligible and the chart owner has not reviewed a policy change.",
+      "verified_by": "components/control-plane/tests/test_helm_chart.py"
+    },
+    {
+      "path": "model-artifacts/render_jobs.py",
+      "reason": "Public artifact ingestion Jobs mount the shared filesystem as a hostPath, not a claim, so the kubelet applies no ownership pass and the policy would buy nothing. Revisit if this renderer moves to a PersistentVolumeClaim."
+    },
+    {
+      "path": "models/cancer-immunotherapy/runtime-images/mosaic/qualification/generated-plan.json",
+      "reason": "The shared scientific cache has many independent writers, so no existing producer owns its root. Giving it the fast path needs a sequenced one-time adoption with a terminal receipt and stage admission binding, which belongs in the batch controller rather than in a renderer. Tracked as follow-up; the plan also pins an adapter commit that is not reachable from main."
+    },
+    {
+      "path": "catalog/runtime/fs2_serve_catalog/workloads.py",
+      "reason": "The model runtime pod mounts fsGroup 1000 while the acquisition Job that writes its cache uses gid 10001, so no producer authorises it to skip the walk. It keeps the Kubernetes default until those identities are aligned."
+    },
+    {
+      "path": "models/cancer-immunotherapy/runtime-images/boltzgen/qualification/render_localization_job.py",
+      "reason": "Sets fsGroup 1000 with no change policy, so it keeps the Kubernetes default. Arrived with main's scientific merge and is untouched here."
+    }
+  ],
+  "excluded_prefixes": [
+    {
+      "prefix": "academic-assets/evidence/",
+      "reason": "Recorded live-object receipts, not templates. They must keep the ownership state the cluster actually had when they were captured."
+    },
+    {
+      "prefix": "models/cancer-immunotherapy/images/alphafold3/",
+      "reason": "Asserts that AlphaFold 3 pods must never set fsGroup, because the kubelet would rewrite licensed bytes to group-writable 0660/2775. It names the field only to forbid it and emits no pod template."
+    }
+  ],
+  "follow_up": [
+    {
+      "item": "align the acquisition, localization and serving filesystem identities",
+      "why": "acquisition writes gid 10001, the serving pod mounts fsGroup 1000, and the localization Job pins neither runAsUser nor runAsGroup. Until one gid spans the chain over one mounted root, no consumer may use OnRootMismatch, so the optimisation cannot be turned on for the serving path at all.",
+      "blocks": [
+        "catalog/runtime/fs2_serve_catalog/workloads.py",
+        "catalog/runtime/fs2_serve_catalog/kubernetes.py"
+      ]
+    },
+    {
+      "item": "sequenced one-time root adoption for many-writer shared caches",
+      "why": "A bootstrap Job rendered beside the stages that consume it proves nothing: nothing orders them, nothing stops the stages running first, and a matching root group and mode are also what an unrelated pod's default walk leaves behind. It needs a terminal content-addressed receipt carrying claim UID, filesystem group, job UID and applied-manifest digest, stage admission bound to that receipt, and exclusion of concurrent writers during first adoption.",
+      "blocks": [
+        "models/cancer-immunotherapy/runtime-images/mosaic/qualification/generated-plan.json",
+        "models/bionemo/boltz2/kubernetes.yaml",
+        "models/bionemo/genmol/kubernetes.yaml",
+        "models/bionemo/msa-search-pdb70/kubernetes.yaml",
+        "models/bionemo/msa-search-pdb70/kubernetes-nim.yaml"
+      ]
+    },
+    {
+      "item": "adopt this contract in the scientific batch adapters",
+      "why": "mosaic, bindcraft-native and bindcraft-open each hard-code fsGroup with no policy in their own _job() renderer. They are not reachable from main yet, so this successor cannot fix them.",
+      "blocks": [
+        "agent/fs2-cancer-images-complexa-boltzgen-mosaic-r20260902"
+      ]
+    }
+  ],
+  "never_fs_group": [
+    {
+      "path": "charts/control-plane/fs2-serve-control-plane/templates/academic-execution-job.yaml",
+      "reason": "Academic assets are read through supplementalGroups with read-only mounts. An fsGroup here would make the kubelet rewrite licensed bytes to group-writable 0660/2775."
+    },
+    {
+      "path": "academic-assets/kubernetes/private-cache-loader.template.json",
+      "reason": "Same delivered-mode contract; the loader uses a root prepare-root init container instead."
+    },
+    {
+      "path": "models/cancer-immunotherapy/images/alphafold3/contracts/af3-runtime-handoff.json",
+      "reason": "AlphaFold 3 parameters are licensed and must never be made group-writable."
+    },
+    {
+      "path": "models/cancer-immunotherapy/artifact-localization/render_localization_jobs.py",
+      "reason": "Pins runAsUser and runAsGroup and deliberately sets no fsGroup, because the kubelet applies ownership to the whole volume rather than the sub-path a pod mounts. Independently reached the same conclusion as this contract."
+    },
+    {
+      "path": "models/cancer-immunotherapy/images/bindcraft-native/qualification/render_semantic_job.py",
+      "reason": "Pins uid/gid 10001 and states that setting fsGroup on the Pod would mutate the shared tree it must not touch."
+    }
+  ],
+  "rollout": {
+    "state": "deferred",
+    "callers": 0,
+    "reason": "No producer/consumer pair in this repository currently satisfies the contract. The artifact acquisition Job writes as gid 10001 while the model runtime pod mounts with fsGroup 1000, so the root can never match both. The localization Job pins neither runAsUser nor runAsGroup, so the group its staged tree ends up owned by is undefined and it cannot be anyone's producer; the validator reports that rather than passing it. Aligning these identities is a deliberate change to running services and is not made here.",
+    "unblocks_when": "producer and consumer are pinned to one gid over one mounted volume root, with the producer owning every inode below it, proven by assert_authority",
+    "this_commit_changes_no_rendered_manifest": true
+  },
+  "invariants_enforced": [
+    "A pod that sets fsGroup must pair it with fsGroupChangePolicy=OnRootMismatch or keep the Kubernetes default; a policy without an fsGroup is rejected as a no-op.",
+    "A persistent mount, read-only included, needs a producer that agrees on gid, on the mounted volume root, and on owning every inode below it. fsGroup ownership is applied per volume, not per mount.",
+    "A writable persistent mount needs a frozen writer identity: without a pinned runAsUser and runAsGroup the group its tree ends up owned by is undefined, so it can never be a producer.",
+    "An owned root is a whole mounted volume root. A descendant of one, or a mount reached through a subPath, is rejected because the kubelet compares only the mount.",
+    "A claim marked readOnly at the volume level beside a writable mount of the same claim is rejected; read-only intent belongs on the mount."
+  ]
+}

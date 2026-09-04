@@ -102,6 +102,46 @@ qualifies a resumable checkpoint format. Cancellation stops new work, suspends
 admitted Kueue work where supported, terminates active attempts using the
 declared grace behavior, and preserves already committed immutable artifacts.
 
+## Volume ownership on the shared cache
+
+A pod that sets `fsGroup` makes the kubelet rewrite owner and mode on every
+inode of its volumes before the first container starts. On the 128 GiB H100
+cache a recorded campaign measured 153-305 s of that walk per Job, against 1-2 s
+once the volume root already matched.
+
+`fs2_serve_catalog.volume_ownership` is the contract for turning that off
+safely. `FilesystemGroupProducer` and `FilesystemGroupConsumer` state who wrote
+a tree and who mounts it, and `assert_authority` refuses the pairing unless they
+agree exactly on:
+
+- the **group**, because the kubelet compares the volume root's gid against the
+  consuming pod's `fsGroup`;
+- the **mounted volume root**, because that is the only path the kubelet
+  compares — a descendant of it, or a mount reached through a `subPath`, proves
+  nothing;
+- the producer owning **every inode** below that root, because the skip is
+  all-or-nothing.
+
+Read-only consumers are not exempt: `fsGroup` ownership is applied per volume,
+not per mount.
+
+**Nothing satisfies this contract yet, and no manifest enables the policy.** The
+artifact acquisition Job writes as gid 10001 while the model runtime pod mounts
+with `fsGroup` 1000, so the root can never match both; and the localization Job
+pins neither `runAsUser` nor `runAsGroup`, so the group its staged tree ends up
+owned by is not stated anywhere. Aligning those identities is a deliberate
+change to running services and is tracked under `follow_up` in the register,
+together with the shared many-writer cache — which additionally needs a
+sequenced one-time adoption with a terminal receipt and stage admission binding,
+controller work rather than renderer work.
+
+Immutable model, artifact and reference mounts stay `readOnly` on the **mount**.
+Setting `readOnly` on the claim marks the whole CSI attachment read-only and
+breaks any writable sibling mount of the same claim; the contract rejects that
+combination. Licensed academic trees take no `fsGroup` at all and are read
+through `supplementalGroups`, because the ownership pass would rewrite their
+delivered modes to group-writable.
+
 ## Access-gated native backends
 
 Native BindCraft with academic PyRosetta and native AlphaFold 3 remain in

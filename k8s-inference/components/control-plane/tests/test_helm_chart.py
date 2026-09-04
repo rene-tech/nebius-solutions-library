@@ -3264,3 +3264,92 @@ def test_extra_kueue_namespace_must_not_repeat_the_model_namespace() -> None:
     )
     assert result.returncode != 0
     assert "must not repeat modelNamespace" in result.stderr
+
+
+def test_chart_pod_templates_match_the_volume_ownership_register() -> None:
+    """The chart half of the repo-wide volume-ownership guard.
+
+    tests/test_volume_ownership_contract.py cannot render Go templates, so every
+    chart entry in the register delegates here.  A template that starts skipping
+    the kubelet ownership walk without a registered authority, or that quietly
+    drops the policy it was registered with, fails on this side.
+    """
+
+    register = json.loads(
+        (CATALOG_ROOT / "contracts" / "volume-ownership-authorities.json").read_text()
+    )
+    policy = register["policy"]
+    prefix = "charts/control-plane/fs2-serve-control-plane/templates/"
+
+    def paths(section: str) -> set[str]:
+        return {
+            item["path"][len(prefix) :]
+            for item in register[section]
+            if item["path"].startswith(prefix)
+        }
+
+    registered = paths("registered")
+    deferred = paths("deferred")
+    template_by_object = {
+        ("Deployment", "fs2-serve-control-plane"): "deployment.yaml",
+        (
+            "Deployment",
+            "fs2-serve-control-plane-admin-console",
+        ): "admin-console-deployment.yaml",
+        (
+            "Deployment",
+            "fs2-serve-control-plane-model-controller",
+        ): "model-controller-deployment.yaml",
+        (
+            "Job",
+            "fs2-serve-control-plane-bootstrap-access",
+        ): "bootstrap-access-job.yaml",
+        ("Job", "fs2-serve-control-plane-migrate"): "migration-job.yaml",
+        ("CronJob", "fs2-serve-control-plane-maintenance"): "maintenance-cronjob.yaml",
+    }
+
+    documents = render(
+        *admin_console_values(),
+        "--set", "modelController.enabled=true",
+        "--set", "modelController.infrastructureEnvelopeConfigMapName=fs2-model-envelope",
+        "--set", "modelController.rendererBundlesConfigMapName=fs2-model-bundles",
+        "--set", "networkPolicy.kubernetesApiCidrs[0]=10.0.0.1/32",
+        "--set", "maintenance.enabled=true",
+        "--set", "bootstrapAccess.enabled=true",
+        "--set", "bootstrapAccess.secretName=fs2-bootstrap",
+        "--set", "bootstrapAccess.tenantId=unit",
+        "--set", "bootstrapAccess.scopes={catalog.read,inference.invoke,mcp.invoke}",
+        "--set", "bootstrapAccess.models={qwen3-8b}",
+    )
+    seen: set[str] = set()
+    for document in documents:
+        kind = document.get("kind")
+        if kind == "CronJob":
+            pod_spec = document["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+        elif kind in {"Deployment", "Job"}:
+            pod_spec = document["spec"]["template"]["spec"]
+        else:
+            continue
+        security = pod_spec.get("securityContext", {})
+        if "fsGroup" not in security and "fsGroupChangePolicy" not in security:
+            continue
+        name = document["metadata"]["name"]
+        template = template_by_object.get((kind, name))
+        assert template is not None, f"unregistered chart pod template for {kind}/{name}"
+        seen.add(template)
+        if security.get("fsGroupChangePolicy") == policy:
+            assert (
+                template in registered
+            ), f"{template} skips the ownership walk without a registered authority"
+        else:
+            assert (
+                template in deferred
+            ), f"{template} pays the recursive ownership walk and is not a recorded deferral"
+        if "fsGroupChangePolicy" in security:
+            assert "fsGroup" in security, f"{template} sets a policy the kubelet ignores"
+        assert security.get("fsGroupChangePolicy") != "Always"
+
+    assert registered | deferred == seen, (
+        "the register and the rendered chart disagree: "
+        f"{sorted((registered | deferred) ^ seen)}"
+    )

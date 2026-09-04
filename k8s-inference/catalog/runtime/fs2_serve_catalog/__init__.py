@@ -38,6 +38,14 @@ from .loader import (
     ScaleContract,
     load_catalog,
 )
+from .volume_ownership import (
+    FS_GROUP_CHANGE_POLICY,
+    VolumeOwnershipError,
+    apply_filesystem_group,
+    assert_pod_volume_ownership,
+    filesystem_group_security_context,
+    validate_pod_volume_ownership,
+)
 from .prerequisites import PrerequisiteBinding, bind_runtime_prerequisites
 from .package import installed_catalog_root
 from .staging import stage_artifact
@@ -56,6 +64,16 @@ from .variant_promotions import (
 __all__ = [
     "Catalog",
     "CatalogError",
+    "FS_GROUP_CHANGE_POLICY",
+    "FilesystemGroupConsumer",
+    "FilesystemGroupProducer",
+    "VolumeOwnershipError",
+    "apply_filesystem_group",
+    "assert_authority",
+    "assert_pod_volume_ownership",
+    "authority_violations",
+    "filesystem_group_security_context",
+    "validate_pod_volume_ownership",
     "AcquisitionPlan",
     "AcquisitionHelperImageAdmission",
     "ActivationBinding",
