@@ -276,6 +276,17 @@
       "object_sub_path": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
       "expanded_bytes": 672435030513,
       "file_count": 195867,
+      "directory_count": 1,
+      "cardinality_observation": {
+        "file": "alphafold3-reference-tree-cardinality.json",
+        "sha256": "37f8dbd7e5e4b4e422b4f7dcdb390707f919ae2360c90ee75a99834d9352ebc2",
+        "physical_file_count_including_reserved_marker": 195868,
+        "root_directory_excluded": true,
+        "job": "secondary-af3-reference-tree-count",
+        "job_uid": "0f592978-990b-488e-85c4-738da7dc23f6",
+        "pod_uid": "a24f0c20-23a7-4b05-b1a6-f2c7870979ac",
+        "state": "complete"
+      },
       "staging_job": {
         "name": "fs2-stage-af3-f2342477991d",
         "uid": "a02fa4d3-f2b4-421c-bc2c-3d4a3d89a54e",
