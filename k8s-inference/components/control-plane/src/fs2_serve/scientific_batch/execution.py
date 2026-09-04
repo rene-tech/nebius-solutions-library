@@ -51,6 +51,10 @@ REFERENCE_DATASETS_HOST_PATH = "/mnt/fs2-reference-data/data"
 REFERENCE_DATA_STORAGE_LABEL = "storage.fs2.nebius/reference-data"
 REFERENCE_DATA_GID = 1000
 BINDCRAFT_AF2_ARTIFACT = "alphafold2-params-bindcraft"
+BINDCRAFT_AF2_DIGEST = "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f"
+BINDCRAFT_AF2_TREE_MANIFEST_DIGEST = "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0"
+BINDCRAFT_AF2_FILE_COUNT = 17
+BINDCRAFT_AF2_EXPANDED_BYTES = 5_587_959_437
 BINDCRAFT_MPNN_VANILLA_ARTIFACT = "colabdesign-mpnn-weights-vanilla"
 BINDCRAFT_MPNN_SOLUBLE_ARTIFACT = "colabdesign-mpnn-weights-soluble"
 BINDCRAFT_PYROSETTA_ARTIFACT = "bindcraft-pyrosetta-installed-tree"
@@ -1170,7 +1174,18 @@ class FileScientificManifestRenderer:
         if set(execution_plan.required_model_artifacts) != required:
             raise ScientificExecutionMapError("BindCraft runtime artifact identities are incomplete")
         localized = {item.logical_artifact_id: item for item in localizations}
-        if "manifest.json" not in {item.path for item in localized[BINDCRAFT_AF2_ARTIFACT].files}:
+        af2 = localized[BINDCRAFT_AF2_ARTIFACT]
+        manifest_file = next((item for item in af2.files if item.path == "manifest.json"), None)
+        tree = af2.aggregate_tree
+        aggregate_manifest_is_exact = tree is not None and (
+            af2.content_digest.removeprefix("sha256:") == BINDCRAFT_AF2_DIGEST
+            and tree.tree_digest.removeprefix("sha256:") == BINDCRAFT_AF2_DIGEST
+            and tree.manifest_digest.removeprefix("sha256:") == BINDCRAFT_AF2_TREE_MANIFEST_DIGEST
+            and tree.file_count == BINDCRAFT_AF2_FILE_COUNT
+            and tree.directory_count == 0
+            and tree.expanded_bytes == BINDCRAFT_AF2_EXPANDED_BYTES
+        )
+        if manifest_file is None and not aggregate_manifest_is_exact:
             raise ScientificExecutionMapError("BindCraft AlphaFold2 parameters require manifest.json")
         pyrosetta = localized[BINDCRAFT_PYROSETTA_ARTIFACT]
         if (
