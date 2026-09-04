@@ -556,6 +556,15 @@ variable "deployment" {
       writes_enabled = optional(bool, false)
       namespace      = optional(string, "fs2-models")
 
+      # Optional cross-attempt cache for compiled kernels and runtime-owned
+      # derived data. Model weights stay on their immutable read-only planes;
+      # this claim is disposable acceleration state only.
+      runtime_cache = optional(object({
+        enabled            = optional(bool, false)
+        storage_class_name = optional(string, "csi-mounted-fs-path-sc")
+        size_gib           = optional(number, 128)
+      }), {})
+
       execution_map = optional(any)
 
       workers                  = optional(number, 2)
@@ -1183,6 +1192,19 @@ variable "deployment" {
       false,
     )
     error_message = "scientific_batch.enabled requires storage.scientific_artifacts.enabled, scientific_batch.writes_enabled requires scientific_batch.enabled, and the batch namespace must be a DNS label."
+  }
+
+  validation {
+    condition = try(
+      (!var.deployment.scientific_batch.runtime_cache.enabled || var.deployment.scientific_batch.enabled) &&
+      can(regex("^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$", var.deployment.scientific_batch.runtime_cache.storage_class_name)) &&
+      length(var.deployment.scientific_batch.runtime_cache.storage_class_name) <= 253 &&
+      floor(var.deployment.scientific_batch.runtime_cache.size_gib) == var.deployment.scientific_batch.runtime_cache.size_gib &&
+      var.deployment.scientific_batch.runtime_cache.size_gib >= 1 &&
+      var.deployment.scientific_batch.runtime_cache.size_gib <= 65536,
+      false,
+    )
+    error_message = "scientific_batch.runtime_cache requires scientific batch execution, a DNS-style storage class, and a whole 1-65536 GiB cache size."
   }
 
   validation {

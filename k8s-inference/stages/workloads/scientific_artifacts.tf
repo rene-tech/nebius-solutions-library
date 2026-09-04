@@ -14,9 +14,27 @@
 # and picks the new credential up without the annotation ever carrying a secret.
 
 locals {
-  scientific_artifacts_enabled     = var.scientific_artifacts.enabled
-  scientific_artifacts_secret_name = "fs2-serve-artifact-store"
-  scientific_artifacts_secret_key  = "credentials.json"
+  scientific_artifacts_enabled        = var.scientific_artifacts.enabled
+  scientific_artifacts_secret_name    = "fs2-serve-artifact-store"
+  scientific_artifacts_secret_key     = "credentials.json"
+  scientific_runtime_cache_claim_name = "fs2-scientific-runtime-cache"
+  scientific_runtime_cache_mount_path = "/cache"
+  scientific_runtime_cache_mounts = flatten([
+    for model in try(var.scientific_batch.execution_map.models, []) : [
+      for stage in try(model.stages, []) : [
+        for mount in try(stage.mounts, []) : {
+          model_id   = try(model.model_id, "")
+          stage_id   = try(stage.stage_id, "")
+          name       = try(mount.name, "")
+          claim_name = try(mount.claim_name, null)
+          host_path  = try(mount.host_path, null)
+          mount_path = try(mount.mount_path, "")
+          sub_path   = try(mount.sub_path, null)
+          read_only  = try(mount.read_only, null)
+        } if try(mount.kind, "") == "runtime-cache"
+      ]
+    ]
+  ])
   # The rollout identity must move whenever the mounted credential could differ.
   # The cloud key's resource_version restarts at zero when the key is replaced,
   # so a revision derived from it alone repeats after a rotation and leaves the
@@ -137,6 +155,50 @@ resource "kubernetes_secret_v1" "scientific_artifact_store" {
   depends_on = [terraform_data.cluster_contract]
 }
 
+# Disposable derived runtime state only: compiled kernels and framework cache
+# entries. Immutable model artifacts and tenant inputs never use this claim.
+# The stable name is part of the reviewed execution-map contract, while size
+# and storage class remain ordinary terraform.tfvars settings.
+resource "kubernetes_persistent_volume_claim_v1" "scientific_runtime_cache" {
+  count = var.scientific_batch.runtime_cache.enabled ? 1 : 0
+
+  wait_until_bound = false
+
+  metadata {
+    name      = local.scientific_runtime_cache_claim_name
+    namespace = var.scientific_batch.namespace
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component"        = "scientific-runtime-cache"
+      "fast-start.fs2.nebius/storage-role" = "compile-cache"
+    })
+    annotations = {
+      "fs2.nebius.ai/data-classification" = "disposable-derived-cache"
+      "fs2.nebius.ai/mount-path"          = local.scientific_runtime_cache_mount_path
+    }
+  }
+
+  spec {
+    access_modes       = ["ReadWriteMany"]
+    storage_class_name = var.scientific_batch.runtime_cache.storage_class_name
+    volume_mode        = "Filesystem"
+
+    resources {
+      requests = {
+        storage = "${var.scientific_batch.runtime_cache.size_gib}Gi"
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      metadata[0].annotations,
+      spec[0].volume_name,
+    ]
+  }
+
+  depends_on = [terraform_data.cluster_contract]
+}
+
 # Publishes exactly what the control-plane chart receives, so the projection is
 # assertable without standing up the whole stage. Everything here is non-secret.
 resource "terraform_data" "scientific_artifacts_contract" {
@@ -159,6 +221,16 @@ resource "terraform_data" "scientific_artifacts_contract" {
       enabled        = var.scientific_batch.enabled
       writes_enabled = var.scientific_batch.writes_enabled
       namespace      = var.scientific_batch.namespace
+      runtime_cache = {
+        enabled            = var.scientific_batch.runtime_cache.enabled
+        claim_name         = var.scientific_batch.runtime_cache.enabled ? local.scientific_runtime_cache_claim_name : null
+        mount_path         = var.scientific_batch.runtime_cache.enabled ? local.scientific_runtime_cache_mount_path : null
+        storage_class_name = var.scientific_batch.runtime_cache.storage_class_name
+        size_gib           = var.scientific_batch.runtime_cache.size_gib
+        consumers = sort([
+          for mount in local.scientific_runtime_cache_mounts : "${mount.model_id}/${mount.stage_id}"
+        ])
+      }
     }
   }
 
@@ -170,6 +242,23 @@ resource "terraform_data" "scientific_artifacts_contract" {
     precondition {
       condition     = !var.scientific_batch.writes_enabled || var.scientific_batch.enabled
       error_message = "scientific batch Kubernetes writes require the batch controller gate."
+    }
+    precondition {
+      condition = (
+        !var.scientific_batch.enabled || (
+          (length(local.scientific_runtime_cache_mounts) == 0 || var.scientific_batch.runtime_cache.enabled) &&
+          (!var.scientific_batch.runtime_cache.enabled || length(local.scientific_runtime_cache_mounts) > 0) &&
+          alltrue([
+            for mount in local.scientific_runtime_cache_mounts :
+            mount.claim_name == local.scientific_runtime_cache_claim_name &&
+            mount.host_path == null &&
+            mount.mount_path == local.scientific_runtime_cache_mount_path &&
+            mount.sub_path == null &&
+            mount.read_only == false
+          ])
+        )
+      )
+      error_message = "A scientific runtime cache must be enabled exactly when the execution map consumes it, and every consumer must use the Terraform-owned writable fs2-scientific-runtime-cache claim at /cache."
     }
     precondition {
       condition = (

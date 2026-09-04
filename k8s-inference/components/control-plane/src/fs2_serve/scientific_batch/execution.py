@@ -43,7 +43,9 @@ from .models import (
 from .profile_catalog import ScientificProfileCatalog, ScientificWorkloadProfile
 
 EXECUTION_SCHEMA = "fs2-serve.nebius.ai/scientific-execution-map/v3"
-MOUNT_KINDS = {"artifact-workspace", "reference", "private"}
+MOUNT_KINDS = {"artifact-workspace", "reference", "private", "runtime-cache"}
+RUNTIME_CACHE_CLAIM_NAME = "fs2-scientific-runtime-cache"
+RUNTIME_CACHE_MOUNT_PATH = "/cache"
 REFERENCE_DATASETS_HOST_PATH = "/mnt/fs2-reference-data/data"
 REFERENCE_DATA_STORAGE_LABEL = "storage.fs2.nebius/reference-data"
 REFERENCE_DATA_GID = 1000
@@ -523,6 +525,17 @@ class FileScientificManifestRenderer:
                             raise ScientificExecutionMapError(
                                 "run artifact workspace must be writable at /mnt/fs2-scientific"
                             )
+                    elif kind == "runtime-cache":
+                        if (
+                            claim_name != RUNTIME_CACHE_CLAIM_NAME
+                            or host_path is not None
+                            or sub_path is not None
+                            or read_only
+                            or mount_path != RUNTIME_CACHE_MOUNT_PATH
+                        ):
+                            raise ScientificExecutionMapError(
+                                "scientific runtime cache must use the Terraform-owned writable claim at /cache"
+                            )
                     else:
                         if (claim_name is None) == (host_path is None):
                             raise ScientificExecutionMapError(
@@ -588,6 +601,8 @@ class FileScientificManifestRenderer:
                     )
                 if kinds.count("artifact-workspace") != 1:
                     raise ScientificExecutionMapError("each stage requires exactly one contained artifact workspace")
+                if kinds.count("runtime-cache") > 1:
+                    raise ScientificExecutionMapError("a scientific stage may declare at most one runtime cache")
                 resources = _object(stage["resources"], "scientific execution resources")
                 if set(resources) != {"requests", "limits"}:
                     raise ScientificExecutionMapError("scientific execution resource fields differ")
@@ -624,6 +639,14 @@ class FileScientificManifestRenderer:
                     for key, value in environment.items()
                 ):
                     raise ScientificExecutionMapError("scientific execution environment is invalid")
+                environment_uses_runtime_cache = any(
+                    value == RUNTIME_CACHE_MOUNT_PATH or value.startswith(f"{RUNTIME_CACHE_MOUNT_PATH}/")
+                    for value in environment.values()
+                )
+                if (kinds.count("runtime-cache") == 1) != environment_uses_runtime_cache:
+                    raise ScientificExecutionMapError(
+                        "scientific runtime cache mount and /cache stage environment must be declared together"
+                    )
                 required_node_labels = _object(stage["required_node_labels"], "scientific required node labels")
                 if len(required_node_labels) > 32 or not all(
                     isinstance(key, str)
@@ -1496,7 +1519,9 @@ class FileScientificManifestRenderer:
                     "imagePullPolicy": "IfNotPresent",
                     "command": ["fs2-serve", "scientific-verify-runtime-artifacts"],
                     "env": [{"name": "FS2_RUNTIME_ARTIFACTS_JSON", "value": runtime_marker_json}],
-                    "volumeMounts": volume_mounts,
+                    # Freeze the verifier's read-only artifact mounts before a
+                    # model-only writable runtime cache is appended below.
+                    "volumeMounts": list(volume_mounts),
                     "resources": {
                         "requests": {"cpu": "100m", "memory": "128Mi"},
                         "limits": {"cpu": "1", "memory": "512Mi"},
@@ -1575,6 +1600,25 @@ class FileScientificManifestRenderer:
             },
             "securityContext": companion_security,
         }
+        runtime_cache = next((mount for mount in execution.mounts if mount.kind == "runtime-cache"), None)
+        if runtime_cache is not None:
+            assert runtime_cache.claim_name is not None
+            volume_mounts.append(
+                {
+                    "name": runtime_cache.name,
+                    "mountPath": runtime_cache.mount_path,
+                    "readOnly": False,
+                }
+            )
+            volumes.append(
+                {
+                    "name": runtime_cache.name,
+                    "persistentVolumeClaim": {
+                        "claimName": runtime_cache.claim_name,
+                        "readOnly": False,
+                    },
+                }
+            )
         supplemental_groups = sorted(
             {group for mount in invocation.runtime_mounts for group in mount.supplemental_groups}
         )

@@ -914,6 +914,11 @@ class DeploymentContractTests(unittest.TestCase):
                 "writes_enabled": False,
                 "namespace": "fs2-scientific",
                 "poll_seconds": "0.25",
+                "runtime_cache": {
+                    "enabled": False,
+                    "size_gib": 128,
+                    "storage_class_name": "csi-mounted-fs-path-sc",
+                },
                 "token_expiration_seconds": 600,
                 "workers": 2,
             },

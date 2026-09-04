@@ -356,6 +356,11 @@ variable "scientific_batch" {
     enabled        = optional(bool, false)
     writes_enabled = optional(bool, false)
     namespace      = optional(string, "fs2-models")
+    runtime_cache = optional(object({
+      enabled            = optional(bool, false)
+      storage_class_name = optional(string, "csi-mounted-fs-path-sc")
+      size_gib           = optional(number, 128)
+    }), {})
     execution_map = optional(any, {
       schema = "fs2-serve.nebius.ai/scientific-execution-map/v3"
       models = []
@@ -371,9 +376,22 @@ variable "scientific_batch" {
   validation {
     condition = (
       (!var.scientific_batch.writes_enabled || var.scientific_batch.enabled) &&
+      (!var.scientific_batch.runtime_cache.enabled || var.scientific_batch.enabled) &&
       can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.scientific_batch.namespace))
     )
-    error_message = "scientific_batch.writes_enabled requires scientific_batch.enabled and a DNS-label namespace."
+    error_message = "scientific_batch writes and runtime cache require scientific_batch.enabled and a DNS-label namespace."
+  }
+
+  validation {
+    condition = try(
+      can(regex("^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$", var.scientific_batch.runtime_cache.storage_class_name)) &&
+      length(var.scientific_batch.runtime_cache.storage_class_name) <= 253 &&
+      floor(var.scientific_batch.runtime_cache.size_gib) == var.scientific_batch.runtime_cache.size_gib &&
+      var.scientific_batch.runtime_cache.size_gib >= 1 &&
+      var.scientific_batch.runtime_cache.size_gib <= 65536,
+      false,
+    )
+    error_message = "scientific_batch.runtime_cache requires a DNS-style storage class and a whole 1-65536 GiB size."
   }
 
   validation {

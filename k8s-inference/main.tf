@@ -32,6 +32,25 @@ resource "terraform_data" "deployment_contract" {
       error_message = "The effective scientific execution map does not match the committed workload-profile qualification digest and execution identities. Regenerate and review the map and profiles together; do not paste or edit generated map fields independently."
     }
 
+    precondition {
+      condition = try(
+        !var.deployment.scientific_batch.enabled || (
+          (length(local.scientific_runtime_cache_mounts) == 0 || var.deployment.scientific_batch.runtime_cache.enabled) &&
+          (!var.deployment.scientific_batch.runtime_cache.enabled || length(local.scientific_runtime_cache_mounts) > 0) &&
+          alltrue([
+            for mount in local.scientific_runtime_cache_mounts :
+            mount.claim_name == "fs2-scientific-runtime-cache" &&
+            mount.host_path == null &&
+            mount.mount_path == "/cache" &&
+            mount.sub_path == null &&
+            mount.read_only == false
+          ])
+        ),
+        false,
+      )
+      error_message = "Scientific runtime-cache consumers require deployment.scientific_batch.runtime_cache.enabled, and every consumer must use the Terraform-owned writable fs2-scientific-runtime-cache claim at /cache."
+    }
+
     # Kueue compares an excluded prefix literally against the whole
     # ResourceName, so an auxiliary device prefix that also matches an
     # accelerator would silently stop budgeting GPUs.
