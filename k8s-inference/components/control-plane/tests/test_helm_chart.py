@@ -258,6 +258,29 @@ def test_chart_lints_and_renders_all_hardened_components() -> None:
     assert "Secret" not in kinds
 
 
+def test_gateway_service_monitor_matches_only_gateway_service() -> None:
+    documents = render(*admin_console_values())
+    service_monitor = next(
+        document
+        for document in documents
+        if document["kind"] == "ServiceMonitor" and document["metadata"]["name"] == "fs2-serve-control-plane"
+    )
+    selector = service_monitor["spec"]["selector"]["matchLabels"]
+    assert selector["app.kubernetes.io/component"] == "gateway"
+
+    services = [document for document in documents if document["kind"] == "Service"]
+    selected_services = {
+        service["metadata"]["name"] for service in services if selector.items() <= service["metadata"]["labels"].items()
+    }
+    assert selected_services == {"fs2-serve-control-plane"}
+    assert (
+        next(service for service in services if service["metadata"]["name"] == "fs2-serve-control-plane-admin-console")[
+            "metadata"
+        ]["labels"]["app.kubernetes.io/component"]
+        == "admin-console"
+    )
+
+
 def test_admin_console_is_disabled_by_default() -> None:
     documents = render()
     assert not any(document["metadata"]["name"] == "fs2-serve-control-plane-admin-console" for document in documents)
@@ -3221,7 +3244,7 @@ def test_observability_adapter_accepts_installed_alertmanager_with_verified_graf
         "--set",
         "adminReadAdapters.observability.installed.alertmanager=true",
         "--set-string",
-        "adminReadAdapters.observability.datasourceUids.alertmanager=fs2-r0123456789-alertmanager",
+        "adminReadAdapters.observability.datasourceUids.alertmanager=alertmanager",
         "--set-string",
         "adminReadAdapters.observability.links.allowedHosts[0]=observe.example.invalid",
         "--set-string",
@@ -3236,8 +3259,14 @@ def test_observability_adapter_accepts_installed_alertmanager_with_verified_graf
     )
     config = json.loads(config_map["data"]["config.json"])
     assert config["installed"]["alertmanager"] is True
-    assert config["datasource_uids"]["alertmanager"] == "fs2-r0123456789-alertmanager"
+    assert config["datasource_uids"]["alertmanager"] == "alertmanager"
     assert config["links"]["alertmanager"].endswith("/grafana/alerting/silences")
+    assert re.fullmatch(
+        r"[a-f0-9]{64}",
+        gateway_deployment(documents)["spec"]["template"]["metadata"]["annotations"][
+            "fs2.nebius.ai/admin-observability-config-sha256"
+        ],
+    )
 
 
 def test_observability_link_requires_verified_allowlisted_https_route() -> None:

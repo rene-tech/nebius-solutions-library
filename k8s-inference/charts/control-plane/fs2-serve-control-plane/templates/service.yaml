@@ -4,6 +4,7 @@ metadata:
   name: {{ include "fs2-serve.fullname" . }}
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
 spec:
   type: ClusterIP
   selector:

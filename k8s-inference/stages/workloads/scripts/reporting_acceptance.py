@@ -21,6 +21,8 @@ GRAFANA_POSTGRES_DATASOURCE_TYPES = frozenset(
 )
 GRAFANA_PROMETHEUS_DATASOURCE_UID = "prometheus"
 GRAFANA_LOKI_DATASOURCE_TYPE = "loki"
+GRAFANA_ALERTMANAGER_DATASOURCE_UID = "alertmanager"
+GRAFANA_ALERTMANAGER_DATASOURCE_TYPE = "alertmanager"
 
 
 def grafana_datasource_is_healthy(
@@ -61,6 +63,19 @@ def loki_labels_query_succeeded(response: dict[str, object]) -> bool:
     )
 
 
+def alertmanager_status_query_succeeded(response: dict[str, object]) -> bool:
+    version_info = response.get("versionInfo")
+    cluster = response.get("cluster")
+    return (
+        isinstance(version_info, dict)
+        and isinstance(version_info.get("version"), str)
+        and bool(version_info["version"])
+        and isinstance(cluster, dict)
+        and isinstance(cluster.get("status"), str)
+        and bool(cluster["status"])
+    )
+
+
 def grafana(path: str) -> dict[str, object]:
     credential = base64.b64encode(
         f"{os.environ['FS2_GRAFANA_USER']}:{os.environ['FS2_GRAFANA_PASSWORD']}".encode()
@@ -88,10 +103,11 @@ def datasource_proxy_path(
     return path if query is None else f"{path}?{urllib.parse.urlencode(query)}"
 
 
-def wait_for_grafana_datasources() -> None:
+def wait_for_grafana_datasources() -> str:
     run_id = os.environ["FS2_RUN_ID"]
     prometheus_uid = os.environ["FS2_GRAFANA_PROMETHEUS_DATASOURCE_UID"]
     loki_uid = os.environ["FS2_GRAFANA_LOKI_DATASOURCE_UID"]
+    alertmanager_uid = os.environ["FS2_GRAFANA_ALERTMANAGER_DATASOURCE_UID"]
     if prometheus_uid != GRAFANA_PROMETHEUS_DATASOURCE_UID:
         raise RuntimeError(
             "Grafana Prometheus datasource UID differs from the exact contract"
@@ -99,6 +115,10 @@ def wait_for_grafana_datasources() -> None:
     if loki_uid != f"fs2-{run_id}-loki":
         raise RuntimeError(
             "Grafana Loki datasource UID differs from the run-scoped contract"
+        )
+    if alertmanager_uid not in {"", GRAFANA_ALERTMANAGER_DATASOURCE_UID}:
+        raise RuntimeError(
+            "Grafana Alertmanager datasource UID differs from the chart-owned contract"
         )
 
     last_error: Exception | None = None
@@ -140,7 +160,28 @@ def wait_for_grafana_datasources() -> None:
             )
             if not loki_labels_query_succeeded(loki_result):
                 raise RuntimeError("Grafana-proxied Loki labels query failed")
-            return
+
+            if alertmanager_uid:
+                alertmanager = grafana(f"/api/datasources/uid/{alertmanager_uid}")
+                if not grafana_datasource_has_identity(
+                    alertmanager,
+                    uid=alertmanager_uid,
+                    datasource_type=GRAFANA_ALERTMANAGER_DATASOURCE_TYPE,
+                ):
+                    raise RuntimeError(
+                        "Grafana Alertmanager datasource identity differs"
+                    )
+                # Alertmanager is a frontend-only built-in Grafana datasource.
+                # The generic /health endpoint requires a backend plugin and
+                # returns "Plugin unavailable" even when proxying is healthy.
+                alertmanager_result = grafana(
+                    datasource_proxy_path(alertmanager_uid, "/api/v2/status")
+                )
+                if not alertmanager_status_query_succeeded(alertmanager_result):
+                    raise RuntimeError(
+                        "Grafana-proxied Alertmanager status query failed"
+                    )
+            return "query-ready" if alertmanager_uid else "disabled"
         except (OSError, ValueError, RuntimeError, urllib.error.HTTPError) as error:
             last_error = error
             time.sleep(5)
@@ -150,7 +191,7 @@ def wait_for_grafana_datasources() -> None:
 
 
 async def main() -> None:
-    await asyncio.to_thread(wait_for_grafana_datasources)
+    alertmanager_status = await asyncio.to_thread(wait_for_grafana_datasources)
     connection = await asyncpg.connect(
         os.environ["FS2_REPORTING_DATABASE_URL"], timeout=20
     )
@@ -165,6 +206,7 @@ async def main() -> None:
     print(
         json.dumps(
             {
+                "alertmanager_datasource": alertmanager_status,
                 "loki_datasource": "query-ready",
                 "prometheus_datasource": "query-ready",
                 "reporting_datasource": "ready",

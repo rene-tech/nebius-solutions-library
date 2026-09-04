@@ -26,8 +26,7 @@ output "managed_resource_count" {
   value = (
     31 +
     (nonsensitive(var.bootstrap_grafana_credentials == null) ? 0 : 1) +
-    (var.jobset.enabled ? 5 : 0) +
-    (var.alertmanager.enabled ? 1 : 0)
+    (var.jobset.enabled ? 5 : 0)
   )
 }
 

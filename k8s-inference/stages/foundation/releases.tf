@@ -307,7 +307,7 @@ resource "helm_release" "monitoring" {
         enabled = var.alertmanager.enabled
         # This default receiver deliberately sends nothing outside the cluster.
         # Operators can still inspect alerts and manage silences through the
-        # provisioned Grafana Alertmanager datasource without exposing port 9093.
+        # chart-provisioned Grafana Alertmanager datasource without exposing port 9093.
         config = {
           global = { resolve_timeout = "5m" }
           route = {
@@ -358,6 +358,17 @@ resource "helm_release" "monitoring" {
             enabled    = true
             label      = "grafana_datasource"
             labelValue = "1"
+            # The pinned stack chart owns this datasource in the same
+            # provisioning file as Prometheus. Keep its stable UID aligned
+            # with the foundation/workloads handoff and omit it when the
+            # optional Alertmanager workload is disabled.
+            alertmanager = {
+              enabled                    = var.alertmanager.enabled
+              name                       = "Alertmanager"
+              uid                        = local.alertmanager_grafana_datasource
+              handleGrafanaManagedAlerts = false
+              implementation             = "prometheus"
+            }
           }
         }
       }
