@@ -11,6 +11,18 @@ import pytest
 from conftest import CONTROL_ROOT
 
 SCRIPT = CONTROL_ROOT / "scripts/refresh_scientific_recipes.py"
+SCIENTIFIC_FLEET = (
+    "alphafold3",
+    "bindcraft",
+    "boltzgen",
+    "esmfold2",
+    "esmfold2-fast",
+    "mosaic",
+    "openfold3-openbind",
+    "proteina-complexa",
+    "protenix-v2",
+    "rfdiffusion",
+)
 
 
 def load_script() -> ModuleType:
@@ -82,6 +94,14 @@ def test_helm_to_json_bytes_match_go_html_and_unicode_rules() -> None:
     assert module._helm_to_json_bytes({"z": "café<&>\u2028\u2029", "a": 1}) == (
         b'{"a":1,"z":"caf\xc3\xa9\\u003c\\u0026\\u003e\\u2028\\u2029"}'
     )
+
+
+@pytest.mark.parametrize("model_id", SCIENTIFIC_FLEET)
+def test_every_scientific_fleet_recipe_has_an_exact_source_closure(model_id: str) -> None:
+    module = load_script()
+    digest = module.runtime_recipe_sha256(CONTROL_ROOT.parents[1], model_id)
+    assert len(digest) == 64
+    int(digest, 16)
 
 
 def test_write_mode_refreshes_the_complete_digest_chain(tmp_path: Path, monkeypatch, capsys) -> None:

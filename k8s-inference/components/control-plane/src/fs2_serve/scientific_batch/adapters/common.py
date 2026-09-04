@@ -52,6 +52,7 @@ _RECIPE_SHARED_PATHS = (
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/materialization.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/localization.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/production_registry.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/adapters/secondary_structure.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/staged_workspace.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/verified_input.py",
     "catalog/runtime/schema/scientific-run-request.schema.json",
@@ -60,6 +61,12 @@ _RECIPE_SHARED_PATHS = (
     "catalog/runtime/contracts/scientific-artifact-localization.json",
 )
 _RECIPE_MODEL_PATHS = {
+    "alphafold3": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/alphafold3.py",
+        "catalog/runtime/schema/alphafold3-parameters.schema.json",
+        "models/structure/batch-adapters/alphafold3/adapter.py",
+        "models/structure/batch-adapters/alphafold3/contract.json",
+    ),
     "boltzgen": (
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/boltzgen.py",
         "catalog/runtime/schema/boltzgen-parameters.schema.json",
@@ -78,12 +85,33 @@ _RECIPE_MODEL_PATHS = {
         "models/cancer-immunotherapy/images/bindcraft-native/image-lock.json",
         "models/cancer-immunotherapy/images/bindcraft-native/runtime/runtime_entrypoint.py",
     ),
+    "esmfold2": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/esmfold2.py",
+        "catalog/runtime/schema/esmfold2-parameters.schema.json",
+        "models/structure/batch-adapters/esmfold2/contract.json",
+    ),
+    "esmfold2-fast": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/esmfold2_fast.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/esmfold2.py",
+        "catalog/runtime/schema/esmfold2-fast-parameters.schema.json",
+        "models/structure/batch-adapters/esmfold2-fast/contract.json",
+    ),
     "mosaic": (
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/mosaic.py",
         "models/cancer-immunotherapy/runtime-images/mosaic/image-lock.json",
         "models/cancer-immunotherapy/runtime-images/mosaic/runtime_entrypoint.py",
         "models/cancer-immunotherapy/runtime-images/mosaic/qualification/render_plan.py",
         "models/cancer-immunotherapy/runtime-images/mosaic/qualification/validate_result.py",
+    ),
+    "openfold3-openbind": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/openfold3.py",
+        "catalog/runtime/schema/openfold3-parameters.schema.json",
+        "models/structure/batch-adapters/openfold3/contract.json",
+    ),
+    "protenix-v2": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/protenix_v2.py",
+        "catalog/runtime/schema/protenix-v2-parameters.schema.json",
+        "models/structure/batch-adapters/protenix-v2/contract.json",
     ),
     "rfdiffusion": (
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/rfdiffusion.py",
