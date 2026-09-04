@@ -12,11 +12,12 @@ from uuid import UUID
 import pytest
 
 from fs2_serve.scientific_batch import companion
-from fs2_serve.scientific_batch.adapters import CollectionPendingError, ScientificAdapterError
+from fs2_serve.scientific_batch.adapters import CollectionPendingError, ScientificAdapterError, staged_workspace
 from fs2_serve.scientific_batch.adapters.staged_workspace import (
     STAGE_COMPLETION_RELATIVE_PATH,
     collect_workspace_handoff,
     completion_marker,
+    contained_stable_file,
     snapshot_workspace,
     wrap_stage_argv,
 )
@@ -235,6 +236,58 @@ def test_snapshot_rejects_symlinks_and_oversized_or_empty_workspaces(tmp_path: P
             label="TestModel",
             maximum_members=4,
             maximum_content_bytes=4,
+        )
+
+
+def test_contained_reader_rejects_traversal_and_a_file_replaced_during_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_bytes(b"{}")
+    with pytest.raises(ScientificAdapterError, match="path is unsafe"):
+        contained_stable_file(
+            workspace,
+            "../outside.json",
+            maximum_bytes=16,
+            label="TestModel result",
+        )
+
+    real = workspace / "real"
+    real.mkdir()
+    (real / "result.json").write_bytes(b"{}")
+    (workspace / "alias").symlink_to(real, target_is_directory=True)
+    with pytest.raises(ScientificAdapterError, match="not a contained regular file"):
+        contained_stable_file(
+            workspace,
+            "alias/result.json",
+            maximum_bytes=16,
+            label="TestModel result",
+        )
+
+    target = workspace / "result.json"
+    target.write_bytes(b"old!")
+    original_fstat = staged_workspace.os.fstat
+    calls = 0
+
+    def racing_fstat(descriptor: int):
+        nonlocal calls
+        metadata = original_fstat(descriptor)
+        calls += 1
+        if calls == 1:
+            replacement = workspace / "replacement.json"
+            replacement.write_bytes(b"new!")
+            os.replace(replacement, target)
+        return metadata
+
+    monkeypatch.setattr(staged_workspace.os, "fstat", racing_fstat)
+    with pytest.raises(ScientificAdapterError, match="changed while it was read"):
+        contained_stable_file(
+            workspace,
+            "result.json",
+            maximum_bytes=16,
+            label="TestModel result",
         )
 
 
