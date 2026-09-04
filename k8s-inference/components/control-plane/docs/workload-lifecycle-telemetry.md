@@ -174,7 +174,6 @@ cd ../../observability
 ./scripts/test.sh
 ```
 
-Migration `0016_workload_lifecycle_telemetry.sql` intentionally reserves 0014
-and 0015 for the active artifact and scientific-controller branches. Before a
-shared control-plane rollout, integrate those migrations and regenerate the
-PostgreSQL release contract from the combined branch.
+Migration `0018_workload_lifecycle_telemetry.sql` follows the integrated
+artifact and scientific-controller migrations. Before a shared control-plane
+rollout, regenerate the PostgreSQL release contract from the combined branch.

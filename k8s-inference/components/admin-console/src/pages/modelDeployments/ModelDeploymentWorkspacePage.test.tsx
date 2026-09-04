@@ -85,7 +85,25 @@ describe("ModelDeployment workspace", () => {
     expect(screen.getByRole("checkbox", { name: "Use preemptible-h100" })).toBeChecked();
     expect(screen.getByLabelText("Hot floor")).toHaveValue(modelDeploymentSpecFixture.availability.minReplicas);
     expect(screen.getByLabelText("Fast-start mode")).toHaveValue("Fixed");
+    expect(screen.getByLabelText("Fast-start mode")).toBeEnabled();
     expect(screen.getByLabelText("Fast-start level")).toHaveValue("L3");
+    expect(screen.getByLabelText("Fast-start level")).toBeEnabled();
+    fireEvent.click(screen.getByText("Operator mechanism details"));
+    const mechanism = screen.getByLabelText("Cold-start mechanism");
+    expect(mechanism).toBeEnabled();
+    expect(within(mechanism).getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual([
+      "",
+      "conventional",
+      "regional-cache",
+      "host-memory-residency",
+      "gpu-resident",
+    ]);
+    fireEvent.change(mechanism, { target: { value: "regional-cache" } });
+    expect(screen.getByLabelText("Cache tier")).toHaveValue("SharedFilesystem");
+    fireEvent.change(mechanism, { target: { value: "gpu-resident" } });
+    expect(screen.getByRole("checkbox", { name: "Use reserved-h100" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Use preemptible-h100" })).not.toBeChecked();
+    expect(screen.getByLabelText("Hot floor")).toHaveValue(1);
     expect(screen.getByRole("button", { name: "Validate draft" })).toBeEnabled();
     expect(screen.getByText(/No observed state or history yet/)).toBeInTheDocument();
   });

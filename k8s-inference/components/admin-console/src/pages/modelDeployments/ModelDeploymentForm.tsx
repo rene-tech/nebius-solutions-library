@@ -83,6 +83,14 @@ interface Props {
 export function ModelDeploymentForm({ name, namespace, spec, identityLocked, disabled, configurationOption, onNameChange, onNamespaceChange, onChange }: Props) {
   const presetLocked = Boolean(configurationOption);
   const fastStart = normalizeFastStartPolicy(spec.fastStart);
+  const selectableMechanisms: Array<ModelDeploymentFastStartMechanism | ""> = [
+    "",
+    ...(configurationOption?.fast_start_mechanism_choices.map((choice) => choice.mechanism)
+      ?? ["conventional", "regional-cache", "host-memory-residency", "gpu-resident"]),
+  ];
+  if (spec.cache.mechanism && !selectableMechanisms.includes(spec.cache.mechanism)) {
+    selectableMechanisms.push(spec.cache.mechanism);
+  }
   function update(change: (next: ModelDeploymentSpec) => void) {
     const next = structuredClone(spec);
     change(next);
@@ -248,7 +256,23 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
           <summary>Operator mechanism details</summary>
           <p>These implementation controls remain visible for diagnosis and backwards compatibility. A cache or snapshot setting alone does not prove a fast-start level.</p>
           <div className="model-deployment-form-grid">
-            <SelectField<ModelDeploymentFastStartMechanism | ""> disabled={presetLocked} label="Cold-start mechanism" onChange={(value) => update((next) => { next.cache.mechanism = value === "" ? null : value; })} value={spec.cache.mechanism ?? ""} values={["", "conventional", "regional-cache", "host-memory-residency", "gpu-resident"]} />
+            <SelectField<ModelDeploymentFastStartMechanism | "">
+              hint={configurationOption ? "Only mechanisms declared for this installed model tuple are offered. Selecting one applies its pool, cache-tier and hot-capacity requirements." : undefined}
+              label="Cold-start mechanism"
+              onChange={(value) => update((next) => {
+                next.cache.mechanism = value === "" ? null : value;
+                const choice = configurationOption?.fast_start_mechanism_choices.find((candidate) => candidate.mechanism === value);
+                if (!choice) return;
+                const compatiblePools = next.placement.poolRefs.filter((poolRef) => choice.pool_refs.includes(poolRef));
+                next.placement.poolRefs = compatiblePools.length > 0 ? compatiblePools : [choice.pool_refs[0]!];
+                if (choice.required_cache_tier) next.cache.tier = choice.required_cache_tier;
+                next.availability.minReplicas = Math.max(next.availability.minReplicas, choice.minimum_hot_replicas);
+                next.availability.maxReplicas = Math.max(next.availability.maxReplicas, choice.minimum_max_replicas);
+              })}
+              value={spec.cache.mechanism ?? ""}
+              values={selectableMechanisms}
+              formatOption={(value) => value || "Automatic from qualified evidence"}
+            />
             <SelectField<ModelDeploymentCacheTier> disabled={presetLocked} label="Cache tier" onChange={(value) => update((next) => { next.cache.tier = value; })} value={spec.cache.tier} values={["Disabled", "ObjectStore", "SharedFilesystem", "NodeLocal"]} />
             <SelectField<ModelDeploymentSnapshotPreference> disabled={presetLocked} label="Snapshot preference" onChange={(value) => update((next) => { next.cache.snapshotPreference = value; next.cache.snapshotRef = value === "Never" ? null : next.cache.snapshotRef ?? { name: "", digest: "", strategy: "Weights" }; })} value={spec.cache.snapshotPreference} values={["Never", "Prefer", "Require"]} />
             <TextField disabled={presetLocked || !spec.cache.snapshotRef} label="Snapshot name" onChange={(value) => update((next) => { if (next.cache.snapshotRef) next.cache.snapshotRef.name = value; })} placeholder={spec.cache.snapshotRef ? "Qualified snapshot" : "Not used"} value={spec.cache.snapshotRef?.name ?? ""} />

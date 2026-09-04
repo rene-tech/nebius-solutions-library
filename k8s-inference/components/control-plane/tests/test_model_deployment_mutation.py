@@ -6,14 +6,24 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from test_model_deployment import envelope, model_spec, renderer, reserved_and_preemptible_envelope
+from test_model_deployment import (
+    envelope,
+    model_spec,
+    render_gpu_resident,
+    render_host_memory,
+    render_regional_cache,
+    renderer,
+    reserved_and_preemptible_envelope,
+)
 
 from fs2_serve.access_models import OperatorPrincipal, OperatorRole, PrincipalKind
 from fs2_serve.crypto import KeyedHasher, PayloadCipher
 from fs2_serve.fast_start import FastStartLevel, FastStartSpec
+from fs2_serve.fast_start_mechanisms import FastStartMechanism
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.model_deployment import (
     ArtifactStorageRef,
+    CacheTier,
     DesiredState,
     ValidationDisposition,
     spec_digest,
@@ -120,6 +130,7 @@ def test_configuration_options_are_exact_valid_installed_defaults() -> None:
     assert default.cache.tier is qualification.template_cache_tiers[default.runtime.template_ref.digest]
     assert default.fast_start == FastStartSpec()
     assert option.fast_start_qualified_level is FastStartLevel.OFF
+    assert [choice.mechanism for choice in option.fast_start_mechanism_choices] == [FastStartMechanism.CONVENTIONAL]
     assert default.placement.accelerators_per_replica == qualification.max_accelerators_per_replica
     assert default.exposure.open_ai_aliases == []
     assert default.exposure.mcp
@@ -152,6 +163,71 @@ def test_configuration_options_are_exact_valid_installed_defaults() -> None:
     ).configuration_options()[0]
     assert not no_mcp_option.default_spec.exposure.mcp
     assert no_mcp_option.default_spec.exposure.mcp_tool_name is None
+
+
+def test_configuration_options_publish_only_declared_mechanisms_and_their_dependencies() -> None:
+    installed = envelope()
+    base_qualification = installed.qualifications["qwen.3-8b"]
+    qualification = base_qualification.model_copy(
+        update={
+            "regional_cache": render_regional_cache(pool_refs=("pool-a",)),
+            "host_memory_residency": render_host_memory(pool_refs=("pool-a",)),
+            "gpu_resident": render_gpu_resident(pool_refs=("pool-a",)),
+            "template_cache_tiers": {
+                digest: CacheTier.SHARED_FILESYSTEM for digest in base_qualification.template_digests
+            },
+        }
+    )
+    installed = installed.model_copy(update={"qualifications": {qualification.model_ref: qualification}})
+    service = ModelDeploymentMutationService(
+        repository=StoreModelDeploymentRepository(
+            MemoryStore(
+                PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+                KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+            )
+        ),
+        writer=FakeWriter(),
+        envelope=installed,
+    )
+
+    option = service.configuration_options()[0]
+    choices = {choice.mechanism: choice for choice in option.fast_start_mechanism_choices}
+    assert list(choices) == [
+        FastStartMechanism.CONVENTIONAL,
+        FastStartMechanism.REGIONAL_CACHE,
+        FastStartMechanism.HOST_MEMORY_RESIDENCY,
+        FastStartMechanism.GPU_RESIDENT,
+    ]
+    assert choices[FastStartMechanism.REGIONAL_CACHE].required_cache_tier.value == "SharedFilesystem"
+    assert choices[FastStartMechanism.HOST_MEMORY_RESIDENCY].required_cache_tier.value == "SharedFilesystem"
+    assert choices[FastStartMechanism.GPU_RESIDENT].required_cache_tier is None
+    assert all(choice.pool_refs == ["pool-a"] for choice in choices.values())
+
+    for mechanism, choice in choices.items():
+        selected = option.default_spec.model_copy(
+            update={
+                "placement": option.default_spec.placement.model_copy(update={"pool_refs": choice.pool_refs}),
+                "cache": option.default_spec.cache.model_copy(
+                    update={
+                        "mechanism": mechanism,
+                        "tier": choice.required_cache_tier or option.default_spec.cache.tier,
+                    }
+                ),
+                "availability": option.default_spec.availability.model_copy(
+                    update={
+                        "min_replicas": max(
+                            option.default_spec.availability.min_replicas,
+                            choice.minimum_hot_replicas,
+                        ),
+                        "max_replicas": max(
+                            option.default_spec.availability.max_replicas,
+                            choice.minimum_max_replicas,
+                        ),
+                    }
+                ),
+            }
+        )
+        assert validate_model_deployment(selected, installed).disposition is ValidationDisposition.ACCEPTED
 
 
 def test_configuration_default_selects_every_compatible_pool_and_invariant_allows_subsets() -> None:
@@ -337,6 +413,15 @@ def test_capabilities_route_publishes_server_authoritative_configuration_options
     capabilities = response.json()["data"]
     assert capabilities["configuration_revision"] == envelope().revision
     assert [option["model_ref"] for option in capabilities["configuration_options"]] == ["qwen.3-8b"]
+    assert capabilities["configuration_options"][0]["fast_start_mechanism_choices"] == [
+        {
+            "mechanism": "conventional",
+            "pool_refs": ["pool-a"],
+            "required_cache_tier": None,
+            "minimum_hot_replicas": 0,
+            "minimum_max_replicas": 1,
+        }
+    ]
     default = capabilities["configuration_options"][0]["default_spec"]
     assert default["runtime"]["image"] == envelope().qualifications["qwen.3-8b"].runtime_images[0]
     assert default["placement"]["acceleratorsPerReplica"] == 8
