@@ -203,6 +203,16 @@ def test_candidate_keeps_academic_planes_separate_and_is_not_route_exposed() -> 
     )
     assert data.runtime_artifacts == (af3.REFERENCE_ARTIFACT,)
     assert inference.runtime_artifacts == (af3.PARAMETERS_ARTIFACT,)
+    assert data.runtime_mounts == (af3.mount_contract(af3.DATA_STAGE_ID),)
+    assert data.runtime_mounts[0].read_only is True
+    assert data.runtime_mounts[0].mount_path == af3.REFERENCE_MOUNT_PATH
+    assert data.runtime_mounts[0].sub_path is None
+    assert data.runtime_mounts[0].supplemental_groups == (af3.PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP,)
+    assert inference.runtime_mounts == (af3.mount_contract(af3.INFERENCE_STAGE_ID),)
+    assert inference.runtime_mounts[0].read_only is True
+    assert inference.runtime_mounts[0].mount_path == af3.PARAMETERS_MOUNT_PATH
+    assert inference.runtime_mounts[0].sub_path == af3.PARAMETERS_SOURCE_SUB_PATH
+    assert inference.runtime_mounts[0].supplemental_groups == (af3.PARAMETERS_SUPPLEMENTAL_GROUP,)
     assert data.materializations[0].artifact_id == af3.FOLD_INPUT_ID
     assert inference.materializations[0].artifact_id == data.produces
     assert inference.materializations[0].mode is MaterializationMode.EXTRACT_TAR

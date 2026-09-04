@@ -43,6 +43,7 @@ from .common import (
     run_workspace,
     strict_object,
 )
+from .secondary_structure import PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP
 
 MODEL_ID = "alphafold3"
 VARIANT_ID = "upstream-v3-0-4"
@@ -133,6 +134,7 @@ RUNTIME_MOUNTS: Mapping[str, RuntimeArtifactMount] = MappingProxyType(
             # Receipt, dataset marker and sibling manifest all live below this
             # root. A subPath mount would hide two of those objects.
             sub_path=None,
+            supplemental_groups=(PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP,),
         ),
         INFERENCE_STAGE_ID: RuntimeArtifactMount(
             artifact_id=PARAMETERS_ARTIFACT,
