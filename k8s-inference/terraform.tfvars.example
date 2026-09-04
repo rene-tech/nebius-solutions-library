@@ -308,6 +308,17 @@ deployment = {
     grafana = {
       publish_external = false
     }
+    # Alertmanager stays cluster-private. When enabled, Grafana provisions its
+    # Prometheus Alertmanager datasource and publishes the authenticated UI
+    # through the same Grafana subpath as the other operator tools.
+    alertmanager = {
+      enabled   = false
+      retention = "120h"
+      storage = {
+        storage_class_name = "compute-csi-default-sc"
+        size_gib           = 10
+      }
+    }
   }
 
   # Dedicated same-region scientific reference-data plane. The 2 TiB defaults

@@ -1,5 +1,28 @@
 locals {
-  grafana_publication = data.terraform_remote_state.foundation.outputs.grafana_publication_contract
+  grafana_publication    = data.terraform_remote_state.foundation.outputs.grafana_publication_contract
+  observability_operator = data.terraform_remote_state.foundation.outputs.observability_operator_contract
+  alertmanager_grafana_url = (
+    local.grafana_publication.enabled && local.observability_operator.alertmanager.enabled ?
+    "${local.grafana_publication.external_url}/alerting/silences?alertmanager=${local.observability_operator.alertmanager.grafana_datasource_uid}" : null
+  )
+  tempo_grafana_explore_panes = {
+    trace = {
+      datasource = local.observability_operator.tempo.grafana_datasource_uid
+      queries = [{
+        refId      = "A"
+        datasource = { uid = local.observability_operator.tempo.grafana_datasource_uid, type = "tempo" }
+        queryType  = "traceql"
+        query      = "{ }"
+        limit      = 20
+        tableType  = "traces"
+      }]
+      range = { from = "now-1h", to = "now" }
+    }
+  }
+  tempo_grafana_explore_url = (
+    local.grafana_publication.enabled ?
+    "${local.grafana_publication.external_url}/explore?panes=${urlencode(jsonencode(local.tempo_grafana_explore_panes))}&schemaVersion=1&orgId=1" : null
+  )
   grafana_publication_labels = merge(local.common_labels, {
     "app.kubernetes.io/component"                  = "admin-observability"
     "fs2-serve.nebius.ai/public-backend"           = "grafana-only"
@@ -135,7 +158,7 @@ resource "kubernetes_manifest" "grafana_http_route" {
 }
 
 output "admin_observability_links" {
-  description = "Verified-link inputs for the admin UI. Only Grafana is public; raw telemetry stores stay cluster-private."
+  description = "Verified-link inputs for the admin UI. Only authenticated Grafana is public; raw telemetry stores stay cluster-private."
   value = {
     grafana = local.grafana_publication.enabled ? {
       label          = "Grafana"
@@ -144,6 +167,8 @@ output "admin_observability_links" {
     } : null
     raw_prometheus = null
     raw_loki       = null
+    alertmanager   = local.alertmanager_grafana_url
+    tempo          = local.tempo_grafana_explore_url
     route_acceptance = local.grafana_publication.enabled ? {
       gateway         = "public"
       listener        = "public-https"

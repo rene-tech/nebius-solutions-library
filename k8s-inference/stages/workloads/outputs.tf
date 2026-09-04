@@ -52,6 +52,16 @@ output "grafana_url" {
   value       = local.grafana_publication.enabled ? local.grafana_publication.external_url : null
 }
 
+output "alertmanager_url" {
+  description = "Authenticated Grafana Silences URL with the private Alertmanager datasource selected, or null when Alertmanager or Grafana publication is disabled."
+  value       = local.alertmanager_grafana_url
+}
+
+output "tempo_explore_url" {
+  description = "Authenticated Grafana Explore deep link with the provisioned Tempo datasource selected, or null when Grafana publication is disabled."
+  value       = local.tempo_grafana_explore_url
+}
+
 output "grafana_admin_username" {
   description = "Grafana bootstrap username read from the foundation-owned existing Secret."
   value       = data.kubernetes_secret_v1.grafana_admin.data[data.terraform_remote_state.foundation.outputs.grafana_admin_secret_ref.user_key]
@@ -117,6 +127,8 @@ output "access_bundle" {
       mcp_url            = "${trimsuffix(local.public_base_url, "/")}/mcp"
       inference_base_url = "${trimsuffix(local.public_base_url, "/")}/v1"
       grafana_url        = local.grafana_publication.enabled ? local.grafana_publication.external_url : null
+      alertmanager_url   = local.alertmanager_grafana_url
+      tempo_explore_url  = local.tempo_grafana_explore_url
     }
     credentials = {
       admin_bootstrap_token  = random_password.admin_token.result

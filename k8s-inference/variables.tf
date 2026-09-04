@@ -587,6 +587,14 @@ variable "deployment" {
       grafana = optional(object({
         publish_external = optional(bool, false)
       }), {})
+      alertmanager = optional(object({
+        enabled   = optional(bool, false)
+        retention = optional(string, "120h")
+        storage = optional(object({
+          storage_class_name = optional(string, "compute-csi-default-sc")
+          size_gib           = optional(number, 10)
+        }), {})
+      }), {})
     }), {})
 
     applications = object({
@@ -630,6 +638,23 @@ variable "deployment" {
   validation {
     condition     = var.deployment.schema_version == 1
     error_message = "deployment.schema_version must be 1."
+  }
+
+  validation {
+    condition = (
+      can(regex("^[1-9][0-9]*(?:ms|s|m|h)$", var.deployment.observability.alertmanager.retention)) &&
+      length(var.deployment.observability.alertmanager.retention) <= 16 &&
+      length(var.deployment.observability.alertmanager.storage.storage_class_name) >= 1 &&
+      length(var.deployment.observability.alertmanager.storage.storage_class_name) <= 253 &&
+      can(regex(
+        "^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$",
+        var.deployment.observability.alertmanager.storage.storage_class_name,
+      )) &&
+      floor(var.deployment.observability.alertmanager.storage.size_gib) == var.deployment.observability.alertmanager.storage.size_gib &&
+      var.deployment.observability.alertmanager.storage.size_gib >= 1 &&
+      var.deployment.observability.alertmanager.storage.size_gib <= 1024
+    )
+    error_message = "deployment.observability.alertmanager requires a positive bounded Go duration, a DNS-style storage class, and a whole 1-1024 GiB persistent volume."
   }
 
   validation {

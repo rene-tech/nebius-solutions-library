@@ -144,6 +144,8 @@ def complete_access_bundle() -> dict:
             "mcp_url": "https://192.0.2.12/mcp",
             "inference_base_url": "https://192.0.2.12/v1",
             "grafana_url": "https://192.0.2.12/admin/observability/grafana",
+            "alertmanager_url": "https://192.0.2.12/admin/observability/grafana/alerting/silences?alertmanager=fs2-r0123456789-alertmanager",
+            "tempo_explore_url": "https://192.0.2.12/admin/observability/grafana/explore",
         },
         "credentials": {
             "admin_bootstrap_token": "test-only-admin-token",
@@ -568,7 +570,55 @@ class InferenceStackTests(unittest.TestCase):
                         "verified_external_route": True,
                     },
                     "alertmanager": {"url": "", "verified_external_route": False},
-                    "tempo": {"url": "", "verified_external_route": False},
+                    "tempo": {
+                        "url": "https://192.0.2.20/admin/observability/grafana/explore",
+                        "verified_external_route": True,
+                    },
+                },
+            )
+
+    def test_public_alertmanager_launch_is_derived_only_when_installed(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="inference-stack-alertmanager-"
+        ) as temporary:
+            run_root = Path(temporary)
+            configuration = contract()
+            configuration["stages"]["foundation"].update(
+                {
+                    "grafana_publication": {
+                        "enabled": True,
+                        "external_base_url": "",
+                    },
+                    "alertmanager": {
+                        "enabled": True,
+                        "retention": "240h",
+                        "storage": {
+                            "storage_class_name": "compute-csi-default-sc",
+                            "size_gib": 20,
+                        },
+                    },
+                }
+            )
+            dynamic = dynamic_outputs(run_root)
+            dynamic["public_edge_contract"] = {
+                "mode": "public",
+                "public_origin": "https://192.0.2.21",
+            }
+            foundation_path, workloads_path = STACK.write_downstream_variables(
+                run_root, configuration, dynamic
+            )
+
+            foundation = json.loads(foundation_path.read_text(encoding="utf-8"))
+            workloads = json.loads(workloads_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                foundation["alertmanager"],
+                configuration["stages"]["foundation"]["alertmanager"],
+            )
+            self.assertEqual(
+                workloads["admin_observability_links"]["alertmanager"],
+                {
+                    "url": "https://192.0.2.21/admin/observability/grafana/alerting/silences",
+                    "verified_external_route": True,
                 },
             )
 
@@ -1016,6 +1066,8 @@ class InferenceStackTests(unittest.TestCase):
             "admin_web_interface_url": "https://192.0.2.11/admin/",
             "inference_base_url": "https://192.0.2.11/v1",
             "grafana_url": "https://192.0.2.11/admin/observability/grafana",
+            "alertmanager_url": "https://192.0.2.11/admin/observability/grafana/alerting/silences?alertmanager=fs2-r0123456789-alertmanager",
+            "tempo_explore_url": "https://192.0.2.11/admin/observability/grafana/explore",
             "reference_data": None,
             "reference_data_contract": None,
             "scientific_artifacts": None,
@@ -1046,7 +1098,7 @@ class InferenceStackTests(unittest.TestCase):
                 mock.patch.object(
                     STACK,
                     "terraform_optional_json_output",
-                    return_value=endpoint_values["grafana_url"],
+                    side_effect=fake_endpoint_output,
                 ) as terraform_optional_json_output,
                 redirect_stdout(output),
             ):
@@ -1066,7 +1118,7 @@ class InferenceStackTests(unittest.TestCase):
         )
         self.assertEqual(
             [call.args[2] for call in terraform_optional_json_output.call_args_list],
-            ["grafana_url"],
+            ["grafana_url", "alertmanager_url", "tempo_explore_url"],
         )
         self.assertTrue(
             all(
@@ -1102,7 +1154,12 @@ class InferenceStackTests(unittest.TestCase):
                 STACK.workload_endpoint_outputs(
                     "terraform-test", Path("/private/test-run"), contract()
                 ),
-                {**required, "grafana_url": None},
+                {
+                    **required,
+                    "grafana_url": None,
+                    "alertmanager_url": None,
+                    "tempo_explore_url": None,
+                },
             )
 
     def test_status_output_reads_normal_reference_data_status_output(self) -> None:
@@ -1141,7 +1198,13 @@ class InferenceStackTests(unittest.TestCase):
             mock.patch.object(
                 STACK,
                 "terraform_optional_json_output",
-                side_effect=[None, reference_status, reference_contract],
+                side_effect=[
+                    None,
+                    None,
+                    None,
+                    reference_status,
+                    reference_contract,
+                ],
             ),
         ):
             values = STACK.workload_endpoint_outputs(
@@ -1197,7 +1260,15 @@ class InferenceStackTests(unittest.TestCase):
                 mock.patch.object(
                     STACK,
                     "terraform_optional_json_output",
-                    side_effect=[storage_contract, lifecycle, None, None, None],
+                    side_effect=[
+                        storage_contract,
+                        lifecycle,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    ],
                 ),
                 mock.patch.object(
                     STACK,
@@ -1305,6 +1376,8 @@ class InferenceStackTests(unittest.TestCase):
             ("endpoints", "mcp_url"),
             ("endpoints", "inference_base_url"),
             ("endpoints", "grafana_url"),
+            ("endpoints", "alertmanager_url"),
+            ("endpoints", "tempo_explore_url"),
             ("credentials", "admin_bootstrap_token"),
             ("credentials", "mcp_inference_token"),
             ("credentials", "inference_access_token"),

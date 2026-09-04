@@ -228,6 +228,33 @@ variable "bootstrap_grafana_credentials" {
   default   = null
 }
 
+variable "alertmanager" {
+  description = "Persistent Alertmanager settings generated from deployment.observability.alertmanager. The service remains cluster-private and is operated through authenticated Grafana."
+  type = object({
+    enabled   = optional(bool, false)
+    retention = optional(string, "120h")
+    storage = optional(object({
+      storage_class_name = optional(string, "compute-csi-default-sc")
+      size_gib           = optional(number, 10)
+    }), {})
+  })
+  default = {}
+
+  validation {
+    condition = (
+      can(regex("^[1-9][0-9]*(?:ms|s|m|h)$", var.alertmanager.retention)) &&
+      length(var.alertmanager.retention) <= 16 &&
+      length(var.alertmanager.storage.storage_class_name) >= 1 &&
+      length(var.alertmanager.storage.storage_class_name) <= 253 &&
+      can(regex("^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$", var.alertmanager.storage.storage_class_name)) &&
+      floor(var.alertmanager.storage.size_gib) == var.alertmanager.storage.size_gib &&
+      var.alertmanager.storage.size_gib >= 1 &&
+      var.alertmanager.storage.size_gib <= 1024
+    )
+    error_message = "alertmanager requires a positive bounded Go duration, a DNS-style storage class, and a whole 1-1024 GiB persistent volume."
+  }
+}
+
 variable "kueue" {
   description = "Kueue configuration this deployment adds to the pinned release values."
   type = object({

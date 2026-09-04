@@ -73,6 +73,7 @@ _GPU_RESOURCE = re.compile(r"^(?:nvidia\.com/(?:gpu|mig-[A-Za-z0-9_.-]+)|amd\.co
 _SAFE_COMPONENT = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _SAFE_REASON = re.compile(r"^[A-Za-z0-9_.:/ -]{1,200}$")
 _SAFE_HOST = re.compile(r"^(?:[a-z0-9](?:[-a-z0-9]*[a-z0-9])?\.)*[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$")
+_SAFE_GRAFANA_DATASOURCE_UID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _MODEL_LABEL_KEYS = (
     "fs2-serve.nebius.ai/model-id",
     "fs2.nebius.ai/model-id",
@@ -1619,6 +1620,7 @@ class ObservabilityLinkConfig:
         self,
         component_id: str,
         *,
+        datasource_uid: str | None,
         project: str | None,
         cluster: str | None,
         region: str | None,
@@ -1631,7 +1633,7 @@ class ObservabilityLinkConfig:
         if configured is None:
             return None
         parsed = urlsplit(configured)
-        values = {
+        context_values = {
             "from": from_at.astimezone(UTC).isoformat(),
             "to": to_at.astimezone(UTC).isoformat(),
             "var-project": project,
@@ -1640,7 +1642,47 @@ class ObservabilityLinkConfig:
             "var-model": model_id,
             "var-operation": str(operation_id) if operation_id is not None else None,
         }
-        query = urlencode([(key, value) for key, value in values.items() if value is not None])
+        pairs: list[tuple[str, str]]
+        if component_id == "alertmanager":
+            if datasource_uid is None:
+                return None
+            pairs = [("alertmanager", datasource_uid)]
+        elif component_id == "tempo":
+            if datasource_uid is None:
+                return None
+            traceql_filters = []
+            if model_id is not None:
+                traceql_filters.append(f'span."fs2.model.id" = "{model_id}"')
+            if operation_id is not None:
+                traceql_filters.append(f'span."fs2.operation.id" = "{operation_id}"')
+            traceql = "{ " + " && ".join(traceql_filters) + " }" if traceql_filters else "{ }"
+            pane = {
+                "trace": {
+                    "datasource": datasource_uid,
+                    "queries": [
+                        {
+                            "refId": "A",
+                            "datasource": {"uid": datasource_uid, "type": "tempo"},
+                            "queryType": "traceql",
+                            "query": traceql,
+                            "limit": 20,
+                            "tableType": "traces",
+                        }
+                    ],
+                    "range": {
+                        "from": str(int(from_at.astimezone(UTC).timestamp() * 1000)),
+                        "to": str(int(to_at.astimezone(UTC).timestamp() * 1000)),
+                    },
+                }
+            }
+            pairs = [
+                ("panes", json.dumps(pane, separators=(",", ":"), sort_keys=True)),
+                ("schemaVersion", "1"),
+                ("orgId", "1"),
+            ]
+        else:
+            pairs = [(key, value) for key, value in context_values.items() if value is not None]
+        query = urlencode(pairs)
         result = urlunsplit((parsed.scheme, parsed.netloc, parsed.path or "/", query, ""))
         if len(result) > 2048:
             raise ValueError("contextual observability URL exceeded its bound")
@@ -1652,6 +1694,7 @@ class PrometheusObservabilityConfig:
     links: ObservabilityLinkConfig | None = None
     installed_overrides: Mapping[str, bool] | None = None
     versions: Mapping[str, str] | None = None
+    datasource_uids: Mapping[str, str] | None = None
 
     def __post_init__(self) -> None:
         if "prometheus" in (self.installed_overrides or {}):
@@ -1661,6 +1704,10 @@ class PrometheusObservabilityConfig:
                 raise ValueError("observability component configuration is outside the bound")
         if any(not 1 <= len(value) <= 64 for value in (self.versions or {}).values()):
             raise ValueError("observability component version is outside the bound")
+        if set(self.datasource_uids or {}) - {"alertmanager", "tempo"} or any(
+            _SAFE_GRAFANA_DATASOURCE_UID.fullmatch(value) is None for value in (self.datasource_uids or {}).values()
+        ):
+            raise ValueError("observability datasource identity is invalid")
 
     @classmethod
     def from_file(cls, path: Path) -> PrometheusObservabilityConfig:
@@ -1672,12 +1719,13 @@ class PrometheusObservabilityConfig:
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ValueError("observability configuration is not valid JSON") from exc
         body = _mapping(value)
-        if set(body) - {"allowed_hosts", "links", "installed", "versions"}:
+        if set(body) - {"allowed_hosts", "datasource_uids", "links", "installed", "versions"}:
             raise ValueError("observability configuration contains an unsupported field")
         links_raw = _mapping(body.get("links"))
         hosts_raw = _sequence(body.get("allowed_hosts"))
         installed_raw = _mapping(body.get("installed"))
         versions_raw = _mapping(body.get("versions"))
+        datasource_uids_raw = _mapping(body.get("datasource_uids"))
         if any(not isinstance(key, str) or not isinstance(item, str) for key, item in links_raw.items()):
             raise ValueError("observability links must be string pairs")
         if any(not isinstance(item, str) or not item or "*" in item for item in hosts_raw):
@@ -1686,12 +1734,15 @@ class PrometheusObservabilityConfig:
             raise ValueError("observability installation overrides must be booleans")
         if any(not isinstance(key, str) or not isinstance(item, str) for key, item in versions_raw.items()):
             raise ValueError("observability versions must be strings")
+        if any(not isinstance(key, str) or not isinstance(item, str) for key, item in datasource_uids_raw.items()):
+            raise ValueError("observability datasource identities must be string pairs")
         link_values = cast(dict[str, str], dict(links_raw))
         hosts = frozenset(cast(list[str], list(hosts_raw)))
         return cls(
             links=ObservabilityLinkConfig(component_urls=link_values, allowed_hosts=hosts) if link_values else None,
             installed_overrides=cast(dict[str, bool], dict(installed_raw)),
             versions=cast(dict[str, str], dict(versions_raw)),
+            datasource_uids=cast(dict[str, str], dict(datasource_uids_raw)),
         )
 
 
@@ -1929,6 +1980,7 @@ class PrometheusObservabilityAdminAdapter:
         if self.config.links is not None:
             configured = self.config.links.contextual_url(
                 component.id,
+                datasource_uid=(self.config.datasource_uids or {}).get(component.id),
                 project=project,
                 cluster=cluster,
                 region=region,

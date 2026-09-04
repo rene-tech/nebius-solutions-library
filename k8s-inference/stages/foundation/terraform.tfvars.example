@@ -24,6 +24,17 @@ grafana_admin_secret_ref = {
   password_key = "admin-password"
 }
 
+# Generated from deployment.observability.alertmanager by inference-stack.
+# Alertmanager remains private; Grafana is its authenticated operator surface.
+alertmanager = {
+  enabled   = false
+  retention = "120h"
+  storage = {
+    storage_class_name = "compute-csi-default-sc"
+    size_gib           = 10
+  }
+}
+
 # Fresh disposable bootstrap only. Supply through a separate mode-0600 tfvars
 # file; values enter local Terraform state and are destroyed with the run.
 # bootstrap_grafana_credentials = {

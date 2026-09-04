@@ -46,13 +46,16 @@ Loki, OTel Collector, DCGM, Kueue, KEDA, Alertmanager, and Tempo. Each row
 separates installation discovery, health, data availability, observation time,
 version, and launch state. A launch is enabled only when a server-configured
 HTTPS destination passes the allow-list and the component's own health/data
-probe succeeds. OTel has no launch action. Alertmanager and Tempo remain absent
-until installed and independently probed. Loki launches through an approved
-Grafana Explore URL, not a raw credential-bearing Loki URL.
+probe succeeds. Alertmanager is operated through its provisioned Grafana
+datasource and Tempo through a datasource-selected Grafana Explore URL; neither
+raw backend is published. Loki also launches through approved Grafana Explore,
+not a raw credential-bearing Loki URL. Components disabled in Terraform or
+missing a successful probe remain explicitly unavailable.
 
 Optional `model_id` and `operation_id` parameters are bounded selectors used
-only to fill server-owned dashboard variables. They never become metric
-labels, free-form queries, or URL authorities.
+only to fill server-owned dashboard variables and fixed Tempo TraceQL equality
+filters over `fs2.model.id` and `fs2.operation.id`. They never become metric
+labels, caller-authored queries, or URL authorities.
 
 The response also contains bounded aggregate signal summaries for OTel
 pipeline failures and GPU utilization/memory telemetry. Request, error, and

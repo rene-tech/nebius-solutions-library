@@ -1761,6 +1761,10 @@ def write_downstream_variables(
             **foundation["grafana_publication"],
             "external_base_url": origin,
         }
+        alertmanager_enabled = (
+            isinstance(foundation.get("alertmanager"), Mapping)
+            and foundation["alertmanager"].get("enabled") is True
+        )
         workloads["admin_observability_links"] = {
             "allowed_hosts": [parsed.hostname],
             "grafana": {
@@ -1791,8 +1795,18 @@ def write_downstream_variables(
                 "url": f"{origin}/admin/observability/grafana/dashboards",
                 "verified_external_route": True,
             },
-            "alertmanager": {"url": "", "verified_external_route": False},
-            "tempo": {"url": "", "verified_external_route": False},
+            "alertmanager": (
+                {
+                    "url": f"{origin}/admin/observability/grafana/alerting/silences",
+                    "verified_external_route": True,
+                }
+                if alertmanager_enabled
+                else {"url": "", "verified_external_route": False}
+            ),
+            "tempo": {
+                "url": f"{origin}/admin/observability/grafana/explore",
+                "verified_external_route": True,
+            },
         }
     foundation_path = run_root / "foundation.tfvars.json"
     workloads_path = run_root / "workloads.tfvars.json"
@@ -1894,6 +1908,12 @@ def workload_endpoint_outputs(
         "grafana_url": terraform_optional_json_output(
             terraform, WORKLOADS_ROOT, "grafana_url", environment
         ),
+        "alertmanager_url": terraform_optional_json_output(
+            terraform, WORKLOADS_ROOT, "alertmanager_url", environment
+        ),
+        "tempo_explore_url": terraform_optional_json_output(
+            terraform, WORKLOADS_ROOT, "tempo_explore_url", environment
+        ),
     }
     reference_enabled = (
         contract.get("stages", {})
@@ -1991,7 +2011,12 @@ def workload_access_bundle(
     if any(
         key not in endpoints
         or (endpoints[key] is not None and not isinstance(endpoints[key], str))
-        for key in ("admin_portal_url", "grafana_url")
+        for key in (
+            "admin_portal_url",
+            "grafana_url",
+            "alertmanager_url",
+            "tempo_explore_url",
+        )
     ):
         raise DeploymentError("the workloads access bundle is missing or malformed")
 
@@ -2689,6 +2714,8 @@ def status_stack(
             "admin_web_interface_url": None,
             "inference_base_url": None,
             "grafana_url": None,
+            "alertmanager_url": None,
+            "tempo_explore_url": None,
             "reference_data": None,
             "reference_data_contract": None,
             "scientific_artifacts": None,

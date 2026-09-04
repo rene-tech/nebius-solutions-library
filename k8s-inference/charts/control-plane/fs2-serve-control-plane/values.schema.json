@@ -1187,6 +1187,7 @@
             "enabled",
             "prometheusUrl",
             "installed",
+            "datasourceUids",
             "links"
           ],
           "properties": {
@@ -1207,10 +1208,30 @@
               ],
               "properties": {
                 "alertmanager": {
-                  "const": false
+                  "type": "boolean"
                 },
                 "tempo": {
                   "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            },
+            "datasourceUids": {
+              "type": "object",
+              "required": [
+                "alertmanager",
+                "tempo"
+              ],
+              "properties": {
+                "alertmanager": {
+                  "type": "string",
+                  "maxLength": 128,
+                  "pattern": "^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127})?$"
+                },
+                "tempo": {
+                  "type": "string",
+                  "maxLength": 128,
+                  "pattern": "^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127})?$"
                 }
               },
               "additionalProperties": false

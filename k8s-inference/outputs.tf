@@ -138,6 +138,16 @@ output "effective_configuration" {
       fast_start_claims                              = var.deployment.storage.fast_start_claims
       priority_classes                               = var.deployment.dynamic_models.priority_classes
     }
+    observability = {
+      alertmanager = {
+        enabled            = var.deployment.observability.alertmanager.enabled
+        retention          = var.deployment.observability.alertmanager.retention
+        storage_class_name = var.deployment.observability.alertmanager.storage.storage_class_name
+        storage_size_gib   = var.deployment.observability.alertmanager.storage.size_gib
+      }
+      grafana_publish_external = var.deployment.observability.grafana.publish_external
+      dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
+    }
     model_express = {
       enabled         = var.deployment.acceleration.model_express.enabled
       deployment_mode = var.deployment.acceleration.model_express.deployment_mode
