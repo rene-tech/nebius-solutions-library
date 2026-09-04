@@ -11,10 +11,10 @@
     "variant_id": "v1-5-3-pyrosetta-academic",
     "model_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
     "runtime_image_digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
-    "runtime_recipe_sha256": "d2f7ea0d4bd8a7ad64f664a2c936cc8eeb85b101a346b3cf49dca540cb390334",
+    "runtime_recipe_sha256": "098ff641a1f15124fbbcbc91d5d04bf68ed9757d2b81823cf1f2bf660ba795a3",
     "workload_recipe_sha256": "a4e59c0c5bd51067511b5f65f6288e8f7e38164146496ec9337765e795563da2",
     "model_artifact_manifest_digest": "115ba5116f04aa4798facdf15ba334cd8f9e5821481dafe29949299246a56a48",
-    "execution_identity_sha256": "256ba331e59e8c75afcff5eba90374c7bd067e6459ef88b3c3b559198f726fc7"
+    "execution_identity_sha256": "d25a7ad22e9fdb19bdd91517a49c37cff12201713b9e89e6a38660b763171df8"
   },
   "access_admission": {
     "profile": "academic",

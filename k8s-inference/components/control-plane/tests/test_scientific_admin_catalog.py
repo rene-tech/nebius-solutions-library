@@ -198,7 +198,7 @@ async def test_delivered_catalog_joins_every_published_candidate(registry: Regis
         "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e"
     )
     assert boltzgen.backend.execution_identity_digest == (
-        "9d41092dd5c8ad874284c3acf347a29bb4b2ae2695e84fcf30796f27fff6de02"
+        "7cf96cf75856fe6cb52ccabc9796e8b27fca9b2b95befc80bd772b10c4a567ad"
     )
     assert boltzgen.available_upgrade is not None
     assert boltzgen.available_upgrade.source_repository == "HannesStark/boltzgen"
