@@ -22,8 +22,8 @@ from . import (
     esmfold2_fast,
     mosaic,
     openfold3,
-    protenix_v2,
     proteina_complexa,
+    protenix_v2,
     rfdiffusion,
 )
 
