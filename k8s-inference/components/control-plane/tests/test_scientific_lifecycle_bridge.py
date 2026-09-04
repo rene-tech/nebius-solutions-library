@@ -390,6 +390,82 @@ def test_running_pod_is_not_active_compute_until_every_init_container_succeeds()
 
 
 @pytest.mark.asyncio
+async def test_resumed_sync_keeps_pre_apply_events_stable_when_job_uid_is_enriched() -> None:
+    terminal, terminal_attempt = terminal_state(AttemptOutcome.SUCCEEDED)
+    attempt = replace(
+        terminal_attempt,
+        workload=replace(terminal_attempt.workload, uid=None),
+        completed_at=None,
+        outcome=AttemptOutcome.ACTIVE,
+        last_phase=LifecyclePhase.QUEUED,
+        deletion_requested=False,
+        resource_released=False,
+        scheduling_admission=None,
+        kueue_workload_uid=None,
+        pod_uids=(),
+    )
+    state = replace(
+        terminal,
+        stages=(ScientificStageState(stage_id="design", status=StageStatus.ACTIVE, attempts=(attempt,)),),
+        status=BatchStatus.RUNNING,
+        revision=1,
+        failure_code=None,
+    )
+    events = [
+        BatchEvent(
+            sequence=1,
+            occurred_at=NOW,
+            draft=BatchEventDraft.build(
+                operation_id=state.operation_id,
+                batch_id=state.batch_id,
+                workload_id=state.workload_id,
+                kind=BatchEventKind.LIFECYCLE,
+                stage_id=attempt.stage_id,
+                shard_id=attempt.shard_id,
+                attempt_id=attempt.attempt_id,
+                phase=LifecyclePhase.QUEUED,
+            ),
+        )
+    ]
+    repository = MemoryLifecycleRepository()
+    bridge = ScientificLifecycleBridge(
+        lifecycle=repository,
+        batches=EventSource(events),
+        operations=OperationSource(operation(state.operation_id, status=OperationStatus.RUNNING)),
+        cluster="k8s-inference-h100",
+    )
+
+    await bridge.sync(state)
+    bound_attempt = replace(attempt, workload=replace(attempt.workload, uid="job-uid-1"))
+    bound = replace(
+        state,
+        stages=(ScientificStageState(stage_id="design", status=StageStatus.ACTIVE, attempts=(bound_attempt,)),),
+        revision=2,
+    )
+    await bridge.sync(bound)
+
+    detail = await repository.get_workload(attempt.attempt_id, tenant_id=state.tenant_id)
+    assert detail is not None
+    assert {signal.job_uid for signal in detail.signals} == {None}
+    assert {correlation.job_uid for correlation in detail.correlations if correlation.job_uid} == {"job-uid-1"}
+
+    conflicting_attempt = replace(bound_attempt, workload=replace(bound_attempt.workload, uid="job-uid-2"))
+    conflicting = replace(
+        bound,
+        stages=(
+            ScientificStageState(
+                stage_id="design",
+                status=StageStatus.ACTIVE,
+                attempts=(conflicting_attempt,),
+            ),
+        ),
+        revision=3,
+    )
+    with pytest.raises(ValueError, match="event key is already bound to different facts"):
+        await bridge.sync(conflicting)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("outcome", [AttemptOutcome.PREEMPTED, AttemptOutcome.CANCELLED])
 async def test_duplicate_restart_preemption_and_cancellation_never_double_charge_gpu_time(
     outcome: AttemptOutcome,
