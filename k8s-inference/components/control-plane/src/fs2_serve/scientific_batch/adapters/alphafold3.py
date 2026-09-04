@@ -124,6 +124,7 @@ FORBIDDEN_ARGV_TOKENS = (
     "--runtime-localization-marker",
 )
 ADMISSION_BLOCKER = "AcademicDeploymentAuthorizationMissing"
+DEPLOYMENT_AUTHORIZATION_RECEIPT_SHA256 = "3a3d5d77a7f58d7875e33e78defe0dcb482dbe590e18380704594c4c1c3a8155"
 
 RUNTIME_MOUNTS: Mapping[str, RuntimeArtifactMount] = MappingProxyType(
     {
@@ -212,7 +213,7 @@ def _assert_deployment_authorization(profile: Mapping[str, object]) -> None:
     if not isinstance(access, Mapping) or dict(access) != {
         "profile": "academic",
         "state": "verified",
-        "receipt_digest": None,
+        "receipt_digest": DEPLOYMENT_AUTHORIZATION_RECEIPT_SHA256,
         "credentials_embedded": False,
     }:
         raise ScientificAdapterError(ADMISSION_BLOCKER)

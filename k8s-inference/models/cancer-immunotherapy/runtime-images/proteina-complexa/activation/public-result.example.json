@@ -11,10 +11,10 @@
     "variant_id": "upstream-dev-20260827",
     "model_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
     "runtime_image_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
-    "runtime_recipe_sha256": "3f28faf246dda24e2c13c6a9ffc9699ae261b5a594e5178c6519e5ca88bfd4e7",
-    "workload_recipe_sha256": "1ea1d90228cff7efbc4c3e6f6c394be0e384e7870a2a94fa8897b81fe6bfa73b",
+    "runtime_recipe_sha256": "61df7c4b4ec31d80846897c2d9ebca310b0eee90689fe1f79d2513ff07714d57",
+    "workload_recipe_sha256": "f614aa8507bb31c70d9e9316e4a2a9eb297922cc06555af3a801f0240e9b5797",
     "model_artifact_manifest_digest": "7b50848f8797da9a260d35f647fe9282d4d4ea904a14a283ffdcc427a48c900d",
-    "execution_identity_sha256": "799cb5207afd8affa5a54cff3d45288c72c4da388f033bdd9278cf3f8ffa2eb0"
+    "execution_identity_sha256": "70b5604e05dcaddc69b76c1c6666cb93bf56fd9b89c41eb2585ba74fe7adc8b7"
   },
   "access_admission": {
     "profile": "standard",
@@ -36,8 +36,8 @@
         "workload_priority_class": "customer-batch",
         "workload_priority_value": 500,
         "resolved_pool_preference": [
-          "h100-1x",
-          "h100-reserved-8x"
+          "h100-reserved-8x",
+          "h100-1x"
         ],
         "accelerator_resource_name": "nvidia.com/gpu",
         "accelerator_count": 1,
@@ -69,8 +69,8 @@
         "workload_priority_class": "customer-batch",
         "workload_priority_value": 500,
         "resolved_pool_preference": [
-          "h100-1x",
-          "h100-reserved-8x"
+          "h100-reserved-8x",
+          "h100-1x"
         ],
         "accelerator_resource_name": "nvidia.com/gpu",
         "accelerator_count": 1,
@@ -111,8 +111,8 @@
     "receipt_digest": null
   },
   "error": {
-    "code": "ACTIVATION_NOT_ENABLED",
-    "message": "This model remains route-disabled until serialized integration and a public platform run complete.",
+    "code": "PUBLIC_ACCEPTANCE_PENDING",
+    "message": "The profile is active and dispatchable; this fixture remains non-success until a public controller run supplies completion and scheduler receipts.",
     "retryable": false
   }
 }

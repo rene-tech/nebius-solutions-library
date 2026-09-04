@@ -7,21 +7,46 @@ from conftest import CATALOG_ROOT
 from jsonschema import Draft202012Validator, FormatChecker
 
 SOLUTION_ROOT = CATALOG_ROOT.parents[1]
-EXECUTION_MAP_SHA256 = "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c"
+EXECUTION_MAP_SHA256 = "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e"
 PRIMARY_ACTIVE_BRIDGE = {
+    "boltzgen": {
+        "digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+        "artifact_manifest_digest": "8305400f8711388cbc5d9937a120d7ca4de390170082047511e859f636a2dd66",
+        "receipt": ("models/cancer-immunotherapy/runtime-images/boltzgen/evidence/h100-qualification-receipt.json"),
+        "receipt_sha256": "f4a36ad7b8367e3383f584f96377313d39a26b5a08343d789311a41b04b79a46",
+        "receipt_image_path": ("runtime", "image"),
+        "qualified_at": "2026-09-03T07:34:56Z",
+        "fragment": "models/cancer-immunotherapy/runtime-images/boltzgen/activation/fragment.json",
+        "access": {
+            "profile": "standard",
+            "state": "not-required",
+            "receipt_digest": None,
+            "credentials_embedded": False,
+        },
+        "variant": "upstream-v0-3-2",
+        "namespace": "fs2-models",
+        "stages": (
+            "configure",
+            "design",
+            "inverse-folding",
+            "folding",
+            "design-folding",
+            "affinity",
+            "analysis",
+            "filtering",
+        ),
+        "artifacts": {"boltzgen-checkpoints", "boltzgen-inference-molecules"},
+    },
     "proteina-complexa": {
         "digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
         "artifact_manifest_digest": "2d84dbda753a108e2e10f1d0aab1d9bc6dd5017f8f86ed94173d933a9884d4eb",
         "receipt": (
-            "models/cancer-immunotherapy/runtime-images/proteina-complexa/"
-            "evidence/h100-semantic-qualification.json"
+            "models/cancer-immunotherapy/runtime-images/proteina-complexa/evidence/h100-semantic-qualification.json"
         ),
         "receipt_sha256": "380441981a4170c8f2427a47ef4b25898f0ab14e33cc5efe7fdd65ebc1b45c4b",
         "receipt_image_path": ("image_digest",),
         "qualified_at": "2026-09-03T13:53:21Z",
-        "fragment": (
-            "models/cancer-immunotherapy/runtime-images/proteina-complexa/activation/fragment.json"
-        ),
+        "fragment": ("models/cancer-immunotherapy/runtime-images/proteina-complexa/activation/fragment.json"),
         "access": {
             "profile": "standard",
             "state": "not-required",
@@ -41,7 +66,7 @@ PRIMARY_ACTIVE_BRIDGE = {
     },
     "bindcraft": {
         "digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
-        "artifact_manifest_digest": "f5a4a2597e71c772f671b0b8312e412e915f8a2a7a54cf7cdc8126d4e6dd5753",
+        "artifact_manifest_digest": "a933ad20fd8c9e065c3ba77e96ff36c78303841b79a33d1b0308ec7d9873d641",
         "receipt": "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-qualification-20260903.json",
         "receipt_sha256": "162a1705d3f8b301cfb98426c3717fea63f9c9cb4c5c8ed4f21e2a60a1250944",
         "receipt_image_path": ("image", "index_digest"),
@@ -65,10 +90,9 @@ PRIMARY_ACTIVE_BRIDGE = {
     },
     "mosaic": {
         "digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
-        "artifact_manifest_digest": "efff4d6c038fd06994cdb44d02b9a5ed368cd1a1e78ddd75498e25913953072b",
+        "artifact_manifest_digest": "d8c039502375c5b67fafa1123743214fa774ca00cf52fa262f8bfa64fe22c641",
         "receipt": (
-            "models/cancer-immunotherapy/runtime-images/mosaic/"
-            "evidence/h100-v6-split-root-qualification-20260904.json"
+            "models/cancer-immunotherapy/runtime-images/mosaic/evidence/h100-v6-split-root-qualification-20260904.json"
         ),
         "receipt_sha256": "9eeef6c219c3ee0e9754e9d45be9de3f77ccec7824ce9e6b3f0fa17405aef339",
         "receipt_image_path": ("image", "requested_digest"),
@@ -138,9 +162,7 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
         (CATALOG_ROOT / "schema/scientific-workload-profile.schema.json").read_text(encoding="utf-8")
     )
     profile_validator = Draft202012Validator(profile_schema, format_checker=FormatChecker())
-    execution_map_path = CATALOG_ROOT / "contracts/scientific-execution-map.json"
-
-    assert hashlib.sha256(execution_map_path.read_bytes()).hexdigest() == EXECUTION_MAP_SHA256
+    assert _canonical_sha256(execution_document) == EXECUTION_MAP_SHA256
     assert set(PRIMARY_ACTIVE_BRIDGE).issubset(profiles)
     assert set(PRIMARY_ACTIVE_BRIDGE).issubset(executions)
 
@@ -181,8 +203,15 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
         receipt_bytes = receipt_path.read_bytes()
         receipt = json.loads(receipt_bytes)
         assert hashlib.sha256(receipt_bytes).hexdigest() == expected["receipt_sha256"]
-        assert _nested(receipt, expected["receipt_image_path"]) == expected["digest"]
-        if model_id == "proteina-complexa":
+        receipt_image = _nested(receipt, expected["receipt_image_path"])
+        if model_id == "boltzgen":
+            assert isinstance(receipt_image, str) and receipt_image.endswith("@" + expected["digest"])
+            assert receipt["status"] == "passed"
+        else:
+            assert receipt_image == expected["digest"]
+        if model_id == "boltzgen":
+            pass
+        elif model_id == "proteina-complexa":
             assert receipt["all_variants_passed"] is True
         elif model_id == "bindcraft":
             assert receipt["verdict"]["state"] == "passed"
@@ -194,7 +223,7 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
 
         assert execution["variant_id"] == expected["variant"]
         assert execution["workload_namespace"] == expected["namespace"]
-        assert execution["execution_identity_sha256"] is None
+        assert execution["execution_identity_sha256"] == profile["execution_identity"]["execution_identity_sha256"]
         assert tuple(stage["stage_id"] for stage in execution["stages"]) == expected["stages"]
         assert {item["artifact_id"] for item in execution["runtime_artifacts"]} == expected["artifacts"]
         profile_artifacts = {item["artifact_id"]: item for item in profile["runtime_artifacts"]}
@@ -202,12 +231,8 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
             requirement = profile_artifacts[localization["artifact_id"]]
             assert localization["content_digest"] == "sha256:" + requirement["content_identity"]["digest_sha256"]
             if "aggregate_tree" in localization:
-                assert localization["aggregate_tree"]["expanded_bytes"] == requirement["content_identity"][
-                    "size_bytes"
-                ]
-                assert localization["aggregate_tree"]["manifest_sha256"] == requirement[
-                    "readiness_manifest_sha256"
-                ]
+                assert localization["aggregate_tree"]["expanded_bytes"] == requirement["content_identity"]["size_bytes"]
+                assert localization["aggregate_tree"]["manifest_sha256"] == requirement["readiness_manifest_sha256"]
             if "file_manifest" in localization:
                 assert localization["file_manifest"] == requirement["file_manifest"]
         for stage in execution["stages"]:
@@ -232,13 +257,7 @@ def test_bindcraft_private_runtime_tree_is_exact_and_read_only() -> None:
     af2 = next(item for item in bindcraft["runtime_artifacts"] if item["artifact_id"] == "alphafold2-params-bindcraft")
     assert af2["aggregate_tree"]["file_count"] == 17
     assert af2["aggregate_tree"]["expanded_bytes"] == 5_587_959_437
-    assert af2["file_manifest"] == [
-        {
-            "path": "manifest.json",
-            "sha256": "9d0b7e45378ed707cfc31585f3ae960282dc76f3e2c4f60b545b02dbc728423b",
-            "size_bytes": 2866,
-        }
-    ]
+    assert "file_manifest" not in af2
     for stage in stages.values():
         assert stage["service_account_name"] == "fs2-academic-runner"
         pyrosetta = next(mount for mount in stage["mounts"] if mount["name"] == "pyrosetta")

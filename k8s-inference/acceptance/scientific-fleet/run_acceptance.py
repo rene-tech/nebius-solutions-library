@@ -33,9 +33,11 @@ RECEIPT_SCHEMA = "fs2-serve.nebius.ai/scientific-fleet-acceptance-receipt/v1"
 REQUEST_SCHEMA = "fs2-serve.nebius.ai/scientific-run-request/v1"
 MANIFEST_SCHEMA = "fs2-serve.nebius.ai/scientific-artifact-manifest/v1"
 MANIFEST_MEDIA_TYPE = "application/vnd.fs2.scientific-manifest+json"
+ARCHIVE_MANIFEST_SCHEMA = "fs2-serve.nebius.ai/deterministic-tar-gzip-manifest/v1"
 RESULT_SCHEMA = "fs2-serve.nebius.ai/scientific-run-result/v1"
 MAX_JSON_BYTES = 16 * 1024 * 1024
 MAX_INPUT_BYTES = 256 * 1024 * 1024
+MAX_ARCHIVE_MEMBERS = 128
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 MODEL_RE = re.compile(r"^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$")
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -85,39 +87,51 @@ class DeclaredInput:
     encoding: str
 
 
-def deterministic_tar_gzip(source: bytes, archive_path: object) -> bytes:
-    """Package one public fixture file with byte-stable tar and gzip metadata."""
-
+def _archive_path(value: object) -> str:
     if (
-        not isinstance(archive_path, str)
-        or not archive_path
-        or not archive_path.isascii()
-        or "\x00" in archive_path
-        or "\\" in archive_path
+        not isinstance(value, str)
+        or not value
+        or not value.isascii()
+        or "\x00" in value
+        or "\\" in value
     ):
         raise AcceptanceError("supporting_input_archive_path_invalid")
-    relative = PurePosixPath(archive_path)
+    relative = PurePosixPath(value)
     if relative.is_absolute() or any(
         part in {"", ".", ".."} for part in relative.parts
     ):
         raise AcceptanceError("supporting_input_archive_path_invalid")
-    if len(archive_path.encode("utf-8")) > 100:
+    if len(value.encode("utf-8")) > 100:
         raise AcceptanceError("supporting_input_archive_path_invalid")
+    return value
+
+
+def _deterministic_tar_gzip_members(members: list[tuple[str, bytes]]) -> bytes:
+    """Package bounded public fixture members with byte-stable metadata."""
+
+    if not 1 <= len(members) <= MAX_ARCHIVE_MEMBERS:
+        raise AcceptanceError("supporting_input_archive_members_invalid")
+    normalized = [(_archive_path(path), payload) for path, payload in members]
+    if len({path for path, _payload in normalized}) != len(normalized):
+        raise AcceptanceError("supporting_input_archive_members_invalid")
+    if sum(len(payload) for _path, payload in normalized) > MAX_INPUT_BYTES:
+        raise AcceptanceError("supporting_input_too_large")
 
     tar_stream = io.BytesIO()
     try:
         with tarfile.open(
             fileobj=tar_stream, mode="w", format=tarfile.USTAR_FORMAT
         ) as archive:
-            member = tarfile.TarInfo(archive_path)
-            member.size = len(source)
-            member.mode = 0o444
-            member.uid = 0
-            member.gid = 0
-            member.uname = ""
-            member.gname = ""
-            member.mtime = 0
-            archive.addfile(member, io.BytesIO(source))
+            for path, payload in sorted(normalized):
+                member = tarfile.TarInfo(path)
+                member.size = len(payload)
+                member.mode = 0o444
+                member.uid = 0
+                member.gid = 0
+                member.uname = ""
+                member.gname = ""
+                member.mtime = 0
+                archive.addfile(member, io.BytesIO(payload))
     except (OSError, tarfile.TarError, UnicodeError, ValueError) as error:
         raise AcceptanceError("supporting_input_materialization_failed") from error
 
@@ -138,6 +152,12 @@ def deterministic_tar_gzip(source: bytes, archive_path: object) -> bytes:
         "<II", binascii.crc32(tar_bytes) & 0xFFFFFFFF, len(tar_bytes) & 0xFFFFFFFF
     )
     return header + bytes(compressed) + trailer
+
+
+def deterministic_tar_gzip(source: bytes, archive_path: object) -> bytes:
+    """Package one public fixture file with byte-stable tar and gzip metadata."""
+
+    return _deterministic_tar_gzip_members([(_archive_path(archive_path), source)])
 
 
 class PublicApiClient:
@@ -285,6 +305,46 @@ def _resolve_inside(root: Path, value: object, code: str) -> Path:
     return resolved
 
 
+def deterministic_tar_gzip_manifest(root: Path, source: bytes) -> bytes:
+    """Materialize a bounded multi-file archive declared by repository paths."""
+
+    if len(source) > MAX_JSON_BYTES:
+        raise AcceptanceError("supporting_input_archive_manifest_invalid")
+    try:
+        document = _object(
+            json.loads(source), "supporting_input_archive_manifest_invalid"
+        )
+    except (RecursionError, UnicodeDecodeError, ValueError) as error:
+        raise AcceptanceError("supporting_input_archive_manifest_invalid") from error
+    if (
+        set(document) != {"schema", "members"}
+        or document.get("schema") != ARCHIVE_MANIFEST_SCHEMA
+    ):
+        raise AcceptanceError("supporting_input_archive_manifest_invalid")
+    raw_members = _items(
+        document.get("members"), "supporting_input_archive_manifest_invalid"
+    )
+    if not 1 <= len(raw_members) <= MAX_ARCHIVE_MEMBERS:
+        raise AcceptanceError("supporting_input_archive_members_invalid")
+    members: list[tuple[str, bytes]] = []
+    for raw_member in raw_members:
+        member = _object(raw_member, "supporting_input_archive_member_invalid")
+        if set(member) != {"archive_path", "source_path"}:
+            raise AcceptanceError("supporting_input_archive_member_invalid")
+        archive_path = _archive_path(member.get("archive_path"))
+        source_path = _resolve_inside(
+            root,
+            member.get("source_path"),
+            "supporting_input_archive_source_invalid",
+        )
+        try:
+            payload = source_path.read_bytes()
+        except OSError as error:
+            raise AcceptanceError("supporting_input_unavailable") from error
+        members.append((archive_path, payload))
+    return _deterministic_tar_gzip_members(members)
+
+
 def _read_declared_input(root: Path, value: object) -> DeclaredInput:
     declaration = _object(value, "supporting_input_invalid")
     if set(declaration) - {"role", "name", "path", "encoding", "archive_path"}:
@@ -303,6 +363,7 @@ def _read_declared_input(root: Path, value: object) -> DeclaredInput:
         "canonical-json",
         "canonical-json-newline",
         "deterministic-tar-gzip-v1",
+        "deterministic-tar-gzip-manifest-v1",
     }:
         raise AcceptanceError("supporting_input_encoding_invalid")
     path = _resolve_inside(
@@ -319,6 +380,12 @@ def _read_declared_input(root: Path, value: object) -> DeclaredInput:
         if role != "manifest-artifact" or name is None:
             raise AcceptanceError("supporting_input_materializer_role_invalid")
         data = deterministic_tar_gzip(data, archive_path)
+    elif encoding == "deterministic-tar-gzip-manifest-v1":
+        if role != "manifest-artifact" or name is None:
+            raise AcceptanceError("supporting_input_materializer_role_invalid")
+        if archive_path is not None:
+            raise AcceptanceError("supporting_input_archive_path_invalid")
+        data = deterministic_tar_gzip_manifest(root, data)
     elif archive_path is not None:
         raise AcceptanceError("supporting_input_archive_path_invalid")
     elif encoding != "raw":

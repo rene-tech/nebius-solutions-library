@@ -203,16 +203,12 @@ def _valid_prepared_handoff(model_id: str, invocation=None) -> tuple[str, bytes]
             if invocation is not None
             else "00000000-0000-4000-8000-000000000099"
         )
-        raw_digest = (
-            _argument(invocation.argv, "--raw-input-sha256") if invocation is not None else "a" * 64
-        )
+        raw_digest = _argument(invocation.argv, "--raw-input-sha256") if invocation is not None else "a" * 64
         variant = _argument(invocation.argv, "--variant") if invocation is not None else model_id
         mode = _argument(invocation.argv, "--mode") if invocation is not None else "single-sequence"
         seed = int(_argument(invocation.argv, "--seed")) if invocation is not None else 0
         source_revision = (
-            _argument(invocation.argv, "--source-revision")
-            if invocation is not None
-            else esmfold2.SOURCE_REVISION
+            _argument(invocation.argv, "--source-revision") if invocation is not None else esmfold2.SOURCE_REVISION
         )
         return (
             "prepared-input.json",
@@ -253,9 +249,7 @@ def _valid_prepared_handoff(model_id: str, invocation=None) -> tuple[str, bytes]
             "member": payload_name,
             "sha256": hashlib.sha256(payload).hexdigest(),
             "raw_input_sha256": (
-                _argument(invocation.argv, "--raw-input-sha256")
-                if invocation is not None
-                else "a" * 64
+                _argument(invocation.argv, "--raw-input-sha256") if invocation is not None else "a" * 64
             ),
             "raw_input_artifact_id": (
                 _argument(invocation.argv, "--raw-input-artifact-id")
@@ -842,8 +836,7 @@ def test_public_runtime_artifact_mounts_are_exact_read_only_and_group_readable(m
         assert {mount.artifact_id: mount.mount_path for mount in invocation.runtime_mounts} == expected
         assert all(mount.read_only for mount in invocation.runtime_mounts)
         assert all(
-            mount.supplemental_groups == (PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP,)
-            for mount in invocation.runtime_mounts
+            mount.supplemental_groups == (PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP,) for mount in invocation.runtime_mounts
         )
 
 
@@ -1148,9 +1141,7 @@ def _write_confidence_workspace(
                 else "00000000-0000-4000-8000-000000000099"
             ),
             "sha256": (
-                _argument(invocation.argv, "--expected-raw-input-sha256")
-                if invocation is not None
-                else "a" * 64
+                _argument(invocation.argv, "--expected-raw-input-sha256") if invocation is not None else "a" * 64
             ),
         },
         "seeds": list(seeds),
@@ -1392,8 +1383,8 @@ def test_production_companion_publishes_result_manifest_and_validation(model_id:
 
 def test_contract_documents_match_code_and_the_published_successor_handoff() -> None:
     handoff = json.loads(IMAGE_HANDOFF.read_text(encoding="utf-8"))
-    assert handoff["state"] == "published-build-only-not-activated"
-    assert handoff["production_protocol_compatible"] is True
+    assert handoff["state"] == "publication-partial-pending-not-activated"
+    assert handoff["production_protocol_compatible"] is False
     assert handoff["semantic_h100_qualification"] is False
     assert handoff["route_activation_allowed"] is False
     assert "alphafold3" not in {item["model_id"] for item in handoff["images"]}
@@ -1405,17 +1396,20 @@ def test_contract_documents_match_code_and_the_published_successor_handoff() -> 
         assert value["variant_id"] == module.VARIANT_ID
         assert value["source"]["repository"] == module.SOURCE_REPOSITORY
         assert value["source"]["revision"] == module.SOURCE_REVISION
+        semantic_qualified = model_id == "openfold3-openbind"
         assert value["activation"] == {
             "profile_state": "candidate-unqualified",
             "route_exposed": False,
-            "semantic_h100_qualified": False,
+            "semantic_h100_qualified": semantic_qualified,
         }
         assert value["runtime_image"]["repository"] == images[model_id]["repository"]
         assert value["runtime_image"]["tag"] == images[model_id]["tag"]
         assert value["runtime_image"]["digest"] == images[model_id]["digest"]
         assert value["runtime_image"]["workspace_uid"] == 10001
         assert value["runtime_image"]["workspace_gid"] == 10001
-        assert value["runtime_image"]["state"] == "build-only-not-semantic-qualified"
+        assert value["runtime_image"]["state"] == (
+            "semantic-h100-qualified" if semantic_qualified else "build-only-not-semantic-qualified"
+        )
         assert {
             stage["stage_id"]: {
                 "collector_id": stage["collector_id"],
@@ -1438,6 +1432,19 @@ def test_committed_publication_evidence_matches_the_exact_image_handoff() -> Non
     }
     evidence_images = {item["model_id"]: item for item in evidence["images"]}
     for image in handoff["images"]:
+        if image["model_id"] == "openfold3-openbind":
+            successor = json.loads(
+                (
+                    SOLUTION_ROOT / "models/cancer-immunotherapy/images/structure-secondary/evidence/"
+                    "openfold3-runner-baked-publication-20260904.json"
+                ).read_text(encoding="utf-8")
+            )
+            assert successor["image"]["target"] == f"{image['repository']}:{image['tag']}"
+            assert successor["image"]["digest"] == image["digest"]
+            assert successor["image"]["default_uid"] == 10001
+            assert successor["image"]["default_gid"] == 10001
+            assert re.fullmatch(r"[0-9a-f]{64}", successor["sbom"]["sha256"])
+            continue
         item = evidence_images[image["model_id"]]
         assert item["target"] == f"{image['repository']}:{image['tag']}"
         assert item["digest"] == image["digest"]

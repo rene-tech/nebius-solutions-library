@@ -1,4 +1,4 @@
-"""Fail-closed contracts for the isolated academic AlphaFold 3 candidate."""
+"""Contracts for the isolated academic AlphaFold 3 active bridge."""
 
 from __future__ import annotations
 
@@ -28,10 +28,7 @@ from fs2_serve.scientific_batch.scheduling import SchedulingContractError, Sched
 SOLUTION_ROOT = Path(__file__).resolve().parents[3]
 ADAPTER_ROOT = SOLUTION_ROOT / "models/structure/batch-adapters/alphafold3"
 RUNTIME_FIXTURES = SOLUTION_ROOT / "models/cancer-immunotherapy/images/alphafold3/fixtures"
-RUNTIME_HANDOFF = (
-    SOLUTION_ROOT
-    / "models/cancer-immunotherapy/images/alphafold3/contracts/af3-runtime-handoff.json"
-)
+RUNTIME_HANDOFF = SOLUTION_ROOT / "models/cancer-immunotherapy/images/alphafold3/contracts/af3-runtime-handoff.json"
 R7_IMAGE_DIGEST = "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7"
 
 install_production_adapters()
@@ -71,7 +68,7 @@ def compile_plan(*, inputs: tuple[ScientificInputArtifact, ...] | None = None):
         af3.MODEL_ID,
         profile(),
         request(),
-        operation_id="op-af3-isolated-candidate",
+        operation_id="op-af3-isolated-active",
         variant_id=af3.VARIANT_ID,
         access_context=ArtifactAccessContext(
             profile="academic",
@@ -166,8 +163,8 @@ def academic_scheduling() -> SchedulingContractResolver:
     )
 
 
-def test_candidate_keeps_academic_planes_separate_and_is_not_route_exposed() -> None:
-    candidate = profile()
+def test_active_bridge_keeps_academic_planes_separate() -> None:
+    active_profile = profile()
     contract = load(ADAPTER_ROOT / "contract.json")
     handoff = load(RUNTIME_HANDOFF)
     assert contract["runtime"]["workspace_uid"] == 1001
@@ -177,19 +174,34 @@ def test_candidate_keeps_academic_planes_separate_and_is_not_route_exposed() -> 
     assert handoff["image"]["digest"] == R7_IMAGE_DIGEST
     assert contract["runtime"]["image_digest"] == handoff["image"]["digest"]
     assert af3.RUNTIME_IMAGE_DIGEST == handoff["image"]["digest"]
-    assert candidate["execution_identity"]["runtime_image_digest"] == handoff["image"]["digest"]
+    assert active_profile["execution_identity"]["runtime_image_digest"] == handoff["image"]["digest"]
     assert "h100" in contract["runtime"]["qualification_required"].lower()
+    # The model contract preserves the original fail-closed handoff; the
+    # model-owned activation projection is the evidence-backed current state.
     assert contract["route_gate"]["route_exposed"] is False
-    assert candidate["state"] == "candidate-unqualified"
-    assert candidate["route_exposed"] is False
-    assert candidate["resources"]["compatible_pool_ids"] == ["h100-reserved-8x", "h100-1x"]
-    assert candidate["resources"]["required_node_labels"] == {
+    assert active_profile["state"] == "active"
+    assert active_profile["route_exposed"] is True
+    assert active_profile["source"]["classification"] == "qualified-input"
+    assert active_profile["interface"]["mcp"]["invocable"] is True
+    assert active_profile["semantic_validation"]["state"] == "active"
+    assert active_profile["qualification"] == {
+        "h100_semantic_receipt_sha256": "095e4d8da54621329d65a1bdae0e9f5b70d9bb305165d7d3f8e26315fe604b75",
+        "public_completion_receipt_sha256": None,
+        "scheduler_eligibility_receipt_sha256": None,
+        "execution_map_sha256": active_profile["qualification"]["execution_map_sha256"],
+        "qualified_at": "2026-09-04T16:57:43Z",
+    }
+    assert active_profile["resources"]["compatible_pool_ids"] == [
+        "h100-reserved-8x",
+        "h100-1x",
+    ]
+    assert active_profile["resources"]["required_node_labels"] == {
         "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
     }
-    assert candidate["access"] == {
+    assert active_profile["access"] == {
         "profile": "academic",
         "state": "verified",
-        "receipt_digest": None,
+        "receipt_digest": "3a3d5d77a7f58d7875e33e78defe0dcb482dbe590e18380704594c4c1c3a8155",
         "credentials_embedded": False,
     }
     plan = compile_plan()
@@ -220,7 +232,7 @@ def test_candidate_keeps_academic_planes_separate_and_is_not_route_exposed() -> 
     assert af3.REFERENCE_MOUNT_PATH not in inference.argv
 
 
-def test_candidate_freezes_in_the_academic_namespace_only() -> None:
+def test_active_profile_freezes_in_the_academic_namespace_only() -> None:
     plan = compile_plan().controller_plan
     snapshot = academic_scheduling().freeze(
         service_class="customer-batch",

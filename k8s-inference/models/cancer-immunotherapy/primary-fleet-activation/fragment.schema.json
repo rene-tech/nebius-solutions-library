@@ -69,6 +69,7 @@
             "state": {
               "enum": [
                 "semantic-qualified-route-disabled",
+                "semantic-qualified-active-awaiting-public-acceptance",
                 "published-successor-awaiting-h100-controller-qualification"
               ]
             },
@@ -169,7 +170,8 @@
                 "enum": [
                   "raw",
                   "canonical-json-newline",
-                  "deterministic-tar-gzip-v1"
+                  "deterministic-tar-gzip-v1",
+                  "deterministic-tar-gzip-manifest-v1"
                 ]
               },
               "archive_path": {"$ref": "#/$defs/repository_path"}
@@ -191,6 +193,20 @@
                 "else": {
                   "not": {"required": ["archive_path"]}
                 }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "encoding": {"const": "deterministic-tar-gzip-manifest-v1"}
+                  },
+                  "required": ["encoding"]
+                },
+                "then": {
+                  "required": ["name"],
+                  "properties": {
+                    "role": {"const": "manifest-artifact"}
+                  }
+                }
               }
             ]
           }
@@ -202,8 +218,8 @@
       "additionalProperties": false,
       "required": ["route_exposed", "ready_for_route", "public_platform_run_required"],
       "properties": {
-        "route_exposed": {"const": false},
-        "ready_for_route": {"const": false},
+        "route_exposed": {"const": true},
+        "ready_for_route": {"const": true},
         "public_platform_run_required": {"const": true}
       }
     }

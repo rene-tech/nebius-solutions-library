@@ -38,7 +38,7 @@
       ]
     },
     "h100": {
-      "state": "semantic-qualified-route-disabled",
+      "state": "semantic-qualified-active-awaiting-public-acceptance",
       "accelerator_class": "nvidia-h100-sxm5-80gb",
       "evidence_paths": [
         "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-qualification-20260903.json"
@@ -68,10 +68,10 @@
       "execution_identity": {
         "model_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
         "runtime_image_digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
-        "runtime_recipe_sha256": "87242bab8728227eb1ff67ee14da22fdfb0b89f5a4a267efa37a00074edc917e",
-        "workload_recipe_sha256": "e3ca7d4fc41ea5b7cda1b2b92b8a6c8534fd33e7869126e9c09036ee6d068255",
-        "artifact_manifest_digest": "f5a4a2597e71c772f671b0b8312e412e915f8a2a7a54cf7cdc8126d4e6dd5753",
-        "execution_identity_sha256": "2520997f613fa629af136860488cedb66c8e1f6390a83a5224f96cde5b03a2c4"
+        "runtime_recipe_sha256": "d2f7ea0d4bd8a7ad64f664a2c936cc8eeb85b101a346b3cf49dca540cb390334",
+        "workload_recipe_sha256": "a4e59c0c5bd51067511b5f65f6288e8f7e38164146496ec9337765e795563da2",
+        "artifact_manifest_digest": "a933ad20fd8c9e065c3ba77e96ff36c78303841b79a33d1b0308ec7d9873d641",
+        "execution_identity_sha256": "37b56481aa4cfa686d310e91d4907986abb1053155796ba04458ed5fed120019"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -136,7 +136,20 @@
             "min_parallelism": 1,
             "max_parallelism": 1,
             "checkpoint_mode": "none",
-            "preemption_mode": "non_preemptible"
+            "preemption_mode": "non_preemptible",
+            "placement": {
+              "class": "general-cpu"
+            },
+            "resources": {
+              "cpu_millis": 2000,
+              "memory_bytes": 8589934592,
+              "ephemeral_storage_bytes": 17179869184,
+              "limits": {
+                "cpu_millis": 4000,
+                "memory_bytes": 17179869184,
+                "ephemeral_storage_bytes": 34359738368
+              }
+            }
           }
         ],
         "retry": {
@@ -159,7 +172,7 @@
         "h100_semantic_receipt_sha256": "162a1705d3f8b301cfb98426c3717fea63f9c9cb4c5c8ed4f21e2a60a1250944",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
         "qualified_at": "2026-09-03T07:04:28Z"
       },
       "policy": {
@@ -167,9 +180,59 @@
         "non_clinical": true,
         "limitations": [
           "The exact image and private PyRosetta tree passed a real H100 semantic run under the authorized academic PoC path.",
-          "Admission remains request-gated and route-disabled until the serialized public controller run proves academic receipt, mixed-plane mounts, collection, and semantic validation."
+          "The active bridge is anchored to the verified academic receipt, mixed-plane mounts, collection contract, and H100 semantic evidence; public completion and scheduler acceptance receipts remain pending."
         ]
-      }
+      },
+      "runtime_artifacts": [
+        {
+          "artifact_id": "alphafold2-params-bindcraft",
+          "content_identity": {
+            "digest_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+            "size_bytes": 5587959437
+          },
+          "file_manifest": [
+            {
+              "path": "manifest.json",
+              "sha256": "9d0b7e45378ed707cfc31585f3ae960282dc76f3e2c4f60b545b02dbc728423b",
+              "size_bytes": 2866
+            }
+          ],
+          "required_files": [
+            "manifest.json"
+          ],
+          "readiness_manifest_sha256": "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0"
+        },
+        {
+          "artifact_id": "colabdesign-mpnn-weights-vanilla",
+          "content_identity": {
+            "digest_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+            "size_bytes": 26602793
+          },
+          "file_manifest": [],
+          "required_files": [],
+          "readiness_manifest_sha256": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8"
+        },
+        {
+          "artifact_id": "colabdesign-mpnn-weights-soluble",
+          "content_identity": {
+            "digest_sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+            "size_bytes": 26601241
+          },
+          "file_manifest": [],
+          "required_files": [],
+          "readiness_manifest_sha256": "471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660"
+        },
+        {
+          "artifact_id": "bindcraft-pyrosetta-installed-tree",
+          "content_identity": {
+            "digest_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+            "size_bytes": 3287122494
+          },
+          "file_manifest": [],
+          "required_files": [],
+          "readiness_manifest_sha256": "ee24f7445426b0536da9781bc57a9ef33e4e1e98a3434afae31cdd84e7b473d3"
+        }
+      ]
     }
   },
   "execution_projection": {
@@ -267,8 +330,8 @@
             "nvidia-h100-sxm5-80gb"
           ],
           "eligible_pool_ids": [
-            "h100-1x",
-            "h100-reserved-8x"
+            "h100-reserved-8x",
+            "h100-1x"
           ],
           "required_node_labels": {
             "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
@@ -324,8 +387,8 @@
     ]
   },
   "activation_gate": {
-    "route_exposed": false,
-    "ready_for_route": false,
+    "route_exposed": true,
+    "ready_for_route": true,
     "public_platform_run_required": true
   }
 }

@@ -36,6 +36,7 @@ from fs2_serve.scientific_batch.scheduling import SchedulingContractResolver
 SOLUTION_ROOT = Path(__file__).resolve().parents[3]
 CATALOG_ROOT = SOLUTION_ROOT / "catalog/runtime"
 ADAPTER_ROOT = SOLUTION_ROOT / "models/structure/batch-adapters/boltzgen"
+ACTIVATION_ROOT = SOLUTION_ROOT / "models/cancer-immunotherapy/runtime-images/boltzgen/activation"
 
 
 def _request() -> dict[str, object]:
@@ -60,6 +61,45 @@ def _input() -> ScientificInputArtifact:
         media_type=boltzgen.CAMPAIGN_INPUT_MEDIA_TYPE,
         compression="gzip",
     )
+
+
+def test_public_acceptance_fixture_compiles_the_bounded_production_plan() -> None:
+    request = json.loads((ACTIVATION_ROOT / "public-request.json").read_text(encoding="utf-8"))
+    manifest = json.loads((ACTIVATION_ROOT / "input-manifest.json").read_text(encoding="utf-8"))
+    entry = manifest["entries"][0]
+    pointer = entry["artifact"]
+    verified = ScientificInputArtifact(
+        logical_artifact_id=entry["name"],
+        semantic_type=entry["semantic_type"],
+        artifact_id=UUID("00000000-0000-4000-8000-000000000001"),
+        digest="sha256:" + pointer["sha256"],
+        size_bytes=pointer["size_bytes"],
+        media_type=pointer["media_type"],
+        compression=pointer["compression"],
+    )
+    catalog = ScientificProfileCatalog.load(CATALOG_ROOT)
+    renderer = _renderer(catalog)
+    profile = catalog.get(boltzgen.MODEL_ID)
+    access = renderer.access_context(profile, tenant_id="boltz-public-fixture")
+    plan = renderer.plan(
+        profile,
+        request,
+        operation_id=UUID("10000000-0000-4000-8000-000000000001"),
+        access_context=access,
+        input_artifacts=(verified,),
+    )
+
+    assert plan.controller_plan.stage("configure").shards == ("pdl1-face",)
+    assert plan.invocation("configure", "pdl1-face").consumes == (boltzgen.CAMPAIGN_INPUT_ID,)
+    assert [stage.stage_id for stage in plan.controller_plan.stages] == [
+        "configure",
+        "design",
+        "inverse-folding",
+        "folding",
+        "design-folding",
+        "analysis",
+        "filtering",
+    ]
 
 
 def _renderer(catalog: ScientificProfileCatalog) -> FileScientificManifestRenderer:

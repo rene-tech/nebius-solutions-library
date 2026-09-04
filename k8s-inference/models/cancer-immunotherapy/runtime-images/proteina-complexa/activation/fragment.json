@@ -38,7 +38,7 @@
       ]
     },
     "h100": {
-      "state": "semantic-qualified-route-disabled",
+      "state": "semantic-qualified-active-awaiting-public-acceptance",
       "accelerator_class": "nvidia-h100-sxm5-80gb",
       "evidence_paths": [
         "models/cancer-immunotherapy/runtime-images/proteina-complexa/evidence/h100-run-receipt.json",
@@ -69,10 +69,10 @@
       "execution_identity": {
         "model_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
         "runtime_image_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
-        "runtime_recipe_sha256": "3f28faf246dda24e2c13c6a9ffc9699ae261b5a594e5178c6519e5ca88bfd4e7",
-        "workload_recipe_sha256": "1ea1d90228cff7efbc4c3e6f6c394be0e384e7870a2a94fa8897b81fe6bfa73b",
+        "runtime_recipe_sha256": "61df7c4b4ec31d80846897c2d9ebca310b0eee90689fe1f79d2513ff07714d57",
+        "workload_recipe_sha256": "f614aa8507bb31c70d9e9316e4a2a9eb297922cc06555af3a801f0240e9b5797",
         "artifact_manifest_digest": "2d84dbda753a108e2e10f1d0aab1d9bc6dd5017f8f86ed94173d933a9884d4eb",
-        "execution_identity_sha256": "a3c2813a0197d1e8f6ab2633897ec0fb5a241488a4bdfe06e76eae8b6a96e16f"
+        "execution_identity_sha256": "44dd74aefb4da624f9bcd983ea59b932db0b04395c68eb6ff777b2bc9a6528c3"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -111,8 +111,7 @@
           "h100-1x"
         ],
         "required_node_labels": {
-          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
-          "storage.fs2.nebius/reference-data": "true"
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
         }
       },
       "workload": {
@@ -137,7 +136,20 @@
             "min_parallelism": 1,
             "max_parallelism": 1,
             "checkpoint_mode": "none",
-            "preemption_mode": "non_preemptible"
+            "preemption_mode": "non_preemptible",
+            "placement": {
+              "class": "general-cpu"
+            },
+            "resources": {
+              "cpu_millis": 2000,
+              "memory_bytes": 4294967296,
+              "ephemeral_storage_bytes": 8589934592,
+              "limits": {
+                "cpu_millis": 4000,
+                "memory_bytes": 8589934592,
+                "ephemeral_storage_bytes": 17179869184
+              }
+            }
           },
           {
             "id": "evaluate",
@@ -161,7 +173,20 @@
             "min_parallelism": 1,
             "max_parallelism": 1,
             "checkpoint_mode": "none",
-            "preemption_mode": "non_preemptible"
+            "preemption_mode": "non_preemptible",
+            "placement": {
+              "class": "general-cpu"
+            },
+            "resources": {
+              "cpu_millis": 2000,
+              "memory_bytes": 4294967296,
+              "ephemeral_storage_bytes": 8589934592,
+              "limits": {
+                "cpu_millis": 4000,
+                "memory_bytes": 8589934592,
+                "ephemeral_storage_bytes": 17179869184
+              }
+            }
           }
         ],
         "retry": {
@@ -184,17 +209,69 @@
         "h100_semantic_receipt_sha256": "380441981a4170c8f2427a47ef4b25898f0ab14e33cc5efe7fdd65ebc1b45c4b",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
         "qualified_at": "2026-09-03T13:53:21Z"
       },
       "policy": {
         "commercial_use": "license-dependent",
         "non_clinical": true,
         "limitations": [
-          "The exact image and all three runtime variants passed H100 semantic qualification; the public controller route and complete staged workflow have not.",
-          "Activation remains disabled until a serialized integration run proves exact artifact admission, scheduling, collection, and public semantic validation."
+          "The immutable runtime digest and public checkpoint generations passed all-variant H100 semantic qualification; complete public four-stage workflow and scheduler acceptance receipts remain pending.",
+          "Core self-refolding uses a controller-mounted AlphaFold2 or RoseTTAFold3 artifact; optional ESM2, ESMFold, and MPNN metrics are disabled until their exact artifacts pass readiness."
         ]
-      }
+      },
+      "runtime_artifacts": [
+        {
+          "artifact_id": "complexa-protein",
+          "content_identity": {
+            "digest_sha256": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+            "size_bytes": 7034391160
+          },
+          "file_manifest": [],
+          "required_files": [],
+          "readiness_manifest_sha256": "b84403b26e5ac4acd2ea3203d3ea7936e8ef009a9ac1c19fbcfddd7c40667851"
+        },
+        {
+          "artifact_id": "complexa-ligand",
+          "content_identity": {
+            "digest_sha256": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+            "size_bytes": 5890739041
+          },
+          "file_manifest": [],
+          "required_files": [],
+          "readiness_manifest_sha256": "868551c2ec89d8296155ac5e5e0a674205cbc851c301ed58f32014d7fe404177"
+        },
+        {
+          "artifact_id": "complexa-ame",
+          "content_identity": {
+            "digest_sha256": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+            "size_bytes": 5892211805
+          },
+          "file_manifest": [],
+          "required_files": [],
+          "readiness_manifest_sha256": "18199cf0468000baefa7ed0cb604a2a7c64d0228ddf8d8e5579d6c1e543267db"
+        },
+        {
+          "artifact_id": "rosettafold3-checkpoint",
+          "content_identity": {
+            "digest_sha256": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+            "size_bytes": 3038876446
+          },
+          "file_manifest": [],
+          "required_files": [],
+          "readiness_manifest_sha256": "94002c4a6a8c7fdbdda20e658785cf63a7708728afccf9615f1d54ea71657822"
+        },
+        {
+          "artifact_id": "alphafold2-params",
+          "content_identity": {
+            "digest_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+            "size_bytes": 5587956571
+          },
+          "file_manifest": [],
+          "required_files": [],
+          "readiness_manifest_sha256": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f"
+        }
+      ]
     }
   },
   "execution_projection": {
@@ -313,8 +390,8 @@
             "nvidia-h100-sxm5-80gb"
           ],
           "eligible_pool_ids": [
-            "h100-1x",
-            "h100-reserved-8x"
+            "h100-reserved-8x",
+            "h100-1x"
           ],
           "required_node_labels": {
             "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
@@ -346,8 +423,8 @@
             "nvidia-h100-sxm5-80gb"
           ],
           "eligible_pool_ids": [
-            "h100-1x",
-            "h100-reserved-8x"
+            "h100-reserved-8x",
+            "h100-1x"
           ],
           "required_node_labels": {
             "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
@@ -389,8 +466,8 @@
     ]
   },
   "activation_gate": {
-    "route_exposed": false,
-    "ready_for_route": false,
+    "route_exposed": true,
+    "ready_for_route": true,
     "public_platform_run_required": true
   }
 }

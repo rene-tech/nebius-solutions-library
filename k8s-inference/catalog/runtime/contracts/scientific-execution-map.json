@@ -5,7 +5,7 @@
       "model_id": "boltzgen",
       "variant_id": "upstream-v0-3-2",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "ecc726237a6f7d2d88359a44947e01d5f7018d5ea598ab47fd4d39b78986977e",
+      "execution_identity_sha256": "9d41092dd5c8ad874284c3acf347a29bb4b2ae2695e84fcf30796f27fff6de02",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -464,7 +464,7 @@
       "model_id": "proteina-complexa",
       "variant_id": "upstream-dev-20260827",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "62071777496576eff4549f48da5c78db47ca4aedb8f8d2e454c143ecd825ddd1",
+      "execution_identity_sha256": "44dd74aefb4da624f9bcd983ea59b932db0b04395c68eb6ff777b2bc9a6528c3",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -782,7 +782,7 @@
       "model_id": "bindcraft",
       "variant_id": "v1-5-3-pyrosetta-academic",
       "workload_namespace": "fs2-academic-poc",
-      "execution_identity_sha256": "2520997f613fa629af136860488cedb66c8e1f6390a83a5224f96cde5b03a2c4",
+      "execution_identity_sha256": "37b56481aa4cfa686d310e91d4907986abb1053155796ba04458ed5fed120019",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -793,13 +793,6 @@
           "mount_path": "/models/alphafold2",
           "content_digest": "sha256:9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
           "localization_receipt_digest": "sha256:bd2275bf6545c24fca98206338a4f45a580eeebb4f08536267c9cf1c0ed77932",
-          "file_manifest": [
-            {
-              "path": "manifest.json",
-              "sha256": "9d0b7e45378ed707cfc31585f3ae960282dc76f3e2c4f60b545b02dbc728423b",
-              "size_bytes": 2866
-            }
-          ],
           "aggregate_tree": {
             "storage_kind": "localization-generation",
             "tree_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
@@ -1007,7 +1000,7 @@
       "model_id": "mosaic",
       "variant_id": "mosaic-boltz2-proteinmpnn-v1",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "74596ef23ea34112e6b319d1a6f8859c030c2d61e61980b258aa974c7dd73bba",
+      "execution_identity_sha256": "c65d6c2cc1ffd71fa877a02ebe7e24a2eff28a3f63effb7f80dcc0c4ef2e7ceb",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1018,18 +1011,13 @@
           "mount_path": "/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt",
           "content_digest": "sha256:e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
           "localization_receipt_digest": "sha256:a2cfc9a72c101d77ecc2a80fb779909bb3da0def3e3f0893be9238e65c948165",
-          "aggregate_tree": {
-            "storage_kind": "localization-generation",
-            "tree_sha256": "e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
-            "manifest_sha256": "89c9316d5b723dd266e508ac41479aa03dc4de8158e1cf946be2f1efc56c9ebf",
-            "inventory_sha256": "e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
-            "manifest_algorithm": "fs2-raw-file/v1",
-            "file_count": 1,
-            "directory_count": 0,
-            "expanded_bytes": 2286561469,
-            "canonical_path": "scientific-localization/public/generations/mosaic-boltz2-conf/sha256/e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
-            "marker_relative_path": ".fs2-runtime-tree.json"
-          }
+          "file_manifest": [
+            {
+              "path": "boltz2_conf.ckpt",
+              "sha256": "e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
+              "size_bytes": 2286561469
+            }
+          ]
         },
         {
           "artifact_id": "boltzgen-inference-molecules",
@@ -1190,7 +1178,7 @@
       "model_id": "rfdiffusion",
       "variant_id": "rfdiffusion-v1-1-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "ba33a17f3867344af9f02c7050f0784f628784b995e102a01d5f717c8fec4844",
+      "execution_identity_sha256": "d15d6e41cfdade09e501b9da7c9db050bc8125da36ef02b78725b35f863d957b",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1307,7 +1295,7 @@
       "model_id": "esmfold2",
       "variant_id": "biohub-v3-4-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": null,
+      "execution_identity_sha256": "8fa8302c1634c579bbe03ee968604d0321661c5689f69d4c80c561488c727f58",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1518,7 +1506,7 @@
       "model_id": "esmfold2-fast",
       "variant_id": "biohub-v3-4-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": null,
+      "execution_identity_sha256": "0e4df0d822d4dc796569284f103ce47602d951abf141db02d8b2890a822ae552",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1729,7 +1717,7 @@
       "model_id": "openfold3-openbind",
       "variant_id": "upstream-openbind-v0-5-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "62017b9dccdf06464ed7e749343170ed599964c32a06d4578c25215e9345e60f",
+      "execution_identity_sha256": "73e9e2401e626d445f0dfb80fef84ff2698396577815b42ebe395d04840aab94",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1765,7 +1753,7 @@
       "stages": [
         {
           "stage_id": "data-pipeline",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
           "collector_id": "openfold3-data-collector-v1",
           "validator_id": "openfold3-data-validator-v1",
           "mounts": [
@@ -1801,7 +1789,7 @@
         },
         {
           "stage_id": "inference",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
           "collector_id": "openfold3-result-collector-v1",
           "validator_id": "openfold3-upstream-openbind-v0-5-0",
           "mounts": [
@@ -1876,7 +1864,7 @@
       "model_id": "protenix-v2",
       "variant_id": "upstream-v2-0-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "8100a67d18fd394b4c284371bf04c020a151e15e1d6e1e331e0f1afb210767fb",
+      "execution_identity_sha256": "69eac0fd6d1ffbdf186a7d0e3640f2de027b095d5f800a37d32346bd45eb8c30",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -2057,7 +2045,7 @@
       "model_id": "alphafold3",
       "variant_id": "upstream-v3-0-4",
       "workload_namespace": "fs2-academic-poc",
-      "execution_identity_sha256": "a9bc5265365e8e6df0ce9d70991f1fb5af58363d9f959e90c417b87ebe543f56",
+      "execution_identity_sha256": "b496602bf9ac8baba8e4e5a33021a77275b34bca1b9b70bbf107fc46e2cb0245",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -2203,7 +2191,7 @@
               "claim_name": "academic-assets-runtime-rwx",
               "host_path": null,
               "mount_path": "/models/af3.bin.zst",
-              "sub_path": null,
+              "sub_path": "alphafold3/af3.bin.zst",
               "read_only": true
             },
             {

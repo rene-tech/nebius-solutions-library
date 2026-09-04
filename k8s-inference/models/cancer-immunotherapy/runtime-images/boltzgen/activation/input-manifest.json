@@ -1,0 +1,17 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+  "manifest_id": "manifest.boltzgen.pdl1.01",
+  "entries": [
+    {
+      "name": "campaign-input",
+      "semantic_type": "boltzgen-campaign-input/v1",
+      "artifact": {
+        "artifact_id": "artifact.boltzgen.pdl1.campaign.01",
+        "sha256": "39f4eac886f1e311f12a8a0b5ad275bafc3840d4ee945a4d8be0661d9f0c809b",
+        "size_bytes": 143393,
+        "media_type": "application/gzip",
+        "compression": "gzip"
+      }
+    }
+  ]
+}

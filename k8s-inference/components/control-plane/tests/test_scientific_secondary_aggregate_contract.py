@@ -5,14 +5,12 @@ import json
 import re
 from pathlib import PurePosixPath
 
-import pytest
 from conftest import CATALOG_ROOT, SOLUTION_ROOT
 
 from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer
-from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog, ScientificProfileError
+from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog
 
-
-SECONDARY_CANDIDATES = {
+SECONDARY_ACTIVE = {
     "esmfold2": {
         "digest": "sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
         "variant": "biohub-v3-4-0",
@@ -23,6 +21,9 @@ SECONDARY_CANDIDATES = {
         "cache_stages": (),
         "uid": 10001,
         "gid": 10001,
+        "receipt": "82b38d4a9d7c9aaa006b4b8e6dd40ffa701a9f5220e1d0314fc8fc4edec9d129",
+        "evidence": "esmfold2-h100-semantic-qualification.json",
+        "qualified_at": "2026-09-04T17:28:47Z",
     },
     "esmfold2-fast": {
         "digest": "sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
@@ -37,6 +38,9 @@ SECONDARY_CANDIDATES = {
         "cache_stages": (),
         "uid": 10001,
         "gid": 10001,
+        "receipt": "d1ed9458bf2a4745c66a9a1c6387721cc2a5d7195c6e57e8f7a7867a7dc8370d",
+        "evidence": "esmfold2-fast-h100-semantic-qualification.json",
+        "qualified_at": "2026-09-04T17:28:47Z",
     },
     "protenix-v2": {
         "digest": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
@@ -48,9 +52,12 @@ SECONDARY_CANDIDATES = {
         "cache_stages": ("prepare-data", "sample-structure"),
         "uid": 10001,
         "gid": 10001,
+        "receipt": "33a54067af682bef43b282e12a46067b6891115a9e198eb214c9df46e1437f0a",
+        "evidence": "protenix-v2-h100-semantic-qualification.json",
+        "qualified_at": "2026-09-04T16:49:30Z",
     },
     "openfold3-openbind": {
-        "digest": "sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de",
+        "digest": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
         "variant": "upstream-openbind-v0-5-0",
         "namespace": "fs2-models",
         "stages": ("data-pipeline", "inference"),
@@ -62,6 +69,9 @@ SECONDARY_CANDIDATES = {
         "cache_stages": ("inference",),
         "uid": 10001,
         "gid": 10001,
+        "receipt": "120aa9c48ab7108e23fd09e47943f9203aedd7d39e405727033a94bb986bdbef",
+        "evidence": "openfold3-runner-baked-h100-semantic-qualification.json",
+        "qualified_at": "2026-09-04T17:53:27Z",
     },
     "alphafold3": {
         "digest": "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
@@ -76,6 +86,9 @@ SECONDARY_CANDIDATES = {
         "cache_stages": ("inference",),
         "uid": 1001,
         "gid": 1001,
+        "receipt": "095e4d8da54621329d65a1bdae0e9f5b70d9bb305165d7d3f8e26315fe604b75",
+        "evidence": "alphafold3-h100-semantic-qualification.json",
+        "qualified_at": "2026-09-04T16:57:43Z",
     },
 }
 
@@ -85,17 +98,13 @@ COMPLETE_FLEET = {
     "bindcraft",
     "mosaic",
     "rfdiffusion",
-    *SECONDARY_CANDIDATES,
+    *SECONDARY_ACTIVE,
 }
 
 
 def _documents() -> tuple[dict[str, object], dict[str, object]]:
-    profiles = json.loads(
-        (CATALOG_ROOT / "contracts/scientific-workload-profiles.json").read_text(encoding="utf-8")
-    )
-    executions = json.loads(
-        (CATALOG_ROOT / "contracts/scientific-execution-map.json").read_text(encoding="utf-8")
-    )
+    profiles = json.loads((CATALOG_ROOT / "contracts/scientific-workload-profiles.json").read_text(encoding="utf-8"))
+    executions = json.loads((CATALOG_ROOT / "contracts/scientific-execution-map.json").read_text(encoding="utf-8"))
     return profiles, executions
 
 
@@ -105,7 +114,7 @@ def _covers(mount_path: str, artifact_path: str) -> bool:
     return mount == artifact or mount in artifact.parents
 
 
-def test_complete_fleet_is_serialized_while_secondary_routes_remain_closed() -> None:
+def test_complete_fleet_is_serialized_as_an_active_pre_acceptance_bridge() -> None:
     profiles_document, execution_document = _documents()
     profiles = {item["model_id"]: item for item in profiles_document["profiles"]}
     executions = {item["model_id"]: item for item in execution_document["models"]}
@@ -113,34 +122,51 @@ def test_complete_fleet_is_serialized_while_secondary_routes_remain_closed() -> 
     assert set(profiles) == COMPLETE_FLEET
     assert set(executions) == COMPLETE_FLEET
     catalog = ScientificProfileCatalog.load(CATALOG_ROOT)
-    assert {profile.model_id for profile in catalog.list()} == {"boltzgen"}
+    assert {profile.model_id for profile in catalog.list()} == COMPLETE_FLEET
 
-    for model_id, expected in SECONDARY_CANDIDATES.items():
+    for model_id, expected in SECONDARY_ACTIVE.items():
         profile = profiles[model_id]
         identity = profile["execution_identity"]
-        assert profile["state"] == "candidate-unqualified"
-        assert profile["route_exposed"] is False
+        assert profile["state"] == "active"
+        assert profile["route_exposed"] is True
+        assert profile["source"]["classification"] == "qualified-input"
         assert profile["interface"]["mcp"]["discoverable"] is True
-        assert profile["interface"]["mcp"]["invocable"] is False
-        assert profile.get("qualification") is None
+        assert profile["interface"]["mcp"]["invocable"] is True
+        assert profile["semantic_validation"]["state"] == "active"
+        qualification = profile["qualification"]
+        assert qualification == {
+            "h100_semantic_receipt_sha256": expected["receipt"],
+            "public_completion_receipt_sha256": None,
+            "scheduler_eligibility_receipt_sha256": None,
+            "execution_map_sha256": profiles["boltzgen"]["qualification"]["execution_map_sha256"],
+            "qualified_at": expected["qualified_at"],
+        }
+        evidence = (
+            SOLUTION_ROOT
+            / "models/cancer-immunotherapy/images/structure-secondary/evidence/live-h100-20260904"
+            / expected["evidence"]
+        )
+        assert hashlib.sha256(evidence.read_bytes()).hexdigest() == expected["receipt"]
         assert identity["runtime_image_digest"] == expected["digest"]
-        assert identity["artifact_manifest_digest"] is None
-        assert identity["execution_identity_sha256"] is None
+        assert re.fullmatch(r"[a-f0-9]{64}", identity["artifact_manifest_digest"])
+        assert re.fullmatch(r"[a-f0-9]{64}", identity["execution_identity_sha256"])
         assert profile["resources"]["compatible_pool_ids"] == ["h100-reserved-8x", "h100-1x"]
         assert "accelerator.fs2.nebius/pool-id" not in profile["resources"]["required_node_labels"]
         assert tuple(item["artifact_id"] for item in profile["runtime_artifacts"]) == expected["artifacts"]
-        with pytest.raises(ScientificProfileError, match="not runnable"):
-            catalog.get(model_id)
+        assert catalog.get(model_id).model_id == model_id
 
         execution = executions[model_id]
         assert execution["variant_id"] == expected["variant"]
         assert execution["workload_namespace"] == expected["namespace"]
-        assert execution["execution_identity_sha256"] is None
+        assert execution["execution_identity_sha256"] == identity["execution_identity_sha256"]
+        expected_artifact_identity = hashlib.sha256(
+            json.dumps(execution["runtime_artifacts"], sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        assert identity["artifact_manifest_digest"] == expected_artifact_identity
         assert tuple(stage["stage_id"] for stage in execution["stages"]) == expected["stages"]
         assert tuple(item["artifact_id"] for item in execution["runtime_artifacts"]) == expected["artifacts"]
         assert all(
-            "accelerator.fs2.nebius/pool-id" not in stage["required_node_labels"]
-            for stage in execution["stages"]
+            "accelerator.fs2.nebius/pool-id" not in stage["required_node_labels"] for stage in execution["stages"]
         )
 
     renderer = FileScientificManifestRenderer(
@@ -155,7 +181,7 @@ def test_secondary_localizations_and_stage_mounts_are_exact() -> None:
     profiles = {item["model_id"]: item for item in profiles_document["profiles"]}
     executions = {item["model_id"]: item for item in execution_document["models"]}
 
-    for model_id, expected in SECONDARY_CANDIDATES.items():
+    for model_id, expected in SECONDARY_ACTIVE.items():
         profile_artifacts = {item["artifact_id"]: item for item in profiles[model_id]["runtime_artifacts"]}
         execution = executions[model_id]
         localizations = {item["artifact_id"]: item for item in execution["runtime_artifacts"]}
@@ -169,12 +195,8 @@ def test_secondary_localizations_and_stage_mounts_are_exact() -> None:
                 assert localization["file_manifest"] == requirement["file_manifest"]
                 assert {item["path"] for item in localization["file_manifest"]} == set(requirement["required_files"])
             else:
-                assert localization["aggregate_tree"]["expanded_bytes"] == requirement["content_identity"][
-                    "size_bytes"
-                ]
-                assert localization["aggregate_tree"]["manifest_sha256"] == requirement[
-                    "readiness_manifest_sha256"
-                ]
+                assert localization["aggregate_tree"]["expanded_bytes"] == requirement["content_identity"]["size_bytes"]
+                assert localization["aggregate_tree"]["manifest_sha256"] == requirement["readiness_manifest_sha256"]
 
         for stage in execution["stages"]:
             stage_id = stage["stage_id"]
@@ -203,8 +225,7 @@ def test_secondary_localizations_and_stage_mounts_are_exact() -> None:
             assert len(artifact_mounts) == len(expected_artifacts)
             for artifact_id in expected_artifacts:
                 assert any(
-                    _covers(item["mount_path"], localizations[artifact_id]["mount_path"])
-                    for item in artifact_mounts
+                    _covers(item["mount_path"], localizations[artifact_id]["mount_path"]) for item in artifact_mounts
                 )
             if any(item["host_path"] is not None for item in artifact_mounts):
                 assert stage["required_node_labels"]["storage.fs2.nebius/reference-data"] == "true"
@@ -239,9 +260,7 @@ def test_alphafold3_keeps_public_and_academic_planes_separate() -> None:
 
     artifacts = {item["artifact_id"]: item for item in execution["runtime_artifacts"]}
     parameters = artifacts["alphafold3-parameters"]
-    assert parameters["content_digest"] == (
-        "sha256:74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff"
-    )
+    assert parameters["content_digest"] == ("sha256:74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff")
     assert parameters["localization_receipt_digest"] == (
         "sha256:9c89f122ea3616efe70e07c2c27dddf236d347cab4002498c4dab9677d138bd4"
     )
@@ -288,12 +307,8 @@ def test_alphafold3_keeps_public_and_academic_planes_separate() -> None:
 
 def test_openfold3_uses_the_exact_live_localizations_and_shared_cache() -> None:
     profiles_document, execution_document = _documents()
-    profile = next(
-        item for item in profiles_document["profiles"] if item["model_id"] == "openfold3-openbind"
-    )
-    execution = next(
-        item for item in execution_document["models"] if item["model_id"] == "openfold3-openbind"
-    )
+    profile = next(item for item in profiles_document["profiles"] if item["model_id"] == "openfold3-openbind")
+    execution = next(item for item in execution_document["models"] if item["model_id"] == "openfold3-openbind")
 
     expected = {
         "openfold3-openbind-0": {

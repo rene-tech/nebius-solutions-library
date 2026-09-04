@@ -913,11 +913,11 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "--set",
         "academicAssets.execution.enabled=true",
         "--set",
-        "academicAssets.readinessManifestSha256=" + "b" * 64,
-        "--set",
         "academicAssets.execution.referenceDataLocalQueue=academic-scientific-cpu",
         "--set",
         "academicAssets.execution.referenceDataClusterQueue=reference-data-cpu",
+        "--set",
+        "academicAssets.readinessManifestSha256=" + "b" * 64,
         "--set-json",
         "academicAssets.runtimeBindings=" + json.dumps(academic_binding),
         "--set",
@@ -1051,6 +1051,45 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
 def test_committed_scientific_profile_binds_exact_helm_execution_map_bytes() -> None:
     execution_map = json.loads((CATALOG_ROOT / "contracts/scientific-execution-map.json").read_text())
     profiles = json.loads((CATALOG_ROOT / "contracts/scientific-workload-profiles.json").read_text())["profiles"]
+    academic_bindings = {
+        "bindcraft-pyrosetta-installed-tree": {
+            "modelId": "bindcraft",
+            "artifactId": "bindcraft-pyrosetta-installed-tree",
+            "sourceSubPath": (
+                "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/"
+                "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+            ),
+            "consumerPath": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+            "mechanism": "subpath-directory-mount",
+            "contentIdentityKind": "tree-manifest",
+            "contentManifestAlgorithm": "fs2-tree-manifest/v1",
+            "contentDigestSha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+            "sizeBytes": 3287122494,
+            "sourceArtifact": {
+                "filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+                "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+                "size_bytes": 1667097173,
+            },
+            "readOnly": True,
+        },
+        "alphafold3-parameters": {
+            "modelId": "alphafold3",
+            "artifactId": "alphafold3-parameters",
+            "sourceSubPath": "alphafold3/af3.bin.zst",
+            "consumerPath": "/models/af3.bin.zst",
+            "mechanism": "subpath-file-mount",
+            "contentIdentityKind": "file-digest",
+            "contentManifestAlgorithm": None,
+            "contentDigestSha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+            "sizeBytes": 1020545840,
+            "sourceArtifact": {
+                "filename": "af3.bin.zst",
+                "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+                "size_bytes": 1020545840,
+            },
+            "readOnly": True,
+        },
+    }
 
     documents = render(
         "--set",
@@ -1067,6 +1106,18 @@ def test_committed_scientific_profile_binds_exact_helm_execution_map_bytes() -> 
         "scientificBatch.executionMapConfigMapName=scientific-execution-committed",
         "--set-json",
         "scientificBatch.executionMap=" + json.dumps(execution_map, separators=(",", ":"), sort_keys=True),
+        "--set",
+        "academicAssets.enabled=true",
+        "--set",
+        "academicAssets.execution.enabled=true",
+        "--set",
+        "academicAssets.execution.referenceDataLocalQueue=academic-scientific-cpu",
+        "--set",
+        "academicAssets.execution.referenceDataClusterQueue=reference-data-cpu",
+        "--set",
+        "academicAssets.readinessManifestSha256=" + "b" * 64,
+        "--set-json",
+        "academicAssets.runtimeBindings=" + json.dumps(academic_bindings, separators=(",", ":"), sort_keys=True),
         "--set",
         "scientificArtifacts.enabled=true",
         "--set-string",

@@ -1,10 +1,12 @@
 # BoltzGen H100 qualification
 
-This directory qualifies the upstream BoltzGen v0.3.2 `design` stage as a
-closed, offline scientific batch workload.  It does not open a public route.
-The checked-in renderer imports the production scientific adapter, compiles its
-request into direct `boltzgen configure` and `boltzgen execute` argv, and emits
-a suspended Kueue Job with immutable image and artifact identities.
+This directory records the original closed H100 qualification of the upstream
+BoltzGen v0.3.2 `design` stage and the model-owned public acceptance input used
+by the active fleet bridge. The checked-in renderer imports the production
+scientific adapter, compiles its request into direct `boltzgen configure` and
+`boltzgen execute` argv, and emits a suspended Kueue Job with immutable image
+and artifact identities. The image-level qualifier itself did not open a
+route; the aggregate activation is a later, separately validated step.
 
 ## Locked subjects
 
@@ -75,10 +77,11 @@ the input chain label survives.  It records exact output digests and sizes.
 Qualification covers `configure` plus the upstream `design` stage for one
 representative PD-L1 request.  Inverse folding, folding, affinity, analysis,
 filtering, controller collection, result publication, and route-level access
-remain integration acceptance work.  In particular, the catalog profile must
-consume the qualified image and artifact handoff through its owning integration
-branch before BoltzGen can become routable; this slice intentionally leaves
-`route_exposed` false.
+remain public acceptance work. The catalog profile now consumes the exact
+qualified image and artifact handoff in `active` state so that the public
+runner can break the activation/acceptance circularity. Public completion and
+scheduler-eligibility receipts remain null until that run succeeds; the
+profile must not be promoted to `qualified` before then.
 
 ## Live evidence
 

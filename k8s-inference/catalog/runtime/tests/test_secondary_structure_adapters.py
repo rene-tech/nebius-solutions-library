@@ -10,7 +10,8 @@ ADAPTER_ROOT = SOLUTION_ROOT / "models/structure/batch-adapters"
 HANDOFF_PATH = ADAPTER_ROOT / "secondary-r4-image-handoff.json"
 MODEL_IDS = ("esmfold2", "esmfold2-fast", "protenix-v2", "openfold3-openbind")
 ADAPTER_DIRECTORIES = {
-    model_id: "openfold3" if model_id == "openfold3-openbind" else model_id for model_id in MODEL_IDS
+    model_id: "openfold3" if model_id == "openfold3-openbind" else model_id
+    for model_id in MODEL_IDS
 }
 SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 
@@ -30,12 +31,16 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
             for image in self.handoff["images"]  # type: ignore[index]
         }
         self.contracts = {
-            model_id: load_json(ADAPTER_ROOT / ADAPTER_DIRECTORIES[model_id] / "contract.json")
+            model_id: load_json(
+                ADAPTER_ROOT / ADAPTER_DIRECTORIES[model_id] / "contract.json"
+            )
             for model_id in MODEL_IDS
         }
         self.profiles = {
             model_id: load_json(
-                ADAPTER_ROOT / ADAPTER_DIRECTORIES[model_id] / "activation/workload-profile.json"
+                ADAPTER_ROOT
+                / ADAPTER_DIRECTORIES[model_id]
+                / "activation/workload-profile.json"
             )["profile"]
             for model_id in MODEL_IDS
         }
@@ -88,13 +93,24 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
                 self.assertIn("Terraform", seam)
                 self.assertIn("activation", seam)
 
-    def test_cpu_preprocessing_precedes_gpu_inference_and_closure_is_explicit(self) -> None:
+    def test_cpu_preprocessing_precedes_gpu_inference_and_closure_is_explicit(
+        self,
+    ) -> None:
         for model_id, contract in self.contracts.items():
             with self.subTest(model_id=model_id):
                 stages = contract["stages"]
-                self.assertEqual([stage["resource_class"] for stage in stages], ["cpu", "gpu"])
-                declared = {artifact["artifact_id"] for artifact in contract["runtime_artifacts"]}
-                bound = {artifact_id for stage in stages for artifact_id in stage["runtime_artifacts"]}
+                self.assertEqual(
+                    [stage["resource_class"] for stage in stages], ["cpu", "gpu"]
+                )
+                declared = {
+                    artifact["artifact_id"]
+                    for artifact in contract["runtime_artifacts"]
+                }
+                bound = {
+                    artifact_id
+                    for stage in stages
+                    for artifact_id in stage["runtime_artifacts"]
+                }
                 self.assertEqual(bound, declared)
                 self.assertEqual(len({stage["collector_id"] for stage in stages}), 2)
                 self.assertEqual(len({stage["validator_id"] for stage in stages}), 2)
@@ -102,13 +118,25 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
     def test_each_adapter_has_two_positive_and_one_negative_fixture(self) -> None:
         for model_id in MODEL_IDS:
             with self.subTest(model_id=model_id):
-                paths = sorted((ADAPTER_ROOT / ADAPTER_DIRECTORIES[model_id] / "fixtures").glob("*.json"))
+                paths = sorted(
+                    (ADAPTER_ROOT / ADAPTER_DIRECTORIES[model_id] / "fixtures").glob(
+                        "*.json"
+                    )
+                )
                 self.assertEqual(len(paths), 3)
-                self.assertEqual(sum(path.name.startswith("positive-") for path in paths), 2)
-                self.assertEqual(sum(path.name.startswith("negative-") for path in paths), 1)
+                self.assertEqual(
+                    sum(path.name.startswith("positive-") for path in paths), 2
+                )
+                self.assertEqual(
+                    sum(path.name.startswith("negative-") for path in paths), 1
+                )
                 fixtures = [load_json(path) for path in paths]
                 self.assertTrue(
-                    all(fixture["schema"] == "fs2-serve.nebius.ai/scientific-run-request/v1" for fixture in fixtures)
+                    all(
+                        fixture["schema"]
+                        == "fs2-serve.nebius.ai/scientific-run-request/v1"
+                        for fixture in fixtures
+                    )
                 )
 
     def test_capability_and_backend_identity_boundaries_are_explicit(self) -> None:
@@ -125,11 +153,24 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
             "independent-non-equivalent-alternative-to-alphafold3",
         )
 
-    def test_model_owned_profiles_prefer_reserved_capacity_but_remain_closed(self) -> None:
+    def test_model_owned_profiles_are_active_and_prefer_reserved_capacity(self) -> None:
         for model_id, profile in self.profiles.items():
             with self.subTest(model_id=model_id):
-                self.assertEqual(profile["state"], "candidate-unqualified")
-                self.assertIs(profile["route_exposed"], False)
+                self.assertEqual(profile["state"], "active")
+                self.assertIs(profile["route_exposed"], True)
+                self.assertEqual(profile["source"]["classification"], "qualified-input")
+                self.assertIs(profile["interface"]["mcp"]["invocable"], True)
+                self.assertEqual(profile["semantic_validation"]["state"], "active")
+                self.assertRegex(
+                    profile["qualification"]["h100_semantic_receipt_sha256"],
+                    r"^[0-9a-f]{64}$",
+                )
+                self.assertIsNone(
+                    profile["qualification"]["public_completion_receipt_sha256"]
+                )
+                self.assertIsNone(
+                    profile["qualification"]["scheduler_eligibility_receipt_sha256"]
+                )
                 self.assertEqual(
                     profile["resources"]["compatible_pool_ids"],
                     ["h100-reserved-8x", "h100-1x"],

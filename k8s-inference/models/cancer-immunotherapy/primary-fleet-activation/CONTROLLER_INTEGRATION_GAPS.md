@@ -1,13 +1,13 @@
 # Mosaic and RFdiffusion controller integration gap
 
 The production controller compilers and semantic collectors use the public
-identities `mosaic` and `rfdiffusion`. They are registered globally, but both
-profiles remain `candidate-unqualified` with `route_exposed: false`. The
-activation fragments, image locks, and serialized candidate profiles now pin
+identities `mosaic` and `rfdiffusion`. They are registered globally, and both
+profiles use the schema-supported `active` bridge with `route_exposed: true`.
+The activation fragments, image locks, and serialized profiles pin
 the split-root successor images. Each exact successor passed its bounded
 image-level H100 workflow with independent request and model roots. Neither has
 yet passed the public platform controller submission, companion collection,
-and scheduler-admission sequence required to open a route.
+and scheduler-admission sequence required for `qualified` state.
 
 Exact published successor identities:
 
@@ -57,11 +57,11 @@ accepted runtime reads `FS2_RUNTIME_IMAGE_DIGEST`; the controller projects that
 same key and its collector verifies the emitted aggregate against it. No alias
 such as `FS2_EXPECTED_RUNTIME_IMAGE_DIGEST` is valid.
 
-## Promotion gate
+## Qualification gate
 
 The immutable successors above are integrated and their direct H100 workflow
 checks passed. Run all of the following through the public platform before
-changing either route flag:
+promoting either profile from `active` to `qualified`:
 
 - Mosaic target-FASTA design and aggregate through the real companion;
 - RFdiffusion backbone and motif runs through the real companion;
@@ -73,13 +73,14 @@ changing either route flag:
   completion-identity negatives.
 
 Until those platform runs pass, the serialized controller entries remain
-deliberately non-dispatchable. The exact successor H100 evidence proves the
-split-root runtime behavior, but is not a public service completion or Kueue
-admission receipt.
+dispatchable in `active` state but are not represented as fully `qualified`.
+Their public-completion and scheduler-eligibility receipt fields remain null.
+The exact successor H100 evidence proves the split-root runtime behavior, but
+is not a public service completion or Kueue admission receipt.
 
 ## Serialized identity state
 
-The candidate recipe closure includes the shared companion, execution-map,
+The active recipe closure includes the shared companion, execution-map,
 registry, workspace helper, and exact model compiler/collector. In particular
 it names:
 
@@ -90,7 +91,7 @@ it names:
 - `components/control-plane/src/fs2_serve/scientific_batch/adapters/verified_input.py`;
 - the exact model-specific compiler/collector module.
 
-Runtime and workload recipe digests are derived from the combined tree. Model
-artifact-manifest and execution-identity digests remain null by design until a
-real public run supplies the promotion evidence required by the canonical
-candidate profile schema.
+Runtime and workload recipe digests, model-artifact manifest digests, and
+execution identities are derived from the combined tree. The H100 semantic
+receipt is exact; only public-completion and scheduler-eligibility receipts
+remain null until the public acceptance run supplies them.

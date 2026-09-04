@@ -38,7 +38,7 @@
       ]
     },
     "h100": {
-      "state": "semantic-qualified-route-disabled",
+      "state": "semantic-qualified-active-awaiting-public-acceptance",
       "accelerator_class": "nvidia-h100-sxm5-80gb",
       "evidence_paths": [
         "models/cancer-immunotherapy/runtime-images/mosaic/evidence/h100-v6-split-root-qualification-20260904.json",
@@ -68,12 +68,12 @@
         "classification": "qualified-input"
       },
       "execution_identity": {
-        "model_revision": "70fec525423f5e87156a1a957b4a4048f9f8e676",
+        "model_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
         "runtime_image_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
-        "runtime_recipe_sha256": "15fc35e486f39b4132029568ef0cbee0a9d345dac6f3f286517c96ffe9ce71c5",
-        "workload_recipe_sha256": "601fa6b79b49ab517fa0d9c260733550e09f6fed25968046c88efe2a9c0b9d42",
-        "artifact_manifest_digest": "efff4d6c038fd06994cdb44d02b9a5ed368cd1a1e78ddd75498e25913953072b",
-        "execution_identity_sha256": "a27564abc2717ccc0f44048ecda9ca94f1dafd8a58a00c100cc0f8956587a41d"
+        "runtime_recipe_sha256": "48bbb0d58257b86e95d6db1668f2715df796100479717adc58716b8485a7627a",
+        "workload_recipe_sha256": "4d2f21deaafd20c839ee3a81490bbaae2f3d1857294d8a3593916e77b4b06083",
+        "artifact_manifest_digest": "d8c039502375c5b67fafa1123743214fa774ca00cf52fa262f8bfa64fe22c641",
+        "execution_identity_sha256": "c65d6c2cc1ffd71fa877a02ebe7e24a2eff28a3f63effb7f80dcc0c4ef2e7ceb"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -138,7 +138,20 @@
             "min_parallelism": 1,
             "max_parallelism": 1,
             "checkpoint_mode": "none",
-            "preemption_mode": "non_preemptible"
+            "preemption_mode": "non_preemptible",
+            "placement": {
+              "class": "general-cpu"
+            },
+            "resources": {
+              "cpu_millis": 1000,
+              "memory_bytes": 2147483648,
+              "ephemeral_storage_bytes": 8589934592,
+              "limits": {
+                "cpu_millis": 2000,
+                "memory_bytes": 4294967296,
+                "ephemeral_storage_bytes": 17179869184
+              }
+            }
           }
         ],
         "retry": {
@@ -161,7 +174,7 @@
         "h100_semantic_receipt_sha256": "9eeef6c219c3ee0e9754e9d45be9de3f77ccec7824ce9e6b3f0fa17405aef339",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
         "qualified_at": "2026-09-04T15:25:31Z"
       },
       "policy": {
@@ -171,7 +184,47 @@
           "The exact adapter-v6 successor digest passed its bounded design and aggregate workflow on a real H100 with independent request and model-artifact roots; adapter-v5 evidence remains only a separately reproduced baseline.",
           "Route activation remains disabled until this serialized platform controller workflow completes public submission, collection, and scheduling qualification."
         ]
-      }
+      },
+      "runtime_artifacts": [
+        {
+          "artifact_id": "mosaic-boltz2-conf",
+          "content_identity": {
+            "digest_sha256": "e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
+            "size_bytes": 2286561469
+          },
+          "file_manifest": [
+            {
+              "path": "boltz2_conf.ckpt",
+              "sha256": "e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
+              "size_bytes": 2286561469
+            }
+          ],
+          "required_files": [
+            "boltz2_conf.ckpt"
+          ],
+          "readiness_manifest_sha256": "89c9316d5b723dd266e508ac41479aa03dc4de8158e1cf946be2f1efc56c9ebf"
+        },
+        {
+          "artifact_id": "boltzgen-inference-molecules",
+          "content_identity": {
+            "digest_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+            "size_bytes": 1820698819
+          },
+          "file_manifest": [],
+          "required_files": [],
+          "readiness_manifest_sha256": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4"
+        },
+        {
+          "artifact_id": "mosaic-components",
+          "content_identity": {
+            "digest_sha256": "d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6",
+            "size_bytes": 33423545
+          },
+          "file_manifest": [],
+          "required_files": [],
+          "readiness_manifest_sha256": "a2f5f436771705ecb1e57eb4d447c3343573ef7596a8fca1dbc67541ecfe701e"
+        }
+      ]
     }
   },
   "execution_projection": {
@@ -252,8 +305,8 @@
             "nvidia-h100-sxm5-80gb"
           ],
           "eligible_pool_ids": [
-            "h100-1x",
-            "h100-reserved-8x"
+            "h100-reserved-8x",
+            "h100-1x"
           ],
           "required_node_labels": {
             "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
@@ -293,8 +346,8 @@
     ]
   },
   "activation_gate": {
-    "route_exposed": false,
-    "ready_for_route": false,
+    "route_exposed": true,
+    "ready_for_route": true,
     "public_platform_run_required": true
   }
 }

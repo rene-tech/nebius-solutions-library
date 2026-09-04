@@ -18,10 +18,10 @@
       "execution_identity": {
         "model_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
         "runtime_image_digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
-        "runtime_recipe_sha256": "06de235551aba3f72e96f0e369477b05bb2f69b33dc9b55e74377abc03ccc6f1",
+        "runtime_recipe_sha256": "0643e1968e08c4bdd527165eeca3305c9e90d01bab054751c5f467fc1a080872",
         "workload_recipe_sha256": "223b796e10fbf933d591817163086bc2830d0e54212b6a7d8e27624aae24d336",
         "artifact_manifest_digest": "8305400f8711388cbc5d9937a120d7ca4de390170082047511e859f636a2dd66",
-        "execution_identity_sha256": "ecc726237a6f7d2d88359a44947e01d5f7018d5ea598ab47fd4d39b78986977e"
+        "execution_identity_sha256": "9d41092dd5c8ad874284c3acf347a29bb4b2ae2695e84fcf30796f27fff6de02"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -206,7 +206,7 @@
         "commercial_use": "allowed",
         "non_clinical": true,
         "limitations": [
-          "Candidate adapter only; an immutable locally smoke-tested image exists, but artifact readiness, H100 semantic receipt, route, and live readiness do not.",
+          "The immutable runtime and both public artifact generations passed the bounded configure-and-design H100 qualification used by this active bridge; full public multi-stage acceptance receipts remain pending.",
           "A preempted attempt restarts from committed inputs; BoltzGen partial attempt output is not represented as a resumable platform checkpoint.",
           "The separately pinned inference molecule dictionary remains blocked on its terms receipt."
         ]
@@ -215,7 +215,7 @@
         "h100_semantic_receipt_sha256": "f4a36ad7b8367e3383f584f96377313d39a26b5a08343d789311a41b04b79a46",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "c6bb15124fdf01e18564e986d30838074630faad9cc467520161a02841b16186",
+        "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
         "qualified_at": "2026-09-03T07:34:56Z"
       },
       "runtime_artifacts": [
@@ -258,10 +258,10 @@
       "execution_identity": {
         "model_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
         "runtime_image_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
-        "runtime_recipe_sha256": "e7ccb117f24d74e67714120f0e44b734f3ddc66c992199accf5786d900910730",
+        "runtime_recipe_sha256": "61df7c4b4ec31d80846897c2d9ebca310b0eee90689fe1f79d2513ff07714d57",
         "workload_recipe_sha256": "f614aa8507bb31c70d9e9316e4a2a9eb297922cc06555af3a801f0240e9b5797",
         "artifact_manifest_digest": "2d84dbda753a108e2e10f1d0aab1d9bc6dd5017f8f86ed94173d933a9884d4eb",
-        "execution_identity_sha256": "62071777496576eff4549f48da5c78db47ca4aedb8f8d2e454c143ecd825ddd1"
+        "execution_identity_sha256": "44dd74aefb4da624f9bcd983ea59b932db0b04395c68eb6ff777b2bc9a6528c3"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -398,14 +398,14 @@
         "h100_semantic_receipt_sha256": "380441981a4170c8f2427a47ef4b25898f0ab14e33cc5efe7fdd65ebc1b45c4b",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
         "qualified_at": "2026-09-03T13:53:21Z"
       },
       "policy": {
         "commercial_use": "license-dependent",
         "non_clinical": true,
         "limitations": [
-          "The immutable runtime digest and public checkpoint generations passed all-variant H100 semantic qualification, but this profile remains a candidate until the controller route and complete four-stage workflow pass end to end.",
+          "The immutable runtime digest and public checkpoint generations passed all-variant H100 semantic qualification; complete public four-stage workflow and scheduler acceptance receipts remain pending.",
           "Core self-refolding uses a controller-mounted AlphaFold2 or RoseTTAFold3 artifact; optional ESM2, ESMFold, and MPNN metrics are disabled until their exact artifacts pass readiness."
         ]
       },
@@ -479,10 +479,10 @@
       "execution_identity": {
         "model_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
         "runtime_image_digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
-        "runtime_recipe_sha256": "87242bab8728227eb1ff67ee14da22fdfb0b89f5a4a267efa37a00074edc917e",
-        "workload_recipe_sha256": "e3ca7d4fc41ea5b7cda1b2b92b8a6c8534fd33e7869126e9c09036ee6d068255",
-        "artifact_manifest_digest": "f5a4a2597e71c772f671b0b8312e412e915f8a2a7a54cf7cdc8126d4e6dd5753",
-        "execution_identity_sha256": "2520997f613fa629af136860488cedb66c8e1f6390a83a5224f96cde5b03a2c4"
+        "runtime_recipe_sha256": "d2f7ea0d4bd8a7ad64f664a2c936cc8eeb85b101a346b3cf49dca540cb390334",
+        "workload_recipe_sha256": "a4e59c0c5bd51067511b5f65f6288e8f7e38164146496ec9337765e795563da2",
+        "artifact_manifest_digest": "a933ad20fd8c9e065c3ba77e96ff36c78303841b79a33d1b0308ec7d9873d641",
+        "execution_identity_sha256": "37b56481aa4cfa686d310e91d4907986abb1053155796ba04458ed5fed120019"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -583,7 +583,7 @@
         "h100_semantic_receipt_sha256": "162a1705d3f8b301cfb98426c3717fea63f9c9cb4c5c8ed4f21e2a60a1250944",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
         "qualified_at": "2026-09-03T07:04:28Z"
       },
       "policy": {
@@ -591,7 +591,7 @@
         "non_clinical": true,
         "limitations": [
           "The exact image and private PyRosetta tree passed a real H100 semantic run under the authorized academic PoC path.",
-          "Admission remains route-disabled until this serialized controller contract proves the academic receipt, mixed-plane mounts, collection, and semantic validation."
+          "The active bridge is anchored to the verified academic receipt, mixed-plane mounts, collection contract, and H100 semantic evidence; public completion and scheduler acceptance receipts remain pending."
         ]
       },
       "runtime_artifacts": [
@@ -662,10 +662,10 @@
       "execution_identity": {
         "model_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
         "runtime_image_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
-        "runtime_recipe_sha256": "15fc35e486f39b4132029568ef0cbee0a9d345dac6f3f286517c96ffe9ce71c5",
-        "workload_recipe_sha256": "601fa6b79b49ab517fa0d9c260733550e09f6fed25968046c88efe2a9c0b9d42",
-        "artifact_manifest_digest": "efff4d6c038fd06994cdb44d02b9a5ed368cd1a1e78ddd75498e25913953072b",
-        "execution_identity_sha256": "74596ef23ea34112e6b319d1a6f8859c030c2d61e61980b258aa974c7dd73bba"
+        "runtime_recipe_sha256": "48bbb0d58257b86e95d6db1668f2715df796100479717adc58716b8485a7627a",
+        "workload_recipe_sha256": "4d2f21deaafd20c839ee3a81490bbaae2f3d1857294d8a3593916e77b4b06083",
+        "artifact_manifest_digest": "d8c039502375c5b67fafa1123743214fa774ca00cf52fa262f8bfa64fe22c641",
+        "execution_identity_sha256": "c65d6c2cc1ffd71fa877a02ebe7e24a2eff28a3f63effb7f80dcc0c4ef2e7ceb"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -766,7 +766,7 @@
         "h100_semantic_receipt_sha256": "9eeef6c219c3ee0e9754e9d45be9de3f77ccec7824ce9e6b3f0fa17405aef339",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
         "qualified_at": "2026-09-04T15:25:31Z"
       },
       "policy": {
@@ -784,8 +784,16 @@
             "digest_sha256": "e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
             "size_bytes": 2286561469
           },
-          "file_manifest": [],
-          "required_files": [],
+          "file_manifest": [
+            {
+              "path": "boltz2_conf.ckpt",
+              "sha256": "e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
+              "size_bytes": 2286561469
+            }
+          ],
+          "required_files": [
+            "boltz2_conf.ckpt"
+          ],
           "readiness_manifest_sha256": "89c9316d5b723dd266e508ac41479aa03dc4de8158e1cf946be2f1efc56c9ebf"
         },
         {
@@ -827,10 +835,10 @@
       "execution_identity": {
         "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
         "runtime_image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
-        "runtime_recipe_sha256": "a43cb088e08278e089433bdd8816b14ac94d7cc490dfb7ec9a771498da0941dc",
-        "workload_recipe_sha256": "548da3b7c5dd5868d7e8adaf64b4dcc0bb2e89b3611f324eb6701478bb76cb5e",
+        "runtime_recipe_sha256": "8b89855058e29f6771aca7645a8ad581c644c7812c89e27c505ac4ddacb34a77",
+        "workload_recipe_sha256": "625ac765fe08415199b937a1ddb8b6289ed7924e0b88b9f5f342391076891bde",
         "artifact_manifest_digest": "931ae8f26343abe60d3fd4efb71da9ca2822899bde61357044eea09ca85bfc2d",
-        "execution_identity_sha256": "ba33a17f3867344af9f02c7050f0784f628784b995e102a01d5f717c8fec4844"
+        "execution_identity_sha256": "d15d6e41cfdade09e501b9da7c9db050bc8125da36ef02b78725b35f863d957b"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -932,7 +940,7 @@
         "h100_semantic_receipt_sha256": "1f392018020143dbc81695632cdfef02b9582f49e0187f72e6a172c0e8b80765",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
         "qualified_at": "2026-09-04T15:21:42Z"
       },
       "policy": {
@@ -961,22 +969,22 @@
       "model_id": "esmfold2",
       "display_name": "ESMFold2 v3.4.0 (Biohub esm)",
       "execution_mode": "scientific-batch",
-      "state": "candidate-unqualified",
-      "route_exposed": false,
+      "state": "active",
+      "route_exposed": true,
       "source": {
         "kind": "git",
         "repository": "Biohub/esm",
         "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
         "review_url": "https://github.com/Biohub/esm/tree/827ec128e4cdaf80f7d6f95fb367a08980b34918",
-        "classification": "candidate-input"
+        "classification": "qualified-input"
       },
       "execution_identity": {
         "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
         "runtime_image_digest": "sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
-        "runtime_recipe_sha256": null,
-        "workload_recipe_sha256": null,
-        "artifact_manifest_digest": null,
-        "execution_identity_sha256": null
+        "runtime_recipe_sha256": "5060058ebb04d37499f45428b59db2221c83740058dc94b3ed873f6d4c1d5bb8",
+        "workload_recipe_sha256": "d9122390e171ccc173acff9b77b48fbc49f138c6f321ffcb8131d71157b3b2ee",
+        "artifact_manifest_digest": "ea6c0f0211aecb53c4fa9a3c4033de650ef13995cb41ed8f7c3c90f150b78a3a",
+        "execution_identity_sha256": "8fa8302c1634c579bbe03ee968604d0321661c5689f69d4c80c561488c727f58"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -993,7 +1001,7 @@
         ],
         "mcp": {
           "discoverable": true,
-          "invocable": false,
+          "invocable": true,
           "tool_name": "submit_esmfold2",
           "description": "Submit an ESMFold2 single-sequence or precomputed-MSA protein structure prediction."
         }
@@ -1083,14 +1091,14 @@
       },
       "semantic_validation": {
         "validator_id": "esmfold2-biohub-v3-4-0",
-        "state": "candidate-unqualified"
+        "state": "active"
       },
       "policy": {
         "commercial_use": "allowed",
         "non_clinical": true,
         "limitations": [
-          "Image sha256:870b9f647f41...762a4a is the immutable published H100 successor; exact-digest semantic qualification is still in progress.",
-          "The trunk, ESMC-6B and CCD artifacts are bound to checksum-verified content-addressed objects on the shared reference-data plane, including terminal ESMC localization receipt 14599935...0962.",
+          "Image sha256:870b9f647f41...762a4a completed exact-digest semantic H100 inference with the checksum-verified trunk, ESMC-6B and CCD objects; public completion and scheduler eligibility receipts remain pending.",
+          "The shared ESMC-6B object is bound by terminal localization receipt 14599935...0962 and mounted read-only with storage supplemental group 1000.",
           "precomputed-msa consumes MSA rows carried in the input manifest only; no online MSA server is ever contacted."
         ]
       },
@@ -1195,7 +1203,7 @@
             "tokenizer.json",
             "tokenizer_config.json"
           ],
-          "readiness_manifest_sha256": "b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454"
+          "readiness_manifest_sha256": "b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454a"
         },
         {
           "artifact_id": "esmfold2-ccd",
@@ -1215,29 +1223,36 @@
           ],
           "readiness_manifest_sha256": "4b701f8db3ca2d75353db710e0f6624fec6e1cb48f86cf435ec1bfa191b5bf4c"
         }
-      ]
+      ],
+      "qualification": {
+        "h100_semantic_receipt_sha256": "82b38d4a9d7c9aaa006b4b8e6dd40ffa701a9f5220e1d0314fc8fc4edec9d129",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
+        "qualified_at": "2026-09-04T17:28:47Z"
+      }
     },
     {
       "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
       "model_id": "esmfold2-fast",
       "display_name": "ESMFold2-Fast v3.4.0 (Biohub esm)",
       "execution_mode": "scientific-batch",
-      "state": "candidate-unqualified",
-      "route_exposed": false,
+      "state": "active",
+      "route_exposed": true,
       "source": {
         "kind": "git",
         "repository": "Biohub/esm",
         "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
         "review_url": "https://github.com/Biohub/esm/tree/827ec128e4cdaf80f7d6f95fb367a08980b34918",
-        "classification": "candidate-input"
+        "classification": "qualified-input"
       },
       "execution_identity": {
         "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
         "runtime_image_digest": "sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
-        "runtime_recipe_sha256": null,
-        "workload_recipe_sha256": null,
-        "artifact_manifest_digest": null,
-        "execution_identity_sha256": null
+        "runtime_recipe_sha256": "2c815683f0c7a5dfbe6214c659a049100bd4d9d4dc0118057ec4604f6cde74ce",
+        "workload_recipe_sha256": "febe1c6511e2db35468cf46cf215bccb8c651df79d778c28a45afea9a56bf731",
+        "artifact_manifest_digest": "5cbdf1f33aeaa1be79a678fdd3aa851ee6cbdd86dfc03c66b97ea8647b5d52c0",
+        "execution_identity_sha256": "0e4df0d822d4dc796569284f103ce47602d951abf141db02d8b2890a822ae552"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -1255,7 +1270,7 @@
         ],
         "mcp": {
           "discoverable": true,
-          "invocable": false,
+          "invocable": true,
           "tool_name": "submit_esmfold2_fast",
           "description": "Submit a single-sequence ESMFold2-Fast protein structure prediction; MSA inputs are rejected."
         }
@@ -1345,14 +1360,14 @@
       },
       "semantic_validation": {
         "validator_id": "esmfold2-fast-biohub-v3-4-0",
-        "state": "candidate-unqualified"
+        "state": "active"
       },
       "policy": {
         "commercial_use": "allowed",
         "non_clinical": true,
         "limitations": [
-          "Image sha256:fc7b86878495...2702e0 is the immutable published H100 successor; exact-digest semantic qualification is still in progress.",
-          "The trunk, ESMC-6B and CCD artifacts are bound to checksum-verified content-addressed objects on the shared reference-data plane, including terminal ESMC localization receipt 14599935...0962.",
+          "Image sha256:fc7b86878495...2702e0 completed exact-digest semantic H100 inference with the checksum-verified trunk, ESMC-6B and CCD objects; public completion and scheduler eligibility receipts remain pending.",
+          "The shared ESMC-6B object is bound by terminal localization receipt 14599935...0962 and mounted read-only with storage supplemental group 1000.",
           "The fast trunk, ESMC-6B and CCD artifacts are catalog manifests without a localization generation or node admission receipt."
         ]
       },
@@ -1457,7 +1472,7 @@
             "tokenizer.json",
             "tokenizer_config.json"
           ],
-          "readiness_manifest_sha256": "b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454"
+          "readiness_manifest_sha256": "b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454a"
         },
         {
           "artifact_id": "esmfold2-ccd",
@@ -1477,7 +1492,14 @@
           ],
           "readiness_manifest_sha256": "4b701f8db3ca2d75353db710e0f6624fec6e1cb48f86cf435ec1bfa191b5bf4c"
         }
-      ]
+      ],
+      "qualification": {
+        "h100_semantic_receipt_sha256": "d1ed9458bf2a4745c66a9a1c6387721cc2a5d7195c6e57e8f7a7867a7dc8370d",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
+        "qualified_at": "2026-09-04T17:28:47Z"
+      }
     },
     {
       "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
@@ -1495,11 +1517,11 @@
       },
       "execution_identity": {
         "model_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
-        "runtime_image_digest": "sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de",
-        "runtime_recipe_sha256": "11f0123107851f5c3d4c3aebb0fdb540924d12d0213f6393f5eaea03878e4403",
+        "runtime_image_digest": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
+        "runtime_recipe_sha256": "0b5ad5519c07a28f97d8f4b287ae352c0ca2c5b3a6ff43904dc2567cb29d6743",
         "workload_recipe_sha256": "73a463f3d28d658780d6a52c10b7826301d9a510e6899e7d117ffaa1d800fcbe",
         "artifact_manifest_digest": "c4cc2c59313470ee7498f37d377485328785e09080ccb2136edfeef754a573bb",
-        "execution_identity_sha256": "62017b9dccdf06464ed7e749343170ed599964c32a06d4578c25215e9345e60f"
+        "execution_identity_sha256": "73e9e2401e626d445f0dfb80fef84ff2698396577815b42ebe395d04840aab94"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -1608,20 +1630,20 @@
         "state": "active"
       },
       "qualification": {
-        "h100_semantic_receipt_sha256": "695428c786ce9555d69095a074764d5312596ed30610c353a5988ca7e2777784",
+        "h100_semantic_receipt_sha256": "120aa9c48ab7108e23fd09e47943f9203aedd7d39e405727033a94bb986bdbef",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
-        "qualified_at": "2026-09-04T16:32:24Z"
+        "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
+        "qualified_at": "2026-09-04T17:53:27Z"
       },
       "policy": {
         "commercial_use": "allowed",
         "non_clinical": true,
         "limitations": [
-          "Image sha256:3686e530...93b1de completed exact-digest semantic H100 inference as UID/GID 10001:10001 with its immutable localized artifacts; public completion and scheduler eligibility receipts remain pending.",
+          "The r5 image is superseded because its 0444 runner parent directory was not traversable by UID 10001; r6 bakes the exact 102-byte runner below a 0555 parent and passed exact-artifact H100 semantics without a runtime ConfigMap projection.",
           "OpenFold3 is an independent, non-equivalent backend to AlphaFold 3: distinct code, weights, license and results; it is never reported as AlphaFold 3.",
           "The public scientific identity is openfold3-openbind so it cannot collide with the existing openfold3 HTTP catalog record; the legacy runtime-emitted openfold3 label is accepted only inside this adapter's output-validation boundary.",
-          "The exact OpenBind-0 checkpoint and components.bcif objects have immutable manifests and successful shared-filesystem localization receipts; the H100 qualifier projected the canonical runner-base file explicitly, so a future image should bake that file to remove the projection."
+          "The OpenBind-0 checkpoint and components.bcif are bound to immutable localization receipts; public completion and scheduler-eligibility receipts remain pending."
         ]
       },
       "runtime_artifacts": [
@@ -1680,10 +1702,10 @@
       "execution_identity": {
         "model_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
         "runtime_image_digest": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
-        "runtime_recipe_sha256": "49fafd4a5f88d84ec1c71de04ea61443d8566946eed919a0cb1344a27f869afd",
+        "runtime_recipe_sha256": "e0e90ab6884e844bfacd3d83a4755aabf41e1c8858a60e79dd6844f0e4825ad8",
         "workload_recipe_sha256": "5313859b371d6feda38f7cdb20c8be079a63b40b999a57fb87cb9a204404b26a",
         "artifact_manifest_digest": "e4396ce5ab67717f3bd608aa76f33c0c0f40afcd966d0426b05e18e19e490f2f",
-        "execution_identity_sha256": "8100a67d18fd394b4c284371bf04c020a151e15e1d6e1e331e0f1afb210767fb"
+        "execution_identity_sha256": "69eac0fd6d1ffbdf186a7d0e3640f2de027b095d5f800a37d32346bd45eb8c30"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -1795,7 +1817,7 @@
         "h100_semantic_receipt_sha256": "33a54067af682bef43b282e12a46067b6891115a9e198eb214c9df46e1437f0a",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
         "qualified_at": "2026-09-04T16:49:30Z"
       },
       "policy": {
@@ -1882,10 +1904,10 @@
       "execution_identity": {
         "model_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
         "runtime_image_digest": "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
-        "runtime_recipe_sha256": "db1f6db25560f5be089bbe532fdcb7131124f4a57c93afb2ff807630b89fc3ed",
+        "runtime_recipe_sha256": "bb4629e7c019454b361397c46d1a420f7ce22fe1d444e4edf9272b94a8101547",
         "workload_recipe_sha256": "26bb46f3fb56503d798eeb939e64f97a24d1bb19a7ac249b25a8edf55423bb8d",
         "artifact_manifest_digest": "f0a5202f7f035ca014feff1bb16c1b342483a09bd67781cb934564c0630a7cc2",
-        "execution_identity_sha256": "a9bc5265365e8e6df0ce9d70991f1fb5af58363d9f959e90c417b87ebe543f56"
+        "execution_identity_sha256": "b496602bf9ac8baba8e4e5a33021a77275b34bca1b9b70bbf107fc46e2cb0245"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -1909,7 +1931,7 @@
       "access": {
         "profile": "academic",
         "state": "verified",
-        "receipt_digest": null,
+        "receipt_digest": "3a3d5d77a7f58d7875e33e78defe0dcb482dbe590e18380704594c4c1c3a8155",
         "credentials_embedded": false
       },
       "resources": {
@@ -1997,7 +2019,7 @@
         "h100_semantic_receipt_sha256": "095e4d8da54621329d65a1bdae0e9f5b70d9bb305165d7d3f8e26315fe604b75",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
         "qualified_at": "2026-09-04T16:57:43Z"
       },
       "policy": {

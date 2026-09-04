@@ -6,22 +6,22 @@
     "model_id": "esmfold2-fast",
     "display_name": "ESMFold2-Fast v3.4.0 (Biohub esm)",
     "execution_mode": "scientific-batch",
-    "state": "candidate-unqualified",
-    "route_exposed": false,
+    "state": "active",
+    "route_exposed": true,
     "source": {
       "kind": "git",
       "repository": "Biohub/esm",
       "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
       "review_url": "https://github.com/Biohub/esm/tree/827ec128e4cdaf80f7d6f95fb367a08980b34918",
-      "classification": "candidate-input"
+      "classification": "qualified-input"
     },
     "execution_identity": {
       "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
       "runtime_image_digest": "sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
-      "runtime_recipe_sha256": null,
-      "workload_recipe_sha256": null,
-      "artifact_manifest_digest": null,
-      "execution_identity_sha256": null
+      "runtime_recipe_sha256": "2c815683f0c7a5dfbe6214c659a049100bd4d9d4dc0118057ec4604f6cde74ce",
+      "workload_recipe_sha256": "febe1c6511e2db35468cf46cf215bccb8c651df79d778c28a45afea9a56bf731",
+      "artifact_manifest_digest": "5cbdf1f33aeaa1be79a678fdd3aa851ee6cbdd86dfc03c66b97ea8647b5d52c0",
+      "execution_identity_sha256": "0e4df0d822d4dc796569284f103ce47602d951abf141db02d8b2890a822ae552"
     },
     "interface": {
       "protocol": "scientific-batch-v1",
@@ -39,7 +39,7 @@
       ],
       "mcp": {
         "discoverable": true,
-        "invocable": false,
+        "invocable": true,
         "tool_name": "submit_esmfold2_fast",
         "description": "Submit a single-sequence ESMFold2-Fast protein structure prediction; MSA inputs are rejected."
       }
@@ -129,14 +129,14 @@
     },
     "semantic_validation": {
       "validator_id": "esmfold2-fast-biohub-v3-4-0",
-      "state": "candidate-unqualified"
+      "state": "active"
     },
     "policy": {
       "commercial_use": "allowed",
       "non_clinical": true,
       "limitations": [
-        "Image sha256:fc7b86878495...2702e0 is the immutable published H100 successor; exact-digest semantic qualification is still in progress.",
-        "The trunk, ESMC-6B and CCD artifacts are bound to checksum-verified content-addressed objects on the shared reference-data plane, including terminal ESMC localization receipt 14599935...0962.",
+        "Image sha256:fc7b86878495...2702e0 completed exact-digest semantic H100 inference with the checksum-verified trunk, ESMC-6B and CCD objects; public completion and scheduler eligibility receipts remain pending.",
+        "The shared ESMC-6B object is bound by terminal localization receipt 14599935...0962 and mounted read-only with storage supplemental group 1000.",
         "The fast trunk, ESMC-6B and CCD artifacts are catalog manifests without a localization generation or node admission receipt."
       ]
     },
@@ -241,7 +241,7 @@
           "tokenizer.json",
           "tokenizer_config.json"
         ],
-        "readiness_manifest_sha256": "b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454"
+        "readiness_manifest_sha256": "b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454a"
       },
       {
         "artifact_id": "esmfold2-ccd",
@@ -261,6 +261,13 @@
         ],
         "readiness_manifest_sha256": "4b701f8db3ca2d75353db710e0f6624fec6e1cb48f86cf435ec1bfa191b5bf4c"
       }
-    ]
+    ],
+    "qualification": {
+      "h100_semantic_receipt_sha256": "d1ed9458bf2a4745c66a9a1c6387721cc2a5d7195c6e57e8f7a7867a7dc8370d",
+      "public_completion_receipt_sha256": null,
+      "scheduler_eligibility_receipt_sha256": null,
+      "execution_map_sha256": "8f1e1cd972db55989c57cc5be6da971ad8e28dffd336c36571fcd7fbf601da3e",
+      "qualified_at": "2026-09-04T17:28:47Z"
+    }
   }
 }

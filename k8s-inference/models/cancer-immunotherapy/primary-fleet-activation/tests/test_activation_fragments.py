@@ -100,8 +100,7 @@ class PrimaryActivationFragmentTests(unittest.TestCase):
         def wrong_generation(fragment):
             artifact = fragment["execution_projection"]["runtime_artifacts"][0]
             artifact["source"]["sub_path"] = (
-                "scientific-localization/public/generations/"
-                f"{artifact['artifact_id']}/sha256/{'0' * 64}"
+                f"scientific-localization/public/generations/{artifact['artifact_id']}/sha256/{'0' * 64}"
             )
 
         self.assertIn(
@@ -110,7 +109,13 @@ class PrimaryActivationFragmentTests(unittest.TestCase):
         )
 
     def test_ready_bindings_use_read_only_generation_subpaths(self) -> None:
-        for model_id in ("proteina-complexa", "bindcraft", "mosaic", "rfdiffusion"):
+        for model_id in (
+            "boltzgen",
+            "proteina-complexa",
+            "bindcraft",
+            "mosaic",
+            "rfdiffusion",
+        ):
             fragment, errors = activation.validate_fragment(
                 activation.FRAGMENTS[model_id]
             )
@@ -124,10 +129,7 @@ class PrimaryActivationFragmentTests(unittest.TestCase):
                 )
 
     def test_recipes_are_derived_from_the_exact_integration_source(self) -> None:
-        registry = (
-            "components/control-plane/src/fs2_serve/"
-            "scientific_batch/adapters/__init__.py"
-        )
+        registry = "components/control-plane/src/fs2_serve/scientific_batch/adapters/__init__.py"
         for model_id, path in activation.FRAGMENTS.items():
             with self.subTest(model_id=model_id):
                 fragment, errors = activation.validate_fragment(path)
@@ -158,7 +160,9 @@ class PrimaryActivationFragmentTests(unittest.TestCase):
         for model_id, path in activation.FRAGMENTS.items():
             with self.subTest(serialized_identity=model_id):
                 fragment = activation.load_json(path)
-                projected = fragment["profile_projection"]["profile"]["execution_identity"]
+                projected = fragment["profile_projection"]["profile"][
+                    "execution_identity"
+                ]
                 canonical = canonical_by_id[model_id]["execution_identity"]
                 self.assertEqual(
                     projected["runtime_recipe_sha256"],

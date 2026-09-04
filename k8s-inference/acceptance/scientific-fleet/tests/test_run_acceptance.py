@@ -43,6 +43,9 @@ K8S_ROOT = Path(__file__).resolve().parents[3]
 PROTEINA_FRAGMENT = Path(
     "models/cancer-immunotherapy/runtime-images/proteina-complexa/activation/fragment.json"
 )
+BOLTZGEN_FRAGMENT = Path(
+    "models/cancer-immunotherapy/runtime-images/boltzgen/activation/fragment.json"
+)
 
 
 def canonical(value: object, *, newline: bool = False) -> bytes:
@@ -649,6 +652,8 @@ class AcceptanceRunnerTest(unittest.TestCase):
                 runtime_image=expected["runtime_image_digest"],
                 runtime_recipe=expected["runtime_recipe_sha256"],
                 workload_recipe=expected["workload_recipe_sha256"],
+                model_artifacts=expected["artifact_manifest_digest"],
+                execution_identity=expected["execution_identity_sha256"],
             ) as api:
                 config = MODULE.RunConfig(
                     endpoint=api.endpoint,
@@ -681,6 +686,107 @@ class AcceptanceRunnerTest(unittest.TestCase):
                     [item["role"] for item in receipt["artifact_digests"]["uploads"]],
                     ["manifest-artifact", "request-input-manifest"],
                 )
+                self.assertTrue(receipt_path.is_file())
+
+    def test_boltzgen_public_fixture_materializes_the_exact_bounded_campaign(
+        self,
+    ) -> None:
+        fragment_value = json.loads(
+            (K8S_ROOT / BOLTZGEN_FRAGMENT).read_text(encoding="utf-8")
+        )
+        expected = fragment_value["profile_projection"]["profile"]["execution_identity"]
+        variant_id = fragment_value["execution_projection"]["variant_id"]
+        with TemporaryDirectory() as directory:
+            receipt_path = Path(directory) / "boltzgen-receipt.json"
+            config = MODULE.RunConfig(
+                endpoint="http://127.0.0.1",
+                repository_root=K8S_ROOT,
+                activation_fragment=BOLTZGEN_FRAGMENT,
+                receipt_path=receipt_path,
+                run_id="boltzgen-public-fixture-offline",
+                timeout_seconds=0.05,
+                poll_seconds=0.005,
+                request_timeout_seconds=2,
+            )
+            model_id, request, declarations, _fragment = MODULE._activation(config)
+            self.assertEqual(model_id, "boltzgen")
+            self.assertEqual(request["operation"], "design-binders")
+            self.assertEqual(
+                [item.role for item in declarations],
+                ["request-input-manifest", "manifest-artifact"],
+            )
+            campaign = declarations[1]
+            self.assertEqual(campaign.name, "campaign-input")
+            self.assertEqual(
+                hashlib.sha256(campaign.data).hexdigest(),
+                "39f4eac886f1e311f12a8a0b5ad275bafc3840d4ee945a4d8be0661d9f0c809b",
+            )
+            self.assertEqual(len(campaign.data), 143393)
+            with tarfile.open(
+                fileobj=io.BytesIO(campaign.data), mode="r:gz"
+            ) as archive:
+                members = archive.getmembers()
+                self.assertEqual(
+                    [member.name for member in members],
+                    ["5J89-chain-A.cif", "design-specs/pdl1-face.yaml"],
+                )
+                self.assertTrue(
+                    all(
+                        (member.mode, member.uid, member.gid, member.mtime)
+                        == (0o444, 0, 0, 0)
+                        for member in members
+                    )
+                )
+                target = archive.extractfile(members[0])
+                design = archive.extractfile(members[1])
+                self.assertIsNotNone(target)
+                self.assertIsNotNone(design)
+                assert target is not None and design is not None
+                self.assertEqual(
+                    hashlib.sha256(target.read()).hexdigest(),
+                    "93aeba8e72dcb98589f5da5ac5379f0c81f676cbf704a77a7d977faeb6c7ed19",
+                )
+                self.assertEqual(
+                    design.read(),
+                    (
+                        K8S_ROOT
+                        / "models/cancer-immunotherapy/runtime-images/boltzgen/qualification/pdl1-face.yaml"
+                    ).read_bytes(),
+                )
+
+            with FakeApi(
+                model_id=model_id,
+                variant_id=variant_id,
+                operation=str(request["operation"]),
+                model_revision=expected["model_revision"],
+                runtime_image=expected["runtime_image_digest"],
+                runtime_recipe=expected["runtime_recipe_sha256"],
+                workload_recipe=expected["workload_recipe_sha256"],
+                model_artifacts=expected["artifact_manifest_digest"],
+                execution_identity=expected["execution_identity_sha256"],
+            ) as api:
+                config = MODULE.RunConfig(
+                    endpoint=api.endpoint,
+                    repository_root=K8S_ROOT,
+                    activation_fragment=BOLTZGEN_FRAGMENT,
+                    receipt_path=receipt_path,
+                    run_id="boltzgen-public-fixture-offline",
+                    timeout_seconds=0.05,
+                    poll_seconds=0.005,
+                    request_timeout_seconds=2,
+                )
+                receipt = MODULE.run_acceptance(
+                    config,
+                    MODULE.PublicApiClient(
+                        api.endpoint, "test-token", timeout_seconds=2
+                    ),
+                )
+
+                self.assertEqual(len(api.state.uploaded), 2)
+                self.assertEqual(api.state.uploaded[0]["body"], campaign.data)
+                rebuilt = json.loads(api.state.uploaded[1]["body"])
+                self.assertEqual(rebuilt["entries"][0]["name"], "campaign-input")
+                self.assertEqual(receipt["model"]["model_id"], "boltzgen")
                 self.assertTrue(receipt_path.is_file())
 
     def test_deterministic_archive_materializer_rejects_unsafe_paths_and_roles(
@@ -716,6 +822,23 @@ class AcceptanceRunnerTest(unittest.TestCase):
                 MODULE.AcceptanceError, "supporting_input_materializer_role_invalid"
             ):
                 MODULE._read_declared_input(root, declaration)
+
+            manifest = canonical(
+                {
+                    "schema": MODULE.ARCHIVE_MANIFEST_SCHEMA,
+                    "members": [
+                        {
+                            "archive_path": "inputs/target.pdb",
+                            "source_path": "../escape.pdb",
+                        }
+                    ],
+                }
+            )
+            with self.assertRaisesRegex(
+                MODULE.AcceptanceError,
+                "supporting_input_archive_source_invalid",
+            ):
+                MODULE.deterministic_tar_gzip_manifest(root, manifest)
 
     def test_digest_size_and_media_mismatches_fail_closed(self) -> None:
         for mode in ("digest", "size", "media"):
