@@ -63,10 +63,22 @@ AF3_PREPROCESS_STAGE = "data-pipeline"
 AF3_INFERENCE_STAGE = "inference"
 AF3_PREPROCESS_CPU_MILLIS = 16_000
 AF3_PREPROCESS_MEMORY_BYTES = 64 * 1024**3
+STAGE_RUNNER_RELATIVE_PATH = ".fs2/stage-runner.py"
 
 
 class ScientificExecutionMapError(CatalogProfileAdapterError):
     """The trusted execution map is absent or differs from the profile."""
+
+
+def _runtime_command(invocation: StageInvocation) -> tuple[str, ...]:
+    """Return the model argv beneath the optional trusted completion runner."""
+
+    runner = f"{invocation.working_directory}/{STAGE_RUNNER_RELATIVE_PATH}"
+    if invocation.argv[:3] == ("python", runner, "--"):
+        if len(invocation.argv) < 4:
+            raise ScientificExecutionMapError("scientific stage runner has no model command")
+        return invocation.argv[3:]
+    return invocation.argv
 
 
 def _object(value: object, label: str) -> Mapping[str, Any]:
@@ -821,7 +833,7 @@ class FileScientificManifestRenderer:
                 )
         if profile.model_id == "bindcraft":
             for invocation in bound_plan.invocations:
-                if invocation.argv[:2] != ("python", "/opt/fs2/runtime_entrypoint.py"):
+                if _runtime_command(invocation)[:2] != ("python", "/opt/fs2/runtime_entrypoint.py"):
                     raise ScientificExecutionMapError(
                         "BindCraft must explicitly invoke the reviewed runtime artifact gate"
                     )
@@ -1090,11 +1102,20 @@ class FileScientificManifestRenderer:
         ):
             raise ScientificExecutionMapError("BindCraft PyRosetta installed-tree identity differs")
         for invocation in execution_plan.invocations:
-            if invocation.argv[:2] != ("python", "/opt/fs2/runtime_entrypoint.py"):
+            if _runtime_command(invocation)[:2] != ("python", "/opt/fs2/runtime_entrypoint.py"):
                 raise ScientificExecutionMapError("BindCraft must explicitly invoke the reviewed runtime artifact gate")
             by_artifact: dict[str, list[RuntimeArtifactMount]] = defaultdict(list)
             for mount in invocation.runtime_mounts:
                 by_artifact[mount.artifact_id].append(mount)
+            expected_artifacts = (
+                required
+                if invocation.stage_id == "design"
+                else {BINDCRAFT_AF2_ARTIFACT, BINDCRAFT_PYROSETTA_ARTIFACT}
+                if invocation.stage_id == "aggregate"
+                else set()
+            )
+            if not expected_artifacts or set(by_artifact) != expected_artifacts:
+                raise ScientificExecutionMapError("BindCraft stage runtime artifacts differ from its exact contract")
             af2 = by_artifact[BINDCRAFT_AF2_ARTIFACT]
             pyrosetta_mounts = by_artifact[BINDCRAFT_PYROSETTA_ARTIFACT]
             if len(af2) != 1 or af2[0].mount_path != "/models/alphafold2":
@@ -1105,10 +1126,11 @@ class FileScientificManifestRenderer:
                 or not pyrosetta_mounts[0].supplemental_groups
             ):
                 raise ScientificExecutionMapError("BindCraft PyRosetta installed tree uses the wrong target")
-            for artifact_id, target in BINDCRAFT_MPNN_TARGETS.items():
-                mpnn = by_artifact[artifact_id]
-                if len(mpnn) != 1 or mpnn[0].mount_path != target:
-                    raise ScientificExecutionMapError("BindCraft ProteinMPNN target is not exact")
+            if invocation.stage_id == "design":
+                for artifact_id, target in BINDCRAFT_MPNN_TARGETS.items():
+                    mpnn = by_artifact[artifact_id]
+                    if len(mpnn) != 1 or mpnn[0].mount_path != target:
+                        raise ScientificExecutionMapError("BindCraft ProteinMPNN target is not exact")
 
     def bind_runtime_artifacts(
         self,

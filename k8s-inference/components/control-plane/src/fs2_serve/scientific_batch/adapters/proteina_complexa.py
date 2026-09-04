@@ -7,16 +7,20 @@ and the selected Hugging Face weight revision.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..models import (
     AdapterExecutionPlan,
     ArtifactMaterialization,
     MaterializationMode,
+    RuntimeArtifactMount,
     RuntimeTreeBinding,
     StageInvocation,
+    StageWorkspaceDocument,
 )
 from .common import (
     ArtifactLoader,
@@ -40,6 +44,15 @@ from .common import (
     strict_object,
     structure_atom_count,
 )
+from .staged_workspace import (
+    collect_workspace_handoff,
+    completion_marker,
+    materialize_collected_output,
+    wrap_stage_argv,
+)
+
+if TYPE_CHECKING:
+    from . import CollectedStageOutput
 
 MODEL_ID = "proteina-complexa"
 VARIANT_ID = "upstream-dev-20260827"
@@ -48,6 +61,15 @@ SOURCE_REVISION = "54058860d43444c7289873f77d3e50b5b02348cd"
 PARAMETER_SCHEMA = "fs2-serve.nebius.ai/proteina-complexa-parameters/v1"
 MAX_INPUT_BYTES = 64 * 1024 * 1024
 MAX_OUTPUT_BYTES = 2 * 1024 * 1024 * 1024
+MAX_STAGE_HANDOFF_CONTENT_BYTES = MAX_OUTPUT_BYTES
+MAX_STAGE_HANDOFF_BYTES = 3 * 1024 * 1024 * 1024
+MAX_STAGE_HANDOFF_MEMBERS = 16_384
+COLLECTOR_ID = "proteina-complexa-v1"
+VALIDATOR_ID = "proteina-complexa-v1"
+STAGE_HANDOFF_NAME = "stage-handoff"
+STAGE_HANDOFF_SEMANTIC_TYPE = "proteina-complexa-workspace-handoff-tar/v1"
+PUBLIC_REQUEST_DOCUMENT = ".fs2/public-request.json"
+REFERENCE_DATA_SUPPLEMENTAL_GROUP = 1000
 
 AF2_ARTIFACT_ID = "alphafold2-params"
 RF3_ARTIFACT_ID = "rosettafold3-checkpoint"
@@ -246,6 +268,45 @@ def _stage_runtime_trees(parameters: ProteinaParameters, stage_id: str) -> tuple
     return ()
 
 
+def _stage_runtime_mounts(parameters: ProteinaParameters, stage_id: str) -> tuple[RuntimeArtifactMount, ...]:
+    """Name every external tree at the exact path consumed by the runtime."""
+
+    return tuple(
+        RuntimeArtifactMount(
+            artifact_id=artifact_id,
+            mount_path=model_root(artifact_id),
+            supplemental_groups=(REFERENCE_DATA_SUPPLEMENTAL_GROUP,),
+        )
+        for artifact_id in _stage_runtime_artifacts(parameters, stage_id)
+    )
+
+
+def _canonical_json(value: object) -> str:
+    try:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    except (TypeError, ValueError) as error:
+        raise ScientificAdapterError("Proteina-Complexa request is not canonical JSON") from error
+
+
+def _public_request_document(request: PublicRunRequest) -> StageWorkspaceDocument:
+    return StageWorkspaceDocument(PUBLIC_REQUEST_DOCUMENT, _canonical_json(request.to_dict()))
+
+
+def _load_public_request(workspace: Path) -> Mapping[str, object]:
+    path = workspace.joinpath(*Path(PUBLIC_REQUEST_DOCUMENT).parts)
+    try:
+        content = path.read_bytes()
+    except OSError as error:
+        raise ScientificAdapterError("Proteina-Complexa collector request document is unavailable") from error
+    try:
+        value = json.loads(content)
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise ScientificAdapterError("Proteina-Complexa collector request document is invalid") from error
+    if not isinstance(value, Mapping) or _canonical_json(value).encode() != content:
+        raise ScientificAdapterError("Proteina-Complexa collector request document is not canonical")
+    return value
+
+
 def compile_run(profile: Mapping[str, object], request_value: object, *, operation_id: str) -> AdapterExecutionPlan:
     """Compile a canonical request into the canonical four-stage controller plan."""
 
@@ -268,11 +329,16 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
             StageInvocation(
                 stage_id=stage_id,
                 shard_id="main",
-                argv=_argv(parameters, stage_id),
+                argv=wrap_stage_argv(workspace, _argv(parameters, stage_id)),
                 environment=_environment(parameters, stage_id, workspace),
                 working_directory=workspace,
                 consumes=(previous,),
                 produces=output,
+                collector_id=COLLECTOR_ID,
+                validator_id=VALIDATOR_ID,
+                handoff_name=(STAGE_HANDOFF_NAME if stage_id != stage_ids[-1] else None),
+                max_output_artifacts=(1 if stage_id != stage_ids[-1] else parameters.num_samples + 1),
+                max_output_bytes=(MAX_STAGE_HANDOFF_BYTES if stage_id != stage_ids[-1] else MAX_OUTPUT_BYTES),
                 materializations=(
                     ArtifactMaterialization(
                         artifact_id=previous,
@@ -287,6 +353,8 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
                 ),
                 runtime_artifacts=_stage_runtime_artifacts(parameters, stage_id),
                 runtime_trees=_stage_runtime_trees(parameters, stage_id),
+                runtime_mounts=_stage_runtime_mounts(parameters, stage_id),
+                workspace_documents=(_public_request_document(request),),
             )
         )
         previous = output
@@ -418,4 +486,36 @@ def collect_output(request_value: object, workspace: Path) -> CollectedOutput:
         tuple(entries),
         manifest_id="proteina-complexa.results",
         maximum_total_bytes=MAX_OUTPUT_BYTES,
+    )
+
+
+def collect_companion_output(invocation: StageInvocation, workspace: Path) -> CollectedStageOutput:
+    """Collect one exact production stage after trusted zero-exit completion."""
+
+    if invocation.collector_id != COLLECTOR_ID or invocation.validator_id != VALIDATOR_ID:
+        raise ScientificAdapterError("Proteina-Complexa collector received another execution identity")
+    if invocation.stage_id != "analyze":
+        return collect_workspace_handoff(
+            invocation,
+            workspace,
+            label="ProteinaComplexa",
+            name=STAGE_HANDOFF_NAME,
+            semantic_type=STAGE_HANDOFF_SEMANTIC_TYPE,
+            maximum_members=MAX_STAGE_HANDOFF_MEMBERS,
+            maximum_content_bytes=MAX_STAGE_HANDOFF_CONTENT_BYTES,
+            maximum_archive_bytes=MAX_STAGE_HANDOFF_BYTES,
+        )
+    if invocation.handoff_name is not None:
+        raise ScientificAdapterError("Proteina-Complexa terminal stage declares an intermediate handoff")
+    completion_sha256 = completion_marker(invocation, workspace, label="ProteinaComplexa")
+    request = _load_public_request(workspace)
+    collected = collect_output(request, workspace)
+    semantic = validate_output(request, collected.manifest, artifact_loader=collected.blobs.__getitem__)
+    return materialize_collected_output(
+        invocation,
+        workspace,
+        collected,
+        label="ProteinaComplexa",
+        completion_sha256=completion_sha256,
+        validation=semantic,
     )

@@ -22,7 +22,7 @@ import tarfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import zstandard
 
@@ -31,8 +31,12 @@ from ..models import (
     AdapterExecutionPlan,
     ArtifactMaterialization,
     MaterializationMode,
+    RuntimeArtifactAdmissionRole,
+    RuntimeArtifactAdmissionSpec,
+    RuntimeArtifactMount,
     RuntimeTreeBinding,
     StageInvocation,
+    StageWorkspaceDocument,
 )
 from .common import (
     ARTIFACT_MANIFEST_SCHEMA,
@@ -44,6 +48,7 @@ from .common import (
     assert_profile_identity,
     bounded_int,
     build_execution_plan,
+    canonical_digest,
     collect_output_files,
     finite_number,
     parse_public_request,
@@ -52,6 +57,10 @@ from .common import (
     strict_object,
     structure_atom_count,
 )
+from .staged_workspace import completion_marker, materialize_collected_output, wrap_stage_argv
+
+if TYPE_CHECKING:
+    from . import CollectedStageOutput
 
 MODEL_ID = "bindcraft"
 VARIANT_ID = "v1-5-3-pyrosetta-academic"
@@ -68,6 +77,10 @@ DESIGN_STAGE = "design"
 AGGREGATE_STAGE = "aggregate"
 DESIGN_COLLECTOR_ID = "bindcraft-design-output-v1"
 AGGREGATE_COLLECTOR_ID = "bindcraft-aggregate-output-v1"
+VALIDATOR_ID = "bindcraft-v1"
+PUBLIC_REQUEST_DOCUMENT = ".fs2/public-request.json"
+REFERENCE_DATA_SUPPLEMENTAL_GROUP = 1000
+ACADEMIC_ASSET_SUPPLEMENTAL_GROUP = 65532
 
 # The reviewed outer entrypoint is the artifact gate. It verifies the AlphaFold2
 # manifest and binds PyRosetta on every non-smoke command before it execs the
@@ -204,6 +217,39 @@ def _bindings_for(artifacts: tuple[str, ...]) -> tuple[RuntimeTreeBinding, ...]:
     return tuple(item for item in tree_bindings() if item.artifact_id in artifacts)
 
 
+def _mounts_for(artifacts: tuple[str, ...]) -> tuple[RuntimeArtifactMount, ...]:
+    roots = {artifact_id: root for _role, (artifact_id, root, _digest) in EXTERNAL_TREE_ROLES.items()}
+    return tuple(
+        RuntimeArtifactMount(
+            artifact_id=artifact_id,
+            mount_path=roots[artifact_id],
+            supplemental_groups=(
+                (ACADEMIC_ASSET_SUPPLEMENTAL_GROUP,)
+                if artifact_id == PYROSETTA_ARTIFACT
+                else (REFERENCE_DATA_SUPPLEMENTAL_GROUP,)
+            ),
+        )
+        for artifact_id in artifacts
+    )
+
+
+def _admission_for(artifacts: tuple[str, ...]) -> RuntimeArtifactAdmissionSpec:
+    by_artifact = {artifact_id: (role, root) for role, (artifact_id, root, _digest) in EXTERNAL_TREE_ROLES.items()}
+    return RuntimeArtifactAdmissionSpec(
+        schema="fs2.nebius.ai/bindcraft-external-tree-admission/v1",
+        relative_path=".fs2/external-trees.json",
+        roles=tuple(
+            RuntimeArtifactAdmissionRole(
+                role=by_artifact[artifact_id][0],
+                artifact_id=artifact_id,
+                mount_path=by_artifact[artifact_id][1],
+                identity_field="inventory-digest",
+            )
+            for artifact_id in artifacts
+        ),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class BindCraftParameters:
     """Bounded caller parameters projected from the public parameter schema."""
@@ -329,6 +375,40 @@ def _canonical_bytes(value: object) -> bytes:
         raise ScientificAdapterError("BindCraft native document is not canonical JSON") from error
 
 
+def _canonical_json(value: object) -> str:
+    return _canonical_bytes(value).decode("ascii").removesuffix("\n")
+
+
+def _workspace_documents(
+    request: PublicRunRequest,
+    parameters: BindCraftParameters,
+    *,
+    shard_index: int,
+) -> tuple[StageWorkspaceDocument, ...]:
+    return (
+        StageWorkspaceDocument(PUBLIC_REQUEST_DOCUMENT, _canonical_json(request.to_dict())),
+        StageWorkspaceDocument(
+            ".fs2/request.json", _canonical_json(native_request(request, parameters, shard_index=shard_index))
+        ),
+        StageWorkspaceDocument(".fs2/input-manifest.json", _canonical_json(native_input_manifest(request))),
+    )
+
+
+def _load_public_request(workspace: Path) -> Mapping[str, object]:
+    path = workspace.joinpath(*PurePosixPath(PUBLIC_REQUEST_DOCUMENT).parts)
+    try:
+        content = path.read_bytes()
+    except OSError as error:
+        raise ScientificAdapterError("BindCraft collector request document is unavailable") from error
+    try:
+        value = json.loads(content)
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise ScientificAdapterError("BindCraft collector request document is invalid") from error
+    if not isinstance(value, Mapping) or _canonical_json(value).encode("ascii") != content:
+        raise ScientificAdapterError("BindCraft collector request document is not canonical")
+    return value
+
+
 def native_input_manifest(request: PublicRunRequest) -> dict[str, object]:
     """Project the public target pointer into the manifest r18 consumes."""
 
@@ -362,7 +442,7 @@ def native_request(
 
     if not 0 <= shard_index < parameters.shard_count:
         raise ScientificAdapterError("BindCraft native request shard index is outside the plan")
-    manifest_bytes = _canonical_bytes(native_input_manifest(request))
+    manifest_bytes = _canonical_json(native_input_manifest(request)).encode("ascii")
     value: dict[str, object] = {
         "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
         "operation": request.operation,
@@ -414,7 +494,10 @@ def materialize_runtime_documents(invocation: StageInvocation, workspace: Path) 
         manifest_value = json.loads(manifest_bytes)
     except (UnicodeError, json.JSONDecodeError) as error:
         raise ScientificAdapterError("BindCraft invocation runtime documents are unreadable") from error
-    if _canonical_bytes(request_value) != request_bytes or _canonical_bytes(manifest_value) != manifest_bytes:
+    if (
+        _canonical_json(request_value).encode("ascii") != request_bytes
+        or _canonical_json(manifest_value).encode("ascii") != manifest_bytes
+    ):
         raise ScientificAdapterError("BindCraft invocation runtime documents are not canonical")
     if not isinstance(request_value, Mapping) or not isinstance(manifest_value, Mapping):
         raise ScientificAdapterError("BindCraft invocation runtime documents must be JSON objects")
@@ -522,16 +605,18 @@ def _environment(
         ("FS2_BINDCRAFT_BINDER_LENGTH_MIN", str(parameters.minimum_length)),
         ("FS2_BINDCRAFT_EXTERNAL_TREE_ROLES", _canonical_bytes(external_tree_roles()).decode("ascii")),
         ("FS2_BINDCRAFT_EXTERNAL_TREES", f"{workspace}/.fs2/external-trees.json"),
-        ("FS2_BINDCRAFT_INPUT_MANIFEST_JSON", _canonical_bytes(native_input_manifest(request)).decode("ascii")),
+        ("FS2_BINDCRAFT_INPUT_MANIFEST_JSON", _canonical_json(native_input_manifest(request))),
         ("FS2_BINDCRAFT_MPNN_SOLUBLE_TREE", MPNN_SOLUBLE_PATH),
         ("FS2_BINDCRAFT_MPNN_VANILLA_TREE", MPNN_VANILLA_PATH),
         ("FS2_BINDCRAFT_MPNN_WEIGHTS", MPNN_WEIGHTS_SETTING[parameters.mpnn_lane]),
         ("FS2_BINDCRAFT_PYROSETTA_TREE", PYROSETTA_PATH),
         (
             "FS2_BINDCRAFT_REQUEST_JSON",
-            _canonical_bytes(native_request(request, parameters, shard_index=shard_index)).decode("ascii"),
+            _canonical_json(native_request(request, parameters, shard_index=shard_index)),
         ),
         ("FS2_SCIENTIFIC_COLLECTOR_ID", collector_id),
+        ("FS2_SCIENTIFIC_VALIDATOR_ID", VALIDATOR_ID),
+        ("FS2_NETWORK_MODE", "offline"),
         ("FS2_SOURCE_REVISION", SOURCE_REVISION),
         # The gate rejects a PYTHONPATH that does not start with the licensed
         # tree, so the order here is contract, not preference.
@@ -633,7 +718,7 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
             StageInvocation(
                 stage_id=DESIGN_STAGE,
                 shard_id=shard_id,
-                argv=_design_argv(workspace, index, parameters.seed(index)),
+                argv=wrap_stage_argv(workspace, _design_argv(workspace, index, parameters.seed(index))),
                 environment=_environment(
                     request,
                     parameters,
@@ -646,6 +731,11 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
                 working_directory=workspace,
                 consumes=(request.input_manifest.artifact_id,),
                 produces=produces,
+                collector_id=DESIGN_COLLECTOR_ID,
+                validator_id=VALIDATOR_ID,
+                handoff_name=f"shard-{index:03d}-bundle",
+                max_output_artifacts=1,
+                max_output_bytes=MAX_BUNDLE_BYTES,
                 materializations=(
                     ArtifactMaterialization(
                         artifact_id=request.input_manifest.artifact_id,
@@ -656,6 +746,9 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
                 ),
                 runtime_artifacts=DESIGN_RUNTIME_ARTIFACTS,
                 runtime_trees=design_trees,
+                runtime_mounts=_mounts_for(DESIGN_RUNTIME_ARTIFACTS),
+                workspace_documents=_workspace_documents(request, parameters, shard_index=index),
+                runtime_admission=_admission_for(DESIGN_RUNTIME_ARTIFACTS),
             )
         )
 
@@ -664,7 +757,10 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
         StageInvocation(
             stage_id=AGGREGATE_STAGE,
             shard_id="main",
-            argv=_aggregate_argv(aggregate_workspace, len(design_outputs)),
+            argv=wrap_stage_argv(
+                aggregate_workspace,
+                _aggregate_argv(aggregate_workspace, len(design_outputs)),
+            ),
             environment=_environment(
                 request,
                 parameters,
@@ -677,6 +773,10 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
             working_directory=aggregate_workspace,
             consumes=tuple(design_outputs),
             produces=f"bindcraft.{operation_id}.results",
+            collector_id=AGGREGATE_COLLECTOR_ID,
+            validator_id=VALIDATOR_ID,
+            max_output_artifacts=MAX_FINAL_ENTRIES,
+            max_output_bytes=MAX_OUTPUT_BYTES,
             materializations=tuple(
                 ArtifactMaterialization(
                     artifact_id=logical_id,
@@ -688,6 +788,8 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
             ),
             runtime_artifacts=AGGREGATE_RUNTIME_ARTIFACTS,
             runtime_trees=aggregate_trees,
+            runtime_mounts=_mounts_for(AGGREGATE_RUNTIME_ARTIFACTS),
+            workspace_documents=_workspace_documents(request, parameters, shard_index=0),
         )
     )
 
@@ -1062,10 +1164,11 @@ def collect_aggregate_output(
     public, parameters = _request(request_value)
     if _DIGEST_REFERENCE.fullmatch(runtime_image_digest) is None:
         raise ScientificAdapterError("BindCraft aggregate requires an immutable runtime image digest")
-    input_bytes = _canonical_bytes(native_input_manifest(public))
-    request_bytes = _canonical_bytes(native_request(public, parameters, shard_index=0))
+    input_bytes = _canonical_json(native_input_manifest(public)).encode("ascii")
+    request_document_bytes = _canonical_json(native_request(public, parameters, shard_index=0)).encode("ascii")
+    request_identity_bytes = _canonical_bytes(native_request(public, parameters, shard_index=0))
     _runtime_document(workspace, ".fs2/input-manifest.json", input_bytes, label="BindCraft native input manifest")
-    _runtime_document(workspace, ".fs2/request.json", request_bytes, label="BindCraft native request")
+    _runtime_document(workspace, ".fs2/request.json", request_document_bytes, label="BindCraft native request")
     marker_path = _contained_artifact(
         workspace,
         ".fs2/runtime-localization.json",
@@ -1229,7 +1332,7 @@ def collect_aggregate_output(
         "access_profile": "academic",
         "academic_asset_id": ACADEMIC_ASSET_ID,
         "academic_artifact_sha256": PYROSETTA_ARCHIVE_SHA256,
-        "request_sha256": hashlib.sha256(request_bytes).hexdigest(),
+        "request_sha256": hashlib.sha256(request_identity_bytes).hexdigest(),
         "runtime_image_digest": runtime_image_digest,
         "runtime_localization_marker_sha256": marker_sha256,
         "localization_generation": localization_generation,
@@ -1252,7 +1355,7 @@ def collect_aggregate_output(
     return collect_output_files(
         workspace,
         tuple(collector_entries),
-        manifest_id=f"bindcraft.results.{hashlib.sha256(request_bytes).hexdigest()[:24]}",
+        manifest_id=f"bindcraft.results.{hashlib.sha256(request_identity_bytes).hexdigest()[:24]}",
         maximum_total_bytes=MAX_OUTPUT_BYTES,
     )
 
@@ -1277,3 +1380,54 @@ def collect_stage_output(
             runtime_image_digest=runtime_image_digest,
         )
     raise ScientificAdapterError(f"unsupported BindCraft collector identity {collector_id!r}")
+
+
+def collect_companion_output(invocation: StageInvocation, workspace: Path) -> CollectedStageOutput:
+    """Collect one controller-bound BindCraft stage after atomic completion."""
+
+    if invocation.validator_id != VALIDATOR_ID or invocation.collector_id not in {
+        DESIGN_COLLECTOR_ID,
+        AGGREGATE_COLLECTOR_ID,
+    }:
+        raise ScientificAdapterError("BindCraft collector received another execution identity")
+    completion_sha256 = completion_marker(invocation, workspace, label="BindCraft")
+    request = _load_public_request(workspace)
+    public, parameters = _request(request)
+    if invocation.collector_id == DESIGN_COLLECTOR_ID:
+        if invocation.stage_id != DESIGN_STAGE or invocation.handoff_name is None:
+            raise ScientificAdapterError("BindCraft design collector received another stage contract")
+        collected = collect_design_output(request, workspace)
+        return materialize_collected_output(
+            invocation,
+            workspace,
+            collected,
+            label="BindCraftDesign",
+            completion_sha256=completion_sha256,
+            validation={
+                "request_sha256": canonical_digest(public.to_dict()),
+                "shard_id": invocation.shard_id,
+            },
+        )
+    if invocation.stage_id != AGGREGATE_STAGE or invocation.handoff_name is not None:
+        raise ScientificAdapterError("BindCraft aggregate collector received another stage contract")
+    runtime_image_digest = os.environ.get("FS2_RUNTIME_IMAGE_DIGEST")
+    if runtime_image_digest is None:
+        raise ScientificAdapterError("BindCraft aggregate collector has no admitted runtime image digest")
+    collected = collect_aggregate_output(
+        request,
+        workspace,
+        runtime_image_digest=runtime_image_digest,
+    )
+    return materialize_collected_output(
+        invocation,
+        workspace,
+        collected,
+        label="BindCraftAggregate",
+        completion_sha256=completion_sha256,
+        validation={
+            "request_sha256": canonical_digest(public.to_dict()),
+            "design_count": parameters.designs,
+            "shard_count": parameters.shard_count,
+            "runtime_image_digest": runtime_image_digest,
+        },
+    )

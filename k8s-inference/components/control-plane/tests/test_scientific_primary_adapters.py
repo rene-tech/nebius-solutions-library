@@ -37,6 +37,7 @@ from fs2_serve.scientific_batch import (
 from fs2_serve.scientific_batch.adapters import boltzgen, proteina_complexa
 from fs2_serve.scientific_batch.adapters.common import runtime_recipe_sha256
 from fs2_serve.scientific_batch.adapters.materialization import materialize_boltzgen_input
+from fs2_serve.scientific_batch.adapters.staged_workspace import STAGE_COMPLETION_SCHEMA
 from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer
 from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog
 
@@ -129,6 +130,39 @@ ATOM 3 N N B 21.104 23.207 24.099
 ATOM 4 C CA B 22.104 23.207 24.099
 #
 """
+
+
+def publish_stage_completion(invocation: Any, workspace: Path) -> str:
+    """Materialize controller documents and the runner-owned terminal marker."""
+
+    metadata = workspace / ".fs2"
+    metadata.mkdir(parents=True, exist_ok=True)
+    for document in invocation.workspace_documents:
+        destination = workspace.joinpath(*Path(document.relative_path).parts)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            assert destination.read_text(encoding="utf-8") == document.canonical_json
+        else:
+            destination.write_text(document.canonical_json, encoding="utf-8")
+    argv = invocation.argv[3:]
+    payload = json.dumps(
+        {
+            "schema": STAGE_COMPLETION_SCHEMA,
+            "status": "passed",
+            "stage_id": invocation.stage_id,
+            "shard_id": invocation.shard_id,
+            "logical_output_id": invocation.produces,
+            "collector_id": invocation.collector_id,
+            "validator_id": invocation.validator_id,
+            "argv_sha256": hashlib.sha256(
+                json.dumps(argv, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+            ).hexdigest(),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    (metadata / "stage-complete.json").write_bytes(payload)
+    return hashlib.sha256(payload).hexdigest()
 
 
 def output_manifest(items: list[tuple[str, str, str, bytes]]) -> tuple[dict[str, object], dict[str, bytes]]:
@@ -347,6 +381,11 @@ def test_proteina_commands_and_artifact_handoffs_are_exact_and_shell_free() -> N
     previous = request["input_manifest"]["artifact_id"]
     for invocation, stage_id in zip(result.invocations, ("generate", "filter", "evaluate", "analyze"), strict=True):
         assert invocation.argv[:3] == (
+            "python",
+            f"{invocation.working_directory}/.fs2/stage-runner.py",
+            "--",
+        )
+        assert invocation.argv[3:6] == (
             "complexa",
             stage_id,
             "/opt/fs2/source/configs/search_ligand_binder_local_pipeline.yaml",
@@ -358,6 +397,8 @@ def test_proteina_commands_and_artifact_handoffs_are_exact_and_shell_free() -> N
         assert invocation.materializations[0].artifact_id == invocation.consumes[0]
         assert invocation.materializations[0].destination.startswith("/mnt/fs2-scientific/work/proteina-complexa/")
         assert invocation.materializations[0].destination.endswith("/main")
+        assert invocation.collector_id == invocation.validator_id == proteina_complexa.VALIDATOR_ID
+        assert invocation.handoff_name == (None if stage_id == "analyze" else proteina_complexa.STAGE_HANDOFF_NAME)
         assert all("artifact://" not in value for value in invocation.argv)
         assert all("/mnt/fs2-scientific/models" not in value for value in invocation.argv)
     assert "++ckpt_name=complexa_ligand.ckpt" in result.invocations[0].argv
@@ -865,3 +906,52 @@ def test_collectors_consume_real_upstream_csv_and_structures_without_exposing_pa
         )["design_count"]
         == 4
     )
+
+
+def test_proteina_companion_collects_only_runner_completed_handoffs_and_final_outputs(tmp_path: Path) -> None:
+    request = fixture("proteina-complexa", "positive-protein.json")
+    plan = proteina_complexa.compile_run(
+        profile("proteina-complexa"),
+        request,
+        operation_id="op-proteina-companion",
+    )
+
+    intermediate_workspace = tmp_path / "generate"
+    generated = intermediate_workspace / "generation" / "sample.json"
+    generated.parent.mkdir(parents=True)
+    generated.write_text('{"status":"generated"}', encoding="utf-8")
+    intermediate = plan.invocation("generate", "main")
+    completion_sha256 = publish_stage_completion(intermediate, intermediate_workspace)
+    handoff = proteina_complexa.collect_companion_output(intermediate, intermediate_workspace)
+    assert tuple(item.name for item in handoff.artifacts) == (proteina_complexa.STAGE_HANDOFF_NAME,)
+    assert handoff.artifacts[0].semantic_type == proteina_complexa.STAGE_HANDOFF_SEMANTIC_TYPE
+    assert handoff.artifacts[0].compression == "zstd"
+    assert handoff.validation["completion_marker_sha256"] == completion_sha256
+    assert handoff.validation["status"] == "passed"
+
+    terminal_workspace = tmp_path / "analyze"
+    structure = terminal_workspace / "evaluation" / "design-1" / "design-1.pdb"
+    structure.parent.mkdir(parents=True)
+    structure.write_bytes(pdb_bytes())
+    csv_path = terminal_workspace / "evaluation" / "RAW_binder_results_pipeline_combined.csv"
+    csv_path.write_text(
+        f"id_gen,pdb_path,_res_pLDDT_self,_res_i_pae_self,_res_scRMSD_self\ndesign-1,{structure},0.81,4.2,1.1\n",
+        encoding="utf-8",
+    )
+    terminal = plan.invocation("analyze", "main")
+    terminal_completion = publish_stage_completion(terminal, terminal_workspace)
+    collected = proteina_complexa.collect_companion_output(terminal, terminal_workspace)
+    assert collected.validation["completion_marker_sha256"] == terminal_completion
+    assert collected.validation["design_count"] == 1
+    assert collected.validation["status"] == "passed"
+    assert {item.semantic_type for item in collected.artifacts} == {
+        "proteina-complexa-results-csv/v1",
+        "protein-complex-structure/v1",
+    }
+    result_csv = next(
+        item.path.read_bytes()
+        for item in collected.artifacts
+        if item.semantic_type == "proteina-complexa-results-csv/v1"
+    )
+    assert b"pdb_path" not in result_csv
+    assert str(tmp_path).encode() not in result_csv

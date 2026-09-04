@@ -17,6 +17,7 @@ import os
 import stat
 import tarfile
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
@@ -28,6 +29,7 @@ from .primitives import ScientificAdapterError
 
 if TYPE_CHECKING:
     from . import CollectedStageOutput
+    from .common import CollectedOutput
 
 STAGE_RUNNER_RELATIVE_PATH = ".fs2/stage-runner.py"
 STAGE_COMPLETION_RELATIVE_PATH = ".fs2/stage-complete.json"
@@ -358,6 +360,69 @@ def collect_workspace_handoff(
     )
 
 
+def materialize_collected_output(
+    invocation: StageInvocation,
+    workspace: Path,
+    collected: CollectedOutput,
+    *,
+    label: str,
+    completion_sha256: str,
+    validation: Mapping[str, object],
+) -> CollectedStageOutput:
+    """Turn a validated legacy manifest/blob closure into companion files.
+
+    Older model adapters already contain strict, model-specific semantic
+    collectors.  This bridge preserves those checks while moving the resulting
+    bytes onto the production companion protocol.  The completion marker must
+    be validated before the legacy collector is called; accepting its digest as
+    an explicit argument makes that ordering visible at every call site.
+    """
+
+    from . import CollectedArtifactFile, CollectedStageOutput
+    from .common import ScientificAdapterError, load_output_manifest
+
+    def load(artifact_id: str) -> bytes:
+        try:
+            return collected.blobs[artifact_id]
+        except KeyError as error:
+            raise ScientificAdapterError(f"{label} collected manifest references an absent blob") from error
+
+    loaded = load_output_manifest(
+        collected.manifest,
+        artifact_loader=load,
+        maximum_entries=invocation.max_output_artifacts,
+        maximum_total_bytes=invocation.max_output_bytes,
+    )
+    referenced = {item.pointer.artifact_id for item in loaded}
+    if set(collected.blobs) != referenced:
+        raise ScientificAdapterError(f"{label} collected output contains an unreferenced blob")
+    if invocation.handoff_name is not None and invocation.handoff_name not in {item.name for item in loaded}:
+        raise ScientificAdapterError(f"{label} collected output omits the exact handoff entry")
+
+    artifacts: list[CollectedArtifactFile] = []
+    for index, item in enumerate(loaded):
+        output = workspace / ".fs2" / "collected" / f"artifact-{index:04d}"
+        atomic_publish(output, item.content, workspace=workspace, label=f"{label} collected artifact")
+        artifacts.append(
+            CollectedArtifactFile(
+                name=item.name,
+                semantic_type=item.semantic_type,
+                path=output,
+                media_type=item.pointer.media_type,
+                compression=item.pointer.compression,
+            )
+        )
+    evidence = dict(validation)
+    evidence.update(
+        {
+            "validator_id": invocation.validator_id,
+            "status": "passed",
+            "completion_marker_sha256": completion_sha256,
+        }
+    )
+    return CollectedStageOutput(artifacts=tuple(artifacts), validation=evidence)
+
+
 __all__ = [
     "STAGE_COMPLETION_RELATIVE_PATH",
     "STAGE_COMPLETION_SCHEMA",
@@ -367,6 +432,7 @@ __all__ = [
     "collect_workspace_handoff",
     "completion_marker",
     "encode_handoff",
+    "materialize_collected_output",
     "snapshot_workspace",
     "unwrapped_stage_argv",
     "validate_handoff",

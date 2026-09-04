@@ -16,6 +16,14 @@ import pytest
 from fs2_serve.scientific_batch import ResourceClass, ScientificAdapterError, compile_adapter_run
 from fs2_serve.scientific_batch.adapters import bindcraft
 from fs2_serve.scientific_batch.adapters.materialization import safe_extract_tar
+from fs2_serve.scientific_batch.adapters.staged_workspace import STAGE_COMPLETION_SCHEMA
+from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer
+from fs2_serve.scientific_batch.models import (
+    RuntimeArtifactAggregateTree,
+    RuntimeArtifactFile,
+    RuntimeArtifactLocalization,
+    RuntimeArtifactTreeKind,
+)
 
 SOLUTION_ROOT = Path(__file__).resolve().parents[3]
 ADAPTER_ROOT = SOLUTION_ROOT / "models/structure/batch-adapters/bindcraft"
@@ -193,6 +201,7 @@ def test_each_stage_binds_the_trees_it_actually_needs() -> None:
     assert set(plan.required_model_artifacts) == set(bindcraft.DESIGN_RUNTIME_ARTIFACTS)
     aggregate = plan.invocation("aggregate", "main")
     assert set(aggregate.runtime_artifacts) == set(bindcraft.AGGREGATE_RUNTIME_ARTIFACTS)
+    assert {item.artifact_id for item in aggregate.runtime_mounts} == set(bindcraft.AGGREGATE_RUNTIME_ARTIFACTS)
     aggregate_paths = {item.mount_path for item in aggregate.runtime_trees}
     assert aggregate_paths == {bindcraft.AF2_PATH, bindcraft.PYROSETTA_PATH}
     assert bindcraft.MPNN_VANILLA_PATH not in aggregate_paths
@@ -200,6 +209,41 @@ def test_each_stage_binds_the_trees_it_actually_needs() -> None:
         design = plan.invocation("design", shard)
         assert set(design.runtime_artifacts) == set(bindcraft.DESIGN_RUNTIME_ARTIFACTS)
         assert len(design.runtime_trees) == 4
+
+
+def test_execution_verifier_accepts_the_exact_stage_specific_bindcraft_mount_sets() -> None:
+    """The CPU aggregate must not be forced to carry unused ProteinMPNN trees."""
+
+    plan = compile_fixture("positive-default-lane")
+    af2 = RuntimeArtifactLocalization(
+        logical_artifact_id=bindcraft.AF2_ARTIFACT,
+        mount_path=bindcraft.AF2_PATH,
+        content_digest="sha256:" + "1" * 64,
+        files=(RuntimeArtifactFile(path="manifest.json", digest="sha256:" + "2" * 64, size_bytes=1),),
+        localization_receipt_digest="sha256:" + "3" * 64,
+    )
+    pyrosetta_digest = "sha256:" + bindcraft.PYROSETTA_INVENTORY_SHA256
+    pyrosetta = RuntimeArtifactLocalization(
+        logical_artifact_id=bindcraft.PYROSETTA_ARTIFACT,
+        mount_path=bindcraft.PYROSETTA_PATH,
+        content_digest=pyrosetta_digest,
+        files=(),
+        localization_receipt_digest="sha256:" + "4" * 64,
+        aggregate_tree=RuntimeArtifactAggregateTree(
+            tree_digest=pyrosetta_digest,
+            manifest_digest="sha256:" + "5" * 64,
+            inventory_digest=pyrosetta_digest,
+            file_count=8_697,
+            directory_count=100,
+            expanded_bytes=3_287_122_494,
+            canonical_path=f"bindcraft/pyrosetta/sha256/{bindcraft.PYROSETTA_INVENTORY_SHA256}",
+            storage_kind=RuntimeArtifactTreeKind.LOCALIZATION_GENERATION,
+            manifest_algorithm="fs2-tree-inventory/v2",
+            marker_relative_path=".fs2-runtime-tree.json",
+        ),
+    )
+
+    FileScientificManifestRenderer._verify_bindcraft_runtime(plan, (af2, pyrosetta))
 
 
 def test_every_bound_tree_is_reachable_through_the_plan() -> None:
@@ -219,9 +263,10 @@ def test_stage_argv_is_shell_free_and_uses_the_reviewed_outer_entrypoint() -> No
     plan = compile_fixture("positive-default-lane")
     for invocation in plan.invocations:
         argv = invocation.argv
-        assert argv[:2] == ("python", "/opt/fs2/runtime_entrypoint.py")
-        assert argv[2] == "/opt/fs2/bin/bindcraft-batch"
-        assert argv[3] in {"run-trajectory", "aggregate"}
+        assert argv[:3] == ("python", f"{invocation.working_directory}/.fs2/stage-runner.py", "--")
+        assert argv[3:5] == ("python", "/opt/fs2/runtime_entrypoint.py")
+        assert argv[5] == "/opt/fs2/bin/bindcraft-batch"
+        assert argv[6] in {"run-trajectory", "aggregate"}
         assert argv[0] not in {"sh", "bash", "/bin/sh", "/bin/bash"}
         assert not any(token in {"-c", ";", "&&", "|"} or "$(" in token for token in argv)
         assert "--runtime-localization-marker" in argv
@@ -240,7 +285,7 @@ def test_each_invocation_carries_its_exact_native_request_and_input_manifest() -
     plan = bindcraft.compile_run(granted(), request, operation_id="op-bindcraft-native-documents")
     public, parameters = bindcraft._request(request)
     expected_manifest = bindcraft.native_input_manifest(public)
-    expected_manifest_bytes = bindcraft._canonical_bytes(expected_manifest)
+    expected_manifest_bytes = bindcraft._canonical_json(expected_manifest).encode()
 
     for index, shard_id in enumerate(parameters.shard_ids):
         invocation = plan.invocation("design", shard_id)
@@ -428,6 +473,39 @@ def _pointer(path: Path, artifact_id: str, media_type: str) -> dict[str, Any]:
         "media_type": media_type,
         "compression": "none",
     }
+
+
+def publish_stage_completion(invocation: Any, workspace: Path) -> str:
+    """Materialize controller documents and the runner-owned terminal marker."""
+
+    metadata = workspace / ".fs2"
+    metadata.mkdir(parents=True, exist_ok=True)
+    for document in invocation.workspace_documents:
+        destination = workspace.joinpath(*Path(document.relative_path).parts)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            assert destination.read_text(encoding="utf-8") == document.canonical_json
+        else:
+            destination.write_text(document.canonical_json, encoding="utf-8")
+    argv = invocation.argv[3:]
+    payload = json.dumps(
+        {
+            "schema": STAGE_COMPLETION_SCHEMA,
+            "status": "passed",
+            "stage_id": invocation.stage_id,
+            "shard_id": invocation.shard_id,
+            "logical_output_id": invocation.produces,
+            "collector_id": invocation.collector_id,
+            "validator_id": invocation.validator_id,
+            "argv_sha256": hashlib.sha256(
+                json.dumps(argv, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+            ).hexdigest(),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    (metadata / "stage-complete.json").write_bytes(payload)
+    return hashlib.sha256(payload).hexdigest()
 
 
 def publish_shard(
@@ -618,6 +696,28 @@ def test_design_collector_publishes_one_deterministic_bounded_overlay_bundle(tmp
     }
 
 
+def test_design_companion_binds_completion_request_and_exact_handoff(tmp_path: Path) -> None:
+    request = fixture("positive-default-lane")
+    request["parameters"]["designs"] = 2
+    invocation = bindcraft.compile_run(
+        granted(),
+        request,
+        operation_id="op-bindcraft-companion",
+    ).invocation("design", "design-000")
+    workspace = tmp_path / "design-000"
+    publish_shard(workspace, index=0, request=request)
+    completion_sha256 = publish_stage_completion(invocation, workspace)
+
+    collected = bindcraft.collect_companion_output(invocation, workspace)
+
+    assert tuple(item.name for item in collected.artifacts) == (invocation.handoff_name,)
+    assert collected.artifacts[0].semantic_type == "bindcraft-native-shard-bundle-tar/v1"
+    assert collected.artifacts[0].compression == "zstd"
+    assert collected.validation["completion_marker_sha256"] == completion_sha256
+    assert collected.validation["shard_id"] == "design-000"
+    assert collected.validation["status"] == "passed"
+
+
 def test_design_collector_rejects_semantic_and_content_address_tampering(tmp_path: Path) -> None:
     request = fixture("positive-default-lane")
     workspace = tmp_path / "wrong-engine"
@@ -705,8 +805,8 @@ def test_compiled_argv_and_native_document_execute_the_real_r18_parser_contract(
     public, parameters = bindcraft._request(request)
     design = plan.invocation("design", "design-000")
     aggregate = plan.invocation("aggregate", "main")
-    assert runtime.parser().parse_args(list(design.argv[3:])).mode == "run-trajectory"
-    assert runtime.parser().parse_args(list(aggregate.argv[3:])).mode == "aggregate"
+    assert runtime.parser().parse_args(list(design.argv[6:])).mode == "run-trajectory"
+    assert runtime.parser().parse_args(list(aggregate.argv[6:])).mode == "aggregate"
 
     native = bindcraft.native_request(public, parameters, shard_index=0)
     native["parameters"]["_shard_index"] = 0
@@ -812,6 +912,16 @@ def test_r18_aggregate_consumes_the_bundle_and_the_final_collector_returns_every
 
     with pytest.raises(ScientificAdapterError, match="runtime_image_digest"):
         bindcraft.collect_aggregate_output(request, aggregate, runtime_image_digest="sha256:" + "f" * 64)
+
+    aggregate_invocation = plan.invocation("aggregate", "main")
+    completion_sha256 = publish_stage_completion(aggregate_invocation, aggregate)
+    companion_output = bindcraft.collect_companion_output(aggregate_invocation, aggregate)
+    assert len(companion_output.artifacts) == len(entries)
+    assert companion_output.validation["completion_marker_sha256"] == completion_sha256
+    assert companion_output.validation["design_count"] == 2
+    assert companion_output.validation["shard_count"] == 2
+    assert companion_output.validation["runtime_image_digest"] == R18_IMAGE_DIGEST
+    assert companion_output.validation["status"] == "passed"
     with pytest.raises(ScientificAdapterError, match="unsupported BindCraft collector"):
         bindcraft.collect_stage_output("bindcraft-unknown-v1", request, aggregate)
 
