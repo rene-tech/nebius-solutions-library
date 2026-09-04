@@ -294,8 +294,9 @@ resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap" {
         automount_service_account_token = false
         enable_service_links            = false
         node_selector = {
-          "workload.fs2.nebius/system" = "true"
-          "capacity.fs2.nebius/pool"   = "system"
+          "workload.fs2.nebius/system"      = "true"
+          "capacity.fs2.nebius/pool"        = "system"
+          "storage.fs2.nebius/shared-cache" = "true"
         }
 
         security_context {
