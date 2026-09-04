@@ -23,14 +23,15 @@ locals {
     for model in try(var.scientific_batch.execution_map.models, []) : [
       for stage in try(model.stages, []) : [
         for mount in try(stage.mounts, []) : {
-          model_id   = try(model.model_id, "")
-          stage_id   = try(stage.stage_id, "")
-          name       = try(mount.name, "")
-          claim_name = try(mount.claim_name, null)
-          host_path  = try(mount.host_path, null)
-          mount_path = try(mount.mount_path, "")
-          sub_path   = try(mount.sub_path, null)
-          read_only  = try(mount.read_only, null)
+          model_id           = try(model.model_id, "")
+          stage_id           = try(stage.stage_id, "")
+          workload_namespace = try(model.workload_namespace, "")
+          name               = try(mount.name, "")
+          claim_name         = try(mount.claim_name, null)
+          host_path          = try(mount.host_path, null)
+          mount_path         = try(mount.mount_path, "")
+          sub_path           = try(mount.sub_path, null)
+          read_only          = try(mount.read_only, null)
         } if try(mount.kind, "") == "runtime-cache"
       ]
     ]
@@ -43,10 +44,11 @@ locals {
   scientific_runtime_cache_consumers = flatten([
     for model in try(var.scientific_batch.execution_map.models, []) : [
       for stage in try(model.stages, []) : {
-        model_id      = try(model.model_id, "")
-        stage_id      = try(stage.stage_id, "")
-        workspace_uid = try(stage.workspace_uid, null)
-        workspace_gid = try(stage.workspace_gid, null)
+        model_id           = try(model.model_id, "")
+        stage_id           = try(stage.stage_id, "")
+        workload_namespace = try(model.workload_namespace, "")
+        workspace_uid      = try(stage.workspace_uid, null)
+        workspace_gid      = try(stage.workspace_gid, null)
         cache_paths = sort(distinct([
           for value in values(try(stage.environment, {})) : value
           if try(startswith(value, "${local.scientific_runtime_cache_mount_path}/"), false)
@@ -62,11 +64,12 @@ locals {
       for name in distinct([
         for path in consumer.cache_paths : split("/", path)[2]
         ]) : {
-        name     = name
-        uid      = consumer.workspace_uid
-        gid      = consumer.workspace_gid
-        model_id = consumer.model_id
-        stage_id = consumer.stage_id
+        name               = name
+        uid                = consumer.workspace_uid
+        gid                = consumer.workspace_gid
+        model_id           = consumer.model_id
+        stage_id           = consumer.stage_id
+        workload_namespace = consumer.workload_namespace
       }
     ]
   ])
@@ -94,6 +97,87 @@ locals {
     program_sha256    = filesha256("${path.module}/scripts/scientific_runtime_cache_bootstrap.py")
     runtime_image_ref = "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
   }))
+  # A PersistentVolumeClaim is namespaced. Keep the original singleton resource
+  # for the configured batch namespace (and therefore its stable Terraform
+  # address), then provision one same-named claim for every additional workload
+  # namespace that actually renders a runtime-cache mount.
+  scientific_runtime_cache_consumer_namespaces = sort(distinct([
+    for consumer in local.scientific_runtime_cache_consumers : consumer.workload_namespace
+  ]))
+  scientific_runtime_cache_additional_namespaces = toset([
+    for namespace in local.scientific_runtime_cache_consumer_namespaces : namespace
+    if namespace != var.scientific_batch.namespace
+  ])
+  scientific_runtime_cache_additional_directory_claims = {
+    for namespace in local.scientific_runtime_cache_additional_namespaces : namespace => [
+      for claim in local.scientific_runtime_cache_directory_claims : claim
+      if claim.workload_namespace == namespace
+    ]
+  }
+  scientific_runtime_cache_additional_claims_by_name = {
+    for namespace, claims in local.scientific_runtime_cache_additional_directory_claims : namespace => {
+      for claim in claims : claim.name => claim...
+    }
+  }
+  scientific_runtime_cache_additional_directories = {
+    for namespace, claims_by_name in local.scientific_runtime_cache_additional_claims_by_name : namespace => [
+      for name in sort(keys(claims_by_name)) : {
+        name = name
+        uid  = claims_by_name[name][0].uid
+        gid  = claims_by_name[name][0].gid
+        mode = "2770"
+      }
+    ]
+  }
+  scientific_runtime_cache_additional_ownership_contracts = {
+    for namespace, directories in local.scientific_runtime_cache_additional_directories : namespace => {
+      schema      = "fs2-serve.nebius.ai/scientific-runtime-cache-ownership/v1"
+      root        = local.scientific_runtime_cache_mount_path
+      directories = directories
+    }
+  }
+  scientific_runtime_cache_additional_ownership_sha256 = {
+    for namespace, contract in local.scientific_runtime_cache_additional_ownership_contracts :
+    namespace => sha256(jsonencode(contract))
+  }
+  scientific_runtime_cache_additional_bootstrap_sha256 = {
+    for namespace, ownership_sha256 in local.scientific_runtime_cache_additional_ownership_sha256 : namespace => sha256(jsonencode({
+      namespace         = namespace
+      ownership_sha256  = ownership_sha256
+      program_sha256    = filesha256("${path.module}/scripts/scientific_runtime_cache_bootstrap.py")
+      runtime_image_ref = "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
+    }))
+  }
+  scientific_runtime_cache_namespace_claims = merge([
+    for _ in range(var.scientific_batch.runtime_cache.enabled ? 1 : 0) : merge(
+      {
+        (var.scientific_batch.namespace) = {
+          claim_name       = local.scientific_runtime_cache_claim_name
+          bootstrap_job    = "fs2-scientific-cache-${substr(local.scientific_runtime_cache_bootstrap_sha256, 0, 12)}"
+          bootstrap_sha256 = local.scientific_runtime_cache_bootstrap_sha256
+          contract_sha256  = local.scientific_runtime_cache_ownership_sha256
+          directories      = local.scientific_runtime_cache_directories
+          consumers = sort(distinct([
+            for mount in local.scientific_runtime_cache_mounts : "${mount.model_id}/${mount.stage_id}"
+            if mount.workload_namespace == var.scientific_batch.namespace
+          ]))
+        }
+      },
+      {
+        for namespace in local.scientific_runtime_cache_additional_namespaces : namespace => {
+          claim_name       = local.scientific_runtime_cache_claim_name
+          bootstrap_job    = "fs2-scientific-cache-${substr(local.scientific_runtime_cache_additional_bootstrap_sha256[namespace], 0, 12)}"
+          bootstrap_sha256 = local.scientific_runtime_cache_additional_bootstrap_sha256[namespace]
+          contract_sha256  = local.scientific_runtime_cache_additional_ownership_sha256[namespace]
+          directories      = local.scientific_runtime_cache_additional_directories[namespace]
+          consumers = sort(distinct([
+            for mount in local.scientific_runtime_cache_mounts : "${mount.model_id}/${mount.stage_id}"
+            if mount.workload_namespace == namespace
+          ]))
+        }
+      },
+    )
+  ]...)
   # The rollout identity must move whenever the mounted credential could differ.
   # The cloud key's resource_version restarts at zero when the key is replaced,
   # so a revision derived from it alone repeats after a rotation and leaves the
@@ -258,6 +342,54 @@ resource "kubernetes_persistent_volume_claim_v1" "scientific_runtime_cache" {
   depends_on = [terraform_data.cluster_contract]
 }
 
+# Preserve the original PVC address above for existing states, while creating
+# the same stable claim name in every other execution-map namespace that mounts
+# it. Kubernetes cannot mount a claim across namespace boundaries.
+resource "kubernetes_persistent_volume_claim_v1" "scientific_runtime_cache_additional" {
+  for_each = var.scientific_batch.runtime_cache.enabled ? local.scientific_runtime_cache_additional_namespaces : toset([])
+
+  wait_until_bound = false
+
+  metadata {
+    name      = local.scientific_runtime_cache_claim_name
+    namespace = each.key
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component"        = "scientific-runtime-cache"
+      "fast-start.fs2.nebius/storage-role" = "compile-cache"
+    })
+    annotations = {
+      "fs2.nebius.ai/data-classification" = "disposable-derived-cache"
+      "fs2.nebius.ai/mount-path"          = local.scientific_runtime_cache_mount_path
+    }
+  }
+
+  spec {
+    access_modes       = ["ReadWriteMany"]
+    storage_class_name = var.scientific_batch.runtime_cache.storage_class_name
+    volume_mode        = "Filesystem"
+
+    resources {
+      requests = {
+        storage = "${var.scientific_batch.runtime_cache.size_gib}Gi"
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      metadata[0].annotations,
+      spec[0].volume_name,
+    ]
+  }
+
+  depends_on = [
+    terraform_data.cluster_contract,
+    module.academic_assets,
+    module.reference_data,
+    kubernetes_manifest.additional_local_queue,
+  ]
+}
+
 # Prepare only the model-owned boundaries declared above. The root-capable
 # container sees no credential, service-account token, network requirement or
 # other writable volume. Its checked-in program refuses nested/traversing names
@@ -372,6 +504,117 @@ resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap" {
   ]
 }
 
+# Additional namespace-local claims receive the same bounded, non-recursive
+# ownership bootstrap as the original claim. Each contract contains only the
+# model-owned first-level boundaries consumed in that namespace.
+resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap_additional" {
+  for_each = var.scientific_batch.runtime_cache.enabled ? local.scientific_runtime_cache_additional_namespaces : toset([])
+
+  metadata {
+    name      = "fs2-scientific-cache-${substr(local.scientific_runtime_cache_additional_bootstrap_sha256[each.key], 0, 12)}"
+    namespace = each.key
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component" = "scientific-runtime-cache-bootstrap"
+    })
+    annotations = {
+      "fs2.nebius.ai/runtime-cache-ownership-sha256" = local.scientific_runtime_cache_additional_ownership_sha256[each.key]
+      "fs2.nebius.ai/runtime-cache-bootstrap-sha256" = local.scientific_runtime_cache_additional_bootstrap_sha256[each.key]
+    }
+  }
+
+  spec {
+    backoff_limit           = 3
+    active_deadline_seconds = 600
+
+    template {
+      metadata {
+        labels = merge(local.common_labels, {
+          "app.kubernetes.io/component" = "scientific-runtime-cache-bootstrap"
+        })
+      }
+
+      spec {
+        restart_policy                  = "Never"
+        automount_service_account_token = false
+        enable_service_links            = false
+        node_selector = {
+          "workload.fs2.nebius/system"      = "true"
+          "capacity.fs2.nebius/pool"        = "system"
+          "storage.fs2.nebius/shared-cache" = "true"
+        }
+
+        security_context {
+          run_as_non_root = false
+          seccomp_profile { type = "RuntimeDefault" }
+        }
+
+        container {
+          name  = "prepare"
+          image = "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
+          command = [
+            "python",
+            "-c",
+            file("${path.module}/scripts/scientific_runtime_cache_bootstrap.py"),
+          ]
+
+          env {
+            name  = "FS2_SCIENTIFIC_RUNTIME_CACHE_OWNERSHIP_JSON"
+            value = jsonencode(local.scientific_runtime_cache_additional_ownership_contracts[each.key])
+          }
+
+          volume_mount {
+            name       = "runtime-cache"
+            mount_path = local.scientific_runtime_cache_mount_path
+            read_only  = false
+          }
+
+          resources {
+            requests = { cpu = "25m", memory = "32Mi" }
+            limits   = { cpu = "250m", memory = "128Mi" }
+          }
+
+          security_context {
+            allow_privilege_escalation = false
+            read_only_root_filesystem  = true
+            run_as_non_root            = false
+            run_as_user                = 0
+            run_as_group               = 0
+            capabilities {
+              drop = ["ALL"]
+              # CAP_FSETID retains the exact 02770 boundary after chown changes
+              # the directory group away from the bootstrap process' group.
+              add = [
+                "CHOWN",
+                "DAC_OVERRIDE",
+                "FOWNER",
+                "FSETID",
+              ]
+            }
+          }
+        }
+
+        volume {
+          name = "runtime-cache"
+          persistent_volume_claim {
+            claim_name = kubernetes_persistent_volume_claim_v1.scientific_runtime_cache_additional[each.key].metadata[0].name
+            read_only  = false
+          }
+        }
+      }
+    }
+  }
+
+  wait_for_completion = true
+  timeouts { create = "15m" }
+
+  lifecycle { create_before_destroy = true }
+
+  depends_on = [
+    kubernetes_persistent_volume_claim_v1.scientific_runtime_cache_additional,
+    terraform_data.scientific_artifacts_contract,
+  ]
+}
+
 # Publishes exactly what the control-plane chart receives, so the projection is
 # assertable without standing up the whole stage. Everything here is non-secret.
 resource "terraform_data" "scientific_artifacts_contract" {
@@ -406,6 +649,7 @@ resource "terraform_data" "scientific_artifacts_contract" {
           contract_sha256  = local.scientific_runtime_cache_ownership_sha256
           directories      = local.scientific_runtime_cache_directories
         } : null
+        namespace_claims = local.scientific_runtime_cache_namespace_claims
         consumers = sort([
           for mount in local.scientific_runtime_cache_mounts : "${mount.model_id}/${mount.stage_id}"
         ])
@@ -445,6 +689,7 @@ resource "terraform_data" "scientific_artifacts_contract" {
           length(local.scientific_runtime_cache_consumers) > 0 &&
           alltrue([
             for consumer in local.scientific_runtime_cache_consumers :
+            can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", consumer.workload_namespace)) &&
             length(consumer.cache_paths) > 0 &&
             length(distinct([
               for path in consumer.cache_paths : split("/", path)[2]

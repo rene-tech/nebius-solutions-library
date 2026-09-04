@@ -377,6 +377,7 @@ output "scientific_artifacts_status" {
           contract_sha256  = local.scientific_runtime_cache_ownership_sha256
           directories      = local.scientific_runtime_cache_directories
         } : null
+        namespace_claims = local.scientific_runtime_cache_namespace_claims
       }
     }
   } : null

@@ -97,10 +97,13 @@ def test_terraform_uses_execution_map_owners_and_blocks_control_plane() -> None:
         )
     )
     claims: dict[str, tuple[int, int]] = {}
+    claims_by_namespace: dict[str, dict[str, tuple[int, int]]] = {}
     for model in execution_map["models"]:
         for stage in model["stages"]:
             if not any(mount["kind"] == "runtime-cache" for mount in stage["mounts"]):
                 continue
+            namespace = model["workload_namespace"]
+            namespace_claims = claims_by_namespace.setdefault(namespace, {})
             roots = {
                 value.split("/")[2]
                 for value in stage["environment"].values()
@@ -112,12 +115,23 @@ def test_terraform_uses_execution_map_owners_and_blocks_control_plane() -> None:
                 if cache_root in claims:
                     assert claims[cache_root] == owner
                 claims[cache_root] = owner
+                if cache_root in namespace_claims:
+                    assert namespace_claims[cache_root] == owner
+                namespace_claims[cache_root] = owner
 
     assert claims == {
         "alphafold3": (1001, 1001),
         "mosaic": (10001, 10001),
         "openfold3": (10001, 10001),
         "protenix": (10001, 10001),
+    }
+    assert claims_by_namespace == {
+        "fs2-academic-poc": {"alphafold3": (1001, 1001)},
+        "fs2-models": {
+            "mosaic": (10001, 10001),
+            "openfold3": (10001, 10001),
+            "protenix": (10001, 10001),
+        },
     }
 
     cache_source = (ROOT / "stages/workloads/scientific_artifacts.tf").read_text(
@@ -127,10 +141,20 @@ def test_terraform_uses_execution_map_owners_and_blocks_control_plane() -> None:
         'resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap"'
         in cache_source
     )
-    assert "workspace_uid = try(stage.workspace_uid, null)" in cache_source
-    assert "workspace_gid = try(stage.workspace_gid, null)" in cache_source
-    assert 'mode = "2770"' in cache_source
-    assert '"CHOWN",\n                "DAC_OVERRIDE",\n                "FOWNER",\n                "FSETID",' in cache_source
+    assert (
+        'resource "kubernetes_persistent_volume_claim_v1" "scientific_runtime_cache_additional"'
+        in cache_source
+    )
+    assert (
+        'resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap_additional"'
+        in cache_source
+    )
+    assert "scientific_runtime_cache_additional_namespaces" in cache_source
+    assert "namespace_claims = local.scientific_runtime_cache_namespace_claims" in cache_source
+    assert "workspace_uid      = try(stage.workspace_uid, null)" in cache_source
+    assert "workspace_gid      = try(stage.workspace_gid, null)" in cache_source
+    assert cache_source.count('mode = "2770"') == 2
+    assert cache_source.count('"FSETID",') == 2
     assert '"storage.fs2.nebius/shared-cache" = "true"' in cache_source
     assert "fs_group" not in cache_source
     control_plane_source = (ROOT / "stages/workloads/control_plane.tf").read_text(
@@ -138,4 +162,8 @@ def test_terraform_uses_execution_map_owners_and_blocks_control_plane() -> None:
     )
     assert (
         "kubernetes_job_v1.scientific_runtime_cache_bootstrap," in control_plane_source
+    )
+    assert (
+        "kubernetes_job_v1.scientific_runtime_cache_bootstrap_additional,"
+        in control_plane_source
     )
