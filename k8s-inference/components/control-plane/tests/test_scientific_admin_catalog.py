@@ -198,7 +198,7 @@ async def test_delivered_catalog_isolated_missing_profiles_per_model(registry: R
         "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e"
     )
     assert boltzgen.backend.execution_identity_digest == (
-        "ad894520846cf2c5dad109023f893fac31f43f5fe63ba930726480c32b068590"
+        "4a40c76bae6150ad1915388a2717ba1c4e7c44fba287f828c1085a18d9e51eb3"
     )
     assert boltzgen.available_upgrade is not None
     assert boltzgen.available_upgrade.source_repository == "HannesStark/boltzgen"
