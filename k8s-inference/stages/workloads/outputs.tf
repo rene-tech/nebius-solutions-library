@@ -371,6 +371,12 @@ output "scientific_artifacts_status" {
         mount_path         = var.scientific_batch.runtime_cache.enabled ? local.scientific_runtime_cache_mount_path : null
         storage_class_name = var.scientific_batch.runtime_cache.storage_class_name
         size_gib           = var.scientific_batch.runtime_cache.size_gib
+        ownership = var.scientific_batch.runtime_cache.enabled ? {
+          bootstrap_job    = "fs2-scientific-cache-${substr(local.scientific_runtime_cache_bootstrap_sha256, 0, 12)}"
+          bootstrap_sha256 = local.scientific_runtime_cache_bootstrap_sha256
+          contract_sha256  = local.scientific_runtime_cache_ownership_sha256
+          directories      = local.scientific_runtime_cache_directories
+        } : null
       }
     }
   } : null

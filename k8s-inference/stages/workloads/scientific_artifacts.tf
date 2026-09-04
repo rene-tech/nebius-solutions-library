@@ -35,6 +35,65 @@ locals {
       ]
     ]
   ])
+  # A runtime-cache mount is model-only, but the RWX claim's provider-owned
+  # root is not writable by the unprivileged model UID. Derive each exact
+  # first-level cache boundary and its owner from the same execution-map stage
+  # that the controller renders. Terraform prepares those boundaries once;
+  # kubelet never performs a recursive fsGroup rewrite on every cold start.
+  scientific_runtime_cache_consumers = flatten([
+    for model in try(var.scientific_batch.execution_map.models, []) : [
+      for stage in try(model.stages, []) : {
+        model_id      = try(model.model_id, "")
+        stage_id      = try(stage.stage_id, "")
+        workspace_uid = try(stage.workspace_uid, null)
+        workspace_gid = try(stage.workspace_gid, null)
+        cache_paths = sort(distinct([
+          for value in values(try(stage.environment, {})) : value
+          if try(startswith(value, "${local.scientific_runtime_cache_mount_path}/"), false)
+        ]))
+        } if length([
+          for mount in try(stage.mounts, []) : mount
+          if try(mount.kind, "") == "runtime-cache"
+      ]) == 1
+    ]
+  ])
+  scientific_runtime_cache_directory_claims = flatten([
+    for consumer in local.scientific_runtime_cache_consumers : [
+      for name in distinct([
+        for path in consumer.cache_paths : split("/", path)[2]
+        ]) : {
+        name     = name
+        uid      = consumer.workspace_uid
+        gid      = consumer.workspace_gid
+        model_id = consumer.model_id
+        stage_id = consumer.stage_id
+      }
+    ]
+  ])
+  scientific_runtime_cache_directory_claims_by_name = {
+    for claim in local.scientific_runtime_cache_directory_claims : claim.name => claim...
+  }
+  scientific_runtime_cache_directories = [
+    for name in sort(keys(local.scientific_runtime_cache_directory_claims_by_name)) : {
+      name = name
+      uid  = local.scientific_runtime_cache_directory_claims_by_name[name][0].uid
+      gid  = local.scientific_runtime_cache_directory_claims_by_name[name][0].gid
+      mode = "2770"
+    }
+  ]
+  scientific_runtime_cache_ownership_contract = {
+    schema      = "fs2-serve.nebius.ai/scientific-runtime-cache-ownership/v1"
+    root        = local.scientific_runtime_cache_mount_path
+    directories = local.scientific_runtime_cache_directories
+  }
+  scientific_runtime_cache_ownership_sha256 = sha256(jsonencode(
+    local.scientific_runtime_cache_ownership_contract
+  ))
+  scientific_runtime_cache_bootstrap_sha256 = sha256(jsonencode({
+    ownership_sha256  = local.scientific_runtime_cache_ownership_sha256
+    program_sha256    = filesha256("${path.module}/scripts/scientific_runtime_cache_bootstrap.py")
+    runtime_image_ref = "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
+  }))
   # The rollout identity must move whenever the mounted credential could differ.
   # The cloud key's resource_version restarts at zero when the key is replaced,
   # so a revision derived from it alone repeats after a rotation and leaves the
@@ -199,6 +258,111 @@ resource "kubernetes_persistent_volume_claim_v1" "scientific_runtime_cache" {
   depends_on = [terraform_data.cluster_contract]
 }
 
+# Prepare only the model-owned boundaries declared above. The root-capable
+# container sees no credential, service-account token, network requirement or
+# other writable volume. Its checked-in program refuses nested/traversing names
+# and applies ownership non-recursively, so existing compiled entries remain
+# untouched across Terraform updates.
+resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap" {
+  count = var.scientific_batch.runtime_cache.enabled ? 1 : 0
+
+  metadata {
+    name      = "fs2-scientific-cache-${substr(local.scientific_runtime_cache_bootstrap_sha256, 0, 12)}"
+    namespace = var.scientific_batch.namespace
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component" = "scientific-runtime-cache-bootstrap"
+    })
+    annotations = {
+      "fs2.nebius.ai/runtime-cache-ownership-sha256" = local.scientific_runtime_cache_ownership_sha256
+      "fs2.nebius.ai/runtime-cache-bootstrap-sha256" = local.scientific_runtime_cache_bootstrap_sha256
+    }
+  }
+
+  spec {
+    backoff_limit           = 3
+    active_deadline_seconds = 600
+
+    template {
+      metadata {
+        labels = merge(local.common_labels, {
+          "app.kubernetes.io/component" = "scientific-runtime-cache-bootstrap"
+        })
+      }
+
+      spec {
+        restart_policy                  = "Never"
+        automount_service_account_token = false
+        enable_service_links            = false
+        node_selector = {
+          "workload.fs2.nebius/system" = "true"
+          "capacity.fs2.nebius/pool"   = "system"
+        }
+
+        security_context {
+          run_as_non_root = false
+          seccomp_profile { type = "RuntimeDefault" }
+        }
+
+        container {
+          name  = "prepare"
+          image = "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
+          command = [
+            "python",
+            "-c",
+            file("${path.module}/scripts/scientific_runtime_cache_bootstrap.py"),
+          ]
+
+          env {
+            name  = "FS2_SCIENTIFIC_RUNTIME_CACHE_OWNERSHIP_JSON"
+            value = jsonencode(local.scientific_runtime_cache_ownership_contract)
+          }
+
+          volume_mount {
+            name       = "runtime-cache"
+            mount_path = local.scientific_runtime_cache_mount_path
+            read_only  = false
+          }
+
+          resources {
+            requests = { cpu = "25m", memory = "32Mi" }
+            limits   = { cpu = "250m", memory = "128Mi" }
+          }
+
+          security_context {
+            allow_privilege_escalation = false
+            read_only_root_filesystem  = true
+            run_as_non_root            = false
+            run_as_user                = 0
+            run_as_group               = 0
+            capabilities {
+              drop = ["ALL"]
+              add  = ["CHOWN", "DAC_OVERRIDE", "FOWNER"]
+            }
+          }
+        }
+
+        volume {
+          name = "runtime-cache"
+          persistent_volume_claim {
+            claim_name = kubernetes_persistent_volume_claim_v1.scientific_runtime_cache[0].metadata[0].name
+            read_only  = false
+          }
+        }
+      }
+    }
+  }
+
+  wait_for_completion = true
+  timeouts { create = "15m" }
+
+  lifecycle { create_before_destroy = true }
+
+  depends_on = [
+    kubernetes_persistent_volume_claim_v1.scientific_runtime_cache,
+    terraform_data.scientific_artifacts_contract,
+  ]
+}
+
 # Publishes exactly what the control-plane chart receives, so the projection is
 # assertable without standing up the whole stage. Everything here is non-secret.
 resource "terraform_data" "scientific_artifacts_contract" {
@@ -227,6 +391,12 @@ resource "terraform_data" "scientific_artifacts_contract" {
         mount_path         = var.scientific_batch.runtime_cache.enabled ? local.scientific_runtime_cache_mount_path : null
         storage_class_name = var.scientific_batch.runtime_cache.storage_class_name
         size_gib           = var.scientific_batch.runtime_cache.size_gib
+        ownership = var.scientific_batch.runtime_cache.enabled ? {
+          bootstrap_job    = "fs2-scientific-cache-${substr(local.scientific_runtime_cache_bootstrap_sha256, 0, 12)}"
+          bootstrap_sha256 = local.scientific_runtime_cache_bootstrap_sha256
+          contract_sha256  = local.scientific_runtime_cache_ownership_sha256
+          directories      = local.scientific_runtime_cache_directories
+        } : null
         consumers = sort([
           for mount in local.scientific_runtime_cache_mounts : "${mount.model_id}/${mount.stage_id}"
         ])
@@ -259,6 +429,32 @@ resource "terraform_data" "scientific_artifacts_contract" {
         )
       )
       error_message = "A scientific runtime cache must be enabled exactly when the execution map consumes it, and every consumer must use the Terraform-owned writable fs2-scientific-runtime-cache claim at /cache."
+    }
+    precondition {
+      condition = (
+        !var.scientific_batch.runtime_cache.enabled || (
+          length(local.scientific_runtime_cache_consumers) > 0 &&
+          alltrue([
+            for consumer in local.scientific_runtime_cache_consumers :
+            length(consumer.cache_paths) > 0 &&
+            length(distinct([
+              for path in consumer.cache_paths : split("/", path)[2]
+            ])) == 1
+          ]) &&
+          alltrue([
+            for claim in local.scientific_runtime_cache_directory_claims :
+            can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", claim.name)) &&
+            try(claim.uid >= 1 && claim.uid <= 2147483647, false) &&
+            try(claim.gid >= 1 && claim.gid <= 2147483647, false)
+          ]) &&
+          alltrue([
+            for claims in values(local.scientific_runtime_cache_directory_claims_by_name) :
+            length(distinct([for claim in claims : claim.uid])) == 1 &&
+            length(distinct([for claim in claims : claim.gid])) == 1
+          ])
+        )
+      )
+      error_message = "Every runtime-cache stage must declare one safe first-level /cache directory whose exact non-root UID/GID agrees across consumers."
     }
     precondition {
       condition = (
