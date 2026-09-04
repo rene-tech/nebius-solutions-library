@@ -35,6 +35,7 @@ from .models import (
     ServiceClass,
     StageStatus,
     WorkloadKind,
+    accelerator_admission_projection,
 )
 from .postgres_repository import ScientificBatchNotFoundError
 from .profile_catalog import (
@@ -402,11 +403,7 @@ class ScientificBatchService:
                                     if attempt.scheduling_admission is None
                                     or attempt.scheduling_admission.admitted_at is None
                                     else PublicSchedulingAdmission(
-                                        resolved_pool_id=attempt.scheduling_admission.resolved_pool_id,
-                                        admitted_resource_flavor=attempt.scheduling_admission.admitted_resource_flavor,
-                                        accelerator_resource_name=attempt.scheduling_admission.accelerator_resource_name,
-                                        accelerator_count=attempt.scheduling_admission.accelerator_count,
-                                        admitted_at=attempt.scheduling_admission.admitted_at,
+                                        **accelerator_admission_projection(attempt.scheduling_admission)
                                     )
                                 ),
                                 failure_kind=attempt.failure_kind,

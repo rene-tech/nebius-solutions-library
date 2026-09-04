@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from pathlib import PurePosixPath
-from typing import TypeVar
+from typing import TypedDict, TypeVar
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 _NAME_RE = re.compile(r"^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$")
@@ -1419,6 +1419,31 @@ class SchedulingAdmission:
         ):
             if identity is not None and (len(identity) > 128 or _POOL_RE.fullmatch(identity) is None):
                 raise ValueError(f"{label} is invalid")
+
+
+class AcceleratorAdmissionProjection(TypedDict):
+    """Accelerator-only admission fields shared by public and artifact models."""
+
+    resolved_pool_id: str | None
+    admitted_resource_flavor: str | None
+    accelerator_resource_name: str | None
+    accelerator_count: int
+    admitted_at: datetime
+
+
+def accelerator_admission_projection(admission: SchedulingAdmission) -> AcceleratorAdmissionProjection:
+    """Drop CPU placement identity from accelerator-only consumer contracts."""
+
+    if admission.admitted_at is None:
+        raise ValueError("only an admitted Kueue allocation can be projected")
+    accelerated = admission.accelerator_count > 0
+    return {
+        "resolved_pool_id": admission.resolved_pool_id if accelerated else None,
+        "admitted_resource_flavor": admission.admitted_resource_flavor if accelerated else None,
+        "accelerator_resource_name": admission.accelerator_resource_name if accelerated else None,
+        "accelerator_count": admission.accelerator_count,
+        "admitted_at": admission.admitted_at,
+    }
 
 
 @dataclass(frozen=True, slots=True)

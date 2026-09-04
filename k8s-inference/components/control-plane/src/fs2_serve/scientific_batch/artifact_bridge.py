@@ -41,6 +41,7 @@ from .models import (
     ScientificInputArtifact,
     VerifiedInputManifest,
     WorkloadResource,
+    accelerator_admission_projection,
 )
 from .profile_catalog import ScientificProfileCatalog, ScientificProfileError
 
@@ -241,13 +242,7 @@ class ArtifactServiceBridge:
                 admission=(
                     None
                     if admission is None or admission.admitted_at is None
-                    else KueueAdmission(
-                        resolved_pool_id=admission.resolved_pool_id,
-                        admitted_resource_flavor=admission.admitted_resource_flavor,
-                        accelerator_resource_name=admission.accelerator_resource_name,
-                        accelerator_count=admission.accelerator_count,
-                        admitted_at=admission.admitted_at,
-                    )
+                    else KueueAdmission(**accelerator_admission_projection(admission))
                 ),
                 kueue_workload_uid=attempt.kueue_workload_uid,
                 k8s_job_uid=attempt.workload.uid,

@@ -30,7 +30,7 @@ from fs2_serve.auth import OperatorSessionService, PepperRing, TokenService
 from fs2_serve.crypto import KeyedHasher
 from fs2_serve.mcp_server import PATTokenVerifier, build_mcp_server
 from fs2_serve.memory_store import MemoryStore
-from fs2_serve.models import Principal, Scope, TokenCreate
+from fs2_serve.models import OperationStatus, OperationView, Principal, Scope, TokenCreate
 from fs2_serve.runtime import StubRuntimeClient
 from fs2_serve.scientific_artifacts import (
     ArtifactAccess,
@@ -79,6 +79,7 @@ from fs2_serve.scientific_batch.models import (
     ArtifactAccessContext,
     ArtifactMaterialization,
     AttemptArtifactCommit,
+    AttemptOutcome,
     BatchEvent,
     BatchEventDraft,
     BatchEventKind,
@@ -92,6 +93,7 @@ from fs2_serve.scientific_batch.models import (
     ResourceClass,
     SchedulingAdmission,
     SchedulingSnapshot,
+    ScientificAttemptState,
     ScientificBatchPlan,
     ScientificBatchState,
     ScientificInputAdmission,
@@ -101,6 +103,7 @@ from fs2_serve.scientific_batch.models import (
     StageExecutionBinding,
     StageInvocation,
     StageSchedulingDecision,
+    StageStatus,
     StageVolumeBinding,
     VerifiedInputManifest,
     WorkloadKind,
@@ -3892,6 +3895,151 @@ async def test_scientific_worker_paces_continuously_claimable_batches() -> None:
     await asyncio.sleep(0.13)
     await worker.close()
     assert 2 <= controller.calls <= 4
+
+
+@pytest.mark.parametrize("accelerated", [False, True], ids=["cpu", "gpu"])
+@pytest.mark.asyncio
+async def test_accelerator_only_admission_projection_is_shared_by_status_and_artifact_ledger(
+    accelerated: bool,
+) -> None:
+    now = datetime(2026, 9, 4, 22, tzinfo=UTC)
+    operation_id, attempt_id = uuid4(), uuid4()
+    stage_id = "inference" if accelerated else "data-pipeline"
+    pool_id = "h100-hot" if accelerated else "cpu-reference"
+    flavor = "inference-h100-1x" if accelerated else "cpu-reference"
+    resource_name = "nvidia.com/gpu" if accelerated else None
+    count = 1 if accelerated else 0
+    resource_class = ResourceClass.GPU if accelerated else ResourceClass.CPU
+    admission = SchedulingAdmission(
+        resolved_pool_id=pool_id,
+        admitted_resource_flavor=flavor,
+        accelerator_resource_name=resource_name,
+        accelerator_count=count,
+        admitted_at=now,
+        quota_reserved_at=now,
+        cpu_millis=16_000,
+        memory_bytes=64 * 1024**3,
+    )
+    plan = ScientificBatchPlan((ScientificStagePlan(stage_id=stage_id, resource_class=resource_class),))
+    snapshot = SchedulingSnapshot(
+        policy_revision="projection-test-v1",
+        captured_at=now,
+        service_class=ServiceClass.CUSTOMER_BATCH,
+        tenant_queue="scientific",
+        model_lane="protein-design",
+        workload_namespace="fs2-models",
+        route_namespace="fs2-models",
+        stages=(
+            StageSchedulingDecision(
+                stage_id=stage_id,
+                resource_class=resource_class,
+                resolved_cluster_queue="inference",
+                resolved_local_queue="scientific",
+                workload_priority_class="standard",
+                workload_priority_value=0,
+                resolved_pool_preference=(pool_id,),
+                accelerator_resource_name=resource_name,
+                accelerator_count=count,
+                max_queue_seconds=600,
+                max_execution_seconds=3600,
+                checkpoint_mode=CheckpointMode.RESTART,
+                preemption_mode=PreemptionMode.RESTARTABLE,
+                requested_resource_flavor=None if accelerated else flavor,
+            ),
+        ),
+    )
+    state = ScientificBatchState.admit(
+        operation_id=operation_id,
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        variant_id="projection-test",
+        input_artifact_id=uuid4(),
+        plan=plan,
+        scheduling=snapshot,
+    )
+    attempt = ScientificAttemptState(
+        attempt_id=attempt_id,
+        stage_id=stage_id,
+        shard_id="main",
+        attempt_number=1,
+        workload=WorkloadRef(
+            namespace="fs2-models",
+            name=f"projection-{stage_id}",
+            kind=WorkloadKind.JOB,
+            uid=f"job-{attempt_id.hex}",
+        ),
+        started_at=now,
+        completed_at=now,
+        outcome=AttemptOutcome.SUCCEEDED,
+        last_phase=LifecyclePhase.TEARDOWN,
+        scheduling_admission=admission,
+        kueue_workload_uid=f"workload-{attempt_id.hex}",
+        pod_uids=(f"pod-{attempt_id.hex}",),
+    )
+    state = replace(
+        state,
+        status=BatchStatus.RUNNING,
+        stages=(replace(state.stages[0], status=StageStatus.ACTIVE, attempts=(attempt,)),),
+    )
+
+    repository = MemoryArtifactRepository(clock=lambda: now)
+    await repository.register_operation(operation_id, tenant_id="tenant-a")
+    service = ScientificArtifactService(
+        repository=repository,
+        object_store=FakeObjectStore(clock=lambda: now),
+        allowed_media_types=ALLOWED_MEDIA_TYPES,
+        clock=lambda: now,
+    )
+    await service.open_attempt(
+        OpenStageAttempt(
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id="tenant-a",
+            stage_id=stage_id,
+            shard_id="main",
+            attempt_number=1,
+            started_at=now,
+        )
+    )
+    bridge = ArtifactServiceBridge(
+        artifacts=repository,
+        batches=object(),  # type: ignore[arg-type]
+        profiles=profile_catalog(),
+        store=object(),  # type: ignore[arg-type]
+        service=service,
+    )
+    await bridge.close_attempt(state, attempt)
+
+    expected_pool = pool_id if accelerated else None
+    expected_flavor = flavor if accelerated else None
+    persisted = await repository.get_attempt(attempt_id, tenant_id="tenant-a")
+    assert persisted.admission is not None
+    assert persisted.admission.resolved_pool_id == expected_pool
+    assert persisted.admission.admitted_resource_flavor == expected_flavor
+    assert persisted.admission.accelerator_resource_name == resource_name
+    assert persisted.admission.accelerator_count == count
+
+    operation = OperationView(
+        id=operation_id,
+        tenant_id="tenant-a",
+        principal_id="scientist-a",
+        token_id=uuid4(),
+        model_id="protein-design",
+        model_revision="projection-test",
+        protocol="scientific-batch-v1",
+        operation="design",
+        idempotency_key=f"projection-{stage_id}-0001",
+        status=OperationStatus.RUNNING,
+        accepted_at=now,
+        available_at=now,
+    )
+    public = ScientificBatchService._state_view(operation, state)["batch"]["stages"][0]["attempts"][0][
+        "scheduling_admission"
+    ]
+    assert public["resolved_pool_id"] == expected_pool
+    assert public["admitted_resource_flavor"] == expected_flavor
+    assert public["accelerator_resource_name"] == resource_name
+    assert public["accelerator_count"] == count
 
 
 @pytest.mark.asyncio
