@@ -5,7 +5,7 @@
       "model_id": "boltzgen",
       "variant_id": "upstream-v0-3-2",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "edf1aec448a6ef45f686f82e3151519ad95d0c68be263777e235ce32e1231b8a",
+      "execution_identity_sha256": "4a40c76bae6150ad1915388a2717ba1c4e7c44fba287f828c1085a18d9e51eb3",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -65,15 +65,6 @@
               "read_only": false
             },
             {
-              "name": "reference-data",
-              "kind": "reference",
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "mount_path": "/reference-data",
-              "sub_path": null,
-              "read_only": true
-            },
-            {
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
               "kind": "reference",
@@ -127,15 +118,6 @@
               "mount_path": "/mnt/fs2-scientific",
               "sub_path": null,
               "read_only": false
-            },
-            {
-              "name": "reference-data",
-              "kind": "reference",
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "mount_path": "/reference-data",
-              "sub_path": null,
-              "read_only": true
             },
             {
               "claim_name": null,
@@ -193,15 +175,6 @@
               "read_only": false
             },
             {
-              "name": "reference-data",
-              "kind": "reference",
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "mount_path": "/reference-data",
-              "sub_path": null,
-              "read_only": true
-            },
-            {
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
               "kind": "reference",
@@ -255,15 +228,6 @@
               "mount_path": "/mnt/fs2-scientific",
               "sub_path": null,
               "read_only": false
-            },
-            {
-              "name": "reference-data",
-              "kind": "reference",
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "mount_path": "/reference-data",
-              "sub_path": null,
-              "read_only": true
             },
             {
               "claim_name": null,
@@ -321,15 +285,6 @@
               "read_only": false
             },
             {
-              "name": "reference-data",
-              "kind": "reference",
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "mount_path": "/reference-data",
-              "sub_path": null,
-              "read_only": true
-            },
-            {
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
               "kind": "reference",
@@ -383,15 +338,6 @@
               "mount_path": "/mnt/fs2-scientific",
               "sub_path": null,
               "read_only": false
-            },
-            {
-              "name": "reference-data",
-              "kind": "reference",
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "mount_path": "/reference-data",
-              "sub_path": null,
-              "read_only": true
             },
             {
               "claim_name": null,

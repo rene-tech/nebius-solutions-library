@@ -2,29 +2,42 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
+import json
+import os
+import tarfile
+import tempfile
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+import zstandard
 
 from ..catalog_adapter import ScientificStageExpansion
 from ..models import (
     AdapterExecutionPlan,
     ArtifactMaterialization,
     MaterializationMode,
+    RuntimeArtifactMount,
     RuntimeTreeBinding,
     ScientificInputArtifact,
     StageInvocation,
 )
 from .common import (
     ArtifactLoader,
+    ArtifactPointer,
     CollectedOutput,
+    LoadedArtifact,
     PublicRunRequest,
     ScientificAdapterError,
     assert_profile_identity,
     bounded_int,
     build_execution_plan,
     canonical_digest,
+    canonicalize_upstream_csv,
     collect_output_files,
     finite_number,
     load_output_manifest,
@@ -39,6 +52,9 @@ from .common import (
     strict_object,
     structure_atom_count,
 )
+
+if TYPE_CHECKING:
+    from . import CollectedStageOutput
 
 MODEL_ID = "boltzgen"
 VARIANT_ID = "upstream-v0-3-2"
@@ -76,6 +92,26 @@ PROTOCOLS = frozenset(
 )
 MAX_INPUT_BYTES = 256 * 1024 * 1024
 MAX_OUTPUT_BYTES = 8 * 1024 * 1024 * 1024
+# The current companion safely buffers and extracts at most 256 MiB.  Keep
+# producer content below that after tar framing, and fail closed instead of
+# producing a handoff that the next stage cannot consume.  Larger campaigns
+# need the separately tracked streaming materializer before these bounds move.
+MAX_STAGE_HANDOFF_BYTES = 256 * 1024 * 1024
+MAX_STAGE_HANDOFF_CONTENT_BYTES = 240 * 1024 * 1024
+MAX_STAGE_HANDOFF_MEMBERS = 4_096
+STAGE_HANDOFF_NAME = "stage-handoff"
+STAGE_HANDOFF_SEMANTIC_TYPE = "boltzgen-workspace-handoff-tar/v1"
+STAGE_HANDOFF_MEDIA_TYPE = "application/octet-stream"
+STAGE_HANDOFF_COMPRESSION = "zstd"
+FINAL_RANKING_MEDIA_TYPE = "text/csv"
+FINAL_STRUCTURE_MEDIA_TYPE = "chemical/x-mmcif"
+STAGE_RUNNER_RELATIVE_PATH = ".fs2/stage-runner.py"
+STAGE_COMPLETION_RELATIVE_PATH = ".fs2/stage-complete.json"
+STAGE_COMPLETION_SCHEMA = "fs2-serve.nebius.ai/scientific-stage-completion/v1"
+# Public localization generations are group-readable from the reference-data
+# host plane.  The renderer refuses a hostPath projection unless the frozen
+# invocation carries that exact published group.
+REFERENCE_DATA_SUPPLEMENTAL_GROUP = 1000
 MAX_BATCHES = 32
 MAX_TOTAL_DESIGNS = 60_000
 INPUT_MANIFEST_MEDIA_TYPE = "application/vnd.fs2.scientific-manifest+json"
@@ -232,6 +268,19 @@ def _execute_argv(batch: DesignBatch, stage_id: str, operation_id: str) -> tuple
     )
 
 
+def _stage_argv(workspace: str, command: tuple[str, ...]) -> tuple[str, ...]:
+    """Run upstream behind the controller-materialized completion publisher."""
+
+    return ("python", f"{workspace}/{STAGE_RUNNER_RELATIVE_PATH}", "--", *command)
+
+
+def _unwrapped_stage_argv(invocation: StageInvocation) -> tuple[str, ...]:
+    expected_runner = f"{invocation.working_directory}/{STAGE_RUNNER_RELATIVE_PATH}"
+    if invocation.argv[:3] != ("python", expected_runner, "--") or len(invocation.argv) < 4:
+        raise ScientificAdapterError("BoltzGen stage does not use the trusted completion publisher")
+    return invocation.argv[3:]
+
+
 def _structure_entry_name(shard_id: str, file_name: str) -> str:
     """Bind an upstream ranking filename to one path-free manifest identity."""
 
@@ -314,6 +363,7 @@ def compile_run(
         ("HF_HUB_OFFLINE", "1"),
         ("TRANSFORMERS_OFFLINE", "1"),
     )
+    request_sha256 = canonical_digest(request.to_dict())
     prior_artifacts = {batch.shard_id: campaign_artifact_id for batch in parameters.batches}
     invocations: list[StageInvocation] = []
     for stage_id in selected_stages:
@@ -339,18 +389,45 @@ def compile_run(
                 StageInvocation(
                     stage_id=stage_id,
                     shard_id=batch.shard_id,
-                    argv=(
-                        _configure_argv(parameters, batch, operation_id)
-                        if stage_id == "configure"
-                        else _execute_argv(batch, stage_id, operation_id)
+                    argv=_stage_argv(
+                        workspace,
+                        (
+                            _configure_argv(parameters, batch, operation_id)
+                            if stage_id == "configure"
+                            else _execute_argv(batch, stage_id, operation_id)
+                        ),
                     ),
-                    environment=environment,
+                    environment=(
+                        *environment,
+                        ("FS2_BOLTZGEN_BUDGET", str(batch.budget)),
+                        ("FS2_BOLTZGEN_NUM_DESIGNS", str(batch.num_designs)),
+                        ("FS2_BOLTZGEN_REQUEST_SHA256", request_sha256),
+                    ),
                     working_directory=workspace,
                     consumes=(previous,),
                     produces=output,
+                    handoff_name=(STAGE_HANDOFF_NAME if stage_id != selected_stages[-1] else None),
+                    max_output_artifacts=(1 if stage_id != selected_stages[-1] else batch.budget + 1),
+                    max_output_bytes=(MAX_STAGE_HANDOFF_BYTES if stage_id != selected_stages[-1] else MAX_OUTPUT_BYTES),
                     materializations=(materialization,),
                     runtime_artifacts=(
                         (WEIGHTS_ARTIFACT_ID, MOLECULES_ARTIFACT_ID) if stage_id in RUNTIME_ARTIFACT_STAGES else ()
+                    ),
+                    runtime_mounts=(
+                        (
+                            RuntimeArtifactMount(
+                                artifact_id=WEIGHTS_ARTIFACT_ID,
+                                mount_path=model_root(WEIGHTS_ARTIFACT_ID),
+                                supplemental_groups=(REFERENCE_DATA_SUPPLEMENTAL_GROUP,),
+                            ),
+                            RuntimeArtifactMount(
+                                artifact_id=MOLECULES_ARTIFACT_ID,
+                                mount_path=model_root(MOLECULES_ARTIFACT_ID),
+                                supplemental_groups=(REFERENCE_DATA_SUPPLEMENTAL_GROUP,),
+                            ),
+                        )
+                        if stage_id in RUNTIME_ARTIFACT_STAGES
+                        else ()
                     ),
                     runtime_trees=((molecules_tree_binding(),) if stage_id in RUNTIME_ARTIFACT_STAGES else ()),
                 )
@@ -503,3 +580,352 @@ def collect_output(request_value: object, workspaces: Mapping[str, Path]) -> Col
         },
         blobs=blobs,
     )
+
+
+def _completion_marker(invocation: StageInvocation, workspace: Path) -> tuple[Path, str]:
+    """Read the exact atomic marker emitted after the upstream child exits zero."""
+
+    from . import CollectionPendingError
+
+    marker = workspace.joinpath(*Path(STAGE_COMPLETION_RELATIVE_PATH).parts)
+    if not marker.exists():
+        raise CollectionPendingError("BoltzGen stage has not atomically published completion")
+    try:
+        root = workspace.resolve(strict=True)
+        resolved = marker.resolve(strict=True)
+    except OSError as error:
+        raise ScientificAdapterError("BoltzGen completion marker is unavailable") from error
+    if root not in resolved.parents or marker.is_symlink() or not resolved.is_file():
+        raise ScientificAdapterError("BoltzGen completion marker is not a contained regular file")
+    payload = resolved.read_bytes()
+    if not 1 <= len(payload) <= 16 * 1024:
+        raise ScientificAdapterError("BoltzGen completion marker size is outside the bound")
+    try:
+        value = json.loads(payload)
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise ScientificAdapterError("BoltzGen terminal completion marker is invalid JSON") from error
+    command = _unwrapped_stage_argv(invocation)
+    command_bytes = json.dumps(
+        command,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode()
+    expected = {
+        "schema": STAGE_COMPLETION_SCHEMA,
+        "status": "passed",
+        "stage_id": invocation.stage_id,
+        "shard_id": invocation.shard_id,
+        "logical_output_id": invocation.produces,
+        "collector_id": invocation.collector_id,
+        "validator_id": invocation.validator_id,
+        "argv_sha256": hashlib.sha256(command_bytes).hexdigest(),
+    }
+    if value != expected:
+        raise ScientificAdapterError("BoltzGen completion marker differs from the frozen invocation")
+    return resolved, hashlib.sha256(payload).hexdigest()
+
+
+def _atomic_publish(path: Path, content: bytes) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="wb",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".partial",
+        delete=False,
+    ) as output:
+        temporary = Path(output.name)
+        output.write(content)
+        output.flush()
+        os.fsync(output.fileno())
+    try:
+        os.chmod(temporary, 0o400)
+        os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _workspace_snapshot(workspace: Path) -> tuple[tuple[str, bool, bytes], ...]:
+    """Capture one bounded, symlink-free workspace after terminal completion."""
+
+    root = workspace.resolve(strict=True)
+    entries: list[tuple[str, bool, bytes]] = []
+    total = 0
+    file_count = 0
+    for path in sorted(root.rglob("*"), key=lambda candidate: candidate.relative_to(root).as_posix()):
+        relative = path.relative_to(root)
+        if relative.parts[0] == ".fs2":
+            continue
+        if path.is_symlink():
+            raise ScientificAdapterError("BoltzGen workspace handoff contains a symbolic link")
+        try:
+            resolved = path.resolve(strict=True)
+        except OSError as error:
+            raise ScientificAdapterError("BoltzGen workspace changed during handoff collection") from error
+        if root not in resolved.parents:
+            raise ScientificAdapterError("BoltzGen workspace handoff escapes its attempt root")
+        name = relative.as_posix()
+        if path.is_dir():
+            entries.append((name, True, b""))
+        elif path.is_file():
+            before = path.stat()
+            content = path.read_bytes()
+            after = path.stat()
+            if (
+                len(content) != before.st_size
+                or before.st_size != after.st_size
+                or before.st_mtime_ns != after.st_mtime_ns
+                or before.st_ino != after.st_ino
+            ):
+                raise ScientificAdapterError("BoltzGen workspace changed during handoff collection")
+            total += len(content)
+            file_count += 1
+            if total > MAX_STAGE_HANDOFF_CONTENT_BYTES:
+                raise ScientificAdapterError("BoltzGen workspace handoff exceeds the extracted byte bound")
+            entries.append((name, False, content))
+        else:
+            raise ScientificAdapterError("BoltzGen workspace handoff contains an unsupported entry")
+        if len(entries) > MAX_STAGE_HANDOFF_MEMBERS:
+            raise ScientificAdapterError("BoltzGen workspace handoff exceeds the member bound")
+    if not entries or file_count == 0:
+        raise ScientificAdapterError("BoltzGen workspace handoff contains no regular files")
+    return tuple(entries)
+
+
+def _encode_handoff(entries: tuple[tuple[str, bool, bytes], ...]) -> bytes:
+    stream = io.BytesIO()
+    try:
+        with tarfile.open(fileobj=stream, mode="w", format=tarfile.PAX_FORMAT) as archive:
+            for name, is_directory, content in entries:
+                member = tarfile.TarInfo(f"{name}/" if is_directory else name)
+                member.uid = 0
+                member.gid = 0
+                member.uname = ""
+                member.gname = ""
+                member.mtime = 0
+                member.mode = 0o755 if is_directory else 0o400
+                if is_directory:
+                    member.type = tarfile.DIRTYPE
+                else:
+                    member.size = len(content)
+                    archive.addfile(member, io.BytesIO(content))
+                    continue
+                archive.addfile(member)
+        raw = stream.getvalue()
+        if len(raw) > MAX_STAGE_HANDOFF_BYTES:
+            raise ScientificAdapterError("BoltzGen workspace handoff exceeds the framed tar bound")
+        result = zstandard.ZstdCompressor(level=3, write_checksum=True, write_content_size=True).compress(raw)
+    except (OSError, tarfile.TarError, zstandard.ZstdError) as error:
+        raise ScientificAdapterError("BoltzGen workspace handoff could not be encoded") from error
+    if not 1 <= len(result) <= MAX_STAGE_HANDOFF_BYTES:
+        raise ScientificAdapterError("BoltzGen workspace handoff exceeds the compressed byte bound")
+    return result
+
+
+def _validate_handoff(content: bytes, entries: tuple[tuple[str, bool, bytes], ...]) -> None:
+    expected = {name: (is_directory, payload) for name, is_directory, payload in entries}
+    try:
+        raw = zstandard.ZstdDecompressor().decompress(content, max_output_size=MAX_STAGE_HANDOFF_BYTES)
+        with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as archive:
+            members = archive.getmembers()
+            observed: dict[str, tuple[bool, bytes]] = {}
+            for member in members:
+                name = member.name.rstrip("/")
+                if name in observed or not (member.isdir() or member.isfile()):
+                    raise ScientificAdapterError("BoltzGen handoff archive has duplicate or unsupported entries")
+                if member.isdir():
+                    observed[name] = (True, b"")
+                    continue
+                source = archive.extractfile(member)
+                if source is None:
+                    raise ScientificAdapterError("BoltzGen handoff archive member has no payload")
+                payload = source.read(MAX_STAGE_HANDOFF_CONTENT_BYTES + 1)
+                if len(payload) != member.size:
+                    raise ScientificAdapterError("BoltzGen handoff archive member size differs")
+                observed[name] = (False, payload)
+    except (tarfile.TarError, zstandard.ZstdError) as error:
+        raise ScientificAdapterError("BoltzGen handoff archive failed its terminal validation") from error
+    if observed != expected:
+        raise ScientificAdapterError("BoltzGen handoff archive differs from the completed workspace")
+
+
+def _collect_handoff_stage(
+    invocation: StageInvocation,
+    workspace: Path,
+    *,
+    completion_sha256: str,
+) -> CollectedStageOutput:
+    from . import CollectedArtifactFile, CollectedStageOutput
+
+    if invocation.handoff_name != STAGE_HANDOFF_NAME or invocation.stage_id == "filtering":
+        raise ScientificAdapterError("BoltzGen handoff collector received another stage contract")
+    entries = _workspace_snapshot(workspace)
+    content = _encode_handoff(entries)
+    _validate_handoff(content, entries)
+    output = workspace / ".fs2" / "boltzgen-stage-handoff.tar.zst"
+    _atomic_publish(output, content)
+    return CollectedStageOutput(
+        artifacts=(
+            CollectedArtifactFile(
+                name=STAGE_HANDOFF_NAME,
+                semantic_type=STAGE_HANDOFF_SEMANTIC_TYPE,
+                path=output,
+                media_type=STAGE_HANDOFF_MEDIA_TYPE,
+                compression=STAGE_HANDOFF_COMPRESSION,
+            ),
+        ),
+        validation={
+            "validator_id": invocation.validator_id,
+            "status": "passed",
+            "completion_marker_sha256": completion_sha256,
+            "handoff_sha256": hashlib.sha256(content).hexdigest(),
+            "handoff_size_bytes": len(content),
+            "member_count": len(entries),
+            "expanded_bytes": sum(len(payload) for _name, is_directory, payload in entries if not is_directory),
+        },
+    )
+
+
+def _environment_int(invocation: StageInvocation, name: str, *, minimum: int, maximum: int) -> int:
+    try:
+        raw = dict(invocation.environment)[name]
+        value = int(raw)
+    except (KeyError, ValueError) as error:
+        raise ScientificAdapterError(f"BoltzGen invocation has no valid {name}") from error
+    return bounded_int(value, minimum=minimum, maximum=maximum, label=name)
+
+
+def _collect_final_stage(
+    invocation: StageInvocation,
+    workspace: Path,
+    *,
+    completion_sha256: str,
+) -> CollectedStageOutput:
+    from . import CollectedArtifactFile, CollectedStageOutput
+
+    if invocation.stage_id != "filtering" or invocation.handoff_name is not None:
+        raise ScientificAdapterError("BoltzGen result collector received another stage contract")
+    command = _unwrapped_stage_argv(invocation)
+    if command[:2] != ("boltzgen", "execute") or command[-2:] != ("--steps", "filtering"):
+        raise ScientificAdapterError("BoltzGen result invocation is not the filtering stage")
+    budget = _environment_int(invocation, "FS2_BOLTZGEN_BUDGET", minimum=1, maximum=1_000)
+    request_sha256 = dict(invocation.environment).get("FS2_BOLTZGEN_REQUEST_SHA256", "")
+    if len(request_sha256) != 64 or any(character not in "0123456789abcdef" for character in request_sha256):
+        raise ScientificAdapterError("BoltzGen invocation request digest is invalid")
+
+    root = workspace.resolve(strict=True)
+    final_root = root / "final_ranked_designs"
+    ranking = final_root / f"final_designs_metrics_{budget}.csv"
+    structures_root = final_root / f"final_{budget}_designs"
+    try:
+        structures = sorted((*structures_root.glob("*.cif"), *structures_root.glob("*.mmcif")))
+        ranking_content = ranking.read_bytes()
+    except OSError as error:
+        raise ScientificAdapterError("BoltzGen terminal result files are unavailable") from error
+    if ranking.is_symlink() or len(structures) != budget:
+        raise ScientificAdapterError("BoltzGen terminal result count differs from the requested budget")
+    fields, rows = parse_csv_artifact(
+        ranking_content,
+        label=f"BoltzGen ranking {invocation.shard_id}",
+        maximum_rows=budget,
+    )
+    required = {"id", "file_name", "designed_chain_sequence"}
+    if not required.issubset(fields) or len(rows) != budget:
+        raise ScientificAdapterError("BoltzGen ranking CSV is missing required rows or columns")
+    confidence_key = "design_to_target_iptm" if "design_to_target_iptm" in fields else "design_iptm"
+    rmsd_key = "designfolding-filter_rmsd" if "designfolding-filter_rmsd" in fields else "filter_rmsd"
+    if confidence_key not in fields or rmsd_key not in fields:
+        raise ScientificAdapterError("BoltzGen ranking CSV lacks confidence or refold RMSD")
+    ranked_names: set[str] = set()
+    for row in rows:
+        _structure_entry_name(invocation.shard_id, row["file_name"])
+        if row["file_name"] in ranked_names:
+            raise ScientificAdapterError("BoltzGen ranking contains a duplicate structure filename")
+        ranked_names.add(row["file_name"])
+        sequence = protein_sequence(row["designed_chain_sequence"], label="BoltzGen sequence")
+        if max(Counter(sequence).values()) / len(sequence) > 0.30:
+            raise ScientificAdapterError("BoltzGen sequence fails the composition-bias gate")
+        if finite_number(float(row[confidence_key]), minimum=0.0, maximum=1.0, label=confidence_key) <= 0:
+            raise ScientificAdapterError("BoltzGen design has no meaningful target interface confidence")
+        finite_number(float(row[rmsd_key]), minimum=0.0, maximum=10.0, label=rmsd_key)
+        if "unresolved_residues" in fields and row["unresolved_residues"] not in {"0", "0.0"}:
+            raise ScientificAdapterError("BoltzGen design contains unresolved residues")
+    if ranked_names != {path.name for path in structures}:
+        raise ScientificAdapterError("BoltzGen ranking filenames do not match emitted structure artifacts")
+
+    sanitized_ranking = canonicalize_upstream_csv(
+        ranking_content,
+        label=f"BoltzGen ranking {invocation.shard_id}",
+        maximum_rows=budget,
+    )
+    ranking_output = root / ".fs2" / "boltzgen-final-ranking.csv"
+    _atomic_publish(ranking_output, sanitized_ranking)
+    artifacts = [
+        CollectedArtifactFile(
+            name=f"ranking.{invocation.shard_id}",
+            semantic_type="boltzgen-ranking-csv/v1",
+            path=ranking_output,
+            media_type=FINAL_RANKING_MEDIA_TYPE,
+        )
+    ]
+    atom_count = 0
+    total_bytes = len(sanitized_ranking)
+    for index, structure in enumerate(structures):
+        try:
+            resolved = structure.resolve(strict=True)
+        except OSError as error:
+            raise ScientificAdapterError("BoltzGen terminal structure is unavailable") from error
+        if root not in resolved.parents or structure.is_symlink() or not resolved.is_file():
+            raise ScientificAdapterError("BoltzGen terminal structure is not a contained regular file")
+        content = resolved.read_bytes()
+        total_bytes += len(content)
+        if total_bytes > invocation.max_output_bytes:
+            raise ScientificAdapterError("BoltzGen terminal outputs exceed the invocation byte bound")
+        pointer = ArtifactPointer(
+            artifact_id=f"validation.boltzgen.{index}",
+            sha256=hashlib.sha256(content).hexdigest(),
+            size_bytes=len(content),
+            media_type=FINAL_STRUCTURE_MEDIA_TYPE,
+        )
+        name = _structure_entry_name(invocation.shard_id, resolved.name)
+        atom_count += structure_atom_count(
+            LoadedArtifact(name, "protein-complex-structure/v1", pointer, content),
+            require_two_chains=True,
+        )
+        artifacts.append(
+            CollectedArtifactFile(
+                name=name,
+                semantic_type="protein-complex-structure/v1",
+                path=resolved,
+                media_type=FINAL_STRUCTURE_MEDIA_TYPE,
+            )
+        )
+    return CollectedStageOutput(
+        artifacts=tuple(artifacts),
+        validation={
+            "validator_id": invocation.validator_id,
+            "status": "passed",
+            "request_sha256": request_sha256,
+            "completion_marker_sha256": completion_sha256,
+            "design_count": budget,
+            "atom_count": atom_count,
+        },
+    )
+
+
+def collect_companion_output(invocation: StageInvocation, workspace: Path) -> CollectedStageOutput:
+    """Collect one exact production stage after an atomic process boundary."""
+
+    if invocation.collector_id != "boltzgen-v0-3-2" or invocation.validator_id != "boltzgen-v0-3-2":
+        raise ScientificAdapterError("BoltzGen collector received another execution identity")
+    _marker, completion_sha256 = _completion_marker(invocation, workspace)
+    if invocation.stage_id == "filtering":
+        return _collect_final_stage(invocation, workspace, completion_sha256=completion_sha256)
+    return _collect_handoff_stage(invocation, workspace, completion_sha256=completion_sha256)

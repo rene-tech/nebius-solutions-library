@@ -50,6 +50,23 @@ DERIVED_IDENTITY_FIELDS = frozenset(
         "execution_map_sha256",
     }
 )
+# This one aggregate cleanup is owned by the serialized production repair, not
+# by any model activation lane.  The old execution map declared the entire
+# reference-data plane in addition to two exact BoltzGen generation mounts.
+# The renderer correctly rejects that unbound broad declaration.  Permit only
+# its all-stage removal while continuing to reject every other authored leaf.
+BOLTZGEN_GPU_STAGES = frozenset(
+    {"configure", "design", "inverse-folding", "folding", "design-folding", "affinity"}
+)
+BOLTZGEN_LEGACY_BROAD_MOUNT = {
+    "name": "reference-data",
+    "kind": "reference",
+    "claim_name": None,
+    "host_path": "/mnt/fs2-reference-data/data",
+    "mount_path": "/reference-data",
+    "sub_path": None,
+    "read_only": True,
+}
 INTEGRATION_SOURCE_REVISION = "003064c440c4ab198bf96957e435a7aac8da6800"
 SHARED_RUNTIME_RECIPE_PATHS = frozenset(
     {
@@ -484,7 +501,9 @@ def validate_fragment_document(fragment: dict[str, Any], path: Path) -> list[str
     return errors
 
 
-def _json_leaves(value: Any, path: tuple[Any, ...] = ()) -> Iterator[tuple[tuple[Any, ...], Any]]:
+def _json_leaves(
+    value: Any, path: tuple[Any, ...] = ()
+) -> Iterator[tuple[tuple[Any, ...], Any]]:
     if isinstance(value, dict):
         for key, item in value.items():
             yield from _json_leaves(item, path + (key,))
@@ -506,6 +525,50 @@ def _aggregate_at_baseline(relative: str) -> Any:
     return json.loads(completed.stdout)
 
 
+def _normalize_serialized_boltzgen_mount_cleanup(
+    relative: str, baseline: dict[str, Any], current: dict[str, Any]
+) -> None:
+    """Normalize only the reviewed all-GPU-stage removal of one inert broad mount."""
+
+    if relative != "catalog/runtime/contracts/scientific-execution-map.json":
+        return
+    baseline_models = {
+        item.get("model_id"): item
+        for item in baseline.get("models", [])
+        if isinstance(item, dict)
+    }
+    current_models = {
+        item.get("model_id"): item
+        for item in current.get("models", [])
+        if isinstance(item, dict)
+    }
+    baseline_model = baseline_models.get("boltzgen")
+    current_model = current_models.get("boltzgen")
+    if not isinstance(baseline_model, dict) or not isinstance(current_model, dict):
+        return
+    baseline_stages = {
+        item.get("stage_id"): item
+        for item in baseline_model.get("stages", [])
+        if isinstance(item, dict)
+    }
+    current_stages = {
+        item.get("stage_id"): item
+        for item in current_model.get("stages", [])
+        if isinstance(item, dict)
+    }
+    if not all(
+        isinstance(baseline_stages.get(stage_id), dict)
+        and isinstance(current_stages.get(stage_id), dict)
+        and BOLTZGEN_LEGACY_BROAD_MOUNT in baseline_stages[stage_id].get("mounts", [])
+        and BOLTZGEN_LEGACY_BROAD_MOUNT
+        not in current_stages[stage_id].get("mounts", [])
+        for stage_id in BOLTZGEN_GPU_STAGES
+    ):
+        return
+    for stage_id in BOLTZGEN_GPU_STAGES:
+        baseline_stages[stage_id]["mounts"].remove(BOLTZGEN_LEGACY_BROAD_MOUNT)
+
+
 def _derived_identity_refresh_only(relative: str) -> list[str]:
     """Classify a change to a shared aggregate as derived-only, or report why not.
 
@@ -521,16 +584,29 @@ def _derived_identity_refresh_only(relative: str) -> list[str]:
     ``components/control-plane/tests/test_scientific_primary_adapters.py``.
     """
     try:
-        baseline = dict(_json_leaves(_aggregate_at_baseline(relative)))
+        baseline_document = _aggregate_at_baseline(relative)
     except (subprocess.CalledProcessError, json.JSONDecodeError):
         return [f"forbidden shared aggregate changed: {relative}"]
-    current = dict(_json_leaves(load_json(repository_path(relative))))
+    current_document = load_json(repository_path(relative))
+    if not isinstance(baseline_document, dict) or not isinstance(
+        current_document, dict
+    ):
+        return [f"forbidden shared aggregate changed: {relative}"]
+    _normalize_serialized_boltzgen_mount_cleanup(
+        relative, baseline_document, current_document
+    )
+    baseline = dict(_json_leaves(baseline_document))
+    current = dict(_json_leaves(current_document))
     added = sorted(set(current) - set(baseline))
     removed = sorted(set(baseline) - set(current))
-    changed = sorted(key for key in set(baseline) & set(current) if baseline[key] != current[key])
+    changed = sorted(
+        key for key in set(baseline) & set(current) if baseline[key] != current[key]
+    )
     errors = []
     for key in added:
-        errors.append(f"shared aggregate {relative} adds authored content: {_leaf_name(key)}")
+        errors.append(
+            f"shared aggregate {relative} adds authored content: {_leaf_name(key)}"
+        )
     for key in removed:
         errors.append(f"shared aggregate {relative} removes content: {_leaf_name(key)}")
     for key in changed:

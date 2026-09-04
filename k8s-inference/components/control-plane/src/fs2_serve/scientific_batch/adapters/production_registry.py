@@ -16,6 +16,7 @@ from . import (
     _DEFAULT_VARIANTS,
     AdapterCompiler,
     StageCollector,
+    boltzgen,
     esmfold2,
     esmfold2_fast,
     openfold3,
@@ -37,6 +38,25 @@ def _secondary_collectors() -> Mapping[str, tuple[AdapterCompiler, str, Mapping[
     return result
 
 
+def _primary_collectors() -> Mapping[str, tuple[AdapterCompiler, str, Mapping[str, StageCollector]]]:
+    """Return only primary models carried by the production execution map.
+
+    Proteina-Complexa and BindCraft retain their legacy compilers, but neither
+    has a production execution-map entry in this release.  Registering their
+    legacy collectors would therefore create an unreachable, unreviewed
+    companion surface.  BoltzGen is active and every stage shares one frozen
+    collector/validator identity.
+    """
+
+    return {
+        boltzgen.MODEL_ID: (
+            _COMPILERS[boltzgen.MODEL_ID],
+            boltzgen.VARIANT_ID,
+            {"boltzgen-v0-3-2": boltzgen.collect_companion_output},
+        )
+    }
+
+
 def install_production_adapters() -> None:
     """Register the closed production allow-list exactly once per process."""
 
@@ -48,7 +68,8 @@ def install_production_adapters() -> None:
     # registry, so it must be imported only after that registry is initialized.
     from . import alphafold3
 
-    registrations = dict(_secondary_collectors())
+    registrations = dict(_primary_collectors())
+    registrations.update(_secondary_collectors())
     registrations[alphafold3.MODEL_ID] = (
         alphafold3.compile_run,
         alphafold3.VARIANT_ID,

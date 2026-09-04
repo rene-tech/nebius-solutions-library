@@ -516,7 +516,12 @@ def test_boltzgen_uses_one_gpu_shard_commands_and_every_exact_checkpoint_identit
     assert result.controller_plan.stage("configure").shards == ("pdl1-a", "pdl1-b")
     configure = [item for item in result.invocations if item.stage_id == "configure"]
     for invocation, designs in zip(configure, (10, 12), strict=True):
-        argv = invocation.argv
+        assert invocation.argv[:3] == (
+            "python",
+            f"{invocation.working_directory}/.fs2/stage-runner.py",
+            "--",
+        )
+        argv = invocation.argv[3:]
         assert argv[:2] == ("boltzgen", "configure")
         assert argv[argv.index("--devices") + 1] == "1"
         assert argv[argv.index("--num_designs") + 1] == str(designs)
@@ -529,6 +534,13 @@ def test_boltzgen_uses_one_gpu_shard_commands_and_every_exact_checkpoint_identit
         assert argv[argv.index("--moldir") + 1] == "/opt/fs2/artifacts/boltzgen-inference-molecules"
         assert invocation.runtime_artifacts == ("boltzgen-checkpoints", "boltzgen-inference-molecules")
         assert invocation.materializations[0].yaml_name == f"design-specs/{invocation.shard_id}.yaml"
+        environment = dict(invocation.environment)
+        assert environment["FS2_BOLTZGEN_NUM_DESIGNS"] == str(designs)
+        assert environment["FS2_BOLTZGEN_BUDGET"] == "2"
+        assert len(environment["FS2_BOLTZGEN_REQUEST_SHA256"]) == 64
+        assert invocation.handoff_name == boltzgen.STAGE_HANDOFF_NAME
+        assert invocation.max_output_artifacts == 1
+        assert invocation.max_output_bytes == boltzgen.MAX_STAGE_HANDOFF_BYTES
         assert "--models_token" not in argv
         assert all("huggingface:" not in value and "https://" not in value for value in argv)
     assert boltzgen.CHECKPOINTS == (
@@ -550,8 +562,20 @@ def test_boltzgen_uses_one_gpu_shard_commands_and_every_exact_checkpoint_identit
     assert all(item.runtime_artifacts == () for item in reuse.invocations if item.stage_id in {"analysis", "filtering"})
     assert all(item.materializations for item in reuse.invocations)
     for item in reuse.invocations[1:]:
-        assert item.argv[:2] == ("boltzgen", "execute")
+        assert item.argv[:3] == (
+            "python",
+            f"{item.working_directory}/.fs2/stage-runner.py",
+            "--",
+        )
+        assert item.argv[3:5] == ("boltzgen", "execute")
         assert "--reuse" not in item.argv
+    for item in reuse.invocations:
+        if item.stage_id == "filtering":
+            assert item.handoff_name is None
+            assert item.max_output_artifacts == int(dict(item.environment)["FS2_BOLTZGEN_BUDGET"]) + 1
+        else:
+            assert item.handoff_name == boltzgen.STAGE_HANDOFF_NAME
+            assert item.max_output_artifacts == 1
 
 
 def test_boltzgen_public_execution_binding_accepts_a_canonical_optional_stage_subset() -> None:
