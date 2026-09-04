@@ -583,12 +583,12 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertNotIn(phrase, reviewed_text)
 
-    def test_successor_publication_is_pending_and_fail_closed(self) -> None:
+    def test_successor_publication_digests_are_immutable_and_fail_closed(self) -> None:
         expected = {
-            "esmfold2": None,
-            "esmfold2-fast": None,
-            "protenix-v2": None,
-            "openfold3": None,
+            "esmfold2": "sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
+            "esmfold2-fast": "sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+            "protenix-v2": "sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
+            "openfold3": "sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
         }
         self.assertEqual(
             {image["id"]: image["published_digest"] for image in LOCK["images"]},
@@ -703,7 +703,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
     ) -> None:
         images = {image["id"]: image for image in LOCK["images"]}
         expected_level_states = {
-            "L1": "candidate-evidence-collected-pending-independent-acceptance",
+            "L1": "candidate-published-build-only-not-semantic-qualified",
             "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
             "L3": "unavailable-no-local-disk-cached-snapshot",
             "L4": "unavailable-no-system-ram-retained-model",
@@ -714,7 +714,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             self.assertIsNone(fast_start["qualified_level"])
             self.assertEqual(
                 fast_start["qualification_state"],
-                "evidence-collected-pending-independent-acceptance",
+                "published-build-only-not-semantic-qualified",
             )
             self.assertEqual(fast_start["level_states"], expected_level_states)
 
@@ -2261,11 +2261,11 @@ for seed in seeds:
         self,
     ) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("0ad6ffe9126c6e70fe3dbdff6e0936e0544dd9b2", readme)
+        self.assertIn("a25251748608f3f437277e3c1c3c91896d5dc482", readme)
         self.assertIn("model-owned adapter contracts", readme)
         self.assertIn("pending-external-activation", readme)
-        self.assertIn("immutable non-deployable candidates", readme)
-        self.assertIn("remain required before deployment or admission", readme)
+        self.assertIn("build-only-not-semantic-qualified", readme)
+        self.assertIn("require fresh exact-digest H100 semantic receipts", readme)
 
     def test_shell_entrypoints_are_syntactically_valid(self) -> None:
         for name in (

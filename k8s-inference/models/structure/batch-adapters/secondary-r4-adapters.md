@@ -10,25 +10,26 @@ remain owned elsewhere.
 
 | Model | CPU stage | GPU stage | Immutable published digest |
 | --- | --- | --- | --- |
-| `esmfold2` | `prepare-input` | `fold` | `sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a` |
-| `esmfold2-fast` | `prepare-input` | `fold` | `sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0` |
-| `protenix-v2` | `prepare-data` | `sample-structure` | `sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8` |
-| `openfold3-openbind` | `data-pipeline` | `inference` | `sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5` |
+| `esmfold2` | `prepare-input` | `fold` | `sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3` |
+| `esmfold2-fast` | `prepare-input` | `fold` | `sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35` |
+| `protenix-v2` | `prepare-data` | `sample-structure` | `sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e` |
+| `openfold3-openbind` | `data-pipeline` | `inference` | `sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4` |
 
 The generated argv is shell-free and is parser-tested directly from image
-source Git object `a1b5b6b24b2dae54a1f7caeba9981a7aaa60cc8f`. ESMFold2-Fast rejects every MSA
+source Git object `a25251748608f3f437277e3c1c3c91896d5dc482`. ESMFold2-Fast rejects every MSA
 mode before GPU admission. Protenix prepares an immutable compressed handoff before
 sampling. OpenFold3 is an independent, non-equivalent backend and never satisfies
 an `alphafold3` request.
 
-All four repaired successors are immutably published and passed offline image and
-protocol checks. The publication handoff remains deliberately separate from route
-activation: activation profiles pin the published image, artifact, recipe, and H100
-semantic-evidence identities before becoming dispatchable. In particular, the r6
-OpenFold successor runs as runtime UID/GID `10001:10001`, validates the public
-`openfold3-openbind` identity, and has an exact matching H100 semantic receipt. The
-canonical machine-readable publication handoff and current image tuples remain in
-the historically named `secondary-r4-image-handoff.json`.
+All four localization-compatible successors are immutably published and passed
+offline image and protocol checks. Publication remains deliberately separate from
+route activation: the new digests have no H100 semantic receipt yet. Existing
+activation projections retain their predecessor identities until fresh live runs
+qualify each successor; qualification is never inherited. The r7 OpenFold successor
+runs as UID/GID `10001:10001` and validates the public `openfold3-openbind` identity,
+but its predecessor's H100 receipt is not evidence for r7. The canonical
+machine-readable publication handoff and current image tuples remain in the
+historically named `secondary-r4-image-handoff.json`.
 
 Protenix keeps three identities separate: the acquired source payload, the
 localization manifest/recipe, and the content digest of the tree mounted by the model

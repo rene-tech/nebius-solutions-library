@@ -1,41 +1,41 @@
 {
   "schema": "fs2.nebius.ai/secondary-successor-image-handoff/v1",
-  "state": "publication-pending-not-activated",
-  "image_source_commit": null,
+  "state": "published-build-only-not-activated",
+  "image_source_commit": "a25251748608f3f437277e3c1c3c91896d5dc482",
   "semantic_h100_qualification": false,
   "route_activation_allowed": false,
-  "production_protocol_compatible": false,
-  "successor_requirement": "Publish successors that accept the current enriched localization-marker v1 contract, then perform exact-artifact H100 semantic qualification before route activation.",
+  "production_protocol_compatible": true,
+  "successor_requirement": "The localization-compatible successors are published. Perform exact-artifact H100 semantic qualification for each new digest before route activation.",
   "images": [
     {
       "model_id": "esmfold2",
       "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2",
       "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r6",
-      "digest": null
+      "digest": "sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3"
     },
     {
       "model_id": "esmfold2-fast",
       "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast",
       "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r6",
-      "digest": null
+      "digest": "sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35"
     },
     {
       "model_id": "protenix-v2",
       "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2",
       "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r6",
-      "digest": null
+      "digest": "sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e"
     },
     {
       "model_id": "openfold3-openbind",
       "evidence_directory": "openfold3",
       "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream",
       "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r7",
-      "digest": null
+      "digest": "sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4"
     }
   ],
   "evidence": {
-    "source": "pending repository-owned publisher receipt",
-    "scope": "Publication preparation only; no registry, H100, or semantic claim exists until the publisher records it.",
+    "source": "models/cancer-immunotherapy/images/structure-secondary/evidence/localization-marker-successor-publication-20260904.json",
+    "scope": "Repository-owned evidence for immutable registry publication, exact source identity, offline non-root smoke, and SPDX SBOM hashes. It is not H100 or semantic qualification evidence.",
     "activation_gate": "Promote only after immutable artifact localization, exact runtime cache delivery where declared, and successful semantic H100 inference."
   }
 }

@@ -1396,7 +1396,7 @@ def test_contract_documents_match_code_and_the_published_successor_handoff() -> 
         assert value["variant_id"] == module.VARIANT_ID
         assert value["source"]["repository"] == module.SOURCE_REPOSITORY
         assert value["source"]["revision"] == module.SOURCE_REVISION
-        semantic_qualified = model_id == "openfold3-openbind"
+        semantic_qualified = False
         assert value["activation"] == {
             "profile_state": "candidate-unqualified",
             "route_exposed": False,
@@ -1432,19 +1432,6 @@ def test_committed_publication_evidence_matches_the_exact_image_handoff() -> Non
     }
     evidence_images = {item["model_id"]: item for item in evidence["images"]}
     for image in handoff["images"]:
-        if image["model_id"] == "openfold3-openbind":
-            successor = json.loads(
-                (
-                    SOLUTION_ROOT / "models/cancer-immunotherapy/images/structure-secondary/evidence/"
-                    "openfold3-runner-baked-publication-20260904.json"
-                ).read_text(encoding="utf-8")
-            )
-            assert successor["image"]["target"] == f"{image['repository']}:{image['tag']}"
-            assert successor["image"]["digest"] == image["digest"]
-            assert successor["image"]["default_uid"] == 10001
-            assert successor["image"]["default_gid"] == 10001
-            assert re.fullmatch(r"[0-9a-f]{64}", successor["sbom"]["sha256"])
-            continue
         item = evidence_images[image["model_id"]]
         assert item["target"] == f"{image['repository']}:{image['tag']}"
         assert item["digest"] == image["digest"]

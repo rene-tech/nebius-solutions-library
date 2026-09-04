@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 evidence/*
 !evidence/successor-publication-20260904.json
+!evidence/localization-marker-successor-publication-20260904.json
