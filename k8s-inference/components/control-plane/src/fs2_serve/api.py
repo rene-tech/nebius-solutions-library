@@ -700,6 +700,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             request.method,
             request.url.path,
             error,
+            exc_info=(type(error), error, error.__traceback__),
         )
         return _error(503, "scientific_profile_unavailable", "scientific workload profile is unavailable")
 

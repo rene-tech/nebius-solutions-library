@@ -1810,6 +1810,33 @@ def plan_stage(
     variable_file: Path,
     destroy: bool = False,
 ) -> tuple[Path, dict[str, Any], dict[str, str]]:
+    if stage == "workloads" and not destroy:
+        expected_batch = (
+            contract.get("stages", {}).get("workloads", {}).get("scientific_batch")
+        )
+        if isinstance(expected_batch, Mapping):
+            if variable_file.is_symlink() or not variable_file.is_file():
+                raise DeploymentError(
+                    "the generated workloads input must be a regular file before planning"
+                )
+            try:
+                workload_variables = json.loads(
+                    variable_file.read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError) as error:
+                raise DeploymentError(
+                    "the generated workloads input is not readable canonical JSON"
+                ) from error
+            actual_batch = (
+                workload_variables.get("scientific_batch")
+                if isinstance(workload_variables, Mapping)
+                else None
+            )
+            if actual_batch != expected_batch:
+                raise DeploymentError(
+                    "the generated scientific batch input differs from the customer "
+                    "configuration; regenerate staged inputs with inference-stack"
+                )
     root = stage_root(stage)
     state, _, _ = stage_paths(run_root, stage)
     environment = stage_environment(

@@ -243,6 +243,49 @@ def regional_dynamic(run_root: Path) -> dict:
 
 
 class InferenceStackTests(unittest.TestCase):
+    def test_workloads_plan_refuses_execution_map_drift_before_terraform(self) -> None:
+        configuration = contract()
+        expected_map = {
+            "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
+            "models": [{"model_id": "boltzgen", "variant_id": "upstream-v0-3-2"}],
+        }
+        configuration["stages"]["workloads"]["scientific_batch"] = {
+            "enabled": True,
+            "execution_map": expected_map,
+        }
+
+        with tempfile.TemporaryDirectory(prefix="inference-stack-map-drift-") as temporary:
+            run_root = Path(temporary)
+            workloads_path = run_root / "workloads.tfvars.json"
+            STACK.private_json(
+                workloads_path,
+                {
+                    "scientific_batch": {
+                        "enabled": True,
+                        "execution_map": {
+                            "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
+                            "models": [],
+                        },
+                    }
+                },
+            )
+            with (
+                mock.patch.object(STACK, "terraform_init") as terraform_init,
+                self.assertRaisesRegex(
+                    STACK.DeploymentError,
+                    "scientific batch input differs from the customer configuration",
+                ),
+            ):
+                STACK.plan_stage(
+                    "terraform-test",
+                    run_root=run_root,
+                    stage="workloads",
+                    contract=configuration,
+                    variable_file=workloads_path,
+                )
+
+        terraform_init.assert_not_called()
+
     def test_generated_stage_files_are_deterministic_private_and_secret_free(
         self,
     ) -> None:

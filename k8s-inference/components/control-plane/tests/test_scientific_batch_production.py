@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Mapping
 from dataclasses import replace
@@ -90,6 +91,7 @@ from fs2_serve.scientific_batch.models import (
     PreemptionMode,
     ResourceClass,
     SchedulingAdmission,
+    SchedulingSnapshot,
     ScientificBatchPlan,
     ScientificBatchState,
     ScientificInputAdmission,
@@ -595,6 +597,76 @@ def scientific_runtime(
         scientific_batches=service,
     )
     return runtime, controller, repository, cluster, pointer
+
+
+@pytest.mark.asyncio
+async def test_wrapped_scheduling_failure_is_logged_with_its_chain_but_not_returned(
+    registry,
+    cipher,
+    hasher,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    runtime, _, _, _, pointer = scientific_runtime(registry, cipher, hasher)
+    assert runtime.scientific_batches is not None
+    cause = "injected exact scheduler contract cause"
+
+    def reject_scheduling(**_: Any) -> SchedulingSnapshot:
+        raise SchedulingContractError(cause)
+
+    monkeypatch.setattr(runtime.scientific_batches.scheduling, "freeze", reject_scheduling)
+    issued = await runtime.tokens.issue(
+        TokenCreate(
+            principal_id="scientist-a",
+            tenant_id="tenant-a",
+            scopes={Scope.INFERENCE_INVOKE},
+            models={"protein-design"},
+            max_concurrency=1,
+        ),
+        created_by="test",
+    )
+    request = {
+        "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "operation": "design",
+        "service_class": "customer-batch",
+        "input_manifest": pointer,
+        "parameters": {},
+    }
+    caplog.set_level(logging.WARNING, logger="fs2_serve.scientific_batch")
+    app = create_app(runtime)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="https://inference.test.invalid",
+            headers={"authorization": f"Bearer {issued.token}"},
+        ) as client:
+            response = await client.post(
+                "/v1/models/protein-design:submit",
+                headers={"idempotency-key": "scientific-log-chain-0001"},
+                json=request,
+            )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "error": {
+            "type": "scientific_profile_unavailable",
+            "message": "scientific workload profile is unavailable",
+        }
+    }
+    assert cause not in response.text
+
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "fs2_serve.scientific_batch"
+        and record.getMessage().startswith("scientific profile unavailable method=POST")
+    ]
+    assert len(records) == 1
+    assert records[0].exc_info is not None
+    rendered_log = logging.Formatter("%(message)s").format(records[0])
+    assert cause in rendered_log
+    assert "SchedulingContractError" in rendered_log
+    assert "ScientificProfileError: Kueue scheduling contract cannot admit this profile" in rendered_log
 
 
 @pytest.mark.asyncio
