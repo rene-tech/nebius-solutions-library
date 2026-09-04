@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/esmfold2-biohub-v3-4-0-parameters/v1",
+  "title": "ESMFold2 (Biohub esm v3.4.0) scientific run parameters",
+  "description": "Mirrors fs2_serve.scientific_batch.adapters.esmfold2.Parameters.parse: one bounded amino-acid sequence, a supported input mode, and an optional deterministic seed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sequence",
+    "mode"
+  ],
+  "properties": {
+    "sequence": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^[ACDEFGHIKLMNPQRSTVWYX]+$"
+    },
+    "mode": {
+      "enum": [
+        "single-sequence",
+        "precomputed-msa"
+      ],
+      "description": "precomputed-msa consumes MSA rows carried by the input manifest; no online MSA server is ever contacted."
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    }
+  }
+}

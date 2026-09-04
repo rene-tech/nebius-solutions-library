@@ -5,12 +5,14 @@ import re
 import unittest
 from pathlib import Path
 
-
 SOLUTION_ROOT = Path(__file__).resolve().parents[3]
 ADAPTER_ROOT = SOLUTION_ROOT / "models/structure/batch-adapters"
 HANDOFF_PATH = ADAPTER_ROOT / "secondary-r4-image-handoff.json"
 PROFILE_PATH = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-workload-profiles.json"
-MODEL_IDS = ("esmfold2", "esmfold2-fast", "protenix-v2", "openfold3")
+MODEL_IDS = ("esmfold2", "esmfold2-fast", "protenix-v2", "openfold3-openbind")
+ADAPTER_DIRECTORIES = {
+    model_id: "openfold3" if model_id == "openfold3-openbind" else model_id for model_id in MODEL_IDS
+}
 SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
@@ -29,7 +31,7 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
             for image in self.handoff["images"]  # type: ignore[index]
         }
         self.contracts = {
-            model_id: load_json(ADAPTER_ROOT / model_id / "contract.json")
+            model_id: load_json(ADAPTER_ROOT / ADAPTER_DIRECTORIES[model_id] / "contract.json")
             for model_id in MODEL_IDS
         }
 
@@ -76,15 +78,8 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
             with self.subTest(model_id=model_id):
                 stages = contract["stages"]
                 self.assertEqual([stage["resource_class"] for stage in stages], ["cpu", "gpu"])
-                declared = {
-                    artifact["artifact_id"]
-                    for artifact in contract["runtime_artifacts"]
-                }
-                bound = {
-                    artifact_id
-                    for stage in stages
-                    for artifact_id in stage["runtime_artifacts"]
-                }
+                declared = {artifact["artifact_id"] for artifact in contract["runtime_artifacts"]}
+                bound = {artifact_id for stage in stages for artifact_id in stage["runtime_artifacts"]}
                 self.assertEqual(bound, declared)
                 self.assertEqual(len({stage["collector_id"] for stage in stages}), 2)
                 self.assertEqual(len({stage["validator_id"] for stage in stages}), 2)
@@ -92,12 +87,14 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
     def test_each_adapter_has_two_positive_and_one_negative_fixture(self) -> None:
         for model_id in MODEL_IDS:
             with self.subTest(model_id=model_id):
-                paths = sorted((ADAPTER_ROOT / model_id / "fixtures").glob("*.json"))
+                paths = sorted((ADAPTER_ROOT / ADAPTER_DIRECTORIES[model_id] / "fixtures").glob("*.json"))
                 self.assertEqual(len(paths), 3)
                 self.assertEqual(sum(path.name.startswith("positive-") for path in paths), 2)
                 self.assertEqual(sum(path.name.startswith("negative-") for path in paths), 1)
                 fixtures = [load_json(path) for path in paths]
-                self.assertTrue(all(fixture["schema"] == "fs2-serve.nebius.ai/scientific-run-request/v1" for fixture in fixtures))
+                self.assertTrue(
+                    all(fixture["schema"] == "fs2-serve.nebius.ai/scientific-run-request/v1" for fixture in fixtures)
+                )
 
     def test_capability_and_backend_identity_boundaries_are_explicit(self) -> None:
         self.assertEqual(
@@ -109,7 +106,7 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
         self.assertIs(fast_capabilities["precomputed_msa"], False)
         self.assertIn("before GPU allocation", fast_capabilities["rejection"])
         self.assertEqual(
-            self.contracts["openfold3"]["relationship"],
+            self.contracts["openfold3-openbind"]["relationship"],
             "independent-non-equivalent-alternative-to-alphafold3",
         )
 

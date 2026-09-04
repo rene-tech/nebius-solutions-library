@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .common import (
     ARTIFACT_MANIFEST_SCHEMA,
@@ -16,6 +17,9 @@ from .common import (
     collect_output_files,
     structure_atom_count,
 )
+
+if TYPE_CHECKING:
+    from . import CollectedStageOutput
 
 CONFIDENCE_SCHEMA = "fs2.nebius.ai/structure-confidence/v1"
 _METRIC_BOUNDS = {
@@ -83,6 +87,46 @@ def collect_handoff(
             "entries": [{"name": name, "semantic_type": semantic_type, "artifact": pointer.to_dict()}],
         },
         blobs={artifact_id: content},
+    )
+
+
+def collect_handoff_stage(
+    workspace: Path,
+    *,
+    filename: str,
+    name: str,
+    semantic_type: str,
+    media_type: str,
+    maximum_bytes: int,
+    validator_id: str,
+    compression: str | None = None,
+) -> CollectedStageOutput:
+    """Return one file-backed handoff for the production companion."""
+
+    from . import CollectedArtifactFile, CollectedStageOutput, CollectionPendingError
+
+    if not (workspace / filename).exists():
+        raise CollectionPendingError("stage handoff is not atomically available")
+    output = _contained_file(workspace, filename, label="stage handoff")
+    size = output.stat().st_size
+    if not 1 <= size <= maximum_bytes:
+        raise ScientificAdapterError("stage handoff size is outside the adapter bound")
+    return CollectedStageOutput(
+        artifacts=(
+            CollectedArtifactFile(
+                name=name,
+                semantic_type=semantic_type,
+                path=output,
+                media_type=media_type,
+                compression=compression,
+            ),
+        ),
+        validation={
+            "validator_id": validator_id,
+            "status": "passed",
+            "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+            "size_bytes": size,
+        },
     )
 
 
@@ -221,11 +265,7 @@ def _validated_confidence_entries(
         pairs.add(pair)
         filenames.add(filename)
 
-    expected_pairs = {
-        (seed, sample)
-        for seed in expected_seeds
-        for sample in range(expected_samples_per_seed)
-    }
+    expected_pairs = {(seed, sample) for seed in expected_seeds for sample in range(expected_samples_per_seed)}
     if pairs != expected_pairs:
         raise ScientificAdapterError("confidence results do not cover the requested seed/sample product")
     entries.append(("confidence", "structure-confidence-json/v1", confidence_path, False))
@@ -288,8 +328,58 @@ def collect_confidence_envelope(
         workspace,
         entries,
         manifest_id=(
-            f"{expected_runtime_id}.results."
-            f"{hashlib.sha256(expected_model_revision.encode('utf-8')).hexdigest()[:24]}"
+            f"{expected_runtime_id}.results.{hashlib.sha256(expected_model_revision.encode('utf-8')).hexdigest()[:24]}"
         ),
         maximum_total_bytes=maximum_total_bytes,
     )
+
+
+def collect_confidence_stage(
+    workspace: Path,
+    *,
+    validator_id: str,
+    expected_runtime_id: str,
+    expected_model_revision: str,
+    expected_seeds: tuple[int, ...],
+    expected_samples_per_seed: int,
+    maximum_total_bytes: int,
+) -> CollectedStageOutput:
+    """Validate a confidence closure and expose its existing files to the companion."""
+
+    from . import CollectedArtifactFile, CollectedStageOutput, CollectionPendingError
+
+    if not (workspace / "outputs/confidence.json").exists():
+        raise CollectionPendingError("confidence envelope is not atomically available")
+    entries, validation = _validated_confidence_entries(
+        workspace,
+        expected_runtime_id=expected_runtime_id,
+        expected_model_revision=expected_model_revision,
+        expected_seeds=expected_seeds,
+        expected_samples_per_seed=expected_samples_per_seed,
+    )
+    artifacts: list[CollectedArtifactFile] = []
+    total = 0
+    for name, semantic_type, path, sanitize_csv in entries:
+        if sanitize_csv:
+            raise ScientificAdapterError("secondary confidence output unexpectedly requires rewriting")
+        total += path.stat().st_size
+        if total > maximum_total_bytes:
+            raise ScientificAdapterError("collected outputs exceed the byte bound")
+        suffix = path.suffix.lower()
+        media_type = (
+            "application/json"
+            if semantic_type.endswith("json/v1") or suffix == ".json"
+            else "chemical/x-mmcif"
+            if suffix in {".cif", ".mmcif"}
+            else "chemical/x-pdb"
+        )
+        artifacts.append(
+            CollectedArtifactFile(
+                name=name,
+                semantic_type=semantic_type,
+                path=path,
+                media_type=media_type,
+            )
+        )
+    validation["validator_id"] = validator_id
+    return CollectedStageOutput(artifacts=tuple(artifacts), validation=validation)

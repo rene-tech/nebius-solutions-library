@@ -19,6 +19,7 @@ import zstandard
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from .adapters import CollectedArtifactFile, CollectionPendingError, collect_stage_output
+from .adapters.production_registry import install_production_adapters
 from .models import (
     ArtifactMaterialization,
     MaterializationMode,
@@ -28,6 +29,8 @@ from .models import (
     StageInvocation,
     StageWorkspaceDocument,
 )
+
+install_production_adapters()
 
 _ROOT = Path("/mnt/fs2-scientific")
 _MAX_ARCHIVE_FILES = 4096

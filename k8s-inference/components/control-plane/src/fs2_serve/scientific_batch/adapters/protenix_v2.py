@@ -5,11 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..models import (
     AdapterExecutionPlan,
     ArtifactMaterialization,
     MaterializationMode,
+    ScientificInputArtifact,
     StageInvocation,
 )
 from .common import (
@@ -23,20 +25,38 @@ from .common import (
     run_workspace,
     strict_object,
 )
-from .secondary_structure import collect_confidence_envelope, collect_handoff
+from .secondary_structure import (
+    collect_confidence_envelope,
+    collect_confidence_stage,
+    collect_handoff,
+    collect_handoff_stage,
+)
+from .verified_input import verified_manifest_entry
+
+if TYPE_CHECKING:
+    from . import CollectedStageOutput
 
 MODEL_ID = "protenix-v2"
 VARIANT_ID = "upstream-v2-0-0"
 SOURCE_REPOSITORY = "bytedance/Protenix"
 SOURCE_REVISION = "2475421477ab414b571149ad4a875c390ff8a35d"
 PARAMETER_SCHEMA = "fs2-serve.nebius.ai/protenix-v2-upstream-v2-0-0-parameters/v1"
+INPUT_ARTIFACT_ID = "protenix-input"
+INPUT_SEMANTIC_TYPE = "protenix-input-json/v1"
+INPUT_MEDIA_TYPE = "application/json"
+MAX_INPUT_BYTES = 256 * 1024 * 1024
+REQUIRES_VERIFIED_INPUT_ARTIFACTS = True
 MODEL_ARTIFACT = "protenix-v2"
 VALIDATOR_ID = "protenix-v2-upstream-v2-0-0"
 WEIGHTS_REPOSITORY = "TMF001/protenix-v2-weights"
 WEIGHTS_REVISION = "653edab28103133512575365130916e3fd23ecc3"
 OUTPUT_MODEL_REVISION = f"{WEIGHTS_REPOSITORY}@{WEIGHTS_REVISION}"
-COMPOSITE_MANIFEST_SHA256 = "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48"
+# Acquisition bytes, the localization recipe, and the resulting runtime tree
+# are deliberately separate identities.  A source payload digest must never
+# be mistaken for the tree mounted into a model Pod.
+SOURCE_PAYLOAD_SHA256 = "8e14bb809d37db806159b7d277577abc692aec81d8899fbc84915d23ebe12eca"
 LOCALIZATION_MANIFEST_SHA256 = "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7"
+LOCALIZED_TREE_CONTENT_SHA256 = "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48"
 WEIGHTS_SHA256 = "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599"
 WEIGHTS_SIZE_BYTES = 1_859_785_497
 COMPOSITE_SIZE_BYTES = 2_514_897_184
@@ -101,9 +121,20 @@ def compile_run(
     request_value: object,
     *,
     operation_id: str,
+    input_artifacts: tuple[ScientificInputArtifact, ...] | None = None,
 ) -> AdapterExecutionPlan:
-    request = parse_public_request(request_value, maximum_input_bytes=256 * 1024 * 1024)
+    request = parse_public_request(request_value, maximum_input_bytes=MAX_INPUT_BYTES)
     parameters = Parameters.parse(request.parameters)
+    model_input = verified_manifest_entry(
+        request,
+        input_artifacts,
+        logical_artifact_id=INPUT_ARTIFACT_ID,
+        semantic_type=INPUT_SEMANTIC_TYPE,
+        media_type=INPUT_MEDIA_TYPE,
+        compressions=frozenset({None, "none"}),
+        maximum_bytes=MAX_INPUT_BYTES,
+        label="Protenix v2",
+    )
     assert_profile_identity(
         profile,
         model_id=MODEL_ID,
@@ -160,11 +191,19 @@ def compile_run(
                 ("FS2_SCIENTIFIC_VALIDATOR_ID", PREPARE_VALIDATOR_ID),
             ),
             working_directory=prep_root,
-            consumes=(request.input_manifest.artifact_id,),
+            consumes=(model_input.logical_artifact_id,),
             produces=prepared,
+            collector_id=PREPARE_COLLECTOR_ID,
+            validator_id=PREPARE_VALIDATOR_ID,
+            handoff_name="processed-input",
+            max_output_artifacts=1,
+            max_output_bytes=64 * 1024 * 1024,
             materializations=(
                 ArtifactMaterialization(
-                    request.input_manifest.artifact_id, f"{prep_root}/input.json", MaterializationMode.COPY_FILE
+                    model_input.logical_artifact_id,
+                    f"{prep_root}/input.json",
+                    MaterializationMode.COPY_FILE,
+                    compression=model_input.compression,
                 ),
             ),
             runtime_artifacts=(MODEL_ARTIFACT,),
@@ -213,6 +252,10 @@ def compile_run(
             working_directory=pred_root,
             consumes=(prepared,),
             produces=result,
+            collector_id=RESULT_COLLECTOR_ID,
+            validator_id=VALIDATOR_ID,
+            max_output_artifacts=len(parameters.seeds) * parameters.sample_count * 2 + 1,
+            max_output_bytes=8 * 1024 * 1024 * 1024,
             materializations=(
                 ArtifactMaterialization(
                     prepared, f"{pred_root}/input", MaterializationMode.EXTRACT_TAR, compression="zstd"
@@ -267,3 +310,51 @@ def collect_stage_output(collector_id: str, request_value: object, workspace: Pa
     if collector_id == RESULT_COLLECTOR_ID:
         return collect_result(request_value, workspace)
     raise ScientificAdapterError(f"unsupported Protenix v2 collector identity {collector_id!r}")
+
+
+def _argument(invocation: StageInvocation, name: str) -> str:
+    if invocation.argv.count(name) != 1 or invocation.argv.index(name) + 1 >= len(invocation.argv):
+        raise ScientificAdapterError(f"Protenix v2 invocation has no exact {name} argument")
+    return invocation.argv[invocation.argv.index(name) + 1]
+
+
+def collect_companion_output(invocation: StageInvocation, workspace: Path) -> CollectedStageOutput:
+    """Collect from the immutable invocation used by the production companion."""
+
+    if invocation.collector_id == PREPARE_COLLECTOR_ID:
+        if invocation.stage_id != "prepare-data" or invocation.validator_id != PREPARE_VALIDATOR_ID:
+            raise ScientificAdapterError("Protenix v2 prep collector received another stage contract")
+        return collect_handoff_stage(
+            workspace,
+            filename="handoff.tar.zst",
+            name="processed-input",
+            semantic_type="protenix-processed-input/v1",
+            media_type="application/x-tar",
+            compression="zstd",
+            maximum_bytes=64 * 1024 * 1024,
+            validator_id=invocation.validator_id,
+        )
+    if invocation.collector_id == RESULT_COLLECTOR_ID:
+        if invocation.stage_id != "sample-structure" or invocation.validator_id != VALIDATOR_ID:
+            raise ScientificAdapterError("Protenix v2 result collector received another stage contract")
+        raw_seeds = _argument(invocation, "--seeds").split(",")
+        try:
+            seeds = tuple(int(value) for value in raw_seeds)
+            samples = int(_argument(invocation, "--sample-count"))
+        except ValueError as error:
+            raise ScientificAdapterError("Protenix v2 invocation seed/sample envelope is invalid") from error
+        if not 1 <= len(seeds) <= 16 or len(set(seeds)) != len(seeds):
+            raise ScientificAdapterError("Protenix v2 invocation seeds are invalid")
+        for seed in seeds:
+            bounded_int(seed, minimum=0, maximum=2**31 - 1, label="model seed")
+        bounded_int(samples, minimum=1, maximum=16, label="sample_count")
+        return collect_confidence_stage(
+            workspace,
+            validator_id=invocation.validator_id,
+            expected_runtime_id=MODEL_ID,
+            expected_model_revision=OUTPUT_MODEL_REVISION,
+            expected_seeds=seeds,
+            expected_samples_per_seed=samples,
+            maximum_total_bytes=invocation.max_output_bytes,
+        )
+    raise ScientificAdapterError(f"unsupported Protenix v2 collector identity {invocation.collector_id!r}")

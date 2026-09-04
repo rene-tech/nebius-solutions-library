@@ -1,6 +1,6 @@
 {
   "schema": "fs2-serve.nebius.ai/scientific-adapter-identity/v1",
-  "model_id": "openfold3",
+  "model_id": "openfold3-openbind",
   "variant_id": "upstream-openbind-v0-5-0",
   "relationship": "independent-non-equivalent-alternative-to-alphafold3",
   "module": "fs2_serve.scientific_batch.adapters.openfold3",

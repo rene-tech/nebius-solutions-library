@@ -309,8 +309,11 @@ class SchedulingContractResolver:
                         raise SchedulingContractError("CPU stage resource envelope exceeds its declared request")
             else:
                 placement_class = placement_class or StagePlacementClass.ACCELERATOR
+                raw_stage_accelerator = None if placement is None else placement.get("accelerator")
                 stage_accelerator = (
-                    None if placement is None else _object(placement.get("accelerator"), "scientific stage accelerator")
+                    None
+                    if raw_stage_accelerator is None
+                    else _object(raw_stage_accelerator, "scientific stage accelerator")
                 )
                 stage_pools = model_pools if stage_accelerator is None else stage_accelerator.get("pool_ids")
                 stage_gpu_count = gpu_count if stage_accelerator is None else stage_accelerator.get("count")

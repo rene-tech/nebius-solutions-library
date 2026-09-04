@@ -1,0 +1,120 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-adapter-identity/v1",
+  "model_id": "alphafold3",
+  "variant_id": "upstream-v3-0-4",
+  "candidate_state": "unqualified",
+  "source": {
+    "repository": "google-deepmind/alphafold3",
+    "revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+    "revision_kind": "commit",
+    "release_tag": "v3.0.4"
+  },
+  "runtime": {
+    "image_digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
+    "command_io_contract": "models/cancer-immunotherapy/images/alphafold3/contracts/af3-command-io-contract.json",
+    "command": [
+      "/alphafold3_venv/bin/python3",
+      "/opt/fs2/af3_runtime.py"
+    ]
+  },
+  "authorization": {
+    "scope": "deployment",
+    "access_profile": "academic",
+    "use_authorization_status": "Granted",
+    "execution_authorization_status": "Authorized",
+    "serving_admission": "AdmittedNoPerRequestLicenseReceipt",
+    "request_time_license_receipt_required": false
+  },
+  "execution_namespace": "fs2-academic-poc",
+  "stages": [
+    {
+      "id": "data-pipeline",
+      "role": "cpu",
+      "resources": {
+        "cpu": "16",
+        "memory": "64Gi",
+        "ephemeral_storage": "32Gi",
+        "gpu_count": 0
+      },
+      "scheduling": {
+        "cpu_class": "reference-data",
+        "local_queue": "academic-scientific-cpu",
+        "cluster_queue": "reference-data-cpu"
+      },
+      "runtime_artifacts": [
+        {
+          "artifact_id": "alphafold3-public-databases-v3.0",
+          "state": "pending-terminal-publication",
+          "source_kind": "host-root",
+          "source": "/mnt/fs2-reference-data/data",
+          "source_sub_path": null,
+          "mount_path": "/reference-data",
+          "read_only": true,
+          "terminal_receipt": "/reference-data/receipts/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28.json",
+          "inventory_marker": ".fs2-manifest-sha256",
+          "manifest_path_template": "/reference-data/manifests/sha256/<manifest_sha256>.json"
+        }
+      ],
+      "forbidden_artifacts": [
+        "alphafold3-parameters"
+      ],
+      "produces": {
+        "format": "application/x-tar",
+        "directory": "fs2-af3-handoff",
+        "index": "index.json",
+        "schema": "fs2-serve.nebius.ai/alphafold3-data-handoff/v1",
+        "collector": "alphafold3-data-collector-v1",
+        "collector_requires_terminal_receipt": "data-runtime-receipt.json",
+        "collector_limits": {
+          "files": 64,
+          "bytes": 1073741824
+        }
+      }
+    },
+    {
+      "id": "inference",
+      "role": "gpu",
+      "needs": [
+        "data-pipeline"
+      ],
+      "resources": {
+        "gpu_count": 1
+      },
+      "scheduling": {
+        "local_queue": "academic-scientific",
+        "cluster_queue": "inference-accelerators",
+        "pool_resolution": "deployment-contract"
+      },
+      "runtime_artifacts": [
+        {
+          "artifact_id": "alphafold3-parameters",
+          "source_kind": "pvc-subpath-file",
+          "claim": "academic-assets-runtime-rwx",
+          "claim_namespace": "fs2-academic-poc",
+          "source_sub_path": "alphafold3/af3.bin.zst",
+          "mount_path": "/models/af3.bin.zst",
+          "read_only": true,
+          "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+          "size_bytes": 1020545840,
+          "supplemental_group": 65532,
+          "fs_group_forbidden": true
+        }
+      ],
+      "forbidden_artifacts": [
+        "alphafold3-public-databases-v3.0"
+      ],
+      "produces": {
+        "collector": "alphafold3-result-collector-v1",
+        "validator": "alphafold3-upstream-v3-0-4",
+        "artifacts": [
+          "protein-structure-mmcif/v1",
+          "alphafold3-summary-confidence/v1"
+        ]
+      }
+    }
+  ],
+  "route_gate": {
+    "route_exposed": false,
+    "blocked_until": "a producer-generated terminal reference receipt is published and the integrated renderer is live-qualified"
+  }
+}
