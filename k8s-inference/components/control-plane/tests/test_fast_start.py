@@ -37,6 +37,14 @@ from fs2_serve.fast_start_identity import (
     RuntimePlacementIdentity,
     mechanism_config_digest,
 )
+from fs2_serve.fast_start_mechanisms import (
+    FastStartMechanism,
+    GpuResidentQualification,
+    HostMemoryResidencyQualification,
+    RegionalCacheQualification,
+    ResidencyHolder,
+    RetainedCompileCache,
+)
 from fs2_serve.model_deployment import (
     CacheTier,
     FastStartEvidence,
@@ -108,8 +116,11 @@ def environment_identity(pool: PoolEnvelope) -> RuntimeEnvironmentIdentity:
     return RuntimeEnvironmentIdentity.model_validate({**payload, "qualificationDigest": canonical_digest(payload)})
 
 
-def qualify_for_fast_start(installed: InfrastructureEnvelope) -> InfrastructureEnvelope:
-    base_spec = model_spec()
+def qualify_for_fast_start(
+    installed: InfrastructureEnvelope,
+    base_spec: ModelDeploymentSpec | None = None,
+) -> InfrastructureEnvelope:
+    base_spec = base_spec or model_spec()
     pools = {
         key: pool.model_copy(
             update={
@@ -296,6 +307,7 @@ def test_fixed_and_automatic_combinations_are_validated_with_defaults() -> None:
     assert default.mode is FastStartMode.FIXED
     assert default.level is FastStartLevel.OFF
     assert default.fallback_policy is FastStartFallbackPolicy.ALLOW_LOWER_LEVEL
+    assert default == FastStartSpec.model_validate({"mode": "Fixed"})
     assert default == FastStartSpec.model_validate({"mode": "Fixed", "level": "Off"})
     assert default.requested_level is FastStartLevel.OFF
 
@@ -325,12 +337,18 @@ def test_default_fast_start_keeps_every_existing_spec_digest_stable() -> None:
         "maximumLevel": None,
         "fallbackPolicy": "AllowLowerLevel",
     }
+    assert wire["cache"]["mechanism"] is None
     legacy = {key: value for key, value in wire.items() if key != "fastStart"}
+    legacy["cache"] = {key: value for key, value in legacy["cache"].items() if key != "mechanism"}
     assert ModelDeploymentSpec.model_validate(legacy) == spec
     legacy["placement"]["poolRefs"] = sorted(legacy["placement"]["poolRefs"])
     legacy["exposure"]["openAIAliases"] = sorted(legacy["exposure"]["openAIAliases"])
     legacy["policy"]["allowedPrincipalIds"] = sorted(legacy["policy"]["allowedPrincipalIds"])
     assert spec_digest(spec) == canonical_digest(legacy)
+    # Pinned to the digest the released contract produced before the optional
+    # fast-start policy and the optional cold-start mechanism were added, so a
+    # later optional field can never silently roll a running workload.
+    assert spec_digest(spec) == "sha256:092bab27467b2a92ccfba642ba13cbd2896bdbde3e85080ebf687d105987f000"
     explicit_default = with_fast_start(spec, mode="Fixed", level="Off", fallback_policy="AllowLowerLevel")
     assert spec_digest(explicit_default) == spec_digest(spec)
     assert spec_digest(with_fast_start(spec, mode="Fixed", level="L1")) != spec_digest(spec)
@@ -605,8 +623,15 @@ def test_fixed_mode_honours_requests_only_with_evidence_then_falls_back_or_rejec
     assert decision.fast_start.qualification.state is FastStartQualificationState.UNQUALIFIED
     assert decision.fast_start.assigned_level is None and decision.fast_start.target_seconds is None
 
+    conventional_installed = with_evidence(
+        envelope(),
+        evidence(base, envelope().pools["pool-a"], seconds=[50.0] * 20, mechanism="conventional"),
+        evidence(base, envelope().pools["pool-b"], seconds=[100.0] * 20, mechanism="conventional"),
+    )
     accepted = validate_model_deployment(
-        with_fast_start(base, level="L2", fallback_policy="RequireTarget"), installed, evaluation_time=NOW
+        with_fast_start(base, level="L2", fallback_policy="RequireTarget"),
+        conventional_installed,
+        evaluation_time=NOW,
     )
     assert accepted.disposition is ValidationDisposition.ACCEPTED
     assert accepted.fast_start is not None and accepted.fast_start.assigned_level is FastStartLevel.L2
@@ -767,3 +792,302 @@ def test_status_projection_round_trips_through_kubernetes_camel_case_records() -
     assert wire["pools"][0]["receiptDigests"] == [digest("f")]
     restored = FastStartStatus.model_validate(_normalize_keys(wire))
     assert restored == status
+
+
+def test_pinning_a_cold_start_mechanism_is_a_deliberate_spec_change() -> None:
+    """Selecting a mechanism must change the digest; leaving it unset must not."""
+
+    spec = model_spec()
+    wire = spec.model_dump(mode="json", by_alias=True)
+
+    pinned = ModelDeploymentSpec.model_validate({**wire, "cache": {**wire["cache"], "mechanism": "regional-cache"}})
+    assert pinned.cache.mechanism is FastStartMechanism.REGIONAL_CACHE
+    assert spec_digest(pinned) != spec_digest(spec)
+
+    unpinned = ModelDeploymentSpec.model_validate({**wire, "cache": {**wire["cache"], "mechanism": None}})
+    assert spec_digest(unpinned) == spec_digest(spec)
+
+    # The two paths this cluster has no hardware for are not selectable at all,
+    # so a revision can never ask for a mechanism the pool cannot provide.
+    for refused in ("node-local-restore", "shared-restore", "modelexpress"):
+        with pytest.raises(ValueError, match="not selectable"):
+            ModelDeploymentSpec.model_validate({**wire, "cache": {**wire["cache"], "mechanism": refused}})
+
+
+H100_CAPABILITY_SELECTOR = {
+    "local-nvme.fs2.nebius/eligible": "false",
+    "snapshot.fs2.nebius/eligible": "false",
+}
+PLACEHOLDER_DIGEST = "sha256:" + "0" * 64
+
+
+def _self_digested(model: Any, **fields: Any) -> Any:
+    """Build a mechanism declaration with its own canonical configDigest."""
+
+    digest_value = model.model_construct(config_digest=PLACEHOLDER_DIGEST, **fields).expected_config_digest()
+    return model(config_digest=digest_value, **fields)
+
+
+def _regional_cache_declaration(pool_refs: Sequence[str], **overrides: Any) -> RegionalCacheQualification:
+    fields: dict[str, Any] = {
+        "image_mirror_registry": "registry.example",
+        "payload_claim_name": "qwen-cache-rwx",
+        "payload_content_path": "/models/qwen/payload",
+        "payload_bytes": 16397461266,
+        "compile_cache": RetainedCompileCache(
+            claim_name="fsm-compile-cache-rwx",
+            sub_path="qwen/driver-580-sm90",
+            abi="driver-580-sm90",
+            mount_path="/runtime-cache",
+            size_limit_bytes=1 << 34,
+        ),
+        "pool_refs": list(pool_refs),
+    }
+    fields.update(overrides)
+    return _self_digested(RegionalCacheQualification, **fields)
+
+
+def _host_memory_declaration(pool_refs: Sequence[str], **overrides: Any) -> HostMemoryResidencyQualification:
+    fields: dict[str, Any] = {
+        "residency_mode": "locked-payload-residency",
+        "payload_claim_name": "qwen-cache-rwx",
+        "payload_content_path": "/models/qwen/payload",
+        "payload_digest": digest("a"),
+        "payload_bytes": 16397461266,
+        "reserved_bytes": 19327352832,
+        "node_allocatable_bytes": 1648745732096,
+        "holder": ResidencyHolder(
+            name="fsm-hostmem-qwen",
+            namespace="fs2-models",
+            receipt_claim_name="fsm-residency-receipt-rwx",
+            receipt_mount_path="/residency",
+        ),
+        "receipt_max_age_seconds": 180,
+        "pool_refs": list(pool_refs),
+    }
+    fields.update(overrides)
+    return _self_digested(HostMemoryResidencyQualification, **fields)
+
+
+def _gpu_resident_declaration(pool_refs: Sequence[str], **overrides: Any) -> GpuResidentQualification:
+    fields: dict[str, Any] = {
+        "residency_mode": "standby-engine",
+        "standby_replicas": 1,
+        "accelerators_per_standby_replica": 1,
+        "minimum_hot_replicas": 1,
+        "promotion_probe_period_seconds": 1,
+        "pool_refs": list(pool_refs),
+    }
+    fields.update(overrides)
+    return _self_digested(GpuResidentQualification, **fields)
+
+
+def _declared_envelope(
+    *,
+    mechanism: str,
+    cache_tier: CacheTier = CacheTier.SHARED_FILESYSTEM,
+    pool_refs: Sequence[str] = ("pool-a",),
+    **declaration_overrides: Any,
+) -> tuple[ModelDeploymentSpec, InfrastructureEnvelope]:
+    """A spec that pins ``mechanism`` and an envelope that declares it."""
+
+    base = envelope()
+    qualification = base.qualifications["qwen.3-8b"]
+    pools = {
+        key: value.model_copy(update={"node_selector": {**value.node_selector, **H100_CAPABILITY_SELECTOR}})
+        for key, value in base.pools.items()
+    }
+    declarations: dict[str, Any] = {}
+    if mechanism == FastStartMechanism.REGIONAL_CACHE.value:
+        declarations["regional_cache"] = _regional_cache_declaration(pool_refs, **declaration_overrides)
+    elif mechanism == FastStartMechanism.HOST_MEMORY_RESIDENCY.value:
+        declarations["host_memory_residency"] = _host_memory_declaration(pool_refs, **declaration_overrides)
+    elif mechanism == FastStartMechanism.GPU_RESIDENT.value:
+        declarations["gpu_resident"] = _gpu_resident_declaration(pool_refs, **declaration_overrides)
+    updated = InfrastructureEnvelope(
+        **{
+            **base.model_dump(),
+            "pools": {key: value.model_dump() for key, value in pools.items()},
+            "qualifications": {
+                "qwen.3-8b": {
+                    **qualification.model_dump(),
+                    "template_cache_tiers": {digest("c"): cache_tier.value},
+                    **{key: value.model_dump() for key, value in declarations.items()},
+                }
+            },
+        }
+    )
+    spec = model_spec()
+    wire = spec.model_dump(mode="json", by_alias=True)
+    wire["cache"] = {**wire["cache"], "tier": cache_tier.value, "mechanism": mechanism}
+    return ModelDeploymentSpec.model_validate(wire), updated
+
+
+def _codes(spec: ModelDeploymentSpec, infrastructure: InfrastructureEnvelope) -> set[str]:
+    decision = validate_model_deployment(spec, infrastructure, evaluation_time=NOW)
+    return {issue.code for issue in decision.issues}
+
+
+def test_a_pinned_mechanism_needs_a_reviewed_declaration_from_terraform() -> None:
+    spec, infrastructure = _declared_envelope(mechanism="regional-cache")
+    assert "fast_start_mechanism_declaration_required" not in _codes(spec, infrastructure)
+
+    undeclared = InfrastructureEnvelope(
+        **{
+            **infrastructure.model_dump(),
+            "qualifications": {
+                "qwen.3-8b": {
+                    **infrastructure.qualifications["qwen.3-8b"].model_dump(),
+                    "regional_cache": None,
+                }
+            },
+        }
+    )
+    decision = validate_model_deployment(spec, undeclared, evaluation_time=NOW)
+    assert "fast_start_mechanism_declaration_required" in {issue.code for issue in decision.issues}
+    # The gap is Terraform's to close, and the exact input is named.
+    assert "fast_start_mechanisms.qwen.3-8b.regional-cache" in decision.terraform_inputs
+
+
+def test_a_retained_payload_mechanism_needs_the_shared_filesystem_tier() -> None:
+    spec, infrastructure = _declared_envelope(mechanism="regional-cache", cache_tier=CacheTier.NODE_LOCAL)
+    assert "fast_start_mechanism_cache_tier_incompatible" in _codes(spec, infrastructure)
+
+
+def test_a_pinned_mechanism_must_be_declared_for_every_placement_pool() -> None:
+    spec, infrastructure = _declared_envelope(mechanism="host-memory-residency", pool_refs=("pool-b",))
+    assert "fast_start_mechanism_pool_unqualified" in _codes(spec, infrastructure)
+
+
+def test_gpu_resident_is_refused_until_the_promotion_controller_exists() -> None:
+    with pytest.raises(ValueError, match="not selectable"):
+        _declared_envelope(mechanism="gpu-resident", minimum_hot_replicas=2)
+
+
+def _mechanism_envelope(declaration: Any, *, mechanism: str) -> InfrastructureEnvelope:
+    """An envelope that declares ``mechanism`` for every pool of the model."""
+
+    base = qualify_for_fast_start(envelope())
+    qualification = base.qualifications["qwen.3-8b"]
+    field = {
+        "regional-cache": "regional_cache",
+        "host-memory-residency": "host_memory_residency",
+        "gpu-resident": "gpu_resident",
+    }[mechanism]
+    return base.model_copy(
+        update={"qualifications": {"qwen.3-8b": qualification.model_copy(update={field: declaration})}}
+    )
+
+
+def test_a_configured_mechanism_with_too_few_samples_still_qualifies_nothing() -> None:
+    """A mechanism being present and configured never raises a level."""
+
+    declaration = _regional_cache_declaration(("pool-a", "pool-b"))
+    installed = _mechanism_envelope(declaration, mechanism="regional-cache")
+    spec = ModelDeploymentSpec.model_validate(
+        {
+            **model_spec().model_dump(mode="json", by_alias=True),
+            "cache": {**model_spec().model_dump(mode="json", by_alias=True)["cache"], "mechanism": "regional-cache"},
+        }
+    )
+    bound = mechanism_config_digest(
+        mechanism="regional-cache",
+        storage_contract_digest=STORAGE_CONTRACT_DIGEST,
+        declaration_digest=declaration.config_digest,
+    )
+    qualification = installed.qualifications["qwen.3-8b"].model_copy(
+        update={
+            "fast_start_evidence": [
+                evidence(
+                    spec,
+                    installed.pools[pool_ref],
+                    seconds=[41.0, 42.0, 43.0],
+                    mechanism="regional-cache",
+                    mechanism_config_digest=bound,
+                )
+                for pool_ref in ("pool-a", "pool-b")
+            ]
+        }
+    )
+    installed = installed.model_copy(update={"qualifications": {"qwen.3-8b": qualification}})
+
+    assessment = evaluate_fast_start(spec, installed, evaluation_time=NOW)
+    # Three failure-free 42-second attempts would look like L3 to a careless
+    # reader. The rule is 20, so the qualified level stays Off.
+    pool = next(item for item in assessment.pools if item.pool_ref == "pool-a")
+    assert pool.paths[0].mechanism == "regional-cache"
+    assert pool.paths[0].model_start is not None
+    assert pool.paths[0].model_start.p95_seconds == 43.0
+    assert pool.reason == "InsufficientBenchmarkSamples"
+    assert assessment.qualified_level is FastStartLevel.OFF
+    assert assessment.assigned_level is FastStartLevel.OFF
+
+
+def test_a_pinned_mechanism_refuses_another_mechanisms_cohort() -> None:
+    declaration = _regional_cache_declaration(("pool-a", "pool-b"))
+    installed = _mechanism_envelope(declaration, mechanism="regional-cache")
+    spec = ModelDeploymentSpec.model_validate(
+        {
+            **model_spec().model_dump(mode="json", by_alias=True),
+            "cache": {**model_spec().model_dump(mode="json", by_alias=True)["cache"], "mechanism": "regional-cache"},
+        }
+    )
+    # A full, otherwise compatible conventional cohort belonging to a different
+    # mechanism must not qualify the pinned revision.
+    qualification = installed.qualifications["qwen.3-8b"].model_copy(
+        update={
+            "fast_start_evidence": [
+                evidence(
+                    spec,
+                    installed.pools[pool_ref],
+                    seconds=[20.0] * MINIMUM_QUALIFYING_SAMPLES,
+                    mechanism="conventional",
+                )
+                for pool_ref in ("pool-a", "pool-b")
+            ]
+        }
+    )
+    installed = installed.model_copy(update={"qualifications": {"qwen.3-8b": qualification}})
+
+    assessment = evaluate_fast_start(spec, installed, evaluation_time=NOW)
+    assert assessment.qualified_level is FastStartLevel.OFF
+    pool = next(item for item in assessment.pools if item.pool_ref == "pool-a")
+    assert pool.paths == []
+    retained = pool.retained_paths[0]
+    assert retained.mechanism == "conventional"
+    assert [(item.code, item.field) for item in retained.mismatches] == [("ValueMismatch", "$.cache.mechanism")]
+
+
+def test_evidence_must_carry_the_declaration_bound_mechanism_identity() -> None:
+    declaration = _regional_cache_declaration(("pool-a", "pool-b"))
+    installed = _mechanism_envelope(declaration, mechanism="regional-cache")
+    spec = model_spec()
+    # Evidence recorded before the declaration existed carries the storage-only
+    # identity, so it is retained rather than counted once a declaration lands.
+    stale = mechanism_config_digest(
+        mechanism="regional-cache",
+        storage_contract_digest=STORAGE_CONTRACT_DIGEST,
+    )
+    qualification = installed.qualifications["qwen.3-8b"].model_copy(
+        update={
+            "fast_start_evidence": [
+                evidence(
+                    spec,
+                    installed.pools["pool-a"],
+                    seconds=[20.0] * MINIMUM_QUALIFYING_SAMPLES,
+                    mechanism="regional-cache",
+                    mechanism_config_digest=stale,
+                )
+            ]
+        }
+    )
+    installed = installed.model_copy(update={"qualifications": {"qwen.3-8b": qualification}})
+
+    assessment = evaluate_fast_start(spec, installed, evaluation_time=NOW)
+    pool = next(item for item in assessment.pools if item.pool_ref == "pool-a")
+    assert pool.paths == []
+    assert any(
+        item.field == "$.cache.mechanismConfigDigest"
+        for retained in pool.retained_paths
+        for item in retained.mismatches
+    )

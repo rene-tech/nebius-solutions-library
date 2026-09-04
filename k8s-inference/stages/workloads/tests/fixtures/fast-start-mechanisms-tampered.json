@@ -1,0 +1,63 @@
+{
+  "models": {
+    "qwen3-8b": {
+      "gpuResident": {
+        "acceleratorsPerStandbyReplica": 1,
+        "configDigest": "sha256:f4f819bc52b60c63487b0e26c46bf84259f61365f02a903689dae19ea3f84b95",
+        "minimumHotReplicas": 1,
+        "poolRefs": [
+          "nebius-b300-preemptible-1x"
+        ],
+        "promotionProbePeriodSeconds": 1,
+        "residencyMode": "standby-engine",
+        "schema": "fs2-serve.nebius.ai/fast-start-gpu-resident/v1",
+        "standbyReplicas": 1
+      },
+      "hostMemoryResidency": {
+        "configDigest": "sha256:62c80d10dfcd7c8cf1173a936921219aa7065f37c82eef37484f5716d219930d",
+        "holder": {
+          "name": "fs2-hostmem-qwen3-8b",
+          "namespace": "fs2-models",
+          "receiptClaimName": "fs2-residency-receipt-rwx",
+          "receiptMountPath": "/residency"
+        },
+        "nodeAllocatableBytes": 1648745732096,
+        "payloadBytes": 16397461266,
+        "payloadClaimName": "qwen3-8b-cache-rwx-7af24455",
+        "payloadContentPath": "/models/qwen3-8b/payload",
+        "payloadDigest": "sha256:5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d",
+        "poolRefs": [
+          "nebius-b300-preemptible-1x"
+        ],
+        "receiptMaxAgeSeconds": 180,
+        "reservedBytes": 21474836480,
+        "residencyMode": "mapped-payload-residency",
+        "schema": "fs2-serve.nebius.ai/fast-start-host-memory-residency/v1"
+      },
+      "regionalCache": {
+        "compileCache": {
+          "abi": "driver-580.159.04-sm90",
+          "claimName": "fs2-compile-cache-rwx",
+          "mountPath": "/runtime-cache",
+          "sizeLimitBytes": 17179869184,
+          "subPath": "qwen3-8b/driver-580.159.04-sm90"
+        },
+        "configDigest": "sha256:4a2a1b3c1ed4b467d8ffc00b8519fe467cb1c99e384e8ce14ec41b66cb2f5312",
+        "imageMirrorRegistry": "cr.eu-north1.nebius.cloud",
+        "payloadBytes": 16397461266,
+        "payloadClaimName": "qwen3-8b-cache-rwx-7af24455",
+        "payloadContentPath": "/models/qwen3-8b/payload",
+        "poolRefs": [
+          "nebius-b300-preemptible-1x"
+        ],
+        "schema": "fs2-serve.nebius.ai/fast-start-regional-cache/v1",
+        "warmPageCache": {
+          "readBytesLimit": 16397461266,
+          "timeoutSeconds": 600,
+          "workers": 16
+        }
+      }
+    }
+  },
+  "schema": "fs2-serve.nebius.ai/fast-start-mechanism-set/v1"
+}
