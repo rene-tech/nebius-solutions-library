@@ -52,7 +52,6 @@ _RECIPE_SHARED_PATHS = (
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/materialization.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/localization.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/production_registry.py",
-    "components/control-plane/src/fs2_serve/scientific_batch/adapters/secondary_structure.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/staged_workspace.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/verified_input.py",
     "catalog/runtime/schema/scientific-run-request.schema.json",
@@ -94,6 +93,7 @@ _RECIPE_MODEL_PATHS = {
     ),
     "esmfold2": (
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/esmfold2.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/secondary_structure.py",
         "catalog/runtime/schema/esmfold2-parameters.schema.json",
         "models/structure/batch-adapters/esmfold2/contract.json",
         "models/cancer-immunotherapy/images/structure-secondary/image-lock.json",
@@ -104,6 +104,7 @@ _RECIPE_MODEL_PATHS = {
     "esmfold2-fast": (
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/esmfold2_fast.py",
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/esmfold2.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/secondary_structure.py",
         "catalog/runtime/schema/esmfold2-fast-parameters.schema.json",
         "models/structure/batch-adapters/esmfold2-fast/contract.json",
         "models/cancer-immunotherapy/images/structure-secondary/image-lock.json",
@@ -120,6 +121,7 @@ _RECIPE_MODEL_PATHS = {
     ),
     "openfold3-openbind": (
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/openfold3.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/secondary_structure.py",
         "catalog/runtime/schema/openfold3-parameters.schema.json",
         "models/structure/batch-adapters/openfold3/contract.json",
         "models/cancer-immunotherapy/images/structure-secondary/handoff_contract.py",
@@ -131,6 +133,7 @@ _RECIPE_MODEL_PATHS = {
     ),
     "protenix-v2": (
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/protenix_v2.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/secondary_structure.py",
         "catalog/runtime/schema/protenix-v2-parameters.schema.json",
         "models/structure/batch-adapters/protenix-v2/contract.json",
         "models/cancer-immunotherapy/images/structure-secondary/handoff_contract.py",
