@@ -623,6 +623,14 @@ export interface ModelDeploymentPoolChoice {
   maximum_replicas: number;
 }
 
+export interface ModelDeploymentFastStartMechanismChoice {
+  mechanism: ModelDeploymentFastStartMechanism;
+  pool_refs: string[];
+  required_cache_tier: ModelDeploymentCacheTier | null;
+  minimum_hot_replicas: number;
+  minimum_max_replicas: number;
+}
+
 export interface ModelDeploymentConfigurationOption {
   model_ref: string;
   suggested_name: string;
@@ -633,6 +641,8 @@ export interface ModelDeploymentConfigurationOption {
   priority_class_choices: string[];
   tenant_choices: string[];
   scale_to_zero_qualified: boolean;
+  fast_start_mechanism_choices: ModelDeploymentFastStartMechanismChoice[];
+  fast_start_qualified_level: ModelDeploymentFastStartLevel;
 }
 
 export interface ModelDeploymentMutationCapabilities {

@@ -376,22 +376,22 @@ def test_context_overview_models_and_model_detail_are_typed_and_explicit(
     )
 
 
-def test_runtime_views_include_only_configured_models_and_use_unambiguous_pool_gpu(
+def test_h100_runtime_views_override_portable_catalog_gpu_metadata_without_rewriting_it(
     registry: Registry,
     cipher: Any,
     hasher: Any,
 ) -> None:
     from test_admin_configuration import qualified_configuration
 
+    catalog_gpu_class = registry.get("qwen3-8b").gateway.gpu_class
+    assert catalog_gpu_class == "NVIDIA-B300-SXM6-288GB"
     configuration, _ = qualified_configuration()
     pool_id = next(iter(configuration.pools))
     model = configuration.models["qwen3-8b"]
     configuration = configuration.model_copy(
         update={
             "pools": {
-                pool_id: configuration.pools[pool_id].model_copy(
-                    update={"accelerator_class": "nvidia-h100-sxm"}
-                )
+                pool_id: configuration.pools[pool_id].model_copy(update={"accelerator_class": "nvidia-h100-sxm5-80gb"})
             },
             "models": {
                 "qwen3-8b": model.model_copy(
@@ -413,9 +413,10 @@ def test_runtime_views_include_only_configured_models_and_use_unambiguous_pool_g
     assert models.json()["data"]["total"] == 1
     identity = models.json()["data"]["items"][0]["identity"]
     assert identity["id"] == "qwen3-8b"
-    assert identity["gpu_class"] == "nvidia-h100-sxm"
+    assert identity["gpu_class"] == "nvidia-h100-sxm5-80gb"
     assert identity["gpu_count"] == 2
-    assert detail.json()["data"]["model"]["identity"]["gpu_class"] == "nvidia-h100-sxm"
+    assert detail.json()["data"]["model"]["identity"]["gpu_class"] == "nvidia-h100-sxm5-80gb"
+    assert registry.get("qwen3-8b").gateway.gpu_class == catalog_gpu_class
     states = {item["state"]: item["models"] for item in overview.json()["data"]["model_states"]}
     assert states["hot"] == 1
     assert states["unknown"] == 0

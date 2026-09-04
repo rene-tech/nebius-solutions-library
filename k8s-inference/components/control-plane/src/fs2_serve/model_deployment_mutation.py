@@ -28,11 +28,18 @@ from .access_models import OperatorPrincipal, OperatorRole
 from .admin import AdminProblemError
 from .admin_models import AdminEnvelope
 from .fast_start import FastStartLevel
+from .fast_start_mechanisms import (
+    DECLARED_MECHANISMS,
+    SELECTABLE_MECHANISMS,
+    FastStartMechanism,
+    GpuResidentQualification,
+)
 from .model_deployment import (
     API_VERSION,
     DNS_LABEL_PATTERN,
     DNS_SUBDOMAIN_PATTERN,
     KIND,
+    CacheTier,
     DesiredState,
     InfrastructureEnvelope,
     LifecycleSpec,
@@ -325,6 +332,24 @@ class ModelDeploymentPoolChoice(StrictModel):
     maximum_replicas: int = Field(ge=1, le=10000)
 
 
+class ModelDeploymentFastStartMechanismChoice(StrictModel):
+    mechanism: FastStartMechanism
+    pool_refs: list[str] = Field(min_length=1, max_length=128)
+    required_cache_tier: CacheTier | None = None
+    minimum_hot_replicas: int = Field(default=0, ge=0, le=10000)
+    minimum_max_replicas: int = Field(default=1, ge=1, le=10000)
+
+    @model_validator(mode="after")
+    def exact_dependencies(self) -> ModelDeploymentFastStartMechanismChoice:
+        if self.mechanism not in SELECTABLE_MECHANISMS:
+            raise ValueError("configuration option mechanism is not operator-selectable")
+        if len(set(self.pool_refs)) != len(self.pool_refs):
+            raise ValueError("configuration option mechanism pools must be unique")
+        if self.minimum_max_replicas < self.minimum_hot_replicas:
+            raise ValueError("configuration option mechanism ceiling cannot be below its hot floor")
+        return self
+
+
 class ModelDeploymentConfigurationOption(StrictModel):
     model_ref: str = Field(min_length=1, max_length=128)
     suggested_name: str = Field(min_length=1, max_length=253, pattern=DNS_SUBDOMAIN_PATTERN)
@@ -335,6 +360,10 @@ class ModelDeploymentConfigurationOption(StrictModel):
     priority_class_choices: list[str] = Field(min_length=1, max_length=128)
     tenant_choices: list[str] = Field(min_length=1, max_length=1024)
     scale_to_zero_qualified: bool
+    fast_start_mechanism_choices: list[ModelDeploymentFastStartMechanismChoice] = Field(
+        min_length=1,
+        max_length=len(SELECTABLE_MECHANISMS),
+    )
     # Highest fast-start level backed by compatible benchmark evidence for the
     # default spec across every default pool; Off when no evidence exists.
     fast_start_qualified_level: FastStartLevel = FastStartLevel.OFF
@@ -357,6 +386,18 @@ class ModelDeploymentConfigurationOption(StrictModel):
             raise ValueError("configuration option default tenant is not an allowed choice")
         if self.default_spec.availability.min_replicas == 0 and not self.scale_to_zero_qualified:
             raise ValueError("configuration option cannot default to unqualified scale-to-zero")
+        mechanism_choices = {choice.mechanism: choice for choice in self.fast_start_mechanism_choices}
+        if len(mechanism_choices) != len(self.fast_start_mechanism_choices):
+            raise ValueError("configuration option mechanism choices must be unique")
+        if FastStartMechanism.CONVENTIONAL not in mechanism_choices:
+            raise ValueError("configuration option must retain the conventional mechanism")
+        if any(not set(choice.pool_refs).issubset(pool_refs) for choice in mechanism_choices.values()):
+            raise ValueError("configuration option mechanism pools must be allowed pool choices")
+        default_mechanism = self.default_spec.cache.mechanism
+        if default_mechanism is not None:
+            choice = mechanism_choices.get(default_mechanism)
+            if choice is None or not default_pool_refs.issubset(choice.pool_refs):
+                raise ValueError("configuration option default mechanism is not an allowed choice")
         return self
 
 
@@ -480,6 +521,49 @@ class ModelDeploymentMutationService:
             template_name, template_digest = valid_templates[0]
             default_maximum = min(4, budget_replicas, sum(choice.maximum_replicas for choice in pool_choices))
             default_minimum = 0 if qualification.scale_to_zero_qualified else 1
+            selectable_pool_refs = [choice.pool_ref for choice in pool_choices]
+            mechanism_choices = [
+                ModelDeploymentFastStartMechanismChoice(
+                    mechanism=FastStartMechanism.CONVENTIONAL,
+                    pool_refs=selectable_pool_refs,
+                )
+            ]
+            for mechanism in DECLARED_MECHANISMS:
+                declaration = qualification.mechanism_declaration(mechanism)
+                if declaration is None:
+                    continue
+                declared_pool_refs = [
+                    pool_ref for pool_ref in selectable_pool_refs if pool_ref in declaration.pool_refs
+                ]
+                if not declared_pool_refs:
+                    continue
+                minimum_hot_replicas = 0
+                minimum_max_replicas = 1
+                required_cache_tier: CacheTier | None = None
+                if mechanism in (
+                    FastStartMechanism.REGIONAL_CACHE,
+                    FastStartMechanism.HOST_MEMORY_RESIDENCY,
+                ):
+                    required_cache_tier = CacheTier.SHARED_FILESYSTEM
+                    if qualification.template_cache_tiers[template_digest] is not required_cache_tier:
+                        continue
+                if isinstance(declaration, GpuResidentQualification):
+                    minimum_hot_replicas = declaration.minimum_hot_replicas
+                    minimum_max_replicas = declaration.minimum_hot_replicas + declaration.standby_replicas
+                    available_replicas = sum(
+                        choice.maximum_replicas for choice in pool_choices if choice.pool_ref in declared_pool_refs
+                    )
+                    if minimum_max_replicas > available_replicas:
+                        continue
+                mechanism_choices.append(
+                    ModelDeploymentFastStartMechanismChoice(
+                        mechanism=mechanism,
+                        pool_refs=declared_pool_refs,
+                        required_cache_tier=required_cache_tier,
+                        minimum_hot_replicas=minimum_hot_replicas,
+                        minimum_max_replicas=minimum_max_replicas,
+                    )
+                )
             try:
                 default_spec = ModelDeploymentSpec.model_validate(
                     {
@@ -570,6 +654,7 @@ class ModelDeploymentMutationService:
                         priority_class_choices=valid_priorities,
                         tenant_choices=valid_tenants,
                         scale_to_zero_qualified=qualification.scale_to_zero_qualified,
+                        fast_start_mechanism_choices=mechanism_choices,
                         fast_start_qualified_level=decision.fast_start.qualified_level,
                     )
                 )
