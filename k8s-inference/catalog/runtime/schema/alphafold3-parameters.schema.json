@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/alphafold3-upstream-v3-0-4-parameters/v1",
+  "title": "AlphaFold 3 v3.0.4 scientific run parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "input_mode"
+  ],
+  "properties": {
+    "input_mode": {
+      "const": "raw",
+      "description": "Run the reference-data CPU pipeline before GPU inference. Enriched input requires a separate single-stage profile."
+    },
+    "fold_job": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^/\\\\\\u0000-\\u001f\\u007f]+$",
+      "description": "Optional AlphaFold 3 job name to select when one input artifact contains multiple jobs."
+    }
+  }
+}
