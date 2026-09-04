@@ -47,7 +47,13 @@ describe("ModelDeployment draft helpers", () => {
 
     const fixed = structuredClone(valid);
     fixed.fastStart = { mode: "Fixed" };
-    expect(localModelDeploymentProblem("qwen-live", "fs2-models", fixed)).toMatch(/needs a level/);
+    expect(localModelDeploymentProblem("qwen-live", "fs2-models", fixed)).toBeNull();
+    expect(fastStartPolicySummary(fixed.fastStart)).toBe("Fixed · Off · Standard loading");
+
+    const automaticDefaults = structuredClone(valid);
+    automaticDefaults.fastStart = { mode: "Automatic" };
+    expect(localModelDeploymentProblem("qwen-live", "fs2-models", automaticDefaults)).toBeNull();
+    expect(fastStartPolicySummary(automaticDefaults.fastStart)).toBe("Automatic · Off–L4");
 
     const automatic = structuredClone(valid);
     automatic.fastStart = { mode: "Automatic", minimumLevel: "L4", maximumLevel: "L1" };

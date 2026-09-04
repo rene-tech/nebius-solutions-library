@@ -1049,7 +1049,9 @@ locals {
     # while the controller still drops core requests before admission. The
     # facade refuses an enabled general CPU lane without core_capacity, so the
     # two can never disagree.
-    budget_core_resources = local.root_core_admission_enabled
+    budget_core_resources                 = local.root_core_admission_enabled
+    fast_start_claims                     = var.deployment.storage.fast_start_claims
+    accelerator_node_schedulable_capacity = local.root_accelerator_node_sizes
     reference_data = {
       enabled    = var.deployment.storage.reference_data.enabled
       namespace  = var.deployment.storage.reference_data.namespace
@@ -1136,6 +1138,7 @@ locals {
       fast_start_evidence_file                   = var.deployment.dynamic_models.fast_start_evidence_file
       fast_start_environment_qualifications_file = var.deployment.dynamic_models.fast_start_environment_qualifications_file
       fast_start_measurement_contracts_file      = var.deployment.dynamic_models.fast_start_measurement_contracts_file
+      fast_start_mechanisms_file                 = var.deployment.dynamic_models.fast_start_mechanisms_file
       fast_start_wait_second_value               = var.deployment.dynamic_models.fast_start_wait_second_value
       fast_start_mechanism_hourly_costs          = var.deployment.dynamic_models.fast_start_mechanism_hourly_costs
       priority_classes                           = var.deployment.dynamic_models.priority_classes

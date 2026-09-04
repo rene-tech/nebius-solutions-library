@@ -1,0 +1,19 @@
+{
+  "models": {
+    "unknown-model": {
+      "gpuResident": {
+        "acceleratorsPerStandbyReplica": 1,
+        "configDigest": "sha256:f4f819bc52b60c63487b0e26c46bf84259f61365f02a903689dae19ea3f84b95",
+        "minimumHotReplicas": 1,
+        "poolRefs": [
+          "nebius-b300-preemptible-1x"
+        ],
+        "promotionProbePeriodSeconds": 1,
+        "residencyMode": "standby-engine",
+        "schema": "fs2-serve.nebius.ai/fast-start-gpu-resident/v1",
+        "standbyReplicas": 1
+      }
+    }
+  },
+  "schema": "fs2-serve.nebius.ai/fast-start-mechanism-set/v1"
+}

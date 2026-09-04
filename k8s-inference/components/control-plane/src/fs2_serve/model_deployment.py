@@ -27,7 +27,9 @@ from pydantic import AwareDatetime, Field, StringConstraints, model_validator
 
 from .fast_start import (
     FastStartAssessment,
+    FastStartFallbackPolicy,
     FastStartMode,
+    FastStartPathAssessment,
     FastStartQualificationState,
     FastStartSpec,
     evaluate_fast_start,
@@ -39,6 +41,21 @@ from .fast_start_identity import (
     RuntimeEvidenceIdentity,
     StartupScenario,
 )
+from .fast_start_mechanisms import (
+    DECLARED_MECHANISMS,
+    SELECTABLE_MECHANISMS,
+    FastStartMechanism,
+    GpuResidentQualification,
+    HostMemoryResidencyQualification,
+    RegionalCacheQualification,
+    assess_pool_mechanisms,
+    configure_gpu_resident,
+    configure_host_memory_residency,
+    configure_regional_cache,
+    residency_holder_manifests,
+    scheduled_pod_memory_bytes,
+)
+from .fast_start_policy import FastStartHistoryWindow
 from .models import KubernetesModel
 
 API_VERSION = "inference.fs2.nebius.ai/v1alpha1"
@@ -226,9 +243,27 @@ class SnapshotRef(NamedDigest):
 
 
 class CacheSpec(KubernetesModel):
+    """Cache tier, snapshot policy, and the selected cold-start mechanism.
+
+    ``mechanism`` pins which cold-start optimisation the renderer configures and
+    which benchmark cohort may qualify a level for this revision.  Leaving it
+    unset preserves the historical wire digest. Fixed policy renders the
+    conventional loader; Automatic policy resolves one qualified, renderable
+    mechanism and uses that same decision for evidence, rendering and status.
+    Pinning is strictly narrowing. A mechanism never grants a level merely by
+    being selected.
+    """
+
     tier: CacheTier
     snapshot_preference: SnapshotPreference
     snapshot_ref: SnapshotRef | None = None
+    mechanism: FastStartMechanism | None = None
+
+    @model_validator(mode="after")
+    def selectable_mechanism(self) -> CacheSpec:
+        if self.mechanism is not None and self.mechanism not in SELECTABLE_MECHANISMS:
+            raise ValueError("cache mechanism is not selectable on a ModelDeployment")
+        return self
 
     @model_validator(mode="after")
     def valid_snapshot(self) -> CacheSpec:
@@ -437,6 +472,11 @@ def spec_digest(spec: ModelDeploymentSpec) -> str:
         # were already persisted; an unset or default policy keeps every
         # existing ETag and controller spec-digest annotation stable.
         del payload["fastStart"]
+    if spec.cache.mechanism is None:
+        # The cold-start mechanism selection joined the contract later still.
+        # An unpinned revision keeps its existing ETag and spec-digest
+        # annotation, so adding this field cannot roll a running workload.
+        del payload["cache"]["mechanism"]
     return canonical_digest(payload)
 
 
@@ -459,6 +499,15 @@ class ValidationIssue(KubernetesModel):
     owner: Literal["live-control-plane", "terraform"]
 
 
+class FastStartMechanismDecision(KubernetesModel):
+    """One effective mechanism decision shared by validation, render and status."""
+
+    mechanism: FastStartMechanism
+    source: Literal["Explicit", "Automatic", "Default"]
+    renderable: bool
+    reason: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z][A-Za-z0-9]*$")
+
+
 class ValidationDecision(KubernetesModel):
     disposition: ValidationDisposition
     spec_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
@@ -466,12 +515,15 @@ class ValidationDecision(KubernetesModel):
     terraform_inputs: list[str] = Field(default_factory=list, max_length=64)
     admitted_pool_ref: str | None = Field(default=None, min_length=1, max_length=128)
     fast_start: FastStartAssessment | None = None
+    fast_start_mechanism: FastStartMechanismDecision
 
     @model_validator(mode="after")
     def consistent_disposition(self) -> ValidationDecision:
         error_owners = {issue.owner for issue in self.issues if issue.severity is ValidationSeverity.ERROR}
         if self.disposition is ValidationDisposition.ACCEPTED and error_owners:
             raise ValueError("accepted validation cannot contain errors")
+        if self.disposition is ValidationDisposition.ACCEPTED and not self.fast_start_mechanism.renderable:
+            raise ValueError("accepted validation needs a renderable fast-start mechanism")
         if self.disposition is ValidationDisposition.REJECTED and "live-control-plane" not in error_owners:
             raise ValueError("rejected validation needs a live-control-plane error")
         if self.disposition is ValidationDisposition.INFRASTRUCTURE_REQUIRED and (
@@ -487,6 +539,7 @@ class PoolEnvelope(KubernetesModel):
     resource_name: str = Field(min_length=1, max_length=253)
     capacity_type: Literal["regular", "preemptible"]
     accelerators_per_node: int = Field(ge=1, le=64)
+    allocatable_memory_bytes: int | None = Field(default=None, ge=1, le=1 << 50)
     min_nodes: int = Field(ge=0, le=10000)
     max_nodes: int = Field(ge=0, le=10000)
     node_selector: dict[str, str] = Field(min_length=1, max_length=32)
@@ -606,6 +659,40 @@ class ModelQualification(KubernetesModel):
     fast_start_evidence: list[FastStartEvidence] = Field(default_factory=list, max_length=256)
     fast_start_runtime_contracts: list[FastStartRuntimeContract] = Field(default_factory=list, max_length=64)
     model_express: ModelExpressQualification | None = None
+    regional_cache: RegionalCacheQualification | None = None
+    host_memory_residency: HostMemoryResidencyQualification | None = None
+    gpu_resident: GpuResidentQualification | None = None
+
+    def mechanism_declaration(
+        self,
+        mechanism: FastStartMechanism,
+    ) -> RegionalCacheQualification | HostMemoryResidencyQualification | GpuResidentQualification | None:
+        """Return the reviewed declaration for one mechanism, if any."""
+
+        if mechanism is FastStartMechanism.REGIONAL_CACHE:
+            return self.regional_cache
+        if mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY:
+            return self.host_memory_residency
+        if mechanism is FastStartMechanism.GPU_RESIDENT:
+            return self.gpu_resident
+        return None
+
+    @model_validator(mode="after")
+    def exact_mechanism_declarations(self) -> ModelQualification:
+        residency = self.host_memory_residency
+        regional = self.regional_cache
+        if residency is not None and regional is not None:
+            if (
+                residency.residency_mode != "runtime-sleep-offload"
+                and residency.payload_content_path != regional.payload_content_path
+            ):
+                raise ValueError("host-memory residency must hold the same retained payload as the regional cache")
+        if (
+            self.gpu_resident is not None
+            and self.gpu_resident.accelerators_per_standby_replica > self.max_accelerators_per_replica
+        ):
+            raise ValueError("a gpu-resident standby replica cannot exceed the qualified accelerator count")
+        return self
 
     @model_validator(mode="after")
     def exact_artifacts(self) -> ModelQualification:
@@ -661,6 +748,12 @@ class InfrastructureEnvelope(KubernetesModel):
     max_accelerators_per_model: int = Field(default=1024, ge=1, le=640000)
     fast_start_wait_second_value: float = Field(default=0.01, ge=0, le=1000000)
     fast_start_mechanism_hourly_costs: dict[str, float] = Field(default_factory=dict, max_length=128)
+    residency_holder_image: str | None = Field(
+        default=None,
+        min_length=73,
+        max_length=768,
+        pattern=IMAGE_DIGEST_PATTERN,
+    )
 
     @model_validator(mode="after")
     def key_identities_match(self) -> InfrastructureEnvelope:
@@ -679,12 +772,232 @@ class InfrastructureEnvelope(KubernetesModel):
             for item in self.qualifications.values()
         ):
             raise ValueError("ModelExpress v0.5.1 requires one accelerator class per model binding")
+        for item in self.qualifications.values():
+            for mechanism in DECLARED_MECHANISMS:
+                declaration = item.mechanism_declaration(mechanism)
+                if declaration is None:
+                    continue
+                if not set(declaration.pool_refs).issubset(self.pools):
+                    raise ValueError("fast-start mechanism declaration references a pool outside the envelope")
+                if isinstance(declaration, HostMemoryResidencyQualification):
+                    for pool_ref in declaration.pool_refs:
+                        allocatable_memory = self.pools[pool_ref].allocatable_memory_bytes
+                        if allocatable_memory is None or declaration.reserved_bytes > allocatable_memory:
+                            raise ValueError(
+                                "host-memory residency reservation exceeds an eligible pool's allocatable memory"
+                            )
         if any(
             re.fullmatch(r"^[a-z][a-z0-9-]{0,63}$", name) is None or not math.isfinite(cost) or cost < 0
             for name, cost in self.fast_start_mechanism_hourly_costs.items()
         ):
             raise ValueError("fast-start mechanism costs must map bounded names to finite non-negative values")
         return self
+
+
+def _mechanism_renderability(
+    *,
+    mechanism: FastStartMechanism,
+    spec: ModelDeploymentSpec,
+    envelope: InfrastructureEnvelope,
+) -> tuple[bool, str]:
+    """Return whether one mechanism can truthfully render on every selected pool."""
+
+    if mechanism not in SELECTABLE_MECHANISMS:
+        return False, "MechanismNotSelectable"
+    if mechanism in (FastStartMechanism.REGIONAL_CACHE, FastStartMechanism.HOST_MEMORY_RESIDENCY):
+        if spec.cache.tier is not CacheTier.SHARED_FILESYSTEM:
+            return False, "SharedFilesystemRequired"
+    # A missing pool is Terraform-owned infrastructure state.  Resolve that
+    # before declaration membership or physical-capacity checks so derived
+    # live-policy errors cannot take ownership of the same absent object.
+    if any(pool_ref not in envelope.pools for pool_ref in spec.placement.pool_refs):
+        return False, "PoolOutsideEnvelope"
+    qualification = envelope.qualifications.get(spec.model_ref)
+    declaration = qualification.mechanism_declaration(mechanism) if qualification is not None else None
+    if mechanism in DECLARED_MECHANISMS and declaration is None:
+        return False, "NoReviewedDeclaration"
+    if isinstance(declaration, HostMemoryResidencyQualification):
+        if declaration.residency_mode == "runtime-sleep-offload":
+            return False, "SleepWakeControllerNotInstalled"
+        for pool_ref in spec.placement.pool_refs:
+            pool = envelope.pools.get(pool_ref)
+            allocatable_memory = None if pool is None else pool.allocatable_memory_bytes
+            if allocatable_memory is None or declaration.reserved_bytes > allocatable_memory:
+                return False, "HostMemoryReservationExceedsPool"
+    if declaration is not None and not set(spec.placement.pool_refs).issubset(declaration.pool_refs):
+        return False, "NoReviewedDeclarationForPool"
+    for pool_ref in spec.placement.pool_refs:
+        pool = envelope.pools[pool_ref]
+        availability = {
+            item.mechanism: item
+            for item in assess_pool_mechanisms(pool_id=pool.pool_id, node_selector=pool.node_selector)
+        }[mechanism.value]
+        if availability.state != "Available":
+            return False, availability.reason
+    return True, "MechanismRenderable"
+
+
+def decide_fast_start_mechanism(
+    *,
+    spec: ModelDeploymentSpec,
+    envelope: InfrastructureEnvelope,
+    assessment: FastStartAssessment,
+    automatic_history: tuple[FastStartHistoryWindow, FastStartHistoryWindow] | None = None,
+    previous_status: Mapping[str, Any] | None = None,
+    evaluation_time: datetime | None = None,
+) -> FastStartMechanismDecision:
+    """Choose the one mechanism rendered and reported for this reconciliation."""
+
+    if spec.cache.mechanism is not None:
+        renderable, reason = _mechanism_renderability(
+            mechanism=spec.cache.mechanism,
+            spec=spec,
+            envelope=envelope,
+        )
+        return FastStartMechanismDecision(
+            mechanism=spec.cache.mechanism,
+            source="Explicit",
+            renderable=renderable,
+            reason=reason,
+        )
+    if spec.fast_start.mode is not FastStartMode.AUTOMATIC:
+        return FastStartMechanismDecision(
+            mechanism=FastStartMechanism.CONVENTIONAL,
+            source="Default",
+            renderable=True,
+            reason="ConventionalDefault",
+        )
+
+    candidates: list[tuple[FastStartMechanism, int, float, float]] = []
+    for mechanism in SELECTABLE_MECHANISMS:
+        renderable, _reason = _mechanism_renderability(mechanism=mechanism, spec=spec, envelope=envelope)
+        if not renderable:
+            continue
+        paths: list[FastStartPathAssessment] = []
+        for pool in assessment.pools:
+            matches = [path for path in pool.paths if path.mechanism == mechanism.value]
+            if not matches:
+                paths = []
+                break
+            paths.append(
+                min(
+                    matches,
+                    key=lambda path: (
+                        -path.qualified_level.rank,
+                        math.inf
+                        if path.model_start is None or path.model_start.p95_seconds is None
+                        else path.model_start.p95_seconds,
+                        path.identity_digest,
+                    ),
+                )
+            )
+        if not paths:
+            continue
+        binding_level = min(path.qualified_level.rank for path in paths)
+        slowest_p95 = max(
+            math.inf
+            if path.model_start is None or path.model_start.p95_seconds is None
+            else path.model_start.p95_seconds
+            for path in paths
+        )
+        if not math.isfinite(slowest_p95):
+            continue
+        candidates.append(
+            (
+                mechanism,
+                binding_level,
+                slowest_p95,
+                envelope.fast_start_mechanism_hourly_costs.get(mechanism.value, 0.0),
+            )
+        )
+
+    assert spec.fast_start.minimum_level is not None
+    target_candidates = [item for item in candidates if item[1] >= spec.fast_start.minimum_level.rank]
+    if target_candidates:
+        selection_candidates = target_candidates
+    elif spec.fast_start.fallback_policy is FastStartFallbackPolicy.ALLOW_LOWER_LEVEL and candidates:
+        # A permitted fallback means the highest qualified lower level, not a
+        # cheaper but slower mechanism.  Economics only breaks ties between
+        # mechanisms that can deliver that same fallback class.
+        fallback_rank = max(item[1] for item in candidates)
+        selection_candidates = [item for item in candidates if item[1] == fallback_rank]
+    else:
+        selection_candidates = []
+    candidate_mechanisms = {item[0] for item in selection_candidates}
+    if not selection_candidates:
+        candidate_mechanisms.add(FastStartMechanism.CONVENTIONAL)
+    now = evaluation_time or datetime.now(UTC)
+    previous_fast_start = previous_status.get("fastStart", {}) if isinstance(previous_status, Mapping) else {}
+    previous_automatic = previous_fast_start.get("automatic", {}) if isinstance(previous_fast_start, Mapping) else {}
+    previous_mechanism = previous_automatic.get("mechanismId") if isinstance(previous_automatic, Mapping) else None
+    previous_evaluated_at = previous_automatic.get("evaluatedAt") if isinstance(previous_automatic, Mapping) else None
+    if isinstance(previous_evaluated_at, str) and isinstance(previous_mechanism, str):
+        try:
+            previous_time = datetime.fromisoformat(previous_evaluated_at.replace("Z", "+00:00"))
+        except ValueError:
+            previous_time = None
+        retained = (
+            FastStartMechanism(previous_mechanism)
+            if previous_mechanism in {item.value for item in FastStartMechanism}
+            else None
+        )
+        if (
+            previous_time is not None
+            and previous_time.tzinfo is not None
+            and previous_time <= now
+            and now - previous_time < timedelta(minutes=5)
+            and retained in candidate_mechanisms
+        ):
+            return FastStartMechanismDecision(
+                mechanism=retained,
+                source="Automatic",
+                renderable=True,
+                reason="AutomaticEvaluationRetained",
+            )
+
+    short_history = None if automatic_history is None else automatic_history[0]
+    long_history = None if automatic_history is None else automatic_history[1]
+    history_complete = bool(
+        short_history is not None
+        and long_history is not None
+        and short_history.complete
+        and long_history.complete
+        and envelope.fast_start_wait_second_value is not None
+    )
+    if not history_complete:
+        if spec.fast_start.minimum_level.rank > 0 and selection_candidates:
+            # Without demand there is no defensible latency-value trade-off.
+            # Pick the least costly qualified mechanism deterministically; the
+            # level policy will clamp it to the configured bounds.
+            selected = min(
+                selection_candidates,
+                key=lambda item: (item[3], item[2], -item[1], item[0].value),
+            )[0]
+            reason = "MissingDemandDataQualifiedFallback"
+        else:
+            selected = FastStartMechanism.CONVENTIONAL
+            reason = "MissingDemandDataConventionalFallback"
+    elif selection_candidates:
+        assert long_history is not None and envelope.fast_start_wait_second_value is not None
+        activation_rate = long_history.expected_cold_activations_per_hour
+        selected = min(
+            selection_candidates,
+            key=lambda item: (
+                item[3] + activation_rate * item[2] * envelope.fast_start_wait_second_value,
+                -item[1],
+                item[0].value,
+            ),
+        )[0]
+        reason = "DemandCostSelected"
+    else:
+        selected = FastStartMechanism.CONVENTIONAL
+        reason = "ConventionalFallback"
+    return FastStartMechanismDecision(
+        mechanism=selected,
+        source="Automatic",
+        renderable=True,
+        reason=reason,
+    )
 
 
 def _issue(
@@ -709,13 +1022,64 @@ def validate_model_deployment(
     *,
     current: ModelDeploymentSpec | None = None,
     evaluation_time: datetime | None = None,
+    automatic_history: tuple[FastStartHistoryWindow, FastStartHistoryWindow] | None = None,
+    previous_status: Mapping[str, Any] | None = None,
+    fast_start_mechanism: FastStartMechanismDecision | None = None,
 ) -> ValidationDecision:
     """Validate one revision before any renderer, Kubernetes, or cloud action."""
 
     issues: list[ValidationIssue] = []
     terraform_inputs: set[str] = set()
-    fast_start = evaluate_fast_start(spec, envelope, evaluation_time=evaluation_time or datetime.now(UTC))
-    if fast_start.qualification.state is FastStartQualificationState.UNQUALIFIED:
+    observed_at = evaluation_time or datetime.now(UTC)
+    broad_fast_start = evaluate_fast_start(spec, envelope, evaluation_time=observed_at)
+    mechanism_decision = fast_start_mechanism or decide_fast_start_mechanism(
+        spec=spec,
+        envelope=envelope,
+        assessment=broad_fast_start,
+        automatic_history=automatic_history,
+        previous_status=previous_status,
+        evaluation_time=observed_at,
+    )
+    if fast_start_mechanism is not None:
+        renderable, reason = _mechanism_renderability(
+            mechanism=mechanism_decision.mechanism,
+            spec=spec,
+            envelope=envelope,
+        )
+        if spec.cache.mechanism is not None and mechanism_decision.mechanism is not spec.cache.mechanism:
+            renderable, reason = False, "PinnedMechanismMismatch"
+        if not renderable:
+            mechanism_decision = mechanism_decision.model_copy(update={"renderable": False, "reason": reason})
+    assessed_spec = spec
+    if spec.cache.mechanism is None:
+        assessed_spec = spec.model_copy(
+            update={"cache": spec.cache.model_copy(update={"mechanism": mechanism_decision.mechanism})}
+        )
+    # Qualification must be narrowed to the mechanism that this exact
+    # reconciliation renders.  Using the broad automatic assessment here can
+    # admit RequireTarget from one mechanism while rendering another one with
+    # no compatible evidence.
+    fast_start = evaluate_fast_start(assessed_spec, envelope, evaluation_time=observed_at)
+    pools_outside_envelope = any(pool_ref not in envelope.pools for pool_ref in spec.placement.pool_refs)
+    reason_handled_by_explicit_spec = spec.cache.mechanism is not None and mechanism_decision.reason in {
+        "NoReviewedDeclaration",
+        "NoReviewedDeclarationForPool",
+        "SharedFilesystemRequired",
+    }
+    if (
+        not mechanism_decision.renderable
+        and mechanism_decision.reason != "PoolOutsideEnvelope"
+        and not reason_handled_by_explicit_spec
+    ):
+        issues.append(
+            _issue(
+                "fast_start_mechanism_unavailable",
+                "$.spec.cache.mechanism",
+                f"the selected cold-start mechanism is unavailable: {mechanism_decision.reason}",
+                owner="live-control-plane",
+            )
+        )
+    if fast_start.qualification.state is FastStartQualificationState.UNQUALIFIED and not pools_outside_envelope:
         issues.append(
             _issue(
                 "fast_start_target_unqualified",
@@ -965,6 +1329,68 @@ def validate_model_deployment(
                 )
             )
 
+    mechanism = spec.cache.mechanism
+    if mechanism is not None and mechanism in DECLARED_MECHANISMS:
+        declaration = qualification.mechanism_declaration(mechanism) if qualification is not None else None
+        if declaration is None:
+            issues.append(
+                _issue(
+                    "fast_start_mechanism_declaration_required",
+                    "$.spec.cache.mechanism",
+                    "the selected cold-start mechanism has no reviewed declaration for this model",
+                    owner="terraform",
+                )
+            )
+            terraform_inputs.add(f"fast_start_mechanisms.{spec.model_ref}.{mechanism.value}")
+        else:
+            for index, pool_ref in enumerate(spec.placement.pool_refs):
+                if pool_ref not in envelope.pools:
+                    continue
+                if pool_ref not in declaration.pool_refs:
+                    issues.append(
+                        _issue(
+                            "fast_start_mechanism_pool_unqualified",
+                            f"$.spec.placement.poolRefs[{index}]",
+                            "the selected cold-start mechanism is not declared for this pool",
+                            owner="live-control-plane",
+                        )
+                    )
+            if (
+                mechanism in (FastStartMechanism.REGIONAL_CACHE, FastStartMechanism.HOST_MEMORY_RESIDENCY)
+                and spec.cache.tier is not CacheTier.SHARED_FILESYSTEM
+            ):
+                issues.append(
+                    _issue(
+                        "fast_start_mechanism_cache_tier_incompatible",
+                        "$.spec.cache.tier",
+                        "a retained regional payload needs the SharedFilesystem cache tier",
+                        owner="live-control-plane",
+                    )
+                )
+            if isinstance(declaration, GpuResidentQualification):
+                # A parked standby replica holds an accelerator for as long as
+                # it waits. Make that dependency explicit here instead of
+                # letting the autoscaler meet it as unexplained reserved
+                # capacity.
+                if spec.availability.min_replicas < declaration.minimum_hot_replicas:
+                    issues.append(
+                        _issue(
+                            "gpu_resident_hot_floor_required",
+                            "$.spec.availability.minReplicas",
+                            "gpu-resident needs a hot floor at least as large as its declared minimum",
+                            owner="live-control-plane",
+                        )
+                    )
+                if spec.availability.max_replicas < declaration.minimum_hot_replicas + declaration.standby_replicas:
+                    issues.append(
+                        _issue(
+                            "gpu_resident_capacity_required",
+                            "$.spec.availability.maxReplicas",
+                            "gpu-resident needs replica headroom for its parked standby replicas",
+                            owner="live-control-plane",
+                        )
+                    )
+
     pool_replica_capacity = {
         pool.pool_id: (pool.accelerators_per_node // spec.placement.accelerators_per_replica) * pool.max_nodes
         for pool in known_pools
@@ -1079,6 +1505,7 @@ def validate_model_deployment(
         terraform_inputs=sorted(terraform_inputs),
         admitted_pool_ref=admitted_pool_ref,
         fast_start=fast_start,
+        fast_start_mechanism=mechanism_decision,
     )
 
 
@@ -1093,8 +1520,30 @@ class RenderContext(KubernetesModel):
     evaluation_time: AwareDatetime = Field(default_factory=lambda: datetime.now(UTC))
     minimum_total_replicas_override: int | None = Field(default=None, ge=0, le=10000)
     hot_floor_override: int | None = Field(default=None, ge=0, le=10000)
+    fast_start_mechanism: FastStartMechanismDecision | None = None
     model_express: ModelExpressQualification | None = None
+    regional_cache: RegionalCacheQualification | None = None
+    host_memory_residency: HostMemoryResidencyQualification | None = None
+    gpu_resident: GpuResidentQualification | None = None
+    residency_holder_image: str | None = Field(
+        default=None,
+        min_length=73,
+        max_length=768,
+        pattern=IMAGE_DIGEST_PATTERN,
+    )
     preview: bool = False
+
+    def mechanism_declaration(
+        self,
+        mechanism: FastStartMechanism,
+    ) -> RegionalCacheQualification | HostMemoryResidencyQualification | GpuResidentQualification | None:
+        if mechanism is FastStartMechanism.REGIONAL_CACHE:
+            return self.regional_cache
+        if mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY:
+            return self.host_memory_residency
+        if mechanism is FastStartMechanism.GPU_RESIDENT:
+            return self.gpu_resident
+        return None
 
     @model_validator(mode="after")
     def owner_required_for_apply(self) -> RenderContext:
@@ -1843,6 +2292,30 @@ class LegacyManifestRenderer:
             raise ValueError("legacy template primary workload is missing")
 
         known_gpu_resources = {pool.resource_name for pool in (context.eligible_pools or [context.pool])}
+        residency_holders: dict[str, tuple[HostMemoryResidencyQualification, PoolEnvelope]] = {}
+        residency_runtime_segments: dict[str, list[tuple[int, int]]] = {}
+        mechanism = (
+            context.fast_start_mechanism.mechanism if context.fast_start_mechanism is not None else spec.cache.mechanism
+        )
+        if context.fast_start_mechanism is not None and not context.fast_start_mechanism.renderable:
+            raise ValueError("the effective cold-start mechanism is not renderable")
+        if spec.cache.mechanism is not None and mechanism is not spec.cache.mechanism:
+            raise ValueError("the render mechanism differs from the operator-pinned mechanism")
+        if mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY:
+            residency = context.mechanism_declaration(mechanism)
+            if not isinstance(residency, HostMemoryResidencyQualification):
+                raise ValueError("the selected cold-start mechanism has no reviewed declaration")
+            if residency.holder.namespace != context.namespace:
+                raise ValueError("the residency holder must share the ModelDeployment namespace")
+            if residency.residency_mode != "runtime-sleep-offload":
+                for pool in context.eligible_pools or [context.pool]:
+                    if pool.pool_id not in residency.pool_refs:
+                        raise ValueError("the selected cold-start mechanism is not declared for the rendered pool")
+                    if pool.allocatable_memory_bytes is None:
+                        raise ValueError("host-memory residency needs measured allocatable RAM for every pool")
+                    if residency.reserved_bytes > pool.allocatable_memory_bytes:
+                        raise ValueError("host-memory holder cannot fit in the pool's allocatable RAM")
+                    residency_holders[pool.pool_id] = (residency, pool)
         for segment in segments:
             workload = copy.deepcopy(primary_template)
             workload_metadata = workload["metadata"]
@@ -1927,6 +2400,48 @@ class LegacyManifestRenderer:
                     **pod_metadata.get("labels", {}),
                     MODEL_EXPRESS_TRANSFER_GROUP_LABEL: transfer_group,
                 }
+            if mechanism is not None and mechanism in DECLARED_MECHANISMS:
+                declaration = context.mechanism_declaration(mechanism)
+                if declaration is None:
+                    raise ValueError("the selected cold-start mechanism has no reviewed declaration")
+                if segment.pool.pool_id not in declaration.pool_refs:
+                    raise ValueError("the selected cold-start mechanism is not declared for the rendered pool")
+                if isinstance(declaration, RegionalCacheQualification):
+                    configure_regional_cache(
+                        pod_spec=pod_spec,
+                        pod_metadata=pod_metadata,
+                        qualification=declaration,
+                        runtime_image=spec.runtime.image,
+                        runtime_container_name=bundle.runtime_container_name,
+                    )
+                elif isinstance(declaration, HostMemoryResidencyQualification):
+                    if declaration.holder.namespace != context.namespace:
+                        raise ValueError("the residency holder must share the ModelDeployment namespace")
+                    holder_name = _derived_name("fs2-hostmem-", f"{context.name}-{segment.pool.pool_id}")
+                    holder_identity = bounded_label_value(holder_name)
+                    configure_host_memory_residency(
+                        pod_spec=pod_spec,
+                        pod_metadata=pod_metadata,
+                        qualification=declaration,
+                        runtime_image=spec.runtime.image,
+                        model_ref=bounded_label_value(spec.model_ref),
+                        holder_identity=holder_identity,
+                        runtime_container_name=bundle.runtime_container_name,
+                    )
+                    residency_runtime_segments.setdefault(segment.pool.pool_id, []).append(
+                        (segment.maximum_replicas, scheduled_pod_memory_bytes(pod_spec))
+                    )
+                else:
+                    configure_gpu_resident(
+                        pod_spec=pod_spec,
+                        pod_metadata=pod_metadata,
+                        qualification=declaration,
+                        configured_hot_replicas=hot_floor,
+                        # The hot segment is the promoted serving set; a burst
+                        # segment is where a parked standby waits for promotion.
+                        role="serving" if segment.role == "hot" else "standby",
+                        runtime_container_name=bundle.runtime_container_name,
+                    )
             resources = container.setdefault("resources", {})
             for field in ("requests", "limits"):
                 values = resources.setdefault(field, {})
@@ -2026,6 +2541,50 @@ class LegacyManifestRenderer:
             if owner_references:
                 scaler["metadata"]["ownerReferences"] = owner_references
             rendered.append(scaler)
+
+        # Hot and burst Deployments can share a pool.  Validate the worst
+        # schedulable per-node mix across all of that pool's segments instead of
+        # checking each segment as though it had the node to itself.
+        for pool_id, (residency, pool) in residency_holders.items():
+            remaining_slots = pool.accelerators_per_node // spec.placement.accelerators_per_replica
+            runtime_memory = 0
+            for segment_maximum, pod_memory in sorted(
+                residency_runtime_segments.get(pool_id, []),
+                key=lambda item: item[1],
+                reverse=True,
+            ):
+                admitted = min(segment_maximum, remaining_slots)
+                runtime_memory += admitted * pod_memory
+                remaining_slots -= admitted
+                if remaining_slots == 0:
+                    break
+            assert pool.allocatable_memory_bytes is not None
+            if residency.reserved_bytes + runtime_memory > pool.allocatable_memory_bytes:
+                raise ValueError("host-memory holder and runtime Pods cannot fit in the pool's allocatable RAM")
+
+        primary_pod_security_context = primary_template["spec"]["template"]["spec"].get("securityContext")
+        for pool_id, (residency, pool) in sorted(residency_holders.items()):
+            if context.residency_holder_image is None:
+                raise ValueError("a host-memory residency render needs the holder image")
+            holder_name = _derived_name("fs2-hostmem-", f"{context.name}-{pool_id}")
+            holder_identity = bounded_label_value(holder_name)
+            rendered.extend(
+                residency_holder_manifests(
+                    namespace=context.namespace,
+                    name=holder_name,
+                    model_ref=bounded_label_value(spec.model_ref),
+                    holder_identity=holder_identity,
+                    qualification=residency,
+                    image=context.residency_holder_image,
+                    node_selector=pool.node_selector,
+                    tolerations=pool.tolerations,
+                    labels=labels,
+                    annotations={**annotations, WORKLOAD_POOL_ANNOTATION: pool_id},
+                    # The holder must read exactly the bytes the runtime reads.
+                    pod_security_context=primary_pod_security_context,
+                    owner_references=owner_references,
+                )
+            )
 
         if spec.lifecycle.desired_state is DesiredState.ENABLED:
             if spec.exposure.open_ai or spec.exposure.mcp:
@@ -2188,7 +2747,7 @@ class ReconcilePlan(KubernetesModel):
     remove_finalizer: bool = False
 
 
-def _rejected_decision(
+def reject_validation_decision(
     decision: ValidationDecision,
     *,
     code: str,
@@ -2201,6 +2760,7 @@ def _rejected_decision(
         issues=[*decision.issues, _issue(code, path, message, owner="live-control-plane")],
         terraform_inputs=decision.terraform_inputs,
         fast_start=decision.fast_start,
+        fast_start_mechanism=decision.fast_start_mechanism,
     )
 
 
@@ -2281,6 +2841,7 @@ def plan_reconciliation(
         envelope,
         current=current,
         evaluation_time=render_context.evaluation_time,
+        fast_start_mechanism=render_context.fast_start_mechanism,
     )
     if validation.disposition is ValidationDisposition.REJECTED:
         return ReconcilePlan(
@@ -2301,6 +2862,10 @@ def plan_reconciliation(
     context_pool_refs = {pool.pool_id for pool in (render_context.eligible_pools or [render_context.pool])}
     if context_pool_refs != set(spec.placement.pool_refs):
         raise ValueError("render context eligible pools differ from the admitted placement")
+    if render_context.fast_start_mechanism is None:
+        render_context = render_context.model_copy(update={"fast_start_mechanism": validation.fast_start_mechanism})
+    elif render_context.fast_start_mechanism != validation.fast_start_mechanism:
+        raise ValueError("render context fast-start decision differs from validation")
 
     if spec.adoption.mode is AdoptionMode.OBSERVE:
         return ReconcilePlan(
@@ -2321,7 +2886,7 @@ def plan_reconciliation(
     if spec.adoption.mode is AdoptionMode.CLAIM:
         problem = _verify_adoption(spec, render_context, observed, adoption_verification)
         if problem is not None:
-            rejected = _rejected_decision(
+            rejected = reject_validation_decision(
                 validation,
                 code="adoption_verification_failed",
                 path="$.spec.adoption",
@@ -2373,7 +2938,21 @@ def plan_reconciliation(
                 }
             )
 
-    render = renderer.render(effective_spec, effective_context)
+    try:
+        render = renderer.render(effective_spec, effective_context)
+    except ValueError as exc:
+        rejected = reject_validation_decision(
+            validation,
+            code="render_contract_invalid",
+            path="$.spec",
+            message=str(exc),
+        )
+        return ReconcilePlan(
+            action=ReconcileAction.REJECT,
+            target_generation=generation,
+            spec_digest=rejected.spec_digest,
+            validation=rejected,
+        )
     observed_by_identity = _resource_map(observed)
     desired_by_identity = {
         f"{item.api_version}/{item.kind}/{item.namespace}/{item.name}": item for item in render.resources
@@ -2386,7 +2965,7 @@ def plan_reconciliation(
             if observed_by_identity[identity].controller_owner_uid != render_context.uid
         ]
         if collisions:
-            rejected = _rejected_decision(
+            rejected = reject_validation_decision(
                 validation,
                 code="foreign_resource_collision",
                 path="$.metadata.name",

@@ -279,6 +279,15 @@ spec:
                     snapshotPreference:
                       type: string
                       enum: [Never, Prefer, Require]
+                    mechanism:
+                      description: >-
+                        Pinned cold-start optimisation mechanism. When unset, Fixed
+                        mode uses the conventional loader and Automatic mode selects
+                        a qualified, renderable mechanism from evidence. Pinning
+                        narrows both the render and which benchmark cohort may qualify
+                        a level; it never grants a level by itself.
+                      type: string
+                      enum: [conventional, regional-cache, host-memory-residency]
                     snapshotRef:
                       type: object
                       required: [name, digest, strategy]
@@ -436,15 +445,19 @@ spec:
                       type: string
                       enum: [Fixed, Automatic]
                     level:
+                      description: Fixed-mode target; defaults to Off when omitted.
                       type: string
                       enum: ["Off", L1, L2, L3, L4]
                     minimumLevel:
+                      description: Automatic-mode lower bound; defaults to Off when omitted.
                       type: string
                       enum: ["Off", L1, L2, L3, L4]
                     maximumLevel:
+                      description: Automatic-mode upper bound; defaults to L4 when omitted.
                       type: string
                       enum: ["Off", L1, L2, L3, L4]
                     fallbackPolicy:
+                      description: Defaults to AllowLowerLevel when omitted.
                       type: string
                       enum: [AllowLowerLevel, RequireTarget]
             status:
@@ -620,6 +633,120 @@ spec:
                       minimum: 1
                     hot:
                       type: boolean
+                    cacheMechanisms:
+                      description: >-
+                        Every cold-start mechanism the platform knows about,
+                        including the ones this cluster's pools cannot provide.
+                        A Configured mechanism never raises qualifiedLevel,
+                        assignedLevel or effectiveLevel; those come only from
+                        compatible benchmark evidence.
+                      type: object
+                      maxProperties: 16
+                      additionalProperties:
+                        type: object
+                        required: [state, selected, availability, reason, poolRefs, pools]
+                        properties:
+                          state:
+                            type: string
+                            enum: [Available, Configured, Pending, Unavailable, Undeclared]
+                          selected:
+                            type: boolean
+                          availability:
+                            type: string
+                            enum: [Available, Unavailable]
+                          reason:
+                            type: string
+                            minLength: 1
+                            maxLength: 64
+                            pattern: ^[A-Za-z][A-Za-z0-9]*$
+                          configDigest:
+                            type: string
+                            pattern: ^sha256:[a-f0-9]{64}$
+                          residencyMode:
+                            type: string
+                            minLength: 1
+                            maxLength: 64
+                          poolRefs:
+                            type: array
+                            maxItems: 32
+                            x-kubernetes-list-type: set
+                            items:
+                              type: string
+                              minLength: 1
+                              maxLength: 128
+                          pools:
+                            type: object
+                            maxProperties: 32
+                            additionalProperties:
+                              type: object
+                              required: [availability, reason]
+                              properties:
+                                availability:
+                                  type: string
+                                  enum: [Available, Unavailable]
+                                reason:
+                                  type: string
+                                  minLength: 1
+                                  maxLength: 64
+                                  pattern: ^[A-Za-z][A-Za-z0-9]*$
+                                evidenceSelector:
+                                  type: object
+                                  maxProperties: 8
+                                  additionalProperties:
+                                    type: string
+                                    maxLength: 63
+                                mechanismConfigDigest:
+                                  type: string
+                                  pattern: ^sha256:[a-f0-9]{64}$
+                          retainedPayloadBytes:
+                            type: integer
+                            format: int64
+                            minimum: 0
+                          retainedCompileCacheAbi:
+                            type: string
+                            minLength: 1
+                            maxLength: 128
+                          reservedHostMemoryBytes:
+                            description: Host memory reserved per holder node or serving replica, as identified by hostMemoryReservationScope.
+                            type: integer
+                            format: int64
+                            minimum: 0
+                          hostMemoryReservationScope:
+                            type: string
+                            enum: [per-node, per-replica]
+                          maximumReservedHostMemoryBytes:
+                            description: Maximum host memory reservation for the selected render; zero when this declaration is not selected.
+                            type: integer
+                            format: int64
+                            minimum: 0
+                          reservedHostMemoryFraction:
+                            description: Declared fraction of node allocatable memory; omitted for heterogeneous multi-pool placements.
+                            type: number
+                            minimum: 0
+                            maximum: 1
+                          standbyReplicas:
+                            type: integer
+                            format: int32
+                            minimum: 0
+                            maximum: 64
+                          reservedAccelerators:
+                            type: integer
+                            format: int32
+                            minimum: 0
+                            maximum: 4096
+                          minimumHotReplicas:
+                            type: integer
+                            format: int32
+                            minimum: 0
+                            maximum: 10000
+                          configuredHotReplicas:
+                            type: integer
+                            format: int32
+                            minimum: 0
+                            maximum: 10000
+                          telemetryState:
+                            type: string
+                            enum: [Unavailable]
                     mechanisms:
                       type: object
                       maxProperties: 16

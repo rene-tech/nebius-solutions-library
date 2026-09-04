@@ -332,6 +332,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
                 repository=model_repository,
                 writer=kubernetes_models,
                 envelope=controller_files.infrastructure_envelope,
+                renderer=controller_files.renderer(),
+                prometheus_server_address=settings.model_controller_prometheus_server_address,
                 namespace=settings.model_controller_namespace,
             )
             model_deployment_bridge = ModelDeploymentRuntimeBridge(

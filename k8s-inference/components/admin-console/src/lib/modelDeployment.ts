@@ -1,4 +1,5 @@
 import type {
+  ModelDeploymentCacheMechanismStatus,
   ModelDeploymentConfigurationOption,
   ModelDeploymentEffectiveFastStartLevel,
   ModelDeploymentFastStartFallbackPolicy,
@@ -64,6 +65,7 @@ export interface NormalizedFastStartStatus {
   endToEndSeconds: number | null;
   observedAt: string | null;
   mechanisms: Record<string, unknown> | null;
+  cacheMechanisms: Record<string, ModelDeploymentCacheMechanismStatus>;
   pools: ModelDeploymentFastStartPoolStatus[];
   automatic: ModelDeploymentFastStartStatus["automatic"];
 }
@@ -76,7 +78,7 @@ export function normalizeFastStartPolicy(policy: ModelDeploymentFastStartPolicy 
   const mode = policy?.mode === "Automatic" ? "Automatic" : "Fixed";
   const level = policy?.level ?? "Off";
   const minimumLevel = policy?.minimumLevel ?? "Off";
-  const maximumLevel = policy?.maximumLevel ?? (policy?.level ?? "L1");
+  const maximumLevel = policy?.maximumLevel ?? "L4";
   return {
     configured: Boolean(policy),
     mode,
@@ -145,6 +147,7 @@ export function normalizedFastStartStatus(view: ModelDeploymentStatusView): Norm
     observedAt: status.observedAt ?? status.observed_at
       ?? modelStart?.latestObservedAt ?? modelStart?.latest_observed_at ?? null,
     mechanisms: status.mechanisms ?? null,
+    cacheMechanisms: status.cacheMechanisms ?? status.cache_mechanisms ?? {},
     pools,
     automatic: status.automatic ?? null,
   };
@@ -187,7 +190,7 @@ export function createEmptyModelDeploymentSpec(tenantId = ""): ModelDeploymentSp
       cooldownSeconds: 300,
       warmWindows: [],
     },
-    cache: { tier: "Disabled", snapshotPreference: "Never", snapshotRef: null },
+    cache: { tier: "Disabled", snapshotPreference: "Never", snapshotRef: null, mechanism: null },
     fastStart: { mode: "Fixed", level: "Off", fallbackPolicy: "AllowLowerLevel" },
     queue: { localQueue: "", priorityClass: "", maxQueueSeconds: 900 },
     rollout: { strategy: "Rolling", maxUnavailable: 0, maxSurge: 1, progressDeadlineSeconds: 1800 },
@@ -308,11 +311,19 @@ export function localModelDeploymentProblem(
   if (spec.cache.snapshotPreference === "Require" && spec.cache.tier === "Disabled") return "A required snapshot needs an enabled cache tier.";
   if (spec.cache.snapshotRef && !dnsSubdomain.test(spec.cache.snapshotRef.name)) return "Snapshot name must be a Kubernetes DNS subdomain.";
   if (spec.cache.snapshotRef && !sha256.test(spec.cache.snapshotRef.digest)) return "Snapshot digest must be a complete sha256 digest.";
+  if (
+    (spec.cache.mechanism === "regional-cache" || spec.cache.mechanism === "host-memory-residency")
+    && spec.cache.tier !== "SharedFilesystem"
+  ) return "A retained regional payload needs the SharedFilesystem cache tier.";
   if (spec.fastStart) {
-    if (spec.fastStart.mode === "Fixed" && !spec.fastStart.level) return "A fixed fast-start policy needs a level.";
+    if (
+      spec.fastStart.mode === "Fixed"
+      && (spec.fastStart.minimumLevel != null || spec.fastStart.maximumLevel != null)
+    ) return "Fixed fast-start uses level; minimum and maximum levels belong to Automatic mode.";
     if (spec.fastStart.mode === "Automatic") {
-      if (!spec.fastStart.minimumLevel || !spec.fastStart.maximumLevel) return "An automatic fast-start policy needs minimum and maximum levels.";
-      if ((fastStartLevelOrder.get(spec.fastStart.minimumLevel) ?? -1) > (fastStartLevelOrder.get(spec.fastStart.maximumLevel) ?? -1)) return "Automatic fast-start minimum cannot exceed its maximum.";
+      if (spec.fastStart.level != null) return "Automatic fast-start uses minimum and maximum levels; level belongs to Fixed mode.";
+      const normalized = normalizeFastStartPolicy(spec.fastStart);
+      if ((fastStartLevelOrder.get(normalized.minimumLevel) ?? -1) > (fastStartLevelOrder.get(normalized.maximumLevel) ?? -1)) return "Automatic fast-start minimum cannot exceed its maximum.";
     }
   }
   if (!dnsSubdomain.test(spec.queue.localQueue) || !dnsSubdomain.test(spec.queue.priorityClass)) return "Queue and priority-class references must be Kubernetes DNS subdomains.";

@@ -115,6 +115,10 @@ deployment = {
     # Optional, machine-generated benchmark projection. Keep the receipt
     # cohort outside this human-authored file.
     # fast_start_evidence_file = "/absolute/private/run/fast-start-evidence.json"
+    # A reviewed mechanism set declares compile-cache and residency-receipt
+    # claim names. Terraform provisions those claims through
+    # storage.fast_start_claims below unless manage=false adopts existing ones.
+    # fast_start_mechanisms_file = "/absolute/private/run/fast-start-mechanisms.json"
     # Optional relative hourly costs let Automatic mode balance wait time
     # against mechanism cost; unknown mechanisms use zero marginal cost.
     # fast_start_wait_second_value = 0.01
@@ -313,6 +317,12 @@ deployment = {
   # The pipeline never shares the Kubernetes system pool. Its image must
   # contain Python, zstd and the AWS CLI and must be digest pinned.
   # storage = {
+  #   fast_start_claims = {
+  #     manage                     = true
+  #     storage_class              = "csi-mounted-fs-path-sc"
+  #     compile_cache_min_size_gib = 16
+  #     residency_receipt_size_gib = 1
+  #   }
   #   reference_data = {
   #     enabled = true
   #     # The portable default is disposable with forbid_deletion=false. This

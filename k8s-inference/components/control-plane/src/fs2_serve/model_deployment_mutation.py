@@ -27,16 +27,27 @@ from .access import AdminAccessService
 from .access_models import OperatorPrincipal, OperatorRole
 from .admin import AdminProblemError
 from .admin_models import AdminEnvelope
-from .fast_start import FastStartLevel
+from .fast_start import FastStartLevel, FastStartMode, FastStartSpec
+from .fast_start_mechanisms import (
+    DECLARED_MECHANISMS,
+    SELECTABLE_MECHANISMS,
+    FastStartMechanism,
+    GpuResidentQualification,
+    HostMemoryResidencyQualification,
+)
 from .model_deployment import (
     API_VERSION,
     DNS_LABEL_PATTERN,
     DNS_SUBDOMAIN_PATTERN,
     KIND,
+    CacheTier,
     DesiredState,
+    FastStartMechanismDecision,
     InfrastructureEnvelope,
     LifecycleSpec,
     ModelDeploymentSpec,
+    ModelRenderer,
+    RenderContext,
     ValidationDisposition,
     spec_digest,
     validate_model_deployment,
@@ -325,6 +336,24 @@ class ModelDeploymentPoolChoice(StrictModel):
     maximum_replicas: int = Field(ge=1, le=10000)
 
 
+class ModelDeploymentFastStartMechanismChoice(StrictModel):
+    mechanism: FastStartMechanism
+    pool_refs: list[str] = Field(min_length=1, max_length=128)
+    required_cache_tier: CacheTier | None = None
+    minimum_hot_replicas: int = Field(default=0, ge=0, le=10000)
+    minimum_max_replicas: int = Field(default=1, ge=1, le=10000)
+
+    @model_validator(mode="after")
+    def exact_dependencies(self) -> ModelDeploymentFastStartMechanismChoice:
+        if self.mechanism not in SELECTABLE_MECHANISMS:
+            raise ValueError("configuration option mechanism is not operator-selectable")
+        if len(set(self.pool_refs)) != len(self.pool_refs):
+            raise ValueError("configuration option mechanism pools must be unique")
+        if self.minimum_max_replicas < self.minimum_hot_replicas:
+            raise ValueError("configuration option mechanism ceiling cannot be below its hot floor")
+        return self
+
+
 class ModelDeploymentConfigurationOption(StrictModel):
     model_ref: str = Field(min_length=1, max_length=128)
     suggested_name: str = Field(min_length=1, max_length=253, pattern=DNS_SUBDOMAIN_PATTERN)
@@ -335,6 +364,10 @@ class ModelDeploymentConfigurationOption(StrictModel):
     priority_class_choices: list[str] = Field(min_length=1, max_length=128)
     tenant_choices: list[str] = Field(min_length=1, max_length=1024)
     scale_to_zero_qualified: bool
+    fast_start_mechanism_choices: list[ModelDeploymentFastStartMechanismChoice] = Field(
+        min_length=1,
+        max_length=len(SELECTABLE_MECHANISMS),
+    )
     # Highest fast-start level backed by compatible benchmark evidence for the
     # default spec across every default pool; Off when no evidence exists.
     fast_start_qualified_level: FastStartLevel = FastStartLevel.OFF
@@ -357,6 +390,18 @@ class ModelDeploymentConfigurationOption(StrictModel):
             raise ValueError("configuration option default tenant is not an allowed choice")
         if self.default_spec.availability.min_replicas == 0 and not self.scale_to_zero_qualified:
             raise ValueError("configuration option cannot default to unqualified scale-to-zero")
+        mechanism_choices = {choice.mechanism: choice for choice in self.fast_start_mechanism_choices}
+        if len(mechanism_choices) != len(self.fast_start_mechanism_choices):
+            raise ValueError("configuration option mechanism choices must be unique")
+        if FastStartMechanism.CONVENTIONAL not in mechanism_choices:
+            raise ValueError("configuration option must retain the conventional mechanism")
+        if any(not set(choice.pool_refs).issubset(pool_refs) for choice in mechanism_choices.values()):
+            raise ValueError("configuration option mechanism pools must be allowed pool choices")
+        default_mechanism = self.default_spec.cache.mechanism
+        if default_mechanism is not None:
+            choice = mechanism_choices.get(default_mechanism)
+            if choice is None or not default_pool_refs.issubset(choice.pool_refs):
+                raise ValueError("configuration option default mechanism is not an allowed choice")
         return self
 
 
@@ -406,12 +451,123 @@ class ModelDeploymentMutationService:
         repository: StoreModelDeploymentRepository,
         writer: ModelDeploymentDesiredWriter,
         envelope: InfrastructureEnvelope,
+        renderer: ModelRenderer | None = None,
+        prometheus_server_address: str | None = None,
         namespace: str = "fs2-models",
     ) -> None:
         self.repository = repository
         self.writer = writer
         self.envelope = envelope
+        self.renderer = renderer
+        self.prometheus_server_address = prometheus_server_address
         self.namespace = namespace
+
+    def _render_is_proven(
+        self,
+        *,
+        spec: ModelDeploymentSpec,
+        mechanism: FastStartMechanismDecision,
+        admitted_pool_ref: str | None,
+        name: str,
+        generation: int,
+    ) -> bool:
+        """Render the exact accepted mechanism with the installed template."""
+
+        if (
+            self.renderer is None
+            or self.prometheus_server_address is None
+            or admitted_pool_ref is None
+            or not mechanism.renderable
+        ):
+            return False
+        qualification = self.envelope.qualifications.get(spec.model_ref)
+        pool = self.envelope.pools.get(admitted_pool_ref)
+        if qualification is None or pool is None:
+            return False
+        try:
+            self.renderer.render(
+                spec,
+                RenderContext(
+                    name=name,
+                    namespace=self.namespace,
+                    uid=None,
+                    generation=generation,
+                    pool=pool,
+                    eligible_pools=[self.envelope.pools[pool_ref] for pool_ref in spec.placement.pool_refs],
+                    prometheus_server_address=self.prometheus_server_address,
+                    fast_start_mechanism=mechanism,
+                    model_express=qualification.model_express,
+                    regional_cache=qualification.regional_cache,
+                    host_memory_residency=qualification.host_memory_residency,
+                    gpu_resident=qualification.gpu_resident,
+                    residency_holder_image=self.envelope.residency_holder_image,
+                    preview=True,
+                ),
+            )
+        except ValueError:
+            return False
+        return True
+
+    def _mechanism_choice_is_renderable(
+        self,
+        *,
+        default_spec: ModelDeploymentSpec,
+        choice: ModelDeploymentFastStartMechanismChoice,
+        pool_refs: list[str],
+        maximum_replicas: int,
+    ) -> bool:
+        """Prove the exact mechanism, pools and advertised replica ceiling."""
+
+        minimum_replicas = max(default_spec.availability.min_replicas, choice.minimum_hot_replicas)
+        if maximum_replicas < max(minimum_replicas, choice.minimum_max_replicas):
+            return False
+        candidate = default_spec.model_copy(
+            update={
+                "placement": default_spec.placement.model_copy(update={"pool_refs": pool_refs}),
+                "availability": default_spec.availability.model_copy(
+                    update={
+                        "min_replicas": minimum_replicas,
+                        "max_replicas": maximum_replicas,
+                    }
+                ),
+                "cache": default_spec.cache.model_copy(
+                    update={
+                        "tier": choice.required_cache_tier or default_spec.cache.tier,
+                        "mechanism": choice.mechanism,
+                    }
+                ),
+            }
+        )
+        decision = validate_model_deployment(candidate, self.envelope)
+        if decision.disposition is not ValidationDisposition.ACCEPTED:
+            return False
+        return self._render_is_proven(
+            spec=candidate,
+            mechanism=decision.fast_start_mechanism,
+            admitted_pool_ref=decision.admitted_pool_ref,
+            name=_dns_safe_name(candidate.model_ref),
+            generation=1,
+        )
+
+    def _host_memory_pool_density_is_renderable(
+        self,
+        *,
+        default_spec: ModelDeploymentSpec,
+        choice: ModelDeploymentFastStartMechanismChoice,
+        pool_ref: str,
+    ) -> bool:
+        """Additionally prove the worst schedulable host-memory Pod density."""
+
+        pool = self.envelope.pools[pool_ref]
+        runtime_pods_per_node = pool.accelerators_per_node // default_spec.placement.accelerators_per_replica
+        if runtime_pods_per_node < 1:
+            return False
+        return self._mechanism_choice_is_renderable(
+            default_spec=default_spec,
+            choice=choice,
+            pool_refs=[pool_ref],
+            maximum_replicas=runtime_pods_per_node,
+        )
 
     def configuration_options(self) -> list[ModelDeploymentConfigurationOption]:
         """Return only complete defaults accepted by the installed envelope."""
@@ -480,6 +636,60 @@ class ModelDeploymentMutationService:
             template_name, template_digest = valid_templates[0]
             default_maximum = min(4, budget_replicas, sum(choice.maximum_replicas for choice in pool_choices))
             default_minimum = 0 if qualification.scale_to_zero_qualified else 1
+            selectable_pool_refs = [choice.pool_ref for choice in pool_choices]
+            mechanism_choices = [
+                ModelDeploymentFastStartMechanismChoice(
+                    mechanism=FastStartMechanism.CONVENTIONAL,
+                    pool_refs=selectable_pool_refs,
+                )
+            ]
+            for mechanism in DECLARED_MECHANISMS:
+                if mechanism not in SELECTABLE_MECHANISMS:
+                    continue
+                declaration = qualification.mechanism_declaration(mechanism)
+                if declaration is None:
+                    continue
+                declared_pool_refs = [
+                    pool_ref for pool_ref in selectable_pool_refs if pool_ref in declaration.pool_refs
+                ]
+                if isinstance(declaration, HostMemoryResidencyQualification):
+                    if declaration.residency_mode == "runtime-sleep-offload":
+                        continue
+                    declared_pool_refs = [
+                        pool_ref
+                        for pool_ref in declared_pool_refs
+                        if (allocatable_memory := self.envelope.pools[pool_ref].allocatable_memory_bytes) is not None
+                        and declaration.reserved_bytes <= allocatable_memory
+                    ]
+                if not declared_pool_refs:
+                    continue
+                minimum_hot_replicas = 0
+                minimum_max_replicas = 1
+                required_cache_tier: CacheTier | None = None
+                if mechanism in (
+                    FastStartMechanism.REGIONAL_CACHE,
+                    FastStartMechanism.HOST_MEMORY_RESIDENCY,
+                ):
+                    required_cache_tier = CacheTier.SHARED_FILESYSTEM
+                    if qualification.template_cache_tiers[template_digest] is not required_cache_tier:
+                        continue
+                if isinstance(declaration, GpuResidentQualification):
+                    minimum_hot_replicas = declaration.minimum_hot_replicas
+                    minimum_max_replicas = declaration.minimum_hot_replicas + declaration.standby_replicas
+                    available_replicas = sum(
+                        choice.maximum_replicas for choice in pool_choices if choice.pool_ref in declared_pool_refs
+                    )
+                    if minimum_max_replicas > available_replicas:
+                        continue
+                mechanism_choices.append(
+                    ModelDeploymentFastStartMechanismChoice(
+                        mechanism=mechanism,
+                        pool_refs=declared_pool_refs,
+                        required_cache_tier=required_cache_tier,
+                        minimum_hot_replicas=minimum_hot_replicas,
+                        minimum_max_replicas=minimum_max_replicas,
+                    )
+                )
             try:
                 default_spec = ModelDeploymentSpec.model_validate(
                     {
@@ -517,6 +727,10 @@ class ModelDeploymentMutationService:
                             "tier": qualification.template_cache_tiers[template_digest].value,
                             "snapshotPreference": "Never",
                             "snapshotRef": None,
+                            # An unpinned draft keeps the historical spec digest.
+                            # Fixed mode renders conventional loading; Automatic
+                            # mode resolves one qualified, renderable mechanism.
+                            "mechanism": None,
                         },
                         "queue": {
                             "localQueue": valid_queues[0],
@@ -553,6 +767,61 @@ class ModelDeploymentMutationService:
                         "fastStart": {"mode": "Fixed", "level": "Off", "fallbackPolicy": "AllowLowerLevel"},
                     }
                 )
+                renderable_mechanism_choices: list[ModelDeploymentFastStartMechanismChoice] = []
+                pool_maximum_replicas = {choice.pool_ref: choice.maximum_replicas for choice in pool_choices}
+                for choice in mechanism_choices:
+                    renderable_pool_refs: list[str] = []
+                    for pool_ref in choice.pool_refs:
+                        # This is the exact ceiling the admin UI derives from
+                        # the already advertised per-pool capacity metadata.
+                        candidate_maximum = min(
+                            max(default_spec.availability.max_replicas, choice.minimum_max_replicas),
+                            pool_maximum_replicas[pool_ref],
+                        )
+                        if not self._mechanism_choice_is_renderable(
+                            default_spec=default_spec,
+                            choice=choice,
+                            pool_refs=[pool_ref],
+                            maximum_replicas=candidate_maximum,
+                        ):
+                            continue
+                        if (
+                            choice.mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY
+                            and not self._host_memory_pool_density_is_renderable(
+                                default_spec=default_spec,
+                                choice=choice,
+                                pool_ref=pool_ref,
+                            )
+                        ):
+                            continue
+                        renderable_pool_refs.append(pool_ref)
+                    if not renderable_pool_refs:
+                        continue
+                    choice = choice.model_copy(update={"pool_refs": renderable_pool_refs})
+                    candidate_maximum = min(
+                        max(default_spec.availability.max_replicas, choice.minimum_max_replicas),
+                        sum(pool_maximum_replicas[pool_ref] for pool_ref in renderable_pool_refs),
+                    )
+                    if not self._mechanism_choice_is_renderable(
+                        default_spec=default_spec,
+                        choice=choice,
+                        pool_refs=renderable_pool_refs,
+                        maximum_replicas=candidate_maximum,
+                    ):
+                        continue
+                    renderable_mechanism_choices.append(choice)
+                conventional_choice = next(
+                    (
+                        choice
+                        for choice in renderable_mechanism_choices
+                        if choice.mechanism is FastStartMechanism.CONVENTIONAL
+                    ),
+                    None,
+                )
+                if conventional_choice is None or set(conventional_choice.pool_refs) != set(
+                    default_spec.placement.pool_refs
+                ):
+                    continue
                 decision = validate_model_deployment(default_spec, self.envelope)
                 if decision.disposition is not ValidationDisposition.ACCEPTED or decision.fast_start is None:
                     continue
@@ -567,6 +836,7 @@ class ModelDeploymentMutationService:
                         priority_class_choices=valid_priorities,
                         tenant_choices=valid_tenants,
                         scale_to_zero_qualified=qualification.scale_to_zero_qualified,
+                        fast_start_mechanism_choices=renderable_mechanism_choices,
                         fast_start_qualified_level=decision.fast_start.qualified_level,
                     )
                 )
@@ -593,7 +863,13 @@ class ModelDeploymentMutationService:
             receipt=receipt,
         )
 
-    def _validate(self, spec: ModelDeploymentSpec, current: ModelDeploymentRevision | None) -> None:
+    def _validate(
+        self,
+        spec: ModelDeploymentSpec,
+        current: ModelDeploymentRevision | None,
+        *,
+        name: str,
+    ) -> None:
         decision = validate_model_deployment(
             spec,
             self.envelope,
@@ -615,6 +891,45 @@ class ModelDeploymentMutationService:
                 409,
                 "model_deployment_infrastructure_required",
                 f"Terraform-owned prerequisites are unavailable: {inputs}",
+            )
+        render_decisions = [decision]
+        if spec.cache.mechanism is None and spec.fast_start.mode is FastStartMode.AUTOMATIC:
+            # Automatic may choose a different qualified mechanism after demand
+            # history changes. Prove every mechanism that live validation could
+            # admit later, not only the missing-history choice made during this
+            # request. A no-target proof spec isolates renderability from evidence
+            # that can legitimately arrive after the desired revision is stored.
+            proof_spec = spec.model_copy(update={"fast_start": FastStartSpec()})
+            for mechanism in SELECTABLE_MECHANISMS:
+                if mechanism is decision.fast_start_mechanism.mechanism:
+                    continue
+                candidate = validate_model_deployment(
+                    proof_spec,
+                    self.envelope,
+                    current=current.spec if current is not None else None,
+                    fast_start_mechanism=FastStartMechanismDecision(
+                        mechanism=mechanism,
+                        source="Automatic",
+                        renderable=True,
+                        reason="AuthoritativeRenderCandidate",
+                    ),
+                )
+                if candidate.disposition is ValidationDisposition.ACCEPTED:
+                    render_decisions.append(candidate)
+        if any(
+            not self._render_is_proven(
+                spec=spec,
+                mechanism=render_decision.fast_start_mechanism,
+                admitted_pool_ref=render_decision.admitted_pool_ref,
+                name=name,
+                generation=current.revision + 1 if current is not None else 1,
+            )
+            for render_decision in render_decisions
+        ):
+            raise ModelDeploymentMutationProblemError(
+                422,
+                "model_deployment_render_failed",
+                "qualified renderer could not produce the desired revision",
             )
 
     @staticmethod
@@ -678,7 +993,7 @@ class ModelDeploymentMutationService:
             raise ModelDeploymentMutationProblemError(409, "model_identity_conflict", "model belongs to another tenant")
         if actor.tenant_id is not None and actor.tenant_id != proposal.spec.tenant_id:
             raise ModelDeploymentMutationProblemError(403, "tenant_forbidden", "tenant is outside operator policy")
-        self._validate(proposal.spec, current)
+        self._validate(proposal.spec, current, name=proposal.name)
         if current is not None:
             await self._require_cold_cutover(current=current, proposed=proposal.spec)
         action = (
@@ -753,7 +1068,7 @@ class ModelDeploymentMutationService:
         target = next((item for item in rows if item.revision == request.target_revision), None)
         if target is None:
             raise ModelDeploymentMutationProblemError(404, "model_revision_not_found", "target revision was not found")
-        self._validate(target.spec, current)
+        self._validate(target.spec, current, name=current.name)
         await self._require_cold_cutover(current=current, proposed=target.spec)
         return await self._append_action(
             current=current,

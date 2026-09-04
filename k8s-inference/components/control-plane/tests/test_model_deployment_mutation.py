@@ -6,14 +6,24 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from test_model_deployment import envelope, model_spec, renderer, reserved_and_preemptible_envelope
+from test_model_deployment import (
+    envelope,
+    model_spec,
+    render_gpu_resident,
+    render_host_memory,
+    render_regional_cache,
+    renderer,
+    reserved_and_preemptible_envelope,
+)
 
 from fs2_serve.access_models import OperatorPrincipal, OperatorRole, PrincipalKind
 from fs2_serve.crypto import KeyedHasher, PayloadCipher
-from fs2_serve.fast_start import FastStartLevel, FastStartSpec
+from fs2_serve.fast_start import FastStartLevel, FastStartMode, FastStartSpec
+from fs2_serve.fast_start_mechanisms import FastStartMechanism
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.model_deployment import (
     ArtifactStorageRef,
+    CacheTier,
     DesiredState,
     ValidationDisposition,
     spec_digest,
@@ -46,6 +56,8 @@ from fs2_serve.model_deployment_records import (
     ModelDeploymentRuntimePhase,
     ModelDeploymentStatusObservation,
 )
+
+PROMETHEUS_ADDRESS = "http://prometheus.fs2-observability.svc:9090"
 
 
 def _actor() -> OperatorPrincipal:
@@ -103,6 +115,8 @@ def test_configuration_options_are_exact_valid_installed_defaults() -> None:
         ),
         writer=FakeWriter(),
         envelope=installed,
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     )
 
     options = service.configuration_options()
@@ -120,6 +134,7 @@ def test_configuration_options_are_exact_valid_installed_defaults() -> None:
     assert default.cache.tier is qualification.template_cache_tiers[default.runtime.template_ref.digest]
     assert default.fast_start == FastStartSpec()
     assert option.fast_start_qualified_level is FastStartLevel.OFF
+    assert [choice.mechanism for choice in option.fast_start_mechanism_choices] == [FastStartMechanism.CONVENTIONAL]
     assert default.placement.accelerators_per_replica == qualification.max_accelerators_per_replica
     assert default.exposure.open_ai_aliases == []
     assert default.exposure.mcp
@@ -138,6 +153,8 @@ def test_configuration_options_are_exact_valid_installed_defaults() -> None:
         repository=service.repository,
         writer=FakeWriter(),
         envelope=hot_only,
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     )
     hot_only_option = hot_only_service.configuration_options()[0]
     assert not hot_only_option.scale_to_zero_qualified
@@ -149,9 +166,308 @@ def test_configuration_options_are_exact_valid_installed_defaults() -> None:
         repository=service.repository,
         writer=FakeWriter(),
         envelope=no_mcp,
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     ).configuration_options()[0]
     assert not no_mcp_option.default_spec.exposure.mcp
     assert no_mcp_option.default_spec.exposure.mcp_tool_name is None
+
+
+def test_configuration_options_publish_only_declared_mechanisms_and_their_dependencies() -> None:
+    installed = envelope()
+    base_qualification = installed.qualifications["qwen.3-8b"]
+    qualification = base_qualification.model_copy(
+        update={
+            "regional_cache": render_regional_cache(pool_refs=("pool-a",)),
+            "host_memory_residency": render_host_memory(pool_refs=("pool-a",)),
+            "gpu_resident": render_gpu_resident(pool_refs=("pool-a",)),
+            "template_cache_tiers": {
+                digest: CacheTier.SHARED_FILESYSTEM for digest in base_qualification.template_digests
+            },
+        }
+    )
+    installed = installed.model_copy(
+        update={
+            "qualifications": {qualification.model_ref: qualification},
+            "residency_holder_image": qualification.runtime_images[0],
+        }
+    )
+    service = ModelDeploymentMutationService(
+        repository=StoreModelDeploymentRepository(
+            MemoryStore(
+                PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+                KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+            )
+        ),
+        writer=FakeWriter(),
+        envelope=installed,
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
+    )
+
+    option = service.configuration_options()[0]
+    choices = {choice.mechanism: choice for choice in option.fast_start_mechanism_choices}
+    assert list(choices) == [
+        FastStartMechanism.CONVENTIONAL,
+        FastStartMechanism.REGIONAL_CACHE,
+        FastStartMechanism.HOST_MEMORY_RESIDENCY,
+    ]
+    assert choices[FastStartMechanism.REGIONAL_CACHE].required_cache_tier.value == "SharedFilesystem"
+    assert choices[FastStartMechanism.HOST_MEMORY_RESIDENCY].required_cache_tier.value == "SharedFilesystem"
+    assert all(choice.pool_refs == ["pool-a"] for choice in choices.values())
+
+    unproven = ModelDeploymentMutationService(
+        repository=service.repository,
+        writer=FakeWriter(),
+        envelope=installed,
+    ).configuration_options()
+    assert unproven == []
+
+    for mechanism, choice in choices.items():
+        selected = option.default_spec.model_copy(
+            update={
+                "placement": option.default_spec.placement.model_copy(update={"pool_refs": choice.pool_refs}),
+                "cache": option.default_spec.cache.model_copy(
+                    update={
+                        "mechanism": mechanism,
+                        "tier": choice.required_cache_tier or option.default_spec.cache.tier,
+                    }
+                ),
+                "availability": option.default_spec.availability.model_copy(
+                    update={
+                        "min_replicas": max(
+                            option.default_spec.availability.min_replicas,
+                            choice.minimum_hot_replicas,
+                        ),
+                        "max_replicas": max(
+                            option.default_spec.availability.max_replicas,
+                            choice.minimum_max_replicas,
+                        ),
+                    }
+                ),
+            }
+        )
+        assert validate_model_deployment(selected, installed).disposition is ValidationDisposition.ACCEPTED
+
+
+def test_configuration_options_prove_host_memory_fit_with_the_qualified_runtime_template() -> None:
+    gib = 1024**3
+    installed = envelope()
+    base_qualification = installed.qualifications["qwen.3-8b"]
+    host_memory = render_host_memory(
+        pool_refs=("pool-a",),
+        reserved_bytes=18 * gib,
+        node_allocatable_bytes=24 * gib,
+    )
+    qualification = base_qualification.model_copy(
+        update={
+            "max_accelerators_per_replica": 1,
+            "host_memory_residency": host_memory,
+            "template_cache_tiers": {
+                digest: CacheTier.SHARED_FILESYSTEM for digest in base_qualification.template_digests
+            },
+        }
+    )
+    installed = installed.model_copy(
+        update={
+            "pools": {
+                **installed.pools,
+                "pool-a": installed.pools["pool-a"].model_copy(update={"allocatable_memory_bytes": 24 * gib}),
+            },
+            "qualifications": {qualification.model_ref: qualification},
+            "residency_holder_image": qualification.runtime_images[0],
+        }
+    )
+    repository = StoreModelDeploymentRepository(
+        MemoryStore(
+            PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+            KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+        )
+    )
+
+    cannot_fill_node = ModelDeploymentMutationService(
+        repository=repository,
+        writer=FakeWriter(),
+        envelope=installed,
+        renderer=renderer(runtime_memory_request="1Gi"),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
+    ).configuration_options()[0]
+    assert FastStartMechanism.HOST_MEMORY_RESIDENCY not in {
+        choice.mechanism for choice in cannot_fill_node.fast_start_mechanism_choices
+    }
+
+    fills_node = ModelDeploymentMutationService(
+        repository=repository,
+        writer=FakeWriter(),
+        envelope=installed,
+        renderer=renderer(runtime_memory_request="512Mi"),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
+    ).configuration_options()[0]
+    host_choice = next(
+        choice
+        for choice in fills_node.fast_start_mechanism_choices
+        if choice.mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY
+    )
+    assert host_choice.pool_refs == ["pool-a"]
+
+
+@pytest.mark.asyncio
+async def test_regional_cache_mirror_mismatch_is_neither_advertised_nor_persisted() -> None:
+    installed = envelope()
+    base_qualification = installed.qualifications["qwen.3-8b"]
+    foreign_image = f"foreign.example/fs2/vllm@sha256:{'b' * 64}"
+    qualification = base_qualification.model_copy(
+        update={
+            "runtime_images": [foreign_image],
+            "regional_cache": render_regional_cache(pool_refs=("pool-a",)),
+            "template_cache_tiers": {
+                digest: CacheTier.SHARED_FILESYSTEM for digest in base_qualification.template_digests
+            },
+        }
+    )
+    installed = installed.model_copy(update={"qualifications": {qualification.model_ref: qualification}})
+    store = MemoryStore(
+        PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+        KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+    )
+    writer = FakeWriter()
+    service = ModelDeploymentMutationService(
+        repository=StoreModelDeploymentRepository(store),
+        writer=writer,
+        envelope=installed,
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
+    )
+
+    option = service.configuration_options()[0]
+    assert [choice.mechanism for choice in option.fast_start_mechanism_choices] == [FastStartMechanism.CONVENTIONAL]
+    regional = option.default_spec.model_copy(
+        update={
+            "cache": option.default_spec.cache.model_copy(
+                update={
+                    "tier": CacheTier.SHARED_FILESYSTEM,
+                    "mechanism": FastStartMechanism.REGIONAL_CACHE,
+                }
+            )
+        }
+    )
+    assert validate_model_deployment(regional, installed).disposition is ValidationDisposition.ACCEPTED
+
+    with pytest.raises(ModelDeploymentMutationProblemError) as rejected:
+        await service.apply(
+            _apply_request(
+                key="reject-unrenderable-regional-cache-0001",
+                proposal=ModelDeploymentPreviewProposal(name="qwen-live", spec=regional),
+            ),
+            _actor(),
+        )
+
+    assert rejected.value.status_code == 422
+    assert rejected.value.code == "model_deployment_render_failed"
+    assert (
+        await service.repository.current(
+            namespace="fs2-models",
+            name="qwen-live",
+            tenant_id=None,
+        )
+        is None
+    )
+    assert writer.writes == []
+
+    automatic = regional.model_copy(
+        update={
+            "cache": regional.cache.model_copy(update={"mechanism": None}),
+            "fast_start": FastStartSpec(
+                mode=FastStartMode.AUTOMATIC,
+                minimum_level=FastStartLevel.OFF,
+                maximum_level=FastStartLevel.L4,
+            ),
+        }
+    )
+    automatic_decision = validate_model_deployment(automatic, installed)
+    assert automatic_decision.disposition is ValidationDisposition.ACCEPTED
+    assert automatic_decision.fast_start_mechanism.mechanism is FastStartMechanism.CONVENTIONAL
+    with pytest.raises(ModelDeploymentMutationProblemError) as automatic_rejected:
+        await service.apply(
+            _apply_request(
+                key="reject-latent-unrenderable-regional-cache-0002",
+                proposal=ModelDeploymentPreviewProposal(name="qwen-auto", spec=automatic),
+            ),
+            _actor(),
+        )
+    assert automatic_rejected.value.code == "model_deployment_render_failed"
+    assert (
+        await service.repository.current(
+            namespace="fs2-models",
+            name="qwen-auto",
+            tenant_id=None,
+        )
+        is None
+    )
+    assert writer.writes == []
+
+
+@pytest.mark.asyncio
+async def test_apply_requires_authoritative_render_proof_before_persisting() -> None:
+    store = MemoryStore(
+        PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+        KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+    )
+    writer = FakeWriter()
+    service = ModelDeploymentMutationService(
+        repository=StoreModelDeploymentRepository(store),
+        writer=writer,
+        envelope=envelope(),
+    )
+
+    with pytest.raises(ModelDeploymentMutationProblemError) as rejected:
+        await service.apply(
+            _apply_request(
+                key="reject-unproven-render-0001",
+                proposal=ModelDeploymentPreviewProposal(name="qwen-live", spec=model_spec()),
+            ),
+            _actor(),
+        )
+
+    assert rejected.value.status_code == 422
+    assert rejected.value.code == "model_deployment_render_failed"
+    assert (
+        await service.repository.current(
+            namespace="fs2-models",
+            name="qwen-live",
+            tenant_id=None,
+        )
+        is None
+    )
+    assert writer.writes == []
+
+
+def test_configuration_options_hide_sleep_offload_without_a_runtime_actor() -> None:
+    installed = envelope()
+    qualification = installed.qualifications["qwen.3-8b"].model_copy(
+        update={
+            "host_memory_residency": render_host_memory(
+                pool_refs=("pool-a",),
+                mode="runtime-sleep-offload",
+            )
+        }
+    )
+    installed = installed.model_copy(update={"qualifications": {qualification.model_ref: qualification}})
+    service = ModelDeploymentMutationService(
+        repository=StoreModelDeploymentRepository(
+            MemoryStore(
+                PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+                KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+            )
+        ),
+        writer=FakeWriter(),
+        envelope=installed,
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
+    )
+
+    mechanisms = [choice.mechanism for choice in service.configuration_options()[0].fast_start_mechanism_choices]
+    assert FastStartMechanism.HOST_MEMORY_RESIDENCY not in mechanisms
 
 
 def test_configuration_default_selects_every_compatible_pool_and_invariant_allows_subsets() -> None:
@@ -167,6 +483,8 @@ def test_configuration_default_selects_every_compatible_pool_and_invariant_allow
         ),
         writer=FakeWriter(),
         envelope=installed,
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     )
 
     option = service.configuration_options()[0]
@@ -191,6 +509,89 @@ def test_configuration_default_selects_every_compatible_pool_and_invariant_allow
             **option.model_dump(exclude={"default_spec"}),
             default_spec=unknown_pool_default,
         )
+
+
+@pytest.mark.asyncio
+async def test_advertised_mechanism_uses_the_same_capacity_ceiling_as_the_ui_candidate() -> None:
+    installed = reserved_and_preemptible_envelope()
+    base_qualification = installed.qualifications["qwen.3-8b"]
+    qualification = base_qualification.model_copy(
+        update={
+            "max_accelerators_per_replica": 1,
+            "regional_cache": render_regional_cache(pool_refs=("preemptible-h100",)),
+            "template_cache_tiers": {
+                digest: CacheTier.SHARED_FILESYSTEM for digest in base_qualification.template_digests
+            },
+        }
+    )
+    installed = installed.model_copy(update={"qualifications": {qualification.model_ref: qualification}})
+    repository = StoreModelDeploymentRepository(
+        MemoryStore(
+            PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+            KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+        )
+    )
+    writer = FakeWriter()
+    service = ModelDeploymentMutationService(
+        repository=repository,
+        writer=writer,
+        envelope=installed,
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
+    )
+
+    option = service.configuration_options()[0]
+    choice = next(
+        item for item in option.fast_start_mechanism_choices if item.mechanism is FastStartMechanism.REGIONAL_CACHE
+    )
+    assert option.default_spec.availability.max_replicas == 4
+    assert choice.pool_refs == ["preemptible-h100"]
+    maximum_by_pool = {item.pool_ref: item.maximum_replicas for item in option.pool_choices}
+    advertised_maximum = sum(maximum_by_pool[pool_ref] for pool_ref in choice.pool_refs)
+    assert advertised_maximum == 2
+
+    # Mirror the form's mechanism-selection transform exactly. The resulting
+    # desired spec, rather than a proof-only lower ceiling, must be accepted by
+    # both live validation and the authoritative renderer before persistence.
+    candidate = option.default_spec.model_copy(
+        update={
+            "placement": option.default_spec.placement.model_copy(update={"pool_refs": choice.pool_refs}),
+            "cache": option.default_spec.cache.model_copy(
+                update={
+                    "mechanism": choice.mechanism,
+                    "tier": choice.required_cache_tier,
+                }
+            ),
+            "availability": option.default_spec.availability.model_copy(
+                update={
+                    "min_replicas": max(
+                        option.default_spec.availability.min_replicas,
+                        choice.minimum_hot_replicas,
+                    ),
+                    "max_replicas": min(
+                        max(
+                            option.default_spec.availability.max_replicas,
+                            choice.minimum_max_replicas,
+                        ),
+                        advertised_maximum,
+                    ),
+                }
+            ),
+        }
+    )
+    assert candidate.availability.max_replicas == 2
+    assert validate_model_deployment(candidate, installed).disposition is ValidationDisposition.ACCEPTED
+
+    applied = await service.apply(
+        _apply_request(
+            key="regional-capacity-exact-candidate-0001",
+            proposal=ModelDeploymentPreviewProposal(name="qwen-live", spec=candidate),
+        ),
+        _actor(),
+    )
+    assert applied.projection == "applied"
+    assert applied.revision.spec == candidate
+    assert len(writer.writes) == 1
 
 
 @pytest.mark.asyncio
@@ -328,6 +729,8 @@ def test_capabilities_route_publishes_server_authoritative_configuration_options
         repository=StoreModelDeploymentRepository(runtime.store),
         writer=FakeWriter(),
         envelope=envelope(),
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     )
     with _client(runtime) as client:
         assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
@@ -337,6 +740,15 @@ def test_capabilities_route_publishes_server_authoritative_configuration_options
     capabilities = response.json()["data"]
     assert capabilities["configuration_revision"] == envelope().revision
     assert [option["model_ref"] for option in capabilities["configuration_options"]] == ["qwen.3-8b"]
+    assert capabilities["configuration_options"][0]["fast_start_mechanism_choices"] == [
+        {
+            "mechanism": "conventional",
+            "pool_refs": ["pool-a"],
+            "required_cache_tier": None,
+            "minimum_hot_replicas": 0,
+            "minimum_max_replicas": 1,
+        }
+    ]
     default = capabilities["configuration_options"][0]["default_spec"]
     assert default["runtime"]["image"] == envelope().qualifications["qwen.3-8b"].runtime_images[0]
     assert default["placement"]["acceleratorsPerReplica"] == 8
@@ -355,6 +767,8 @@ async def test_apply_drain_rollback_reconcile_and_pending_projection() -> None:
         repository=StoreModelDeploymentRepository(store),
         writer=writer,
         envelope=envelope(),
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     )
     proposal = ModelDeploymentPreviewProposal(name="qwen-live", spec=model_spec())
 
@@ -413,6 +827,79 @@ async def test_apply_drain_rollback_reconcile_and_pending_projection() -> None:
 
 
 @pytest.mark.asyncio
+async def test_rollback_refuses_an_old_unrenderable_revision_before_append_or_projection() -> None:
+    store = MemoryStore(
+        PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+        KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+    )
+    repository = StoreModelDeploymentRepository(store)
+    service = ModelDeploymentMutationService(
+        repository=repository,
+        writer=FakeWriter(),
+        envelope=envelope(),
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
+    )
+    created = await service.apply(
+        _apply_request(
+            key="rollback-render-create-0001",
+            proposal=ModelDeploymentPreviewProposal(name="qwen-live", spec=model_spec()),
+        ),
+        _actor(),
+    )
+    updated_spec = created.revision.spec.model_copy(
+        update={
+            "availability": created.revision.spec.availability.model_copy(
+                update={"idle_seconds": created.revision.spec.availability.idle_seconds + 1}
+            )
+        }
+    )
+    updated = await service.apply(
+        _apply_request(
+            key="rollback-render-update-0002",
+            proposal=ModelDeploymentPreviewProposal(
+                name="qwen-live",
+                base_etag=created.revision.etag,
+                spec=updated_spec,
+            ),
+        ),
+        _actor(),
+    )
+
+    class RejectingRenderer:
+        name = "rejecting-renderer"
+
+        def render(self, *_args: object, **_kwargs: object) -> object:
+            raise ValueError("old template is no longer renderable")
+
+    rejecting_writer = FakeWriter()
+    rejecting_service = ModelDeploymentMutationService(
+        repository=repository,
+        writer=rejecting_writer,
+        envelope=envelope(),
+        renderer=RejectingRenderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
+    )
+
+    with pytest.raises(ModelDeploymentMutationProblemError) as rejected:
+        await rejecting_service.rollback(
+            name="qwen-live",
+            request=ModelDeploymentRollbackRequest(
+                target_revision=created.revision.revision,
+                base_etag=updated.revision.etag,
+                idempotency_key="rollback-render-rejected-0003",
+            ),
+            actor=_actor(),
+        )
+
+    assert rejected.value.status_code == 422
+    assert rejected.value.code == "model_deployment_render_failed"
+    current = await repository.current(namespace="fs2-models", name="qwen-live", tenant_id=None)
+    assert current == updated.revision
+    assert rejecting_writer.writes == []
+
+
+@pytest.mark.asyncio
 async def test_runtime_material_change_requires_observed_cold_drained_revision() -> None:
     store = MemoryStore(
         PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
@@ -422,6 +909,8 @@ async def test_runtime_material_change_requires_observed_cold_drained_revision()
         repository=StoreModelDeploymentRepository(store),
         writer=FakeWriter(),
         envelope=envelope(),
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     )
     created = await service.apply(
         _apply_request(
@@ -568,6 +1057,8 @@ async def test_kubernetes_writer_updates_post_owned_fields_with_merge_patch(tmp_
         repository=StoreModelDeploymentRepository(store),
         writer=writer,
         envelope=envelope(),
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
     )
     proposal = ModelDeploymentPreviewProposal(name="qwen-live", spec=model_spec())
     result = await service.apply(_apply_request(key="create-qwen-0001", proposal=proposal), _actor())

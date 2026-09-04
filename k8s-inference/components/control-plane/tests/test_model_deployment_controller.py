@@ -8,23 +8,36 @@ from typing import Any
 
 import httpx
 import pytest
-from test_fast_start import evidence, with_evidence, with_fast_start
-from test_model_deployment import envelope, model_spec, renderer, reserved_and_preemptible_envelope
+from test_fast_start import STORAGE_CONTRACT_DIGEST, evidence, qualify_for_fast_start, with_evidence, with_fast_start
+from test_model_deployment import (
+    envelope,
+    model_spec,
+    render_gpu_resident,
+    render_host_memory,
+    render_regional_cache,
+    renderer,
+    reserved_and_preemptible_envelope,
+)
 
 from fs2_serve.fast_start import FastStartLevel
+from fs2_serve.fast_start_identity import mechanism_config_digest
 from fs2_serve.fast_start_policy import FastStartHistoryWindow
 from fs2_serve.model_deployment import (
     FIELD_MANAGER,
     FINALIZER,
+    CacheTier,
     DesiredState,
     DrainObservation,
+    InfrastructureEnvelope,
     LifecycleSpec,
+    ModelDeploymentSpec,
     ObservedResource,
     RenderContext,
     RenderedResource,
     RenderPlan,
     canonical_digest,
     plan_reconciliation,
+    validate_model_deployment,
 )
 from fs2_serve.model_deployment_bridge import _normalize_keys
 from fs2_serve.model_deployment_controller import (
@@ -41,6 +54,7 @@ from fs2_serve.model_deployment_controller import (
     PostgresActiveOperations,
     PrometheusActiveOperations,
     ResourceSnapshot,
+    _snapshot,
     build_status,
 )
 from fs2_serve.model_deployment_records import ModelDeploymentObservedStatus
@@ -167,8 +181,13 @@ def snapshot(resource: RenderedResource, *, ready: bool = True, owner_uid: str =
         if resource.kind == "Deployment" and ready
         else 0
         if resource.kind == "Deployment"
+        else 1
+        if resource.kind == "DaemonSet" and ready
+        else 0
+        if resource.kind == "DaemonSet"
         else None
     )
+    desired_replicas = 1 if resource.kind == "DaemonSet" else replicas
     raw = copy.deepcopy(resource.manifest)
     metadata = raw["metadata"]
     managed_fields: list[dict[str, Any]] = [{"manager": FIELD_MANAGER, "fieldsV1": {"f:spec": {}}}]
@@ -195,6 +214,16 @@ def snapshot(resource: RenderedResource, *, ready: bool = True, owner_uid: str =
             "availableReplicas": replicas,
             "unavailableReplicas": 0,
         }
+    elif resource.kind == "DaemonSet":
+        raw["status"] = {
+            "observedGeneration": 1,
+            "desiredNumberScheduled": desired_replicas,
+            "currentNumberScheduled": replicas,
+            "updatedNumberScheduled": replicas,
+            "numberReady": replicas,
+            "numberAvailable": replicas,
+            "numberUnavailable": 0 if ready else desired_replicas,
+        }
     return ResourceSnapshot(
         observed=ObservedResource(
             api_version=resource.api_version,
@@ -208,13 +237,17 @@ def snapshot(resource: RenderedResource, *, ready: bool = True, owner_uid: str =
         ),
         resource_version="3",
         generation=1,
-        observed_generation=1 if resource.kind == "Deployment" else None,
-        desired_replicas=replicas if resource.kind == "Deployment" else None,
+        observed_generation=1 if resource.kind in {"Deployment", "DaemonSet"} else None,
+        desired_replicas=desired_replicas if resource.kind in {"Deployment", "DaemonSet"} else None,
         replicas=replicas,
         updated_replicas=replicas,
         ready_replicas=replicas,
         available_replicas=replicas,
-        unavailable_replicas=0 if resource.kind == "Deployment" else None,
+        unavailable_replicas=(0 if ready else desired_replicas)
+        if resource.kind == "DaemonSet"
+        else 0
+        if resource.kind == "Deployment"
+        else None,
         replica_field_managers=replica_managers,
         raw=raw,
     )
@@ -818,8 +851,8 @@ def test_status_keeps_fast_start_levels_apart_and_claims_effective_only_when_con
     pools = envelope().pools
     installed = with_evidence(
         envelope(),
-        evidence(model_spec(), pools["pool-a"], seconds=[40, 45, 50, 55, 58] * 4),
-        evidence(model_spec(), pools["pool-b"], seconds=[70, 80, 90, 100, 110] * 4),
+        evidence(model_spec(), pools["pool-a"], seconds=[40, 45, 50, 55, 58] * 4, mechanism="conventional"),
+        evidence(model_spec(), pools["pool-b"], seconds=[70, 80, 90, 100, 110] * 4, mechanism="conventional"),
     )
     plan = plan_reconciliation(
         generation=1,
@@ -860,7 +893,7 @@ def test_status_keeps_fast_start_levels_apart_and_claims_effective_only_when_con
     assert fast_start["modelStart"]["p95Seconds"] == 110 and fast_start["modelStart"]["sampleCount"] == 20
     assert "capacityWait" not in fast_start and "endToEnd" not in fast_start
     assert {pool["poolRef"]: pool["qualifiedLevel"] for pool in fast_start["pools"]} == {"pool-a": "L3", "pool-b": "L2"}
-    assert {pool["selectedMechanism"] for pool in fast_start["pools"]} == {"shared-cache"}
+    assert {pool["selectedMechanism"] for pool in fast_start["pools"]} == {"conventional"}
     assert all(pool["selectedCompatibilityTupleDigest"].startswith("sha256:") for pool in fast_start["pools"])
     condition = next(item for item in pending["conditions"] if item["type"] == "FastStartQualified")
     assert (condition["status"], condition["reason"]) == ("False", "RequestedLevelUnqualified")
@@ -893,8 +926,8 @@ def test_automatic_status_uses_durable_demand_history_and_persists_hysteresis() 
     pools = envelope().pools
     installed = with_evidence(
         envelope(),
-        evidence(base, pools["pool-a"], seconds=[50.0] * 20),
-        evidence(base, pools["pool-b"], seconds=[100.0] * 20),
+        evidence(base, pools["pool-a"], seconds=[50.0] * 20, mechanism="conventional"),
+        evidence(base, pools["pool-b"], seconds=[100.0] * 20, mechanism="conventional"),
     )
     spec = with_fast_start(base, mode="Automatic", minimum_level="Off", maximum_level="L2")
     context = RenderContext(
@@ -983,7 +1016,7 @@ def test_automatic_status_uses_durable_demand_history_and_persists_hysteresis() 
     assert fast_start["automatic"]["longWindowIdleGapEpisodes"] == 10
 
 
-def test_automatic_status_selects_the_cheapest_common_qualified_mechanism() -> None:
+def test_automatic_status_filters_nonselectable_evidence_mechanisms() -> None:
     base = model_spec()
     pools = envelope().pools
     installed = with_evidence(
@@ -1064,9 +1097,11 @@ def test_automatic_status_selects_the_cheapest_common_qualified_mechanism() -> N
             fast_start_history=history,
         )
 
-    assert status["fastStart"]["assignedLevel"] == "L1"
-    assert status["fastStart"]["automatic"]["mechanismId"] == "slow-cache"
-    assert status["fastStart"]["modelStart"]["p95Seconds"] == 100.0
+    assert plan.validation.fast_start_mechanism.mechanism.value == "conventional"
+    assert plan.validation.fast_start_mechanism.reason == "MissingDemandDataConventionalFallback"
+    assert status["fastStart"]["assignedLevel"] == "Off"
+    assert status["fastStart"]["automatic"]["mechanismId"] == "conventional"
+    assert "modelStart" not in status["fastStart"]
 
 
 def test_renderer_propagates_controller_identity_to_runtime_pod_template() -> None:
@@ -1730,3 +1765,637 @@ async def test_http_delete_carries_exact_uid_and_resource_version_preconditions(
     assert deleted[0]["propagationPolicy"] == "Foreground"
     assert deleted[0]["preconditions"] == {"uid": "scaled-object-uid", "resourceVersion": "20"}
     await http.aclose()
+
+
+def _mechanism_envelope() -> tuple[ModelDeploymentSpec, InfrastructureEnvelope]:
+    """A model that declares and pins regional-cache, with no evidence at all."""
+
+    base = envelope()
+    pools = {
+        key: value.model_copy(
+            update={
+                "node_selector": {
+                    **value.node_selector,
+                    "local-nvme.fs2.nebius/eligible": "false",
+                    "snapshot.fs2.nebius/eligible": "false",
+                }
+            }
+        )
+        for key, value in base.pools.items()
+    }
+    declaration = render_regional_cache()
+    qualification = base.qualifications["qwen.3-8b"].model_copy(update={"regional_cache": declaration})
+    installed = base.model_copy(update={"pools": pools, "qualifications": {"qwen.3-8b": qualification}})
+    wire = model_spec().model_dump(mode="json", by_alias=True)
+    wire["cache"] = {**wire["cache"], "mechanism": "regional-cache"}
+    return ModelDeploymentSpec.model_validate(wire), installed
+
+
+def _all_mechanism_envelope(mechanism: str) -> tuple[ModelDeploymentSpec, InfrastructureEnvelope]:
+    base = envelope()
+    qualification = base.qualifications["qwen.3-8b"].model_copy(
+        update={
+            "regional_cache": render_regional_cache(),
+            "host_memory_residency": render_host_memory(),
+            "gpu_resident": render_gpu_resident(),
+            "template_cache_tiers": {
+                digest_value: CacheTier.SHARED_FILESYSTEM
+                for digest_value in base.qualifications["qwen.3-8b"].template_digests
+            },
+        }
+    )
+    installed = base.model_copy(
+        update={
+            "qualifications": {qualification.model_ref: qualification},
+            "residency_holder_image": model_spec().runtime.image,
+        }
+    )
+    wire = model_spec().model_dump(mode="json", by_alias=True)
+    wire["cache"] = {**wire["cache"], "mechanism": mechanism}
+    wire["availability"] = {**wire["availability"], "maxReplicas": 20}
+    if mechanism in {"regional-cache", "host-memory-residency"}:
+        wire["cache"]["tier"] = "SharedFilesystem"
+    return ModelDeploymentSpec.model_validate(wire), installed
+
+
+def _automatic_declared_evidence(
+    *,
+    mechanism: str,
+    seconds: float,
+) -> tuple[ModelDeploymentSpec, InfrastructureEnvelope]:
+    pinned, installed = _all_mechanism_envelope("regional-cache")
+    spec = with_fast_start(
+        pinned.model_copy(update={"cache": pinned.cache.model_copy(update={"mechanism": None})}),
+        mode="Automatic",
+        minimum_level="Off",
+        maximum_level="L4",
+    )
+    installed = qualify_for_fast_start(installed, spec)
+    qualification = installed.qualifications[spec.model_ref]
+    declaration = qualification.regional_cache if mechanism == "regional-cache" else qualification.gpu_resident
+    assert declaration is not None
+    bound = mechanism_config_digest(
+        mechanism=mechanism,
+        storage_contract_digest=STORAGE_CONTRACT_DIGEST,
+        declaration_digest=declaration.config_digest,
+    )
+    qualification = qualification.model_copy(
+        update={
+            "fast_start_evidence": [
+                evidence(
+                    spec,
+                    installed.pools[pool_ref],
+                    seconds=[seconds] * 20,
+                    mechanism=mechanism,
+                    mechanism_config_digest=bound,
+                    receipt_digest=canonical_digest({"pool": pool_ref, "mechanism": mechanism}),
+                )
+                for pool_ref in spec.placement.pool_refs
+            ]
+        }
+    )
+    return spec, installed.model_copy(update={"qualifications": {spec.model_ref: qualification}})
+
+
+def _mechanism_context(
+    spec: ModelDeploymentSpec,
+    installed: InfrastructureEnvelope,
+) -> RenderContext:
+    qualification = installed.qualifications[spec.model_ref]
+    return RenderContext(
+        name="qwen-live",
+        namespace="fs2-models",
+        uid="cr-uid-1",
+        generation=1,
+        pool=installed.pools["pool-b"],
+        eligible_pools=[installed.pools[pool_ref] for pool_ref in spec.placement.pool_refs],
+        prometheus_server_address="http://prometheus:9090",
+        regional_cache=qualification.regional_cache,
+        host_memory_residency=qualification.host_memory_residency,
+        gpu_resident=qualification.gpu_resident,
+        residency_holder_image=installed.residency_holder_image,
+    )
+
+
+def test_automatic_mechanism_decision_is_the_renderer_and_status_decision() -> None:
+    spec, installed = _automatic_declared_evidence(mechanism="regional-cache", seconds=45.0)
+    now = datetime(2026, 9, 4, 10, tzinfo=UTC)
+    history = (
+        FastStartHistoryWindow(
+            started_at=now - timedelta(hours=1),
+            ended_at=now,
+            request_count=10,
+            cold_activation_count=2,
+            idle_gap_episode_count=2,
+            target_miss_count=0,
+        ),
+        FastStartHistoryWindow(
+            started_at=now - timedelta(days=7),
+            ended_at=now,
+            request_count=70,
+            cold_activation_count=14,
+            idle_gap_episode_count=14,
+            target_miss_count=0,
+        ),
+    )
+    installed = installed.model_copy(update={"fast_start_wait_second_value": 1.0})
+    missing_history = validate_model_deployment(spec, installed, evaluation_time=now)
+    assert missing_history.fast_start_mechanism.mechanism.value == "conventional"
+    assert missing_history.fast_start_mechanism.reason == "MissingDemandDataConventionalFallback"
+    decision = validate_model_deployment(
+        spec,
+        installed,
+        evaluation_time=now,
+        automatic_history=history,
+    )
+    context = _mechanism_context(spec, installed).model_copy(
+        update={"evaluation_time": now, "fast_start_mechanism": decision.fast_start_mechanism}
+    )
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=installed,
+        renderer=renderer(),
+        render_context=context,
+        observed=[],
+        discovery_complete=True,
+    )
+    assert plan.validation.fast_start_mechanism.mechanism.value == "regional-cache"
+    assert plan.validation.fast_start_mechanism.reason == "DemandCostSelected"
+    assert plan.render is not None
+    runtime_pods = [item.manifest["spec"]["template"] for item in plan.render.resources if item.kind == "Deployment"]
+    assert runtime_pods
+    assert {pod["metadata"]["annotations"]["fast-start.fs2.nebius/mechanism"] for pod in runtime_pods} == {
+        "regional-cache"
+    }
+    discovery = Discovery(resources=[snapshot(item, ready=True) for item in plan.render.resources], complete=True)
+    status = build_status(
+        spec=spec,
+        owner_uid="cr-uid-1",
+        generation=1,
+        plan=plan,
+        discovery=discovery,
+        previous_status={},
+        drain=None,
+        envelope=installed,
+    )
+    assert status["fastStart"]["automatic"]["mechanismId"] == "regional-cache"
+    assert status["fastStart"]["cacheMechanisms"]["regional-cache"]["selected"] is True
+
+
+def test_automatic_require_target_uses_qualified_mechanism_when_demand_history_is_missing() -> None:
+    spec, installed = _automatic_declared_evidence(mechanism="regional-cache", seconds=45.0)
+    spec = with_fast_start(
+        spec,
+        mode="Automatic",
+        minimum_level="L2",
+        maximum_level="L4",
+        fallback_policy="RequireTarget",
+    )
+    now = datetime(2026, 9, 4, 10, tzinfo=UTC)
+    context = _mechanism_context(spec, installed).model_copy(update={"evaluation_time": now})
+
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=installed,
+        renderer=renderer(),
+        render_context=context,
+        observed=[],
+        discovery_complete=True,
+    )
+
+    assert plan.action.value == "apply"
+    assert plan.validation.fast_start_mechanism.mechanism.value == "regional-cache"
+    assert plan.validation.fast_start_mechanism.reason == "MissingDemandDataQualifiedFallback"
+    assert plan.validation.fast_start is not None
+    assert plan.validation.fast_start.qualification.state.value == "Qualified"
+    assert plan.render is not None
+    runtime_pods = [item.manifest["spec"]["template"] for item in plan.render.resources if item.kind == "Deployment"]
+    assert runtime_pods
+    assert {pod["metadata"]["annotations"].get("fast-start.fs2.nebius/mechanism") for pod in runtime_pods} == {
+        "regional-cache"
+    }
+
+    status = build_status(
+        spec=spec,
+        owner_uid="cr-uid-1",
+        generation=1,
+        plan=plan,
+        discovery=Discovery(resources=[snapshot(item, ready=True) for item in plan.render.resources], complete=True),
+        previous_status={},
+        drain=None,
+        envelope=installed,
+        fast_start_history=None,
+        now=now,
+    )
+    assert status["fastStart"]["automatic"]["mechanismId"] == "regional-cache"
+    assert status["fastStart"]["qualification"]["state"] == "Qualified"
+    assert status["fastStart"]["effectiveLevel"] == "L2"
+
+
+def test_automatic_allow_lower_level_keeps_the_highest_qualified_mechanism() -> None:
+    spec, installed = _automatic_declared_evidence(mechanism="regional-cache", seconds=45.0)
+    spec = with_fast_start(
+        spec,
+        mode="Automatic",
+        minimum_level="L4",
+        maximum_level="L4",
+        fallback_policy="AllowLowerLevel",
+    )
+
+    decision = validate_model_deployment(spec, installed, evaluation_time=datetime(2026, 9, 4, 10, tzinfo=UTC))
+
+    assert decision.disposition.value == "accepted"
+    assert decision.fast_start_mechanism.mechanism.value == "regional-cache"
+    assert decision.fast_start_mechanism.reason == "MissingDemandDataQualifiedFallback"
+    assert decision.fast_start is not None
+    assert decision.fast_start.assigned_level.value == "L3"
+    assert decision.fast_start.qualification.state.value == "Fallback"
+
+
+def test_automatic_mechanism_cost_changes_with_observed_activation_rate() -> None:
+    spec, installed = _automatic_declared_evidence(mechanism="regional-cache", seconds=30.0)
+    qualification = installed.qualifications[spec.model_ref]
+    conventional_config = mechanism_config_digest(
+        mechanism="conventional",
+        storage_contract_digest=STORAGE_CONTRACT_DIGEST,
+    )
+    regional_config = mechanism_config_digest(
+        mechanism="regional-cache",
+        storage_contract_digest=STORAGE_CONTRACT_DIGEST,
+        declaration_digest=qualification.regional_cache.config_digest if qualification.regional_cache else None,
+    )
+    qualification = qualification.model_copy(
+        update={
+            "fast_start_evidence": [
+                evidence(
+                    spec,
+                    installed.pools[pool_ref],
+                    seconds=[seconds] * 20,
+                    mechanism=mechanism,
+                    mechanism_config_digest=(conventional_config if mechanism == "conventional" else regional_config),
+                    receipt_digest=canonical_digest({"pool": pool_ref, "mechanism": mechanism}),
+                )
+                for pool_ref in spec.placement.pool_refs
+                for mechanism, seconds in (("conventional", 300.0), ("regional-cache", 30.0))
+            ]
+        }
+    )
+    installed = installed.model_copy(
+        update={
+            "qualifications": {spec.model_ref: qualification},
+            "fast_start_wait_second_value": 1.0,
+            "fast_start_mechanism_hourly_costs": {"conventional": 0.0, "regional-cache": 100.0},
+        }
+    )
+    now = datetime(2026, 9, 4, 10, tzinfo=UTC)
+
+    def history(cold_activations: int) -> tuple[FastStartHistoryWindow, FastStartHistoryWindow]:
+        return (
+            FastStartHistoryWindow(
+                started_at=now - timedelta(hours=1),
+                ended_at=now,
+                request_count=10,
+                cold_activation_count=min(cold_activations, 10),
+                idle_gap_episode_count=0,
+                target_miss_count=0,
+            ),
+            FastStartHistoryWindow(
+                started_at=now - timedelta(days=7),
+                ended_at=now,
+                request_count=70,
+                cold_activation_count=cold_activations,
+                idle_gap_episode_count=0,
+                target_miss_count=0,
+            ),
+        )
+
+    quiet = validate_model_deployment(spec, installed, evaluation_time=now, automatic_history=history(0))
+    busy = validate_model_deployment(spec, installed, evaluation_time=now, automatic_history=history(70))
+    assert quiet.fast_start_mechanism.mechanism.value == "conventional"
+    assert busy.fast_start_mechanism.mechanism.value == "regional-cache"
+
+
+def test_automatic_gpu_resident_evidence_fails_closed() -> None:
+    spec, installed = _automatic_declared_evidence(mechanism="gpu-resident", seconds=1.0)
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=installed,
+        renderer=renderer(),
+        render_context=_mechanism_context(spec, installed),
+        observed=[],
+        discovery_complete=True,
+    )
+    assert plan.validation.fast_start_mechanism.mechanism.value == "conventional"
+    assert plan.validation.fast_start_mechanism.reason == "MissingDemandDataConventionalFallback"
+    assert plan.render is not None
+    for item in plan.render.resources:
+        if item.kind != "Deployment":
+            continue
+        pod = item.manifest["spec"]["template"]
+        assert "fast-start.fs2.nebius/gpu-resident-role" not in pod["metadata"].get("labels", {})
+        assert "readinessGates" not in pod["spec"]
+
+
+def test_runtime_sleep_offload_is_rejected_by_live_validation() -> None:
+    spec, installed = _all_mechanism_envelope("host-memory-residency")
+    qualification = installed.qualifications[spec.model_ref].model_copy(
+        update={"host_memory_residency": render_host_memory(mode="runtime-sleep-offload")}
+    )
+    installed = installed.model_copy(update={"qualifications": {spec.model_ref: qualification}})
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=installed,
+        renderer=renderer(),
+        render_context=_mechanism_context(spec, installed),
+        observed=[],
+        discovery_complete=True,
+    )
+    assert plan.action.value == "reject"
+    assert plan.validation.fast_start_mechanism.renderable is False
+    assert plan.validation.fast_start_mechanism.reason == "SleepWakeControllerNotInstalled"
+    assert "fast_start_mechanism_unavailable" in {item.code for item in plan.validation.issues}
+
+
+def test_host_residency_waits_for_every_receipt_backed_holder() -> None:
+    spec, installed = _all_mechanism_envelope("host-memory-residency")
+    context = _mechanism_context(spec, installed)
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=installed,
+        renderer=renderer(),
+        render_context=context,
+        observed=[],
+        discovery_complete=True,
+    )
+    assert plan.render is not None
+    unready = Discovery(
+        resources=[snapshot(item, ready=item.kind != "DaemonSet") for item in plan.render.resources],
+        complete=True,
+    )
+    pending = build_status(
+        spec=spec,
+        owner_uid="cr-uid-1",
+        generation=1,
+        plan=plan,
+        discovery=unready,
+        previous_status={},
+        drain=None,
+        envelope=installed,
+    )
+    host = pending["fastStart"]["cacheMechanisms"]["host-memory-residency"]
+    assert (host["state"], host["reason"]) == ("Pending", "ResidencyHoldersNotReady")
+    assert "effectiveLevel" not in pending["fastStart"]
+
+    ready = Discovery(resources=[snapshot(item, ready=True) for item in plan.render.resources], complete=True)
+    configured = build_status(
+        spec=spec,
+        owner_uid="cr-uid-1",
+        generation=1,
+        plan=plan,
+        discovery=ready,
+        previous_status=pending,
+        drain=None,
+        envelope=installed,
+    )
+    assert configured["fastStart"]["cacheMechanisms"]["host-memory-residency"]["state"] == "Configured"
+
+
+def test_host_residency_configures_every_selected_pool_when_runtime_fits_in_one_pool() -> None:
+    spec, installed = _all_mechanism_envelope("host-memory-residency")
+    spec = spec.model_copy(update={"availability": spec.availability.model_copy(update={"max_replicas": 4})})
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=installed,
+        renderer=renderer(),
+        render_context=_mechanism_context(spec, installed),
+        observed=[],
+        discovery_complete=True,
+    )
+
+    assert plan.render is not None
+    holders = [item for item in plan.render.resources if item.kind == "DaemonSet"]
+    assert {
+        item.manifest["metadata"]["annotations"]["fs2-serve.nebius.ai/workload-pool-ref"] for item in holders
+    } == set(spec.placement.pool_refs)
+    status = build_status(
+        spec=spec,
+        owner_uid="cr-uid-1",
+        generation=1,
+        plan=plan,
+        discovery=Discovery(
+            resources=[snapshot(item, ready=True) for item in plan.render.resources],
+            complete=True,
+        ),
+        previous_status={},
+        drain=None,
+        envelope=installed,
+    )
+    assert status["fastStart"]["cacheMechanisms"]["host-memory-residency"]["state"] == "Configured"
+
+
+def test_production_snapshot_maps_daemonset_node_and_probe_readiness() -> None:
+    spec, installed = _all_mechanism_envelope("host-memory-residency")
+    plan = renderer().render(spec, _mechanism_context(spec, installed))
+    holder = next(item for item in plan.resources if item.kind == "DaemonSet")
+    raw = copy.deepcopy(holder.manifest)
+    raw["metadata"].update(
+        {
+            "uid": "holder-uid",
+            "resourceVersion": "9",
+            "generation": 3,
+            "managedFields": [{"manager": FIELD_MANAGER, "fieldsV1": {"f:spec": {}}}],
+        }
+    )
+    raw["status"] = {
+        "observedGeneration": 3,
+        "desiredNumberScheduled": 2,
+        "currentNumberScheduled": 2,
+        "updatedNumberScheduled": 2,
+        "numberReady": 0,
+        "numberAvailable": 0,
+        "numberUnavailable": 2,
+    }
+    observed = _snapshot(raw, holder)
+    assert observed.desired_replicas == 2
+    assert observed.replicas == 2
+    assert observed.ready_replicas == 0
+    assert observed.unavailable_replicas == 2
+
+    raw["status"].update({"numberReady": 2, "numberAvailable": 2})
+    raw["status"].pop("numberUnavailable")
+    healthy = _snapshot(raw, holder)
+    assert healthy.ready_replicas == 2
+    assert healthy.available_replicas == 2
+    assert healthy.unavailable_replicas == 0
+
+
+@pytest.mark.asyncio
+async def test_controller_passes_all_reviewed_mechanisms_and_holder_image_to_real_render() -> None:
+    spec, installed = _all_mechanism_envelope("host-memory-residency")
+    raw = model_object()
+    raw["spec"] = spec.model_dump(mode="json", by_alias=True)
+    api = FakeApi(raw)
+    captured: list[RenderContext] = []
+    delegate = renderer()
+
+    class CapturingRenderer:
+        def render(self, desired: ModelDeploymentSpec, context: RenderContext) -> RenderPlan:
+            captured.append(context)
+            return delegate.render(desired, context)
+
+    subject = ModelDeploymentController(
+        api=api,
+        envelope=installed,
+        renderer=CapturingRenderer(),
+        namespace="fs2-models",
+        holder_identity="fs2-system/controller:pod-uid",
+        prometheus_server_address="http://prometheus:9090",
+        writes_enabled=True,
+        active_operations=ZeroActiveOperations(),
+        queue_capacity=2,
+        worker_count=1,
+        poll_seconds=0.01,
+    )
+    key = ModelKey(namespace="fs2-models", name="qwen-live")
+
+    assert (await subject.reconcile(key, fence())).action == "finalizer-added"
+    assert (await subject.reconcile(key, fence())).requeue
+    context = captured[-1]
+    qualification = installed.qualifications[spec.model_ref]
+    assert context.regional_cache == qualification.regional_cache
+    assert context.host_memory_residency == qualification.host_memory_residency
+    assert context.gpu_resident == qualification.gpu_resident
+    assert context.residency_holder_image == installed.residency_holder_image
+    holders = [item for item in api.resources.values() if item.observed.kind == "DaemonSet"]
+    assert len(holders) == len(spec.placement.pool_refs)
+    assert all(
+        item.raw["spec"]["selector"]["matchLabels"]["fast-start.fs2.nebius/host-memory-holder"] for item in holders
+    )
+    statuses = api.status_writes[-1]["fastStart"]["cacheMechanisms"]
+    host = statuses["host-memory-residency"]
+    assert qualification.host_memory_residency is not None
+    reserved_per_node = qualification.host_memory_residency.reserved_bytes
+    assert host["selected"] is True
+    assert host["reservedHostMemoryBytes"] == reserved_per_node
+    assert host.get("reservedHostMemoryFraction") is None
+    assert host["maximumReservedHostMemoryBytes"] == reserved_per_node * sum(
+        installed.pools[pool_ref].max_nodes for pool_ref in spec.placement.pool_refs
+    )
+    assert statuses["regional-cache"]["state"] == "Available"
+    assert statuses["gpu-resident"]["state"] == "Unavailable"
+
+
+@pytest.mark.asyncio
+async def test_controller_reports_an_unrenderable_physical_ram_layout_without_throwing() -> None:
+    spec, installed = _all_mechanism_envelope("host-memory-residency")
+    gib = 1024**3
+    pools = {
+        pool_ref: pool.model_copy(update={"allocatable_memory_bytes": 20 * gib})
+        for pool_ref, pool in installed.pools.items()
+    }
+    installed = InfrastructureEnvelope.model_validate(
+        installed.model_copy(update={"pools": pools}).model_dump(mode="json", by_alias=True)
+    )
+    raw = model_object()
+    raw["spec"] = spec.model_dump(mode="json", by_alias=True)
+    api = FakeApi(raw)
+    subject = ModelDeploymentController(
+        api=api,
+        envelope=installed,
+        renderer=renderer(runtime_memory_request="1Gi"),
+        namespace="fs2-models",
+        holder_identity="fs2-system/controller:pod-uid",
+        prometheus_server_address="http://prometheus:9090",
+        writes_enabled=True,
+        active_operations=ZeroActiveOperations(),
+        queue_capacity=2,
+        worker_count=1,
+        poll_seconds=0.01,
+    )
+
+    result = await subject.reconcile(ModelKey(namespace="fs2-models", name="qwen-live"), fence())
+
+    assert result.action == "reject"
+    assert api.resources == {}
+    assert api.status_writes[-1]["phase"] == "Failed"
+    failed = next(item for item in api.status_writes[-1]["conditions"] if item["type"] == "Failed")
+    assert failed["reason"] == "ValidationRejected"
+
+
+def test_a_configured_mechanism_is_reported_without_claiming_a_level() -> None:
+    """The honest report: mechanism Configured, effective level still absent."""
+
+    spec, installed = _mechanism_envelope()
+    context = RenderContext(
+        name="qwen-live",
+        namespace="fs2-models",
+        uid="cr-uid-1",
+        generation=1,
+        pool=installed.pools["pool-b"],
+        eligible_pools=[installed.pools[pool_ref] for pool_ref in spec.placement.pool_refs],
+        prometheus_server_address="http://prometheus:9090",
+        regional_cache=installed.qualifications["qwen.3-8b"].regional_cache,
+    )
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=installed,
+        renderer=renderer(),
+        render_context=context,
+        observed=[],
+        discovery_complete=True,
+    )
+    status = build_status(
+        spec=spec,
+        owner_uid="cr-uid-1",
+        generation=1,
+        plan=plan,
+        discovery=Discovery(resources=[], complete=True),
+        previous_status={},
+        drain=None,
+        envelope=installed,
+    )
+    fast_start = status["fastStart"]
+    mechanisms = fast_start["cacheMechanisms"]
+
+    # The selected mechanism is visible and attributed to its reviewed digest.
+    conventional = mechanisms["conventional"]
+    assert conventional["state"] == "Available"
+    assert conventional["reason"] == "ConventionalLoaderAvailable"
+    assert conventional["selected"] is False
+    regional = mechanisms["regional-cache"]
+    assert regional["selected"] is True
+    assert regional["state"] in ("Configured", "Pending")
+    assert regional["configDigest"] == installed.qualifications["qwen.3-8b"].regional_cache.config_digest
+    assert regional["retainedCompileCacheAbi"] == "driver-580-sm90"
+
+    # And it buys nothing: there is no evidence, so no level is claimed.
+    assert fast_start["qualifiedLevel"] == "Off"
+    assert fast_start.get("effectiveLevel") in (None, "Off")
+
+    # The paths this cluster has no hardware for are reported, not hidden.
+    assert mechanisms["node-local-restore"]["state"] == "Unavailable"
+    assert mechanisms["node-local-restore"]["reason"] == "NoNodeLocalNvme"
+    assert mechanisms["shared-restore"]["reason"] == "NoQualifiedSnapshotCapability"
+    for pool in mechanisms["node-local-restore"]["pools"].values():
+        assert pool["evidenceSelector"] == {"local-nvme.fs2.nebius/eligible": "false"}
+
+    # GPU residency stays fail-closed until a production promotion controller
+    # owns the readiness-gate condition.
+    assert mechanisms["gpu-resident"]["state"] == "Unavailable"
+    assert mechanisms["gpu-resident"]["reason"] == "PromotionControllerNotInstalled"
+    assert mechanisms["gpu-resident"]["selected"] is False
+    assert mechanisms["gpu-resident"].get("configDigest") is None

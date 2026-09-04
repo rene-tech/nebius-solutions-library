@@ -826,6 +826,11 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
         "resources": ["horizontalpodautoscalers"],
         "verbs": ["get", "list", "watch"],
     } in model_role["rules"]
+    assert {
+        "apiGroups": ["apps"],
+        "resources": ["daemonsets", "deployments"],
+        "verbs": ["get", "list", "watch", "create", "patch", "delete"],
+    } in model_role["rules"]
     assert not any(
         document["kind"] in {"ClusterRole", "ClusterRoleBinding"} and "model-controller" in document["metadata"]["name"]
         for document in documents

@@ -35,6 +35,7 @@ from .fast_start_identity import (
     identity_mismatches,
     mechanism_config_digest,
 )
+from .fast_start_mechanisms import FastStartCacheMechanismStatus, FastStartMechanism
 from .models import KubernetesModel
 
 if TYPE_CHECKING:
@@ -375,6 +376,10 @@ class FastStartStatus(FastStartAssessment):
     hot: bool | None = None
     automatic: FastStartAutomaticStatus | None = None
     mechanisms: dict[str, FastStartMechanismStatus] = Field(default_factory=dict, max_length=16)
+    #: Configured cold-start cache mechanisms.  Being ``Configured`` here never
+    #: raises ``qualifiedLevel``, ``assignedLevel`` or ``effectiveLevel``; a
+    #: mechanism with no populated cohort is reported next to an ``Off`` level.
+    cache_mechanisms: dict[str, FastStartCacheMechanismStatus] = Field(default_factory=dict, max_length=16)
 
 
 def nearest_rank(values: Sequence[float | None], fraction: float) -> float | None:
@@ -467,15 +472,29 @@ def _identity_compatibility(
     ):
         return [FastStartIdentityMismatch(code="ValueMismatch", field="$.environment.members")]
 
+    selected = spec.cache.mechanism
+    if selected is not None and evidence.mechanism != selected.value:
+        # A pinned mechanism is the only path this revision renders, so another
+        # mechanism's cohort cannot qualify it. This narrows compatibility; it
+        # never widens it.
+        return [FastStartIdentityMismatch(code="ValueMismatch", field="$.cache.mechanism")]
     if evidence.mechanism == "modelexpress":
         model_express = qualification.model_express
         if model_express is None or pool.pool_id not in model_express.pool_refs:
             return [FastStartIdentityMismatch(code="MissingExpectedValue", field="$.cache.mechanismConfigDigest")]
         expected_mechanism_digest = model_express.config_digest
     else:
+        # Retained evidence may name a mechanism this build does not model,
+        # because earlier campaigns used other names. An unknown name keeps the
+        # historical storage-only identity instead of raising.
+        known = [item for item in FastStartMechanism if item.value == evidence.mechanism]
+        declaration = qualification.mechanism_declaration(known[0]) if known else None
+        if declaration is not None and pool.pool_id not in declaration.pool_refs:
+            return [FastStartIdentityMismatch(code="MissingExpectedValue", field="$.cache.mechanismConfigDigest")]
         expected_mechanism_digest = mechanism_config_digest(
             mechanism=evidence.mechanism,
             storage_contract_digest=contract.storage_contract_digest,
+            declaration_digest=None if declaration is None else declaration.config_digest,
         )
 
     snapshot_digest = spec.cache.snapshot_ref.digest if spec.cache.snapshot_ref is not None else None
