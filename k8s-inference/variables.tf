@@ -415,6 +415,16 @@ variable "deployment" {
         block_size_bytes = optional(number, 4096)
         forbid_deletion  = optional(bool, false)
       }))
+      # The mechanism declaration remains the source of truth for claim names,
+      # namespaces and compile-cache byte limits. This deployment-wide block
+      # selects whether Terraform owns those declared claims and how they are
+      # realized on the shared filesystem installed by the foundation stage.
+      fast_start_claims = optional(object({
+        manage                     = optional(bool, true)
+        storage_class              = optional(string, "csi-mounted-fs-path-sc")
+        compile_cache_min_size_gib = optional(number, 16)
+        residency_receipt_size_gib = optional(number, 1)
+      }), {})
       reference_data = optional(object({
         enabled = optional(bool, false)
         lifecycle = optional(object({
@@ -971,6 +981,24 @@ variable "deployment" {
 
   validation {
     condition = try(
+      length(var.deployment.storage.fast_start_claims.storage_class) <= 253 &&
+      can(regex(
+        "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$",
+        var.deployment.storage.fast_start_claims.storage_class,
+      )) &&
+      floor(var.deployment.storage.fast_start_claims.compile_cache_min_size_gib) == var.deployment.storage.fast_start_claims.compile_cache_min_size_gib &&
+      var.deployment.storage.fast_start_claims.compile_cache_min_size_gib >= 1 &&
+      var.deployment.storage.fast_start_claims.compile_cache_min_size_gib <= 65536 &&
+      floor(var.deployment.storage.fast_start_claims.residency_receipt_size_gib) == var.deployment.storage.fast_start_claims.residency_receipt_size_gib &&
+      var.deployment.storage.fast_start_claims.residency_receipt_size_gib >= 1 &&
+      var.deployment.storage.fast_start_claims.residency_receipt_size_gib <= 1024,
+      false,
+    )
+    error_message = "storage.fast_start_claims requires a DNS-subdomain storage class, a whole 1-65536 GiB compile-cache minimum, and a whole 1-1024 GiB residency-receipt claim."
+  }
+
+  validation {
+    condition = try(
       !var.deployment.storage.reference_data.enabled || (
         contains(["retain", "disposable"], var.deployment.storage.reference_data.lifecycle.retention_mode) &&
         (
@@ -1385,6 +1413,7 @@ variable "deployment" {
         for path in [
           var.deployment.dynamic_models.fast_start_environment_qualifications_file,
           var.deployment.dynamic_models.fast_start_measurement_contracts_file,
+          var.deployment.dynamic_models.fast_start_mechanisms_file,
         ] : path == null ? true : startswith(pathexpand(path), "/") && can(jsondecode(file(pathexpand(path))))
       ]) &&
       var.deployment.dynamic_models.fast_start_wait_second_value >= 0 &&
@@ -1396,7 +1425,7 @@ variable "deployment" {
       ]),
       false,
     )
-    error_message = "models.selection must be profile or explicit; explicit IDs must belong to the profile; fast-start evidence and qualification contracts must be readable JSON at absolute paths; and bounded economic inputs must be valid."
+    error_message = "models.selection must be profile or explicit; explicit IDs must belong to the profile; fast-start evidence, qualification, measurement, and mechanism contracts must be readable JSON at absolute paths; and bounded economic inputs must be valid."
   }
 
   validation {

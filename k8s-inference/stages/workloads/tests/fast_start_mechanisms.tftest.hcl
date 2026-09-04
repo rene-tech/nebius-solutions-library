@@ -250,6 +250,97 @@ run "declared_mechanisms_reach_the_model_qualification" {
     )
     error_message = "The envelope must carry each mechanism's declared price and hot-floor dependency."
   }
+
+  assert {
+    condition = (
+      local.model_controller_envelope.residencyHolderImage ==
+      "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
+    )
+    error_message = "The envelope must expose the digest-pinned control-plane image that packages the residency agent."
+  }
+}
+
+run "declared_storage_dependencies_are_real_rwx_claims" {
+  command = plan
+
+  variables {
+    model_controller = merge(var.model_controller, {
+      fast_start_mechanisms_file = abspath("tests/fixtures/fast-start-mechanisms.json")
+    })
+  }
+
+  plan_options {
+    target = [
+      kubernetes_persistent_volume_claim_v1.fast_start_compile_cache,
+      kubernetes_persistent_volume_claim_v1.fast_start_residency_receipt,
+    ]
+  }
+
+  assert {
+    condition = (
+      length(kubernetes_persistent_volume_claim_v1.fast_start_compile_cache) == 1 &&
+      length(kubernetes_persistent_volume_claim_v1.fast_start_residency_receipt) == 1
+    )
+    error_message = "The declared compile cache and residency receipt must each resolve to one Terraform-managed claim."
+  }
+
+  assert {
+    condition = (
+      kubernetes_persistent_volume_claim_v1.fast_start_compile_cache["fs2-models/fs2-compile-cache-rwx"].metadata[0].namespace == "fs2-models" &&
+      length(kubernetes_persistent_volume_claim_v1.fast_start_compile_cache["fs2-models/fs2-compile-cache-rwx"].spec[0].access_modes) == 1 &&
+      contains(kubernetes_persistent_volume_claim_v1.fast_start_compile_cache["fs2-models/fs2-compile-cache-rwx"].spec[0].access_modes, "ReadWriteMany") &&
+      kubernetes_persistent_volume_claim_v1.fast_start_compile_cache["fs2-models/fs2-compile-cache-rwx"].spec[0].storage_class_name == "csi-mounted-fs-path-sc" &&
+      kubernetes_persistent_volume_claim_v1.fast_start_compile_cache["fs2-models/fs2-compile-cache-rwx"].spec[0].resources[0].requests.storage == "16Gi"
+    )
+    error_message = "The compile-cache claim must use the declared runtime namespace and the shared-filesystem RWX class with enough capacity for its byte limit."
+  }
+
+  assert {
+    condition = (
+      kubernetes_persistent_volume_claim_v1.fast_start_residency_receipt["fs2-models/fs2-residency-receipt-rwx"].metadata[0].namespace == "fs2-models" &&
+      length(kubernetes_persistent_volume_claim_v1.fast_start_residency_receipt["fs2-models/fs2-residency-receipt-rwx"].spec[0].access_modes) == 1 &&
+      contains(kubernetes_persistent_volume_claim_v1.fast_start_residency_receipt["fs2-models/fs2-residency-receipt-rwx"].spec[0].access_modes, "ReadWriteMany") &&
+      kubernetes_persistent_volume_claim_v1.fast_start_residency_receipt["fs2-models/fs2-residency-receipt-rwx"].spec[0].storage_class_name == "csi-mounted-fs-path-sc" &&
+      kubernetes_persistent_volume_claim_v1.fast_start_residency_receipt["fs2-models/fs2-residency-receipt-rwx"].spec[0].resources[0].requests.storage == "1Gi"
+    )
+    error_message = "The residency holder and serving init container must share one real RWX receipt claim."
+  }
+}
+
+run "existing_claims_can_remain_externally_managed" {
+  command = plan
+
+  variables {
+    fast_start_claims = {
+      manage                     = false
+      storage_class              = "adopted-rwx.example"
+      compile_cache_min_size_gib = 24
+      residency_receipt_size_gib = 2
+    }
+    model_controller = merge(var.model_controller, {
+      fast_start_mechanisms_file = abspath("tests/fixtures/fast-start-mechanisms.json")
+    })
+  }
+
+  plan_options {
+    target = [
+      kubernetes_persistent_volume_claim_v1.fast_start_compile_cache,
+      kubernetes_persistent_volume_claim_v1.fast_start_residency_receipt,
+    ]
+  }
+
+  assert {
+    condition = (
+      length(local.fast_start_compile_cache_claims) == 1 &&
+      length(local.fast_start_residency_receipt_claims) == 1 &&
+      local.fast_start_compile_cache_claims["fs2-models/fs2-compile-cache-rwx"].size_gib == 24 &&
+      local.fast_start_residency_receipt_claims["fs2-models/fs2-residency-receipt-rwx"].size_gib == 2 &&
+      var.fast_start_claims.storage_class == "adopted-rwx.example" &&
+      length(local.fast_start_managed_compile_cache_claims) == 0 &&
+      length(local.fast_start_managed_residency_receipt_claims) == 0
+    )
+    error_message = "manage=false must retain the declared external claim contract without attempting to create either claim."
+  }
 }
 
 run "a_tampered_declaration_is_refused" {
@@ -271,4 +362,3 @@ run "a_tampered_declaration_is_refused" {
   # itself is refused rather than producing an envelope.
   expect_failures = [terraform_data.model_controller_contract]
 }
-

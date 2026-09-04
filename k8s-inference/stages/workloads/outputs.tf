@@ -220,6 +220,17 @@ output "dynamic_model_contract" {
   }
 }
 
+output "fast_start_claims_contract" {
+  description = "Non-secret RWX claim realization derived from the reviewed fast-start mechanism set. manage=false means the named claims are externally owned and must already exist."
+  value = {
+    manage             = var.fast_start_claims.manage
+    storage_class      = var.fast_start_claims.storage_class
+    access_mode        = "ReadWriteMany"
+    compile_cache      = local.fast_start_compile_cache_claims
+    residency_receipts = local.fast_start_residency_receipt_claims
+  }
+}
+
 output "model_autoscaling_contract" {
   description = "Non-secret replica-owner, hot-floor, timing, and exact route-to-Deployment contract."
   value = {
@@ -370,6 +381,8 @@ output "managed_resource_count" {
     length(local.terraform_owned_model_manifests) +
     length(local.keeper_manifests) +
     length(local.terraform_owned_model_scalers) +
+    length(local.fast_start_managed_compile_cache_claims) +
+    length(local.fast_start_managed_residency_receipt_claims) +
     (var.model_controller.enabled ? 2 : 0) +
     (local.model_controller_bootstrap_enabled ? 3 : 0) +
     (local.admin_configuration_enabled ? 1 : 0) +
