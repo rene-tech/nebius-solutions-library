@@ -16,6 +16,11 @@ locals {
   scientific_workload_profile_contract = jsondecode(file(
     "${path.module}/catalog/runtime/contracts/scientific-workload-profiles.json"
   ))
+  committed_academic_asset_readiness_path = "${path.module}/catalog/runtime/contracts/academic-asset-readiness.json"
+  committed_academic_asset_readiness      = jsondecode(file(local.committed_academic_asset_readiness_path))
+  committed_academic_asset_readiness_sha256 = filesha256(
+    local.committed_academic_asset_readiness_path
+  )
   scientific_workload_profiles_by_model_id = {
     for profile in local.scientific_workload_profile_contract.profiles :
     profile.model_id => profile
@@ -1022,9 +1027,16 @@ locals {
       general_shared_cache    = false
       deny_egress_on_validate = var.academic_assets.deny_egress_during_offline_validation
     }
-    execution                 = var.academic_assets.execution
-    assets                    = var.academic_assets.assets
-    readiness_manifest_sha256 = var.academic_assets.readiness_manifest_sha256
+    execution = var.academic_assets.execution
+    assets    = var.academic_assets.assets
+    # The catalog image contains this reviewed readiness projection. Default to
+    # the digest of those exact bytes so enabling the shipped academic models
+    # does not require a customer to copy an implementation detail into
+    # terraform.tfvars. An explicit live-project receipt still takes precedence.
+    readiness_manifest_sha256 = var.academic_assets.enabled ? coalesce(
+      var.academic_assets.readiness_manifest_sha256,
+      local.committed_academic_asset_readiness_sha256,
+    ) : var.academic_assets.readiness_manifest_sha256
   }
 
   workloads_variables = {

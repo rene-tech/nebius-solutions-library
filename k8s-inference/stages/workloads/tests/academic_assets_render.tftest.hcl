@@ -258,7 +258,7 @@ run "enabled_academic_config_reaches_the_chart" {
         deny_egress_on_validate = true
       }
       assets                    = {}
-      readiness_manifest_sha256 = null
+      readiness_manifest_sha256 = "2b5a21f8eca6d8e465f29c508a6717915b84e73cb351d24811223a70228a3e36"
     }
   }
 
@@ -285,5 +285,128 @@ run "enabled_academic_config_reaches_the_chart" {
       terraform_data.academic_assets_contract.input.delivery.world_readable == false
     )
     error_message = "The projected delivery must keep the mount-not-bake invariants."
+  }
+}
+
+run "localized_private_generation_reaches_the_chart" {
+  command = plan
+
+  variables {
+    academic_assets = {
+      enabled        = true
+      project_id     = "project-test"
+      region         = "eu-north1"
+      tenant_id      = "tenant-academic"
+      institution_id = null
+      namespace      = "fs2-academic-poc"
+      runtime_claim = {
+        name          = "academic-assets-runtime-rwx"
+        storage_gib   = 128
+        storage_class = "csi-mounted-fs-path-sc"
+        access_mode   = "ReadWriteMany"
+        lifecycle     = "disposable"
+      }
+      legacy_quarantine_claim = {
+        enabled     = false
+        namespace   = "fs2-models"
+        name        = "cancer-immunotherapy-academic-assets-rwx-v1"
+        storage_gib = 128
+        retain      = false
+      }
+      delivery = {
+        mode                    = "tenant-private-volume"
+        mount_root              = "/opt/fs2/academic"
+        asset_gid               = 65532
+        consumer_access         = "supplemental-group"
+        world_readable          = false
+        embed_licensed_bytes    = false
+        general_shared_cache    = false
+        deny_egress_on_validate = true
+      }
+      assets = {
+        pyrosetta-bindcraft = {
+          model_id              = "bindcraft"
+          relative_path         = "pyrosetta-bindcraft/pyrosetta.whl"
+          install_relative_path = "pyrosetta-bindcraft/site-packages"
+          runtime_binding = {
+            artifact_id                = "bindcraft-pyrosetta-installed-tree"
+            source_sub_path            = "pyrosetta-bindcraft/site-packages"
+            consumer_path              = "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
+            mechanism                  = "subpath-directory-mount"
+            content_identity_kind      = "tree-manifest"
+            content_manifest_algorithm = "fs2-tree-manifest/v1"
+            content_digest_sha256      = "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+            size_bytes                 = 3287122494
+            source_artifact = {
+              filename   = "pyrosetta.whl"
+              sha256     = "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242"
+              size_bytes = 1667097173
+            }
+          }
+        }
+      }
+      readiness_manifest_sha256 = "2b5a21f8eca6d8e465f29c508a6717915b84e73cb351d24811223a70228a3e36"
+    }
+
+    scientific_batch = {
+      execution_map = {
+        schema = "fs2-serve.nebius.ai/scientific-execution-map/v3"
+        models = [{
+          model_id = "bindcraft"
+          stages = [
+            {
+              stage_id = "design"
+              mounts = [{
+                kind       = "private"
+                claim_name = "academic-assets-runtime-rwx"
+                mount_path = "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
+                sub_path   = "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+              }]
+            },
+            {
+              stage_id = "aggregate"
+              mounts = [{
+                kind       = "private"
+                claim_name = "academic-assets-runtime-rwx"
+                mount_path = "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
+                sub_path   = "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+              }]
+            },
+          ]
+        }]
+      }
+    }
+  }
+
+  plan_options {
+    target = [terraform_data.academic_assets_contract]
+  }
+
+  assert {
+    condition = (
+      terraform_data.academic_assets_contract.input.helm_values.runtimeBindings["pyrosetta-bindcraft"].sourceSubPath ==
+      "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+    )
+    error_message = "The chart must mount the immutable localized generation rather than the PyRosetta ingestion source tree."
+  }
+
+  assert {
+    condition = (
+      terraform_data.academic_assets_contract.input.helm_values.runtimeBindings["pyrosetta-bindcraft"].artifactId == "bindcraft-pyrosetta-installed-tree" &&
+      terraform_data.academic_assets_contract.input.helm_values.runtimeBindings["pyrosetta-bindcraft"].consumerPath == "/opt/fs2/academic/pyrosetta-bindcraft/site-packages" &&
+      terraform_data.academic_assets_contract.input.helm_values.runtimeBindings["pyrosetta-bindcraft"].contentDigestSha256 == "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+    )
+    error_message = "Selecting the localized path must preserve the exact academic artifact, consumer, and content identities."
+  }
+
+  assert {
+    condition = (
+      terraform_data.academic_assets_contract.input.helm_values.tenantId == "tenant-academic" &&
+      terraform_data.academic_assets_contract.input.helm_values.readinessManifestSha256 == "2b5a21f8eca6d8e465f29c508a6717915b84e73cb351d24811223a70228a3e36" &&
+      terraform_data.academic_assets_contract.input.helm_values.execution.localQueue == "academic-scientific" &&
+      terraform_data.academic_assets_contract.input.helm_values.execution.clusterQueue == "inference-accelerators" &&
+      terraform_data.academic_assets_contract.input.helm_values.execution.serviceAccount == "fs2-academic-runner"
+    )
+    error_message = "The chart must receive the exact Terraform tenant, readiness receipt, GPU queues, and runner identity."
   }
 }

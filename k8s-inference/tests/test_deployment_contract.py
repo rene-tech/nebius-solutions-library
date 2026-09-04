@@ -1366,6 +1366,36 @@ class DeploymentContractTests(unittest.TestCase):
             },
         )
 
+    def test_academic_readiness_defaults_to_the_checked_in_contract_bytes(self) -> None:
+        variable_file = self._two_pool_af3_deployment("academic-readiness-default")
+        configuration = json.loads(variable_file.read_text(encoding="utf-8"))
+        configuration["deployment"]["scientific_batch"]["runtime_cache"] = {
+            "enabled": True
+        }
+        variable_file.write_text(
+            json.dumps(configuration, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        outputs = self._planned_outputs(variable_file, "academic-readiness-default")
+        readiness_path = (
+            DEPLOY_ROOT
+            / "catalog"
+            / "runtime"
+            / "contracts"
+            / "academic-asset-readiness.json"
+        )
+        expected = hashlib.sha256(readiness_path.read_bytes()).hexdigest()
+
+        self.assertEqual(
+            outputs["academic_assets"]["readiness_manifest_sha256"], expected
+        )
+        self.assertEqual(
+            outputs["deployment_contract"]["stages"]["workloads"][
+                "academic_assets"
+            ]["readiness_manifest_sha256"],
+            expected,
+        )
+
     def _raw_af3_deployment(self, name: str, override: dict[str, Any] | None = None) -> Path:
         """The shipped raw configuration's scheduling inputs, as a tfvars file."""
 

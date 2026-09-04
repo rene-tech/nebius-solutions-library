@@ -3,6 +3,14 @@ resource "terraform_data" "deployment_contract" {
 
   lifecycle {
     precondition {
+      condition = !var.academic_assets.enabled || (
+        local.committed_academic_asset_readiness.schema == "fs2-serve.nebius.ai/academic-asset-readiness/v1" &&
+        length(local.committed_academic_asset_readiness_sha256) == 64
+      )
+      error_message = "Enabled academic assets require the checked-in schema-v1 readiness projection and its exact SHA-256 digest."
+    }
+
+    precondition {
       condition     = !var.deployment.scientific_batch.writes_enabled || var.deployment.scientific_batch.enabled
       error_message = "Scientific batch writes require the scientific batch controller gate."
     }

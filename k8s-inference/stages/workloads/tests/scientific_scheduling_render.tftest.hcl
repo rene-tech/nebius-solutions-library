@@ -352,7 +352,7 @@ variables {
         relative_path = "alphafold3/af3.bin.zst"
       }
     }
-    readiness_manifest_sha256 = null
+    readiness_manifest_sha256 = "2b5a21f8eca6d8e465f29c508a6717915b84e73cb351d24811223a70228a3e36"
   }
   scheduling = {
     cohort                             = { enabled = true, name = "inference-shared" }
@@ -371,6 +371,24 @@ variables {
     model_eligible_pool_ids = {
       alphafold3 = ["nebius-b300-preemptible-1x"]
     }
+  }
+}
+
+run "academic_chart_receives_both_stage_queues" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.academic_assets_contract]
+  }
+
+  assert {
+    condition = (
+      terraform_data.academic_assets_contract.input.helm_values.execution.localQueue == "academic-scientific" &&
+      terraform_data.academic_assets_contract.input.helm_values.execution.clusterQueue == "inference-accelerators" &&
+      terraform_data.academic_assets_contract.input.helm_values.execution.referenceDataLocalQueue == "academic-scientific-cpu" &&
+      terraform_data.academic_assets_contract.input.helm_values.execution.referenceDataClusterQueue == "reference-data-cpu"
+    )
+    error_message = "The Helm handoff must identify both the academic accelerator lane and the namespace-local reference-data CPU lane."
   }
 }
 
