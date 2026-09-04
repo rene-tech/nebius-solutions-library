@@ -292,11 +292,15 @@ def render(
                 }
             )
 
+    if not generation_planes and not planes:
+        raise SystemExit("RFdiffusion qualification requires one checkpoint artifact plane")
+    checkpoint_plane = generation_planes[0][0] if generation_planes else planes[0][0]
+    checkpoint_root = f"{ARTIFACT_MOUNT}/{checkpoint_plane}"
     command = [
         "python", "/opt/fs2/runtime_entrypoint.py", "run",
         "--request", f"{REQUEST_MOUNT}/request.json",
         "--input-manifest", f"{REQUEST_MOUNT}/input-manifest.json",
-        "--artifact-root", ARTIFACT_MOUNT,
+        "--artifact-root", checkpoint_root,
         "--input-artifact-root", INPUT_ARTIFACT_MOUNT,
         "--checkpoint-artifact-id", checkpoint_artifact_id,
         "--output", f"{WORKSPACE_MOUNT}/{name}",

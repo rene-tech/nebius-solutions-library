@@ -11,7 +11,8 @@ python3 -m py_compile runtime_entrypoint.py build_rfdiffusion.py fetch_verified.
   contract/generate_golden_argv.py \
   qualification/stage_checkpoint.py qualification/render_job.py \
   qualification/stage_target.py qualification/validate_result.py \
-  tests/test_rfdiffusion_runtime.py tests/test_adapter_contract.py
+  tests/test_rfdiffusion_runtime.py tests/test_adapter_contract.py \
+  tests/test_qualification_renderer.py
 echo "ok"
 
 echo
