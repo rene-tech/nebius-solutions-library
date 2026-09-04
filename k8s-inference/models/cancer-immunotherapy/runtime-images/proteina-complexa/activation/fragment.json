@@ -57,22 +57,22 @@
       "model_id": "proteina-complexa",
       "display_name": "Proteina-Complexa",
       "execution_mode": "scientific-batch",
-      "state": "candidate-unqualified",
-      "route_exposed": false,
+      "state": "active",
+      "route_exposed": true,
       "source": {
         "kind": "git",
         "repository": "NVIDIA-BioNeMo/Proteina-Complexa",
         "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
         "review_url": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa/tree/54058860d43444c7289873f77d3e50b5b02348cd",
-        "classification": "candidate-input"
+        "classification": "qualified-input"
       },
       "execution_identity": {
         "model_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
         "runtime_image_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
         "runtime_recipe_sha256": "3f28faf246dda24e2c13c6a9ffc9699ae261b5a594e5178c6519e5ca88bfd4e7",
         "workload_recipe_sha256": "1ea1d90228cff7efbc4c3e6f6c394be0e384e7870a2a94fa8897b81fe6bfa73b",
-        "artifact_manifest_digest": null,
-        "execution_identity_sha256": null
+        "artifact_manifest_digest": "2d84dbda753a108e2e10f1d0aab1d9bc6dd5017f8f86ed94173d933a9884d4eb",
+        "execution_identity_sha256": "a3c2813a0197d1e8f6ab2633897ec0fb5a241488a4bdfe06e76eae8b6a96e16f"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -89,14 +89,14 @@
         ],
         "mcp": {
           "discoverable": true,
-          "invocable": false,
+          "invocable": true,
           "tool_name": "submit_proteina_complexa",
           "description": "Submit a bounded asynchronous Proteina-Complexa binder design run."
         }
       },
       "access": {
         "profile": "standard",
-        "state": "unverified",
+        "state": "not-required",
         "receipt_digest": null,
         "credentials_embedded": false
       },
@@ -178,7 +178,14 @@
       },
       "semantic_validation": {
         "validator_id": "proteina-complexa-v1",
-        "state": "candidate-unqualified"
+        "state": "active"
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "380441981a4170c8f2427a47ef4b25898f0ab14e33cc5efe7fdd65ebc1b45c4b",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "qualified_at": "2026-09-03T13:53:21Z"
       },
       "policy": {
         "commercial_use": "license-dependent",

@@ -246,22 +246,22 @@
       "model_id": "proteina-complexa",
       "display_name": "Proteina-Complexa",
       "execution_mode": "scientific-batch",
-      "state": "candidate-unqualified",
-      "route_exposed": false,
+      "state": "active",
+      "route_exposed": true,
       "source": {
         "kind": "git",
         "repository": "NVIDIA-BioNeMo/Proteina-Complexa",
         "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
         "review_url": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa/tree/54058860d43444c7289873f77d3e50b5b02348cd",
-        "classification": "candidate-input"
+        "classification": "qualified-input"
       },
       "execution_identity": {
         "model_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
         "runtime_image_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
         "runtime_recipe_sha256": "e7ccb117f24d74e67714120f0e44b734f3ddc66c992199accf5786d900910730",
         "workload_recipe_sha256": "f614aa8507bb31c70d9e9316e4a2a9eb297922cc06555af3a801f0240e9b5797",
-        "artifact_manifest_digest": null,
-        "execution_identity_sha256": null
+        "artifact_manifest_digest": "2d84dbda753a108e2e10f1d0aab1d9bc6dd5017f8f86ed94173d933a9884d4eb",
+        "execution_identity_sha256": "62071777496576eff4549f48da5c78db47ca4aedb8f8d2e454c143ecd825ddd1"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -278,14 +278,14 @@
         ],
         "mcp": {
           "discoverable": true,
-          "invocable": false,
+          "invocable": true,
           "tool_name": "submit_proteina_complexa",
           "description": "Submit a bounded asynchronous Proteina-Complexa binder design run."
         }
       },
       "access": {
         "profile": "standard",
-        "state": "unverified",
+        "state": "not-required",
         "receipt_digest": null,
         "credentials_embedded": false
       },
@@ -392,7 +392,14 @@
       },
       "semantic_validation": {
         "validator_id": "proteina-complexa-v1",
-        "state": "candidate-unqualified"
+        "state": "active"
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "380441981a4170c8f2427a47ef4b25898f0ab14e33cc5efe7fdd65ebc1b45c4b",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "qualified_at": "2026-09-03T13:53:21Z"
       },
       "policy": {
         "commercial_use": "license-dependent",
@@ -460,22 +467,22 @@
       "model_id": "bindcraft",
       "display_name": "BindCraft academic",
       "execution_mode": "scientific-batch",
-      "state": "candidate-unqualified",
-      "route_exposed": false,
+      "state": "active",
+      "route_exposed": true,
       "source": {
         "kind": "git",
         "repository": "martinpacesa/BindCraft",
         "revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
         "review_url": "https://github.com/martinpacesa/BindCraft/tree/7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
-        "classification": "candidate-input"
+        "classification": "qualified-input"
       },
       "execution_identity": {
         "model_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
         "runtime_image_digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
         "runtime_recipe_sha256": "87242bab8728227eb1ff67ee14da22fdfb0b89f5a4a267efa37a00074edc917e",
         "workload_recipe_sha256": "e3ca7d4fc41ea5b7cda1b2b92b8a6c8534fd33e7869126e9c09036ee6d068255",
-        "artifact_manifest_digest": null,
-        "execution_identity_sha256": null
+        "artifact_manifest_digest": "f5a4a2597e71c772f671b0b8312e412e915f8a2a7a54cf7cdc8126d4e6dd5753",
+        "execution_identity_sha256": "2520997f613fa629af136860488cedb66c8e1f6390a83a5224f96cde5b03a2c4"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -492,7 +499,7 @@
         ],
         "mcp": {
           "discoverable": true,
-          "invocable": false,
+          "invocable": true,
           "tool_name": "submit_bindcraft",
           "description": "Submit an academically gated BindCraft binder-design campaign."
         }
@@ -570,7 +577,14 @@
       },
       "semantic_validation": {
         "validator_id": "bindcraft-v1",
-        "state": "candidate-unqualified"
+        "state": "active"
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "162a1705d3f8b301cfb98426c3717fea63f9c9cb4c5c8ed4f21e2a60a1250944",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "qualified_at": "2026-09-03T07:04:28Z"
       },
       "policy": {
         "commercial_use": "license-dependent",
@@ -636,22 +650,22 @@
       "model_id": "mosaic",
       "display_name": "Mosaic protein design",
       "execution_mode": "scientific-batch",
-      "state": "candidate-unqualified",
-      "route_exposed": false,
+      "state": "active",
+      "route_exposed": true,
       "source": {
         "kind": "git",
         "repository": "escalante-bio/mosaic",
         "revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
         "review_url": "https://github.com/escalante-bio/mosaic/tree/70fec525423f5f87156a1a957b4a4048f9f8e676",
-        "classification": "candidate-input"
+        "classification": "qualified-input"
       },
       "execution_identity": {
         "model_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
         "runtime_image_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
         "runtime_recipe_sha256": "15fc35e486f39b4132029568ef0cbee0a9d345dac6f3f286517c96ffe9ce71c5",
         "workload_recipe_sha256": "601fa6b79b49ab517fa0d9c260733550e09f6fed25968046c88efe2a9c0b9d42",
-        "artifact_manifest_digest": null,
-        "execution_identity_sha256": null
+        "artifact_manifest_digest": "efff4d6c038fd06994cdb44d02b9a5ed368cd1a1e78ddd75498e25913953072b",
+        "execution_identity_sha256": "74596ef23ea34112e6b319d1a6f8859c030c2d61e61980b258aa974c7dd73bba"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -668,7 +682,7 @@
         ],
         "mcp": {
           "discoverable": true,
-          "invocable": false,
+          "invocable": true,
           "tool_name": "submit_mosaic",
           "description": "Submit a bounded Mosaic binder-design campaign."
         }
@@ -746,7 +760,14 @@
       },
       "semantic_validation": {
         "validator_id": "mosaic-boltz2-proteinmpnn-v1",
-        "state": "candidate-unqualified"
+        "state": "active"
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "9eeef6c219c3ee0e9754e9d45be9de3f77ccec7824ce9e6b3f0fa17405aef339",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "qualified_at": "2026-09-04T15:25:31Z"
       },
       "policy": {
         "commercial_use": "allowed",
@@ -794,22 +815,22 @@
       "model_id": "rfdiffusion",
       "display_name": "RFdiffusion v1.1.0",
       "execution_mode": "scientific-batch",
-      "state": "candidate-unqualified",
-      "route_exposed": false,
+      "state": "active",
+      "route_exposed": true,
       "source": {
         "kind": "git",
         "repository": "RosettaCommons/RFdiffusion",
         "revision": "9273ef67335acaf91df0150473a274759229cdf6",
         "review_url": "https://github.com/RosettaCommons/RFdiffusion/tree/9273ef67335acaf91df0150473a274759229cdf6",
-        "classification": "candidate-input"
+        "classification": "qualified-input"
       },
       "execution_identity": {
         "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
         "runtime_image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
         "runtime_recipe_sha256": "a43cb088e08278e089433bdd8816b14ac94d7cc490dfb7ec9a771498da0941dc",
         "workload_recipe_sha256": "548da3b7c5dd5868d7e8adaf64b4dcc0bb2e89b3611f324eb6701478bb76cb5e",
-        "artifact_manifest_digest": null,
-        "execution_identity_sha256": null
+        "artifact_manifest_digest": "931ae8f26343abe60d3fd4efb71da9ca2822899bde61357044eea09ca85bfc2d",
+        "execution_identity_sha256": "ba33a17f3867344af9f02c7050f0784f628784b995e102a01d5f717c8fec4844"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -827,7 +848,7 @@
         ],
         "mcp": {
           "discoverable": true,
-          "invocable": false,
+          "invocable": true,
           "tool_name": "submit_rfdiffusion",
           "description": "Submit a bounded RFdiffusion backbone or motif-scaffolding run."
         }
@@ -905,7 +926,14 @@
       },
       "semantic_validation": {
         "validator_id": "rfdiffusion-v1-1-0",
-        "state": "candidate-unqualified"
+        "state": "active"
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "1f392018020143dbc81695632cdfef02b9582f49e0187f72e6a172c0e8b80765",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "qualified_at": "2026-09-04T15:21:42Z"
       },
       "policy": {
         "commercial_use": "allowed",

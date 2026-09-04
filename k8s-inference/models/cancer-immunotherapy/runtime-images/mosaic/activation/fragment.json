@@ -58,22 +58,22 @@
       "model_id": "mosaic",
       "display_name": "Mosaic protein design",
       "execution_mode": "scientific-batch",
-      "state": "candidate-unqualified",
-      "route_exposed": false,
+      "state": "active",
+      "route_exposed": true,
       "source": {
         "kind": "git",
         "repository": "escalante-bio/mosaic",
         "revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
         "review_url": "https://github.com/escalante-bio/mosaic/tree/70fec525423f5f87156a1a957b4a4048f9f8e676",
-        "classification": "candidate-input"
+        "classification": "qualified-input"
       },
       "execution_identity": {
         "model_revision": "70fec525423f5e87156a1a957b4a4048f9f8e676",
         "runtime_image_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
         "runtime_recipe_sha256": "15fc35e486f39b4132029568ef0cbee0a9d345dac6f3f286517c96ffe9ce71c5",
         "workload_recipe_sha256": "601fa6b79b49ab517fa0d9c260733550e09f6fed25968046c88efe2a9c0b9d42",
-        "artifact_manifest_digest": null,
-        "execution_identity_sha256": null
+        "artifact_manifest_digest": "efff4d6c038fd06994cdb44d02b9a5ed368cd1a1e78ddd75498e25913953072b",
+        "execution_identity_sha256": "a27564abc2717ccc0f44048ecda9ca94f1dafd8a58a00c100cc0f8956587a41d"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -90,7 +90,7 @@
         ],
         "mcp": {
           "discoverable": true,
-          "invocable": false,
+          "invocable": true,
           "tool_name": "submit_mosaic",
           "description": "Submit a bounded Mosaic binder-design campaign."
         }
@@ -155,7 +155,14 @@
       },
       "semantic_validation": {
         "validator_id": "mosaic-boltz2-proteinmpnn-v1",
-        "state": "candidate-unqualified"
+        "state": "active"
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "9eeef6c219c3ee0e9754e9d45be9de3f77ccec7824ce9e6b3f0fa17405aef339",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "616a90000ed3f20789a1ebae4ed3c5265962a706e9dbabf77b7374d157e8cd7c",
+        "qualified_at": "2026-09-04T15:25:31Z"
       },
       "policy": {
         "commercial_use": "allowed",
