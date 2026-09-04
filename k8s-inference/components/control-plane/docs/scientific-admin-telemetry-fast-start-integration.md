@@ -26,6 +26,32 @@ detail and never grants a customer-facing level. `Off` remains the truthful
 level until the exact model, runtime, artifact, pool and mechanism identity has
 a failure-free measured cohort that satisfies the fast-start evidence policy.
 
+## File scope and independent gates
+
+Replaying the reviewed fast-start series onto the frozen main baseline changes
+35 paths, all within the mechanism slice:
+
+- fast-start semantics and CRD: 2 paths;
+- admin types, form, workspace and UI tests: 5 paths;
+- evaluator, identity, mechanism renderer, controller and backend tests: 11
+  paths;
+- campaign contract, runner, redacted H100 evidence and tests: 9 paths; and
+- Terraform declaration flow, fixtures and root propagation tests: 8 paths.
+
+The operator-selection and integration correction touches nine paths, four of
+which are in that mechanism slice. Its five additional paths are the admin
+fixture, H100 metadata regression, mutation-capability regression, lifecycle
+migration note and this integration record. The resulting current-main diff is
+40 paths and contains no aggregate scientific workload profile or execution
+map.
+
+Backend tests exercise the evaluator, renderer, controller, CRD and capability
+response. UI tests exercise server-authoritative selection and dependency
+application. Terraform tests exercise valid and tampered declarations. The
+campaign unit suite exercises production-rendered arms, summary calculation
+and the retained evidence invariant. Root contract and public-export gates
+exercise the remaining propagation and documentation paths.
+
 ## Operator surfaces
 
 The authenticated admin API exposes scientific capability, run, run-detail and
