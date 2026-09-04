@@ -37,6 +37,8 @@ from fs2_serve.fast_start_mechanisms import (
     residency_holder_manifests,
     unavailable_mechanisms,
 )
+from fs2_serve.model_deployment import InfrastructureEnvelope
+from fs2_serve.model_deployment_controller import ControllerFiles
 
 QWEN_IMAGE = "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:" + "22" * 32
 
@@ -60,6 +62,97 @@ NVME_POOL_SELECTOR = {
     "local-nvme.fs2.nebius/eligible": "true",
     "snapshot.fs2.nebius/eligible": "true",
 }
+TERRAFORM_FAST_START_FIXTURE = (
+    Path(__file__).resolve().parents[3] / "stages" / "workloads" / "tests" / "fixtures" / "fast-start-mechanisms.json"
+)
+
+
+def test_terraform_accepted_mechanism_envelope_loads_through_the_controller(tmp_path: Path) -> None:
+    """The positive Terraform fixture must be a loadable runtime contract."""
+
+    mechanism_set = json.loads(TERRAFORM_FAST_START_FIXTURE.read_text(encoding="utf-8"))
+    declarations = mechanism_set["models"]["qwen3-8b"]
+    template_digest = "sha256:" + "11" * 32
+    artifact_digest = "sha256:" + "33" * 32
+    envelope_document = {
+        "revision": "sha256:" + "44" * 32,
+        "pools": {
+            "nebius-b300-preemptible-1x": {
+                "poolId": "nebius-b300-preemptible-1x",
+                "acceleratorClass": "nvidia-b300-sxm6-288gb",
+                "resourceName": "nvidia.com/gpu",
+                "capacityType": "preemptible",
+                "acceleratorsPerNode": 1,
+                "allocatableMemoryBytes": 1648745732096,
+                "minNodes": 0,
+                "maxNodes": 1,
+                "nodeSelector": {
+                    "accelerator.fs2.nebius/pool-id": "nebius-b300-preemptible-1x",
+                },
+                "tolerations": [],
+                "startupScenario": "fresh-node-zero-pod",
+                "fastStartEnvironmentBindings": [],
+            }
+        },
+        "qualifications": {
+            "qwen3-8b": {
+                "modelRef": "qwen3-8b",
+                "runtimeProfile": "vllm",
+                "artifactRevisions": {"revision-1": artifact_digest},
+                "artifactManifestDigests": [artifact_digest],
+                "runtimeImages": [QWEN_IMAGE],
+                "acceleratorClasses": ["nvidia-b300-sxm6-288gb"],
+                "maxAcceleratorsPerReplica": 1,
+                "templateDigests": [template_digest],
+                "templateRefs": {"qwen3-8b.legacy-v1": template_digest},
+                "templateCacheTiers": {template_digest: "SharedFilesystem"},
+                "openAIQualified": True,
+                "mcpToolName": "qwen3_8b",
+                "scaleToZeroQualified": True,
+                "fastStartEvidence": [],
+                "fastStartRuntimeContracts": [],
+                **declarations,
+            }
+        },
+        "localQueues": ["interactive"],
+        "priorityClasses": ["standard"],
+        "tenantIds": ["tenant-a"],
+        "maxAcceleratorsPerModel": 1,
+        "residencyHolderImage": QWEN_IMAGE,
+    }
+    # Exercise the runtime model directly, then the exact file-loading path used
+    # by both the API and the model-controller process at startup.
+    expected = InfrastructureEnvelope.model_validate(envelope_document)
+    envelope_file = tmp_path / "infrastructure-envelope.json"
+    bundles_file = tmp_path / "renderer-bundles.json"
+    envelope_file.write_text(json.dumps(envelope_document), encoding="utf-8")
+    bundles_file.write_text(
+        json.dumps(
+            [
+                {
+                    "modelRef": "qwen3-8b",
+                    "runtimeProfile": "vllm",
+                    "templateDigest": template_digest,
+                    "primaryWorkloadName": "qwen3-8b-runtime",
+                    "runtimeContainerName": "vllm",
+                    "primaryServiceName": "qwen3-8b-runtime",
+                    "primaryServicePort": 8000,
+                    "resources": [
+                        {
+                            "apiVersion": "v1",
+                            "kind": "ConfigMap",
+                            "metadata": {"name": "qwen3-8b-runtime", "namespace": "fs2-models"},
+                        }
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = ControllerFiles.load(envelope_file, bundles_file)
+    assert loaded.infrastructure_envelope == expected
+    assert loaded.renderer().name == "legacy-manifest-v1"
 
 
 def _by_name(pool_id: str, selector: dict[str, str]) -> dict[str, tuple[str, str]]:

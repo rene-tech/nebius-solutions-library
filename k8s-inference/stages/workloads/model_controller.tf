@@ -39,6 +39,70 @@ locals {
   # Terraform. Each declaration carries its own configDigest and this gate
   # recomputes it, so a hand-edited declaration cannot slip into the envelope
   # and silently inherit an existing benchmark cohort.
+  fast_start_mechanism_set_keys = toset(["schema", "models"])
+  fast_start_regional_cache_required_keys = toset([
+    "schema",
+    "configDigest",
+    "imageMirrorRegistry",
+    "payloadClaimName",
+    "payloadContentPath",
+    "payloadBytes",
+    "compileCache",
+    "poolRefs",
+  ])
+  fast_start_regional_cache_allowed_keys = setunion(
+    local.fast_start_regional_cache_required_keys,
+    toset(["warmPageCache"]),
+  )
+  fast_start_compile_cache_keys = toset([
+    "claimName",
+    "subPath",
+    "abi",
+    "mountPath",
+    "sizeLimitBytes",
+  ])
+  fast_start_warm_page_cache_keys = toset([
+    "workers",
+    "readBytesLimit",
+    "timeoutSeconds",
+  ])
+  fast_start_host_memory_keys = toset([
+    "schema",
+    "configDigest",
+    "residencyMode",
+    "payloadClaimName",
+    "payloadContentPath",
+    "payloadDigest",
+    "payloadBytes",
+    "reservedBytes",
+    "nodeAllocatableBytes",
+    "holder",
+    "receiptMaxAgeSeconds",
+    "poolRefs",
+  ])
+  fast_start_residency_holder_keys = toset([
+    "name",
+    "namespace",
+    "receiptClaimName",
+    "receiptMountPath",
+  ])
+  fast_start_gpu_resident_keys = toset([
+    "schema",
+    "configDigest",
+    "residencyMode",
+    "standbyReplicas",
+    "acceleratorsPerStandbyReplica",
+    "minimumHotReplicas",
+    "promotionProbePeriodSeconds",
+    "poolRefs",
+  ])
+  fast_start_sha256_digest_pattern = "^sha256:[a-f0-9]{64}$"
+  fast_start_dns_subdomain_pattern = (
+    "^[a-z0-9](?:[a-z0-9-]{0,251}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,251}[a-z0-9])?)*$"
+  )
+  fast_start_content_path_pattern             = "^/(?:[A-Za-z0-9._-]+/?)+$"
+  fast_start_json_nonnegative_integer_pattern = "^(0|[1-9][0-9]*)$"
+
   model_controller_fast_start_mechanism_declarations = {
     for model_id, declarations in try(local.model_controller_fast_start_mechanisms.models, {}) :
     model_id => {
@@ -47,6 +111,13 @@ locals {
   }
   model_controller_fast_start_mechanism_names_valid = try(
     local.model_controller_fast_start_mechanisms.schema == "fs2-serve.nebius.ai/fast-start-mechanism-set/v1" &&
+    toset(keys(local.model_controller_fast_start_mechanisms)) == local.fast_start_mechanism_set_keys &&
+    length(local.model_controller_fast_start_mechanism_declarations) <= 512 &&
+    alltrue([
+      for model_id in keys(local.model_controller_fast_start_mechanism_declarations) :
+      contains(local.selected_model_ids, model_id) &&
+      contains(local.model_controller_dynamic_model_ids, model_id)
+    ]) &&
     alltrue(flatten([
       for model_id, declarations in local.model_controller_fast_start_mechanism_declarations : [
         for mechanism, declaration in declarations :
@@ -55,14 +126,197 @@ locals {
     ])),
     false,
   )
+  # Terraform publishes these objects verbatim into the controller envelope.
+  # Validate the same closed wire shapes as the strict Pydantic runtime models,
+  # including nested objects, so a successfully planned envelope cannot crash
+  # ControllerFiles.load during API or controller startup.
+  model_controller_fast_start_mechanism_shapes_valid = try(
+    alltrue(flatten([
+      for model_id, declarations in local.model_controller_fast_start_mechanism_declarations : [
+        for mechanism, declaration in declarations :
+        mechanism == "regionalCache" ? (
+          length(setsubtract(
+            local.fast_start_regional_cache_required_keys,
+            toset(keys(declaration)),
+          )) == 0 &&
+          length(setsubtract(
+            toset(keys(declaration)),
+            local.fast_start_regional_cache_allowed_keys,
+          )) == 0 &&
+          declaration.schema == "fs2-serve.nebius.ai/fast-start-regional-cache/v1" &&
+          length(declaration.imageMirrorRegistry) >= 3 &&
+          length(declaration.imageMirrorRegistry) <= 253 &&
+          can(regex("^[a-z0-9][a-z0-9.-]*(?::[0-9]{1,5})?$", declaration.imageMirrorRegistry)) &&
+          length(declaration.payloadClaimName) >= 1 &&
+          length(declaration.payloadClaimName) <= 253 &&
+          can(regex(local.fast_start_dns_subdomain_pattern, declaration.payloadClaimName)) &&
+          length(declaration.payloadContentPath) >= 2 &&
+          length(declaration.payloadContentPath) <= 512 &&
+          can(regex(local.fast_start_content_path_pattern, declaration.payloadContentPath)) &&
+          can(regex(local.fast_start_json_nonnegative_integer_pattern, jsonencode(declaration.payloadBytes))) &&
+          declaration.payloadBytes >= 1 && declaration.payloadBytes <= 70368744177664 &&
+          toset(keys(declaration.compileCache)) == local.fast_start_compile_cache_keys &&
+          length(declaration.compileCache.claimName) >= 1 &&
+          length(declaration.compileCache.claimName) <= 253 &&
+          can(regex(local.fast_start_dns_subdomain_pattern, declaration.compileCache.claimName)) &&
+          length(declaration.compileCache.subPath) >= 1 &&
+          length(declaration.compileCache.subPath) <= 200 &&
+          can(regex("^[A-Za-z0-9](?:[A-Za-z0-9._/-]*[A-Za-z0-9])?$", declaration.compileCache.subPath)) &&
+          !startswith(declaration.compileCache.subPath, "/") &&
+          !strcontains(declaration.compileCache.subPath, "..") &&
+          length(declaration.compileCache.abi) >= 3 &&
+          length(declaration.compileCache.abi) <= 128 &&
+          can(regex("^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$", declaration.compileCache.abi)) &&
+          strcontains(declaration.compileCache.subPath, declaration.compileCache.abi) &&
+          length(declaration.compileCache.mountPath) >= 2 &&
+          length(declaration.compileCache.mountPath) <= 200 &&
+          can(regex(local.fast_start_content_path_pattern, declaration.compileCache.mountPath)) &&
+          can(regex(
+            local.fast_start_json_nonnegative_integer_pattern,
+            jsonencode(declaration.compileCache.sizeLimitBytes),
+          )) &&
+          declaration.compileCache.sizeLimitBytes >= 1048576 &&
+          declaration.compileCache.sizeLimitBytes <= 4398046511104 &&
+          (
+            try(declaration.warmPageCache, null) == null ? true : (
+              toset(keys(declaration.warmPageCache)) == local.fast_start_warm_page_cache_keys &&
+              can(regex(
+                local.fast_start_json_nonnegative_integer_pattern,
+                jsonencode(declaration.warmPageCache.workers),
+              )) &&
+              declaration.warmPageCache.workers >= 1 && declaration.warmPageCache.workers <= 64 &&
+              can(regex(
+                local.fast_start_json_nonnegative_integer_pattern,
+                jsonencode(declaration.warmPageCache.readBytesLimit),
+              )) &&
+              declaration.warmPageCache.readBytesLimit >= 1048576 &&
+              declaration.warmPageCache.readBytesLimit <= 4398046511104 &&
+              declaration.warmPageCache.readBytesLimit <= declaration.payloadBytes &&
+              can(regex(
+                local.fast_start_json_nonnegative_integer_pattern,
+                jsonencode(declaration.warmPageCache.timeoutSeconds),
+              )) &&
+              declaration.warmPageCache.timeoutSeconds >= 1 &&
+              declaration.warmPageCache.timeoutSeconds <= 1800
+            )
+          )
+          ) : mechanism == "hostMemoryResidency" ? (
+          toset(keys(declaration)) == local.fast_start_host_memory_keys &&
+          declaration.schema == "fs2-serve.nebius.ai/fast-start-host-memory-residency/v1" &&
+          contains([
+            "locked-payload-residency",
+            "mapped-payload-residency",
+            "runtime-sleep-offload",
+          ], declaration.residencyMode) &&
+          length(declaration.payloadClaimName) >= 1 &&
+          length(declaration.payloadClaimName) <= 253 &&
+          can(regex(local.fast_start_dns_subdomain_pattern, declaration.payloadClaimName)) &&
+          length(declaration.payloadContentPath) >= 2 &&
+          length(declaration.payloadContentPath) <= 512 &&
+          can(regex(local.fast_start_content_path_pattern, declaration.payloadContentPath)) &&
+          can(regex(local.fast_start_sha256_digest_pattern, declaration.payloadDigest)) &&
+          can(regex(local.fast_start_json_nonnegative_integer_pattern, jsonencode(declaration.payloadBytes))) &&
+          declaration.payloadBytes >= 1 && declaration.payloadBytes <= 70368744177664 &&
+          can(regex(local.fast_start_json_nonnegative_integer_pattern, jsonencode(declaration.reservedBytes))) &&
+          declaration.reservedBytes >= 1 && declaration.reservedBytes <= 70368744177664 &&
+          can(regex(
+            local.fast_start_json_nonnegative_integer_pattern,
+            jsonencode(declaration.nodeAllocatableBytes),
+          )) &&
+          declaration.nodeAllocatableBytes >= 1 && declaration.nodeAllocatableBytes <= 281474976710656 &&
+          declaration.reservedBytes <= declaration.nodeAllocatableBytes &&
+          (
+            declaration.residencyMode == "runtime-sleep-offload" ?
+            declaration.reservedBytes >= declaration.payloadBytes :
+            declaration.reservedBytes >= declaration.payloadBytes + 268435456
+          ) &&
+          toset(keys(declaration.holder)) == local.fast_start_residency_holder_keys &&
+          length(declaration.holder.name) >= 1 && length(declaration.holder.name) <= 253 &&
+          can(regex(local.fast_start_dns_subdomain_pattern, declaration.holder.name)) &&
+          length(declaration.holder.namespace) >= 1 && length(declaration.holder.namespace) <= 63 &&
+          can(regex(local.fast_start_dns_subdomain_pattern, declaration.holder.namespace)) &&
+          length(declaration.holder.receiptClaimName) >= 1 &&
+          length(declaration.holder.receiptClaimName) <= 253 &&
+          can(regex(local.fast_start_dns_subdomain_pattern, declaration.holder.receiptClaimName)) &&
+          length(declaration.holder.receiptMountPath) >= 2 &&
+          length(declaration.holder.receiptMountPath) <= 200 &&
+          can(regex(local.fast_start_content_path_pattern, declaration.holder.receiptMountPath)) &&
+          can(regex(
+            local.fast_start_json_nonnegative_integer_pattern,
+            jsonencode(declaration.receiptMaxAgeSeconds),
+          )) &&
+          declaration.receiptMaxAgeSeconds >= 30 && declaration.receiptMaxAgeSeconds <= 86400
+          ) : mechanism == "gpuResident" ? (
+          toset(keys(declaration)) == local.fast_start_gpu_resident_keys &&
+          declaration.schema == "fs2-serve.nebius.ai/fast-start-gpu-resident/v1" &&
+          contains(["standby-engine", "warm-engine-hot-floor"], declaration.residencyMode) &&
+          can(regex(
+            local.fast_start_json_nonnegative_integer_pattern,
+            jsonencode(declaration.standbyReplicas),
+          )) &&
+          declaration.standbyReplicas >= 1 && declaration.standbyReplicas <= 64 &&
+          can(regex(
+            local.fast_start_json_nonnegative_integer_pattern,
+            jsonencode(declaration.acceleratorsPerStandbyReplica),
+          )) &&
+          declaration.acceleratorsPerStandbyReplica >= 1 &&
+          declaration.acceleratorsPerStandbyReplica <= 64 &&
+          can(regex(
+            local.fast_start_json_nonnegative_integer_pattern,
+            jsonencode(declaration.minimumHotReplicas),
+          )) &&
+          declaration.minimumHotReplicas >= 0 && declaration.minimumHotReplicas <= 10000 &&
+          (
+            declaration.residencyMode != "warm-engine-hot-floor" || declaration.minimumHotReplicas >= 1
+          ) &&
+          can(regex(
+            local.fast_start_json_nonnegative_integer_pattern,
+            jsonencode(declaration.promotionProbePeriodSeconds),
+          )) &&
+          declaration.promotionProbePeriodSeconds >= 1 &&
+          declaration.promotionProbePeriodSeconds <= 60
+        ) : false
+      ]
+    ])),
+    false,
+  )
   model_controller_fast_start_mechanism_digests_valid = try(
     alltrue(flatten([
       for model_id, declarations in local.model_controller_fast_start_mechanism_declarations : [
         for mechanism, declaration in declarations :
-        can(regex("^sha256:[a-f0-9]{64}$", declaration.configDigest)) &&
-        declaration.configDigest == "sha256:${sha256(jsonencode({
-          for key, value in declaration : key => value if key != "configDigest"
-        }))}"
+        can(regex(local.fast_start_sha256_digest_pattern, declaration.configDigest)) &&
+        declaration.configDigest == (
+          mechanism == "regionalCache" ? "sha256:${sha256(jsonencode({
+            schema              = declaration.schema
+            imageMirrorRegistry = declaration.imageMirrorRegistry
+            payloadClaimName    = declaration.payloadClaimName
+            payloadContentPath  = declaration.payloadContentPath
+            payloadBytes        = declaration.payloadBytes
+            compileCache        = declaration.compileCache
+            warmPageCache       = try(declaration.warmPageCache, null)
+            poolRefs            = declaration.poolRefs
+            }))}" : mechanism == "hostMemoryResidency" ? "sha256:${sha256(jsonencode({
+            schema               = declaration.schema
+            residencyMode        = declaration.residencyMode
+            payloadClaimName     = declaration.payloadClaimName
+            payloadContentPath   = declaration.payloadContentPath
+            payloadDigest        = declaration.payloadDigest
+            payloadBytes         = declaration.payloadBytes
+            reservedBytes        = declaration.reservedBytes
+            nodeAllocatableBytes = declaration.nodeAllocatableBytes
+            holder               = declaration.holder
+            receiptMaxAgeSeconds = declaration.receiptMaxAgeSeconds
+            poolRefs             = declaration.poolRefs
+            }))}" : mechanism == "gpuResident" ? "sha256:${sha256(jsonencode({
+            schema                        = declaration.schema
+            residencyMode                 = declaration.residencyMode
+            standbyReplicas               = declaration.standbyReplicas
+            acceleratorsPerStandbyReplica = declaration.acceleratorsPerStandbyReplica
+            minimumHotReplicas            = declaration.minimumHotReplicas
+            promotionProbePeriodSeconds   = declaration.promotionProbePeriodSeconds
+            poolRefs                      = declaration.poolRefs
+          }))}" : ""
+        )
       ]
     ])),
     false,
@@ -71,7 +325,9 @@ locals {
     alltrue(flatten([
       for model_id, declarations in local.model_controller_fast_start_mechanism_declarations : [
         for mechanism, declaration in declarations :
-        length(declaration.poolRefs) > 0 &&
+        can(tolist(declaration.poolRefs)) &&
+        length(declaration.poolRefs) > 0 && length(declaration.poolRefs) <= 32 &&
+        length(distinct(declaration.poolRefs)) == length(declaration.poolRefs) &&
         alltrue([
           for pool_ref in declaration.poolRefs : contains(keys(local.selected_queue_pools), pool_ref)
         ])
@@ -92,11 +348,33 @@ locals {
     ])),
     false,
   )
+  model_controller_fast_start_mechanism_cross_fields_valid = try(
+    alltrue([
+      for model_id, declarations in local.model_controller_fast_start_mechanism_declarations :
+      (
+        contains(keys(declarations), "regionalCache") &&
+        contains(keys(declarations), "hostMemoryResidency") &&
+        try(declarations.hostMemoryResidency.residencyMode, "") != "runtime-sleep-offload"
+        ) ? (
+        declarations.regionalCache.payloadContentPath == declarations.hostMemoryResidency.payloadContentPath
+      ) : true
+    ]) &&
+    alltrue([
+      for model_id, declarations in local.model_controller_fast_start_mechanism_declarations :
+      contains(keys(declarations), "gpuResident") ? (
+        declarations.gpuResident.acceleratorsPerStandbyReplica <=
+        local.profile_contract.model_autoscaling_targets[model_id].gpu_count
+      ) : true
+    ]),
+    false,
+  )
   model_controller_fast_start_mechanisms_valid = (
     local.model_controller_fast_start_mechanism_names_valid &&
+    local.model_controller_fast_start_mechanism_shapes_valid &&
     local.model_controller_fast_start_mechanism_digests_valid &&
     local.model_controller_fast_start_mechanism_pools_valid &&
-    local.model_controller_fast_start_host_memory_valid
+    local.model_controller_fast_start_host_memory_valid &&
+    local.model_controller_fast_start_mechanism_cross_fields_valid
   )
   model_controller_fast_start_environment_qualifications_valid = try(
     local.model_controller_fast_start_environment_qualifications.schema == "fs2-serve.nebius.ai/runtime-environment-qualification-set/v1" &&

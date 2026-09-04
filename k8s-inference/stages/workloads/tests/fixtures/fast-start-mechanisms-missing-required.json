@@ -1,0 +1,29 @@
+{
+  "models": {
+    "qwen3-8b": {
+      "regionalCache": {
+        "compileCache": {
+          "abi": "driver-580.159.04-sm90",
+          "claimName": "fs2-compile-cache-rwx",
+          "mountPath": "/runtime-cache",
+          "sizeLimitBytes": 17179869184,
+          "subPath": "qwen3-8b/driver-580.159.04-sm90"
+        },
+        "configDigest": "sha256:a0a7decdd9b2859bbf567e997fec9f4e8870f780cb34bd69237643e9fd2bffa9",
+        "imageMirrorRegistry": "cr.eu-north1.nebius.cloud",
+        "payloadClaimName": "qwen3-8b-cache-rwx-7af24455",
+        "payloadContentPath": "/models/qwen3-8b/payload",
+        "poolRefs": [
+          "nebius-b300-preemptible-1x"
+        ],
+        "schema": "fs2-serve.nebius.ai/fast-start-regional-cache/v1",
+        "warmPageCache": {
+          "readBytesLimit": 16397461266,
+          "timeoutSeconds": 600,
+          "workers": 16
+        }
+      }
+    }
+  },
+  "schema": "fs2-serve.nebius.ai/fast-start-mechanism-set/v1"
+}

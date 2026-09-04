@@ -379,3 +379,114 @@ run "a_tampered_declaration_is_refused" {
   # itself is refused rather than producing an envelope.
   expect_failures = [terraform_data.model_controller_contract]
 }
+
+# These declarations carry a freshly recomputed digest over their malformed
+# bytes. They prove the contract gate validates the runtime schema itself,
+# rather than rejecting only stale hashes.
+run "a_rehashed_declaration_without_an_explicit_schema_is_refused" {
+  command = plan
+
+  variables {
+    model_controller = merge(var.model_controller, {
+      fast_start_mechanisms_file = abspath("tests/fixtures/fast-start-mechanisms-missing-schema.json")
+    })
+  }
+
+  plan_options {
+    target = [terraform_data.model_controller_contract]
+  }
+
+  assert {
+    condition = (
+      local.model_controller_fast_start_mechanism_declarations["qwen3-8b"].regionalCache.configDigest ==
+      "sha256:${sha256(jsonencode({
+        for key, value in local.model_controller_fast_start_mechanism_declarations["qwen3-8b"].regionalCache :
+        key => value if key != "configDigest"
+      }))}"
+    )
+    error_message = "The negative fixture must carry a recomputed digest before schema validation rejects it."
+  }
+
+  expect_failures = [terraform_data.model_controller_contract]
+}
+
+run "a_rehashed_declaration_without_a_required_field_is_refused" {
+  command = plan
+
+  variables {
+    model_controller = merge(var.model_controller, {
+      fast_start_mechanisms_file = abspath("tests/fixtures/fast-start-mechanisms-missing-required.json")
+    })
+  }
+
+  plan_options {
+    target = [terraform_data.model_controller_contract]
+  }
+
+  assert {
+    condition = (
+      local.model_controller_fast_start_mechanism_declarations["qwen3-8b"].regionalCache.configDigest ==
+      "sha256:${sha256(jsonencode({
+        for key, value in local.model_controller_fast_start_mechanism_declarations["qwen3-8b"].regionalCache :
+        key => value if key != "configDigest"
+      }))}"
+    )
+    error_message = "The negative fixture must carry a recomputed digest before required-field validation rejects it."
+  }
+
+  expect_failures = [terraform_data.model_controller_contract]
+}
+
+run "a_rehashed_declaration_with_an_unexpected_field_is_refused" {
+  command = plan
+
+  variables {
+    model_controller = merge(var.model_controller, {
+      fast_start_mechanisms_file = abspath("tests/fixtures/fast-start-mechanisms-unexpected-field.json")
+    })
+  }
+
+  plan_options {
+    target = [terraform_data.model_controller_contract]
+  }
+
+  assert {
+    condition = (
+      local.model_controller_fast_start_mechanism_declarations["qwen3-8b"].regionalCache.configDigest ==
+      "sha256:${sha256(jsonencode({
+        for key, value in local.model_controller_fast_start_mechanism_declarations["qwen3-8b"].regionalCache :
+        key => value if key != "configDigest"
+      }))}"
+    )
+    error_message = "The negative fixture must carry a recomputed digest before closed-shape validation rejects it."
+  }
+
+  expect_failures = [terraform_data.model_controller_contract]
+}
+
+run "a_rehashed_declaration_for_an_unknown_model_is_refused" {
+  command = plan
+
+  variables {
+    model_controller = merge(var.model_controller, {
+      fast_start_mechanisms_file = abspath("tests/fixtures/fast-start-mechanisms-unknown-model.json")
+    })
+  }
+
+  plan_options {
+    target = [terraform_data.model_controller_contract]
+  }
+
+  assert {
+    condition = (
+      local.model_controller_fast_start_mechanism_declarations["unknown-model"].gpuResident.configDigest ==
+      "sha256:${sha256(jsonencode({
+        for key, value in local.model_controller_fast_start_mechanism_declarations["unknown-model"].gpuResident :
+        key => value if key != "configDigest"
+      }))}"
+    )
+    error_message = "The negative fixture must carry a recomputed digest before model-membership validation rejects it."
+  }
+
+  expect_failures = [terraform_data.model_controller_contract]
+}
