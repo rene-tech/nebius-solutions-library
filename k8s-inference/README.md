@@ -390,6 +390,23 @@ requires nor enables academic execution. See
 [scientific-artifacts/README.md](scientific-artifacts/README.md) for the layout
 module, the chart seam and the live signed-handle smoke test.
 
+### Scientific execution map
+
+Enabling `scientific_batch` does not require copying generated stage bindings
+into `terraform.tfvars`. The root automatically loads
+[`catalog/runtime/contracts/scientific-execution-map.json`](catalog/runtime/contracts/scientific-execution-map.json)
+and carries that object unchanged through the generated workloads input to the
+control-plane chart. `effective_configuration.scientific_batch` reports the
+source and exact Helm-byte SHA-256 for review.
+
+`scientific_batch.execution_map` remains available only as an advanced
+object override. When batch is enabled, Terraform refuses an empty or malformed
+map, duplicate model IDs, a map digest that differs from any included committed
+workload profile's `qualification.execution_map_sha256`, or an execution
+identity that differs from that profile. Regenerate and review the execution map
+and profiles together before using the override; hand-editing generated fields
+is intentionally not a supported activation path.
+
 ### Live model ownership and bootstrap
 
 For a new cluster, `dynamic_models.workload_owner = "controller"` makes
