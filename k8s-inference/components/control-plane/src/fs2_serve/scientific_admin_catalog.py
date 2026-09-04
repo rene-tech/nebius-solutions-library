@@ -173,6 +173,7 @@ class CandidateRouteScope:
     lane_id: str
     variant_ids: frozenset[str]
     mapped: bool = False
+    relationship: str | None = None
 
 
 def _mapping_or_empty(value: object) -> Mapping[str, Any]:
@@ -472,6 +473,7 @@ class ScientificCatalogFileAdapter:
                 lane_id=lane_id,
                 variant_ids=variant_ids,
                 mapped=True,
+                relationship=_optional_text(candidate.get("relationship"), maximum=64),
             )
         return scopes, issues
 
@@ -638,10 +640,28 @@ class ScientificCatalogFileAdapter:
         missing: list[str] = []
 
         # Candidate profiles are identity-bearing evidence. A mapped candidate
-        # may share a serving lane with another backend, but it may never
-        # inherit that lane's workload profile.
+        # may share a serving lane with another backend, so a lane-name match
+        # alone is never enough. The variant map must explicitly declare an
+        # exact-model relationship and the candidate/profile source families
+        # must agree before the profile can be bound to that candidate.
         profile = profiles.get(candidate_id)
         profile_error = profile_errors.get(candidate_id)
+        if profile is None and route_scope.mapped and route_scope.relationship == "exact-model":
+            lane_profile = profiles.get(lane_id)
+            lane_profile_source = _mapping_or_empty((lane_profile or {}).get("source"))
+            receipt_source_kind = _optional_text(receipt_source.get("kind"), maximum=32)
+            receipt_source_repository = _optional_text(receipt_source.get("repository"), maximum=512)
+            profile_source_kind = _optional_text(lane_profile_source.get("kind"), maximum=32)
+            profile_source_repository = _optional_text(lane_profile_source.get("repository"), maximum=512)
+            if (
+                lane_profile is not None
+                and receipt_source_kind is not None
+                and receipt_source_repository is not None
+                and receipt_source_kind == profile_source_kind
+                and receipt_source_repository == profile_source_repository
+            ):
+                profile = lane_profile
+                profile_error = profile_errors.get(lane_id)
         if profile is None:
             missing.append("workload-profile")
             if profile_error is not None:
