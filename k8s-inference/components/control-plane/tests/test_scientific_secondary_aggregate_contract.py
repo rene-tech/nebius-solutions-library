@@ -1,0 +1,231 @@
+from __future__ import annotations
+
+import json
+import re
+from pathlib import PurePosixPath
+
+import pytest
+from conftest import CATALOG_ROOT
+
+from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer
+from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog, ScientificProfileError
+
+
+SECONDARY_CANDIDATES = {
+    "esmfold2": {
+        "digest": "sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
+        "variant": "biohub-v3-4-0",
+        "namespace": "fs2-models",
+        "stages": ("prepare-input", "fold"),
+        "artifacts": ("esmfold2-trunk", "esmc-6b", "esmfold2-ccd"),
+        "stage_artifacts": {"prepare-input": (), "fold": ("esmfold2-trunk", "esmc-6b", "esmfold2-ccd")},
+        "cache_stages": (),
+        "uid": 10001,
+        "gid": 10001,
+    },
+    "esmfold2-fast": {
+        "digest": "sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
+        "variant": "biohub-v3-4-0",
+        "namespace": "fs2-models",
+        "stages": ("prepare-input", "fold"),
+        "artifacts": ("esmfold2-fast-trunk", "esmc-6b", "esmfold2-ccd"),
+        "stage_artifacts": {
+            "prepare-input": (),
+            "fold": ("esmfold2-fast-trunk", "esmc-6b", "esmfold2-ccd"),
+        },
+        "cache_stages": (),
+        "uid": 10001,
+        "gid": 10001,
+    },
+    "protenix-v2": {
+        "digest": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
+        "variant": "upstream-v2-0-0",
+        "namespace": "fs2-models",
+        "stages": ("prepare-data", "sample-structure"),
+        "artifacts": ("protenix-v2",),
+        "stage_artifacts": {"prepare-data": ("protenix-v2",), "sample-structure": ("protenix-v2",)},
+        "cache_stages": ("prepare-data", "sample-structure"),
+        "uid": 10001,
+        "gid": 10001,
+    },
+    "openfold3-openbind": {
+        "digest": "sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de",
+        "variant": "upstream-openbind-v0-5-0",
+        "namespace": "fs2-models",
+        "stages": ("data-pipeline", "inference"),
+        "artifacts": ("openfold3-openbind-0", "openfold3-components-bcif"),
+        "stage_artifacts": {
+            "data-pipeline": (),
+            "inference": ("openfold3-openbind-0", "openfold3-components-bcif"),
+        },
+        "cache_stages": ("inference",),
+        "uid": 10001,
+        "gid": 10001,
+    },
+    "alphafold3": {
+        "digest": "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
+        "variant": "upstream-v3-0-4",
+        "namespace": "fs2-academic-poc",
+        "stages": ("data-pipeline", "inference"),
+        "artifacts": ("alphafold3-parameters", "alphafold3-public-databases-v3.0"),
+        "stage_artifacts": {
+            "data-pipeline": ("alphafold3-public-databases-v3.0",),
+            "inference": ("alphafold3-parameters",),
+        },
+        "cache_stages": ("inference",),
+        "uid": 1001,
+        "gid": 1001,
+    },
+}
+
+COMPLETE_FLEET = {
+    "boltzgen",
+    "proteina-complexa",
+    "bindcraft",
+    "mosaic",
+    "rfdiffusion",
+    *SECONDARY_CANDIDATES,
+}
+
+
+def _documents() -> tuple[dict[str, object], dict[str, object]]:
+    profiles = json.loads(
+        (CATALOG_ROOT / "contracts/scientific-workload-profiles.json").read_text(encoding="utf-8")
+    )
+    executions = json.loads(
+        (CATALOG_ROOT / "contracts/scientific-execution-map.json").read_text(encoding="utf-8")
+    )
+    return profiles, executions
+
+
+def _covers(mount_path: str, artifact_path: str) -> bool:
+    mount = PurePosixPath(mount_path)
+    artifact = PurePosixPath(artifact_path)
+    return mount == artifact or mount in artifact.parents
+
+
+def test_complete_fleet_is_serialized_while_secondary_routes_remain_closed() -> None:
+    profiles_document, execution_document = _documents()
+    profiles = {item["model_id"]: item for item in profiles_document["profiles"]}
+    executions = {item["model_id"]: item for item in execution_document["models"]}
+
+    assert set(profiles) == COMPLETE_FLEET
+    assert set(executions) == COMPLETE_FLEET
+    catalog = ScientificProfileCatalog.load(CATALOG_ROOT)
+    assert {profile.model_id for profile in catalog.list()} == {"boltzgen"}
+
+    for model_id, expected in SECONDARY_CANDIDATES.items():
+        profile = profiles[model_id]
+        identity = profile["execution_identity"]
+        assert profile["state"] == "candidate-unqualified"
+        assert profile["route_exposed"] is False
+        assert profile["interface"]["mcp"]["discoverable"] is True
+        assert profile["interface"]["mcp"]["invocable"] is False
+        assert profile.get("qualification") is None
+        assert identity["runtime_image_digest"] == expected["digest"]
+        assert identity["artifact_manifest_digest"] is None
+        assert identity["execution_identity_sha256"] is None
+        assert tuple(item["artifact_id"] for item in profile["runtime_artifacts"]) == expected["artifacts"]
+        with pytest.raises(ScientificProfileError, match="not runnable"):
+            catalog.get(model_id)
+
+        execution = executions[model_id]
+        assert execution["variant_id"] == expected["variant"]
+        assert execution["workload_namespace"] == expected["namespace"]
+        assert execution["execution_identity_sha256"] is None
+        assert tuple(stage["stage_id"] for stage in execution["stages"]) == expected["stages"]
+        assert tuple(item["artifact_id"] for item in execution["runtime_artifacts"]) == expected["artifacts"]
+
+    renderer = FileScientificManifestRenderer(
+        path=CATALOG_ROOT / "contracts/scientific-execution-map.json",
+        profiles=catalog,
+    )
+    assert set(renderer.variants) == COMPLETE_FLEET
+
+
+def test_secondary_localizations_and_stage_mounts_are_exact() -> None:
+    profiles_document, execution_document = _documents()
+    profiles = {item["model_id"]: item for item in profiles_document["profiles"]}
+    executions = {item["model_id"]: item for item in execution_document["models"]}
+
+    for model_id, expected in SECONDARY_CANDIDATES.items():
+        profile_artifacts = {item["artifact_id"]: item for item in profiles[model_id]["runtime_artifacts"]}
+        execution = executions[model_id]
+        localizations = {item["artifact_id"]: item for item in execution["runtime_artifacts"]}
+        assert set(localizations) == set(expected["artifacts"])
+        for artifact_id, localization in localizations.items():
+            requirement = profile_artifacts[artifact_id]
+            assert localization["content_digest"] == "sha256:" + requirement["content_identity"]["digest_sha256"]
+            assert re.fullmatch(r"sha256:[a-f0-9]{64}", localization["localization_receipt_digest"])
+            assert ("file_manifest" in localization) != ("aggregate_tree" in localization)
+            if "file_manifest" in localization:
+                assert localization["file_manifest"] == requirement["file_manifest"]
+                assert {item["path"] for item in localization["file_manifest"]} == set(requirement["required_files"])
+            else:
+                assert localization["aggregate_tree"]["expanded_bytes"] == requirement["content_identity"][
+                    "size_bytes"
+                ]
+                assert localization["aggregate_tree"]["manifest_sha256"] == requirement[
+                    "readiness_manifest_sha256"
+                ]
+
+        for stage in execution["stages"]:
+            stage_id = stage["stage_id"]
+            assert stage["image"].endswith("@" + expected["digest"])
+            assert stage["workspace_uid"] == expected["uid"]
+            assert stage["workspace_gid"] == expected["gid"]
+            assert sum(item["kind"] == "artifact-workspace" for item in stage["mounts"]) == 1
+            cache_mounts = [item for item in stage["mounts"] if item["kind"] == "runtime-cache"]
+            assert bool(cache_mounts) == (stage_id in expected["cache_stages"])
+            if cache_mounts:
+                assert cache_mounts == [
+                    {
+                        "name": "runtime-cache",
+                        "kind": "runtime-cache",
+                        "claim_name": "fs2-scientific-runtime-cache",
+                        "host_path": None,
+                        "mount_path": "/cache",
+                        "sub_path": None,
+                        "read_only": False,
+                    }
+                ]
+                assert any(value.startswith("/cache/") for value in stage["environment"].values())
+
+            artifact_mounts = [item for item in stage["mounts"] if item["kind"] in {"reference", "private"}]
+            expected_artifacts = expected["stage_artifacts"][stage_id]
+            assert len(artifact_mounts) == len(expected_artifacts)
+            for artifact_id in expected_artifacts:
+                assert any(
+                    _covers(item["mount_path"], localizations[artifact_id]["mount_path"])
+                    for item in artifact_mounts
+                )
+            if any(item["host_path"] is not None for item in artifact_mounts):
+                assert stage["required_node_labels"]["storage.fs2.nebius/reference-data"] == "true"
+
+
+def test_alphafold3_keeps_public_and_academic_planes_separate() -> None:
+    _, execution_document = _documents()
+    execution = next(item for item in execution_document["models"] if item["model_id"] == "alphafold3")
+    stages = {item["stage_id"]: item for item in execution["stages"]}
+    data_mounts = stages["data-pipeline"]["mounts"]
+    inference_mounts = stages["inference"]["mounts"]
+
+    assert execution["access_profile"] == "academic"
+    assert stages["data-pipeline"]["service_account_name"] == "fs2-academic-runner"
+    assert stages["inference"]["service_account_name"] == "fs2-academic-runner"
+    assert any(
+        item["kind"] == "reference"
+        and item["host_path"] == "/mnt/fs2-reference-data/data"
+        and item["mount_path"] == "/reference-data"
+        and item["sub_path"] is None
+        for item in data_mounts
+    )
+    assert all(item["kind"] != "private" for item in data_mounts)
+    assert any(
+        item["kind"] == "private"
+        and item["claim_name"] == "academic-assets-runtime-rwx"
+        and item["mount_path"] == "/models/af3.bin.zst"
+        and item["read_only"] is True
+        for item in inference_mounts
+    )
+    assert all(item["kind"] != "reference" and item["host_path"] is None for item in inference_mounts)
