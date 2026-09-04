@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import stat
 import subprocess
@@ -116,6 +117,141 @@ def test_jobset_chart_materializer_remains_plan_time_during_namespace_changes() 
     # A whole-module dependency also captures data.external.chart, moving its
     # read to apply and presenting Helm with an unknown/empty chart at plan.
     assert "  depends_on =" not in jobset_module
+
+
+def _run_kueue_release_verifier(
+    tmp_path: Path,
+    crane_mode: str,
+) -> tuple[subprocess.CompletedProcess[str], list[str], list[str]]:
+    run_root = tmp_path / "run"
+    charts = run_root / "charts"
+    charts.mkdir(parents=True)
+    chart = charts / "kueue-test.tgz"
+    chart.write_bytes(b"exact verified Kueue chart bytes")
+    chart_sha256 = hashlib.sha256(chart.read_bytes()).hexdigest()
+    chart_digest = f"sha256:{'a' * 64}"
+    image_digest = f"sha256:{'b' * 64}"
+    image = f"registry.k8s.io/kueue/kueue:v0.17.8@{image_digest}"
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    attempts = tmp_path / "crane-attempts"
+    sleeps = tmp_path / "sleeps"
+
+    crane = fake_bin / "crane"
+    crane.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$2" >>"${FS2_TEST_CRANE_ATTEMPTS}"
+case "${FS2_TEST_CRANE_MODE}" in
+  retry-once)
+    if [[ "$(wc -l <"${FS2_TEST_CRANE_ATTEMPTS}")" -eq 1 ]]; then
+      echo 'temporary registry EOF' >&2
+      exit 1
+    fi
+    printf '%s\n' "${2##*@}"
+    ;;
+  always-fail)
+    echo 'simulated registry timeout' >&2
+    exit 1
+    ;;
+  drift)
+    printf 'sha256:%064d\n' 0
+    ;;
+  *) exit 2 ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    crane.chmod(0o700)
+
+    helm = fake_bin / "helm"
+    helm.write_text(
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "template" ]]; then
+  cat <<'EOF'
+image: {image}
+name: clusterqueues.kueue.x-k8s.io
+workload.fs2.nebius/system: "true"
+EOF
+elif [[ "$1 $2" == "show crds" ]]; then
+  exit 0
+else
+  echo "unexpected helm invocation: $*" >&2
+  exit 2
+fi
+""",
+        encoding="utf-8",
+    )
+    helm.chmod(0o700)
+
+    sleep = fake_bin / "sleep"
+    sleep.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$1" >>"${FS2_TEST_SLEEP_LOG}"
+""",
+        encoding="utf-8",
+    )
+    sleep.chmod(0o700)
+
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{fake_bin}:{environment['PATH']}",
+            "FS2_KUEUE_CHART_REF": "oci://registry.k8s.io/kueue/charts/kueue",
+            "FS2_KUEUE_CHART_DIGEST": chart_digest,
+            "FS2_KUEUE_CHART_ARCHIVE_SHA256": chart_sha256,
+            "FS2_KUEUE_IMAGE": image,
+            "FS2_KUEUE_RUN_ROOT": str(run_root),
+            "FS2_KUEUE_CHART_ARCHIVE": str(chart),
+            "FS2_TEST_CRANE_ATTEMPTS": str(attempts),
+            "FS2_TEST_CRANE_MODE": crane_mode,
+            "FS2_TEST_SLEEP_LOG": str(sleeps),
+        }
+    )
+    result = subprocess.run(
+        [str(ROOT / "stages/foundation/scripts/materialize-kueue-release.sh")],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=environment,
+    )
+    attempt_lines = attempts.read_text(encoding="utf-8").splitlines()
+    sleep_lines = sleeps.read_text(encoding="utf-8").splitlines() if sleeps.exists() else []
+    return result, attempt_lines, sleep_lines
+
+
+def test_kueue_release_verifier_retries_a_transient_registry_failure(tmp_path: Path) -> None:
+    result, attempts, sleeps = _run_kueue_release_verifier(tmp_path, "retry-once")
+
+    assert result.returncode == 0, result.stderr
+    assert len(attempts) == 3  # two chart attempts, then one controller-image attempt
+    assert sleeps == ["1"]
+    assert "chart digest lookup attempt 1/4 failed" in result.stderr
+    assert "temporary registry EOF" in result.stderr
+    assert "Kueue release verified" in result.stdout
+
+
+def test_kueue_release_verifier_bounds_persistent_registry_failures(tmp_path: Path) -> None:
+    result, attempts, sleeps = _run_kueue_release_verifier(tmp_path, "always-fail")
+
+    assert result.returncode != 0
+    assert len(attempts) == 4
+    assert sleeps == ["1", "2", "4"]
+    assert "chart digest lookup failed after 4 attempts" in result.stderr
+    assert "simulated registry timeout" in result.stderr
+
+
+def test_kueue_release_verifier_never_retries_digest_drift(tmp_path: Path) -> None:
+    result, attempts, sleeps = _run_kueue_release_verifier(tmp_path, "drift")
+
+    assert result.returncode != 0
+    assert len(attempts) == 1
+    assert sleeps == []
+    assert "chart digest drifted: expected" in result.stderr
 
 
 def test_chart_materializer_is_content_addressed_and_idempotent() -> None:
