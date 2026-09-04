@@ -283,8 +283,8 @@
     "detail": "The shared contract passes this exact directory as --artifact-root. The runtime resolves the manifest's Base_ckpt.pt beneath it and verifies its SHA-256 and byte count before use."
   },
   "qualification": {
-    "state": "published-successor-awaiting-h100-controller-qualification",
-    "qualified_digest": null,
+    "state": "h100-qualified-awaiting-production-controller-route",
+    "qualified_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
     "historical_predecessor_digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
     "qualified_operations": [
       "design-backbone",
@@ -297,14 +297,15 @@
     "evidence": [
       "evidence/design/design_8100.pdb",
       "evidence/design/design_9100_motif.pdb",
+      "evidence/h100-r13-split-root-qualification-20260904.json",
       "evidence/h100-canonical-generation-run-20260904.json",
       "evidence/h100-run-receipt.json",
       "evidence/h100-semantic-qualification-design-backbone.json",
       "evidence/h100-semantic-qualification-scaffold-motif.json",
       "evidence/superseded/r10-scaffold-motif-failed-result.json"
     ],
-    "evidence_transfer_policy": "The listed evidence belongs to r12 and demonstrates the unchanged scientific path only. Nothing transfers to r13 until its immutable digest completes a production-controller run.",
-    "kubelet_image_id_verified": false,
+    "evidence_transfer_policy": "The r13 split-root receipt is first-party evidence for the exact successor digest. Historical r12 evidence remains listed only as the independently reproduced semantic baseline; route exposure still requires the serialized production-controller run.",
+    "kubelet_image_id_verified": true,
     "criteria_met": {
       "cuda_execution": "upstream .trb recorded NVIDIA H100 80GB HBM3 on both runs",
       "parseable_structure": "complete N/CA/C backbone on every residue in both designs",
@@ -315,10 +316,11 @@
       "terminal_success_after_upstream": "the envelope reports succeeded only after marker verification",
       "determinism": "seed 8100 reproduced byte-identically across three independently built images and four nodes",
       "canonical_generation_consumed": "both operations resolved inference.ckpt_override_path inside the read-only generation mount /opt/fs2/artifacts/rfdiffusion-base-checkpoint, after the in-pod marker admission exited 0",
+      "split_artifact_roots": "r13 mounted the immutable checkpoint under /opt/fs2/artifacts/rfdiffusion-base-checkpoint and the tenant motif target under /opt/fs2/inputs/targets; both operations succeeded and the motif operation resolved its input only from the request root",
       "determinism_across_artifact_planes": "design_8100.pdb 78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806 and design_9100.pdb ed7d8d33ae73d2e6ffdfd86703e6569e18353fe9985f824973153b4270c520d4 are byte identical to the committed evidence produced from the historical claim"
     },
-    "scope": "r13 changes only checkpoint/request root separation; no semantic, throughput, contention, elasticity, multi-design, snapshot, or cold-start claim exists for the successor until it is published and run.",
-    "localization_state": "The canonical generation was admitted and semantically exercised with r12 on a real H100; r13 uses the same generation but remains unqualified until its own production-controller run. See evidence/h100-canonical-generation-run-20260904.json."
+    "scope": "r13 is semantically qualified on H100 for design-backbone and scaffold-motif with canonical checkpoint and request bytes on separate read-only roots. No throughput, contention, elasticity, multi-design, GPU snapshot, production-controller, or other accelerator-family claim is made.",
+    "localization_state": "The canonical generation was admitted and semantically exercised with r13 on two real H100 nodes while request inputs used a distinct root. See evidence/h100-r13-split-root-qualification-20260904.json."
   },
   "upstream_contract_defects": [
     {

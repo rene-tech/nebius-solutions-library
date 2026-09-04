@@ -1,0 +1,84 @@
+{
+  "schema": "fs2.nebius.ai/rfdiffusion-h100-split-root-qualification/v1",
+  "observed_at": "2026-09-04T15:21:42Z",
+  "claim": "The immutable r13 image completed both accepted RFdiffusion operations on NVIDIA H100 while the checkpoint generation and tenant request input were mounted on separate read-only roots. The kubelet image ID exactly matched the requested digest in both pods.",
+  "cluster": {
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+    "kube_system_namespace_uid": "5e8135da-4a78-4669-863d-455840d0700b",
+    "namespace": "fs2-models"
+  },
+  "image": {
+    "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+    "requested_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+    "kubelet_image_id_matched": true
+  },
+  "artifact_roots": {
+    "checkpoint": {
+      "mount_path": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
+      "host_root": "/mnt/fs2-reference-data/data",
+      "generation_sub_path": "scientific-localization/public/generations/rfdiffusion-base-checkpoint/sha256/7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+      "generation": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+      "checkpoint_sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+      "read_only": true
+    },
+    "request_inputs": {
+      "mount_path": "/opt/fs2/inputs/targets",
+      "source_config_map": "fs2-rfd-r13-targets",
+      "source_config_map_uid": "e8678862-28a1-4729-a3e2-fbdbdcce836e",
+      "input_sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+      "read_only": true
+    },
+    "distinct_roots_confirmed": true
+  },
+  "runs": [
+    {
+      "operation": "design-backbone",
+      "job": "fs2-rfd-r13-design-a3",
+      "pod": "fs2-rfd-r13-design-a3-t5bjt",
+      "pod_uid": "5c0e16f9-b59f-4927-bfa6-0f0c13f4a8b6",
+      "node": "computeinstance-e00m0hsph76ajt9sdb",
+      "started_at": "2026-09-04T15:20:30Z",
+      "finished_at": "2026-09-04T15:21:42Z",
+      "exit_code": 0,
+      "status": "succeeded",
+      "accelerator": "NVIDIA H100 80GB HBM3",
+      "cuda_execution_confirmed": true,
+      "result_sha256": "692bd3fd5f034c7ef56d2cf4e9bb427026f9157f5d0014682361df7c06d58f68",
+      "result_total_seconds": 69.937,
+      "model_ready_seconds": 48.861,
+      "upstream_seconds": 69.51,
+      "output_pdb_sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+      "residue_count": 76,
+      "requested_contig": "76-76"
+    },
+    {
+      "operation": "scaffold-motif",
+      "job": "fs2-rfd-r13-motif-a3",
+      "pod": "fs2-rfd-r13-motif-a3-qwk8v",
+      "pod_uid": "af42f639-29e7-4f63-a98f-bd66ab2dcf11",
+      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "started_at": "2026-09-04T15:20:32Z",
+      "finished_at": "2026-09-04T15:21:37Z",
+      "exit_code": 0,
+      "status": "succeeded",
+      "accelerator": "NVIDIA H100 80GB HBM3",
+      "cuda_execution_confirmed": true,
+      "result_sha256": "af84e5feab5f0fdc62c37083577351c61eaccced59e6aef3e80e644e6c5e1e19",
+      "result_total_seconds": 63.087,
+      "model_ready_seconds": 43.639,
+      "upstream_seconds": 62.59,
+      "output_pdb_sha256": "ed7d8d33ae73d2e6ffdfd86703e6569e18353fe9985f824973153b4270c520d4",
+      "motif_positions_preserved": 12,
+      "motif_ca_rmsd_angstrom": 0.1129,
+      "requested_contig": "10-10/A23-34/10-10"
+    }
+  ],
+  "determinism": {
+    "design_backbone_matches_committed_structure": true,
+    "scaffold_motif_matches_committed_structure": true,
+    "detail": "Both r13 output PDB hashes are byte-identical to the accepted r12 semantic evidence despite the new split-root delivery path."
+  },
+  "scope": "This qualifies the r13 image digest, H100 execution, canonical checkpoint generation, split-root request input, and the two accepted operations. It is not a production-controller route test and makes no GPU snapshot, elasticity, throughput, or other accelerator-family claim."
+}
