@@ -43,6 +43,7 @@ from .models import (
 from .profile_catalog import ScientificProfileCatalog, ScientificWorkloadProfile
 
 EXECUTION_SCHEMA = "fs2-serve.nebius.ai/scientific-execution-map/v3"
+PACKAGED_TOOLS_CATALOG_DIR = "/opt/fs2/catalog"
 MOUNT_KINDS = {"artifact-workspace", "reference", "private", "runtime-cache"}
 RUNTIME_CACHE_CLAIM_NAME = "fs2-scientific-runtime-cache"
 RUNTIME_CACHE_MOUNT_PATH = "/cache"
@@ -731,9 +732,7 @@ class FileScientificManifestRenderer:
             if not isinstance(stages, list):
                 raise ScientificExecutionMapError("scientific profile stages are invalid")
             serialized = {
-                (candidate_model, stage_id)
-                for candidate_model, stage_id in executions
-                if candidate_model == model_id
+                (candidate_model, stage_id) for candidate_model, stage_id in executions if candidate_model == model_id
             }
             declared: set[tuple[str, str]] = set()
             for raw_stage in stages:
@@ -1478,9 +1477,7 @@ class FileScientificManifestRenderer:
         unbound_broad_sources = {
             mount.name
             for mount in execution.mounts
-            if mount.kind in {"reference", "private"}
-            and mount.name not in used_sources
-            and mount.sub_path is None
+            if mount.kind in {"reference", "private"} and mount.name not in used_sources and mount.sub_path is None
         }
         if unbound_broad_sources:
             raise ScientificExecutionMapError("stage declares an unbound broad runtime artifact volume")
@@ -1492,6 +1489,10 @@ class FileScientificManifestRenderer:
             {"name": "FS2_SCIENTIFIC_INTERNAL_API_URL", "value": self.internal_api_url},
             {"name": "FS2_SCIENTIFIC_WORKLOAD_CAPABILITY", "value": capability},
             {"name": "FS2_STAGE_INVOCATION_JSON", "value": _invocation_json(invocation)},
+            # Helm binds tools_image to this same immutable control-plane
+            # image. Its Dockerfile publishes the canonical catalog here;
+            # workload Pods do not mount the gateway's optional catalog PVC.
+            {"name": "FS2_CATALOG_DIR", "value": PACKAGED_TOOLS_CATALOG_DIR},
         ]
         companion_security = {
             "allowPrivilegeEscalation": False,
