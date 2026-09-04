@@ -2,6 +2,7 @@ locals {
   shared_cache_mount_path           = "/mnt/fs2cache"
   reference_data_mount_path         = "/mnt/fs2-reference-data"
   reference_data_host_path          = "${local.reference_data_mount_path}/data"
+  system_inotify_sysctl_path        = "/etc/sysctl.d/99-fs2-system-inotify.conf"
   shared_cache_cloud_init_user_data = <<-YAML
     #cloud-config
     package_update: false
@@ -31,6 +32,51 @@ locals {
       - [mkdir, -p, ${local.shared_cache_mount_path}/csi-mounted-fs-path-data]
       - [install, -d, -m, "0770", -o, "1000", -g, "1000", ${local.reference_data_host_path}]
 YAML
+  # Platform controllers and registry credential helpers create independent
+  # inotify instances. Persist a system-pool-only ceiling and load it during
+  # first boot; the dedicated reference, general CPU, and GPU templates keep
+  # their existing cloud-init bytes and therefore are not rolled by this fix.
+  system_shared_cache_cloud_init_user_data                = <<-YAML
+    #cloud-config
+    package_update: false
+    package_upgrade: false
+    write_files:
+      - path: ${local.system_inotify_sysctl_path}
+        owner: root:root
+        permissions: "0644"
+        content: |
+          fs.inotify.max_user_instances = ${local.effective_system_pool.inotify_max_user_instances}
+    mounts:
+      - [fs2cache, ${local.shared_cache_mount_path}, virtiofs, "defaults,nofail", 0, 2]
+    runcmd:
+      - [sysctl, -p, ${local.system_inotify_sysctl_path}]
+      - [modprobe, fuse]
+      - [mkdir, -p, ${local.shared_cache_mount_path}]
+      - [mount, -a]
+      - [mkdir, -p, ${local.shared_cache_mount_path}/csi-mounted-fs-path-data]
+  YAML
+  system_shared_cache_reference_data_cloud_init_user_data = <<-YAML
+    #cloud-config
+    package_update: false
+    package_upgrade: false
+    write_files:
+      - path: ${local.system_inotify_sysctl_path}
+        owner: root:root
+        permissions: "0644"
+        content: |
+          fs.inotify.max_user_instances = ${local.effective_system_pool.inotify_max_user_instances}
+    mounts:
+      - [fs2cache, ${local.shared_cache_mount_path}, virtiofs, "defaults,nofail", 0, 2]
+      - [fs2reference, ${local.reference_data_mount_path}, virtiofs, "defaults,nofail", 0, 2]
+    runcmd:
+      - [sysctl, -p, ${local.system_inotify_sysctl_path}]
+      - [modprobe, fuse]
+      - [mkdir, -p, ${local.shared_cache_mount_path}]
+      - [mkdir, -p, ${local.reference_data_mount_path}]
+      - [mount, -a]
+      - [mkdir, -p, ${local.shared_cache_mount_path}/csi-mounted-fs-path-data]
+      - [install, -d, -m, "0770", -o, "1000", -g, "1000", ${local.reference_data_host_path}]
+  YAML
   filesystem_attachment = [{
     attach_mode = "READ_WRITE"
     mount_tag   = "fs2cache"
@@ -178,7 +224,7 @@ resource "nebius_mk8s_v1_node_group" "system" {
     }
     service_account_id   = nebius_iam_v1_service_account.nodepull.id
     underlay_required    = false
-    cloud_init_user_data = var.reference_data.enabled ? local.shared_cache_reference_data_cloud_init_user_data : local.shared_cache_cloud_init_user_data
+    cloud_init_user_data = var.reference_data.enabled ? local.system_shared_cache_reference_data_cloud_init_user_data : local.system_shared_cache_cloud_init_user_data
   }
 
   depends_on = [

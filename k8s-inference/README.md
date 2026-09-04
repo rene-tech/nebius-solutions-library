@@ -323,7 +323,7 @@ The top-level variable is `deployment`:
 | `profiles.capacity` | CPU-system, cache, and maximum-capacity envelope: `minimal` or `full_catalog`. |
 | `profiles.accelerators` | Qualified accelerator-pool topology. If omitted, it follows the capacity profile. |
 | `profiles.models` | Model catalog: `minimal` or `full_catalog`. |
-| `cluster` | Kubernetes version, API CIDR allowlist, and optional regular CPU system-pool shape. |
+| `cluster` | Kubernetes version, API CIDR allowlist, and optional regular CPU system-pool shape and inotify ceiling. |
 | `accelerator_pools` | Open map of GPU platform/preset, capacity, optional capacity-block reservation, topology, driver, local-storage, and node-floor/ceiling settings. |
 | `models` | Profile or explicit selection, KEDA/static scaling, hot-model floor, and per-model scaling overrides. |
 | `dynamic_models` | Optional live controller gate, exclusive workload owner, and initial model IDs. Internal envelope and renderer JSON is derived, not customer-authored. |
@@ -345,6 +345,15 @@ For another project, add `project_name`, `network.network_name`,
 `system_update_strategy`. The infrastructure stage verifies those facts through
 the provider. Custom accelerator pools additionally go through the live
 platform and Managed Kubernetes compatibility preflight.
+
+The system pool defaults `inotify_max_user_instances` to `8192`, preventing
+registry credential helpers and platform controllers from exhausting the
+Ubuntu default as their file watches grow. Terraform persists the setting as
+`/etc/sysctl.d/99-fs2-system-inotify.conf` and loads that exact file during the
+system node's first boot. The accepted `256`-`65536` range keeps the override
+intentional and bounded. This cloud-init fragment belongs only to the regular
+system node group; changing it does not mutate accelerator, general CPU, or
+reference-data node templates.
 
 Alertmanager and operator observability access are described in
 [`docs/ADMIN_OBSERVABILITY_ACCESS.md`](docs/ADMIN_OBSERVABILITY_ACCESS.md).

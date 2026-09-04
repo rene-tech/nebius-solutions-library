@@ -30,6 +30,10 @@ deployment = {
   cluster = {
     kubernetes_version          = "1.35"
     control_plane_allowed_cidrs = []
+    # Optional system_pool overrides belong here. The default 8192 avoids
+    # exhausting registry-helper/controller inotify instances and is written
+    # persistently only to system nodes.
+    # system_pool = { inotify_max_user_instances = 8192 }
   }
 
   accelerator_pools = {

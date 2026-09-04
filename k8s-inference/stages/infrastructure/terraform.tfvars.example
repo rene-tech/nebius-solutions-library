@@ -66,6 +66,8 @@ gpu_floor_profile = "zero"
 #   max_surge       = 1
 #   max_unavailable = 0
 #   drain_timeout   = "15m"
+#   # Persisted under /etc/sysctl.d on system nodes only; valid range 256-65536.
+#   inotify_max_user_instances = 8192
 # }
 # shared_cache = {
 #   size_gib         = 512

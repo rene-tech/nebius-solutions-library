@@ -35,15 +35,16 @@ variable "deployment" {
       kubernetes_version          = optional(string, "1.35")
       control_plane_allowed_cidrs = optional(set(string), [])
       system_pool = optional(object({
-        capacity        = optional(string, "regular")
-        platform        = optional(string, "cpu-d3")
-        preset          = optional(string, "8vcpu-32gb")
-        node_count      = optional(number)
-        boot_disk_type  = optional(string, "NETWORK_SSD")
-        boot_disk_gib   = optional(number, 160)
-        max_surge       = optional(number)
-        max_unavailable = optional(number)
-        drain_timeout   = optional(string, "15m")
+        capacity                   = optional(string, "regular")
+        platform                   = optional(string, "cpu-d3")
+        preset                     = optional(string, "8vcpu-32gb")
+        node_count                 = optional(number)
+        boot_disk_type             = optional(string, "NETWORK_SSD")
+        boot_disk_gib              = optional(number, 160)
+        max_surge                  = optional(number)
+        max_unavailable            = optional(number)
+        drain_timeout              = optional(string, "15m")
+        inotify_max_user_instances = optional(number, 8192)
       }))
     }), {})
 
@@ -993,10 +994,13 @@ variable "deployment" {
         var.deployment.cluster.system_pool.max_unavailable == null ||
         var.deployment.cluster.system_pool.max_surge + var.deployment.cluster.system_pool.max_unavailable >= 1
       ) &&
+      floor(var.deployment.cluster.system_pool.inotify_max_user_instances) == var.deployment.cluster.system_pool.inotify_max_user_instances &&
+      var.deployment.cluster.system_pool.inotify_max_user_instances >= 256 &&
+      var.deployment.cluster.system_pool.inotify_max_user_instances <= 65536 &&
       can(regex("^[1-9][0-9]*m$", var.deployment.cluster.system_pool.drain_timeout)),
       false,
     )
-    error_message = "cluster.system_pool must match the bounded regular CPU-pool, disk, rollout, and drain-time contract consumed by infrastructure."
+    error_message = "cluster.system_pool must match the bounded regular CPU-pool, disk, rollout, drain-time, and inotify contract consumed by infrastructure."
   }
 
   validation {

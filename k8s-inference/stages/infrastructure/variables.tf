@@ -240,19 +240,21 @@ variable "system_pool" {
   description = <<-EOT
     Optional typed CPU system-pool override. Null preserves the selected
     capacity profile, target rollout strategy, cpu-d3/8vcpu-32gb shape, and
-    160 GiB NETWORK_SSD boot disk. System nodes remain regular in this release
-    so the control plane add-ons are not coupled to preemptible GPU capacity.
+    160 GiB NETWORK_SSD boot disk, and 8192 inotify instances per user. System
+    nodes remain regular in this release so the control plane add-ons are not
+    coupled to preemptible GPU capacity.
   EOT
   type = object({
-    capacity        = optional(string, "regular")
-    platform        = optional(string, "cpu-d3")
-    preset          = optional(string, "8vcpu-32gb")
-    node_count      = optional(number)
-    boot_disk_type  = optional(string, "NETWORK_SSD")
-    boot_disk_gib   = optional(number, 160)
-    max_surge       = optional(number)
-    max_unavailable = optional(number)
-    drain_timeout   = optional(string, "15m")
+    capacity                   = optional(string, "regular")
+    platform                   = optional(string, "cpu-d3")
+    preset                     = optional(string, "8vcpu-32gb")
+    node_count                 = optional(number)
+    boot_disk_type             = optional(string, "NETWORK_SSD")
+    boot_disk_gib              = optional(number, 160)
+    max_surge                  = optional(number)
+    max_unavailable            = optional(number)
+    drain_timeout              = optional(string, "15m")
+    inotify_max_user_instances = optional(number, 8192)
   })
   default  = null
   nullable = true
@@ -279,10 +281,13 @@ variable "system_pool" {
         floor(var.system_pool.max_unavailable) == var.system_pool.max_unavailable &&
         var.system_pool.max_unavailable >= 0
       )) &&
+      floor(var.system_pool.inotify_max_user_instances) == var.system_pool.inotify_max_user_instances &&
+      var.system_pool.inotify_max_user_instances >= 256 &&
+      var.system_pool.inotify_max_user_instances <= 65536 &&
       can(regex("^[1-9][0-9]*m$", var.system_pool.drain_timeout)),
       false,
     )
-    error_message = "system_pool must use regular capacity, a bounded provider shape/count/boot disk, and an integral nonzero rollout allowance."
+    error_message = "system_pool must use regular capacity, a bounded provider shape/count/boot disk/inotify ceiling, and an integral nonzero rollout allowance."
   }
 }
 
@@ -851,6 +856,10 @@ locals {
       local.selected_target.system_update_strategy.max_unavailable,
     )
     drain_timeout = try(coalesce(var.system_pool.drain_timeout, "15m"), "15m")
+    inotify_max_user_instances = try(
+      coalesce(var.system_pool.inotify_max_user_instances, 8192),
+      8192,
+    )
   }
 
   effective_shared_cache = {

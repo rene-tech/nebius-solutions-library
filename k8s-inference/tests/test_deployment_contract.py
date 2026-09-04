@@ -367,6 +367,52 @@ class DeploymentContractTests(unittest.TestCase):
             contract["stages"]["infrastructure"]["port_forward_local_ports"],
         )
 
+    def test_system_pool_inotify_ceiling_is_a_bounded_tfvars_setting(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-system-inotify",
+            "target": self.catalog_target(),
+            "cluster": {
+                "system_pool": {"inotify_max_user_instances": 16384},
+            },
+        }
+        outputs = self._planned_outputs(
+            self._write_configuration("system-inotify", deployment),
+            "system-inotify",
+        )
+        self.assertEqual(
+            outputs["deployment_contract"]["stages"]["infrastructure"][
+                "system_pool"
+            ]["inotify_max_user_instances"],
+            16384,
+        )
+
+        deployment["cluster"]["system_pool"]["inotify_max_user_instances"] = 128
+        result, _ = self._plan_file(
+            self._write_configuration("system-inotify-too-low", deployment),
+            "system-inotify-too-low",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cluster.system_pool", result.stderr)
+
+        cluster_source = (
+            DEPLOY_ROOT / "stages/infrastructure/cluster.tf"
+        ).read_text(encoding="utf-8")
+        system_resource, non_system_resources = cluster_source.split(
+            'resource "nebius_mk8s_v1_node_group" "reference_data"', 1
+        )
+        system_resource = system_resource.split(
+            'resource "nebius_mk8s_v1_node_group" "system"', 1
+        )[1]
+        self.assertIn(
+            "local.system_shared_cache_cloud_init_user_data", system_resource
+        )
+        self.assertIn(
+            "local.system_shared_cache_reference_data_cloud_init_user_data",
+            system_resource,
+        )
+        self.assertNotIn("local.system_shared_cache", non_system_resources)
+
     def test_dynamic_priority_class_label_boundary_is_rejected_at_root(self) -> None:
         deployment = {
             "schema_version": 1,
