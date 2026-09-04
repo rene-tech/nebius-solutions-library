@@ -1,0 +1,77 @@
+{
+  "schema": "fs2.nebius.ai/primary-scientific-activation-fragment/v1",
+  "model_id": "mosaic",
+  "accepted_evidence": {
+    "source": {"repository": "https://github.com/escalante-bio/mosaic", "revision": "70fec525423f5f87156a1a957b4a4048f9f8e676", "license": "MIT"},
+    "runtime_image": {
+      "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+      "digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+      "lock_path": "models/cancer-immunotherapy/runtime-images/mosaic/image-lock.json",
+      "digest_evidence_path": "models/cancer-immunotherapy/runtime-images/mosaic/evidence/h100-semantic-qualification.json"
+    },
+    "runtime_recipe": {
+      "source_revision": "003064c440c4ab198bf96957e435a7aac8da6800",
+      "algorithm": "fs2-path-set-sha256-v1",
+      "paths": [
+        "catalog/runtime/contracts/scientific-artifact-localization.json",
+        "catalog/runtime/schema/scientific-artifact-localization.schema.json",
+        "catalog/runtime/schema/scientific-run-request.schema.json",
+        "catalog/runtime/schema/scientific-run-result.schema.json",
+        "components/control-plane/src/fs2_serve/scientific_batch/__init__.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/__init__.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/common.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/localization.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/materialization.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/primitives.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/catalog_adapter.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/controller.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/models.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/protocols.py",
+        "models/cancer-immunotherapy/runtime-images/mosaic/image-lock.json",
+        "models/cancer-immunotherapy/runtime-images/mosaic/qualification/render_plan.py",
+        "models/cancer-immunotherapy/runtime-images/mosaic/qualification/validate_result.py",
+        "models/cancer-immunotherapy/runtime-images/mosaic/runtime_entrypoint.py"
+      ]
+    },
+    "h100": {"state": "semantic-qualified-route-disabled", "accelerator_class": "nvidia-h100-sxm5-80gb", "evidence_paths": ["models/cancer-immunotherapy/runtime-images/mosaic/evidence/h100-run-receipt.json", "models/cancer-immunotherapy/runtime-images/mosaic/evidence/h100-semantic-qualification.json"]},
+    "main_commits": ["cbee77ed"]
+  },
+  "profile_projection": {
+    "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
+    "profile": {
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "model_id": "mosaic",
+      "display_name": "Mosaic protein design",
+      "execution_mode": "scientific-batch",
+      "state": "candidate-unqualified",
+      "route_exposed": false,
+      "source": {"kind": "git", "repository": "escalante-bio/mosaic", "revision": "70fec525423f5f87156a1a957b4a4048f9f8e676", "review_url": "https://github.com/escalante-bio/mosaic/tree/70fec525423f5f87156a1a957b4a4048f9f8e676", "classification": "candidate-input"},
+      "execution_identity": {"model_revision": "70fec525423f5e87156a1a957b4a4048f9f8e676", "runtime_image_digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69", "runtime_recipe_sha256": "10f390d6ff0b883828d31b6ff76f3725ff121249fb556e96bf383a478e63ed31", "workload_recipe_sha256": "601fa6b79b49ab517fa0d9c260733550e09f6fed25968046c88efe2a9c0b9d42", "artifact_manifest_digest": null, "execution_identity_sha256": null},
+      "interface": {"protocol": "scientific-batch-v1", "submit_endpoint": "/v1/models/mosaic:submit", "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1", "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1", "parameter_schema": "fs2-serve.nebius.ai/mosaic-boltz2-proteinmpnn-parameters/v1", "operations": ["design-binder"], "service_classes": ["customer-batch", "bulk-backfill"], "mcp": {"discoverable": true, "invocable": false, "tool_name": "submit_mosaic", "description": "Submit a bounded Mosaic binder-design campaign."}},
+      "access": {"profile": "standard", "state": "not-required", "receipt_digest": null, "credentials_embedded": false},
+      "resources": {"gpu_count": 1, "gpu_topology": "single-gpu", "host_architectures": ["amd64"], "compatible_pool_ids": ["h100-1x", "h100-reserved-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb", "storage.fs2.nebius/reference-data": "true"}},
+      "workload": {"stages": [{"id": "design", "needs": [], "resource_class": "gpu", "admission_mode": "independent-jobs", "min_parallelism": 1, "max_parallelism": 64, "checkpoint_mode": "restart", "preemption_mode": "restartable"}, {"id": "aggregate", "needs": ["design"], "resource_class": "cpu", "admission_mode": "independent-jobs", "min_parallelism": 1, "max_parallelism": 1, "checkpoint_mode": "none", "preemption_mode": "non_preemptible"}], "retry": {"max_attempts": 2, "retryable_exit_codes": [137, 143]}, "cancellation": {"mode": "terminate-attempt", "grace_seconds": 60}},
+      "semantic_validation": {"validator_id": "mosaic-boltz2-proteinmpnn-v1", "state": "candidate-unqualified"},
+      "policy": {"commercial_use": "allowed", "non_clinical": true, "limitations": ["The accepted image passed one bounded H100 semantic workflow, but its artifacts were read from a transitional qualification claim.", "No canonical Mosaic public generation exists on current main; route activation must remain disabled until localization and a public controller run succeed."]}
+    }
+  },
+  "execution_projection": {
+    "merge_target": "catalog/runtime/contracts/scientific-execution-map.json",
+    "state": "blocked-missing-canonical-generation",
+    "variant_id": "mosaic-boltz2-proteinmpnn-v1",
+    "namespace": "fs2-models",
+    "runtime_artifacts": [
+      {"artifact_id": "mosaic-boltz2-conf", "state": "blocked-missing-canonical-generation", "mount_path": "/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt", "content_digest": null, "generation": null, "source": {"kind": "unresolved", "root": null, "sub_path": null, "read_only": true, "required_node_labels": {"storage.fs2.nebius/reference-data": "true"}}, "evidence_path": "models/cancer-immunotherapy/runtime-images/mosaic/image-lock.json"},
+      {"artifact_id": "mosaic-boltz2-mols", "state": "blocked-missing-canonical-generation", "mount_path": "/opt/fs2/artifacts/mosaic/boltz/mols", "content_digest": null, "generation": null, "source": {"kind": "unresolved", "root": null, "sub_path": null, "read_only": true, "required_node_labels": {"storage.fs2.nebius/reference-data": "true"}}, "evidence_path": "models/cancer-immunotherapy/runtime-images/mosaic/image-lock.json"},
+      {"artifact_id": "mosaic-components", "state": "blocked-missing-canonical-generation", "mount_path": "/opt/fs2/artifacts/mosaic/proteinmpnn", "content_digest": null, "generation": null, "source": {"kind": "unresolved", "root": null, "sub_path": null, "read_only": true, "required_node_labels": {"storage.fs2.nebius/reference-data": "true"}}, "evidence_path": "model-artifacts/manifest-mosaic-components.json"}
+    ],
+    "artifact_identity_inputs": ["090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1", "39e076d96dbec6b4e86982bbda16f3a53a2a60c9bdc17828d88f6f9a0c7d1fd7", "fdcb774600ae165c28b372465d034672fa3f9576951c3f5a6ad0bc6869b81dcb"],
+    "stages": [
+      {"id": "design", "resource_class": "gpu", "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69", "runtime_artifacts": ["mosaic-boltz2-conf", "mosaic-boltz2-mols", "mosaic-components"], "placement": {"accelerator_classes": ["nvidia-h100-sxm5-80gb"], "eligible_pool_ids": ["h100-1x", "h100-reserved-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb", "storage.fs2.nebius/reference-data": "true"}}},
+      {"id": "aggregate", "resource_class": "cpu", "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69", "runtime_artifacts": [], "placement": {"accelerator_classes": [], "eligible_pool_ids": [], "required_node_labels": {}}}
+    ],
+    "blockers": ["Current main has no canonical public generations or localization receipts for the Boltz-2 checkpoint, Boltz-2 molecule tree, and Mosaic ProteinMPNN components; the transitional qualification PVC is not an activation source."]
+  },
+  "public_fixtures": {"request": "models/cancer-immunotherapy/runtime-images/mosaic/activation/public-request.json", "result": "models/cancer-immunotherapy/runtime-images/mosaic/activation/public-result.example.json", "semantic_validator": "models/cancer-immunotherapy/runtime-images/mosaic/qualification/validate_result.py", "supporting_inputs": [{"role": "request-input-manifest", "path": "models/cancer-immunotherapy/runtime-images/mosaic/qualification/mosaic-input-manifest.json", "encoding": "canonical-json-newline"}, {"role": "manifest-artifact", "path": "models/cancer-immunotherapy/runtime-images/mosaic/qualification/target-minibinder.fasta", "encoding": "raw"}]},
+  "activation_gate": {"route_exposed": false, "ready_for_route": false, "public_platform_run_required": true}
+}

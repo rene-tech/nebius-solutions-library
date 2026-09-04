@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2.nebius.ai/schemas/primary-scientific-activation-fragment-v1.json",
+  "title": "Primary scientific model activation generator input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "model_id",
+    "accepted_evidence",
+    "profile_projection",
+    "execution_projection",
+    "public_fixtures",
+    "activation_gate"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2.nebius.ai/primary-scientific-activation-fragment/v1"
+    },
+    "model_id": {
+      "$ref": "#/$defs/k8s_name"
+    },
+    "accepted_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "runtime_image", "runtime_recipe", "h100", "main_commits"],
+      "properties": {
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "revision", "license"],
+          "properties": {
+            "repository": {"type": "string", "pattern": "^https://"},
+            "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "license": {"type": "string", "minLength": 1}
+          }
+        },
+        "runtime_image": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reference", "digest", "lock_path", "digest_evidence_path"],
+          "properties": {
+            "reference": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
+            "digest": {"$ref": "#/$defs/tagged_sha256"},
+            "lock_path": {"$ref": "#/$defs/repository_path"},
+            "digest_evidence_path": {"$ref": "#/$defs/repository_path"}
+          }
+        },
+        "runtime_recipe": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source_revision", "algorithm", "paths"],
+          "properties": {
+            "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "algorithm": {"const": "fs2-path-set-sha256-v1"},
+            "paths": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"$ref": "#/$defs/repository_path"}
+            }
+          }
+        },
+        "h100": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "accelerator_class", "evidence_paths"],
+          "properties": {
+            "state": {"const": "semantic-qualified-route-disabled"},
+            "accelerator_class": {"const": "nvidia-h100-sxm5-80gb"},
+            "evidence_paths": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"$ref": "#/$defs/repository_path"}
+            }
+          }
+        },
+        "main_commits": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[0-9a-f]{8,40}$"}
+        }
+      }
+    },
+    "profile_projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["merge_target", "profile"],
+      "properties": {
+        "merge_target": {"const": "catalog/runtime/contracts/scientific-workload-profiles.json"},
+        "profile": {"type": "object"}
+      }
+    },
+    "execution_projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "merge_target",
+        "state",
+        "variant_id",
+        "namespace",
+        "runtime_artifacts",
+        "artifact_identity_inputs",
+        "stages",
+        "blockers"
+      ],
+      "properties": {
+        "merge_target": {"const": "catalog/runtime/contracts/scientific-execution-map.json"},
+        "state": {"enum": ["ready-for-serialized-integration", "blocked-missing-canonical-generation"]},
+        "variant_id": {"$ref": "#/$defs/k8s_name"},
+        "namespace": {"$ref": "#/$defs/k8s_name"},
+        "runtime_artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/runtime_artifact"}
+        },
+        "artifact_identity_inputs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/sha256"}
+        },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/stage"}
+        },
+        "blockers": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "adapter_profile_overlay": {
+          "type": "object",
+          "description": "Controller-only fields required by an adapter but not yet expressible in the public profile schema. The integration owner must reconcile this seam before route activation."
+        }
+      }
+    },
+    "public_fixtures": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request", "result", "semantic_validator"],
+      "properties": {
+        "request": {"$ref": "#/$defs/repository_path"},
+        "result": {"$ref": "#/$defs/repository_path"},
+        "semantic_validator": {"$ref": "#/$defs/repository_path"},
+        "supporting_inputs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["role", "path", "encoding"],
+            "properties": {
+              "role": {"enum": ["request-input-manifest", "manifest-artifact"]},
+              "path": {"$ref": "#/$defs/repository_path"},
+              "encoding": {"enum": ["raw", "canonical-json-newline"]}
+            }
+          }
+        }
+      }
+    },
+    "activation_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_exposed", "ready_for_route", "public_platform_run_required"],
+      "properties": {
+        "route_exposed": {"const": false},
+        "ready_for_route": {"const": false},
+        "public_platform_run_required": {"const": true}
+      }
+    }
+  },
+  "$defs": {
+    "k8s_name": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "repository_path": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*\\.\\.)[A-Za-z0-9._/-]+$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "tagged_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "runtime_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_id",
+        "state",
+        "mount_path",
+        "content_digest",
+        "generation",
+        "source",
+        "evidence_path"
+      ],
+      "properties": {
+        "artifact_id": {"$ref": "#/$defs/k8s_name"},
+        "state": {"enum": ["ready", "blocked-missing-canonical-generation"]},
+        "mount_path": {"type": "string", "pattern": "^/"},
+        "content_digest": {
+          "oneOf": [{"$ref": "#/$defs/tagged_sha256"}, {"type": "null"}]
+        },
+        "generation": {
+          "oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "root", "sub_path", "read_only", "required_node_labels"],
+          "properties": {
+            "kind": {"enum": ["reference-host-path", "private-pvc", "unresolved"]},
+            "root": {"type": ["string", "null"]},
+            "sub_path": {"type": ["string", "null"]},
+            "read_only": {"const": true},
+            "required_node_labels": {
+              "type": "object",
+              "additionalProperties": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "evidence_path": {"$ref": "#/$defs/repository_path"}
+      }
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "resource_class", "image", "runtime_artifacts", "placement"],
+      "properties": {
+        "id": {"$ref": "#/$defs/k8s_name"},
+        "resource_class": {"enum": ["cpu", "gpu"]},
+        "image": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
+        "runtime_artifacts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/k8s_name"}
+        },
+        "placement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["accelerator_classes", "eligible_pool_ids", "required_node_labels"],
+          "properties": {
+            "accelerator_classes": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"const": "nvidia-h100-sxm5-80gb"}
+            },
+            "eligible_pool_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"enum": ["h100-1x", "h100-reserved-8x"]}
+            },
+            "required_node_labels": {
+              "type": "object",
+              "additionalProperties": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    }
+  }
+}

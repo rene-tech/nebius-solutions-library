@@ -1,0 +1,36 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+  "operation_id": "operation.primary-activation.rfdiffusion.01",
+  "batch_id": "batch.primary-activation.rfdiffusion.01",
+  "workload_id": "workload.primary-activation.rfdiffusion.01",
+  "terminal_status": "failed",
+  "submitted_at": "2026-09-04T00:00:00Z",
+  "completed_at": "2026-09-04T00:00:00Z",
+  "execution_identity": {
+    "model_id": "rfdiffusion",
+    "variant_id": "rfdiffusion-v1-1-0",
+    "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+    "runtime_image_digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+    "runtime_recipe_sha256": "9ddb01ac49042023ebaa7effb25c71d864e396dba1782fb023b04ad13f7f110c",
+    "workload_recipe_sha256": "548da3b7c5dd5868d7e8adaf64b4dcc0bb2e89b3611f324eb6701478bb76cb5e",
+    "model_artifact_manifest_digest": "8225ace70557d10523c6b60121fdc88bdc6e8c4bc0ba1778c3cedaedb8ec58e7",
+    "execution_identity_sha256": "21dde2956324f6ce0f5bc7deb9c958cba38ecf748b059303417fb9bf6c5f206f"
+  },
+  "access_admission": {"profile": "standard", "state": "not-required", "receipt_digest": null},
+  "scheduling_snapshot": {
+    "policy_revision": "primary-activation-fragment-v1",
+    "captured_at": "2026-09-04T00:00:00Z",
+    "service_class": "customer-batch",
+    "tenant_queue": "fs2-models-async",
+    "model_lane": "rfdiffusion",
+    "stages": [
+      {"stage_id": "inference", "resource_class": "gpu", "resolved_cluster_queue": "scientific-gpu", "resolved_local_queue": "fs2-models-async", "workload_priority_class": "customer-batch", "workload_priority_value": 500, "resolved_pool_preference": ["h100-1x", "h100-reserved-8x"], "accelerator_resource_name": "nvidia.com/gpu", "accelerator_count": 1, "max_queue_seconds": 3600, "max_execution_seconds": 21600, "checkpoint_mode": "restart", "preemption_mode": "restartable"},
+      {"stage_id": "collect", "resource_class": "cpu", "resolved_cluster_queue": "scientific-cpu", "resolved_local_queue": "fs2-models-async", "workload_priority_class": "customer-batch", "workload_priority_value": 500, "resolved_pool_preference": [], "accelerator_resource_name": null, "accelerator_count": 0, "max_queue_seconds": 3600, "max_execution_seconds": 3600, "checkpoint_mode": "none", "preemption_mode": "non_preemptible"}
+    ]
+  },
+  "input_manifest": {"artifact_id": "manifest.rfdiffusion.activation.01", "sha256": "3be62b4a3cf10dfa0567f96e8cbae36b0ef4dfb600d994f114238dfd9020c532", "size_bytes": 411, "media_type": "application/vnd.fs2.scientific-manifest+json", "compression": "none"},
+  "output_manifest": null,
+  "attempts": [],
+  "semantic_validation": {"validator_id": "rfdiffusion-v1-1-0", "status": "not-run", "receipt_digest": null},
+  "error": {"code": "ACTIVATION_NOT_ENABLED", "message": "The RFdiffusion checkpoint has no canonical localized generation, so the route remains disabled.", "retryable": false}
+}

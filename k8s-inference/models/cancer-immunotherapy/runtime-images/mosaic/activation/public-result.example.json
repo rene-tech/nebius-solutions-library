@@ -1,0 +1,36 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+  "operation_id": "operation.primary-activation.mosaic.01",
+  "batch_id": "batch.primary-activation.mosaic.01",
+  "workload_id": "workload.primary-activation.mosaic.01",
+  "terminal_status": "failed",
+  "submitted_at": "2026-09-04T00:00:00Z",
+  "completed_at": "2026-09-04T00:00:00Z",
+  "execution_identity": {
+    "model_id": "mosaic",
+    "variant_id": "mosaic-boltz2-proteinmpnn-v1",
+    "model_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+    "runtime_image_digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+    "runtime_recipe_sha256": "10f390d6ff0b883828d31b6ff76f3725ff121249fb556e96bf383a478e63ed31",
+    "workload_recipe_sha256": "601fa6b79b49ab517fa0d9c260733550e09f6fed25968046c88efe2a9c0b9d42",
+    "model_artifact_manifest_digest": "607bbc8876228a058d3d072c9ee400d4a422a36de077eb9ae03c60176ee07fdd",
+    "execution_identity_sha256": "702740e554ecf602aac6774a2f303f3e88bded79a0121ce0fcb8eee002eb2d28"
+  },
+  "access_admission": {"profile": "standard", "state": "not-required", "receipt_digest": null},
+  "scheduling_snapshot": {
+    "policy_revision": "primary-activation-fragment-v1",
+    "captured_at": "2026-09-04T00:00:00Z",
+    "service_class": "customer-batch",
+    "tenant_queue": "fs2-models-async",
+    "model_lane": "mosaic",
+    "stages": [
+      {"stage_id": "design", "resource_class": "gpu", "resolved_cluster_queue": "scientific-gpu", "resolved_local_queue": "fs2-models-async", "workload_priority_class": "customer-batch", "workload_priority_value": 500, "resolved_pool_preference": ["h100-1x", "h100-reserved-8x"], "accelerator_resource_name": "nvidia.com/gpu", "accelerator_count": 1, "max_queue_seconds": 3600, "max_execution_seconds": 21600, "checkpoint_mode": "restart", "preemption_mode": "restartable"},
+      {"stage_id": "aggregate", "resource_class": "cpu", "resolved_cluster_queue": "scientific-cpu", "resolved_local_queue": "fs2-models-async", "workload_priority_class": "customer-batch", "workload_priority_value": 500, "resolved_pool_preference": [], "accelerator_resource_name": null, "accelerator_count": 0, "max_queue_seconds": 3600, "max_execution_seconds": 3600, "checkpoint_mode": "none", "preemption_mode": "non_preemptible"}
+    ]
+  },
+  "input_manifest": {"artifact_id": "manifest.mosaic.minibinder.01", "sha256": "23d109248070644bbe72f68a9d82ed7e8b4ff763913030ea6206366947795ca7", "size_bytes": 398, "media_type": "application/vnd.fs2.scientific-manifest+json", "compression": "none"},
+  "output_manifest": null,
+  "attempts": [],
+  "semantic_validation": {"validator_id": "mosaic-boltz2-proteinmpnn-v1", "status": "not-run", "receipt_digest": null},
+  "error": {"code": "ACTIVATION_NOT_ENABLED", "message": "Canonical Mosaic artifact generations are not published; the route remains disabled.", "retryable": false}
+}

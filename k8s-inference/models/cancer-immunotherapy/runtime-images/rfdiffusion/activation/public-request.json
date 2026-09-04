@@ -1,0 +1,8 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "design-backbone",
+  "service_class": "customer-batch",
+  "input_manifest": {"artifact_id": "manifest.rfdiffusion.activation.01", "sha256": "3be62b4a3cf10dfa0567f96e8cbae36b0ef4dfb600d994f114238dfd9020c532", "size_bytes": 411, "media_type": "application/vnd.fs2.scientific-manifest+json", "compression": "none"},
+  "parameters": {"schema": "fs2-serve.nebius.ai/rfdiffusion-parameters/v1", "operation": "design-backbone", "contigs": ["76-76"], "num_designs": 1, "seed": 8100, "diffuser_T": 50},
+  "client_context": {"batch_id": "batch.primary-activation.rfdiffusion.01", "correlation_id": "primary-activation.rfdiffusion.01", "display_name": "RFdiffusion backbone activation canary"}
+}
