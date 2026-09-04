@@ -1,11 +1,11 @@
 {
   "schema": "fs2.nebius.ai/secondary-successor-image-handoff/v1",
-  "state": "publication-partial-pending-not-activated",
+  "state": "published-build-only-not-activated",
   "image_source_commit": "a1b5b6b24b2dae54a1f7caeba9981a7aaa60cc8f",
   "semantic_h100_qualification": false,
   "route_activation_allowed": false,
-  "production_protocol_compatible": false,
-  "successor_requirement": "The OpenFold3 runner-baked r6 successor is publication-pending; all routes remain closed until immutable publication and exact-artifact H100 semantic qualification complete.",
+  "production_protocol_compatible": true,
+  "successor_requirement": "All repaired successors are immutably published and protocol compatible. This publication handoff does not authorize route activation; semantic qualification and activation remain governed by their exact model-owned receipts and profiles.",
   "images": [
     {
       "model_id": "esmfold2",

@@ -1383,8 +1383,8 @@ def test_production_companion_publishes_result_manifest_and_validation(model_id:
 
 def test_contract_documents_match_code_and_the_published_successor_handoff() -> None:
     handoff = json.loads(IMAGE_HANDOFF.read_text(encoding="utf-8"))
-    assert handoff["state"] == "publication-partial-pending-not-activated"
-    assert handoff["production_protocol_compatible"] is False
+    assert handoff["state"] == "published-build-only-not-activated"
+    assert handoff["production_protocol_compatible"] is True
     assert handoff["semantic_h100_qualification"] is False
     assert handoff["route_activation_allowed"] is False
     assert "alphafold3" not in {item["model_id"] for item in handoff["images"]}

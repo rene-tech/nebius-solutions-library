@@ -14,6 +14,13 @@ ADAPTER_DIRECTORIES = {
     for model_id in MODEL_IDS
 }
 SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+SEMANTICALLY_H100_QUALIFIED = {"openfold3-openbind"}
+IMAGE_GENERATIONS = {
+    "esmfold2": "h100-r5",
+    "esmfold2-fast": "h100-r5",
+    "protenix-v2": "h100-r5",
+    "openfold3-openbind": "h100-r6",
+}
 
 
 def load_json(path: Path) -> dict[str, object]:
@@ -54,14 +61,17 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
         self.assertIs(self.handoff["production_protocol_compatible"], True)
         self.assertIn("qualification", str(self.handoff["successor_requirement"]))
         self.assertRegex(str(self.handoff["image_source_commit"]), r"^[0-9a-f]{40}$")
-        for image in self.images.values():
-            self.assertTrue(str(image["tag"]).endswith("-h100-r5"))
+        for model_id, image in self.images.items():
+            self.assertTrue(
+                str(image["tag"]).endswith(f"-{IMAGE_GENERATIONS[model_id]}")
+            )
             self.assertRegex(str(image["digest"]), SHA256_PATTERN)
 
     def test_contracts_bind_the_exact_handoff_and_fail_closed(self) -> None:
         for model_id, contract in self.contracts.items():
             with self.subTest(model_id=model_id):
                 image = self.images[model_id]
+                semantic_qualified = model_id in SEMANTICALLY_H100_QUALIFIED
                 self.assertEqual(contract["model_id"], model_id)
                 self.assertEqual(
                     contract["runtime_image"],  # type: ignore[index]
@@ -71,7 +81,11 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
                         "digest": image["digest"],
                         "workspace_uid": 10001,
                         "workspace_gid": 10001,
-                        "state": "build-only-not-semantic-qualified",
+                        "state": (
+                            "semantic-h100-qualified"
+                            if semantic_qualified
+                            else "build-only-not-semantic-qualified"
+                        ),
                     },
                 )
                 self.assertEqual(
@@ -79,7 +93,7 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
                     {
                         "profile_state": "candidate-unqualified",
                         "route_exposed": False,
-                        "semantic_h100_qualified": False,
+                        "semantic_h100_qualified": semantic_qualified,
                     },
                 )
                 profile = self.profiles[model_id]
