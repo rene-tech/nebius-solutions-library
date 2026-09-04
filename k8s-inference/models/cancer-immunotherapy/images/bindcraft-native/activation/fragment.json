@@ -14,7 +14,7 @@
       "digest_evidence_path": "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-qualification-20260903.json"
     },
     "runtime_recipe": {
-      "source_revision": "3c90524baa8f6f1068e11bd192711d664ea1b05c",
+      "source_revision": "cd3cb554404847c829ba01c25b0db5c23ad5f535",
       "algorithm": "fs2-path-set-sha256-v1",
       "paths": [
         "catalog/runtime/contracts/scientific-artifact-localization.json",
