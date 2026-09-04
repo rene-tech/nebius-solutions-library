@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import PurePosixPath
 
 import pytest
-from conftest import CATALOG_ROOT
+from conftest import CATALOG_ROOT, SOLUTION_ROOT
 
 from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer
 from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog, ScientificProfileError
@@ -235,6 +236,54 @@ def test_alphafold3_keeps_public_and_academic_planes_separate() -> None:
         for item in inference_mounts
     )
     assert all(item["kind"] != "reference" and item["host_path"] is None for item in inference_mounts)
+
+    artifacts = {item["artifact_id"]: item for item in execution["runtime_artifacts"]}
+    parameters = artifacts["alphafold3-parameters"]
+    assert parameters["content_digest"] == (
+        "sha256:74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff"
+    )
+    assert parameters["localization_receipt_digest"] == (
+        "sha256:9c89f122ea3616efe70e07c2c27dddf236d347cab4002498c4dab9677d138bd4"
+    )
+
+    reference = artifacts["alphafold3-public-databases-v3.0"]
+    assert reference["aggregate_tree"] == {
+        "storage_kind": "reference-data-plane",
+        "tree_sha256": "d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
+        "manifest_sha256": "aa585259ce05393cd38db1693299ed9ec7f9c421aa4e1159f8d5aa0eb0ba9748",
+        "inventory_sha256": "38af3baa89a66cd24dec785279670a2e37597f98d206f555a04c138c6be71579",
+        "manifest_algorithm": "fs2-serve.nebius.ai/reference-data-manifest/v1",
+        "file_count": 195867,
+        "directory_count": 1,
+        "expanded_bytes": 672435030513,
+        "canonical_path": (
+            "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/"
+            "d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea"
+        ),
+        "marker_relative_path": ".fs2-manifest-sha256",
+    }
+    receipt_path = (
+        SOLUTION_ROOT
+        / "models/cancer-immunotherapy/images/structure-secondary/evidence/live-h100-20260904"
+        / "alphafold3-reference-terminal-receipt.json"
+    )
+    receipt_bytes = receipt_path.read_bytes()
+    canonical_receipt = json.dumps(
+        reference["verification_receipt"], sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode()
+    assert receipt_bytes == canonical_receipt
+    assert len(receipt_bytes) == 1207
+    assert reference["localization_receipt_digest"] == "sha256:" + hashlib.sha256(receipt_bytes).hexdigest()
+    assert reference["localization_receipt_digest"] == (
+        "sha256:b049e69846867caa75ef140e105a962fcf14e5c78ec8bfd97741cced32a8f6a6"
+    )
+
+    assert stages["inference"]["environment"] == {
+        "FS2_AF3_CACHE_ROOT": "/cache/alphafold3",
+        "FS2_AF3_JAX_CACHE_DIR": "/cache/alphafold3/jax",
+        "FS2_AF3_TRITON_CACHE_DIR": "/cache/alphafold3/triton",
+        "FS2_AF3_XDG_CACHE_DIR": "/cache/alphafold3/xdg",
+    }
 
 
 def test_openfold3_uses_the_exact_live_localizations_and_shared_cache() -> None:
