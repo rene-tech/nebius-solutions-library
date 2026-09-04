@@ -98,3 +98,15 @@ def test_profile_catalog_refuses_a_workload_only_mutation(tmp_path: Path) -> Non
 
     with pytest.raises(ScientificProfileError, match="workload recipe digest is stale"):
         ScientificProfileCatalog.load(catalog)
+
+
+def test_profile_catalog_refuses_a_runnable_profile_without_its_parameter_schema(tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog"
+    shutil.copytree(CATALOG_ROOT, catalog)
+    (catalog / "schema/bindcraft-parameters.schema.json").unlink()
+
+    with pytest.raises(
+        ScientificProfileError,
+        match="runnable scientific workload parameter schemas are absent.*bindcraft-v1-5-3-parameters",
+    ):
+        ScientificProfileCatalog.load(catalog)

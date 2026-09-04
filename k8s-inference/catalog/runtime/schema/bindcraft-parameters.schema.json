@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/bindcraft-v1-5-3-parameters/v1",
+  "title": "BindCraft v1.5.3 scientific run parameters",
+  "description": "Bounded public inputs for the controller-owned BindCraft execution plan. Runtime images, commands, model trees, and academic PyRosetta authorization are deployment-owned.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "target",
+    "binder_length",
+    "designs"
+  ],
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "chain",
+        "hotspot_residues"
+      ],
+      "properties": {
+        "chain": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9]$"
+        },
+        "hotspot_residues": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9999
+          }
+        }
+      }
+    },
+    "binder_length": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum",
+        "maximum"
+      ],
+      "properties": {
+        "minimum": {
+          "type": "integer",
+          "minimum": 40,
+          "maximum": 200
+        },
+        "maximum": {
+          "type": "integer",
+          "minimum": 40,
+          "maximum": 200
+        }
+      }
+    },
+    "designs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1024
+    },
+    "mpnn_lane": {
+      "enum": [
+        "vanilla",
+        "soluble"
+      ]
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    }
+  }
+}

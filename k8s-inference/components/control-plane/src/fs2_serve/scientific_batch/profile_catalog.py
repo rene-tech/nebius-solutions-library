@@ -335,6 +335,18 @@ class ScientificProfileCatalog:
             if profile.model_id in profiles:
                 raise ScientificProfileError("scientific workload profile model IDs must be unique")
             profiles[profile.model_id] = profile
+        missing_parameter_schemas = sorted(
+            {
+                profile.parameter_schema
+                for profile in profiles.values()
+                if profile.runnable and profile.parameter_schema not in validators
+            }
+        )
+        if missing_parameter_schemas:
+            raise ScientificProfileError(
+                "runnable scientific workload parameter schemas are absent from the canonical catalog: "
+                + ", ".join(missing_parameter_schemas)
+            )
         return cls(profiles=profiles, validators=validators)
 
     def list(self, *, runnable_only: bool = True) -> tuple[ScientificWorkloadProfile, ...]:

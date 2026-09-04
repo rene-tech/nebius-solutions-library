@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/mosaic-boltz2-proteinmpnn-parameters/v1",
+  "title": "Mosaic Boltz-2 and ProteinMPNN scientific run parameters",
+  "description": "Bounded public inputs for the pinned Mosaic H100 workflow; image, model artifacts, stage commands, collectors, and validators remain controller-owned.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "shard_count",
+    "base_seed",
+    "hotspots",
+    "binder_length",
+    "optimizer_steps"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/mosaic-boltz2-proteinmpnn-parameters/v1"
+    },
+    "shard_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64
+    },
+    "base_seed": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "hotspots": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1200
+      }
+    },
+    "binder_length": {
+      "type": "integer",
+      "minimum": 40,
+      "maximum": 200
+    },
+    "optimizer_steps": {
+      "type": "integer",
+      "minimum": 20,
+      "maximum": 500
+    }
+  }
+}

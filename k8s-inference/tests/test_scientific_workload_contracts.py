@@ -201,41 +201,37 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         academic = {item["model_id"] for item in receipts["receipts"] if item["access_profile"] == "academic"}
         self.assertEqual({"alphafold3", "bindcraft"}, academic)
 
-    # BoltzGen is dispatchable on real H100 and localization evidence. It is active, not
-    # qualified: its public-completion and scheduler-eligibility receipts can only exist
-    # after a real run through the public path, so they are null and the schema forbids
-    # calling it qualified while they are.
-    DISPATCHABLE = {"boltzgen"}
+    ACTIVE_PREQUALIFICATION_FLEET = {
+        "alphafold3",
+        "bindcraft",
+        "boltzgen",
+        "esmfold2",
+        "esmfold2-fast",
+        "mosaic",
+        "openfold3-openbind",
+        "proteina-complexa",
+        "protenix-v2",
+        "rfdiffusion",
+    }
 
-    def test_primary_profiles_are_schema_valid_candidate_only_and_unroutable(self) -> None:
+    def test_scientific_fleet_is_schema_valid_active_and_awaiting_public_completion(self) -> None:
         profiles = self.load(CONTRACT_ROOT / "scientific-workload-profiles.json")
         self.assert_valid("scientific-workload-profiles.schema.json", profiles)
         full_validator = self.validator("scientific-workload-profile.schema.json")
-        self.assertEqual(
-            ["boltzgen", "proteina-complexa"],
-            [profile["model_id"] for profile in profiles["profiles"]],
-        )
+        self.assertEqual(self.ACTIVE_PREQUALIFICATION_FLEET, {profile["model_id"] for profile in profiles["profiles"]})
         for profile in profiles["profiles"]:
             with self.subTest(model_id=profile["model_id"]):
                 self.assertEqual([], list(full_validator.iter_errors(profile)))
-                if profile["model_id"] in self.DISPATCHABLE:
-                    self.assertEqual("active", profile["state"])
-                    qualification = profile["qualification"]
-                    self.assertIsNone(qualification["public_completion_receipt_sha256"])
-                    self.assertIsNone(qualification["scheduler_eligibility_receipt_sha256"])
-                    self.assertIsNotNone(qualification["h100_semantic_receipt_sha256"])
-                    continue
-                self.assertEqual("candidate-unqualified", profile["state"])
-                self.assertFalse(profile["route_exposed"])
-                self.assertEqual(
-                    {
-                        "boltzgen": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
-                        "proteina-complexa": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
-                    }[profile["model_id"]],
-                    profile["execution_identity"]["runtime_image_digest"],
-                )
-                self.assertIsNone(profile["execution_identity"]["artifact_manifest_digest"])
-                self.assertIsNone(profile["execution_identity"]["execution_identity_sha256"])
+                self.assertEqual("active", profile["state"])
+                self.assertTrue(profile["route_exposed"])
+                self.assertTrue(profile["interface"]["mcp"]["discoverable"])
+                self.assertTrue(profile["interface"]["mcp"]["invocable"])
+                qualification = profile["qualification"]
+                self.assertIsNone(qualification["public_completion_receipt_sha256"])
+                self.assertIsNone(qualification["scheduler_eligibility_receipt_sha256"])
+                self.assertRegex(qualification["h100_semantic_receipt_sha256"], r"^[a-f0-9]{64}$")
+                self.assertRegex(profile["execution_identity"]["artifact_manifest_digest"], r"^[a-f0-9]{64}$")
+                self.assertRegex(profile["execution_identity"]["execution_identity_sha256"], r"^[a-f0-9]{64}$")
 
     def test_qualified_profile_requires_complete_runnable_identity(self) -> None:
         profile = copy.deepcopy(
@@ -298,6 +294,18 @@ class ScientificWorkloadContractTests(unittest.TestCase):
             (
                 "boltzgen-parameters.schema.json",
                 ROOT / "models/structure/batch-adapters/boltzgen/fixtures/positive-design.json",
+            ),
+            (
+                "bindcraft-parameters.schema.json",
+                ROOT / "models/cancer-immunotherapy/images/bindcraft-native/activation/public-request.json",
+            ),
+            (
+                "mosaic-parameters.schema.json",
+                ROOT / "models/cancer-immunotherapy/runtime-images/mosaic/activation/public-request.json",
+            ),
+            (
+                "rfdiffusion-parameters.schema.json",
+                ROOT / "models/cancer-immunotherapy/runtime-images/rfdiffusion/activation/public-request.json",
             ),
         )
         request_validator = self.validator("scientific-run-request.schema.json")
