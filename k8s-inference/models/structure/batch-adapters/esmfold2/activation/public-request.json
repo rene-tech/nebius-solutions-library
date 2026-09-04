@@ -1,0 +1,22 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "predict-structure",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "fixture.esmfold2.acceptance-manifest.v1",
+    "sha256": "2670f4d5dd888e92e24feaad4f0663f9ffdbf2b12aa8d0e4c4e25e24c3efe260",
+    "size_bytes": 414,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
+  },
+  "parameters": {
+    "sequence": "MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFP",
+    "mode": "single-sequence",
+    "seed": 101
+  },
+  "client_context": {
+    "batch_id": "acceptance.esmfold2.h100.v1",
+    "correlation_id": "secondary-fleet.h100.acceptance",
+    "display_name": "ESMFold2 single-sequence acceptance canary"
+  }
+}

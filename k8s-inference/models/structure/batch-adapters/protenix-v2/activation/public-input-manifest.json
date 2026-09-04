@@ -1,0 +1,17 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+  "manifest_id": "acceptance.protenix-v2.single-chain.v1",
+  "entries": [
+    {
+      "name": "protenix-input",
+      "semantic_type": "protenix-input-json/v1",
+      "artifact": {
+        "artifact_id": "fixture.protenix-v2.h100-semantic-input.v1",
+        "sha256": "616cbd11f2c07e57c4e0c6ac121bfc891e593ec072946a577f921993c2e9f50e",
+        "size_bytes": 215,
+        "media_type": "application/json",
+        "compression": "none"
+      }
+    }
+  ]
+}

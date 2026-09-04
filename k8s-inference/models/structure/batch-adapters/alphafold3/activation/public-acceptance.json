@@ -1,0 +1,41 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-public-acceptance-input/v1",
+  "model_id": "alphafold3",
+  "profile_projection": {
+    "profile": {
+      "execution_identity": {
+        "model_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69"
+      }
+    }
+  },
+  "execution_projection": {
+    "variant_id": "upstream-v3-0-4"
+  },
+  "public_fixtures": {
+    "request": "models/structure/batch-adapters/alphafold3/activation/public-request.json",
+    "supporting_inputs": [
+      {
+        "role": "request-input-manifest",
+        "path": "models/structure/batch-adapters/alphafold3/activation/public-input-manifest.json",
+        "encoding": "canonical-json-newline"
+      },
+      {
+        "role": "manifest-artifact",
+        "name": "fold-input",
+        "path": "models/cancer-immunotherapy/fast-start-campaign/af3-fold-input.json",
+        "encoding": "raw"
+      }
+    ]
+  },
+  "semantic_input": {
+    "source_contract": "models/cancer-immunotherapy/images/structure-secondary/qualification/render_af3_semantic_job.py#FOLD_INPUT",
+    "payload_path": "models/cancer-immunotherapy/fast-start-campaign/af3-fold-input.json",
+    "sha256": "f0af83bd3c5f30213c9deba15d4657fd53a7f27e46de2bd95794739774795077",
+    "size_bytes": 328,
+    "h100_evidence": "models/cancer-immunotherapy/images/structure-secondary/evidence/live-h100-20260904/alphafold3-h100-semantic-qualification.json"
+  },
+  "activation_gate": {
+    "route_exposed": false,
+    "public_platform_run_required": true
+  }
+}

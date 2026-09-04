@@ -1,0 +1,23 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "predict-complex-structure",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "fixture.openfold3-openbind.acceptance-manifest.v1",
+    "sha256": "0f4fc572b0ebc703b8105923551ff875597acd62fd5d391151c3e60df48eb811",
+    "size_bytes": 433,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
+  },
+  "parameters": {
+    "model_seeds": [
+      101
+    ],
+    "msa_mode": "none"
+  },
+  "client_context": {
+    "batch_id": "acceptance.openfold3-openbind.h100.v1",
+    "correlation_id": "secondary-fleet.h100.acceptance",
+    "display_name": "OpenFold3 OpenBind single-chain acceptance canary"
+  }
+}
