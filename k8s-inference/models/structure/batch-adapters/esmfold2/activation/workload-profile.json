@@ -17,7 +17,7 @@
     },
     "execution_identity": {
       "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
-      "runtime_image_digest": "sha256:e8fb269ff17e752ed8dd8f6c4689eaa55c0efc7adaffc156ccd9357bd075463d",
+      "runtime_image_digest": "sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
       "runtime_recipe_sha256": null,
       "workload_recipe_sha256": null,
       "artifact_manifest_digest": null,
@@ -56,8 +56,8 @@
         "amd64"
       ],
       "compatible_pool_ids": [
-        "h100-1x",
-        "h100-reserved-8x"
+        "h100-reserved-8x",
+        "h100-1x"
       ],
       "required_node_labels": {
         "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
@@ -134,7 +134,7 @@
       "commercial_use": "allowed",
       "non_clinical": true,
       "limitations": [
-        "Image sha256:e8fb269f...5463d is a build-only -h100-r4 candidate; it has no exact-artifact semantic H100 evidence.",
+        "Image sha256:870b9f64...62a4a is the published, protocol-compatible -h100-r5 successor; it remains build-only and has no exact-artifact semantic H100 evidence.",
         "The trunk, ESMC-6B and CCD artifacts are catalog manifests without a localization generation or node admission receipt.",
         "precomputed-msa consumes MSA rows carried in the input manifest only; no online MSA server is ever contacted."
       ]

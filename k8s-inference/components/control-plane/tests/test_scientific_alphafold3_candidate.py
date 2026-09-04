@@ -28,6 +28,11 @@ from fs2_serve.scientific_batch.scheduling import SchedulingContractError, Sched
 SOLUTION_ROOT = Path(__file__).resolve().parents[3]
 ADAPTER_ROOT = SOLUTION_ROOT / "models/structure/batch-adapters/alphafold3"
 RUNTIME_FIXTURES = SOLUTION_ROOT / "models/cancer-immunotherapy/images/alphafold3/fixtures"
+RUNTIME_HANDOFF = (
+    SOLUTION_ROOT
+    / "models/cancer-immunotherapy/images/alphafold3/contracts/af3-runtime-handoff.json"
+)
+R7_IMAGE_DIGEST = "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7"
 
 install_production_adapters()
 
@@ -125,7 +130,7 @@ def academic_scheduling() -> SchedulingContractResolver:
                     "service_classes": [],
                 },
             },
-            "model_eligible_pool_ids": {af3.MODEL_ID: ["h100-1x", "h100-reserved-8x"]},
+            "model_eligible_pool_ids": {af3.MODEL_ID: ["h100-reserved-8x", "h100-1x"]},
             "cpu_classes_schema": "fs2-serve.nebius.ai/cpu-stage-classes/v1",
             "cpu_classes": {
                 "reference-data": {
@@ -164,12 +169,23 @@ def academic_scheduling() -> SchedulingContractResolver:
 def test_candidate_keeps_academic_planes_separate_and_is_not_route_exposed() -> None:
     candidate = profile()
     contract = load(ADAPTER_ROOT / "contract.json")
+    handoff = load(RUNTIME_HANDOFF)
     assert contract["runtime"]["workspace_uid"] == 1001
     assert contract["runtime"]["workspace_gid"] == 1001
-    assert contract["runtime"]["production_protocol_compatible"] is False
+    assert contract["runtime"]["production_protocol_compatible"] is True
+    assert handoff["image"]["tag"] == "3.0.4-85c4d205-r7"
+    assert handoff["image"]["digest"] == R7_IMAGE_DIGEST
+    assert contract["runtime"]["image_digest"] == handoff["image"]["digest"]
+    assert af3.RUNTIME_IMAGE_DIGEST == handoff["image"]["digest"]
+    assert candidate["execution_identity"]["runtime_image_digest"] == handoff["image"]["digest"]
+    assert "h100" in contract["runtime"]["qualification_required"].lower()
     assert contract["route_gate"]["route_exposed"] is False
     assert candidate["state"] == "candidate-unqualified"
     assert candidate["route_exposed"] is False
+    assert candidate["resources"]["compatible_pool_ids"] == ["h100-reserved-8x", "h100-1x"]
+    assert candidate["resources"]["required_node_labels"] == {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+    }
     assert candidate["access"] == {
         "profile": "academic",
         "state": "verified",

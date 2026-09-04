@@ -60,7 +60,7 @@
       "id": "esmfold2",
       "dockerfile": "Dockerfile.esmfold2",
       "repository": "cancer-immunotherapy/esmfold2",
-      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r4",
+      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r5",
       "source": {
         "repository": "https://github.com/Biohub/esm.git",
         "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
@@ -118,9 +118,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "evidence-collected-pending-independent-acceptance",
+        "qualification_state": "published-build-only-not-semantic-qualified",
         "level_states": {
-          "L1": "candidate-evidence-collected-pending-independent-acceptance",
+          "L1": "candidate-published-build-only-not-semantic-qualified",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -139,7 +139,7 @@
       "id": "esmfold2-fast",
       "dockerfile": "Dockerfile.esmfold2",
       "repository": "cancer-immunotherapy/esmfold2-fast",
-      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r4",
+      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r5",
       "source": {
         "repository": "https://github.com/Biohub/esm.git",
         "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
@@ -197,9 +197,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "evidence-collected-pending-independent-acceptance",
+        "qualification_state": "published-build-only-not-semantic-qualified",
         "level_states": {
-          "L1": "candidate-evidence-collected-pending-independent-acceptance",
+          "L1": "candidate-published-build-only-not-semantic-qualified",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -218,7 +218,7 @@
       "id": "protenix-v2",
       "dockerfile": "Dockerfile.protenix-v2",
       "repository": "cancer-immunotherapy/protenix-v2",
-      "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r4",
+      "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r5",
       "source": {
         "repository": "https://github.com/bytedance/Protenix.git",
         "revision": "2475421477ab414b571149ad4a875c390ff8a35d",
@@ -288,9 +288,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "evidence-collected-pending-independent-acceptance",
+        "qualification_state": "published-build-only-not-semantic-qualified",
         "level_states": {
-          "L1": "candidate-evidence-collected-pending-independent-acceptance",
+          "L1": "candidate-published-build-only-not-semantic-qualified",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -309,7 +309,7 @@
       "id": "openfold3",
       "dockerfile": "Dockerfile.openfold3",
       "repository": "cancer-immunotherapy/openfold3-upstream",
-      "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r4",
+      "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r5",
       "source": {
         "repository": "https://github.com/aqlaboratory/openfold-3.git",
         "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
@@ -365,9 +365,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "evidence-collected-pending-independent-acceptance",
+        "qualification_state": "published-build-only-not-semantic-qualified",
         "level_states": {
-          "L1": "candidate-evidence-collected-pending-independent-acceptance",
+          "L1": "candidate-published-build-only-not-semantic-qualified",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
