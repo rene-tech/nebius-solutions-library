@@ -6,14 +6,16 @@
     "state": "passed",
     "meaning": "The immutable r18 image completed its real outer entrypoint on H100, admitted all four external trees by full content, imported the authorized academic PyRosetta tree, produced two designs accepted by the checked-in production filters, and completed content-addressed aggregation.",
     "route_ready": false,
-    "route_ready_reason": "This was the explicitly isolated direct-live proof. The three public generations are qualified, but the tenant-private PyRosetta generation remains rendered rather than promoted, so the runtime localization generation is intentionally empty and no catalog route-readiness claim is made.",
+    "route_ready_reason": "This is immutable image semantic evidence, not a catalog/control-plane activation receipt. PyRosetta is an external-installed-tree with no generation or promotion dependency; route activation remains a separate integrated catalog, scheduling and controller decision.",
     "adapter_aggregation_on_main": "f00dfe86abd4605976433d141fc650014e17ca8a"
   },
   "execution_source": {
     "branch": "agent/fs2-bindcraft-h100-codex-successor-r20260903",
     "base": "origin/main@3f8f4b4e",
     "renderer_content_sha256": "c8b6b0552f25057303b040b6cb37d059bdb6e34ab4fe28b3aacd5ecd072e966d",
-    "direct_live_canonical_pyrosetta": true
+    "direct_live_canonical_pyrosetta": true,
+    "historical_renderer_note": "The 2026-09-03 command used the then-current direct-live switch. The 2026-09-04 successor removed that switch and the synthetic private-generation assumption; the mounted bytes and full-content admission that produced this semantic result are unchanged.",
+    "external_tree_contract_review": "evidence/private-external-tree-probe-20260904.json"
   },
   "environment": {
     "tenant": "authorized tenant; exact ID retained in the private Task Deck deployment record",

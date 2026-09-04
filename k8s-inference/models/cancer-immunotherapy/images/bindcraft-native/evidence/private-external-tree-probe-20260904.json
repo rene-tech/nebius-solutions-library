@@ -1,0 +1,91 @@
+{
+  "schema": "fs2.nebius.ai/bindcraft-private-external-tree-qualification/v1",
+  "observed_at": "2026-09-04T10:35:43Z",
+  "state": "passed",
+  "contract_correction": {
+    "artifact_id": "bindcraft-pyrosetta-installed-tree",
+    "transform": "external-installed-tree",
+    "source_sub_path": "pyrosetta-bindcraft/site-packages",
+    "mounted_probe_path": "/runtime/pyrosetta-bindcraft/site-packages",
+    "visibility": "tenant-private",
+    "generation": null,
+    "generation_marker_required": false,
+    "public_generation_mirroring": false,
+    "contract_path": "catalog/runtime/contracts/scientific-artifact-localization.json",
+    "academic_runtime_contract_path": "academic-assets/contracts/academic-assets.json"
+  },
+  "live_probe": {
+    "job": "fs2-bcr18-exttree2-20260904-private-tree-probe",
+    "namespace": "fs2-academic-poc",
+    "job_uid": "0662ac8e-4b0d-4755-8062-34c278df7e0f",
+    "pod_uid": "2f21a434-4b3e-4e97-8bbf-6c4e4f478cb1",
+    "node": "exact H100 node ID retained in the private Task Deck deployment record",
+    "node_pool": "h100-reserved-8x",
+    "node_accelerator_class": "nvidia-h100-sxm5-80gb",
+    "node_gpu_capacity": 8,
+    "gpu_requested": 0,
+    "compute_choice": "always-hot capacity-block H100 node; CPU-only identity probe",
+    "claim": "academic-assets-runtime-rwx",
+    "claim_access_mode": "ReadWriteMany",
+    "claim_mount_read_only": true,
+    "consumer_security_context": {
+      "run_as_user": 12345,
+      "run_as_group": 12345,
+      "supplemental_groups": [
+        1000,
+        65532
+      ],
+      "fs_group": null,
+      "proof": "the arbitrary primary identity differs from both asset gid 65532 and the historical damaged gid 10001, so successful traversal proves access through the accepted supplemental-group contract and cannot mask that prior fault"
+    },
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+    "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+    "requests": {
+      "cpu": "1",
+      "memory": "1Gi"
+    },
+    "limits": {
+      "cpu": "4",
+      "memory": "4Gi"
+    },
+    "job_started_at": "2026-09-04T10:35:21Z",
+    "job_completed_at": "2026-09-04T10:35:43Z",
+    "job_elapsed_seconds": 22,
+    "container_started_at": "2026-09-04T10:35:22Z",
+    "container_finished_at": "2026-09-04T10:35:40Z",
+    "container_elapsed_seconds": 18,
+    "exit_code": 0
+  },
+  "tree_result": {
+    "readable": true,
+    "tree_manifest_algorithm": "fs2-tree-manifest/v1",
+    "tree_manifest_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+    "file_count": 8697,
+    "directory_count": 779,
+    "symlink_count": 0,
+    "total_bytes": 3287122494,
+    "verification": "r18 read and SHA-256 hashed every regular file through the academic PVC mount; it also checked root readability and traversability"
+  },
+  "execution_contract": {
+    "adapter_commit_on_main": "f00dfe86abd4605976433d141fc650014e17ca8a",
+    "adapter_consumption": "the qualification renderer imports the integrated BindCraft adapter for its public-to-native request translation, exact argv, environment, deterministic seed and workspace paths",
+    "scheduling_commit_on_main": "88470299",
+    "scheduling_ownership": "the direct task-owned qualifier emits no LocalQueue, Kueue suspension or Terraform policy; production scheduling consumes the generated immutable scheduling contract through the shared controller",
+    "semantic_gpu_receipt": "live-h100-qualification-20260903.json"
+  },
+  "historical_receipt_assessment": {
+    "semantic_result": "retained",
+    "reason": "the successful r18 H100 run mounted the same canonical academic source tree and independently admitted its full content before importing PyRosetta",
+    "superseded_assumption": "a private generation or generation marker is required before qualification or route activation",
+    "route_claim": false
+  },
+  "cleanup": {
+    "job_deleted": true,
+    "config_map_deleted": true,
+    "workspace_created": false,
+    "persistent_storage_created": false,
+    "task_resources_remaining": 0,
+    "sibling_qwen_pod_after_cleanup": "Running and Ready",
+    "b300_touched": false
+  }
+}

@@ -18,7 +18,7 @@ qualification evidence, and the tests and docs for exactly that.
 | Base | `pytorch/pytorch@sha256:0279f7aa…` (PyTorch 2.3.0, CUDA 12.1, Python 3.10.14) |
 | Final tag | `…/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r18` |
 | Attestations | SPDX SBOM and SLSA provenance, attesting a revision reachable from a pushed branch |
-| Qualification | **H100 semantic-qualified** by real outer-entrypoint run `bcr18-20260903f`; catalog route remains gated on private generation promotion |
+| Qualification | **H100 semantic-qualified** by real outer-entrypoint run `bcr18-20260903f`; the external-installed-tree contract was re-probed live on 2026-09-04; catalog route activation is a separate controller/catalog decision |
 
 ## Academic PoC authorization
 
@@ -184,22 +184,31 @@ this image only ever sets `FS2_RUNTIME_NAME=bindcraft-academic`. A test pins the
 SHA-256 of all five in-image files against the qualification evidence so the
 match cannot be lost by accident.
 
-## Direct live H100 qualification before private promotion
+## External-installed-tree and adapter-backed qualification
 
 The public AF2 and MPNN trees must have their immutable generation directories
 and terminal in-generation markers before a direct acceptance starts. The
-private PyRosetta installed tree is different: r18 pins its recursive identity
-inside the image, reads every byte before import, and records the mounted root's
-ownership. A missing localization marker for that already repaired canonical
-claim tree therefore does not block the direct semantic proof.
+private PyRosetta tree is not a generation. Its canonical localization contract
+declares `transform=external-installed-tree`, source sub-path
+`pyrosetta-bindcraft/site-packages`, `fs2-tree-manifest/v1` identity
+`a93d68e…aa8d`, 8,697 files, 779 directories, zero symlinks and 3,287,122,494
+bytes. It remains on the tenant-private academic PVC and is never mirrored into
+the public generations layout.
 
-Pass `--direct-live-canonical-pyrosetta` to the renderer to mount only that
-private role from `pyrosetta-bindcraft/site-packages`; the three public roles
-remain on the exact `/generations/.../sha256/...` paths from the accepted
-handoff. The private role's generation is deliberately empty in the runtime
-marker so this qualification cannot be mistaken for catalog localization or
-route readiness. Normal rendering stays fail-closed until every handoff
-generation is published.
+The renderer therefore uses `public_generations_published`, never the obsolete
+all-artifacts generation flag. Its runtime-localization document contains only
+the three public generations. PyRosetta is mounted read-only at the r18 consumer
+path and the H100 design Pod first mounts the owning PVC root at `/runtime`,
+fully hashes `/runtime/pyrosetta-bindcraft/site-packages`, checks the exact
+counts and readability, and only then starts the outer entrypoint. No private
+generation or marker is accepted or synthesized.
+
+Request translation, native documents, deterministic seed, argv, environment
+and workspace paths come directly from the integrated executable BindCraft
+adapter in `components/control-plane`; the qualifier owns no second translator.
+It also accepts no LocalQueue override and writes no Kueue policy. Production
+queue resolution consumes Terraform's immutable generated scheduling contract
+through the shared controller.
 
 ## Live H100 semantic acceptance — passed
 
@@ -231,10 +240,12 @@ The reproducible invocation shape is:
 R=qualification/render_semantic_job.py
 COMMON="--handoff <four-tree-handoff.json> --image <r18 digest reference>
         --run-id <run> --job-name <job> --workspace-claim <durable claim>"
-python3 $R $COMMON --direct-live-canonical-pyrosetta --stage design \
+uv run --project ../../../../components/control-plane python "$R" $COMMON \
+  --stage private-tree-probe | kubectl apply -f -  # CPU-only H100-node contract probe
+uv run --project ../../../../components/control-plane python "$R" $COMMON --stage design \
   | kubectl apply -f -   # GPU
 # wait for the design Job to succeed, then:
-python3 $R $COMMON --direct-live-canonical-pyrosetta --stage aggregate \
+uv run --project ../../../../components/control-plane python "$R" $COMMON --stage aggregate \
   | kubectl apply -f -   # CPU only
 ```
 
@@ -246,12 +257,13 @@ every handed-off artifact against the digest the design stage published before
 using it. Both stages enter the image through its outer entrypoint and carry the
 pinned `default_4stage_multimer.json` and `default_filters.json` digests.
 
-Each Pod has one small non-GPU init container that copies the four ConfigMap
-control documents into an `emptyDir`. Kubernetes projects ConfigMap keys as
+Each execution Pod copies the four ConfigMap control documents into its exact
+adapter workspace on the task-owned PVC. Kubernetes projects ConfigMap keys as
 symlinks, while r18 intentionally refuses symlinked localization and tree
 admission documents; the copy makes them regular read-only files without
-relaxing the image gate. The design itself remains the GPU main container and
-the aggregate remains a separate CPU-only Job.
+relaxing the image gate. The design adds the full-content academic-tree init
+probe described above. The design itself remains the GPU main container and the
+aggregate remains a separate CPU-only Job.
 
 The direct runner also prepares only its run directory on the task-owned empty
 workspace claim with a short root init. The mounted-filesystem driver delivers
@@ -278,10 +290,11 @@ recursively rewrite either shared plane.
 
 All three public roles used their qualified `/generations/.../sha256/...`
 paths and in-generation terminal markers. The private PyRosetta role used the
-canonical repaired claim path under the explicit direct-live flag because its
-content identity is pinned in the image and re-hashed before import. Its private
-generation has not yet been promoted. The runtime marker therefore carries an
-empty generation for that role, and this successful semantic proof is
-deliberately **not** a catalog localization or route-readiness claim.
+canonical repaired claim path because its accepted contract is an external
+installed tree. A 2026-09-04 live r18 probe independently reproduced its exact
+identity and shape through `/runtime`; see
+`evidence/private-external-tree-probe-20260904.json`. The historical semantic
+result remains valid, but this image qualification by itself is deliberately
+**not** a catalog route-activation claim.
 
 Full detail is in `evidence/native-final-image-qualification.json`.

@@ -441,10 +441,10 @@ class ArtifactGateTests(unittest.TestCase):
 
 
 class AcceptedLocalizationHandoffTests(unittest.TestCase):
-    """Hold this runtime to the artifact plane's accepted handoff, not to a guess.
+    """Hold this runtime to the accepted public and external-tree contracts.
 
-    While the handoff was unavailable this package invented one. It is now on
-    main, so these read the real document and fail if the runtime drifts from it.
+    The handoff owns the public generation locations. The localization and
+    academic-assets contracts own the private external installed tree.
     """
 
     HANDOFF = (
@@ -480,7 +480,17 @@ class AcceptedLocalizationHandoffTests(unittest.TestCase):
             identity["inventory_sha256"], bindcraft_runner.PYROSETTA_TREE_MANIFEST_SHA256
         )
         self.assertEqual(licensed["visibility"], "tenant-private")
-        self.assertEqual(licensed["volume"]["kind"], "persistent-volume-claim")
+        contract = renderer._external_pyrosetta_contract(renderer.LOCALIZATION_CONTRACT)  # noqa: SLF001
+        self.assertEqual(contract["transform"], "external-installed-tree")
+        self.assertEqual(contract["source_sub_path"], "pyrosetta-bindcraft/site-packages")
+        self.assertEqual(contract["tree"]["entry_count"], 8697)
+        self.assertEqual(contract["tree"]["directory_count"], 779)
+        self.assertEqual(contract["tree"]["total_bytes"], 3_287_122_494)
+        source = renderer._external_pyrosetta_source(  # noqa: SLF001
+            renderer.ACADEMIC_ASSETS_CONTRACT, contract
+        )
+        self.assertEqual(source["kind"], "persistent-volume-claim")
+        self.assertEqual(source["sub_path"], "pyrosetta-bindcraft/site-packages")
 
     def test_the_three_public_trees_are_host_plane_flat_inventories(self) -> None:
         artifacts = self.bindcraft_artifacts()
@@ -498,9 +508,16 @@ class AcceptedLocalizationHandoffTests(unittest.TestCase):
                 artifact["volume"]["node_selector"], {"storage.fs2.nebius/reference-data": "true"}, name
             )
 
-    def test_every_accepted_generation_carries_the_marker_this_runtime_excludes(self) -> None:
+    def test_only_public_generations_carry_markers(self) -> None:
         # This is why the exclusion is mandatory rather than an optimisation.
-        for name, artifact in self.bindcraft_artifacts().items():
+        artifacts = self.bindcraft_artifacts()
+        private = artifacts["bindcraft-pyrosetta-installed-tree"]
+        self.assertTrue(private["externally_installed"])
+        contract = renderer._external_pyrosetta_contract(renderer.LOCALIZATION_CONTRACT)  # noqa: SLF001
+        self.assertEqual(contract["transform"], "external-installed-tree")
+        for name, artifact in artifacts.items():
+            if name == "bindcraft-pyrosetta-installed-tree":
+                continue
             marker = artifact["marker"]
             self.assertTrue(marker["in_generation"], name)
             self.assertEqual(marker["relative_path"], tree_identity.RUNTIME_MARKER_NAME, name)
@@ -1111,9 +1128,6 @@ class SemanticJobRenderTests(unittest.TestCase):
 
     def handoff(self, root: Path, **overrides: object) -> Path:
         value = json.loads(AcceptedLocalizationHandoffTests.HANDOFF.read_text(encoding="utf-8"))
-        # The real document reports its generations unpublished, which the
-        # renderer refuses by design; a render test has to say they exist.
-        value["evidence"]["generations_published"] = True
         value.update(overrides)
         path = root / "handoff.json"
         path.write_text(json.dumps(value), encoding="utf-8")
@@ -1173,21 +1187,27 @@ class SemanticJobRenderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as name:
             path = self.handoff(Path(name))
             config_map, _ = self.render(path, stage="design")
+            self.assertEqual(
+                config_map["metadata"]["labels"]["fs2.nebius.ai/task"],
+                "fs2-bindcraft-h100-codex-successor-r20260903",
+            )
             for stage in self.stages(path):
                 command = stage["command"]
                 self.assertIn("--runtime-localization-marker", command)
-                self.assertEqual(
-                    command[command.index("--runtime-localization-marker") + 1], renderer.MARKER_PATH
-                )
+                marker_path = command[command.index("--runtime-localization-marker") + 1]
+                self.assertTrue(marker_path.startswith(renderer.ADAPTER_WORKSPACE_ROOT + "/work/"))
                 environment = {item["name"]: item["value"] for item in stage["env"]}
-                self.assertEqual(
-                    environment[bindcraft_runner.RUNTIME_LOCALIZATION_MARKER_ENV], renderer.MARKER_PATH
-                )
+                self.assertEqual(environment[bindcraft_runner.RUNTIME_LOCALIZATION_MARKER_ENV], marker_path)
             marker = json.loads(config_map["data"]["runtime-localization.json"])
             admission = json.loads(config_map["data"]["external-trees.json"])
-            # A generation is per artifact in the accepted contract and equals
-            # that tree's own identity, so no run-level token is invented.
-            identities = {tree["role"]: tree["sha256"] for tree in admission["trees"]}
+            # Only published public generations belong in this marker. The
+            # externally installed PyRosetta tree has a content identity but
+            # deliberately has no generation or in-generation marker.
+            identities = {
+                tree["role"]: tree["sha256"]
+                for tree in admission["trees"]
+                if tree["role"] != bindcraft_runner.PYROSETTA_ROLE
+            }
             self.assertEqual(
                 {role: entry["generation"] for role, entry in marker["trees"].items()}, identities
             )
@@ -1205,14 +1225,13 @@ class SemanticJobRenderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as name:
             path = self.handoff(Path(name))
             for stage in self.stages(path):
-                self.assertNotIn(
-                    "FS2_BINDCRAFT_MPNN_WEIGHTS", {item["name"] for item in stage["env"]}
-                )
-            vanilla = [self.render(path, stage=s, mpnn_weights="original")[1]
-                       for s in ("design", "aggregate")]
-            for stage in [job["spec"]["template"]["spec"]["containers"][0] for job in vanilla]:
                 environment = {item["name"]: item["value"] for item in stage["env"]}
                 self.assertEqual(environment["FS2_BINDCRAFT_MPNN_WEIGHTS"], "original")
+            soluble = [self.render(path, stage=s, mpnn_lane="soluble")[1]
+                        for s in ("design", "aggregate")]
+            for stage in [job["spec"]["template"]["spec"]["containers"][0] for job in soluble]:
+                environment = {item["name"]: item["value"] for item in stage["env"]}
+                self.assertEqual(environment["FS2_BINDCRAFT_MPNN_WEIGHTS"], "soluble")
 
     def test_public_trees_come_from_the_reference_plane_and_only_pyrosetta_from_the_claim(self) -> None:
         # The four trees do not share a backing store. An earlier renderer put
@@ -1236,10 +1255,7 @@ class SemanticJobRenderTests(unittest.TestCase):
             self.assertEqual(
                 volumes[licensed["name"]]["persistentVolumeClaim"]["claimName"], self.ACADEMIC_CLAIM
             )
-            self.assertTrue(
-                licensed["subPath"].startswith("scientific-localization/private/generations/"),
-                licensed["subPath"],
-            )
+            self.assertEqual(licensed["subPath"], renderer.CANONICAL_PYROSETTA_SUB_PATH)
 
             public_paths = set(renderer.MOUNT_PATH_BY_ROLE.values()) - {licensed["mountPath"]}
             for mount_path in public_paths:
@@ -1263,41 +1279,58 @@ class SemanticJobRenderTests(unittest.TestCase):
             self.assertTrue(soluble.endswith("/colabdesign/mpnn/weights_soluble"))
             self.assertNotEqual(mounted[vanilla]["subPath"], mounted[soluble]["subPath"])
 
-    def test_direct_live_mode_uses_only_the_content_pinned_canonical_private_tree(self) -> None:
-        """A private promotion marker must not block the direct semantic proof.
+    def test_external_installed_tree_uses_the_canonical_claim_without_a_marker(self) -> None:
+        """The accepted private contract has no generation to wait for.
 
         The public generation paths remain immutable.  Only the licensed tree,
         whose recursive identity is pinned in the image and verified before
-        import, moves to the already repaired canonical claim path.  The empty
-        generation in the marker prevents this direct run from masquerading as
-        catalog localization readiness.
+        import, comes from the already repaired canonical claim path.
         """
 
-        with tempfile.TemporaryDirectory() as name:
-            original = AcceptedLocalizationHandoffTests.HANDOFF
-            with self.assertRaisesRegex(renderer.RenderError, "generations as not published"):
-                self.render(original, stage="design")
-            config_map, job = self.render(
-                original, stage="design", direct_live_canonical_pyrosetta=True,
-            )
-            spec = job["spec"]["template"]["spec"]
-            container = spec["containers"][0]
-            mounted = {
-                mount["mountPath"]: mount
-                for mount in container["volumeMounts"]
-                if mount["name"].startswith("trees-")
-            }
-            private = mounted[renderer.MOUNT_PATH_BY_ROLE[bindcraft_runner.PYROSETTA_ROLE]]
-            self.assertEqual(private["subPath"], renderer.CANONICAL_PYROSETTA_SUB_PATH)
-            self.assertTrue(private["readOnly"])
-            for role in bindcraft_runner.FLAT_TREE_ROLES:
-                public = mounted[renderer.MOUNT_PATH_BY_ROLE[role]]
-                self.assertIn("/sha256/", public["subPath"])
-                self.assertTrue(public["readOnly"])
-            marker = json.loads(config_map["data"]["runtime-localization.json"])
-            self.assertEqual(marker["trees"][bindcraft_runner.PYROSETTA_ROLE]["generation"], "")
-            for role in bindcraft_runner.FLAT_TREE_ROLES:
-                self.assertRegex(marker["trees"][role]["generation"], r"^[0-9a-f]{64}$")
+        original = AcceptedLocalizationHandoffTests.HANDOFF
+        config_map, job = self.render(original, stage="design")
+        spec = job["spec"]["template"]["spec"]
+        container = spec["containers"][0]
+        mounted = {
+            mount["mountPath"]: mount
+            for mount in container["volumeMounts"]
+            if mount["name"].startswith("trees-")
+        }
+        private = mounted[renderer.MOUNT_PATH_BY_ROLE[bindcraft_runner.PYROSETTA_ROLE]]
+        self.assertEqual(private["subPath"], renderer.CANONICAL_PYROSETTA_SUB_PATH)
+        self.assertTrue(private["readOnly"])
+        for role in bindcraft_runner.FLAT_TREE_ROLES:
+            public = mounted[renderer.MOUNT_PATH_BY_ROLE[role]]
+            self.assertIn("/sha256/", public["subPath"])
+            self.assertTrue(public["readOnly"])
+        marker = json.loads(config_map["data"]["runtime-localization.json"])
+        self.assertNotIn(bindcraft_runner.PYROSETTA_ROLE, marker["trees"])
+        for role in bindcraft_runner.FLAT_TREE_ROLES:
+            self.assertRegex(marker["trees"][role]["generation"], r"^[0-9a-f]{64}$")
+        probe = next(
+            container for container in spec["initContainers"]
+            if container["name"] == "verify-private-pyrosetta"
+        )
+        self.assertEqual(
+            probe["volumeMounts"],
+            [{"name": private["name"], "mountPath": "/runtime", "readOnly": True}],
+        )
+        self.assertIn(renderer.PYROSETTA_PROBE_ROOT, probe["command"][2])
+        self.assertIn("3287122494", probe["command"][2])
+        self.assertIn("8697", probe["command"][2])
+        self.assertNotIn("generation", probe["command"][2])
+
+        _, probe_job = self.render(original, stage="private-tree-probe")
+        probe_spec = probe_job["spec"]["template"]["spec"]
+        self.assertEqual([container["name"] for container in probe_spec["containers"]], [
+            "verify-private-pyrosetta"
+        ])
+        self.assertEqual(len(probe_spec["volumes"]), 1)
+        self.assertNotIn("nvidia.com/gpu", probe_spec["containers"][0]["resources"]["limits"])
+        self.assertEqual(
+            probe_spec["nodeSelector"]["accelerator.fs2.nebius/class"],
+            "nvidia-h100-sxm5-80gb",
+        )
 
     def test_both_stages_are_pinned_to_a_node_carrying_the_reference_plane(self) -> None:
         # The public generations are hostPath, so a Pod that lands elsewhere
@@ -1350,6 +1383,9 @@ class SemanticJobRenderTests(unittest.TestCase):
             context = job["spec"]["template"]["spec"]["securityContext"]
             self.assertIn(65532, context["supplementalGroups"])
             self.assertNotIn("fsGroup", context)
+            self.assertEqual(context["runAsUser"], 12345)
+            self.assertEqual(context["runAsGroup"], 12345)
+            self.assertNotEqual(context["runAsGroup"], 10001)
             self.assertEqual(renderer.PUBLIC_PLANE_GID, 1000)
 
     def test_supplemental_groups_must_be_positive_integers(self) -> None:
@@ -1367,15 +1403,19 @@ class SemanticJobRenderTests(unittest.TestCase):
         path.write_text(json.dumps(value), encoding="utf-8")
         return path
 
-    def test_the_licensed_tree_may_not_be_served_from_a_public_volume(self) -> None:
+    def test_the_licensed_tree_requires_the_private_academic_runtime_cache(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
-            path = self.mutate(root, "bindcraft-pyrosetta-installed-tree", volume={
-                "kind": "host-path", "host_root": self.REFERENCE_PLANE_HOST_PATH,
-                "sub_path": "scientific-localization/public/x", "node_selector": self.NODE_SELECTOR,
-            })
-            with self.assertRaisesRegex(renderer.RenderError, "private academic claim"):
-                self.render(path, stage="design")
+            academic = json.loads(renderer.ACADEMIC_ASSETS_CONTRACT.read_text(encoding="utf-8"))
+            academic["runtime_cache"]["runtime_mount_allowed"] = False
+            contract = root / "academic-assets.json"
+            contract.write_text(json.dumps(academic), encoding="utf-8")
+            with self.assertRaisesRegex(renderer.RenderError, "not privately mountable"):
+                self.render(
+                    self.handoff(root),
+                    stage="design",
+                    academic_assets_contract=contract,
+                )
 
     def test_a_public_tree_may_not_be_served_from_the_private_claim(self) -> None:
         with tempfile.TemporaryDirectory() as name:
@@ -1396,12 +1436,14 @@ class SemanticJobRenderTests(unittest.TestCase):
             path = self.handoff(Path(name))
             _, design = self.render(path, stage="design")
             _, aggregate = self.render(path, stage="aggregate")
-            for job in (design, aggregate):
+            for job, expected_inits in (
+                (design, ["prepare-workspace", "verify-private-pyrosetta", "materialize-request"]),
+                (aggregate, ["prepare-workspace", "materialize-request"]),
+            ):
                 spec = job["spec"]["template"]["spec"]
-                self.assertEqual(len(spec["initContainers"]), 2)
                 self.assertEqual(
                     [init["name"] for init in spec["initContainers"]],
-                    ["prepare-workspace", "materialize-request"],
+                    expected_inits,
                 )
                 for init in spec["initContainers"]:
                     self.assertNotIn("nvidia.com/gpu", init["resources"]["limits"])
@@ -1432,15 +1474,15 @@ class SemanticJobRenderTests(unittest.TestCase):
             spec = job["spec"]["template"]["spec"]
             volumes = {volume["name"]: volume for volume in spec["volumes"]}
             self.assertIn("configMap", volumes["request-source"])
-            self.assertIn("emptyDir", volumes["request"])
-            init = spec["initContainers"][1]
+            self.assertNotIn("request", volumes)
+            init = spec["initContainers"][2]
             self.assertEqual(init["command"][:2], ["python", "-c"])
             for filename in renderer.REQUEST_FILENAMES:
                 self.assertIn(filename, init["command"][2])
             main_mounts = {
                 mount["name"]: mount for mount in spec["containers"][0]["volumeMounts"]
             }
-            self.assertEqual(main_mounts["request"]["mountPath"], "/var/run/fs2")
+            self.assertEqual(main_mounts["workspace"]["mountPath"], renderer.ADAPTER_WORKSPACE_ROOT)
             self.assertNotIn("request-source", main_mounts)
 
     def test_workspace_preparation_cannot_mutate_model_volumes(self) -> None:
@@ -1452,10 +1494,11 @@ class SemanticJobRenderTests(unittest.TestCase):
             self.assertEqual(prepare["securityContext"]["runAsUser"], 0)
             self.assertFalse(prepare["securityContext"]["runAsNonRoot"])
             self.assertEqual(
-                prepare["volumeMounts"], [{"name": "workspace", "mountPath": "/workspace"}]
+                prepare["volumeMounts"],
+                [{"name": "workspace", "mountPath": renderer.ADAPTER_WORKSPACE_ROOT}],
             )
             self.assertNotIn("fsGroup", spec["securityContext"])
-            self.assertIn("/workspace/runs/r17acceptance", prepare["command"][2])
+            self.assertIn(renderer.ADAPTER_WORKSPACE_ROOT + "/work/bindcraft/", prepare["command"][2])
             self.assertNotIn("chown", prepare["command"][2])
 
     def test_rendered_admission_matches_the_mount_paths_and_handoff_identities(self) -> None:
@@ -1493,7 +1536,7 @@ class SemanticJobRenderTests(unittest.TestCase):
                 tree_identity={"inventory_algorithm": "fs2-tree-manifest/v1",
                                "inventory_sha256": foreign},
             )
-            with self.assertRaisesRegex(renderer.RenderError, "licensed tree this image"):
+            with self.assertRaisesRegex(renderer.RenderError, "differs from its canonical contract"):
                 self.render(path, stage="design")
 
     def test_render_rejects_missing_roles_and_traversing_sub_paths(self) -> None:
@@ -1535,17 +1578,18 @@ class SemanticJobRenderTests(unittest.TestCase):
             for location in located:
                 self.assertNotIn(location, module)
 
-    def test_kueue_queue_is_optional_and_controls_suspension(self) -> None:
+    def test_qualification_does_not_duplicate_the_terraform_owned_kueue_route(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             path = self.handoff(Path(name))
             _, unqueued = self.render(path)
-            self.assertFalse(unqueued["spec"]["suspend"])
+            self.assertNotIn("suspend", unqueued["spec"])
             self.assertNotIn("kueue.x-k8s.io/queue-name", unqueued["metadata"]["labels"])
-            _, queued = self.render(path, local_queue="academic-execution")
-            self.assertTrue(queued["spec"]["suspend"])
-            self.assertEqual(
-                queued["metadata"]["labels"]["kueue.x-k8s.io/queue-name"], "academic-execution"
-            )
+            options = {
+                option
+                for action in renderer.parser()._actions  # noqa: SLF001
+                for option in action.option_strings
+            }
+            self.assertNotIn("--local-queue", options)
 
 
 if __name__ == "__main__":

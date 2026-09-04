@@ -42,7 +42,7 @@
       ],
       "verified": "the publisher read the published SLSA provenance back and required the attested revision and context to be the ones it built"
     },
-    "qualification_state": "H100 semantic-qualified by direct outer-entrypoint proof; catalog route remains gated on private generation promotion"
+    "qualification_state": "H100 semantic-qualified by direct outer-entrypoint proof; the private external-installed-tree identity was independently re-probed live on 2026-09-04; catalog route activation is a separate integrated controller decision"
   },
   "non_overwriting_publication": {
     "policy": "every tag is asserted absent before publication; a tag is never overwritten",
@@ -437,9 +437,10 @@
       },
       "contract_conformance": "proven"
     },
-    "localization_scope": "the three public roles used immutable qualified generations; PyRosetta used the content-pinned, ownership-repaired canonical private tree because its private promotion remains pending",
+    "localization_scope": "the three public roles used immutable qualified generations; PyRosetta used the content-pinned, ownership-repaired canonical external-installed-tree on the academic PVC and has no private-generation or marker contract",
     "route_ready": false,
-    "route_ready_reason": "the direct mode intentionally emits an empty private localization generation, so this receipt is semantic H100 evidence and not a catalog localization or route-enablement receipt"
+    "route_ready_reason": "this receipt qualifies the immutable image and external trees; route activation belongs to the integrated catalog, generated scheduling contract and shared controller",
+    "external_installed_tree_review": "evidence/private-external-tree-probe-20260904.json"
   },
   "cleanup": {
     "current_task_receipt": "evidence/live-h100-qualification-20260903.json",
