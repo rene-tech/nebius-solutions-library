@@ -72,6 +72,26 @@
       "bytes": 501,
       "sha256": "a8e4ac215138b0fe1a139035d89db46a86139a1d6957d80fb70b27c7fe41cc50"
     },
+    "logs/academic-ownership-probe-after.log": {
+      "bytes": 740,
+      "sha256": "cb53e26e7c196d16b2d55fe98b4d0bb3b406b5d00071697ec8d25d2254964270"
+    },
+    "logs/academic-ownership-probe-before.log": {
+      "bytes": 773,
+      "sha256": "b7e0855c2c21672bd817b7d522b3eb67cffa1ae2908885ede16e7d28a70510de"
+    },
+    "logs/academic-ownership-repair-v2.log": {
+      "bytes": 734,
+      "sha256": "4c7b9828004582eff50335f3f08c78ae4890296d55addb1a31b4a73072f0df72"
+    },
+    "logs/academic-post-repair-af3-loader-v1.log": {
+      "bytes": 681,
+      "sha256": "462a42589437a16e391f8990fe328859ac3769282c1e1e4d19e3d98d776eafe9"
+    },
+    "logs/academic-post-repair-continuity-v1.log": {
+      "bytes": 2218,
+      "sha256": "33b151cf8c9f5cc5f037dfb07134dbc0be606ab949d2f4c806d76a5025347c24"
+    },
     "logs/academic-pyrosetta-install-v1.log": {
       "bytes": 364,
       "sha256": "a5489d7a3c0ad91c737a9844289c355cfa7c3fd5495f63ce8a3cdd0084271e94"

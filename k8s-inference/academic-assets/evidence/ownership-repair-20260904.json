@@ -1,0 +1,106 @@
+{
+  "after": {
+    "alphafold3": {
+      "gid": 65532,
+      "mode": "0750",
+      "uid": 65532
+    },
+    "consumer_reads": {
+      "af3": "readable",
+      "installed_tree": "readable",
+      "wheel": "readable"
+    },
+    "gids": {
+      "65532": 9477
+    },
+    "installed_tree": {
+      "gid": 65532,
+      "mode": "0550",
+      "uid": 65532
+    },
+    "modes": {
+      "0440": 8681,
+      "0550": 796
+    },
+    "pyrosetta_bindcraft": {
+      "gid": 65532,
+      "mode": "0750",
+      "uid": 65532
+    },
+    "tree_paths": 9477
+  },
+  "before": {
+    "alphafold3": {
+      "gid": 10001,
+      "mode": "02770",
+      "uid": 65532
+    },
+    "consumer_reads": {
+      "af3": "UNREADABLE",
+      "installed_tree": "UNREADABLE",
+      "wheel": "UNREADABLE"
+    },
+    "installed_tree": "Permission denied",
+    "probe": "uid 12345, supplementalGroups [65532], no fsGroup, no runAsGroup masking",
+    "pyrosetta_bindcraft": {
+      "gid": 10001,
+      "mode": "02770",
+      "uid": 65532
+    },
+    "volume_root": {
+      "gid": 10001,
+      "mode": "02775",
+      "uid": 0
+    }
+  },
+  "observed_on": "2026-09-04",
+  "problem": "A prior pod set fsGroup 10001 on the shared academic claim. Kubernetes applies fsGroup to the whole volume rather than the sub-path a pod mounts, so it recursively rewrote the licensed trees to group 10001 with setgid 2770 directories. The contract fixes group 65532 with 0440 files and 0550 directories, so a conforming consumer could read nothing at all.",
+  "recurrence_guard": "render_localization_jobs.py refuses --fs-group for this claim outright and joins group 65532 as a supplemental group instead, so a rendered Job cannot repeat the damage.",
+  "repair": {
+    "job": "academic-ownership-repair-v2",
+    "note": "A first attempt used a root init container and was rejected by kubelet because the pod set runAsNonRoot. The targets were already owned by uid 65532, so no privilege was needed and the root path was abandoned rather than worked around.",
+    "paths_changed": 18962,
+    "privilege": "none; ran as uid 65532 which already owned both target directories",
+    "scope": [
+      "/runtime/alphafold3",
+      "/runtime/pyrosetta-bindcraft"
+    ],
+    "untouched": [
+      "/runtime",
+      ".tools",
+      "scientific-ingestion",
+      "scientific-localization"
+    ],
+    "verified_paths": 9481,
+    "violations": 0
+  },
+  "schema": "fs2-serve.nebius.ai/academic-ownership-repair-evidence/v1",
+  "semantic_continuity": {
+    "alphafold3_bytes": 1020545840,
+    "alphafold3_digest_unchanged": true,
+    "alphafold3_loader": {
+      "loaded_parameter_arrays": 405,
+      "loaded_parameter_elements": 368384602,
+      "loaded_scopes": 329,
+      "loader_evidence_digest": "66bdc2ec42d8b83dfbf95c50ef95a89f2ca2c6d5bc40eb2316640221c9f4ba4d",
+      "parameter_devices": [
+        "cuda:0"
+      ],
+      "unchanged": true
+    },
+    "alphafold3_sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+    "egress": "denied by NetworkPolicy, verified in-process by both probes",
+    "note": "Ownership repair changes group and mode, never content. Reconfirmed against the repaired trees.",
+    "pyrosetta": {
+      "pose_residues": 10,
+      "scorefxn_value": 29.967244,
+      "unchanged": true,
+      "version": "2026.29+releasequarterly.80a0635615"
+    },
+    "tree_digest_unchanged": true,
+    "tree_file_count": 8697,
+    "tree_manifest_algorithm": "fs2-tree-manifest/v1",
+    "tree_manifest_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+    "tree_total_bytes": 3287122494
+  }
+}
