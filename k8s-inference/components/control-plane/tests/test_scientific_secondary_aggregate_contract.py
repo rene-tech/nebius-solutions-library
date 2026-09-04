@@ -253,6 +253,7 @@ def test_alphafold3_keeps_public_and_academic_planes_separate() -> None:
         item["kind"] == "private"
         and item["claim_name"] == "academic-assets-runtime-rwx"
         and item["mount_path"] == "/models/af3.bin.zst"
+        and item["sub_path"] == "alphafold3/af3.bin.zst"
         and item["read_only"] is True
         for item in inference_mounts
     )

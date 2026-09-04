@@ -38,6 +38,7 @@ from fs2_serve.scientific_batch.execution import (
     FileScientificManifestRenderer,
     ScientificExecutionMapError,
     _invocation_json,
+    _runtime_volume_sub_path,
 )
 from fs2_serve.scientific_batch.models import (
     AdapterExecutionPlan,
@@ -593,6 +594,24 @@ def scheduling(plan: ScientificBatchPlan) -> SchedulingSnapshot:
             for stage in plan.stages
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("source", "binding", "expected"),
+    (
+        (None, None, None),
+        ("physical/tree", None, "physical/tree"),
+        (None, "logical/tree", "logical/tree"),
+        ("physical/tree", "child.bin", "physical/tree/child.bin"),
+        ("alphafold3/af3.bin.zst", "alphafold3/af3.bin.zst", "alphafold3/af3.bin.zst"),
+    ),
+)
+def test_runtime_volume_sub_path_composes_relative_bindings_but_deduplicates_exact_identity(
+    source: str | None,
+    binding: str | None,
+    expected: str | None,
+) -> None:
+    assert _runtime_volume_sub_path(source, binding) == expected
 
 
 def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chown(tmp_path: Path) -> None:
@@ -1315,7 +1334,7 @@ def _academic_af3_renderer(
     localizations = (
         {
             "artifact_id": "alphafold3-parameters",
-            "mount_path": "/opt/fs2/academic/alphafold3/af3.bin.zst",
+            "mount_path": "/models/af3.bin.zst",
             "content_digest": "sha256:" + "a" * 64,
             "file_manifest": requirements[0]["file_manifest"],
             "localization_receipt_digest": sha("localized-af3-parameters"),
@@ -1412,8 +1431,8 @@ def _academic_af3_renderer(
                                 "kind": "private",
                                 "claim_name": "academic-assets-runtime-rwx",
                                 "host_path": None,
-                                "mount_path": "/opt/fs2/academic/alphafold3",
-                                "sub_path": "alphafold3",
+                                "mount_path": "/models/af3.bin.zst",
+                                "sub_path": "alphafold3/af3.bin.zst",
                                 "read_only": True,
                             },
                         ],
@@ -1525,8 +1544,8 @@ def _academic_af3_renderer(
         runtime_mounts=(
             RuntimeArtifactMount(
                 artifact_id="alphafold3-parameters",
-                mount_path="/opt/fs2/academic/alphafold3/af3.bin.zst",
-                sub_path="af3.bin.zst",
+                mount_path="/models/af3.bin.zst",
+                sub_path="alphafold3/af3.bin.zst",
                 supplemental_groups=(65532,),
             ),
         ),
@@ -1713,6 +1732,13 @@ def test_af3_academic_v3_map_binds_exact_params_and_content_addressed_database(t
     }
     gpu_mounts = {item["name"]: item for item in gpu_pod["containers"][0]["volumeMounts"]}
     assert gpu_mounts["alphafold3-parameters"]["subPath"] == "alphafold3/af3.bin.zst"
+    verifier = next(item for item in gpu_pod["initContainers"] if item["name"] == "verify-runtime-artifacts")
+    verifier_mounts = {item["name"]: item for item in verifier["volumeMounts"]}
+    assert verifier_mounts["alphafold3-parameters"]["subPath"] == "alphafold3/af3.bin.zst"
+    runtime_marker = json.loads(
+        next(item["value"] for item in gpu_pod["containers"][0]["env"] if item["name"] == "FS2_RUNTIME_ARTIFACTS_JSON")
+    )
+    assert runtime_marker["artifacts"][0]["sub_path"] == "alphafold3/af3.bin.zst"
     assert not any(item["mountPath"] == "/reference-data" for item in gpu_mounts.values())
 
     with pytest.raises(ScientificExecutionMapError, match="immutable execution-map route"):
