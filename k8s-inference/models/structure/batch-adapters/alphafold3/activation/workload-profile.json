@@ -134,7 +134,8 @@
       "non_clinical": true,
       "limitations": [
         "Image sha256:ecc3e735...a85e7 is the published, production-protocol-compatible r7 successor; it remains unqualified until exact-digest H100 parameter-load and inference evidence, a raw-input run through the public path, and a live-qualified renderer exist.",
-        "The licensed parameter file remains tenant-private and is authorized once by the deployment; callers do not provide a per-request license receipt. Formal institutional licence acceptance is still pending.",
+        "The licensed parameter file remains tenant-private and is authorized once by the deployment; exact in-place PVC localization receipt 9c89f122...38bd4 is distinct from the deployment authorization document, and callers do not provide a per-request license receipt.",
+        "The public database tree d27b8956...dfaea has terminal localization receipt 3c7d4176...28874 on the reference-data plane; inference never mounts that public host root.",
         "Raw-input preprocessing runs only in the 16 CPU, 64 GiB reference-data class; the live reference pool nodes are 8 vCPU / 32 GiB and cannot admit it until a larger reference class exists.",
         "OpenFold3 is an independent operational alternative and never satisfies an alphafold3 request."
       ]
