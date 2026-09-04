@@ -1,0 +1,17 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+  "manifest_id": "acceptance.esmfold2-fast.single-sequence.v1",
+  "entries": [
+    {
+      "name": "esmfold2-fast-input",
+      "semantic_type": "esmfold2-fast-input-json/v1",
+      "artifact": {
+        "artifact_id": "fixture.esmfold2-fast.h100-semantic-input.v1",
+        "sha256": "effc08e211b66f0af2c6d51bf19e997febbae3baa38af757669d806bfe24e17c",
+        "size_bytes": 137,
+        "media_type": "application/json",
+        "compression": "none"
+      }
+    }
+  ]
+}

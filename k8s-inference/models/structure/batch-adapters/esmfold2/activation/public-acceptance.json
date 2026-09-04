@@ -1,0 +1,41 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-public-acceptance-input/v1",
+  "model_id": "esmfold2",
+  "profile_projection": {
+    "profile": {
+      "execution_identity": {
+        "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918"
+      }
+    }
+  },
+  "execution_projection": {
+    "variant_id": "biohub-v3-4-0"
+  },
+  "public_fixtures": {
+    "request": "models/structure/batch-adapters/esmfold2/activation/public-request.json",
+    "supporting_inputs": [
+      {
+        "role": "request-input-manifest",
+        "path": "models/structure/batch-adapters/esmfold2/activation/public-input-manifest.json",
+        "encoding": "canonical-json-newline"
+      },
+      {
+        "role": "manifest-artifact",
+        "name": "esmfold2-input",
+        "path": "models/structure/batch-adapters/esmfold2/activation/public-input.json",
+        "encoding": "raw"
+      }
+    ]
+  },
+  "semantic_input": {
+    "source_contract": "models/cancer-immunotherapy/images/structure-secondary/qualification/render_secondary_semantic_job.py#ESM_INPUT",
+    "payload_path": "models/structure/batch-adapters/esmfold2/activation/public-input.json",
+    "sha256": "effc08e211b66f0af2c6d51bf19e997febbae3baa38af757669d806bfe24e17c",
+    "size_bytes": 137,
+    "h100_evidence": null
+  },
+  "activation_gate": {
+    "route_exposed": false,
+    "public_platform_run_required": true
+  }
+}
