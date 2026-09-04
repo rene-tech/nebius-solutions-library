@@ -1000,7 +1000,7 @@
       "model_id": "mosaic",
       "variant_id": "mosaic-boltz2-proteinmpnn-v1",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "2cb05bb5722a7cfe19562caf2e372f479cc311c1670949b2b146f0fbe20b1e27",
+      "execution_identity_sha256": "55746ef1643bc047d14f4ce15670e5aac00dda3e89e415a8385f59693e8c74a0",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1014,7 +1014,7 @@
           "file_manifest": [
             {
               "path": "boltz2_conf.ckpt",
-              "sha256": "e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
+              "sha256": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
               "size_bytes": 2286561469
             }
           ]

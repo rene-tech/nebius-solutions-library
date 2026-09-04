@@ -1,0 +1,58 @@
+{
+  "schema": "fs2.nebius.ai/mosaic-runtime-artifact-digest-correction/v1",
+  "observed_at": "2026-09-04T20:38:40Z",
+  "scope": {
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "cluster_context": "k8s-inference-h100",
+    "namespace": "fs2-models",
+    "pool_ref": "h100-reserved-8x",
+    "gpu_product": "NVIDIA H100 80GB HBM3"
+  },
+  "failed_live_attempt": {
+    "job_name_sha256": "117bfbaa38d2e03d73dd4b6baf25d877b97ef1e0958a83b633454442305ce47a",
+    "pod_name_sha256": "a6f73782cf9775001b31f83e793a08f1c86fc2010dde18e9f337016c9876bfad",
+    "verifier_image_digest": "sha256:4da06677e8ae4bec7dd9f0430d6bc1ced9fb870ae9068361ac89b699f8017e07",
+    "failed_at": "2026-09-04T20:33:48Z",
+    "container": "verify-runtime-artifacts",
+    "exit_code": 1,
+    "error": "runtime artifact file digest differs",
+    "workload_container_started": false
+  },
+  "read_only_probe": {
+    "pod_name_sha256": "21ee79c4fb6967d76450fab86360086e932644249dde4a8183534ff093cc12b8",
+    "created_at": "2026-09-04T20:38:10Z",
+    "finished_at": "2026-09-04T20:38:40Z",
+    "exit_code": 0,
+    "gpu_requested": 0,
+    "mount_read_only": true,
+    "artifact_id": "mosaic-boltz2-conf",
+    "relative_path": "boltz2_conf.ckpt",
+    "observed_size_bytes": 2286561469,
+    "observed_file_sha256": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
+    "cleanup": "pod-deleted"
+  },
+  "identity_diagnosis": {
+    "localized_bytes_match_source": true,
+    "localized_bytes_match_localization_contract": true,
+    "source_file_sha256": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
+    "generation_inventory_sha256": "e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
+    "previous_file_manifest_sha256": "e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
+    "cause": "the runtime file manifest used the generation inventory identity as if it were the file-byte digest",
+    "verdict": "localized bytes are correct; the Mosaic runtime catalog identity was wrong"
+  },
+  "corrected_contract": {
+    "file_manifest_sha256": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
+    "generation_content_digest": "sha256:e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
+    "artifact_manifest_digest": "777eebe088d6d0b26a43dce8d696cca1f9a9b81fe289eac79682cb441c1dc149",
+    "execution_identity_sha256": "55746ef1643bc047d14f4ce15670e5aac00dda3e89e415a8385f59693e8c74a0",
+    "execution_map_sha256": "83ff33fb6784f8f692703f741c447f668dec70313b60a8cd7a7d93b05cd4a01d"
+  },
+  "source_evidence": [
+    "models/bionemo/boltz2/artifact-manifest.json",
+    "catalog/runtime/contracts/scientific-artifact-localization.json",
+    "models/cancer-immunotherapy/artifact-localization/evidence/mosaic-molecule-tree-equivalence-20260904.json"
+  ],
+  "secrets_present": false,
+  "signed_urls_present": false
+}

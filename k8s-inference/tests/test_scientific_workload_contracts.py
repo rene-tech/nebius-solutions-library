@@ -387,6 +387,56 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         self.assertNotEqual(localized["file"]["sha256"], localized["tree"]["inventory_sha256"])
         self.assertEqual(localized["file"]["bytes"], localized["tree"]["total_bytes"])
 
+    def test_mosaic_checkpoint_file_manifest_uses_the_file_digest_not_tree_identity(
+        self,
+    ) -> None:
+        localization = self.load(
+            CONTRACT_ROOT / "scientific-artifact-localization.json"
+        )
+        localized = next(
+            item
+            for item in localization["artifacts"]
+            if item["artifact_id"] == "mosaic-boltz2-conf"
+        )
+        boltz_manifest = self.load(
+            ROOT / "models/bionemo/boltz2/artifact-manifest.json"
+        )
+        source_file = next(
+            item
+            for item in boltz_manifest["content"]["files"]
+            if item["path"] == "boltz2_conf.ckpt"
+        )
+        profiles = self.load(CONTRACT_ROOT / "scientific-workload-profiles.json")
+        profile = next(
+            item for item in profiles["profiles"] if item["model_id"] == "mosaic"
+        )
+        execution_map = self.load(CONTRACT_ROOT / "scientific-execution-map.json")
+        execution = next(
+            item for item in execution_map["models"] if item["model_id"] == "mosaic"
+        )
+        fragment = self.load(
+            ROOT
+            / "models/cancer-immunotherapy/runtime-images/mosaic/activation/fragment.json"
+        )
+        projected_profile = fragment["profile_projection"]["profile"]
+
+        expected = {
+            "path": source_file["path"],
+            "sha256": source_file["sha256"],
+            "size_bytes": source_file["bytes"],
+        }
+        self.assertEqual(localized["file"]["sha256"], source_file["sha256"])
+        self.assertNotEqual(
+            localized["file"]["sha256"], localized["tree"]["inventory_sha256"]
+        )
+        for document in (profile, projected_profile, execution):
+            artifact = next(
+                item
+                for item in document["runtime_artifacts"]
+                if item["artifact_id"] == "mosaic-boltz2-conf"
+            )
+            self.assertEqual([expected], artifact["file_manifest"])
+
     def test_localization_contract_rejects_a_tree_holding_its_own_archive(self) -> None:
         contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
         validator = self.validator("scientific-artifact-localization.schema.json")
