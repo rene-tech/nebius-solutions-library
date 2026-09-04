@@ -24,6 +24,7 @@ import tempfile
 import unittest
 
 from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema.exceptions import ValidationError
 
 
 REFERENCE_DATA = Path(__file__).resolve().parents[1]
@@ -899,6 +900,24 @@ class Af3ReferenceDataRemediationTests(unittest.TestCase):
         Draft202012Validator(schema, format_checker=FormatChecker()).validate(contract)
         validated = reference_data.validate_placement_contract(contract)
         self.assertEqual({"staging", "raw-input", "inference"}, set(validated["stages"]))
+
+    def test_bulk_staging_accepts_the_terraform_fourteen_day_deadline(self) -> None:
+        schema = reference_data.load_json(REFERENCE_DATA / "placement-contract.schema.json")
+        contract = copy.deepcopy(reference_data.load_placement_contract())
+        contract["stages"]["staging"]["defaults"]["active_deadline_seconds"] = 1209600
+
+        Draft202012Validator(schema, format_checker=FormatChecker()).validate(contract)
+        validated = reference_data.validate_placement_contract(contract)
+        self.assertEqual(
+            1209600,
+            validated["stages"]["staging"]["defaults"]["active_deadline_seconds"],
+        )
+
+        contract["stages"]["raw-input"]["defaults"]["active_deadline_seconds"] = 1209600
+        with self.assertRaises(reference_data.ContractError):
+            reference_data.validate_placement_contract(contract)
+        with self.assertRaises(ValidationError):
+            Draft202012Validator(schema, format_checker=FormatChecker()).validate(contract)
 
     def test_a_request_larger_than_its_pool_is_rejected_before_a_job_exists(self) -> None:
         contract = reference_data.load_placement_contract(self._fitting_placement())

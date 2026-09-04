@@ -758,7 +758,10 @@ class FileScientificManifestRenderer:
             cast(str, cast(Mapping[str, Any], item)["id"])
             for item in cast(Mapping[str, Any], profile.value["workload"])["stages"]
         )
-        if tuple(stage.stage_id for stage in plan.controller_plan.stages) != profile_stage_ids:
+        planned_stage_ids = tuple(stage.stage_id for stage in plan.controller_plan.stages)
+        planned_stage_set = frozenset(planned_stage_ids)
+        selected_profile_stage_ids = tuple(stage_id for stage_id in profile_stage_ids if stage_id in planned_stage_set)
+        if planned_stage_ids != selected_profile_stage_ids:
             raise ScientificExecutionMapError("scientific plan adapter changed the canonical profile stages")
         invocations: list[StageInvocation] = []
         for invocation in plan.invocations:
