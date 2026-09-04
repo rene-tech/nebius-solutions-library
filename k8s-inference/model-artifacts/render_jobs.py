@@ -10,7 +10,15 @@ import re
 import sys
 from typing import Any, Sequence
 
-from public_artifacts import ContractError, canonical_json, load_json, sha256_bytes, validate_catalog
+from public_artifacts import (
+    ContractError,
+    DEFAULT_DOWNLOAD_CONCURRENCY,
+    MAX_DOWNLOAD_CONCURRENCY,
+    canonical_json,
+    load_json,
+    sha256_bytes,
+    validate_catalog,
+)
 
 
 DNS_LABEL = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$")
@@ -80,6 +88,14 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
         raise ContractError("the integrated regional reference filesystem must be at least 2048 GiB")
     if not args.shared_filesystem_host_path.startswith("/mnt/") or ".." in args.shared_filesystem_host_path:
         raise ContractError("shared filesystem host path must be a safe absolute path below /mnt")
+    if (
+        isinstance(args.download_concurrency, bool)
+        or not isinstance(args.download_concurrency, int)
+        or not 1 <= args.download_concurrency <= MAX_DOWNLOAD_CONCURRENCY
+    ):
+        raise ContractError(
+            f"download concurrency must be an integer between 1 and {MAX_DOWNLOAD_CONCURRENCY}"
+        )
     cache_parts = Path(args.cache_subpath).parts
     if not cache_parts or args.cache_subpath.startswith("/") or ".." in cache_parts:
         raise ContractError("cache subpath must be a safe relative path")
@@ -94,7 +110,6 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
     if unknown:
         raise ContractError(f"selected artifacts are not available: {sorted(unknown)}")
     catalog_digest = sha256_bytes(canonical_json(load_json(args.catalog)))
-    config_name = _dns(f"public-artifacts-{catalog_digest[:12]}", "ConfigMap name")
     projected_files = {
         "artifact-catalog.json": args.catalog.read_text(encoding="utf-8"),
         "public_artifacts.py": Path(__file__).with_name("public_artifacts.py").read_text(encoding="utf-8"),
@@ -140,6 +155,8 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
             raise ContractError(f"projected artifact program key collides: {relative}")
         data[key] = contents
         program_items.append({"key": key, "path": relative})
+    program_digest = sha256_bytes(canonical_json(projected_files))
+    config_name = _dns(f"public-artifacts-{program_digest[:12]}", "ConfigMap name")
     resources: list[dict[str, Any]] = [
         {
             "apiVersion": "v1",
@@ -151,6 +168,7 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
                     "app.kubernetes.io/name": "public-artifact-ingestion",
                     "app.kubernetes.io/managed-by": "fs2-task-branch",
                     "fs2.nebius.ai/catalog-digest": catalog_digest[:63],
+                    "fs2.nebius.ai/program-digest": program_digest[:63],
                 },
             },
             "immutable": True,
@@ -178,6 +196,7 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
             "--cpu-pool-label", cpu_pool_label,
             "--shared-filesystem-host-path", args.shared_filesystem_host_path,
             "--cache-subpath", args.cache_subpath,
+            "--download-concurrency", str(args.download_concurrency),
             "--reference-plane-source-commit", args.reference_plane_source_commit,
             "--source-commit", args.source_commit,
         ]
@@ -198,6 +217,8 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
                     "annotations": {
                         "fs2.nebius.ai/source-commit": args.source_commit,
                         "fs2.nebius.ai/catalog-digest": catalog_digest,
+                        "fs2.nebius.ai/program-digest": program_digest,
+                        "fs2.nebius.ai/download-concurrency": str(args.download_concurrency),
                         "fs2.nebius.ai/reference-plane-source-commit": args.reference_plane_source_commit,
                         "fs2.nebius.ai/filesystem-id": args.filesystem_id,
                         "fs2.nebius.ai/cpu-pool-id": args.cpu_pool_id,
@@ -303,6 +324,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--node-toleration", required=True)
     result.add_argument("--active-deadline-seconds", type=int, default=21600)
     result.add_argument("--ttl-seconds", type=int, default=86400)
+    result.add_argument(
+        "--download-concurrency",
+        type=int,
+        default=DEFAULT_DOWNLOAD_CONCURRENCY,
+    )
     return result
 
 
