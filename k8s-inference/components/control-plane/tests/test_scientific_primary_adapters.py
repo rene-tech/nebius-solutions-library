@@ -87,6 +87,38 @@ def boltzgen_manifest_request() -> dict[str, Any]:
     return request
 
 
+def proteina_verified_input(
+    *,
+    logical_artifact_id: str = "target-bundle",
+    semantic_type: str = "proteina-complexa-target-bundle/v1",
+    artifact_id: UUID | None = None,
+    size_bytes: int = 32 * 1024,
+    media_type: str = "application/x-tar",
+    compression: str | None = "gzip",
+) -> ScientificInputArtifact:
+    return ScientificInputArtifact(
+        logical_artifact_id=logical_artifact_id,
+        semantic_type=semantic_type,
+        artifact_id=artifact_id or UUID("00000000-0000-0000-0000-000000000011"),
+        digest="sha256:" + "a" * 64,
+        size_bytes=size_bytes,
+        media_type=media_type,
+        compression=compression,
+    )
+
+
+def proteina_manifest_request() -> dict[str, Any]:
+    request = fixture("proteina-complexa", "positive-protein.json")
+    request["input_manifest"] = {
+        "artifact_id": "00000000-0000-0000-0000-000000000012",
+        "sha256": "b" * 64,
+        "size_bytes": 512,
+        "media_type": "application/vnd.fs2.scientific-manifest+json",
+        "compression": "none",
+    }
+    return request
+
+
 def pointer(artifact_id: str, content: bytes, media_type: str) -> dict[str, object]:
     return {
         "artifact_id": artifact_id,
@@ -197,9 +229,13 @@ def output_manifest(items: list[tuple[str, str, str, bytes]]) -> tuple[dict[str,
 
 
 def test_real_catalog_profiles_project_to_canonical_controller_types() -> None:
-    proteina_request = fixture("proteina-complexa", "positive-protein.json")
+    proteina_request = proteina_manifest_request()
     proteina = compile_adapter_run(
-        "proteina-complexa", profile("proteina-complexa"), proteina_request, operation_id="op-proteina-01"
+        "proteina-complexa",
+        profile("proteina-complexa"),
+        proteina_request,
+        operation_id="op-proteina-01",
+        input_artifacts=(proteina_verified_input(),),
     )
     assert all(isinstance(stage, ScientificStagePlan) for stage in proteina.controller_plan.stages)
     assert [stage.stage_id for stage in proteina.controller_plan.stages] == [
@@ -257,7 +293,7 @@ def test_real_catalog_profiles_project_to_canonical_controller_types() -> None:
 
 @pytest.mark.asyncio
 async def test_controller_rejects_adapter_plan_before_operator_execution_binding() -> None:
-    request = fixture("proteina-complexa", "positive-protein.json")
+    request = proteina_manifest_request()
     operation_id = uuid4()
     execution = compile_adapter_run(
         "proteina-complexa",
@@ -265,6 +301,7 @@ async def test_controller_rejects_adapter_plan_before_operator_execution_binding
         request,
         operation_id=str(operation_id),
         variant_id=proteina_complexa.VARIANT_ID,
+        input_artifacts=(proteina_verified_input(),),
     )
     captured_at = datetime(2026, 9, 2, tzinfo=UTC)
     scheduling = SchedulingSnapshot(
@@ -529,6 +566,85 @@ def test_boltzgen_verified_manifest_entry_drives_campaign_materialization() -> N
             wrong_manifest,
             operation_id="op-boltz-compressed-manifest",
             input_artifacts=(campaign,),
+        )
+
+
+def test_proteina_verified_manifest_entry_drives_target_bundle_materialization() -> None:
+    request = proteina_manifest_request()
+    target_bundle = proteina_verified_input()
+    result = compile_adapter_run(
+        "proteina-complexa",
+        profile("proteina-complexa"),
+        request,
+        operation_id="op-proteina-verified-input",
+        input_artifacts=(target_bundle,),
+    )
+
+    generate = result.invocations[0]
+    assert generate.stage_id == "generate"
+    assert generate.consumes == (proteina_complexa.TARGET_BUNDLE_ID,)
+    assert len(generate.materializations) == 1
+    materialization = generate.materializations[0]
+    assert materialization.artifact_id == proteina_complexa.TARGET_BUNDLE_ID
+    assert materialization.mode is MaterializationMode.EXTRACT_TAR
+    assert materialization.compression == "gzip"
+    assert all(invocation.consumes != (request["input_manifest"]["artifact_id"],) for invocation in result.invocations)
+
+    manifest_id = UUID(request["input_manifest"]["artifact_id"])
+    verified_manifest = VerifiedInputManifest(
+        manifest_id="proteina-complexa-pdl1-inputs",
+        manifest_artifact_id=manifest_id,
+        manifest_digest="sha256:" + request["input_manifest"]["sha256"],
+        entries=(target_bundle,),
+    )
+    controller_source = verified_manifest.artifact(materialization.artifact_id)
+    assert controller_source.artifact_id == target_bundle.artifact_id
+    assert controller_source.artifact_id != manifest_id
+
+    with pytest.raises(ScientificAdapterError, match="verified input_artifacts"):
+        proteina_complexa.compile_run(
+            profile("proteina-complexa"),
+            request,
+            operation_id="op-proteina-unverified-input",
+        )
+    with pytest.raises(ScientificAdapterError, match="exactly one target-bundle"):
+        compile_adapter_run(
+            "proteina-complexa",
+            profile("proteina-complexa"),
+            request,
+            operation_id="op-proteina-missing-input",
+            input_artifacts=(),
+        )
+
+    invalid_entries = (
+        proteina_verified_input(logical_artifact_id="wrong-input"),
+        proteina_verified_input(semantic_type="wrong-input/v1"),
+        proteina_verified_input(media_type="application/json"),
+        proteina_verified_input(compression="none"),
+        proteina_verified_input(size_bytes=proteina_complexa.MAX_INPUT_BYTES + 1),
+        proteina_verified_input(
+            artifact_id=UUID(request["input_manifest"]["artifact_id"]),
+        ),
+    )
+    for index, invalid in enumerate(invalid_entries):
+        with pytest.raises(ScientificAdapterError):
+            compile_adapter_run(
+                "proteina-complexa",
+                profile("proteina-complexa"),
+                request,
+                operation_id=f"op-proteina-invalid-input-{index}",
+                input_artifacts=(invalid,),
+            )
+
+    wrong_manifest = copy.deepcopy(request)
+    wrong_manifest["input_manifest"]["compression"] = "gzip"
+    with pytest.raises(ScientificAdapterError, match="manifest must not be compressed"):
+        compile_adapter_run(
+            "proteina-complexa",
+            profile("proteina-complexa"),
+            wrong_manifest,
+            operation_id="op-proteina-compressed-manifest",
+            input_artifacts=(target_bundle,),
         )
 
 

@@ -9,16 +9,20 @@ uses the same authenticated gateway paths a customer can reach.
 from __future__ import annotations
 
 import argparse
+import binascii
 import hashlib
+import io
 import json
 import os
 import re
 import ssl
+import struct
 import sys
+import tarfile
 import tempfile
 import time
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlsplit
@@ -81,6 +85,61 @@ class DeclaredInput:
     encoding: str
 
 
+def deterministic_tar_gzip(source: bytes, archive_path: object) -> bytes:
+    """Package one public fixture file with byte-stable tar and gzip metadata."""
+
+    if (
+        not isinstance(archive_path, str)
+        or not archive_path
+        or not archive_path.isascii()
+        or "\x00" in archive_path
+        or "\\" in archive_path
+    ):
+        raise AcceptanceError("supporting_input_archive_path_invalid")
+    relative = PurePosixPath(archive_path)
+    if relative.is_absolute() or any(
+        part in {"", ".", ".."} for part in relative.parts
+    ):
+        raise AcceptanceError("supporting_input_archive_path_invalid")
+    if len(archive_path.encode("utf-8")) > 100:
+        raise AcceptanceError("supporting_input_archive_path_invalid")
+
+    tar_stream = io.BytesIO()
+    try:
+        with tarfile.open(
+            fileobj=tar_stream, mode="w", format=tarfile.USTAR_FORMAT
+        ) as archive:
+            member = tarfile.TarInfo(archive_path)
+            member.size = len(source)
+            member.mode = 0o444
+            member.uid = 0
+            member.gid = 0
+            member.uname = ""
+            member.gname = ""
+            member.mtime = 0
+            archive.addfile(member, io.BytesIO(source))
+    except (OSError, tarfile.TarError, UnicodeError, ValueError) as error:
+        raise AcceptanceError("supporting_input_materialization_failed") from error
+
+    tar_bytes = tar_stream.getvalue()
+    # Emit stored DEFLATE blocks directly rather than delegating the byte stream
+    # to a host zlib version. Each block begins and ends on a byte boundary.
+    compressed = bytearray()
+    for offset in range(0, len(tar_bytes), 65_535):
+        chunk = tar_bytes[offset : offset + 65_535]
+        final = offset + len(chunk) == len(tar_bytes)
+        compressed.append(1 if final else 0)
+        compressed.extend(struct.pack("<HH", len(chunk), (~len(chunk)) & 0xFFFF))
+        compressed.extend(chunk)
+    # Fixed mtime, no optional filename/comment fields, XFL=0, and OS=255 keep
+    # the gzip envelope stable across Python and host platforms.
+    header = b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff"
+    trailer = struct.pack(
+        "<II", binascii.crc32(tar_bytes) & 0xFFFFFFFF, len(tar_bytes) & 0xFFFFFFFF
+    )
+    return header + bytes(compressed) + trailer
+
+
 class PublicApiClient:
     """Small bounded HTTP client that never returns auth material in errors."""
 
@@ -132,7 +191,7 @@ class PublicApiClient:
             request_headers["Content-Type"] = "application/json"
         if headers:
             request_headers.update(headers)
-        request = Request(
+        request = Request(  # noqa: S310 - endpoint is operator supplied and validated above.
             f"{self.endpoint}{path}",
             data=request_body,
             headers=request_headers,
@@ -228,7 +287,7 @@ def _resolve_inside(root: Path, value: object, code: str) -> Path:
 
 def _read_declared_input(root: Path, value: object) -> DeclaredInput:
     declaration = _object(value, "supporting_input_invalid")
-    if set(declaration) - {"role", "name", "path", "encoding"}:
+    if set(declaration) - {"role", "name", "path", "encoding", "archive_path"}:
         raise AcceptanceError("supporting_input_invalid")
     role = declaration.get("role")
     name = declaration.get("name")
@@ -239,7 +298,12 @@ def _read_declared_input(root: Path, value: object) -> DeclaredInput:
         not isinstance(name, str) or SAFE_ID_RE.fullmatch(name) is None
     ):
         raise AcceptanceError("supporting_input_name_invalid")
-    if encoding not in {"raw", "canonical-json", "canonical-json-newline"}:
+    if encoding not in {
+        "raw",
+        "canonical-json",
+        "canonical-json-newline",
+        "deterministic-tar-gzip-v1",
+    }:
         raise AcceptanceError("supporting_input_encoding_invalid")
     path = _resolve_inside(
         root, declaration.get("path"), "supporting_input_path_invalid"
@@ -250,12 +314,21 @@ def _read_declared_input(root: Path, value: object) -> DeclaredInput:
         raise AcceptanceError("supporting_input_unavailable") from error
     if len(data) > MAX_INPUT_BYTES:
         raise AcceptanceError("supporting_input_too_large")
-    if encoding != "raw":
+    archive_path = declaration.get("archive_path")
+    if encoding == "deterministic-tar-gzip-v1":
+        if role != "manifest-artifact" or name is None:
+            raise AcceptanceError("supporting_input_materializer_role_invalid")
+        data = deterministic_tar_gzip(data, archive_path)
+    elif archive_path is not None:
+        raise AcceptanceError("supporting_input_archive_path_invalid")
+    elif encoding != "raw":
         try:
             document = json.loads(data)
         except (RecursionError, UnicodeDecodeError, ValueError) as error:
             raise AcceptanceError("supporting_input_json_invalid") from error
         data = _canonical_json(document, newline=encoding == "canonical-json-newline")
+    if len(data) > MAX_INPUT_BYTES:
+        raise AcceptanceError("supporting_input_too_large")
     return DeclaredInput(role=role, name=name, data=data, path=path, encoding=encoding)
 
 
