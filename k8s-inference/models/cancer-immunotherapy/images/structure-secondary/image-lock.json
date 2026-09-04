@@ -53,6 +53,34 @@
       "digest": "sha256:ca05bb15341045bb2876153faccb0d029a27b0050350d6b86a83a76b4fa73bb4",
       "deployable": false,
       "reason": "real H100 direct-command smoke pulled the image then exited 127 because the advertised Python executable relied on the bypassed container entrypoint"
+    },
+    {
+      "id": "esmfold2",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2:827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r5",
+      "digest": "sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
+      "deployable": false,
+      "reason": "cannot consume the enriched localization-marker v1 fields emitted by the current artifact localizer"
+    },
+    {
+      "id": "esmfold2-fast",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast:827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r5",
+      "digest": "sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
+      "deployable": false,
+      "reason": "cannot consume the enriched localization-marker v1 fields emitted by the current artifact localizer"
+    },
+    {
+      "id": "protenix-v2",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2:2475421477ab414b571149ad4a875c390ff8a35d-h100-r5",
+      "digest": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
+      "deployable": false,
+      "reason": "cannot consume the enriched localization-marker v1 fields emitted by the current artifact localizer"
+    },
+    {
+      "id": "openfold3",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream:c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r6",
+      "digest": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
+      "deployable": false,
+      "reason": "its prior exact-artifact H100 qualification does not transfer after the localization-marker protocol repair"
     }
   ],
   "images": [
@@ -60,7 +88,7 @@
       "id": "esmfold2",
       "dockerfile": "Dockerfile.esmfold2",
       "repository": "cancer-immunotherapy/esmfold2",
-      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r5",
+      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r6",
       "source": {
         "repository": "https://github.com/Biohub/esm.git",
         "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
@@ -118,9 +146,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "published-build-only-not-semantic-qualified",
+        "qualification_state": "evidence-collected-pending-independent-acceptance",
         "level_states": {
-          "L1": "candidate-published-build-only-not-semantic-qualified",
+          "L1": "candidate-evidence-collected-pending-independent-acceptance",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -132,14 +160,14 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-only-sdpa-dispatch", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": "sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
+      "published_digest": null,
       "deployable": false
     },
     {
       "id": "esmfold2-fast",
       "dockerfile": "Dockerfile.esmfold2",
       "repository": "cancer-immunotherapy/esmfold2-fast",
-      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r5",
+      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r6",
       "source": {
         "repository": "https://github.com/Biohub/esm.git",
         "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
@@ -197,9 +225,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "published-build-only-not-semantic-qualified",
+        "qualification_state": "evidence-collected-pending-independent-acceptance",
         "level_states": {
-          "L1": "candidate-published-build-only-not-semantic-qualified",
+          "L1": "candidate-evidence-collected-pending-independent-acceptance",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -211,14 +239,14 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-only-sdpa-dispatch", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": "sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
+      "published_digest": null,
       "deployable": false
     },
     {
       "id": "protenix-v2",
       "dockerfile": "Dockerfile.protenix-v2",
       "repository": "cancer-immunotherapy/protenix-v2",
-      "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r5",
+      "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r6",
       "source": {
         "repository": "https://github.com/bytedance/Protenix.git",
         "revision": "2475421477ab414b571149ad4a875c390ff8a35d",
@@ -288,9 +316,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "published-build-only-not-semantic-qualified",
+        "qualification_state": "evidence-collected-pending-independent-acceptance",
         "level_states": {
-          "L1": "candidate-published-build-only-not-semantic-qualified",
+          "L1": "candidate-evidence-collected-pending-independent-acceptance",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -302,14 +330,14 @@
         "blackwell": {"status": "unsupported", "scope": "pinned-pytorch-2.7.1-cu126-libtorch-has-no-blackwell-cubin-or-ptx", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
+      "published_digest": null,
       "deployable": false
     },
     {
       "id": "openfold3",
       "dockerfile": "Dockerfile.openfold3",
       "repository": "cancer-immunotherapy/openfold3-upstream",
-      "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r6",
+      "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r7",
       "source": {
         "repository": "https://github.com/aqlaboratory/openfold-3.git",
         "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
@@ -364,10 +392,10 @@
       },
       "fast_start": {
         "maximum_candidate_level": "L1",
-        "qualified_level": "L1",
-        "qualification_state": "qualified-exact-artifact-h100-semantic",
+        "qualified_level": null,
+        "qualification_state": "evidence-collected-pending-independent-acceptance",
         "level_states": {
-          "L1": "qualified-regional-image-and-exact-artifact-h100-semantic",
+          "L1": "candidate-evidence-collected-pending-independent-acceptance",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -375,12 +403,12 @@
         "compiler_cache_optimization": "auxiliary-l1-plus-persistent-cache-pending-first-vs-warm-h100-timing"
       },
       "accelerator_support": {
-        "h100": {"compute_capability": "9.0", "status": "qualified-exact-artifact-semantic"},
+        "h100": {"compute_capability": "9.0", "status": "pending-exact-artifact-semantic-test"},
         "blackwell": {"status": "not-qualified", "scope": "portability-not-readiness", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
-      "deployable": true
+      "published_digest": null,
+      "deployable": false
     }
   ]
 }
