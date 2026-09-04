@@ -384,7 +384,8 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
     )
     assert (
         "{serve,maintenance,migrate,wait-schema,bootstrap-access,validate,postgresql-release-contract,"
-        "model-controller,scientific-materialize,scientific-collect,scientific-prepare-workspace,"
+        "model-controller,gpu-allocation-observer,scientific-materialize,scientific-collect,"
+        "scientific-prepare-workspace,"
         "scientific-verify-runtime-artifacts}" in completed.stdout
     )
     emitted_contract = subprocess.run(  # noqa: S603 - clean-wheel CLI and fixed command.
