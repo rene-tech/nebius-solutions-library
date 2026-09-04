@@ -529,6 +529,8 @@ class ModelDeploymentMutationService:
                 )
             ]
             for mechanism in DECLARED_MECHANISMS:
+                if mechanism not in SELECTABLE_MECHANISMS:
+                    continue
                 declaration = qualification.mechanism_declaration(mechanism)
                 if declaration is None:
                     continue

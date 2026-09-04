@@ -86,7 +86,7 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
   const selectableMechanisms: Array<ModelDeploymentFastStartMechanism | ""> = [
     "",
     ...(configurationOption?.fast_start_mechanism_choices.map((choice) => choice.mechanism)
-      ?? ["conventional", "regional-cache", "host-memory-residency", "gpu-resident"]),
+      ?? ["conventional", "regional-cache", "host-memory-residency"]),
   ];
   if (spec.cache.mechanism && !selectableMechanisms.includes(spec.cache.mechanism)) {
     selectableMechanisms.push(spec.cache.mechanism);

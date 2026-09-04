@@ -196,11 +196,9 @@ def test_configuration_options_publish_only_declared_mechanisms_and_their_depend
         FastStartMechanism.CONVENTIONAL,
         FastStartMechanism.REGIONAL_CACHE,
         FastStartMechanism.HOST_MEMORY_RESIDENCY,
-        FastStartMechanism.GPU_RESIDENT,
     ]
     assert choices[FastStartMechanism.REGIONAL_CACHE].required_cache_tier.value == "SharedFilesystem"
     assert choices[FastStartMechanism.HOST_MEMORY_RESIDENCY].required_cache_tier.value == "SharedFilesystem"
-    assert choices[FastStartMechanism.GPU_RESIDENT].required_cache_tier is None
     assert all(choice.pool_refs == ["pool-a"] for choice in choices.values())
 
     for mechanism, choice in choices.items():

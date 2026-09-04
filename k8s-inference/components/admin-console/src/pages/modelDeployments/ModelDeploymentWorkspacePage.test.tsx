@@ -96,14 +96,9 @@ describe("ModelDeployment workspace", () => {
       "conventional",
       "regional-cache",
       "host-memory-residency",
-      "gpu-resident",
     ]);
     fireEvent.change(mechanism, { target: { value: "regional-cache" } });
     expect(screen.getByLabelText("Cache tier")).toHaveValue("SharedFilesystem");
-    fireEvent.change(mechanism, { target: { value: "gpu-resident" } });
-    expect(screen.getByRole("checkbox", { name: "Use reserved-h100" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "Use preemptible-h100" })).not.toBeChecked();
-    expect(screen.getByLabelText("Hot floor")).toHaveValue(1);
     expect(screen.getByRole("button", { name: "Validate draft" })).toBeEnabled();
     expect(screen.getByText(/No observed state or history yet/)).toBeInTheDocument();
   });

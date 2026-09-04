@@ -281,6 +281,7 @@ RESOURCE_ENDPOINTS = {
     ("v1", "PersistentVolumeClaim"): ResourceEndpoint("v1", "PersistentVolumeClaim", "persistentvolumeclaims"),
     ("v1", "Service"): ResourceEndpoint("v1", "Service", "services"),
     ("v1", "ServiceAccount"): ResourceEndpoint("v1", "ServiceAccount", "serviceaccounts"),
+    ("apps/v1", "DaemonSet"): ResourceEndpoint("apps/v1", "DaemonSet", "daemonsets"),
     ("apps/v1", "Deployment"): ResourceEndpoint("apps/v1", "Deployment", "deployments"),
     ("keda.sh/v1alpha1", "ScaledObject"): ResourceEndpoint("keda.sh/v1alpha1", "ScaledObject", "scaledobjects"),
     ("networking.k8s.io/v1", "NetworkPolicy"): ResourceEndpoint(
@@ -1584,6 +1585,7 @@ def _fast_start_status(
     previous_status: Mapping[str, Any],
     history: tuple[FastStartHistoryWindow, FastStartHistoryWindow] | None,
     now: datetime,
+    host_residency_pool_refs: set[str] | None = None,
 ) -> FastStartStatus | None:
     """Add what only observed runtime can tell to the deterministic policy outcome.
 
@@ -1660,6 +1662,11 @@ def _fast_start_status(
             for pool_ref in sorted(spec.placement.pool_refs)
             if pool_ref in envelope.pools
         }
+        placement_pool_max_nodes = {
+            pool_ref: envelope.pools[pool_ref].max_nodes
+            for pool_ref in sorted(spec.placement.pool_refs)
+            if pool_ref in envelope.pools
+        }
         storage_contract_digests = {
             item.pool_ref: item.storage_contract_digest
             for item in (qualification.fast_start_runtime_contracts if qualification is not None else [])
@@ -1676,9 +1683,12 @@ def _fast_start_status(
             selected=spec.cache.mechanism,
             declarations=declarations,
             pools=placement_pools,
+            pool_max_nodes=placement_pool_max_nodes,
+            host_residency_pool_refs=host_residency_pool_refs,
             storage_contract_digests=storage_contract_digests,
             converged=converged,
             configured_hot_replicas=effective_hot_floor(spec.availability, at=now),
+            configured_max_replicas=spec.availability.max_replicas,
             mechanism_config_digest=mechanism_config_digest,
         )
     return FastStartStatus(
@@ -1815,6 +1825,19 @@ def build_status(
             now=observed_at,
         )
     )
+    host_residency_pool_refs = None
+    if plan.render is not None:
+        host_residency_pool_refs = {
+            pool_ref
+            for item in plan.render.resources
+            if item.kind == "DaemonSet"
+            and isinstance(
+                pool_ref := _mapping(_mapping(item.manifest.get("metadata")).get("annotations")).get(
+                    WORKLOAD_POOL_ANNOTATION
+                ),
+                str,
+            )
+        }
     fast_start = _fast_start_status(
         spec=spec,
         envelope=envelope,
@@ -1824,6 +1847,7 @@ def build_status(
         previous_status=previous_status,
         history=fast_start_history,
         now=observed_at,
+        host_residency_pool_refs=host_residency_pool_refs,
     )
     if fast_start is not None:
         satisfied = fast_start.qualification.state in {
@@ -2233,6 +2257,10 @@ class ModelDeploymentController:
                 eligible_pools=[self.envelope.pools[pool_ref] for pool_ref in spec.placement.pool_refs],
                 prometheus_server_address=self.prometheus_server_address,
                 model_express=qualification.model_express,
+                regional_cache=qualification.regional_cache,
+                host_memory_residency=qualification.host_memory_residency,
+                gpu_resident=qualification.gpu_resident,
+                residency_holder_image=self.envelope.residency_holder_image,
             )
             render = self.renderer.render(spec, context)
             discovery = await self.api.discover(key=key, owner_uid=uid, render=render)

@@ -9,9 +9,9 @@ export type ModelDeploymentFastStartMode = "Fixed" | "Automatic";
 export type ModelDeploymentFastStartMechanism =
   | "conventional"
   | "regional-cache"
-  | "host-memory-residency"
-  | "gpu-resident";
+  | "host-memory-residency";
 export type ModelDeploymentFastStartMechanismState =
+  | "Available"
   | "Configured"
   | "Pending"
   | "Unavailable"
@@ -341,6 +341,10 @@ export interface ModelDeploymentCacheMechanismStatus {
   retained_compile_cache_abi?: string | null;
   reservedHostMemoryBytes?: number | null;
   reserved_host_memory_bytes?: number | null;
+  hostMemoryReservationScope?: "per-node" | "per-replica" | null;
+  host_memory_reservation_scope?: "per-node" | "per-replica" | null;
+  maximumReservedHostMemoryBytes?: number | null;
+  maximum_reserved_host_memory_bytes?: number | null;
   reservedHostMemoryFraction?: number | null;
   reserved_host_memory_fraction?: number | null;
   standbyReplicas?: number | null;

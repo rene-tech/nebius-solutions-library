@@ -385,6 +385,11 @@ def test_crd_is_structural_versioned_and_has_explicit_terraform_upgrade_owner() 
     spec_properties = schema["properties"]["spec"]["properties"]
     assert "fastStart" not in schema["properties"]["spec"]["required"]
     assert "cache" in schema["properties"]["spec"]["required"] and "cache" in status_properties
+    assert spec_properties["cache"]["properties"]["mechanism"]["enum"] == [
+        "conventional",
+        "regional-cache",
+        "host-memory-residency",
+    ]
     fast_start = spec_properties["fastStart"]
     assert fast_start["default"] == {"mode": "Fixed", "level": "Off", "fallbackPolicy": "AllowLowerLevel"}
     levels = ["Off", "L1", "L2", "L3", "L4"]
@@ -395,6 +400,18 @@ def test_crd_is_structural_versioned_and_has_explicit_terraform_upgrade_owner() 
     fast_start_rules = {item["message"] for item in fast_start["x-kubernetes-validations"]}
     assert "fast-start minimumLevel cannot exceed maximumLevel" in fast_start_rules
     fast_start_status = status_properties["fastStart"]
+    cache_mechanism_status = fast_start_status["properties"]["cacheMechanisms"]["additionalProperties"]
+    assert cache_mechanism_status["properties"]["state"]["enum"] == [
+        "Available",
+        "Configured",
+        "Pending",
+        "Unavailable",
+        "Undeclared",
+    ]
+    assert cache_mechanism_status["properties"]["hostMemoryReservationScope"]["enum"] == [
+        "per-node",
+        "per-replica",
+    ]
     assert set(fast_start_status["required"]) == {
         "mode",
         "fallbackPolicy",
@@ -1737,6 +1754,8 @@ def _pinned(mechanism: str) -> ModelDeploymentSpec:
     spec = model_spec()
     wire = spec.model_dump(mode="json", by_alias=True)
     wire["cache"] = {**wire["cache"], "mechanism": mechanism}
+    if mechanism in {"regional-cache", "host-memory-residency"}:
+        wire["cache"]["tier"] = CacheTier.SHARED_FILESYSTEM.value
     return ModelDeploymentSpec.model_validate(wire)
 
 
@@ -1750,6 +1769,57 @@ def _workload(plan: RenderPlan) -> dict[str, Any]:
     workloads = [item for item in plan.resources if item.kind == "Deployment" and "hostmem" not in item.name]
     assert len(workloads) == 1
     return workloads[0].manifest
+
+
+@pytest.mark.asyncio
+async def test_preview_passes_all_reviewed_mechanisms_and_holder_image_to_real_render() -> None:
+    base = envelope()
+    qualification = base.qualifications["qwen.3-8b"].model_copy(
+        update={
+            "regional_cache": render_regional_cache(),
+            "host_memory_residency": render_host_memory(),
+            "gpu_resident": render_gpu_resident(),
+            "template_cache_tiers": {
+                digest_value: CacheTier.SHARED_FILESYSTEM
+                for digest_value in base.qualifications["qwen.3-8b"].template_digests
+            },
+        }
+    )
+    installed = base.model_copy(
+        update={
+            "qualifications": {qualification.model_ref: qualification},
+            "residency_holder_image": model_spec().runtime.image,
+        }
+    )
+    captured: list[RenderContext] = []
+    delegate = renderer()
+
+    class CapturingRenderer:
+        def render(self, desired: ModelDeploymentSpec, context: RenderContext) -> RenderPlan:
+            captured.append(context)
+            return delegate.render(desired, context)
+
+    service = ModelDeploymentPreviewService(
+        envelope=installed,
+        renderer=CapturingRenderer(),
+        state=InMemoryModelDeploymentPreviewState(),
+        prometheus_server_address="http://prometheus:9090",
+    )
+    result = await service.plan(
+        ModelDeploymentPreviewProposal(name="qwen-live", spec=_pinned("regional-cache")),
+        operator(OperatorRole.OPERATOR),
+    )
+
+    assert result.render is not None
+    context = captured[-1]
+    assert context.preview
+    assert context.regional_cache == qualification.regional_cache
+    assert context.host_memory_residency == qualification.host_memory_residency
+    assert context.gpu_resident == qualification.gpu_resident
+    assert context.residency_holder_image == installed.residency_holder_image
+    workload = _workload(result.render)["spec"]["template"]["spec"]
+    runtime_cache = next(item for item in workload["volumes"] if item["name"] == "runtime-cache")
+    assert runtime_cache["persistentVolumeClaim"]["claimName"] == "fsm-compile-cache-rwx"
 
 
 def test_the_renderer_configures_the_pinned_regional_cache() -> None:
@@ -1769,8 +1839,8 @@ def test_the_renderer_owns_the_host_memory_holder_it_depends_on() -> None:
         residency_holder_image=model_spec().runtime.image,
     )
     holders = [item for item in plan.resources if "hostmem" in item.name]
-    assert {item.kind for item in holders} == {"ConfigMap", "Deployment"}
-    holder = next(item for item in holders if item.kind == "Deployment").manifest
+    assert {item.kind for item in holders} == {"ConfigMap", "DaemonSet"}
+    holder = next(item for item in holders if item.kind == "DaemonSet").manifest
     container = holder["spec"]["template"]["spec"]["containers"][0]
     assert container["resources"]["requests"]["memory"] == str(declaration.reserved_bytes)
     # The holder is owned by the ModelDeployment, so deleting the model
@@ -1778,36 +1848,20 @@ def test_the_renderer_owns_the_host_memory_holder_it_depends_on() -> None:
     assert holder["metadata"]["ownerReferences"][0]["kind"] == "ModelDeployment"
 
     pod = _workload(plan)["spec"]["template"]["spec"]
-    assert pod["affinity"]["podAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]
+    assert "podAffinity" not in pod.get("affinity", {})
     assert any(item["name"] == "fs2-verify-host-memory-residency" for item in pod["initContainers"])
 
 
 def test_a_host_memory_render_without_a_holder_image_is_refused() -> None:
     with pytest.raises(ValueError, match="holder image"):
-        render_context().model_copy(update={"host_memory_residency": render_host_memory()}).model_validate(
-            {
-                **render_context().model_dump(),
-                "host_memory_residency": render_host_memory().model_dump(),
-            }
-        )
+        _render("host-memory-residency", host_memory_residency=render_host_memory())
 
 
-def test_the_renderer_parks_a_gpu_resident_standby_on_the_burst_segment() -> None:
-    plan = _render("gpu-resident", gpu_resident=render_gpu_resident())
-    roles = {
-        item.manifest["spec"]["template"]["metadata"]["labels"].get("fast-start.fs2.nebius/gpu-resident-role")
-        for item in plan.resources
-        if item.kind == "Deployment"
-    }
-    assert roles <= {"serving", "standby"}
-    assert "standby" in roles or "serving" in roles
+def test_gpu_resident_is_not_selectable_without_a_promotion_controller() -> None:
+    with pytest.raises(ValidationError, match="not selectable"):
+        _pinned("gpu-resident")
 
 
 def test_a_render_whose_declaration_misses_the_pool_is_refused() -> None:
-    with pytest.raises(ValueError, match="undeclared pool"):
-        render_context().model_copy().model_validate(
-            {
-                **render_context().model_dump(),
-                "regional_cache": render_regional_cache(pool_refs=("pool-a",)).model_dump(),
-            }
-        )
+    with pytest.raises(ValueError, match="not declared for the rendered pool"):
+        _render("regional-cache", regional_cache=render_regional_cache(pool_refs=("pool-a",)))

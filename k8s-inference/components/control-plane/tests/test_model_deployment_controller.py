@@ -12,6 +12,8 @@ from test_fast_start import evidence, with_evidence, with_fast_start
 from test_model_deployment import (
     envelope,
     model_spec,
+    render_gpu_resident,
+    render_host_memory,
     render_regional_cache,
     renderer,
     reserved_and_preemptible_envelope,
@@ -22,6 +24,7 @@ from fs2_serve.fast_start_policy import FastStartHistoryWindow
 from fs2_serve.model_deployment import (
     FIELD_MANAGER,
     FINALIZER,
+    CacheTier,
     DesiredState,
     DrainObservation,
     InfrastructureEnvelope,
@@ -1764,6 +1767,89 @@ def _mechanism_envelope() -> tuple[ModelDeploymentSpec, InfrastructureEnvelope]:
     return ModelDeploymentSpec.model_validate(wire), installed
 
 
+def _all_mechanism_envelope(mechanism: str) -> tuple[ModelDeploymentSpec, InfrastructureEnvelope]:
+    base = envelope()
+    qualification = base.qualifications["qwen.3-8b"].model_copy(
+        update={
+            "regional_cache": render_regional_cache(),
+            "host_memory_residency": render_host_memory(),
+            "gpu_resident": render_gpu_resident(),
+            "template_cache_tiers": {
+                digest_value: CacheTier.SHARED_FILESYSTEM
+                for digest_value in base.qualifications["qwen.3-8b"].template_digests
+            },
+        }
+    )
+    installed = base.model_copy(
+        update={
+            "qualifications": {qualification.model_ref: qualification},
+            "residency_holder_image": model_spec().runtime.image,
+        }
+    )
+    wire = model_spec().model_dump(mode="json", by_alias=True)
+    wire["cache"] = {**wire["cache"], "mechanism": mechanism}
+    wire["availability"] = {**wire["availability"], "maxReplicas": 20}
+    if mechanism in {"regional-cache", "host-memory-residency"}:
+        wire["cache"]["tier"] = "SharedFilesystem"
+    return ModelDeploymentSpec.model_validate(wire), installed
+
+
+@pytest.mark.asyncio
+async def test_controller_passes_all_reviewed_mechanisms_and_holder_image_to_real_render() -> None:
+    spec, installed = _all_mechanism_envelope("host-memory-residency")
+    raw = model_object()
+    raw["spec"] = spec.model_dump(mode="json", by_alias=True)
+    api = FakeApi(raw)
+    captured: list[RenderContext] = []
+    delegate = renderer()
+
+    class CapturingRenderer:
+        def render(self, desired: ModelDeploymentSpec, context: RenderContext) -> RenderPlan:
+            captured.append(context)
+            return delegate.render(desired, context)
+
+    subject = ModelDeploymentController(
+        api=api,
+        envelope=installed,
+        renderer=CapturingRenderer(),
+        namespace="fs2-models",
+        holder_identity="fs2-system/controller:pod-uid",
+        prometheus_server_address="http://prometheus:9090",
+        writes_enabled=True,
+        active_operations=ZeroActiveOperations(),
+        queue_capacity=2,
+        worker_count=1,
+        poll_seconds=0.01,
+    )
+    key = ModelKey(namespace="fs2-models", name="qwen-live")
+
+    assert (await subject.reconcile(key, fence())).action == "finalizer-added"
+    assert (await subject.reconcile(key, fence())).requeue
+    context = captured[-1]
+    qualification = installed.qualifications[spec.model_ref]
+    assert context.regional_cache == qualification.regional_cache
+    assert context.host_memory_residency == qualification.host_memory_residency
+    assert context.gpu_resident == qualification.gpu_resident
+    assert context.residency_holder_image == installed.residency_holder_image
+    holders = [item for item in api.resources.values() if item.observed.kind == "DaemonSet"]
+    assert len(holders) == len(spec.placement.pool_refs)
+    assert all(
+        item.raw["spec"]["selector"]["matchLabels"]["fast-start.fs2.nebius/host-memory-holder"] for item in holders
+    )
+    statuses = api.status_writes[-1]["fastStart"]["cacheMechanisms"]
+    host = statuses["host-memory-residency"]
+    assert qualification.host_memory_residency is not None
+    reserved_per_node = qualification.host_memory_residency.reserved_bytes
+    assert host["selected"] is True
+    assert host["reservedHostMemoryBytes"] == reserved_per_node
+    assert host.get("reservedHostMemoryFraction") is None
+    assert host["maximumReservedHostMemoryBytes"] == reserved_per_node * sum(
+        installed.pools[pool_ref].max_nodes for pool_ref in spec.placement.pool_refs
+    )
+    assert statuses["regional-cache"]["state"] == "Available"
+    assert statuses["gpu-resident"]["state"] == "Unavailable"
+
+
 def test_a_configured_mechanism_is_reported_without_claiming_a_level() -> None:
     """The honest report: mechanism Configured, effective level still absent."""
 
@@ -1802,6 +1888,10 @@ def test_a_configured_mechanism_is_reported_without_claiming_a_level() -> None:
     mechanisms = fast_start["cacheMechanisms"]
 
     # The selected mechanism is visible and attributed to its reviewed digest.
+    conventional = mechanisms["conventional"]
+    assert conventional["state"] == "Available"
+    assert conventional["reason"] == "ConventionalLoaderAvailable"
+    assert conventional["selected"] is False
     regional = mechanisms["regional-cache"]
     assert regional["selected"] is True
     assert regional["state"] in ("Configured", "Pending")
@@ -1819,7 +1909,9 @@ def test_a_configured_mechanism_is_reported_without_claiming_a_level() -> None:
     for pool in mechanisms["node-local-restore"]["pools"].values():
         assert pool["evidenceSelector"] == {"local-nvme.fs2.nebius/eligible": "false"}
 
-    # An undeclared mechanism is neither selected nor pretending to be ready.
-    assert mechanisms["gpu-resident"]["state"] == "Undeclared"
+    # GPU residency stays fail-closed until a production promotion controller
+    # owns the readiness-gate condition.
+    assert mechanisms["gpu-resident"]["state"] == "Unavailable"
+    assert mechanisms["gpu-resident"]["reason"] == "PromotionControllerNotInstalled"
     assert mechanisms["gpu-resident"]["selected"] is False
     assert mechanisms["gpu-resident"].get("configDigest") is None

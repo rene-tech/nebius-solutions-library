@@ -231,7 +231,11 @@ function cacheMechanismSummary(name: string, value: ModelDeploymentCacheMechanis
   const reserved = value.reservedHostMemoryBytes ?? value.reserved_host_memory_bytes;
   if (reserved !== null && reserved !== undefined) {
     const fraction = value.reservedHostMemoryFraction ?? value.reserved_host_memory_fraction;
-    parts.push(`host RAM ${mechanismBytes(reserved)}${fraction ? ` · ${(fraction * 100).toFixed(2)}% of node` : ""}`);
+    const scope = value.hostMemoryReservationScope ?? value.host_memory_reservation_scope ?? "per-node";
+    const scopeLabel = scope === "per-replica" ? "per replica" : "per node";
+    parts.push(`host RAM ${scopeLabel} ${mechanismBytes(reserved)}${scope === "per-node" && fraction ? ` · ${(fraction * 100).toFixed(2)}% of node` : ""}`);
+    const maximum = value.maximumReservedHostMemoryBytes ?? value.maximum_reserved_host_memory_bytes;
+    if (maximum !== null && maximum !== undefined) parts.push(`configured maximum ${mechanismBytes(maximum)}`);
   }
   const abi = value.retainedCompileCacheAbi ?? value.retained_compile_cache_abi;
   if (abi) parts.push(`compile cache ${abi}`);

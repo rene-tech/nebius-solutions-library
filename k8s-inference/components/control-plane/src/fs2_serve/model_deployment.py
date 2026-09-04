@@ -729,6 +729,12 @@ class InfrastructureEnvelope(KubernetesModel):
     max_accelerators_per_model: int = Field(default=1024, ge=1, le=640000)
     fast_start_wait_second_value: float = Field(default=0.01, ge=0, le=1000000)
     fast_start_mechanism_hourly_costs: dict[str, float] = Field(default_factory=dict, max_length=128)
+    residency_holder_image: str | None = Field(
+        default=None,
+        min_length=73,
+        max_length=768,
+        pattern=IMAGE_DIGEST_PATTERN,
+    )
 
     @model_validator(mode="after")
     def key_identities_match(self) -> InfrastructureEnvelope:
@@ -1267,17 +1273,6 @@ class RenderContext(KubernetesModel):
                 raise ValueError("ModelExpress render context contains an unqualified pool")
             if len({item.accelerator_class for item in pools}) != 1:
                 raise ValueError("ModelExpress v0.5.1 render requires one accelerator class")
-        selected_pool_ids = {item.pool_id for item in pools}
-        for mechanism in DECLARED_MECHANISMS:
-            declaration = self.mechanism_declaration(mechanism)
-            if declaration is None:
-                continue
-            if not selected_pool_ids.issubset(declaration.pool_refs):
-                raise ValueError("fast-start mechanism render context contains an undeclared pool")
-        residency = self.host_memory_residency
-        if residency is not None and residency.residency_mode != "runtime-sleep-offload":
-            if self.residency_holder_image is None:
-                raise ValueError("a host-memory residency render needs the holder image")
         return self
 
 
@@ -2111,12 +2106,17 @@ class LegacyManifestRenderer:
                         runtime_container_name=bundle.runtime_container_name,
                     )
                 elif isinstance(declaration, HostMemoryResidencyQualification):
+                    if declaration.holder.namespace != context.namespace:
+                        raise ValueError("the residency holder must share the ModelDeployment namespace")
+                    holder_name = _derived_name("fs2-hostmem-", f"{context.name}-{segment.pool.pool_id}")
+                    holder_identity = bounded_label_value(holder_name)
                     configure_host_memory_residency(
                         pod_spec=pod_spec,
                         pod_metadata=pod_metadata,
                         qualification=declaration,
                         runtime_image=spec.runtime.image,
                         model_ref=bounded_label_value(spec.model_ref),
+                        holder_identity=holder_identity,
                         runtime_container_name=bundle.runtime_container_name,
                     )
                     if declaration.residency_mode != "runtime-sleep-offload":
@@ -2234,18 +2234,22 @@ class LegacyManifestRenderer:
 
         primary_pod_security_context = primary_template["spec"]["template"]["spec"].get("securityContext")
         for pool_id, (residency, pool) in sorted(residency_holders.items()):
-            assert context.residency_holder_image is not None
+            if context.residency_holder_image is None:
+                raise ValueError("a host-memory residency render needs the holder image")
+            holder_name = _derived_name("fs2-hostmem-", f"{context.name}-{pool_id}")
+            holder_identity = bounded_label_value(holder_name)
             rendered.extend(
                 residency_holder_manifests(
                     namespace=context.namespace,
-                    name=_derived_name("fs2-hostmem-", f"{context.name}-{pool_id}"),
+                    name=holder_name,
                     model_ref=bounded_label_value(spec.model_ref),
+                    holder_identity=holder_identity,
                     qualification=residency,
                     image=context.residency_holder_image,
                     node_selector=pool.node_selector,
                     tolerations=pool.tolerations,
                     labels=labels,
-                    annotations=annotations,
+                    annotations={**annotations, WORKLOAD_POOL_ANNOTATION: pool_id},
                     # The holder must read exactly the bytes the runtime reads.
                     pod_security_context=primary_pod_security_context,
                     owner_references=owner_references,

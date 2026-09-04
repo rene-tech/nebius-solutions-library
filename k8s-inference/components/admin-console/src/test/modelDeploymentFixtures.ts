@@ -244,13 +244,6 @@ export const modelDeploymentMutationCapabilitiesFixture: ModelDeploymentMutation
         minimum_hot_replicas: 0,
         minimum_max_replicas: 1,
       },
-      {
-        mechanism: "gpu-resident",
-        pool_refs: ["reserved-h100"],
-        required_cache_tier: null,
-        minimum_hot_replicas: 1,
-        minimum_max_replicas: 2,
-      },
     ],
     fast_start_qualified_level: "L3",
   }],
