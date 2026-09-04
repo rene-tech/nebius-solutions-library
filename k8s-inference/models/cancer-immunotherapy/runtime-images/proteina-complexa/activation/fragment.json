@@ -14,7 +14,7 @@
       "digest_evidence_path": "models/cancer-immunotherapy/runtime-images/proteina-complexa/evidence/h100-semantic-qualification.json"
     },
     "runtime_recipe": {
-      "source_revision": "92343f091dd6bf6da3d4a31f6c0b163db8087830",
+      "source_revision": "897c04aafbb4bb7b1879ae459527caf70aeeb94e",
       "algorithm": "fs2-path-set-sha256-v1",
       "paths": [
         "catalog/runtime/contracts/scientific-artifact-localization.json",
@@ -74,10 +74,10 @@
       "execution_identity": {
         "model_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
         "runtime_image_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
-      "runtime_recipe_sha256": "b2644506e3327110c9f44c0347db95b839783d9c84a1c0fe6de1b62d374bc6cd",
+      "runtime_recipe_sha256": "45d6b89a67d227cbfd2ff144ae1477a5be9f914abf8939d6dfa2ff35484388a5",
         "workload_recipe_sha256": "f614aa8507bb31c70d9e9316e4a2a9eb297922cc06555af3a801f0240e9b5797",
         "artifact_manifest_digest": "2d84dbda753a108e2e10f1d0aab1d9bc6dd5017f8f86ed94173d933a9884d4eb",
-      "execution_identity_sha256": "4ea1de4e97188bfd9b11dfcd7ae3873031d4a4b6d46b21658e02aa623766c9e7"
+      "execution_identity_sha256": "5c72ddaa44c4aaec55a4aa2f7f60ef75e4c1ea1ecc523a7b9ae388b3e32dd96f"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -214,7 +214,7 @@
         "h100_semantic_receipt_sha256": "380441981a4170c8f2427a47ef4b25898f0ab14e33cc5efe7fdd65ebc1b45c4b",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "7af5da8ed9e97cb99dc4c04e9aafe56eda45db8cd44d76df84da403e42a2e1a0",
+        "execution_map_sha256": "1b00c5b641422f1789603a1f634b9dd375a4ca04f2845bbef1837eafb476d0b1",
         "qualified_at": "2026-09-03T13:53:21Z"
       },
       "policy": {

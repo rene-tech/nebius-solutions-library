@@ -14,7 +14,7 @@
       "digest_evidence_path": "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-qualification-20260903.json"
     },
     "runtime_recipe": {
-      "source_revision": "92343f091dd6bf6da3d4a31f6c0b163db8087830",
+      "source_revision": "897c04aafbb4bb7b1879ae459527caf70aeeb94e",
       "algorithm": "fs2-path-set-sha256-v1",
       "paths": [
         "catalog/runtime/contracts/scientific-artifact-localization.json",
@@ -73,10 +73,10 @@
       "execution_identity": {
         "model_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
         "runtime_image_digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
-      "runtime_recipe_sha256": "77c0054ab5582eba4c66250dc331c5fb95be6e17f8120b9b7c88f5410c2c9eed",
-        "workload_recipe_sha256": "a4e59c0c5bd51067511b5f65f6288e8f7e38164146496ec9337765e795563da2",
+      "runtime_recipe_sha256": "34f50908394d3a099e5f8bba6d59fe3d21db5b53909c2255f24162250cb23694",
+        "workload_recipe_sha256": "ad880c5ee2e2f25462b98c5278454290d3090810762037f6df8c4fea99c7a4cb",
         "artifact_manifest_digest": "a933ad20fd8c9e065c3ba77e96ff36c78303841b79a33d1b0308ec7d9873d641",
-      "execution_identity_sha256": "d1c775c0a87106338eb1a3cb1f8f29f2bea87e0dc0d888acd4b12dfec65a44b8"
+      "execution_identity_sha256": "cb1aacc26a7ff596134f2734d67bbe15fe04480f603fe4f95eb1288441b27aad"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -177,7 +177,7 @@
         "h100_semantic_receipt_sha256": "162a1705d3f8b301cfb98426c3717fea63f9c9cb4c5c8ed4f21e2a60a1250944",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "7af5da8ed9e97cb99dc4c04e9aafe56eda45db8cd44d76df84da403e42a2e1a0",
+        "execution_map_sha256": "1b00c5b641422f1789603a1f634b9dd375a4ca04f2845bbef1837eafb476d0b1",
         "qualified_at": "2026-09-03T07:04:28Z"
       },
       "policy": {
