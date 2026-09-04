@@ -78,6 +78,20 @@ BOLTZGEN_LEGACY_BROAD_MOUNT = {
     "sub_path": None,
     "read_only": True,
 }
+BOLTZGEN_FINAL_STAGES = frozenset({"analysis", "filtering"})
+BOLTZGEN_MOLECULE_MOUNT = {
+    "claim_name": None,
+    "host_path": "/mnt/fs2-reference-data/data",
+    "kind": "reference",
+    "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+    "name": "boltzgen-inference-molecules",
+    "read_only": True,
+    "sub_path": (
+        "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/"
+        "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
+    ),
+}
+REFERENCE_DATA_NODE_LABELS = {"storage.fs2.nebius/reference-data": "true"}
 INTEGRATION_SOURCE_REVISION = "897c04aafbb4bb7b1879ae459527caf70aeeb94e"
 SHARED_RUNTIME_RECIPE_PATHS = frozenset(
     {
@@ -661,6 +675,100 @@ def _normalize_serialized_boltzgen_mount_cleanup(
         baseline_stages[stage_id]["mounts"].remove(BOLTZGEN_LEGACY_BROAD_MOUNT)
 
 
+def _normalize_serialized_model_reference_data_repair(
+    relative: str, baseline: dict[str, Any], current: dict[str, Any]
+) -> None:
+    """Normalize only the reviewed storage lane and final-stage mount repair."""
+
+    if relative == "catalog/runtime/contracts/scientific-workload-profiles.json":
+        baseline_models = {
+            item.get("model_id"): item
+            for item in baseline.get("profiles", [])
+            if isinstance(item, dict)
+        }
+        current_models = {
+            item.get("model_id"): item
+            for item in current.get("profiles", [])
+            if isinstance(item, dict)
+        }
+        repairs = {
+            "boltzgen": BOLTZGEN_FINAL_STAGES,
+            "protenix-v2": frozenset({"prepare-data"}),
+        }
+        for model_id, stage_ids in repairs.items():
+            baseline_model = baseline_models.get(model_id)
+            current_model = current_models.get(model_id)
+            if not isinstance(baseline_model, dict) or not isinstance(
+                current_model, dict
+            ):
+                continue
+            baseline_stages = {
+                item.get("id"): item
+                for item in baseline_model.get("workload", {}).get("stages", [])
+                if isinstance(item, dict)
+            }
+            current_stages = {
+                item.get("id"): item
+                for item in current_model.get("workload", {}).get("stages", [])
+                if isinstance(item, dict)
+            }
+            if all(
+                baseline_stages.get(stage_id, {}).get("placement", {}).get("class")
+                == "general-cpu"
+                and current_stages.get(stage_id, {}).get("placement", {}).get("class")
+                == "model-reference-data"
+                for stage_id in stage_ids
+            ):
+                for stage_id in stage_ids:
+                    baseline_stages[stage_id]["placement"]["class"] = (
+                        "model-reference-data"
+                    )
+        return
+
+    if relative != "catalog/runtime/contracts/scientific-execution-map.json":
+        return
+    baseline_models = {
+        item.get("model_id"): item
+        for item in baseline.get("models", [])
+        if isinstance(item, dict)
+    }
+    current_models = {
+        item.get("model_id"): item
+        for item in current.get("models", [])
+        if isinstance(item, dict)
+    }
+    baseline_model = baseline_models.get("boltzgen")
+    current_model = current_models.get("boltzgen")
+    if not isinstance(baseline_model, dict) or not isinstance(current_model, dict):
+        return
+    baseline_stages = {
+        item.get("stage_id"): item
+        for item in baseline_model.get("stages", [])
+        if isinstance(item, dict)
+    }
+    current_stages = {
+        item.get("stage_id"): item
+        for item in current_model.get("stages", [])
+        if isinstance(item, dict)
+    }
+    if not all(
+        BOLTZGEN_MOLECULE_MOUNT
+        not in baseline_stages.get(stage_id, {}).get("mounts", [])
+        and BOLTZGEN_MOLECULE_MOUNT
+        in current_stages.get(stage_id, {}).get("mounts", [])
+        and baseline_stages.get(stage_id, {}).get("required_node_labels") == {}
+        and current_stages.get(stage_id, {}).get("required_node_labels")
+        == REFERENCE_DATA_NODE_LABELS
+        for stage_id in BOLTZGEN_FINAL_STAGES
+    ):
+        return
+    for stage_id in BOLTZGEN_FINAL_STAGES:
+        baseline_stages[stage_id]["mounts"].append(dict(BOLTZGEN_MOLECULE_MOUNT))
+        baseline_stages[stage_id]["required_node_labels"] = dict(
+            REFERENCE_DATA_NODE_LABELS
+        )
+
+
 def _derived_identity_refresh_only(relative: str) -> list[str]:
     """Classify a change to a shared aggregate as derived-only, or report why not.
 
@@ -685,6 +793,9 @@ def _derived_identity_refresh_only(relative: str) -> list[str]:
     ):
         return [f"forbidden shared aggregate changed: {relative}"]
     _normalize_serialized_boltzgen_mount_cleanup(
+        relative, baseline_document, current_document
+    )
+    _normalize_serialized_model_reference_data_repair(
         relative, baseline_document, current_document
     )
     baseline = dict(_json_leaves(baseline_document))

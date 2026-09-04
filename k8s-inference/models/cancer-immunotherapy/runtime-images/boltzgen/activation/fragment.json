@@ -75,10 +75,10 @@
       "execution_identity": {
         "model_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
         "runtime_image_digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
-      "runtime_recipe_sha256": "164475e69b1d3910cb01c1537cb3975a49aed6e212b2c8779272b2ad3ce47942",
-        "workload_recipe_sha256": "223b796e10fbf933d591817163086bc2830d0e54212b6a7d8e27624aae24d336",
+        "runtime_recipe_sha256": "639af92e7d1832ae1551d37a4a077d31ecb993f63d3adab93156e05bb1220b81",
+        "workload_recipe_sha256": "9990f584f6779d4e261aa0a93c901a0a761ef2d5d3cd2557ad89363b3bbb4f0a",
         "artifact_manifest_digest": "8305400f8711388cbc5d9937a120d7ca4de390170082047511e859f636a2dd66",
-      "execution_identity_sha256": "8d55b1460e04a2e6958e401c92a7f4dccccdbcdb4d321029e4014d3ee70cf435"
+        "execution_identity_sha256": "cb036d68d8f537ec399c883b17832350a55459c51820051495713bd7acf1305a"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -204,7 +204,7 @@
             "checkpoint_mode": "none",
             "preemption_mode": "non_preemptible",
             "placement": {
-              "class": "general-cpu"
+              "class": "model-reference-data"
             },
             "resources": {
               "cpu_millis": 2000,
@@ -229,7 +229,7 @@
             "checkpoint_mode": "none",
             "preemption_mode": "non_preemptible",
             "placement": {
-              "class": "general-cpu"
+              "class": "model-reference-data"
             },
             "resources": {
               "cpu_millis": 2000,
@@ -272,7 +272,7 @@
         "h100_semantic_receipt_sha256": "f4a36ad7b8367e3383f584f96377313d39a26b5a08343d789311a41b04b79a46",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "1b00c5b641422f1789603a1f634b9dd375a4ca04f2845bbef1837eafb476d0b1",
+        "execution_map_sha256": "55f1ea1c20099c461ef3ee76a228b06b31b393a7108eb4ade43d40c03355ddaf",
         "qualified_at": "2026-09-03T07:34:56Z"
       },
       "runtime_artifacts": [
@@ -481,22 +481,30 @@
         "id": "analysis",
         "resource_class": "cpu",
         "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
-        "runtime_artifacts": [],
+        "runtime_artifacts": [
+          "boltzgen-inference-molecules"
+        ],
         "placement": {
           "accelerator_classes": [],
           "eligible_pool_ids": [],
-          "required_node_labels": {}
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
         }
       },
       {
         "id": "filtering",
         "resource_class": "cpu",
         "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
-        "runtime_artifacts": [],
+        "runtime_artifacts": [
+          "boltzgen-inference-molecules"
+        ],
         "placement": {
           "accelerator_classes": [],
           "eligible_pool_ids": [],
-          "required_node_labels": {}
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
         }
       }
     ],

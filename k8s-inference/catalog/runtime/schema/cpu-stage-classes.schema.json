@@ -31,7 +31,7 @@
       "type": "string",
       "maxLength": 63,
       "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
-      "description": "Three class IDs are defined by this version. 'reference-data' is the tainted pool that mounts the shared reference databases beside AlphaFold 3's raw data stage. 'general-cpu' is untainted general capacity in the ordinary model namespace. 'academic-cpu' is the same general CPU backing reached through a distinct LocalQueue in the academic claim namespace, currently for BindCraft aggregation. Any other ID is producer-defined and a consumer must treat it as unknown rather than as a synonym for one of these."
+      "description": "Four class IDs are defined by this version. 'reference-data' is the tainted pool that mounts the shared reference databases in the academic namespace beside AlphaFold 3's raw data stage. 'model-reference-data' is the same storage-attached backing reached through a distinct LocalQueue in the ordinary model namespace. 'general-cpu' is untainted general capacity in the ordinary model namespace. 'academic-cpu' is the same general CPU backing reached through a distinct LocalQueue in the academic claim namespace, currently for BindCraft aggregation. Any other ID is producer-defined and a consumer must treat it as unknown rather than as a synonym for one of these."
     },
     "dns_label": {
       "type": "string",

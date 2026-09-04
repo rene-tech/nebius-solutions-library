@@ -7,7 +7,7 @@ from conftest import CATALOG_ROOT
 from jsonschema import Draft202012Validator, FormatChecker
 
 SOLUTION_ROOT = CATALOG_ROOT.parents[1]
-EXECUTION_MAP_SHA256 = "1b00c5b641422f1789603a1f634b9dd375a4ca04f2845bbef1837eafb476d0b1"
+EXECUTION_MAP_SHA256 = "55f1ea1c20099c461ef3ee76a228b06b31b393a7108eb4ade43d40c03355ddaf"
 PRIMARY_ACTIVE_BRIDGE = {
     "boltzgen": {
         "digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
@@ -283,6 +283,32 @@ def test_bindcraft_private_runtime_tree_is_exact_and_read_only() -> None:
         "alphafold2-params",
         "pyrosetta",
     }
+
+
+def test_boltzgen_final_cpu_stages_mount_only_the_molecule_generation() -> None:
+    profiles_document = json.loads(
+        (CATALOG_ROOT / "contracts/scientific-workload-profiles.json").read_text(encoding="utf-8")
+    )
+    execution_document = json.loads(
+        (CATALOG_ROOT / "contracts/scientific-execution-map.json").read_text(encoding="utf-8")
+    )
+    profile = next(item for item in profiles_document["profiles"] if item["model_id"] == "boltzgen")
+    execution = next(item for item in execution_document["models"] if item["model_id"] == "boltzgen")
+    profile_stages = {item["id"]: item for item in profile["workload"]["stages"]}
+    execution_stages = {item["stage_id"]: item for item in execution["stages"]}
+
+    for stage_id in ("analysis", "filtering"):
+        assert profile_stages[stage_id]["placement"] == {"class": "model-reference-data"}
+        stage = execution_stages[stage_id]
+        assert {mount["name"] for mount in stage["mounts"]} == {
+            "artifact-workspace",
+            "boltzgen-inference-molecules",
+        }
+        molecule = next(mount for mount in stage["mounts"] if mount["name"] == "boltzgen-inference-molecules")
+        assert molecule["host_path"] == "/mnt/fs2-reference-data/data"
+        assert molecule["mount_path"] == "/opt/fs2/artifacts/boltzgen-inference-molecules"
+        assert molecule["read_only"] is True
+        assert stage["required_node_labels"] == {"storage.fs2.nebius/reference-data": "true"}
 
 
 def test_mosaic_design_uses_the_shared_persistent_jax_cache() -> None:

@@ -80,14 +80,22 @@ locals {
   # The academic queue object belongs to modules/academic-assets, beside the
   # claim and namespace it serves, so the scheduling owner describes it without
   # creating it. A collision with an operator lane is a real conflict.
-  academic_lane_queue_collisions = sort([
-    for queue_name in concat(
-      keys(local.academic_scheduling_local_queues),
-      keys(local.academic_cpu_local_queues),
-      keys(local.academic_general_cpu_local_queues),
-    ) : queue_name
-    if contains(keys(var.scheduling.local_queues), queue_name)
-  ])
+  managed_lane_queue_names = concat(
+    keys(local.academic_scheduling_local_queues),
+    keys(local.academic_cpu_local_queues),
+    keys(local.academic_general_cpu_local_queues),
+    keys(local.model_reference_cpu_local_queues),
+  )
+  managed_lane_queue_collisions = sort(distinct(concat(
+    [
+      for queue_name in local.managed_lane_queue_names : queue_name
+      if contains(keys(var.scheduling.local_queues), queue_name)
+    ],
+    [
+      for queue_name in distinct(local.managed_lane_queue_names) : queue_name
+      if length([for candidate in local.managed_lane_queue_names : candidate if candidate == queue_name]) > 1
+    ],
+  )))
 
   # The reference queue's quota is authored in Kubernetes quantity strings.
   # Convert to the contract's exact integer units so a stage request can be
@@ -165,6 +173,24 @@ locals {
     }
   } : {}
 
+  # Public localization generations also serve CPU stages in the ordinary
+  # model namespace. Give those stages a namespace-local queue into the same
+  # storage-attached ClusterQueue; Kueue LocalQueues are namespaced and the
+  # academic queue cannot be reused from fs2-models.
+  model_reference_cpu_lane_enabled     = var.reference_data.enabled
+  model_reference_cpu_local_queue_name = "model-reference-data"
+  model_reference_cpu_local_queues = local.model_reference_cpu_lane_enabled ? {
+    (local.model_reference_cpu_local_queue_name) = {
+      namespace           = var.scientific_batch.namespace
+      cluster_queue       = var.reference_data.queue.cluster_queue
+      fair_sharing_weight = 1
+      # CPU stage classes select this lane; route bindings stay unambiguous.
+      model_ids       = toset([])
+      tenant_ids      = toset([])
+      service_classes = toset([])
+    }
+  } : {}
+
   # BindCraft's licensed design stage is namespace-bound to the academic claim.
   # Its small aggregate stage needs the same namespace even though it runs on
   # the elastic general CPU pool. A distinct class and LocalQueue keep that
@@ -196,6 +222,18 @@ locals {
     cpu_millicores = 2000
     memory_mib     = 8192
   }
+  model_reference_cpu_request = {
+    # The largest current stage on this shared class is Protenix prepare-data;
+    # BoltzGen analysis and filtering request 2 CPU and 4 GiB each.
+    cpu_millicores = 4000
+    memory_mib     = 16384
+  }
+  reference_cpu_stage_minimums = merge(
+    local.academic_cpu_lane_enabled ? { reference-data = local.raw_af3_cpu_request } : {},
+    local.model_reference_cpu_lane_enabled ? {
+      model-reference-data = local.model_reference_cpu_request
+    } : {},
+  )
 
   # Named CPU stage classes. Only a class with a real pool, selector,
   # toleration, and advertised per-node capacity is published: an executable
@@ -242,43 +280,45 @@ locals {
   # scheduling module emits the merged map as cpu_classes in the one
   # content-addressed scheduling ConfigMap, against
   # catalog/runtime/schema/cpu-stage-classes.schema.json.
+  reference_cpu_class_backing = {
+    cluster_queue   = var.reference_data.queue.cluster_queue
+    resource_flavor = var.reference_data.queue.resource_flavor
+    # One pool behind one flavor, so admission identifies the exact pool.
+    eligible_pool_ids = [var.reference_data.storage_contract.cpu_pool.id]
+    pool_resolution = {
+      mode    = "per-pool-flavor"
+      pool_id = var.reference_data.storage_contract.cpu_pool.id
+    }
+    node_selector = var.reference_data.storage_contract.cpu_pool.node_labels
+    tolerations = [{
+      key      = var.reference_data.storage_contract.cpu_pool.taint.key
+      operator = "Equal"
+      value    = var.reference_data.storage_contract.cpu_pool.taint.value
+      effect   = var.reference_data.storage_contract.cpu_pool.taint.effect
+    }]
+    # Per node, not the pool aggregate: one stage Pod must fit one node.
+    schedulable_capacity = {
+      cpu               = "${var.reference_data.storage_contract.cpu_pool.schedulable_capacity.cpu_millicores}m"
+      memory            = "${var.reference_data.storage_contract.cpu_pool.schedulable_capacity.memory_mib}Mi"
+      ephemeral_storage = "${var.reference_data.storage_contract.cpu_pool.schedulable_capacity.ephemeral_storage_mib}Mi"
+
+      cpu_millicores        = var.reference_data.storage_contract.cpu_pool.schedulable_capacity.cpu_millicores
+      memory_mib            = var.reference_data.storage_contract.cpu_pool.schedulable_capacity.memory_mib
+      ephemeral_storage_mib = var.reference_data.storage_contract.cpu_pool.schedulable_capacity.ephemeral_storage_mib
+    }
+  }
   scientific_cpu_classes = merge(
     local.academic_cpu_lane_enabled ? {
-      reference-data = {
-        local_queue   = local.academic_cpu_local_queue_name
-        cluster_queue = var.reference_data.queue.cluster_queue
-        namespace     = var.academic_assets.namespace
-        # The flavor the reference-data plane renders for its own queue.
-        resource_flavor = var.reference_data.queue.resource_flavor
-        # One pool behind one flavor, so the admission itself says which pool
-        # ran the stage and no post-schedule Node read is needed.
-        eligible_pool_ids = [var.reference_data.storage_contract.cpu_pool.id]
-        pool_resolution = {
-          mode    = "per-pool-flavor"
-          pool_id = var.reference_data.storage_contract.cpu_pool.id
-        }
-        node_selector = var.reference_data.storage_contract.cpu_pool.node_labels
-        tolerations = [{
-          key      = var.reference_data.storage_contract.cpu_pool.taint.key
-          operator = "Equal"
-          value    = var.reference_data.storage_contract.cpu_pool.taint.value
-          effect   = var.reference_data.storage_contract.cpu_pool.taint.effect
-        }]
-        # Per NODE, not the pool aggregate: a single stage Pod must fit one
-        # node, so a consumer compares its request against this. Carried as
-        # exact apimachinery quantities beside the normalized integers, so a
-        # consumer can compare against a Pod request without a lossy round
-        # trip. Millicores and MiB are exact quantities, not a reformatting.
-        schedulable_capacity = {
-          cpu               = "${var.reference_data.storage_contract.cpu_pool.schedulable_capacity.cpu_millicores}m"
-          memory            = "${var.reference_data.storage_contract.cpu_pool.schedulable_capacity.memory_mib}Mi"
-          ephemeral_storage = "${var.reference_data.storage_contract.cpu_pool.schedulable_capacity.ephemeral_storage_mib}Mi"
-
-          cpu_millicores        = var.reference_data.storage_contract.cpu_pool.schedulable_capacity.cpu_millicores
-          memory_mib            = var.reference_data.storage_contract.cpu_pool.schedulable_capacity.memory_mib
-          ephemeral_storage_mib = var.reference_data.storage_contract.cpu_pool.schedulable_capacity.ephemeral_storage_mib
-        }
-      }
+      reference-data = merge(local.reference_cpu_class_backing, {
+        local_queue = local.academic_cpu_local_queue_name
+        namespace   = var.academic_assets.namespace
+      })
+    } : {},
+    local.model_reference_cpu_lane_enabled ? {
+      model-reference-data = merge(local.reference_cpu_class_backing, {
+        local_queue = local.model_reference_cpu_local_queue_name
+        namespace   = var.scientific_batch.namespace
+      })
     } : {},
     # Contributed by other owners of CPU capacity. This is an internal merge
     # of module outputs, never a tfvars surface: an operator-authored copy of
@@ -325,14 +365,18 @@ locals {
     local.academic_scheduling_local_queues,
     local.academic_cpu_local_queues,
     local.academic_general_cpu_local_queues,
+    local.model_reference_cpu_local_queues,
   )
 
   scheduling_required_namespaces = merge(
     local.academic_execution_enabled ? {
       (var.academic_assets.execution.cluster_queue) = [var.academic_assets.namespace]
     } : {},
-    local.academic_cpu_lane_enabled ? {
-      (var.reference_data.queue.cluster_queue) = [var.academic_assets.namespace]
+    (local.academic_cpu_lane_enabled || local.model_reference_cpu_lane_enabled) ? {
+      (var.reference_data.queue.cluster_queue) = sort(distinct(compact([
+        local.academic_cpu_lane_enabled ? var.academic_assets.namespace : "",
+        local.model_reference_cpu_lane_enabled ? var.scientific_batch.namespace : "",
+      ])))
     } : {},
     local.academic_general_cpu_lane_enabled ? {
       (var.general_cpu_lane.cluster_queue) = [var.academic_assets.namespace]
@@ -368,8 +412,11 @@ resource "terraform_data" "academic_lane_ownership" {
     # emits it would silently win or lose a merge depending on argument order,
     # and the two definitions would drift apart unnoticed.
     precondition {
-      condition     = !contains(keys(local.contributed_cpu_classes), "reference-data")
-      error_message = "A contributed CPU stage class may not redefine reference-data; that class belongs to this stage and is derived from the reference-data plane's own storage contract."
+      condition = alltrue([
+        for class_name in ["reference-data", "model-reference-data"] :
+        !contains(keys(local.contributed_cpu_classes), class_name)
+      ])
+      error_message = "A contributed CPU stage class may not redefine reference-data or model-reference-data; both belong to this stage and derive from the reference-data plane's own storage contract."
     }
 
     # A reference-data plane owns a cpu/memory ClusterQueue, and a CPU stage
@@ -420,8 +467,8 @@ resource "terraform_data" "academic_lane_ownership" {
     }
 
     precondition {
-      condition     = length(local.academic_lane_queue_collisions) == 0
-      error_message = "A scheduling.local_queues entry collides with the derived academic execution LocalQueue name; rename the operator lane or change academic_assets.execution.local_queue so exactly one definition owns that queue."
+      condition     = length(local.managed_lane_queue_collisions) == 0
+      error_message = "A LocalQueue name is defined more than once across operator-authored and managed academic or model reference-data lanes; rename a lane so exactly one definition owns that queue."
     }
 
   }
@@ -458,6 +505,7 @@ module "kueue_scheduling" {
       var.scheduling.local_queues,
       local.academic_cpu_local_queues,
       local.academic_general_cpu_local_queues,
+      local.model_reference_cpu_local_queues,
     )
   })
   external_local_queues = merge(
@@ -481,15 +529,21 @@ module "kueue_scheduling" {
   # cannot lower it, so the node and quota fit checks can never be bypassed.
   cpu_stage_requests = {
     for class_name, request in merge(
-      local.academic_cpu_lane_enabled ? { reference-data = local.raw_af3_cpu_request } : {},
+      local.reference_cpu_stage_minimums,
       local.academic_general_cpu_lane_enabled ? {
         academic-cpu = local.bindcraft_aggregate_cpu_request
       } : {},
       var.scheduling.cpu_stage_requests,
-      ) : class_name => class_name != "reference-data" ? request : {
-      cpu_millicores = max(request.cpu_millicores, local.raw_af3_cpu_request.cpu_millicores)
-      memory_mib     = max(request.memory_mib, local.raw_af3_cpu_request.memory_mib)
-    }
+      ) : class_name => contains(keys(local.reference_cpu_stage_minimums), class_name) ? {
+      cpu_millicores = max(
+        request.cpu_millicores,
+        local.reference_cpu_stage_minimums[class_name].cpu_millicores,
+      )
+      memory_mib = max(
+        request.memory_mib,
+        local.reference_cpu_stage_minimums[class_name].memory_mib,
+      )
+    } : request
   }
   required_namespaces = local.scheduling_required_namespaces
   external_cluster_queues = merge(
@@ -498,6 +552,7 @@ module "kueue_scheduling" {
         namespaces = sort(distinct(compact([
           var.reference_data.namespace,
           local.academic_cpu_lane_enabled ? var.academic_assets.namespace : "",
+          local.model_reference_cpu_lane_enabled ? var.scientific_batch.namespace : "",
         ])))
         # The quota its own owner renders, in the units this contract uses.
         core_quota = {

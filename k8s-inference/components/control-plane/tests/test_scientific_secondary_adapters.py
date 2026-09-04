@@ -348,10 +348,15 @@ def scheduling() -> SchedulingContractResolver:
                     "metadata": {"name": "general-cpu", "namespace": "fs2-models"},
                     "spec": {"clusterQueue": "general-cpu"},
                 },
+                "model-reference-data": {
+                    "metadata": {"name": "model-reference-data", "namespace": "fs2-models"},
+                    "spec": {"clusterQueue": "reference-data-cpu"},
+                },
             },
             "cluster_queues": {
                 "inference": {"metadata": {"name": "inference"}, "spec": {}},
                 "general-cpu": {"metadata": {"name": "general-cpu"}, "spec": {}},
+                "reference-data-cpu": {"metadata": {"name": "reference-data-cpu"}, "spec": {}},
             },
             "workload_priority_classes": {"customer-batch": {"value": 0}},
             "local_queue_routes": {
@@ -365,6 +370,13 @@ def scheduling() -> SchedulingContractResolver:
                 "general-cpu": {
                     "namespace": "fs2-models",
                     "cluster_queue": "general-cpu",
+                    "model_ids": [],
+                    "tenant_ids": [],
+                    "service_classes": [],
+                },
+                "model-reference-data": {
+                    "namespace": "fs2-models",
+                    "cluster_queue": "reference-data-cpu",
                     "model_ids": [],
                     "tenant_ids": [],
                     "service_classes": [],
@@ -397,9 +409,37 @@ def scheduling() -> SchedulingContractResolver:
                         "memory_mib": 32768,
                         "ephemeral_storage_mib": 131072,
                     },
-                }
+                },
+                "model-reference-data": {
+                    "local_queue": "model-reference-data",
+                    "cluster_queue": "reference-data-cpu",
+                    "namespace": "fs2-models",
+                    "resource_flavor": "reference-data-cpu",
+                    "pool_resolution": {"mode": "per-pool-flavor", "pool_id": "reference-data-cpu"},
+                    "node_selector": {
+                        "storage.fs2.nebius/reference-data": "true",
+                        "capacity.fs2.nebius/pool-id": "reference-data-cpu",
+                    },
+                    "tolerations": [
+                        {
+                            "key": "workload.fs2.nebius/reference-data",
+                            "operator": "Equal",
+                            "value": "true",
+                            "effect": "NoSchedule",
+                        }
+                    ],
+                    "eligible_pool_ids": ["reference-data-cpu"],
+                    "schedulable_capacity": {
+                        "cpu_millicores": 32000,
+                        "memory_mib": 131072,
+                        "ephemeral_storage_mib": 131072,
+                    },
+                },
             },
-            "cpu_stage_requests": {"general-cpu": {"cpu_millicores": 4000, "memory_mib": 16384}},
+            "cpu_stage_requests": {
+                "general-cpu": {"cpu_millicores": 4000, "memory_mib": 16384},
+                "model-reference-data": {"cpu_millicores": 4000, "memory_mib": 16384},
+            },
             "namespace_bound_models": {},
             "pools": {
                 "h100-1x": {
@@ -796,9 +836,15 @@ def test_explicit_stage_envelopes_freeze_against_cpu_and_accelerator_lanes(model
     )
     cpu, gpu = snapshot.stages
     assert cpu.resource_class is ResourceClass.CPU
-    assert cpu.resolved_local_queue == "general-cpu"
-    assert cpu.resolved_cluster_queue == "general-cpu"
-    assert cpu.resolved_pool_preference == ("general-cpu-8x",)
+    if model_id == "protenix-v2":
+        assert cpu.resolved_local_queue == "model-reference-data"
+        assert cpu.resolved_cluster_queue == "reference-data-cpu"
+        assert cpu.resolved_pool_preference == ("reference-data-cpu",)
+        assert ("storage.fs2.nebius/reference-data", "true") in cpu.node_selector
+    else:
+        assert cpu.resolved_local_queue == "general-cpu"
+        assert cpu.resolved_cluster_queue == "general-cpu"
+        assert cpu.resolved_pool_preference == ("general-cpu-8x",)
     assert gpu.resource_class is ResourceClass.GPU
     assert gpu.resolved_local_queue == "scientific"
     assert gpu.resolved_cluster_queue == "inference"

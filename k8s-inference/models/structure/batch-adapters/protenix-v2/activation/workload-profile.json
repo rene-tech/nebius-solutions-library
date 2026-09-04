@@ -18,10 +18,10 @@
     "execution_identity": {
       "model_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
       "runtime_image_digest": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
-      "runtime_recipe_sha256": "1b3a764c8f811d01d9adb3998de16a3e18c7f9e706a9fdedadd285054d78f1ba",
-      "workload_recipe_sha256": "5313859b371d6feda38f7cdb20c8be079a63b40b999a57fb87cb9a204404b26a",
+      "runtime_recipe_sha256": "636df3092979d49fdea2090bf604fd3ad2c1643c32c232bc54e5c56daf952dec",
+      "workload_recipe_sha256": "eca378b53d276814dad68026e1e04af4d415bbb58630861ad69e1bc25ec8979f",
       "artifact_manifest_digest": "e4396ce5ab67717f3bd608aa76f33c0c0f40afcd966d0426b05e18e19e490f2f",
-      "execution_identity_sha256": "5f8e54bee9fcb9dc759f5f3335097afd7181f14177746b1ab298d6e33ecb1812"
+      "execution_identity_sha256": "60cf8a25ea4f2aaa4988076cd722d042a176f7199f6ca44a71a1dae3403d62b7"
     },
     "interface": {
       "protocol": "scientific-batch-v1",
@@ -74,7 +74,7 @@
           "checkpoint_mode": "restart",
           "preemption_mode": "restartable",
           "placement": {
-            "class": "general-cpu"
+          "class": "model-reference-data"
           },
           "resources": {
             "cpu_millis": 4000,
@@ -133,7 +133,7 @@
       "h100_semantic_receipt_sha256": "33a54067af682bef43b282e12a46067b6891115a9e198eb214c9df46e1437f0a",
       "public_completion_receipt_sha256": null,
       "scheduler_eligibility_receipt_sha256": null,
-    "execution_map_sha256": "1b00c5b641422f1789603a1f634b9dd375a4ca04f2845bbef1837eafb476d0b1",
+      "execution_map_sha256": "55f1ea1c20099c461ef3ee76a228b06b31b393a7108eb4ade43d40c03355ddaf",
       "qualified_at": "2026-09-04T16:49:30Z"
     },
     "policy": {

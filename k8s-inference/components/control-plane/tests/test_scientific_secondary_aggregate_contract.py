@@ -375,6 +375,9 @@ def test_protenix_uses_the_exact_composite_tree_receipt_and_cache() -> None:
     execution = next(item for item in execution_document["models"] if item["model_id"] == "protenix-v2")
     requirement = profile["runtime_artifacts"][0]
     localization = execution["runtime_artifacts"][0]
+    prepare_profile = next(stage for stage in profile["workload"]["stages"] if stage["id"] == "prepare-data")
+
+    assert prepare_profile["placement"] == {"class": "model-reference-data"}
 
     assert requirement["artifact_id"] == localization["artifact_id"] == "protenix-v2"
     assert requirement["content_identity"] == {

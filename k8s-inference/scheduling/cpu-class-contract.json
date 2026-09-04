@@ -1,6 +1,6 @@
 {
   "schema": "fs2-serve.nebius.ai/cpu-workload-requirements/v1",
-  "description": "Workload requirements and ownership notes for CPU-only scientific stages. This document is not a CPU stage class map: it states what the classes must satisfy and who owns each queue, while the classes themselves are assembled by modules/kueue-scheduling and validated against the shape named in 'describes' (catalog/runtime/schema/cpu-stage-classes.schema.json). Giving it the class schema ID would claim it validates as one. Canonical CPU stage classes for scientific batch placement. This file is the coordination record, not a second contract. The scheduling workstream is the sole producer of the reference-data and academic-cpu classes, the sole assembler of the scheduling contract, and the sole owner of the immutable content-addressed ConfigMap that publishes it. The general CPU lane contributes exactly one canonical general-cpu entry plus the ownership facts for the queue and flavor it creates, and publishes no document, ConfigMap or digest of its own.",
+  "description": "Workload requirements and ownership notes for CPU-only scientific stages. This document is not a CPU stage class map: it states what the classes must satisfy and who owns each queue, while the classes themselves are assembled by modules/kueue-scheduling and validated against the shape named in 'describes' (catalog/runtime/schema/cpu-stage-classes.schema.json). Giving it the class schema ID would claim it validates as one. Canonical CPU stage classes for scientific batch placement. This file is the coordination record, not a second contract. The scheduling workstream is the sole producer of the reference-data, model-reference-data and academic-cpu classes, the sole assembler of the scheduling contract, and the sole owner of the immutable content-addressed ConfigMap that publishes it. The general CPU lane contributes exactly one canonical general-cpu entry plus the ownership facts for the queue and flavor it creates, and publishes no document, ConfigMap or digest of its own.",
   "ownership": {
     "assembled_by": "scheduling workstream",
     "config_map_owner": "scheduling workstream",
@@ -13,6 +13,7 @@
     },
     "entry_producers": {
       "reference-data": "scheduling workstream, from the infrastructure reference-data storage contract",
+      "model-reference-data": "scheduling workstream, by projecting the reference-data backing into the ordinary model namespace through its own LocalQueue",
       "general-cpu": "modules/general-cpu-scheduling, from deployment.cpu_pools and the ordinary general lane configuration",
       "academic-cpu": "scheduling workstream, by projecting the general-cpu backing into the academic claim namespace through its own LocalQueue"
     },
@@ -43,7 +44,7 @@
       "schedulable_capacity"
     ],
     "notes": {
-      "resource_flavor": "The Kueue ResourceFlavor the class admits through. Its node selector pins exactly one pool, so the flavor Kueue reports is itself the pool identity. Namespace-specific general-cpu and academic-cpu classes deliberately share it because every backing placement fact is identical.",
+      "resource_flavor": "The Kueue ResourceFlavor the class admits through. Its node selector pins exactly one pool, so the flavor Kueue reports is itself the pool identity. Namespace-specific general-cpu and academic-cpu classes deliberately share one flavor, as do reference-data and model-reference-data, because every backing placement fact in each pair is identical.",
       "pool_resolution": "An object, and the only place the actual pool appears. {mode: per-pool-flavor, pool_id: <one of this class's eligible pools>} means the class's flavor selector pins exactly one pool, so the admitted flavor answers which node group ran the stage. {mode: node-label-observation, node_label_key: <label>} means the consumer must read that label from the scheduled Node and persist it. A class never claims Kueue binds a pool when its flavor spans several. There is no top-level pool_id.",
       "eligible_pool_ids": "Scheduling is authoritative about which pools may run the class. A consumer enforces this list and never widens placement from whatever a runtime reports as compatible.",
       "schedulable_capacity": "Per node, not the lane aggregate: one stage Pod must fit one node. Carries cpu, memory and ephemeral_storage as Kubernetes quantities the controller persists, alongside the raw measured numbers."
@@ -59,7 +60,7 @@
     ],
     "rules": [
       "An unknown class, a class with no eligible pool, or a digest mismatch is a refusal to admit, never a substitution.",
-      "general-cpu and academic-cpu never resolve to the reference-data flavor, and reference-data never resolves to a general pool, in either direction, regardless of free capacity.",
+      "general-cpu and academic-cpu never resolve to the reference-data flavor; reference-data and model-reference-data never resolve to a general pool, in either direction, regardless of free capacity.",
       "A class carries the complete node selector and toleration set a Job needs; a consumer never reconstructs placement from a pool name."
     ],
     "enablement": "A reference to the scheduling ConfigMap is not proof. The assembler enables the injected seam only when the assembled cpu_classes contains a class ID and cpu_class_digests echoes the exact digest its producer rendered; otherwise the seam stays disabled and writes stay off."
@@ -108,6 +109,36 @@
         "any stage that requires the reference-data filesystem mount"
       ]
     },
+    "model-reference-data": {
+      "resource_class": "cpu",
+      "owner": "deployment.storage.reference_data plus scientific model execution namespace",
+      "purpose": "CPU scientific stages in the ordinary model namespace that read immutable public localization generations from the storage-attached reference-data pool.",
+      "bound_workloads": [
+        {
+          "model_id": "boltzgen",
+          "stage": "analysis and filtering",
+          "capacity": {
+            "cpu": "2",
+            "memory": "4Gi"
+          },
+          "rationale": "Both final upstream steps consume the molecule dictionary recorded in analysis.yaml; their namespace-local queue preserves CPU-only execution while supplying the exact read-only generation mount."
+        },
+        {
+          "model_id": "protenix-v2",
+          "stage": "prepare-data",
+          "capacity": {
+            "cpu": "4",
+            "memory": "16Gi"
+          },
+          "rationale": "Offline input preparation validates and reads the localized Protenix common-data tree before producing the GPU-stage handoff."
+        }
+      ],
+      "forbidden": [
+        "licensed academic-claim workloads",
+        "workloads that do not read an immutable public localization generation",
+        "GPU allocation"
+      ]
+    },
     "reference-data": {
       "resource_class": "cpu",
       "owner": "deployment.storage.reference_data",
@@ -140,7 +171,7 @@
   },
   "quota": {
     "cohort": null,
-    "rationale": "The general CPU lane, including its academic namespace LocalQueue, deliberately joins no cohort. Cohort membership would let general aggregation borrow reference-database capacity, or lend its own to accelerator work, and neither is intended.",
+    "rationale": "The general CPU lane, including its academic namespace LocalQueue, deliberately joins no cohort. Cohort membership would let general aggregation borrow reference-database capacity, or lend its own to accelerator work, and neither is intended. reference-data and model-reference-data are two namespace-local views of one ClusterQueue and do not duplicate its quota.",
     "nominal_source": "sum over eligible pools of measured per-node schedulable_capacity multiplied by that pool's maximum node count",
     "covered_resources": [
       "cpu",
@@ -160,11 +191,12 @@
     ]
   },
   "derivation": {
-    "rule": "Every general-cpu fact is derived from deployment.cpu_pools and the general lane configuration. academic-cpu changes only the LocalQueue and namespace, deriving every backing placement fact from general-cpu. There is no manual facts facade and no operator-supplied class map: a duplicated capacity or quota input could diverge from the pool it describes, and the divergence would only surface as a Job that never schedules.",
+    "rule": "Every general-cpu fact is derived from deployment.cpu_pools and the general lane configuration. academic-cpu changes only the LocalQueue and namespace, deriving every backing placement fact from general-cpu. reference-data and model-reference-data similarly share one infrastructure-derived backing while changing only their LocalQueue and namespace. There is no manual facts facade and no operator-supplied class map: a duplicated capacity or quota input could diverge from the pool it describes, and the divergence would only surface as a Job that never schedules.",
     "sources": {
       "pool_id, eligible_pool_ids, node_selector, tolerations, schedulable_capacity": "deployment.cpu_pools plus the infrastructure general-CPU pool contract",
       "general-cpu local_queue, cluster_queue, namespace, resource_flavor": "deployment.scheduling.general_cpu",
-      "academic-cpu local_queue and namespace": "Terraform-derived academic-general-cpu in academic_assets.namespace; all other fields are the exact general-cpu backing"
+      "academic-cpu local_queue and namespace": "Terraform-derived academic-general-cpu in academic_assets.namespace; all other fields are the exact general-cpu backing",
+      "model-reference-data local_queue and namespace": "Terraform-derived model-reference-data in scientific_batch.namespace; all other fields are the exact reference-data backing"
     },
     "root_preflight": "The root checks every bound workload against the largest declared general CPU node before any node group is created, so an undersized pool is a plan-time answer rather than a pending BindCraft Job."
   },

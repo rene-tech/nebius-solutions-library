@@ -425,9 +425,34 @@ run "licensed_lanes_and_cpu_class_are_rendered_by_the_stage" {
       contains(
         module.kueue_scheduling.contract.cluster_queue_namespaces["reference-data-cpu"],
         "fs2-academic-poc",
+      ) &&
+      contains(
+        module.kueue_scheduling.contract.cluster_queue_namespaces["reference-data-cpu"],
+        "fs2-models",
       )
     )
     error_message = "Both the accelerator ClusterQueue and the externally owned reference CPU ClusterQueue must admit the claim namespace."
+  }
+
+  assert {
+    condition = (
+      module.kueue_scheduling.contract.local_queues["model-reference-data"].metadata.namespace ==
+      "fs2-models" &&
+      module.kueue_scheduling.contract.local_queues["model-reference-data"].spec.clusterQueue ==
+      "reference-data-cpu" &&
+      length(module.kueue_scheduling.contract.local_queue_routes["model-reference-data"].model_ids) == 0 &&
+      module.kueue_scheduling.contract.cpu_classes["model-reference-data"].local_queue ==
+      "model-reference-data" &&
+      module.kueue_scheduling.contract.cpu_classes["model-reference-data"].namespace ==
+      "fs2-models" &&
+      jsonencode(module.kueue_scheduling.contract.cpu_classes["model-reference-data"].node_selector) ==
+      jsonencode(module.kueue_scheduling.contract.cpu_classes["reference-data"].node_selector) &&
+      jsonencode(module.kueue_scheduling.contract.cpu_classes["model-reference-data"].tolerations) ==
+      jsonencode(module.kueue_scheduling.contract.cpu_classes["reference-data"].tolerations) &&
+      jsonencode(module.kueue_scheduling.contract.cpu_classes["model-reference-data"].eligible_pool_ids) ==
+      jsonencode(module.kueue_scheduling.contract.cpu_classes["reference-data"].eligible_pool_ids)
+    )
+    error_message = "The model namespace must have its own route-less LocalQueue and CPU class on the exact storage-attached reference-data backing."
   }
 
   assert {
@@ -516,9 +541,10 @@ run "licensed_lanes_and_cpu_class_are_rendered_by_the_stage" {
       module.kueue_scheduling.contract.cpu_classes["reference-data"].schedulable_capacity.cpu_millicores >= 1 &&
       module.kueue_scheduling.contract.cpu_classes["reference-data"].schedulable_capacity.memory_mib >= 1 &&
       module.kueue_scheduling.contract.cpu_classes["reference-data"].schedulable_capacity.ephemeral_storage_mib >= 0 &&
-      # Only one class exists here. general-cpu has a different producer and
-      # is deliberately absent rather than approximated.
-      join(",", keys(module.kueue_scheduling.contract.cpu_classes)) == "reference-data"
+      # The two namespace-specific reference classes share one backing;
+      # general-cpu has a different producer and remains absent.
+      join(",", keys(module.kueue_scheduling.contract.cpu_classes)) ==
+      "model-reference-data,reference-data"
     )
     error_message = "The rendered reference-data class must satisfy every executable-placement requirement its published class contract states, and no class this repository does not produce may appear."
   }
@@ -526,7 +552,9 @@ run "licensed_lanes_and_cpu_class_are_rendered_by_the_stage" {
   assert {
     condition = (
       module.kueue_scheduling.contract.cpu_stage_requests["reference-data"].cpu_millicores == 16000 &&
-      module.kueue_scheduling.contract.cpu_stage_requests["reference-data"].memory_mib == 65536
+      module.kueue_scheduling.contract.cpu_stage_requests["reference-data"].memory_mib == 65536 &&
+      module.kueue_scheduling.contract.cpu_stage_requests["model-reference-data"].cpu_millicores == 4000 &&
+      module.kueue_scheduling.contract.cpu_stage_requests["model-reference-data"].memory_mib == 16384
     )
     error_message = "The canonical raw AlphaFold 3 data-stage request must be published so a consumer can check it against the per-node capacity."
   }

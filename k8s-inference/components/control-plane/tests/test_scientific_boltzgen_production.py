@@ -130,6 +130,34 @@ def _bound_plan() -> tuple[ScientificProfileCatalog, FileScientificManifestRende
     return catalog, renderer, renderer.bind_runtime_artifacts(profile, plan, access, localizations)
 
 
+def test_final_cpu_stages_bind_only_molecules_and_use_the_storage_attached_lane() -> None:
+    catalog, _renderer_instance, plan = _bound_plan()
+    final_invocations = [invocation for invocation in plan.invocations if invocation.stage_id in boltzgen.FINAL_STAGES]
+    assert {invocation.stage_id for invocation in final_invocations} == set(boltzgen.FINAL_STAGES)
+    for invocation in final_invocations:
+        assert invocation.runtime_artifacts == (boltzgen.MOLECULES_ARTIFACT_ID,)
+        assert tuple(mount.artifact_id for mount in invocation.runtime_mounts) == (boltzgen.MOLECULES_ARTIFACT_ID,)
+        assert invocation.runtime_mounts[0].mount_path == "/opt/fs2/artifacts/boltzgen-inference-molecules"
+
+    profile = catalog.get(boltzgen.MODEL_ID)
+    scheduling = _scheduling().freeze(
+        service_class="customer-batch",
+        model_id=boltzgen.MODEL_ID,
+        tenant_id="boltz-final-stage-test",
+        profile=profile.value,
+        plan=plan.controller_plan,
+        workload_namespace="fs2-models",
+    )
+    for stage_id in boltzgen.FINAL_STAGES:
+        decision = scheduling.stage(stage_id)
+        assert decision.resolved_local_queue == "model-reference-data"
+        assert decision.resolved_cluster_queue == "reference-data-cpu"
+        assert decision.resolved_pool_preference == ("reference-data-cpu",)
+        assert decision.accelerator_count == 0
+        assert ("storage.fs2.nebius/reference-data", "true") in decision.node_selector
+        assert {item.key for item in decision.tolerations} == {"workload.fs2.nebius/reference-data"}
+
+
 def _scheduling(
     pool_preference: tuple[str, ...] = ("h100-reserved-8x", "h100-1x"),
 ) -> SchedulingContractResolver:
@@ -154,14 +182,14 @@ def _scheduling(
                     "metadata": {"name": "scientific", "namespace": "fs2-models"},
                     "spec": {"clusterQueue": "inference"},
                 },
-                "general-cpu": {
-                    "metadata": {"name": "general-cpu", "namespace": "fs2-models"},
-                    "spec": {"clusterQueue": "general-cpu"},
+                "model-reference-data": {
+                    "metadata": {"name": "model-reference-data", "namespace": "fs2-models"},
+                    "spec": {"clusterQueue": "reference-data-cpu"},
                 },
             },
             "cluster_queues": {
                 "inference": {"metadata": {"name": "inference"}, "spec": {}},
-                "general-cpu": {"metadata": {"name": "general-cpu"}, "spec": {}},
+                "reference-data-cpu": {"metadata": {"name": "reference-data-cpu"}, "spec": {}},
             },
             "workload_priority_classes": {"customer-batch": {"value": 0}},
             "local_queue_routes": {
@@ -172,9 +200,9 @@ def _scheduling(
                     "tenant_ids": [],
                     "service_classes": [],
                 },
-                "general-cpu": {
+                "model-reference-data": {
                     "namespace": "fs2-models",
-                    "cluster_queue": "general-cpu",
+                    "cluster_queue": "reference-data-cpu",
                     "model_ids": [],
                     "tenant_ids": [],
                     "service_classes": [],
@@ -183,25 +211,25 @@ def _scheduling(
             "model_eligible_pool_ids": {boltzgen.MODEL_ID: ["h100-reserved-8x", "h100-1x"]},
             "cpu_classes_schema": "fs2-serve.nebius.ai/cpu-stage-classes/v1",
             "cpu_classes": {
-                "general-cpu": {
-                    "local_queue": "general-cpu",
-                    "cluster_queue": "general-cpu",
+                "model-reference-data": {
+                    "local_queue": "model-reference-data",
+                    "cluster_queue": "reference-data-cpu",
                     "namespace": "fs2-models",
-                    "resource_flavor": "general-cpu",
-                    "pool_resolution": {"mode": "per-pool-flavor", "pool_id": "general-cpu-8x"},
+                    "resource_flavor": "reference-data-cpu",
+                    "pool_resolution": {"mode": "per-pool-flavor", "pool_id": "reference-data-cpu"},
                     "node_selector": {
-                        "workload.fs2.nebius/general-cpu": "true",
-                        "capacity.fs2.nebius/pool-id": "general-cpu-8x",
+                        "storage.fs2.nebius/reference-data": "true",
+                        "capacity.fs2.nebius/pool-id": "reference-data-cpu",
                     },
                     "tolerations": [
                         {
-                            "key": "workload.fs2.nebius/general-cpu",
+                            "key": "workload.fs2.nebius/reference-data",
                             "operator": "Equal",
                             "value": "true",
                             "effect": "NoSchedule",
                         }
                     ],
-                    "eligible_pool_ids": ["general-cpu-8x"],
+                    "eligible_pool_ids": ["reference-data-cpu"],
                     "schedulable_capacity": {
                         "cpu_millicores": 8000,
                         "memory_mib": 32768,
@@ -209,7 +237,7 @@ def _scheduling(
                     },
                 }
             },
-            "cpu_stage_requests": {"general-cpu": {"cpu_millicores": 4000, "memory_mib": 16384}},
+            "cpu_stage_requests": {"model-reference-data": {"cpu_millicores": 4000, "memory_mib": 16384}},
             "namespace_bound_models": {},
             "pools": {
                 "h100-1x": {
