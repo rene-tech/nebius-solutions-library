@@ -188,6 +188,19 @@ async def test_delivered_catalog_joins_every_published_candidate(registry: Regis
 
     assert len(snapshot.data.items) == 10
     by_candidate = {item.candidate_id: item for item in snapshot.data.items}
+    assert set(by_candidate) == {
+        "alphafold3",
+        "bindcraft",
+        "boltzgen",
+        "esmfold2",
+        "esmfold2-fast",
+        "mosaic",
+        "openfold3-openbind",
+        "proteina-complexa",
+        "protenix-v2",
+        "rfdiffusion-upstream",
+    }
+    assert all(item.workload_profile == "published" for item in by_candidate.values())
     boltzgen = by_candidate["boltzgen"]
     assert boltzgen.workload_profile == "published"
     assert boltzgen.readiness == "candidate"
@@ -221,6 +234,12 @@ async def test_delivered_catalog_joins_every_published_candidate(registry: Regis
     assert by_candidate["mosaic"].workload_profile == "published"
     assert by_candidate["mosaic"].readiness == "candidate"
     assert "qualified-evidence" in by_candidate["mosaic"].missing_evidence
+    rfdiffusion = by_candidate["rfdiffusion-upstream"]
+    assert rfdiffusion.model_id == "rfdiffusion"
+    assert rfdiffusion.workload_profile == "published"
+    assert rfdiffusion.backend.source_repository == "RosettaCommons/RFdiffusion"
+    assert rfdiffusion.backend.model_revision == "9273ef67335acaf91df0150473a274759229cdf6"
+    assert "workload-profile" not in rfdiffusion.missing_evidence
 
 
 async def test_invalid_profile_is_isolated_to_its_candidate(registry: Registry, tmp_path: Path) -> None:
@@ -405,6 +424,44 @@ async def test_mapped_candidate_never_inherits_the_serving_lane_profile(
     profiles_file.write_text(json.dumps(profiles), encoding="utf-8")
 
     snapshot = await adapter(registry, profiles_file=profiles_file).list_models()
+    rfdiffusion = next(item for item in snapshot.data.items if item.candidate_id == "rfdiffusion-upstream")
+
+    assert rfdiffusion.workload_profile == "absent"
+    assert rfdiffusion.readiness == "unknown"
+    assert rfdiffusion.backend.model_revision is None
+
+
+async def test_exact_model_mapping_binds_a_lane_profile_only_for_the_same_source_family(
+    registry: Registry,
+    tmp_path: Path,
+) -> None:
+    profiles = json.loads((FIXTURES / "scientific-workload-profiles.json").read_text(encoding="utf-8"))
+    profiles["profiles"][1]["model_id"] = "rfdiffusion"
+    profiles_file = tmp_path / "scientific-workload-profiles.json"
+    profiles_file.write_text(json.dumps(profiles), encoding="utf-8")
+    variants = json.loads((FIXTURES / "model-variants.json").read_text(encoding="utf-8"))
+    variants["fallback_candidates"]["rfdiffusion-upstream"]["relationship"] = "exact-model"
+    variants_file = tmp_path / "model-variants.json"
+    variants_file.write_text(json.dumps(variants), encoding="utf-8")
+
+    snapshot = await adapter(
+        registry,
+        profiles_file=profiles_file,
+        variants_file=variants_file,
+    ).list_models()
+    rfdiffusion = next(item for item in snapshot.data.items if item.candidate_id == "rfdiffusion-upstream")
+
+    assert rfdiffusion.model_id == "rfdiffusion"
+    assert rfdiffusion.workload_profile == "published"
+    assert rfdiffusion.backend.model_revision == "4444444444444444444444444444444444444444"
+
+    profiles["profiles"][1]["source"]["repository"] = "untrusted-fork/RFdiffusion"
+    profiles_file.write_text(json.dumps(profiles), encoding="utf-8")
+    snapshot = await adapter(
+        registry,
+        profiles_file=profiles_file,
+        variants_file=variants_file,
+    ).list_models()
     rfdiffusion = next(item for item in snapshot.data.items if item.candidate_id == "rfdiffusion-upstream")
 
     assert rfdiffusion.workload_profile == "absent"
