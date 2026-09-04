@@ -73,9 +73,9 @@ class ScientificAccessGate(StrictModel):
     receipt_digest: str | None = Field(default=None, max_length=128)
     request_time_license_receipt_required: Literal[False] = False
     authorization: ScientificAccessAuthorization | None = None
-    formal_license_status: Literal[
-        "FormalAcceptancePending", "FormalAcceptanceRecorded", "not-applicable"
-    ] = "not-applicable"
+    formal_license_status: Literal["FormalAcceptancePending", "FormalAcceptanceRecorded", "not-applicable"] = (
+        "not-applicable"
+    )
     credentials_exposed: Literal[False] = False
     alternative: ScientificExplicitAlternative | None = None
 
@@ -361,6 +361,16 @@ class ScientificQualificationJoin(StrictModel):
     mismatched: list[str] = Field(default_factory=list, max_length=8)
 
 
+class ScientificAvailableUpgrade(StrictModel):
+    """Unqualified upstream revision observed after the pinned deployment revision."""
+
+    state: Literal["available-unqualified"] = "available-unqualified"
+    source_kind: Literal["git"] = "git"
+    source_repository: str = Field(min_length=1, max_length=512)
+    source_revision: str = Field(pattern=r"^[a-f0-9]{40}$")
+    review_url: str | None = Field(default=None, min_length=1, max_length=2048)
+
+
 class ScientificModelReadiness(StrictModel):
     model_id: str = Field(min_length=1, max_length=128)
     candidate_id: str = Field(min_length=1, max_length=128)
@@ -375,6 +385,7 @@ class ScientificModelReadiness(StrictModel):
     interactive_supported: bool | None = None
     service_classes: list[ScientificServiceClass] = Field(default_factory=list, max_length=8)
     backend: ScientificBackendIdentity
+    available_upgrade: ScientificAvailableUpgrade | None = None
     access: ScientificAccessGate
     caching: ScientificCachingReadiness
 
@@ -391,6 +402,14 @@ class ScientificModelReadiness(StrictModel):
             raise ValueError("a published workload profile must declare its execution mode")
         if self.readiness == "qualified" and self.qualification.state != "qualified":
             raise ValueError("qualified readiness requires a qualified execution-identity join")
+        if self.available_upgrade is not None:
+            if (
+                self.workload_profile != "published"
+                or self.backend.source_revision is None
+                or self.available_upgrade.source_repository != self.backend.source_repository
+                or self.available_upgrade.source_revision == self.backend.source_revision
+            ):
+                raise ValueError("an available upgrade must differ from the pinned backend in the same repository")
         return self
 
 

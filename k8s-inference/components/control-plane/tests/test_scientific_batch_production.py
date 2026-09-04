@@ -141,7 +141,11 @@ def profile_value() -> dict[str, object]:
         "execution_mode": "scientific-batch",
         "state": "qualified",
         "route_exposed": True,
-        "source": {"repository": "example/protein-design"},
+        "source": {
+            "kind": "git",
+            "repository": "example/protein-design",
+            "revision": "b" * 40,
+        },
         "execution_identity": {
             "model_revision": "b" * 40,
             "runtime_image_digest": f"sha256:{digest}",
@@ -189,13 +193,18 @@ def profile_value() -> dict[str, object]:
     }
 
 
-def profile_catalog_for(model_id: str) -> ScientificProfileCatalog:
+def profile_catalog_for(
+    model_id: str,
+    *,
+    profile_document: dict[str, object] | None = None,
+) -> ScientificProfileCatalog:
     """The canonical profile fixture under one caller-chosen model identity."""
 
     def load(name: str) -> Draft202012Validator:
         return Draft202012Validator(json.loads((CATALOG_ROOT / "schema" / name).read_text()))
 
-    profile = ScientificWorkloadProfile(MappingProxyType({**profile_value(), "model_id": model_id}))
+    value = profile_value() if profile_document is None else profile_document
+    profile = ScientificWorkloadProfile(MappingProxyType({**value, "model_id": model_id}))
     return ScientificProfileCatalog(
         profiles={profile.model_id: profile},
         validators={
@@ -670,15 +679,11 @@ async def test_wrapped_scheduling_failure_is_logged_with_its_chain_but_not_retur
 
 
 @pytest.mark.asyncio
-async def test_scientific_discovery_is_submittability_and_token_policy_filtered(
-    registry, cipher, hasher
-) -> None:
+async def test_scientific_discovery_is_submittability_and_token_policy_filtered(registry, cipher, hasher) -> None:
     runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
     assert runtime.scientific_batches is not None
     identity = await principal(runtime.store)
-    authorized = identity.model_copy(
-        update={"scopes": identity.scopes | frozenset({Scope.CATALOG_READ.value})}
-    )
+    authorized = identity.model_copy(update={"scopes": identity.scopes | frozenset({Scope.CATALOG_READ.value})})
 
     discovered = runtime.scientific_batches.discover(authorized, surface="mcp")
     assert [item["model_id"] for item in discovered["data"]] == ["protein-design"]
@@ -686,17 +691,13 @@ async def test_scientific_discovery_is_submittability_and_token_policy_filtered(
     assert discovered["data"][0]["runtime_image_digest"] == "sha256:" + "a" * 64
     assert discovered["data"][0]["public_completion_receipt_sha256"] == "2" * 64
 
-    no_invoke = authorized.model_copy(
-        update={"scopes": frozenset({Scope.CATALOG_READ.value})}
-    )
+    no_invoke = authorized.model_copy(update={"scopes": frozenset({Scope.CATALOG_READ.value})})
     assert runtime.scientific_batches.discover(no_invoke, surface="mcp")["data"] == []
     outside_model_policy = authorized.model_copy(update={"models": frozenset({"another-model"})})
     assert runtime.scientific_batches.discover(outside_model_policy, surface="mcp")["data"] == []
 
 
-def test_scientific_discovery_hides_profiles_when_scheduler_or_binding_is_not_exact(
-    registry, cipher, hasher
-) -> None:
+def test_scientific_discovery_hides_profiles_when_scheduler_or_binding_is_not_exact(registry, cipher, hasher) -> None:
     runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
     assert runtime.scientific_batches is not None
 
@@ -706,19 +707,99 @@ def test_scientific_discovery_hides_profiles_when_scheduler_or_binding_is_not_ex
             "model_eligible_pool_ids": {"another-model": ["h100-preemptible"]},
         }
     )
-    assert runtime.scientific_batches.discovery_profiles(
-        tenant_id="tenant-a",
-        allowed_models=frozenset({"*"}),
-        surface="admin",
-    ) == ()
+    assert (
+        runtime.scientific_batches.discovery_profiles(
+            tenant_id="tenant-a",
+            allowed_models=frozenset({"*"}),
+            surface="admin",
+        )
+        == ()
+    )
 
     runtime.scientific_batches.scheduling = scheduling()
     runtime.scientific_batches.execution_binding.execution_map_sha256 = "sha256:" + "9" * 64
-    assert runtime.scientific_batches.discovery_profiles(
-        tenant_id="tenant-a",
-        allowed_models=frozenset({"*"}),
-        surface="admin",
-    ) == ()
+    assert (
+        runtime.scientific_batches.discovery_profiles(
+            tenant_id="tenant-a",
+            allowed_models=frozenset({"*"}),
+            surface="admin",
+        )
+        == ()
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("h100_semantic_receipt_sha256", None),
+        ("public_completion_receipt_sha256", None),
+        ("public_completion_receipt_sha256", "None"),
+        ("scheduler_eligibility_receipt_sha256", "F" * 64),
+        ("execution_map_sha256", "1" * 63),
+        ("qualified_at", None),
+        ("qualified_at", "not-a-date"),
+    ],
+)
+def test_scientific_discovery_never_exposes_incomplete_qualification(
+    registry,
+    cipher,
+    hasher,
+    field: str,
+    value: object,
+) -> None:
+    runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
+    assert runtime.scientific_batches is not None
+    profile = profile_value()
+    qualification = profile["qualification"]
+    assert isinstance(qualification, dict)
+    qualification[field] = value
+    runtime.scientific_batches.profiles = profile_catalog_for(
+        "protein-design",
+        profile_document=profile,
+    )
+
+    for surface in ("admin", "mcp"):
+        assert (
+            runtime.scientific_batches.discovery_profiles(
+                tenant_id="tenant-a",
+                allowed_models=frozenset({"*"}),
+                surface=surface,
+            )
+            == ()
+        )
+
+
+@pytest.mark.parametrize(
+    ("profile_state", "semantic_state"),
+    [("active", "qualified"), ("qualified", "active")],
+)
+def test_scientific_discovery_requires_explicit_qualified_states(
+    registry,
+    cipher,
+    hasher,
+    profile_state: str,
+    semantic_state: str,
+) -> None:
+    runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
+    assert runtime.scientific_batches is not None
+    profile = profile_value()
+    profile["state"] = profile_state
+    semantic = profile["semantic_validation"]
+    assert isinstance(semantic, dict)
+    semantic["state"] = semantic_state
+    runtime.scientific_batches.profiles = profile_catalog_for(
+        "protein-design",
+        profile_document=profile,
+    )
+
+    assert (
+        runtime.scientific_batches.discovery_profiles(
+            tenant_id="tenant-a",
+            allowed_models=frozenset({"*"}),
+            surface="mcp",
+        )
+        == ()
+    )
 
 
 class _MemoryInputUploadPort:
