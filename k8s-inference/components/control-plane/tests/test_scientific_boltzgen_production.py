@@ -90,7 +90,9 @@ def _bound_plan() -> tuple[ScientificProfileCatalog, FileScientificManifestRende
     return catalog, renderer, renderer.bind_runtime_artifacts(profile, plan, access, localizations)
 
 
-def _scheduling() -> SchedulingContractResolver:
+def _scheduling(
+    pool_preference: tuple[str, ...] = ("h100-reserved-8x", "h100-1x"),
+) -> SchedulingContractResolver:
     return SchedulingContractResolver(
         {
             "schema": "fs2-serve.nebius.ai/kueue-scheduling/v1",
@@ -101,7 +103,7 @@ def _scheduling() -> SchedulingContractResolver:
                     "priority": 0,
                     "default_local_queue": "scientific",
                     "preemption_mode": "restartable",
-                    "pool_preference": ["h100-reserved-8x", "h100-1x"],
+                    "pool_preference": list(pool_preference),
                     "max_queue_seconds": 900,
                     "max_execution_seconds": 86400,
                     "caller_selectable": True,
@@ -138,7 +140,7 @@ def _scheduling() -> SchedulingContractResolver:
                     "service_classes": [],
                 },
             },
-            "model_eligible_pool_ids": {boltzgen.MODEL_ID: ["h100-1x", "h100-reserved-8x"]},
+            "model_eligible_pool_ids": {boltzgen.MODEL_ID: ["h100-reserved-8x", "h100-1x"]},
             "cpu_classes_schema": "fs2-serve.nebius.ai/cpu-stage-classes/v1",
             "cpu_classes": {
                 "general-cpu": {
@@ -347,6 +349,67 @@ async def test_public_request_freezes_schedules_reconciles_and_renders_a_fully_b
     assert environment["FS2_COLLECTOR_ID"] == "boltzgen-v0-3-2"
     assert environment["FS2_VALIDATOR_ID"] == "boltzgen-v0-3-2"
     assert pod["initContainers"][0]["command"][1] == "scientific-prepare-workspace"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pool_id", ("h100-reserved-8x", "h100-1x"))
+async def test_one_gpu_stage_can_freeze_and_render_on_each_eligible_pool(pool_id: str) -> None:
+    catalog, renderer, plan = _bound_plan()
+    profile = catalog.get(boltzgen.MODEL_ID)
+    access = renderer.access_context(profile, tenant_id="boltz-pool-test")
+    localizations = renderer.verify_runtime_artifacts(profile, plan, access)
+    scheduling = _scheduling((pool_id,)).freeze(
+        service_class="customer-batch",
+        model_id=boltzgen.MODEL_ID,
+        tenant_id="boltz-pool-test",
+        profile=profile.value,
+        plan=plan.controller_plan,
+        workload_namespace="fs2-models",
+    )
+    configure = scheduling.stage("configure")
+    assert configure.resolved_pool_preference == (pool_id,)
+    assert configure.accelerator_count == 1
+
+    cluster = FakeScientificBatchCluster()
+    controller = ScientificBatchController(
+        repository=FakeScientificBatchRepository(),
+        cluster=cluster,
+        controller_id=f"boltz-{pool_id}-controller",
+        namespace="fs2-models",
+    )
+    operation_id = uuid4()
+    manifest_id = uuid4()
+    await controller.admit(
+        operation_id=operation_id,
+        tenant_id="boltz-pool-test",
+        model_id=boltzgen.MODEL_ID,
+        variant_id=boltzgen.VARIANT_ID,
+        input_artifact_id=manifest_id,
+        plan=plan.controller_plan,
+        scheduling=scheduling,
+        execution_plan=plan,
+        access_context=access,
+        input_manifest=VerifiedInputManifest(
+            manifest_id="boltz-pool-inputs",
+            manifest_artifact_id=manifest_id,
+            manifest_digest="sha256:" + "d" * 64,
+            entries=(_input(),),
+        ),
+        runtime_artifacts=localizations,
+    )
+    assert await controller.reconcile_once() == operation_id
+    pod = renderer.render(cluster.apply_history[0])["spec"]["template"]["spec"]
+    assert "accelerator.fs2.nebius/pool-id" not in pod.get("nodeSelector", {})
+    expressions = pod["affinity"]["nodeAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"][
+        "nodeSelectorTerms"
+    ][0]["matchExpressions"]
+    assert expressions == [
+        {
+            "key": "accelerator.fs2.nebius/pool-id",
+            "operator": "In",
+            "values": [pool_id],
+        }
+    ]
 
 
 def test_atomic_runner_has_no_early_or_failed_completion_and_mismatch_is_terminal(

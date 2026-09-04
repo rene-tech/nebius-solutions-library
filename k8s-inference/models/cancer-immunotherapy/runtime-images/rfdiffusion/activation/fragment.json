@@ -111,8 +111,8 @@
           "amd64"
         ],
         "compatible_pool_ids": [
-          "h100-1x",
-          "h100-reserved-8x"
+          "h100-reserved-8x",
+          "h100-1x"
         ],
         "required_node_labels": {
           "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",

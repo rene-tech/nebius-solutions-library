@@ -321,7 +321,7 @@ async def test_controller_rejects_adapter_plan_before_operator_execution_binding
                 workload_priority_class="fs2-customer-batch",
                 workload_priority_value=100,
                 resolved_pool_preference=(
-                    ("h100-1x", "h100-reserved-8x") if stage.resource_class is ResourceClass.GPU else ()
+                    ("h100-reserved-8x", "h100-1x") if stage.resource_class is ResourceClass.GPU else ()
                 ),
                 admitted_resource_flavor="inference-h100-1x" if stage.resource_class is ResourceClass.GPU else None,
                 accelerator_resource_name="nvidia.com/gpu" if stage.resource_class is ResourceClass.GPU else None,
