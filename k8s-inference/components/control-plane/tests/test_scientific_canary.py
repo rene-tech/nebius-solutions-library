@@ -75,3 +75,16 @@ def test_profile_catalog_refuses_a_stale_execution_identity(tmp_path: Path) -> N
 
     with pytest.raises(ScientificProfileError, match="execution identity is stale"):
         ScientificProfileCatalog.load(catalog)
+
+
+def test_profile_catalog_refuses_a_workload_only_mutation(tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog"
+    shutil.copytree(CATALOG_ROOT, catalog)
+    profile_path = catalog / "contracts/scientific-workload-profiles.json"
+    document = json.loads(profile_path.read_text())
+    profile = next(item for item in document["profiles"] if item["model_id"] == "boltzgen")
+    profile["workload"]["stages"][0]["max_parallelism"] = 31
+    profile_path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ScientificProfileError, match="workload recipe digest is stale"):
+        ScientificProfileCatalog.load(catalog)

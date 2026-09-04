@@ -27,11 +27,13 @@ CONTROL_PLANE_ROOT = Path(__file__).resolve().parents[1]
 SOLUTION_ROOT = CONTROL_PLANE_ROOT.parents[1]
 PROFILE_PATH = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-workload-profiles.json"
 EXECUTION_MAP_PATH = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-execution-map.json"
-MODEL_IDS = ("boltzgen", "proteina-complexa")
 
 sys.path.insert(0, str(CONTROL_PLANE_ROOT / "src"))
 
-from fs2_serve.scientific_batch.adapters.common import runtime_recipe_sha256  # noqa: E402
+from fs2_serve.scientific_batch.adapters.common import (  # noqa: E402
+    ScientificAdapterError,
+    runtime_recipe_sha256,
+)
 
 _IDENTITY_FIELDS = (
     "model_revision",
@@ -104,18 +106,19 @@ def _derive_contracts(
         raise SystemExit("scientific workload profiles must have unique string model IDs")
 
     drifted: list[str] = []
-    for model_id in MODEL_IDS:
-        profile = profiles.get(model_id)
-        if profile is None:
-            raise SystemExit(f"{PROFILE_PATH} has no profile for {model_id}")
+    for model_id, profile in profiles.items():
         identity = profile.get("execution_identity")
         workload = profile.get("workload")
         if not isinstance(identity, dict) or not isinstance(workload, dict):
             raise SystemExit(f"{model_id} has no execution identity or workload recipe")
+        try:
+            expected_runtime_recipe = recipe_digest(solution_root, model_id)
+        except ScientificAdapterError as error:
+            raise SystemExit(f"{model_id} has no refreshable runtime recipe: {error}") from error
         _replace(
             identity,
             "runtime_recipe_sha256",
-            recipe_digest(solution_root, model_id),
+            expected_runtime_recipe,
             f"{model_id} runtime_recipe_sha256",
             drifted,
         )

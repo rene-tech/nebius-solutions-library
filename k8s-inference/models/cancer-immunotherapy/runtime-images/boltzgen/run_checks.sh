@@ -11,6 +11,7 @@ for document in \
   evidence/h100-qualification-receipt.json \
   qualification/generated-plan-cold.json \
   qualification/generated-plan-prepared.json \
+  qualification/manifest-template.json \
   qualification/request-template.json; do
   python3 -m json.tool "${document}" >/dev/null
 done

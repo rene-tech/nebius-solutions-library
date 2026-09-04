@@ -5,13 +5,15 @@ from __future__ import annotations
 
 import argparse
 import base64
+import gzip
 import hashlib
 import io
 import json
 import sys
 import tarfile
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
+from uuid import UUID
 
 HERE = Path(__file__).resolve().parent
 MODEL_ROOT = HERE.parent
@@ -19,7 +21,7 @@ SOLUTION_ROOT = HERE.parents[4]
 CONTROL_PLANE = SOLUTION_ROOT / "components/control-plane/src"
 sys.path.insert(0, str(CONTROL_PLANE))
 
-from fs2_serve.scientific_batch import profile_from_catalog  # noqa: E402
+from fs2_serve.scientific_batch import ScientificInputArtifact, profile_from_catalog  # noqa: E402
 from fs2_serve.scientific_batch.adapters import boltzgen  # noqa: E402
 
 TASK = "fs2-boltzgen-h100-codex-successor-r20260903"
@@ -29,6 +31,14 @@ ACCELERATOR_CLASS = "nvidia-h100-sxm5-80gb"
 POOL_IDS = ("h100-1x", "h100-reserved-8x")
 ATTEMPT_NUMBERS = {"cold": 4, "prepared": 2}
 PROFILE_PATH = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-workload-profiles.json"
+
+
+class InputBundle(NamedTuple):
+    raw_tar: bytes
+    campaign_payload: bytes
+    scientific_manifest: dict[str, Any]
+    scientific_manifest_payload: bytes
+    input_artifacts: tuple[ScientificInputArtifact, ...]
 
 
 def canonical_json(value: object) -> bytes:
@@ -57,9 +67,71 @@ def input_tar(yaml_payload: bytes, target_payload: bytes) -> bytes:
     return buffer.getvalue()
 
 
+def gzip_payload(payload: bytes) -> bytes:
+    buffer = io.BytesIO()
+    with gzip.GzipFile(fileobj=buffer, filename="", mode="wb", compresslevel=9, mtime=0) as archive:
+        archive.write(payload)
+    return buffer.getvalue()
+
+
+def compile_input_bundle(yaml_payload: bytes, target_payload: bytes) -> tuple[dict[str, Any], InputBundle]:
+    raw_tar = input_tar(yaml_payload, target_payload)
+    campaign_payload = gzip_payload(raw_tar)
+    manifest = json.loads((HERE / "manifest-template.json").read_text(encoding="utf-8"))
+    entries = manifest.get("entries")
+    if not isinstance(entries, list) or len(entries) != 1 or not isinstance(entries[0], dict):
+        raise SystemExit("manifest-template.json must contain exactly one entry")
+    entry = entries[0]
+    if entry.get("name") != boltzgen.CAMPAIGN_INPUT_ID:
+        raise SystemExit("manifest-template.json must name the campaign-input artifact")
+    if entry.get("semantic_type") != boltzgen.CAMPAIGN_INPUT_SEMANTIC_TYPE:
+        raise SystemExit("manifest-template.json has the wrong campaign semantic type")
+    campaign_pointer = entry.get("artifact")
+    if not isinstance(campaign_pointer, dict):
+        raise SystemExit("manifest-template.json campaign entry has no artifact pointer")
+    if (
+        campaign_pointer.get("media_type") != boltzgen.CAMPAIGN_INPUT_MEDIA_TYPE
+        or campaign_pointer.get("compression") != "gzip"
+    ):
+        raise SystemExit("manifest-template.json campaign artifact must declare application/gzip")
+    campaign_pointer["sha256"] = sha256(campaign_payload)
+    campaign_pointer["size_bytes"] = len(campaign_payload)
+
+    manifest_payload = canonical_json(manifest)
+    request = json.loads((HERE / "request-template.json").read_text(encoding="utf-8"))
+    manifest_pointer = request.get("input_manifest")
+    if not isinstance(manifest_pointer, dict):
+        raise SystemExit("request-template.json has no input_manifest pointer")
+    if (
+        manifest_pointer.get("media_type") != boltzgen.INPUT_MANIFEST_MEDIA_TYPE
+        or manifest_pointer.get("compression") != "none"
+    ):
+        raise SystemExit("request-template.json input_manifest must declare canonical JSON")
+    if manifest_pointer.get("artifact_id") == campaign_pointer.get("artifact_id"):
+        raise SystemExit("campaign payload and scientific manifest must use distinct artifact IDs")
+    manifest_pointer["sha256"] = sha256(manifest_payload)
+    manifest_pointer["size_bytes"] = len(manifest_payload)
+    verified_campaign = ScientificInputArtifact(
+        logical_artifact_id=entry["name"],
+        semantic_type=entry["semantic_type"],
+        artifact_id=UUID(campaign_pointer["artifact_id"]),
+        digest=f"sha256:{campaign_pointer['sha256']}",
+        size_bytes=campaign_pointer["size_bytes"],
+        media_type=campaign_pointer["media_type"],
+        compression=campaign_pointer["compression"],
+    )
+    return request, InputBundle(
+        raw_tar=raw_tar,
+        campaign_payload=campaign_payload,
+        scientific_manifest=manifest,
+        scientific_manifest_payload=manifest_payload,
+        input_artifacts=(verified_campaign,),
+    )
+
+
 def compile_plan(
     *, scenario: str, target: Path, lock: dict[str, Any], pool_id: str = "h100-1x"
-) -> tuple[dict[str, object], bytes, bytes]:
+) -> tuple[dict[str, object], bytes, bytes, InputBundle]:
     target_payload = target.read_bytes()
     target_contract = lock["input"]
     if (
@@ -68,23 +140,24 @@ def compile_plan(
     ):
         raise SystemExit("--target does not match the projected PD-L1 identity")
     yaml_payload = (HERE / "pdl1-face.yaml").read_bytes()
-    archive = input_tar(yaml_payload, target_payload)
-    request = json.loads((HERE / "request-template.json").read_text(encoding="utf-8"))
-    request["input_manifest"]["sha256"] = sha256(archive)
-    request["input_manifest"]["size_bytes"] = len(archive)
+    request, input_bundle = compile_input_bundle(yaml_payload, target_payload)
     catalog = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
     profile = profile_from_catalog(catalog, "boltzgen")
     operation_id = f"boltzgen-qual-{scenario}-r20260903"
-    execution = boltzgen.compile_run(profile, request, operation_id=operation_id)
+    execution = boltzgen.compile_run(
+        profile,
+        request,
+        operation_id=operation_id,
+        input_artifacts=input_bundle.input_artifacts,
+    )
     configure = execution.invocation("configure", "pdl1-face")
     design = execution.invocation("design", "pdl1-face")
     adapter_path = SOLUTION_ROOT / lock["adapter"]["repository_path"]
     if sha256(adapter_path.read_bytes()) != lock["adapter"]["source_sha256"]:
         raise SystemExit("checked-in BoltzGen adapter differs from image-lock.json")
     expected_workspace = configure.working_directory
-    if (
-        design.working_directory != expected_workspace
-        or not expected_workspace.startswith("/mnt/fs2-scientific/work/boltzgen/")
+    if design.working_directory != expected_workspace or not expected_workspace.startswith(
+        "/mnt/fs2-scientific/work/boltzgen/"
     ):
         raise SystemExit("adapter workspace contract changed")
     plan: dict[str, object] = {
@@ -95,8 +168,11 @@ def compile_plan(
         "attempt_id": f"attempt-{scenario}-{ATTEMPT_NUMBERS[scenario]:02d}",
         "request": request,
         "request_sha256": execution.request_sha256,
-        "input_artifact_sha256": sha256(archive),
-        "input_artifact_bytes": len(archive),
+        "scientific_manifest": input_bundle.scientific_manifest,
+        "input_artifact_sha256": sha256(input_bundle.campaign_payload),
+        "input_artifact_bytes": len(input_bundle.campaign_payload),
+        "input_manifest_sha256": sha256(input_bundle.scientific_manifest_payload),
+        "input_manifest_bytes": len(input_bundle.scientific_manifest_payload),
         "configure_argv": list(configure.argv),
         "design_argv": list(design.argv),
         "environment": dict(design.environment),
@@ -124,7 +200,7 @@ def compile_plan(
             "gpu_count": 1,
         },
     }
-    return plan, yaml_payload, target_payload
+    return plan, yaml_payload, target_payload, input_bundle
 
 
 def render(
@@ -143,7 +219,7 @@ def render(
             raise SystemExit(f"{name} generation is not pinned in image-lock.json")
     if pool_id not in lock["cluster"]["allowed_pool_ids"] or pool_id not in POOL_IDS:
         raise SystemExit(f"unsupported H100 pool {pool_id!r}")
-    plan, yaml_payload, target_payload = compile_plan(
+    plan, yaml_payload, target_payload, _input_bundle = compile_plan(
         scenario=scenario, target=target, lock=lock, pool_id=pool_id
     )
     name = f"fs2-boltzgen-pdl1-{scenario}-r20260903"
@@ -168,9 +244,7 @@ def render(
         "fs2.nebius.ai/checkpoint-generation": checkpoints["generation"],
         "fs2.nebius.ai/molecule-generation": molecules["generation"],
         "fs2.nebius.ai/adapter-source-sha256": lock["adapter"]["source_sha256"],
-        "fs2.nebius.ai/workload-priority-value": str(
-            plan["scheduling"]["workload_priority_value"]
-        ),
+        "fs2.nebius.ai/workload-priority-value": str(plan["scheduling"]["workload_priority_value"]),
     }
     selector = {
         "accelerator.fs2.nebius/class": ACCELERATOR_CLASS,
@@ -219,9 +293,7 @@ def render(
                     "--input-root",
                     "/opt/fs2/input",
                 ],
-                "env": [
-                    {"name": key, "value": value} for key, value in plan["environment"].items()
-                ]
+                "env": [{"name": key, "value": value} for key, value in plan["environment"].items()]
                 + [
                     {"name": "HOME", "value": "/tmp/home"},
                     {"name": "HF_HOME", "value": "/tmp/huggingface"},
@@ -356,9 +428,7 @@ def main() -> int:
     else:
         print(document, end="")
     if arguments.plan_output:
-        arguments.plan_output.write_text(
-            json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
+        arguments.plan_output.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return 0
 
 

@@ -13,6 +13,7 @@ from ..models import (
     ArtifactMaterialization,
     MaterializationMode,
     RuntimeTreeBinding,
+    ScientificInputArtifact,
     StageInvocation,
 )
 from .common import (
@@ -77,6 +78,14 @@ MAX_INPUT_BYTES = 256 * 1024 * 1024
 MAX_OUTPUT_BYTES = 8 * 1024 * 1024 * 1024
 MAX_BATCHES = 32
 MAX_TOTAL_DESIGNS = 60_000
+INPUT_MANIFEST_MEDIA_TYPE = "application/vnd.fs2.scientific-manifest+json"
+CAMPAIGN_INPUT_ID = "campaign-input"
+CAMPAIGN_INPUT_SEMANTIC_TYPE = "boltzgen-campaign-input/v1"
+CAMPAIGN_INPUT_MEDIA_TYPE = "application/gzip"
+# The production registry must pass artifact-service-verified manifest entries
+# to this adapter. Direct calls without this argument remain available for the
+# adapter's legacy payload-pointer fixtures and offline unit tests.
+REQUIRES_VERIFIED_INPUT_ARTIFACTS = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,7 +247,42 @@ def _structure_entry_name(shard_id: str, file_name: str) -> str:
     return f"structure.{shard_id}.{filename_digest}"
 
 
-def compile_run(profile: Mapping[str, object], request_value: object, *, operation_id: str) -> AdapterExecutionPlan:
+def _campaign_input(
+    request: PublicRunRequest,
+    input_artifacts: tuple[ScientificInputArtifact, ...] | None,
+) -> tuple[str, str | None]:
+    if input_artifacts is None:
+        if request.input_manifest.media_type == INPUT_MANIFEST_MEDIA_TYPE:
+            raise ScientificAdapterError("BoltzGen manifest requests require verified input_artifacts")
+        return request.input_manifest.artifact_id, request.input_manifest.compression
+
+    if request.input_manifest.media_type != INPUT_MANIFEST_MEDIA_TYPE:
+        raise ScientificAdapterError("BoltzGen input_manifest must identify a scientific manifest")
+    if request.input_manifest.compression not in {None, "none"}:
+        raise ScientificAdapterError("BoltzGen input manifest must not be compressed")
+    if len(input_artifacts) != 1:
+        raise ScientificAdapterError("BoltzGen input manifest must contain exactly one campaign-input")
+    campaign = input_artifacts[0]
+    if campaign.logical_artifact_id != CAMPAIGN_INPUT_ID:
+        raise ScientificAdapterError("BoltzGen input manifest must contain campaign-input")
+    if campaign.semantic_type != CAMPAIGN_INPUT_SEMANTIC_TYPE:
+        raise ScientificAdapterError("BoltzGen campaign-input semantic type is invalid")
+    if campaign.media_type != CAMPAIGN_INPUT_MEDIA_TYPE or campaign.compression != "gzip":
+        raise ScientificAdapterError("BoltzGen campaign-input must be application/gzip with gzip compression")
+    if not 1 <= campaign.size_bytes <= MAX_INPUT_BYTES:
+        raise ScientificAdapterError("BoltzGen campaign-input size is outside the adapter bound")
+    if str(campaign.artifact_id) == request.input_manifest.artifact_id:
+        raise ScientificAdapterError("BoltzGen campaign payload and manifest must be distinct artifacts")
+    return campaign.logical_artifact_id, campaign.compression
+
+
+def compile_run(
+    profile: Mapping[str, object],
+    request_value: object,
+    *,
+    operation_id: str,
+    input_artifacts: tuple[ScientificInputArtifact, ...] | None = None,
+) -> AdapterExecutionPlan:
     """Compile bounded campaigns into exact upstream configure/execute steps."""
 
     request, parameters = _request(request_value)
@@ -250,6 +294,7 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
         parameter_schema=PARAMETER_SCHEMA,
         request=request,
     )
+    campaign_artifact_id, campaign_compression = _campaign_input(request, input_artifacts)
     shard_ids = tuple(batch.shard_id for batch in parameters.batches)
     selected_stages = _protocol_steps(parameters.protocol)
     expansions: dict[str, ScientificStageExpansion] = {}
@@ -269,7 +314,7 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
         ("HF_HUB_OFFLINE", "1"),
         ("TRANSFORMERS_OFFLINE", "1"),
     )
-    prior_artifacts = {batch.shard_id: request.input_manifest.artifact_id for batch in parameters.batches}
+    prior_artifacts = {batch.shard_id: campaign_artifact_id for batch in parameters.batches}
     invocations: list[StageInvocation] = []
     for stage_id in selected_stages:
         for batch in parameters.batches:
@@ -282,7 +327,7 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
                 mode=(
                     MaterializationMode.BOLTZGEN_INPUT if stage_id == "configure" else MaterializationMode.OVERLAY_TAR
                 ),
-                compression=request.input_manifest.compression if stage_id == "configure" else "zstd",
+                compression=campaign_compression if stage_id == "configure" else "zstd",
                 yaml_name=f"design-specs/{batch.shard_id}.yaml" if stage_id == "configure" else None,
                 reuse_prefix=(
                     f"reusable-workspaces/{batch.shard_id}"

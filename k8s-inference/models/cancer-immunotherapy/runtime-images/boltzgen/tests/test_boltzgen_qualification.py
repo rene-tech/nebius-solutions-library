@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import io
 import json
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -107,7 +109,8 @@ class ImageContractTests(unittest.TestCase):
             target.write_bytes(b"synthetic-target")
             self.lock["input"]["projected_sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
             self.lock["input"]["projected_bytes"] = target.stat().st_size
-            plan, _yaml, _target = render_job.compile_plan(
+            plan, _yaml, _target, input_bundle = render_job.compile_plan(scenario="cold", target=target, lock=self.lock)
+            second_plan, _yaml, _target, second_bundle = render_job.compile_plan(
                 scenario="cold", target=target, lock=self.lock
             )
         self.assertEqual(plan["configure_argv"][:2], ["boltzgen", "configure"])
@@ -118,6 +121,63 @@ class ImageContractTests(unittest.TestCase):
             ["boltzgen-checkpoints", "boltzgen-inference-molecules"],
         )
         self.assertEqual(plan["scheduling"]["workload_priority_value"], -100)
+
+        request = plan["request"]
+        manifest = plan["scientific_manifest"]
+        campaign_pointer = manifest["entries"][0]["artifact"]
+        manifest_pointer = request["input_manifest"]
+        self.assertNotIn("_input_manifest_note", request)
+        self.assertNotEqual(campaign_pointer["artifact_id"], manifest_pointer["artifact_id"])
+        self.assertEqual(campaign_pointer["media_type"], "application/gzip")
+        self.assertEqual(campaign_pointer["compression"], "gzip")
+        self.assertEqual(campaign_pointer["sha256"], render_job.sha256(input_bundle.campaign_payload))
+        self.assertEqual(campaign_pointer["size_bytes"], len(input_bundle.campaign_payload))
+        self.assertEqual(
+            manifest_pointer["media_type"],
+            "application/vnd.fs2.scientific-manifest+json",
+        )
+        self.assertEqual(manifest_pointer["compression"], "none")
+        self.assertEqual(
+            input_bundle.scientific_manifest_payload,
+            render_job.canonical_json(manifest),
+        )
+        self.assertEqual(
+            manifest_pointer["sha256"],
+            render_job.sha256(input_bundle.scientific_manifest_payload),
+        )
+        self.assertEqual(
+            manifest_pointer["size_bytes"],
+            len(input_bundle.scientific_manifest_payload),
+        )
+        self.assertEqual(plan["input_artifact_sha256"], campaign_pointer["sha256"])
+        self.assertEqual(plan["input_manifest_sha256"], manifest_pointer["sha256"])
+        self.assertNotEqual(plan["input_artifact_sha256"], plan["input_manifest_sha256"])
+        self.assertEqual(input_bundle.campaign_payload, second_bundle.campaign_payload)
+        self.assertEqual(
+            input_bundle.scientific_manifest_payload,
+            second_bundle.scientific_manifest_payload,
+        )
+        self.assertEqual(plan["request_sha256"], second_plan["request_sha256"])
+        self.assertTrue(input_bundle.campaign_payload.startswith(b"\x1f\x8b"))
+        with tarfile.open(fileobj=io.BytesIO(input_bundle.campaign_payload), mode="r:gz") as archive:
+            self.assertEqual(
+                archive.getnames(),
+                ["5J89-chain-A.cif", "design-specs/pdl1-face.yaml"],
+            )
+
+        catalog = json.loads(render_job.PROFILE_PATH.read_text(encoding="utf-8"))
+        profile = render_job.profile_from_catalog(catalog, "boltzgen")
+        execution = render_job.boltzgen.compile_run(
+            profile,
+            request,
+            operation_id=plan["operation_id"],
+            input_artifacts=input_bundle.input_artifacts,
+        )
+        self.assertEqual(execution.request_sha256, plan["request_sha256"])
+        configure = execution.invocation("configure", "pdl1-face")
+        self.assertEqual(configure.consumes, ("campaign-input",))
+        self.assertEqual(configure.materializations[0].artifact_id, "campaign-input")
+        self.assertEqual(configure.materializations[0].compression, "gzip")
 
     def test_render_is_queued_offline_and_generation_pinned(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -146,7 +206,12 @@ class ImageContractTests(unittest.TestCase):
         self.assertIn("@sha256:", container["image"])
         volumes = {item["name"]: item for item in job["spec"]["template"]["spec"]["volumes"]}
         for artifact_id in ("checkpoints", "molecules"):
-            self.assertIn(self.lock["artifacts"][f"boltzgen-{artifact_id if artifact_id == 'checkpoints' else 'inference-molecules'}"]["generation"], volumes[artifact_id]["hostPath"]["path"])
+            self.assertIn(
+                self.lock["artifacts"][
+                    f"boltzgen-{artifact_id if artifact_id == 'checkpoints' else 'inference-molecules'}"
+                ]["generation"],
+                volumes[artifact_id]["hostPath"]["path"],
+            )
         policy = items["NetworkPolicy"]
         self.assertEqual(policy["spec"]["egress"], [])
         self.assertEqual(policy["spec"]["ingress"], [])
@@ -217,9 +282,7 @@ class LocalizationTests(unittest.TestCase):
 
 
 class SemanticValidatorTests(unittest.TestCase):
-    def make_case(
-        self, root: Path, *, binder_y: float, binder_name: str = "C"
-    ) -> tuple[Path, Path]:
+    def make_case(self, root: Path, *, binder_y: float, binder_name: str = "C") -> tuple[Path, Path]:
         target = root / "target.cif"
         workspace = root / "workspace"
         output = workspace / "intermediate_designs"

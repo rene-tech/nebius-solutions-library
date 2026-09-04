@@ -59,8 +59,22 @@ def configure(module: ModuleType, monkeypatch: pytest.MonkeyPatch, root: Path, p
     monkeypatch.setattr(module, "PROFILE_PATH", profile)
     monkeypatch.setattr(module, "EXECUTION_MAP_PATH", execution)
     monkeypatch.setattr(module, "SOLUTION_ROOT", root)
-    monkeypatch.setattr(module, "MODEL_IDS", ("boltzgen",))
     monkeypatch.setattr(module, "runtime_recipe_sha256", lambda _root, _model_id: "9" * 64)
+
+
+def add_third_profile(module: ModuleType, profile_path: Path) -> None:
+    profiles = json.loads(profile_path.read_text(encoding="utf-8"))
+    third = json.loads(json.dumps(profiles["profiles"][0]))
+    third["model_id"] = "future-science"
+    third["workload"]["stages"][0]["resources"]["gpu"] = 2
+    identity = third["execution_identity"]
+    identity["runtime_recipe_sha256"] = "a" * 64
+    identity["workload_recipe_sha256"] = "b" * 64
+    identity_payload = {key: value for key, value in identity.items() if key != "execution_identity_sha256"}
+    identity["execution_identity_sha256"] = hashlib.sha256(module._canonical_bytes(identity_payload)).hexdigest()
+    third.pop("qualification", None)
+    profiles["profiles"].append(third)
+    profile_path.write_text(json.dumps(profiles, indent=2) + "\n", encoding="utf-8")
 
 
 def test_helm_to_json_bytes_match_go_html_and_unicode_rules() -> None:
@@ -143,3 +157,33 @@ def test_second_replace_failure_rolls_back_the_first_contract(tmp_path: Path, mo
     assert profile_path.read_bytes() == original_profiles
     assert execution_map_path.read_bytes() == original_map
     assert not list(tmp_path.glob(".*.json.*"))
+
+
+def test_third_profile_component_drift_is_discovered(tmp_path: Path, monkeypatch, capsys) -> None:
+    module = load_script()
+    profile_path, execution_map_path = write_fixture(tmp_path)
+    configure(module, monkeypatch, tmp_path, profile_path, execution_map_path)
+    assert module.main([]) == 0
+    capsys.readouterr()
+    add_third_profile(module, profile_path)
+
+    assert module.main(["--check"]) == 1
+    output = capsys.readouterr().out
+    assert "future-science runtime_recipe_sha256" in output
+    assert "future-science workload_recipe_sha256" in output
+
+
+def test_unsupported_third_profile_fails_explicitly(tmp_path: Path, monkeypatch) -> None:
+    module = load_script()
+    profile_path, execution_map_path = write_fixture(tmp_path)
+    configure(module, monkeypatch, tmp_path, profile_path, execution_map_path)
+    add_third_profile(module, profile_path)
+
+    def recipe_digest(_root: Path, model_id: str) -> str:
+        if model_id == "future-science":
+            raise module.ScientificAdapterError("no runtime recipe is registered")
+        return "9" * 64
+
+    monkeypatch.setattr(module, "runtime_recipe_sha256", recipe_digest)
+    with pytest.raises(SystemExit, match="future-science has no refreshable runtime recipe"):
+        module.main(["--check"])

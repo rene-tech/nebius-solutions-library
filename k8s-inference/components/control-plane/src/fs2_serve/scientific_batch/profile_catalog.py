@@ -257,6 +257,10 @@ class ScientificProfileCatalog:
                 del identity_payload["execution_identity_sha256"]
                 if recorded_identity != _canonical_sha256(identity_payload):
                     raise ScientificProfileError("scientific workload execution identity is stale")
+            workload = _object_schema(raw.get("workload"), "scientific workload recipe")
+            recorded_workload = identity.get("workload_recipe_sha256")
+            if recorded_workload is not None and recorded_workload != _canonical_sha256(workload):
+                raise ScientificProfileError("scientific workload recipe digest is stale")
             profile = ScientificWorkloadProfile(MappingProxyType(cast(dict[str, Any], raw)))
             if profile.model_id in profiles:
                 raise ScientificProfileError("scientific workload profile model IDs must be unique")

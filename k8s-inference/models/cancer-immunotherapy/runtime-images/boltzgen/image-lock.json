@@ -93,7 +93,7 @@
   "adapter": {
     "repository_path": "components/control-plane/src/fs2_serve/scientific_batch/adapters/boltzgen.py",
     "base_commit": "0d5343c7cda15f1e3cdbdd7bc2c5bebfa32fd659",
-    "source_sha256": "8eb4eb922f0331f0dcb6aa9d5b873607796f5e8689a15410ad25d439b5717e4a",
+    "source_sha256": "07f8faca5c952ad10380b6dc8e4c8fb23fb3d1fdae37cdf6fe7e698b025afc80",
     "operation": "design-binders",
     "service_class": "customer-batch",
     "local_queue": "inference-models",

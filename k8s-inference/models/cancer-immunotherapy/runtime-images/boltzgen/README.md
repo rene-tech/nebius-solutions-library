@@ -47,6 +47,19 @@ uses the `inference-models` LocalQueue and `batch` priority, requests exactly
 one H100, and has no service-account token.  Set `--node-name` when rendering a
 prepared comparison so it runs on the same node as the cold attempt.
 
+The public submission uses two distinct artifact uploads.  First upload the
+deterministic gzip-compressed campaign tar as `application/gzip` with
+`compression: gzip`; its members are `design-specs/<shard>.yaml` and
+`5J89-chain-A.cif` (the materializer supplies the surrounding `inputs/`
+directory).  Put that artifact pointer in the single `campaign-input` entry of
+`qualification/manifest-template.json`, serialize the manifest as canonical
+JSON, and upload it as `application/vnd.fs2.scientific-manifest+json` with no
+compression.  Finally put the manifest artifact pointer—not the campaign
+pointer—in `qualification/request-template.json` before submitting.  The two
+artifact IDs, digests, sizes, media types, and compression declarations remain
+independent; `application/x-tar` is not in the deployed artifact media-type
+allowlist.
+
 ## Semantic boundary
 
 The independent validator imports neither the BoltzGen runtime nor the

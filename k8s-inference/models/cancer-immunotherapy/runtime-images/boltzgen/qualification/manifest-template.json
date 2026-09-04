@@ -6,7 +6,7 @@
       "name": "campaign-input",
       "semantic_type": "boltzgen-campaign-input/v1",
       "artifact": {
-        "artifact_id": "00000000-0000-0000-0000-000000000000",
+        "artifact_id": "00000000-0000-0000-0000-000000000001",
         "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
         "size_bytes": 1,
         "media_type": "application/gzip",

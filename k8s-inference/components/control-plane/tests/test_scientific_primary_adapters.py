@@ -11,21 +11,24 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from scientific_batch_fakes import FakeScientificBatchCluster, FakeScientificBatchRepository
 
 from fs2_serve.scientific_batch import (
     CheckpointMode,
+    MaterializationMode,
     PreemptionMode,
     ResourceClass,
     SchedulingSnapshot,
     ScientificAdapterError,
     ScientificBatchController,
+    ScientificInputArtifact,
     ScientificStagePlan,
     ServiceClass,
     StageSchedulingDecision,
+    VerifiedInputManifest,
     compile_adapter_run,
     load_json_request,
     profile_from_catalog,
@@ -46,6 +49,38 @@ def fixture(model_id: str, name: str) -> dict[str, Any]:
 
 def profile(model_id: str) -> Mapping[str, object]:
     return profile_from_catalog(json.loads(PROFILE_PATH.read_text(encoding="utf-8")), model_id)
+
+
+def boltzgen_verified_input(
+    *,
+    logical_artifact_id: str = "campaign-input",
+    semantic_type: str = "boltzgen-campaign-input/v1",
+    artifact_id: UUID | None = None,
+    size_bytes: int = 1024,
+    media_type: str = "application/gzip",
+    compression: str | None = "gzip",
+) -> ScientificInputArtifact:
+    return ScientificInputArtifact(
+        logical_artifact_id=logical_artifact_id,
+        semantic_type=semantic_type,
+        artifact_id=artifact_id or UUID("00000000-0000-0000-0000-000000000001"),
+        digest="sha256:" + "c" * 64,
+        size_bytes=size_bytes,
+        media_type=media_type,
+        compression=compression,
+    )
+
+
+def boltzgen_manifest_request() -> dict[str, Any]:
+    request = fixture("boltzgen", "positive-design.json")
+    request["input_manifest"] = {
+        "artifact_id": "00000000-0000-0000-0000-000000000002",
+        "sha256": "d" * 64,
+        "size_bytes": 512,
+        "media_type": "application/vnd.fs2.scientific-manifest+json",
+        "compression": "none",
+    }
+    return request
 
 
 def pointer(artifact_id: str, content: bytes, media_type: str) -> dict[str, object]:
@@ -149,8 +184,14 @@ def test_real_catalog_profiles_project_to_canonical_controller_types() -> None:
         ResourceClass.CPU,
     ]
 
-    boltz_request = fixture("boltzgen", "positive-design.json")
-    boltz = compile_adapter_run("boltzgen", profile("boltzgen"), boltz_request, operation_id="op-boltz-01")
+    boltz_request = boltzgen_manifest_request()
+    boltz = compile_adapter_run(
+        "boltzgen",
+        profile("boltzgen"),
+        boltz_request,
+        operation_id="op-boltz-01",
+        input_artifacts=(boltzgen_verified_input(),),
+    )
     assert [stage.stage_id for stage in boltz.controller_plan.stages] == [
         "configure",
         "design",
@@ -366,6 +407,85 @@ def test_boltzgen_campaign_workspaces_are_operation_isolated() -> None:
     second_workspaces = {item.working_directory for item in second.invocations}
     assert first_workspaces.isdisjoint(second_workspaces)
     assert len(first_workspaces) == len(request["parameters"]["batches"])
+
+
+def test_boltzgen_verified_manifest_entry_drives_campaign_materialization() -> None:
+    request = boltzgen_manifest_request()
+    campaign = boltzgen_verified_input()
+    result = compile_adapter_run(
+        "boltzgen",
+        profile("boltzgen"),
+        request,
+        operation_id="op-boltz-verified-input",
+        input_artifacts=(campaign,),
+    )
+
+    configure = [item for item in result.invocations if item.stage_id == "configure"]
+    assert configure
+    for invocation in configure:
+        assert invocation.consumes == ("campaign-input",)
+        assert len(invocation.materializations) == 1
+        materialization = invocation.materializations[0]
+        assert materialization.artifact_id == "campaign-input"
+        assert materialization.mode is MaterializationMode.BOLTZGEN_INPUT
+        assert materialization.compression == "gzip"
+
+    manifest_id = UUID(request["input_manifest"]["artifact_id"])
+    verified_manifest = VerifiedInputManifest(
+        manifest_id="boltzgen-pdl1-inputs",
+        manifest_artifact_id=manifest_id,
+        manifest_digest="sha256:" + request["input_manifest"]["sha256"],
+        entries=(campaign,),
+    )
+    controller_source = verified_manifest.artifact(configure[0].materializations[0].artifact_id)
+    assert controller_source.artifact_id == campaign.artifact_id
+    assert controller_source.artifact_id != manifest_id
+
+    with pytest.raises(ScientificAdapterError, match="verified input_artifacts"):
+        boltzgen.compile_run(
+            profile("boltzgen"),
+            request,
+            operation_id="op-boltz-unverified-input",
+        )
+    with pytest.raises(ScientificAdapterError, match="exactly one campaign-input"):
+        compile_adapter_run(
+            "boltzgen",
+            profile("boltzgen"),
+            request,
+            operation_id="op-boltz-missing-input",
+            input_artifacts=(),
+        )
+
+    invalid_entries = (
+        boltzgen_verified_input(logical_artifact_id="wrong-input"),
+        boltzgen_verified_input(semantic_type="wrong-input/v1"),
+        boltzgen_verified_input(media_type="application/json"),
+        boltzgen_verified_input(compression="none"),
+        boltzgen_verified_input(size_bytes=boltzgen.MAX_INPUT_BYTES + 1),
+        boltzgen_verified_input(
+            artifact_id=UUID(request["input_manifest"]["artifact_id"]),
+        ),
+    )
+    for index, invalid in enumerate(invalid_entries):
+        with pytest.raises(ScientificAdapterError):
+            compile_adapter_run(
+                "boltzgen",
+                profile("boltzgen"),
+                request,
+                operation_id=f"op-boltz-invalid-input-{index}",
+                input_artifacts=(invalid,),
+            )
+
+    wrong_manifest = copy.deepcopy(request)
+    wrong_manifest["input_manifest"]["compression"] = "gzip"
+    with pytest.raises(ScientificAdapterError, match="manifest must not be compressed"):
+        compile_adapter_run(
+            "boltzgen",
+            profile("boltzgen"),
+            wrong_manifest,
+            operation_id="op-boltz-compressed-manifest",
+            input_artifacts=(campaign,),
+        )
 
 
 def test_boltzgen_uses_one_gpu_shard_commands_and_every_exact_checkpoint_identity() -> None:
