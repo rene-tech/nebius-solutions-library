@@ -17,7 +17,7 @@
         },
         "kind": "Event",
         "lastTimestamp": "2026-09-03T03:31:36Z",
-        "message": "Successfully assigned fs2-models/fsc-boltzgen-baseline-t01-20c53a803a3c-ctqzd to computeinstance-e00m0hsph76ajt9sdb",
+        "message": "Successfully assigned fs2-models/fsc-boltzgen-baseline-t01-20c53a803a3c-ctqzd to redacted-h100-node-a",
         "metadata": {
           "creationTimestamp": "2026-09-03T03:31:36Z",
           "name": "fsc-boltzgen-baseline-t01-20c53a803a3c-ctqzd.18d1b20d07de9da7",
@@ -58,10 +58,10 @@
         },
         "reason": "VolumePermissionChangeInProgress",
         "reportingComponent": "kubelet",
-        "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+        "reportingInstance": "redacted-h100-node-a",
         "source": {
           "component": "kubelet",
-          "host": "computeinstance-e00m0hsph76ajt9sdb"
+          "host": "redacted-h100-node-a"
         },
         "type": "Warning"
       },
@@ -90,10 +90,10 @@
         },
         "reason": "VolumePermissionChangeInProgress",
         "reportingComponent": "kubelet",
-        "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+        "reportingInstance": "redacted-h100-node-a",
         "source": {
           "component": "kubelet",
-          "host": "computeinstance-e00m0hsph76ajt9sdb"
+          "host": "redacted-h100-node-a"
         },
         "type": "Warning"
       },
@@ -122,10 +122,10 @@
         },
         "reason": "VolumePermissionChangeInProgress",
         "reportingComponent": "kubelet",
-        "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+        "reportingInstance": "redacted-h100-node-a",
         "source": {
           "component": "kubelet",
-          "host": "computeinstance-e00m0hsph76ajt9sdb"
+          "host": "redacted-h100-node-a"
         },
         "type": "Warning"
       },
@@ -155,10 +155,10 @@
         },
         "reason": "Pulled",
         "reportingComponent": "kubelet",
-        "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+        "reportingInstance": "redacted-h100-node-a",
         "source": {
           "component": "kubelet",
-          "host": "computeinstance-e00m0hsph76ajt9sdb"
+          "host": "redacted-h100-node-a"
         },
         "type": "Normal"
       },
@@ -188,10 +188,10 @@
         },
         "reason": "Created",
         "reportingComponent": "kubelet",
-        "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+        "reportingInstance": "redacted-h100-node-a",
         "source": {
           "component": "kubelet",
-          "host": "computeinstance-e00m0hsph76ajt9sdb"
+          "host": "redacted-h100-node-a"
         },
         "type": "Normal"
       },
@@ -221,10 +221,10 @@
         },
         "reason": "Started",
         "reportingComponent": "kubelet",
-        "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+        "reportingInstance": "redacted-h100-node-a",
         "source": {
           "component": "kubelet",
-          "host": "computeinstance-e00m0hsph76ajt9sdb"
+          "host": "redacted-h100-node-a"
         },
         "type": "Normal"
       }
@@ -568,7 +568,7 @@
       ],
       "dnsPolicy": "ClusterFirst",
       "enableServiceLinks": false,
-      "nodeName": "computeinstance-e00m0hsph76ajt9sdb",
+      "nodeName": "redacted-h100-node-a",
       "nodeSelector": {
         "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
         "accelerator.fs2.nebius/pool-id": "h100-reserved-8x"

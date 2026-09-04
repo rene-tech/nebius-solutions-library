@@ -293,6 +293,11 @@ after the Jobs have been cleaned up. It preserves any semantic verdict and GPU
 telemetry already recorded, because re-parsing a timeline says nothing about the
 science.
 
+Before publication, the two provider-assigned Kubernetes node names in the raw
+object captures are deterministically replaced with `redacted-h100-node-a` and
+`redacted-h100-node-b`. The aliases remain stable across trials, preserving
+node-level correlation without publishing tenant-specific resource IDs.
+
 `./run_checks.sh` runs the whole offline suite: syntax, JSON well-formedness,
 that `CAMPAIGN_SUMMARY.json` is current with the receipts, that every receipt
 has a semantic verdict and a level that follows the published thresholds, that

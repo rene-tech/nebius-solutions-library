@@ -17,7 +17,7 @@
         },
         "kind": "Event",
         "lastTimestamp": "2026-09-03T03:39:52Z",
-        "message": "Successfully assigned fs2-academic-poc/fsc-alphafold3-baseline-t02-a17e6b72cbae-7lgdf to computeinstance-e00m0hsph76ajt9sdb",
+        "message": "Successfully assigned fs2-academic-poc/fsc-alphafold3-baseline-t02-a17e6b72cbae-7lgdf to redacted-h100-node-a",
         "metadata": {
           "creationTimestamp": "2026-09-03T03:39:52Z",
           "name": "fsc-alphafold3-baseline-t02-a17e6b72cbae-7lgdf.18d1b28088a24f61",
@@ -59,10 +59,10 @@
         },
         "reason": "Pulled",
         "reportingComponent": "kubelet",
-        "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+        "reportingInstance": "redacted-h100-node-a",
         "source": {
           "component": "kubelet",
-          "host": "computeinstance-e00m0hsph76ajt9sdb"
+          "host": "redacted-h100-node-a"
         },
         "type": "Normal"
       },
@@ -92,10 +92,10 @@
         },
         "reason": "Created",
         "reportingComponent": "kubelet",
-        "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+        "reportingInstance": "redacted-h100-node-a",
         "source": {
           "component": "kubelet",
-          "host": "computeinstance-e00m0hsph76ajt9sdb"
+          "host": "redacted-h100-node-a"
         },
         "type": "Normal"
       },
@@ -125,10 +125,10 @@
         },
         "reason": "Started",
         "reportingComponent": "kubelet",
-        "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+        "reportingInstance": "redacted-h100-node-a",
         "source": {
           "component": "kubelet",
-          "host": "computeinstance-e00m0hsph76ajt9sdb"
+          "host": "redacted-h100-node-a"
         },
         "type": "Normal"
       }
@@ -467,7 +467,7 @@
       ],
       "dnsPolicy": "ClusterFirst",
       "enableServiceLinks": false,
-      "nodeName": "computeinstance-e00m0hsph76ajt9sdb",
+      "nodeName": "redacted-h100-node-a",
       "nodeSelector": {
         "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
         "accelerator.fs2.nebius/pool-id": "h100-reserved-8x"
