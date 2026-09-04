@@ -9,6 +9,7 @@ import json
 import re
 import subprocess
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,17 @@ FORBIDDEN_AGGREGATES = {
     "catalog/runtime/contracts/scientific-execution-map.json",
 }
 PROVIDER_ID = re.compile(r"(?:computeinstance|mk8scluster|project|tenant)-e00[0-9a-z]+")
+REPOSITORY_PREFIX = "k8s-inference/"
+# Values that are computed from the shared recipe inputs rather than authored.
+# A model lane may not add, remove or edit anything else in a shared aggregate.
+DERIVED_IDENTITY_FIELDS = frozenset(
+    {
+        "runtime_recipe_sha256",
+        "workload_recipe_sha256",
+        "execution_identity_sha256",
+        "execution_map_sha256",
+    }
+)
 INTEGRATION_SOURCE_REVISION = "003064c440c4ab198bf96957e435a7aac8da6800"
 SHARED_RUNTIME_RECIPE_PATHS = frozenset(
     {
@@ -147,11 +159,23 @@ def _identity_is_present(document: Any, value: str) -> bool:
 
 
 def validate_fragment(path: Path) -> tuple[dict[str, Any], list[str]]:
+    """Validate the fragment on disk at ``path``."""
+
     fragment = load_json(path)
+    return fragment, validate_fragment_document(fragment, path)
+
+
+def validate_fragment_document(fragment: dict[str, Any], path: Path) -> list[str]:
+    """Validate an in-memory fragment, so a test can probe a hypothetical one.
+
+    ``path`` is still needed because a fragment names its own model by directory
+    when it omits ``model_id``; nothing is read from it.
+    """
+
     model_id = fragment.get("model_id", path.parent.parent.name)
     errors = validate_schema(fragment, HERE / "fragment.schema.json", model_id)
     if errors:
-        return fragment, errors
+        return errors
 
     accepted = fragment["accepted_evidence"]
     profile = fragment["profile_projection"]["profile"]
@@ -457,7 +481,68 @@ def validate_fragment(path: Path) -> tuple[dict[str, Any], list[str]]:
     serialized = json.dumps(fragment, sort_keys=True, separators=(",", ":"))
     if PROVIDER_ID.search(serialized):
         errors.append(f"{model_id}: provider-specific resource id found")
-    return fragment, errors
+    return errors
+
+
+def _json_leaves(value: Any, path: tuple[Any, ...] = ()) -> Iterator[tuple[tuple[Any, ...], Any]]:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield from _json_leaves(item, path + (key,))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from _json_leaves(item, path + (index,))
+    else:
+        yield path, value
+
+
+def _aggregate_at_baseline(relative: str) -> Any:
+    completed = subprocess.run(
+        ["git", "show", f"{INTEGRATION_SOURCE_REVISION}:{REPOSITORY_PREFIX}{relative}"],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    )
+    return json.loads(completed.stdout)
+
+
+def _derived_identity_refresh_only(relative: str) -> list[str]:
+    """Classify a change to a shared aggregate as derived-only, or report why not.
+
+    The guard exists so a model lane cannot activate itself by writing its own
+    profile or execution-map entry. It is not meant to forbid the derived
+    identity digests, which are a pure function of the shared recipe inputs: any
+    change to those inputs, such as integrating a new localization transform,
+    makes every pinned digest stale, and the repository's own
+    ``scripts/refresh_scientific_recipes.py`` is what recomputes them. So a
+    change is accepted only when no leaf is added or removed and every differing
+    leaf is one of the derived digests. Whether the new digests are *correct* is
+    proven separately, by
+    ``components/control-plane/tests/test_scientific_primary_adapters.py``.
+    """
+    try:
+        baseline = dict(_json_leaves(_aggregate_at_baseline(relative)))
+    except (subprocess.CalledProcessError, json.JSONDecodeError):
+        return [f"forbidden shared aggregate changed: {relative}"]
+    current = dict(_json_leaves(load_json(repository_path(relative))))
+    added = sorted(set(current) - set(baseline))
+    removed = sorted(set(baseline) - set(current))
+    changed = sorted(key for key in set(baseline) & set(current) if baseline[key] != current[key])
+    errors = []
+    for key in added:
+        errors.append(f"shared aggregate {relative} adds authored content: {_leaf_name(key)}")
+    for key in removed:
+        errors.append(f"shared aggregate {relative} removes content: {_leaf_name(key)}")
+    for key in changed:
+        if key[-1] not in DERIVED_IDENTITY_FIELDS:
+            errors.append(
+                f"shared aggregate {relative} changes authored content: {_leaf_name(key)}"
+            )
+    return errors
+
+
+def _leaf_name(key: tuple[Any, ...]) -> str:
+    return ".".join(str(part) for part in key)
 
 
 def validate_no_aggregate_edits() -> list[str]:
@@ -476,10 +561,10 @@ def validate_no_aggregate_edits() -> list[str]:
         stdout=subprocess.PIPE,
     )
     changed = set(completed.stdout.splitlines())
-    return [
-        f"forbidden shared aggregate changed: {path}"
-        for path in sorted(changed & FORBIDDEN_AGGREGATES)
-    ]
+    errors: list[str] = []
+    for path in sorted(changed & FORBIDDEN_AGGREGATES):
+        errors.extend(_derived_identity_refresh_only(path))
+    return errors
 
 
 def render(fragment: dict[str, Any]) -> dict[str, Any]:

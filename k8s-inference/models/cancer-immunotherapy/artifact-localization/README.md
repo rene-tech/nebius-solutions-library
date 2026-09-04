@@ -94,7 +94,7 @@ not.
 | `fs2-flat-tree-inventory/v1` | flat files, CRC-32 | the four public trees |
 | `fs2-tree-inventory/v2` | recursion and directories | a nested tree we stage |
 | `fs2-tree-manifest/v1` | every file by SHA-256, every symlink by target | PyRosetta |
-| `fs2-raw-file/v1` | one filename, byte count, and content SHA-256 | RFdiffusion `Base_ckpt.pt` |
+| `fs2-raw-file/v1` | one filename, byte count, and content SHA-256 | RFdiffusion `Base_ckpt.pt`, Mosaic `boltz2_conf.ckpt` |
 
 The third is not ours. The academic-assets plane already identifies its
 installed trees that way, so this module reproduces that algorithm exactly
@@ -124,6 +124,8 @@ The checked-in handoff joins those records and marks only these public entries
 | `colabdesign-mpnn-weights-soluble` | `54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146` | `471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660` |
 | `colabdesign-mpnn-weights-vanilla` | `2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f` | `07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8` |
 | `rfdiffusion-base-checkpoint` | `7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c` | `abd2a8127d0bd1b3cbd51d5ffc14a3351f805e15f593c8224ee94de57e3e4599` |
+| `mosaic-boltz2-conf` | `e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6` | `89c9316d5b723dd266e508ac41479aa03dc4de8158e1cf946be2f1efc56c9ebf` |
+| `mosaic-components` | `d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6` | `a2f5f436771705ecb1e57eb4d447c3343573ef7596a8fca1dbc67541ecfe701e` |
 
 Both existing H100 nodes admitted the original five in-generation markers. The
 immutable Proteina-Complexa, BindCraft and BoltzGen images then loaded their exact
@@ -409,3 +411,24 @@ declared as a generated entry bound by its own digest. Proteina-Complexa keeps
 reading the sixteen-entry `alphafold2-params` tree, because ColabDesign resolves
 parameter files by name in `AF2_DIR` and an admission document is not part of
 that contract.
+
+## One tree, two upstream archives
+
+`boltzgen-inference-molecules` is bound by both BoltzGen and Mosaic. BoltzGen
+stages it from `mols.zip` and Mosaic's own lock pins `mols.tar` from the Boltz-2
+release; the two archives expand to one identical flat tree of 45,227 entries
+and 1,820,698,819 bytes, compared entry by entry on path, byte count and CRC-32
+with zero differences. Content addressing therefore makes them one generation,
+and Mosaic binds the published one rather than creating a second identity for
+the same bytes. See `evidence/mosaic-molecule-tree-equivalence-20260904.json`.
+
+The second consumer deliberately declares the artifact's **existing** mount
+rather than adding its own. `tree.mount_paths` is projected into the
+generation's sealed `consumer_paths`, and that marker is immutable once
+published, so extending the list would change the marker digest the contract
+expects while the marker on the plane keeps the old one. A consuming Job binds
+the same content-addressed generation at whatever path its immutable runtime
+reads, which for Mosaic is `$FS2_ARTIFACT_ROOT/mosaic/boltz/mols`. Keeping
+consumer paths out of the marker is recorded as a follow-up against the
+localization contract, because they describe how a tree is consumed rather than
+what it contains.

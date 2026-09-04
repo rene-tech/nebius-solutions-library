@@ -351,10 +351,60 @@ class ExternalArtifactPolicy(unittest.TestCase):
             if digest:
                 self.assertIn(digest, source)
 
-    def test_transitional_artifact_delivery_is_declared(self) -> None:
+    def test_canonical_artifact_delivery_is_declared_and_joined(self) -> None:
+        """Delivery is canonical, and every declared generation is real.
+
+        The lock previously declared transitional-task-scoped delivery from a
+        shared qualification claim. It now declares canonical generations, so
+        this pins the stronger claim and checks it joins: every generation is a
+        lowercase SHA-256, its recorded sub-path is the one the localization
+        plane builds from that digest, and the runtime path is the location the
+        entrypoint actually reads.
+        """
         delivery = LOCK["artifact_delivery"]
-        self.assertEqual(delivery["state"], "transitional-task-scoped")
-        self.assertEqual(delivery["canonical_plane"], "unavailable")
+        self.assertEqual(
+            delivery["state"], "canonical-localized-generation-consumed-and-qualified"
+        )
+        self.assertEqual(delivery["canonical_plane"], "available")
+        self.assertIn("historical qualification only", delivery["transitional_claim"])
+
+        entrypoint = (MOSAIC / "runtime_entrypoint.py").read_text(encoding="utf-8")
+        generations = delivery["canonical_generations"]
+        self.assertEqual(len(generations), 3)
+        seen = set()
+        for entry in generations:
+            with self.subTest(artifact_id=entry["artifact_id"]):
+                generation = entry["generation"]
+                self.assertRegex(generation, r"^[0-9a-f]{64}$")
+                self.assertRegex(entry["marker_sha256"], r"^[0-9a-f]{64}$")
+                self.assertEqual(
+                    entry["sub_path"],
+                    "scientific-localization/public/generations/"
+                    f"{entry['artifact_id']}/sha256/{generation}",
+                )
+                self.assertTrue(entry["runtime_path"].startswith("/opt/fs2/artifacts/"))
+                # The path the immutable entrypoint resolves, relative to the
+                # artifact root, has to appear in the entrypoint itself.
+                relative = entry["runtime_path"][len("/opt/fs2/artifacts/"):]
+                tail = relative.rsplit("/", 1)[-1]
+                self.assertIn(tail, entrypoint)
+                self.assertGreater(entry["entry_count"], 0)
+                self.assertGreater(entry["total_bytes"], 0)
+                seen.add(generation)
+        self.assertEqual(len(seen), 3, "each artifact must be a distinct generation")
+
+    def test_the_only_unpublished_generation_is_the_shared_molecule_tree(self) -> None:
+        """Mosaic must not republish bytes another artifact already publishes.
+
+        Boltz-2 ships the molecule dictionary as mols.tar and BoltzGen ships it
+        as mols.zip; the two expand to one identical tree, so exactly one of the
+        three generations is consumed rather than published here, and it must be
+        the molecule tree.
+        """
+        generations = LOCK["artifact_delivery"]["canonical_generations"]
+        borrowed = [item for item in generations if not item["published_by_this_task"]]
+        self.assertEqual([item["artifact_id"] for item in borrowed], ["boltzgen-inference-molecules"])
+        self.assertIn("identical flat tree", borrowed[0]["note"])
 
     def test_recorded_contract_defects_carry_a_resolution(self) -> None:
         self.assertTrue(LOCK["upstream_contract_defects"])

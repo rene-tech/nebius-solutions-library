@@ -1,0 +1,127 @@
+{
+  "conclusion": "The two archives expand to one identical flat tree. Mosaic therefore binds the existing boltzgen-inference-molecules generation through a second declared mount instead of publishing a duplicate identity, and no molecule byte was written to the shared plane by this task.",
+  "measured": {
+    "boltz2_expanded": {
+      "entry_count": 45227,
+      "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+      "inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+      "total_bytes": 1820698819
+    },
+    "difference": {
+      "entries_only_in_boltz2": [],
+      "entries_only_in_boltz2_count": 0,
+      "entries_only_in_published": [],
+      "entries_only_in_published_count": 0,
+      "entries_with_differing_content": [],
+      "entries_with_differing_content_count": 0,
+      "identical_tree": true
+    },
+    "probe_entries": [
+      {
+        "bytes": 6756,
+        "path": "000.pkl",
+        "sha256": "3fe6508827f723502b88a1481d080f9f2afeba0914fb0bfce0459c486461ddeb"
+      },
+      {
+        "bytes": 33285,
+        "path": "3QT.pkl",
+        "sha256": "fc0429dd7731ae2413ef5e0b2108901d69917299f5895540665f107ad36b2561"
+      },
+      {
+        "bytes": 45088,
+        "path": "7DJ.pkl",
+        "sha256": "f2b61e3f3e1a9dbb4b78ad805d1d4b229432f313b83df1e392c64ce57e911748"
+      },
+      {
+        "bytes": 72293,
+        "path": "A1INU.pkl",
+        "sha256": "22383aeb152ca3256431fa6b05bc5768ae2e4d2fd4ecbadeb7dafc194afeb70e"
+      },
+      {
+        "bytes": 10689,
+        "path": "DGL.pkl",
+        "sha256": "d193904beae343749f5f26215470f07d8a58b3db2bb1f138b6b30dcb7bf8c0f8"
+      },
+      {
+        "bytes": 28483,
+        "path": "H49.pkl",
+        "sha256": "2430c46d4e6f37cdc771156ca1bfe2b6ddb46b01d17539dba694b0398912a921"
+      },
+      {
+        "bytes": 47118,
+        "path": "KUN.pkl",
+        "sha256": "6817154ef646108faead26d4da271ea4aaf789962e22054a14d3177625a794df"
+      },
+      {
+        "bytes": 9982,
+        "path": "OIL.pkl",
+        "sha256": "c173113889788fa3d749e5dbd1a26c503b842b446e9f890d5b802d10357b303f"
+      },
+      {
+        "bytes": 38648,
+        "path": "S7M.pkl",
+        "sha256": "ebbb35591e2ca08f3e2f48a952f805da16b19c3da3d1989f3d7678df709db9f6"
+      },
+      {
+        "bytes": 13768,
+        "path": "VW8.pkl",
+        "sha256": "50e5bcfb830a7e2574f49c663282ea4115dc46d65df3d0375acf8e4541bddae9"
+      }
+    ],
+    "published_generation": {
+      "entry_count": 45227,
+      "inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+      "total_bytes": 1820698819
+    }
+  },
+  "method": "One CPU Job on a reference-data node expanded the Boltz-2 mols.tar under its single mols/ member prefix into scratch, inventoried it with the same fs2-flat-tree-inventory/v1 implementation the control plane runs, then scanned the already-published BoltzGen generation in place and compared both entry maps on path, byte count and CRC-32. Neither tree was modified and nothing was published by this Job.",
+  "not_claimed": [
+    "This does not merge the two upstream archives into one provenance record. The contract entry keeps BoltzGen's mols.zip as the staging provenance because that is the archive the published generation was actually staged from.",
+    "boltz2_aff.ckpt is part of the same upstream Boltz-2 revision and is deliberately not localized, because the Mosaic runtime never reads it."
+  ],
+  "observed_at": "2026-09-04T10:24:00Z",
+  "owner_task": "localize-and-qualify-mosaic-and-rfdiffusion-_yvnptl",
+  "question": "Mosaic's accepted image lock pins its Boltz-2 molecule dictionary to the Boltz-2 mols.tar archive, while the plane already publishes the same dictionary staged from BoltzGen's mols.zip. Publishing a second 1.8 GiB generation for identical bytes would create two identities for one content-addressed tree, so the two archives were expanded and inventoried independently and compared entry by entry before anything was published.",
+  "schema": "fs2.nebius.ai/mosaic-molecule-tree-equivalence/v1",
+  "sibling_identities": {
+    "mosaic-boltz2-conf": {
+      "entry_count": 1,
+      "inventory_sha256": "e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
+      "source_sha256": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
+      "total_bytes": 2286561469
+    },
+    "mosaic-components": {
+      "archive_sha256": "41d30b2ac41920c952087a642882c6e8ef1a31a4565db5667a372c9f467b2d1a",
+      "entries": [
+        "abmpnn.pt",
+        "soluble_v_48_020.pt",
+        "v_48_020.pt"
+      ],
+      "entry_count": 3,
+      "inventory_sha256": "d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6",
+      "total_bytes": 33423545
+    }
+  },
+  "sources": {
+    "boltz2": {
+      "archive": "mols.tar",
+      "archive_bytes": 1855662080,
+      "archive_members_extracted": 45227,
+      "archive_members_seen": 45228,
+      "archive_members_skipped": 1,
+      "archive_sha256": "39e076d96dbec6b4e86982bbda16f3a53a2a60c9bdc17828d88f6f9a0c7d1fd7",
+      "member_prefix": "mols/",
+      "skipped_reason": "the single mols/ directory member; every regular file was extracted",
+      "source_revision": "6fdef46d763fee7fbb83ca5501ccceff43b85607",
+      "source_uri": "https://huggingface.co/boltz-community/boltz-2/resolve/6fdef46d763fee7fbb83ca5501ccceff43b85607/mols.tar"
+    },
+    "boltzgen_published": {
+      "archive": "mols.zip",
+      "archive_sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
+      "artifact_id": "boltzgen-inference-molecules",
+      "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+      "source_uri": "https://huggingface.co/datasets/boltzgen/inference-data/resolve/c3d36fd276e9caf098c75d4113c6d5eb320b1a4c/mols.zip"
+    }
+  },
+  "state": "identical"
+}

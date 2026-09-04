@@ -11,12 +11,16 @@
     "variant_id": "proteina-complexa-all-variants-v1",
     "model_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
     "runtime_image_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
-    "runtime_recipe_sha256": "89fa4d7b273c85db5e60c792d12a11f8f2590936e1aa6331d47197055e19647f",
+    "runtime_recipe_sha256": "3f28faf246dda24e2c13c6a9ffc9699ae261b5a594e5178c6519e5ca88bfd4e7",
     "workload_recipe_sha256": "1ea1d90228cff7efbc4c3e6f6c394be0e384e7870a2a94fa8897b81fe6bfa73b",
     "model_artifact_manifest_digest": "7b50848f8797da9a260d35f647fe9282d4d4ea904a14a283ffdcc427a48c900d",
-    "execution_identity_sha256": "84cfce4dc0544b78d9e8fd4aadfec0b42739edeb86c90f607b1e7f5cc399e8de"
+    "execution_identity_sha256": "799cb5207afd8affa5a54cff3d45288c72c4da388f033bdd9278cf3f8ffa2eb0"
   },
-  "access_admission": {"profile": "standard", "state": "not-required", "receipt_digest": null},
+  "access_admission": {
+    "profile": "standard",
+    "state": "not-required",
+    "receipt_digest": null
+  },
   "scheduling_snapshot": {
     "policy_revision": "primary-activation-fragment-v1",
     "captured_at": "2026-09-04T00:00:00Z",
@@ -24,15 +28,91 @@
     "tenant_queue": "fs2-models-async",
     "model_lane": "proteina-complexa",
     "stages": [
-      {"stage_id": "generate", "resource_class": "gpu", "resolved_cluster_queue": "scientific-gpu", "resolved_local_queue": "fs2-models-async", "workload_priority_class": "customer-batch", "workload_priority_value": 500, "resolved_pool_preference": ["h100-1x", "h100-reserved-8x"], "accelerator_resource_name": "nvidia.com/gpu", "accelerator_count": 1, "max_queue_seconds": 3600, "max_execution_seconds": 21600, "checkpoint_mode": "restart", "preemption_mode": "restartable"},
-      {"stage_id": "filter", "resource_class": "cpu", "resolved_cluster_queue": "scientific-cpu", "resolved_local_queue": "fs2-models-async", "workload_priority_class": "customer-batch", "workload_priority_value": 500, "resolved_pool_preference": [], "accelerator_resource_name": null, "accelerator_count": 0, "max_queue_seconds": 3600, "max_execution_seconds": 3600, "checkpoint_mode": "none", "preemption_mode": "non_preemptible"},
-      {"stage_id": "evaluate", "resource_class": "gpu", "resolved_cluster_queue": "scientific-gpu", "resolved_local_queue": "fs2-models-async", "workload_priority_class": "customer-batch", "workload_priority_value": 500, "resolved_pool_preference": ["h100-1x", "h100-reserved-8x"], "accelerator_resource_name": "nvidia.com/gpu", "accelerator_count": 1, "max_queue_seconds": 3600, "max_execution_seconds": 21600, "checkpoint_mode": "restart", "preemption_mode": "restartable"},
-      {"stage_id": "analyze", "resource_class": "cpu", "resolved_cluster_queue": "scientific-cpu", "resolved_local_queue": "fs2-models-async", "workload_priority_class": "customer-batch", "workload_priority_value": 500, "resolved_pool_preference": [], "accelerator_resource_name": null, "accelerator_count": 0, "max_queue_seconds": 3600, "max_execution_seconds": 3600, "checkpoint_mode": "none", "preemption_mode": "non_preemptible"}
+      {
+        "stage_id": "generate",
+        "resource_class": "gpu",
+        "resolved_cluster_queue": "scientific-gpu",
+        "resolved_local_queue": "fs2-models-async",
+        "workload_priority_class": "customer-batch",
+        "workload_priority_value": 500,
+        "resolved_pool_preference": [
+          "h100-1x",
+          "h100-reserved-8x"
+        ],
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "accelerator_count": 1,
+        "max_queue_seconds": 3600,
+        "max_execution_seconds": 21600,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "stage_id": "filter",
+        "resource_class": "cpu",
+        "resolved_cluster_queue": "scientific-cpu",
+        "resolved_local_queue": "fs2-models-async",
+        "workload_priority_class": "customer-batch",
+        "workload_priority_value": 500,
+        "resolved_pool_preference": [],
+        "accelerator_resource_name": null,
+        "accelerator_count": 0,
+        "max_queue_seconds": 3600,
+        "max_execution_seconds": 3600,
+        "checkpoint_mode": "none",
+        "preemption_mode": "non_preemptible"
+      },
+      {
+        "stage_id": "evaluate",
+        "resource_class": "gpu",
+        "resolved_cluster_queue": "scientific-gpu",
+        "resolved_local_queue": "fs2-models-async",
+        "workload_priority_class": "customer-batch",
+        "workload_priority_value": 500,
+        "resolved_pool_preference": [
+          "h100-1x",
+          "h100-reserved-8x"
+        ],
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "accelerator_count": 1,
+        "max_queue_seconds": 3600,
+        "max_execution_seconds": 21600,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "stage_id": "analyze",
+        "resource_class": "cpu",
+        "resolved_cluster_queue": "scientific-cpu",
+        "resolved_local_queue": "fs2-models-async",
+        "workload_priority_class": "customer-batch",
+        "workload_priority_value": 500,
+        "resolved_pool_preference": [],
+        "accelerator_resource_name": null,
+        "accelerator_count": 0,
+        "max_queue_seconds": 3600,
+        "max_execution_seconds": 3600,
+        "checkpoint_mode": "none",
+        "preemption_mode": "non_preemptible"
+      }
     ]
   },
-  "input_manifest": {"artifact_id": "target.pdl1.bundle.01", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size_bytes": 4096, "media_type": "application/x-tar", "compression": "zstd"},
+  "input_manifest": {
+    "artifact_id": "target.pdl1.bundle.01",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "size_bytes": 4096,
+    "media_type": "application/x-tar",
+    "compression": "zstd"
+  },
   "output_manifest": null,
   "attempts": [],
-  "semantic_validation": {"validator_id": "proteina-complexa-v1", "status": "not-run", "receipt_digest": null},
-  "error": {"code": "ACTIVATION_NOT_ENABLED", "message": "This model remains route-disabled until serialized integration and a public platform run complete.", "retryable": false}
+  "semantic_validation": {
+    "validator_id": "proteina-complexa-v1",
+    "status": "not-run",
+    "receipt_digest": null
+  },
+  "error": {
+    "code": "ACTIVATION_NOT_ENABLED",
+    "message": "This model remains route-disabled until serialized integration and a public platform run complete.",
+    "retryable": false
+  }
 }

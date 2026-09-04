@@ -88,6 +88,8 @@ PARAMS_ID = "alphafold2-params"
 VANILLA_MPNN_ID = "colabdesign-mpnn-weights-vanilla"
 SOLUBLE_MPNN_ID = "colabdesign-mpnn-weights-soluble"
 RFDIFFUSION_BASE_ID = "rfdiffusion-base-checkpoint"
+MOSAIC_BOLTZ2_CONF_ID = "mosaic-boltz2-conf"
+MOSAIC_COMPONENTS_ID = "mosaic-components"
 COLABDESIGN_SITE_PACKAGES = "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn"
 
 # The real molecule dictionary is 45,227 flat entries whose Chemical Component
@@ -298,6 +300,8 @@ def test_checked_in_contract_declares_every_runtime_tree() -> None:
         SOLUBLE_MPNN_ID,
         PYROSETTA_ID,
         RFDIFFUSION_BASE_ID,
+        MOSAIC_BOLTZ2_CONF_ID,
+        MOSAIC_COMPONENTS_ID,
     }
 
     # The one tree this plane verifies but never stages: another plane installed
@@ -312,8 +316,34 @@ def test_checked_in_contract_declares_every_runtime_tree() -> None:
     assert pyrosetta.tree.directory_count == 779
     assert pyrosetta.tree.total_bytes == PYROSETTA_TOTAL_BYTES
 
+    # Mosaic's Boltz-2 confidence checkpoint: one raw object, not an archive.
+    conf = contracts[MOSAIC_BOLTZ2_CONF_ID]
+    assert conf.raw_file
+    assert conf.tree.inventory_algorithm == RAW_FILE_ALGORITHM
+    assert conf.tree.entry_count == 1
+    assert conf.tree.total_bytes == 2_286_561_469
+    assert conf.source.filename == "boltz2_conf.ckpt"
+    assert conf.tree.mount_paths == (f"/opt/fs2/artifacts/{MOSAIC_BOLTZ2_CONF_ID}",)
+    assert conf.binding_for("mosaic").binding_name == "FS2_ARTIFACT_ROOT"
+
+    # Mosaic's ProteinMPNN weights, lifted out of the repository tarball. Its
+    # mount is the layout the immutable runtime hard-codes, not the artifact id.
+    components = contracts[MOSAIC_COMPONENTS_ID]
+    assert not components.raw_file
+    assert components.tree.entry_count == 3
+    assert components.tree.total_bytes == 33_423_545
+    assert components.archive.member_prefix.endswith(
+        "/src/mosaic/proteinmpnn/weights/"
+    )
+    assert components.tree.mount_paths == ("/opt/fs2/artifacts/mosaic/proteinmpnn",)
+    assert components.binding_for("mosaic").binding_name == "FS2_ARTIFACT_ROOT"
+
     molecules = contracts[MOLECULES_ID]
+    # Mosaic reads this identical tree too, and deliberately declares the
+    # artifact's existing mount: mount_paths is sealed into the published
+    # marker's consumer_paths, so extending it would invalidate a live marker.
     assert molecules.tree.mount_paths == (f"/opt/fs2/artifacts/{MOLECULES_ID}",)
+    assert molecules.binding_for("mosaic").binding_name == "FS2_ARTIFACT_ROOT"
     assert molecules.tree.entry_count == 45_227
     assert molecules.tree.total_bytes == 1_820_698_819
     assert molecules.archive.filename == "mols.zip"

@@ -2,7 +2,11 @@
   "schema": "fs2.nebius.ai/primary-scientific-activation-fragment/v1",
   "model_id": "bindcraft",
   "accepted_evidence": {
-    "source": {"repository": "https://github.com/martinpacesa/BindCraft", "revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9", "license": "MIT code; PyRosetta academic terms"},
+    "source": {
+      "repository": "https://github.com/martinpacesa/BindCraft",
+      "revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+      "license": "MIT code; PyRosetta academic terms"
+    },
     "runtime_image": {
       "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
       "digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
@@ -33,8 +37,17 @@
         "models/structure/batch-adapters/bindcraft/contract.json"
       ]
     },
-    "h100": {"state": "semantic-qualified-route-disabled", "accelerator_class": "nvidia-h100-sxm5-80gb", "evidence_paths": ["models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-qualification-20260903.json"]},
-    "main_commits": ["4b842d0d", "6009dbf0"]
+    "h100": {
+      "state": "semantic-qualified-route-disabled",
+      "accelerator_class": "nvidia-h100-sxm5-80gb",
+      "evidence_paths": [
+        "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-qualification-20260903.json"
+      ]
+    },
+    "main_commits": [
+      "4b842d0d",
+      "6009dbf0"
+    ]
   },
   "profile_projection": {
     "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
@@ -45,14 +58,111 @@
       "execution_mode": "scientific-batch",
       "state": "candidate-unqualified",
       "route_exposed": false,
-      "source": {"kind": "git", "repository": "martinpacesa/BindCraft", "revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9", "review_url": "https://github.com/martinpacesa/BindCraft/tree/7cd4ace1b7407adf66a50dfefa47de2270f5e4a9", "classification": "candidate-input"},
-      "execution_identity": {"model_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9", "runtime_image_digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d", "runtime_recipe_sha256": "be5c792c80b6ef1bb446a7d4e45ce17b192cb45651d7585c53e7d1dc3bf50de9", "workload_recipe_sha256": "e3ca7d4fc41ea5b7cda1b2b92b8a6c8534fd33e7869126e9c09036ee6d068255", "artifact_manifest_digest": null, "execution_identity_sha256": null},
-      "interface": {"protocol": "scientific-batch-v1", "submit_endpoint": "/v1/models/bindcraft:submit", "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1", "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1", "parameter_schema": "fs2-serve.nebius.ai/bindcraft-v1-5-3-parameters/v1", "operations": ["design-binder"], "service_classes": ["customer-batch", "bulk-backfill"], "mcp": {"discoverable": true, "invocable": false, "tool_name": "submit_bindcraft", "description": "Submit an academically gated BindCraft binder-design campaign."}},
-      "access": {"profile": "academic", "state": "verified", "receipt_digest": "2b5a21f8eca6d8e465f29c508a6717915b84e73cb351d24811223a70228a3e36", "credentials_embedded": false},
-      "resources": {"gpu_count": 1, "gpu_topology": "single-gpu", "host_architectures": ["amd64"], "compatible_pool_ids": ["h100-1x", "h100-reserved-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb", "storage.fs2.nebius/reference-data": "true"}},
-      "workload": {"stages": [{"id": "design", "needs": [], "resource_class": "gpu", "admission_mode": "independent-jobs", "min_parallelism": 1, "max_parallelism": 32, "checkpoint_mode": "restart", "preemption_mode": "restartable"}, {"id": "aggregate", "needs": ["design"], "resource_class": "cpu", "admission_mode": "independent-jobs", "min_parallelism": 1, "max_parallelism": 1, "checkpoint_mode": "none", "preemption_mode": "non_preemptible"}], "retry": {"max_attempts": 2, "retryable_exit_codes": [137, 143]}, "cancellation": {"mode": "terminate-attempt", "grace_seconds": 60}},
-      "semantic_validation": {"validator_id": "bindcraft-v1", "state": "candidate-unqualified"},
-      "policy": {"commercial_use": "license-dependent", "non_clinical": true, "limitations": ["The exact image and private PyRosetta tree passed a real H100 semantic run under the authorized academic PoC path.", "Admission remains request-gated and route-disabled until the serialized public controller run proves academic receipt, mixed-plane mounts, collection, and semantic validation."]}
+      "source": {
+        "kind": "git",
+        "repository": "martinpacesa/BindCraft",
+        "revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+        "review_url": "https://github.com/martinpacesa/BindCraft/tree/7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+        "classification": "candidate-input"
+      },
+      "execution_identity": {
+        "model_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+        "runtime_image_digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+        "runtime_recipe_sha256": "87242bab8728227eb1ff67ee14da22fdfb0b89f5a4a267efa37a00074edc917e",
+        "workload_recipe_sha256": "e3ca7d4fc41ea5b7cda1b2b92b8a6c8534fd33e7869126e9c09036ee6d068255",
+        "artifact_manifest_digest": null,
+        "execution_identity_sha256": null
+      },
+      "interface": {
+        "protocol": "scientific-batch-v1",
+        "submit_endpoint": "/v1/models/bindcraft:submit",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "parameter_schema": "fs2-serve.nebius.ai/bindcraft-v1-5-3-parameters/v1",
+        "operations": [
+          "design-binder"
+        ],
+        "service_classes": [
+          "customer-batch",
+          "bulk-backfill"
+        ],
+        "mcp": {
+          "discoverable": true,
+          "invocable": false,
+          "tool_name": "submit_bindcraft",
+          "description": "Submit an academically gated BindCraft binder-design campaign."
+        }
+      },
+      "access": {
+        "profile": "academic",
+        "state": "verified",
+        "receipt_digest": "2b5a21f8eca6d8e465f29c508a6717915b84e73cb351d24811223a70228a3e36",
+        "credentials_embedded": false
+      },
+      "resources": {
+        "gpu_count": 1,
+        "gpu_topology": "single-gpu",
+        "host_architectures": [
+          "amd64"
+        ],
+        "compatible_pool_ids": [
+          "h100-1x",
+          "h100-reserved-8x"
+        ],
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+          "storage.fs2.nebius/reference-data": "true"
+        }
+      },
+      "workload": {
+        "stages": [
+          {
+            "id": "design",
+            "needs": [],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          },
+          {
+            "id": "aggregate",
+            "needs": [
+              "design"
+            ],
+            "resource_class": "cpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 1,
+            "checkpoint_mode": "none",
+            "preemption_mode": "non_preemptible"
+          }
+        ],
+        "retry": {
+          "max_attempts": 2,
+          "retryable_exit_codes": [
+            137,
+            143
+          ]
+        },
+        "cancellation": {
+          "mode": "terminate-attempt",
+          "grace_seconds": 60
+        }
+      },
+      "semantic_validation": {
+        "validator_id": "bindcraft-v1",
+        "state": "candidate-unqualified"
+      },
+      "policy": {
+        "commercial_use": "license-dependent",
+        "non_clinical": true,
+        "limitations": [
+          "The exact image and private PyRosetta tree passed a real H100 semantic run under the authorized academic PoC path.",
+          "Admission remains request-gated and route-disabled until the serialized public controller run proves academic receipt, mixed-plane mounts, collection, and semantic validation."
+        ]
+      }
     }
   },
   "execution_projection": {
@@ -61,15 +171,120 @@
     "variant_id": "bindcraft-v1-5-3-pyrosetta-academic",
     "namespace": "fs2-academic-poc",
     "runtime_artifacts": [
-      {"artifact_id": "alphafold2-params-bindcraft", "state": "ready", "mount_path": "/models/alphafold2", "content_digest": "sha256:9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f", "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f", "source": {"kind": "reference-host-path", "root": "/mnt/fs2-reference-data/data", "sub_path": "scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f", "read_only": true, "required_node_labels": {"storage.fs2.nebius/reference-data": "true"}}, "evidence_path": "models/cancer-immunotherapy/artifact-localization/evidence/live-20260903/execution-map-fragment.json"},
-      {"artifact_id": "colabdesign-mpnn-weights-vanilla", "state": "ready", "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights", "content_digest": "sha256:2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f", "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f", "source": {"kind": "reference-host-path", "root": "/mnt/fs2-reference-data/data", "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f", "read_only": true, "required_node_labels": {"storage.fs2.nebius/reference-data": "true"}}, "evidence_path": "models/cancer-immunotherapy/artifact-localization/evidence/live-20260903/execution-map-fragment.json"},
-      {"artifact_id": "colabdesign-mpnn-weights-soluble", "state": "ready", "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble", "content_digest": "sha256:54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146", "generation": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146", "source": {"kind": "reference-host-path", "root": "/mnt/fs2-reference-data/data", "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-soluble/sha256/54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146", "read_only": true, "required_node_labels": {"storage.fs2.nebius/reference-data": "true"}}, "evidence_path": "models/cancer-immunotherapy/artifact-localization/evidence/live-20260903/execution-map-fragment.json"},
-      {"artifact_id": "bindcraft-pyrosetta-installed-tree", "state": "ready", "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages", "content_digest": "sha256:a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d", "generation": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d", "source": {"kind": "private-pvc", "root": "fs2-academic-poc/academic-assets-runtime-rwx", "sub_path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d", "read_only": true, "required_node_labels": {}}, "evidence_path": "models/cancer-immunotherapy/artifact-localization/evidence/live-20260903/execution-map-fragment.json"}
+      {
+        "artifact_id": "alphafold2-params-bindcraft",
+        "state": "ready",
+        "mount_path": "/models/alphafold2",
+        "content_digest": "sha256:9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+        "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+        "source": {
+          "kind": "reference-host-path",
+          "root": "/mnt/fs2-reference-data/data",
+          "sub_path": "scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "read_only": true,
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        "evidence_path": "models/cancer-immunotherapy/artifact-localization/evidence/live-20260903/execution-map-fragment.json"
+      },
+      {
+        "artifact_id": "colabdesign-mpnn-weights-vanilla",
+        "state": "ready",
+        "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+        "content_digest": "sha256:2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+        "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+        "source": {
+          "kind": "reference-host-path",
+          "root": "/mnt/fs2-reference-data/data",
+          "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "read_only": true,
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        "evidence_path": "models/cancer-immunotherapy/artifact-localization/evidence/live-20260903/execution-map-fragment.json"
+      },
+      {
+        "artifact_id": "colabdesign-mpnn-weights-soluble",
+        "state": "ready",
+        "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
+        "content_digest": "sha256:54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+        "generation": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+        "source": {
+          "kind": "reference-host-path",
+          "root": "/mnt/fs2-reference-data/data",
+          "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-soluble/sha256/54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "read_only": true,
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        "evidence_path": "models/cancer-immunotherapy/artifact-localization/evidence/live-20260903/execution-map-fragment.json"
+      },
+      {
+        "artifact_id": "bindcraft-pyrosetta-installed-tree",
+        "state": "ready",
+        "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+        "content_digest": "sha256:a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+        "generation": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+        "source": {
+          "kind": "private-pvc",
+          "root": "fs2-academic-poc/academic-assets-runtime-rwx",
+          "sub_path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+          "read_only": true,
+          "required_node_labels": {}
+        },
+        "evidence_path": "models/cancer-immunotherapy/artifact-localization/evidence/live-20260903/execution-map-fragment.json"
+      }
     ],
-    "artifact_identity_inputs": ["9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f", "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f", "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146", "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"],
+    "artifact_identity_inputs": [
+      "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+      "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+      "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+      "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+    ],
     "stages": [
-      {"id": "design", "resource_class": "gpu", "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d", "runtime_artifacts": ["alphafold2-params-bindcraft", "colabdesign-mpnn-weights-vanilla", "colabdesign-mpnn-weights-soluble", "bindcraft-pyrosetta-installed-tree"], "placement": {"accelerator_classes": ["nvidia-h100-sxm5-80gb"], "eligible_pool_ids": ["h100-1x", "h100-reserved-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb", "storage.fs2.nebius/reference-data": "true"}}},
-      {"id": "aggregate", "resource_class": "cpu", "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d", "runtime_artifacts": ["alphafold2-params-bindcraft", "bindcraft-pyrosetta-installed-tree"], "placement": {"accelerator_classes": [], "eligible_pool_ids": [], "required_node_labels": {"storage.fs2.nebius/reference-data": "true"}}}
+      {
+        "id": "design",
+        "resource_class": "gpu",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+        "runtime_artifacts": [
+          "alphafold2-params-bindcraft",
+          "colabdesign-mpnn-weights-vanilla",
+          "colabdesign-mpnn-weights-soluble",
+          "bindcraft-pyrosetta-installed-tree"
+        ],
+        "placement": {
+          "accelerator_classes": [
+            "nvidia-h100-sxm5-80gb"
+          ],
+          "eligible_pool_ids": [
+            "h100-1x",
+            "h100-reserved-8x"
+          ],
+          "required_node_labels": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        }
+      },
+      {
+        "id": "aggregate",
+        "resource_class": "cpu",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+        "runtime_artifacts": [
+          "alphafold2-params-bindcraft",
+          "bindcraft-pyrosetta-installed-tree"
+        ],
+        "placement": {
+          "accelerator_classes": [],
+          "eligible_pool_ids": [],
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        }
+      }
     ],
     "blockers": [],
     "adapter_profile_overlay": {
@@ -84,6 +299,21 @@
       }
     }
   },
-  "public_fixtures": {"request": "models/cancer-immunotherapy/images/bindcraft-native/activation/public-request.json", "result": "models/cancer-immunotherapy/images/bindcraft-native/activation/public-result.example.json", "semantic_validator": "components/control-plane/src/fs2_serve/scientific_batch/adapters/bindcraft.py", "supporting_inputs": [{"role": "request-input-manifest", "path": "models/cancer-immunotherapy/runtime-images/proteina-complexa/tests/fixtures/PD-L1.pdb", "encoding": "raw"}]},
-  "activation_gate": {"route_exposed": false, "ready_for_route": false, "public_platform_run_required": true}
+  "public_fixtures": {
+    "request": "models/cancer-immunotherapy/images/bindcraft-native/activation/public-request.json",
+    "result": "models/cancer-immunotherapy/images/bindcraft-native/activation/public-result.example.json",
+    "semantic_validator": "components/control-plane/src/fs2_serve/scientific_batch/adapters/bindcraft.py",
+    "supporting_inputs": [
+      {
+        "role": "request-input-manifest",
+        "path": "models/cancer-immunotherapy/runtime-images/proteina-complexa/tests/fixtures/PD-L1.pdb",
+        "encoding": "raw"
+      }
+    ]
+  },
+  "activation_gate": {
+    "route_exposed": false,
+    "ready_for_route": false,
+    "public_platform_run_required": true
+  }
 }

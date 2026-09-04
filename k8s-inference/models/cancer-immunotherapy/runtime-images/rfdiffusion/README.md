@@ -199,6 +199,29 @@ checks use the canonical generation.
 **The route is closed.** `route_exposed` is `false` and this runtime is not servable
 until the adapter/controller execution contract is reconciled (see `contract/`).
 
+### Canonical generation runs
+
+`qualification/render_job.py` takes `--generation-plane NAME=ARTIFACT_ID`, which
+is the canonical form and the one an activation run must use. It resolves the
+artifact's accepted generation from
+`catalog/runtime/contracts/scientific-artifact-localization.json`, mounts exactly
+that immutable generation read-only from the public reference-data host plane,
+and adds the reference-data node label to the selector because that plane is a
+host path. With `--verifier-config-map` it also runs one marker-admission init
+container per generation, in the same pod that consumes the bytes.
+
+`--plane NAME=CLAIM[:SUBPATH]` remains for the historical task-owned claim and
+claims nothing about localization. `--input-plane NAME=CONFIGMAP` supplies
+request-scoped bytes, such as the scaffold-motif target structure, which are run
+inputs and never localized model artifacts.
+
+On 2026-09-04 both qualified operations ran this way against generation
+`7f34c945…4c03c` and reproduced the committed structures byte for byte:
+`design_8100.pdb` at `78600be2…9806` and `design_9100.pdb` at `ed7d8d33…20d4`.
+Because those structures were originally produced from the historical claim,
+that equality is what proves the localized generation delivers the qualified
+bytes. See `evidence/h100-canonical-generation-run-20260904.json`.
+
 ## Cache level
 
 The envelope records a submitter-declared cache level from

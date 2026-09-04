@@ -11,12 +11,16 @@
     "variant_id": "bindcraft-v1-5-3-pyrosetta-academic",
     "model_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
     "runtime_image_digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
-    "runtime_recipe_sha256": "be5c792c80b6ef1bb446a7d4e45ce17b192cb45651d7585c53e7d1dc3bf50de9",
+    "runtime_recipe_sha256": "87242bab8728227eb1ff67ee14da22fdfb0b89f5a4a267efa37a00074edc917e",
     "workload_recipe_sha256": "e3ca7d4fc41ea5b7cda1b2b92b8a6c8534fd33e7869126e9c09036ee6d068255",
     "model_artifact_manifest_digest": "115ba5116f04aa4798facdf15ba334cd8f9e5821481dafe29949299246a56a48",
-    "execution_identity_sha256": "704800cfacad57fdceb8db348468573c95fd94550b1d5f3e9656e96833b056ca"
+    "execution_identity_sha256": "95febd35c3e2863fce66d60652a751f0f2ffbb716fe3eafd7e36e95bf3e7fa65"
   },
-  "access_admission": {"profile": "academic", "state": "verified", "receipt_digest": "2b5a21f8eca6d8e465f29c508a6717915b84e73cb351d24811223a70228a3e36"},
+  "access_admission": {
+    "profile": "academic",
+    "state": "verified",
+    "receipt_digest": "2b5a21f8eca6d8e465f29c508a6717915b84e73cb351d24811223a70228a3e36"
+  },
   "scheduling_snapshot": {
     "policy_revision": "primary-activation-fragment-v1",
     "captured_at": "2026-09-04T00:00:00Z",
@@ -24,13 +28,58 @@
     "tenant_queue": "fs2-academic-poc-async",
     "model_lane": "bindcraft",
     "stages": [
-      {"stage_id": "design", "resource_class": "gpu", "resolved_cluster_queue": "scientific-gpu", "resolved_local_queue": "fs2-academic-poc-async", "workload_priority_class": "customer-batch", "workload_priority_value": 500, "resolved_pool_preference": ["h100-1x", "h100-reserved-8x"], "accelerator_resource_name": "nvidia.com/gpu", "accelerator_count": 1, "max_queue_seconds": 3600, "max_execution_seconds": 21600, "checkpoint_mode": "restart", "preemption_mode": "restartable"},
-      {"stage_id": "aggregate", "resource_class": "cpu", "resolved_cluster_queue": "scientific-cpu", "resolved_local_queue": "fs2-academic-poc-async", "workload_priority_class": "customer-batch", "workload_priority_value": 500, "resolved_pool_preference": [], "accelerator_resource_name": null, "accelerator_count": 0, "max_queue_seconds": 3600, "max_execution_seconds": 3600, "checkpoint_mode": "none", "preemption_mode": "non_preemptible"}
+      {
+        "stage_id": "design",
+        "resource_class": "gpu",
+        "resolved_cluster_queue": "scientific-gpu",
+        "resolved_local_queue": "fs2-academic-poc-async",
+        "workload_priority_class": "customer-batch",
+        "workload_priority_value": 500,
+        "resolved_pool_preference": [
+          "h100-1x",
+          "h100-reserved-8x"
+        ],
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "accelerator_count": 1,
+        "max_queue_seconds": 3600,
+        "max_execution_seconds": 21600,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "stage_id": "aggregate",
+        "resource_class": "cpu",
+        "resolved_cluster_queue": "scientific-cpu",
+        "resolved_local_queue": "fs2-academic-poc-async",
+        "workload_priority_class": "customer-batch",
+        "workload_priority_value": 500,
+        "resolved_pool_preference": [],
+        "accelerator_resource_name": null,
+        "accelerator_count": 0,
+        "max_queue_seconds": 3600,
+        "max_execution_seconds": 3600,
+        "checkpoint_mode": "none",
+        "preemption_mode": "non_preemptible"
+      }
     ]
   },
-  "input_manifest": {"artifact_id": "bindcraft.pdl1.target.01", "sha256": "5e949950d8255ec3bf390b8bf24f5c71c6ac8fc65bc553d7e477563c9599b93e", "size_bytes": 74614, "media_type": "chemical/x-pdb", "compression": "none"},
+  "input_manifest": {
+    "artifact_id": "bindcraft.pdl1.target.01",
+    "sha256": "5e949950d8255ec3bf390b8bf24f5c71c6ac8fc65bc553d7e477563c9599b93e",
+    "size_bytes": 74614,
+    "media_type": "chemical/x-pdb",
+    "compression": "none"
+  },
   "output_manifest": null,
   "attempts": [],
-  "semantic_validation": {"validator_id": "bindcraft-v1", "status": "not-run", "receipt_digest": null},
-  "error": {"code": "ACTIVATION_NOT_ENABLED", "message": "The academic BindCraft route remains disabled until serialized integration and a public platform run complete.", "retryable": false}
+  "semantic_validation": {
+    "validator_id": "bindcraft-v1",
+    "status": "not-run",
+    "receipt_digest": null
+  },
+  "error": {
+    "code": "ACTIVATION_NOT_ENABLED",
+    "message": "The academic BindCraft route remains disabled until serialized integration and a public platform run complete.",
+    "retryable": false
+  }
 }

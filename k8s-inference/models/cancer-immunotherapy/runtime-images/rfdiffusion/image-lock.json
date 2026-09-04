@@ -209,9 +209,9 @@
     }
   ],
   "artifact_delivery": {
-    "state": "canonical-localized-generation-qualified",
+    "state": "canonical-localized-generation-consumed-and-qualified",
     "model": "public-host-plane",
-    "detail": "The shared localization contract stages Base_ckpt.pt as an immutable raw file without archive semantics. It verifies source SHA-256 and byte count, publishes generation 7f34c945...d4c03c atomically on the public reference-data host plane, pins marker abd2a812...3e4599, and mounts that exact generation read-only at the r12 runtime's --artifact-root. A live capacity-block H100 node admitted the marker, re-hashed all 483,616,107 bytes and deserialized the checkpoint with this image's PyTorch 2.3.0 runtime.",
+    "detail": "Delivery is canonical. The accepted contract entry, the published generation, the in-generation marker and the semantic runs all agree, and a run has now consumed the generation rather than only probing it. The historical task-owned run input is retained as an archival record and is no longer a delivery path.",
     "planes": [
       {
         "name": "public",
@@ -253,7 +253,8 @@
         "../../artifact-localization/evidence/rfdiffusion-base-checkpoint-stage-20260903.json",
         "../../artifact-localization/evidence/node-admit-rfdiffusion-base-checkpoint-h100-20260903.json",
         "../../artifact-localization/evidence/rfdiffusion-checkpoint-probe-h100-20260903.json"
-      ]
+      ],
+      "this_runtime_claims": "The checkpoint localization was published by the single-file localization lane and is consumed here. This task added no generation of its own for RFdiffusion; it added the canonical-generation plane to the qualification renderer, the in-pod marker admission, and the semantic evidence that the generation actually feeds the qualified operations."
     },
     "run_input_staging": {
       "purpose": "archival exact-byte verifier for the historical r12 qualification input; canonical reruns use the shared localization generation",
@@ -286,11 +287,12 @@
     "route_exposed": false,
     "route_state": "closed",
     "evidence": [
+      "evidence/design/design_8100.pdb",
+      "evidence/design/design_9100_motif.pdb",
+      "evidence/h100-canonical-generation-run-20260904.json",
       "evidence/h100-run-receipt.json",
       "evidence/h100-semantic-qualification-design-backbone.json",
       "evidence/h100-semantic-qualification-scaffold-motif.json",
-      "evidence/design/design_8100.pdb",
-      "evidence/design/design_9100_motif.pdb",
       "evidence/superseded/r10-scaffold-motif-failed-result.json"
     ],
     "evidence_transfer_policy": "Evidence is bound to an exact image digest. Nothing from r6-r11 transfers to this image.",
@@ -303,10 +305,12 @@
       "motif_preserved": "12/12 identities unchanged, superposed CA RMSD 0.1129 A against a 1.5 A limit",
       "physical_geometry": "max CA-CA deviation 0.125 A and 0.137 A from 3.8 A",
       "terminal_success_after_upstream": "the envelope reports succeeded only after marker verification",
-      "determinism": "seed 8100 reproduced byte-identically across three independently built images and four nodes"
+      "determinism": "seed 8100 reproduced byte-identically across three independently built images and four nodes",
+      "canonical_generation_consumed": "both operations resolved inference.ckpt_override_path inside the read-only generation mount /opt/fs2/artifacts/rfdiffusion-base-checkpoint, after the in-pod marker admission exited 0",
+      "determinism_across_artifact_planes": "design_8100.pdb 78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806 and design_9100.pdb ed7d8d33ae73d2e6ffdfd86703e6569e18353fe9985f824973153b4270c520d4 are byte identical to the committed evidence produced from the historical claim"
     },
-    "scope": "One design-backbone and one scaffold-motif run, each once. No throughput, contention, elasticity, multi-design fan-out or snapshot measurement, and no cold-start measurement for this digest: both runs landed on nodes that already held the layers. Those semantic runs used the historical qualification claim; localization qualification is separate and does not rewrite their artifact provenance.",
-    "localization_state": "canonical generation admitted and checkpoint deserialized on an H100 node; see artifact_delivery.localization_owner.evidence"
+    "scope": "One design-backbone and one scaffold-motif run per artifact plane. The original pair read the historical qualification claim; the 2026-09-04 pair read the canonical rfdiffusion-base-checkpoint generation and reproduced both committed structures byte for byte, so the localized generation is proven to deliver the qualified bytes. No throughput, contention, elasticity, multi-design fan-out or snapshot measurement, and still no cold-start measurement for this digest: every run landed on a node that already held the layers.",
+    "localization_state": "canonical generation admitted, checkpoint deserialized, and both qualified operations executed on a real H100 reading only that generation; see evidence/h100-canonical-generation-run-20260904.json"
   },
   "upstream_contract_defects": [
     {
@@ -362,6 +366,14 @@
       "owner": "controller / onboarding owners",
       "blocking": false,
       "detail": "This runtime implements fs2-serve.nebius.ai/rfdiffusion-parameters/v1 with operations design-backbone and scaffold-motif, matching the onboarding declaration. The pending batch-adapter branch instead defines rfdiffusion-upstream-base-parameters/v1 with typed contig objects. One of the two must win before the controller route is exposed; the argv contract in adapter.argv_contract is what this image actually accepts."
+    },
+    {
+      "id": "kueue-flavor-h100-1x-has-quota-but-no-ready-node",
+      "owner": "scheduling / Terraform owners",
+      "blocking": false,
+      "observed": "ClusterQueue inference-accelerators lists inference-h100-1x first with nominal quota for two GPUs, but no Ready node carries accelerator.fs2.nebius/pool-id=h100-1x. A GPU workload admitted through the inference-models LocalQueue without pinning a pool id is assigned that flavor, injected with its node labels, and then cannot schedule; only the cluster autoscaler recovers it, by building a node.",
+      "impact": "First-attempt scheduling latency and an avoidable node build for any scientific GPU workload that does not pin a pool id. Observed live on 2026-09-04: the pod stayed Pending with an untolerated-taint report and triggered a 0->1 scale-up of the h100-1x node group.",
+      "resolution": "This runtime pins accelerator.fs2.nebius/pool-id so Kueue must choose the flavor whose nodes exist. The durable fix is either to give the h100-1x flavor real capacity or to order the reserved flavor first; both belong to the scheduling owner."
     }
   ]
 }

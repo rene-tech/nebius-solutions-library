@@ -320,6 +320,8 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                 "colabdesign-mpnn-weights-soluble",
                 "bindcraft-pyrosetta-installed-tree",
                 "rfdiffusion-base-checkpoint",
+                "mosaic-boltz2-conf",
+                "mosaic-components",
             },
             set(artifacts),
         )
@@ -335,11 +337,25 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                 self.assertNotEqual(archive["sha256"], tree["inventory_sha256"])
                 self.assertNotEqual(archive["bytes"], tree["total_bytes"])
                 for mount in tree["mount_paths"]:
-                    # A mount under the runtime artifact root must be this
-                    # artifact's own directory; an installed-package tree lives
+                    # A direct child of the runtime artifact root must be this
+                    # artifact's own directory, so two artifacts can never
+                    # collide there. A deeper path is a model-scoped layout that
+                    # an immutable runtime already hard-codes, which the naming
+                    # convention cannot express; it only has to not squat
+                    # another artifact's name. An installed-package tree lives
                     # where the package is installed instead.
-                    if mount.startswith("/opt/fs2/artifacts/"):
-                        self.assertEqual("/opt/fs2/artifacts/" + artifact["artifact_id"], mount)
+                    if not mount.startswith("/opt/fs2/artifacts/"):
+                        continue
+                    relative = mount[len("/opt/fs2/artifacts/"):]
+                    if "/" not in relative:
+                        self.assertEqual(artifact["artifact_id"], relative)
+                    else:
+                        self.assertNotIn(
+                            relative.split("/", 1)[0],
+                            {item["artifact_id"] for item in contract["artifacts"]}
+                            - {artifact["artifact_id"]},
+                            mount,
+                        )
                 # A runtime mount is a directory of content, so the archive name
                 # must never be something the tree could legitimately contain.
                 self.assertIsNone(re.compile(tree["entry_path_pattern"]).fullmatch(archive["filename"]))
@@ -394,6 +410,9 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                     "bindcraft",
                     "colabdesign.mpnn.weights",
                 ),
+                ("mosaic-boltz2-conf", "mosaic", "FS2_ARTIFACT_ROOT"),
+                ("mosaic-components", "mosaic", "FS2_ARTIFACT_ROOT"),
+                ("boltzgen-inference-molecules", "mosaic", "FS2_ARTIFACT_ROOT"),
                 (
                     "colabdesign-mpnn-weights-soluble",
                     "bindcraft",
@@ -439,7 +458,10 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                     self.assertNotIn("member_prefix", artifact["file"])
                     continue
                 prefix = artifact["archive"].get("member_prefix")
-                if artifact["artifact_id"].startswith("colabdesign-mpnn-weights-"):
+                lifted = artifact["artifact_id"].startswith(
+                    "colabdesign-mpnn-weights-"
+                ) or artifact["artifact_id"] == "mosaic-components"
+                if lifted:
                     self.assertIsNotNone(prefix)
                     self.assertTrue(prefix.endswith("/"))
                     self.assertIn(artifact["archive"]["source_revision"], prefix)
@@ -485,6 +507,16 @@ class ScientificWorkloadContractTests(unittest.TestCase):
             "rfdiffusion-base-checkpoint": (
                 "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
                 "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
+            ),
+            "mosaic-boltz2-conf": (
+                "e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
+                "/opt/fs2/artifacts/mosaic-boltz2-conf",
+            ),
+            # The mosaic runtime hard-codes this location under its artifact
+            # root, so the declared mount is the layout rather than the name.
+            "mosaic-components": (
+                "d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6",
+                "/opt/fs2/artifacts/mosaic/proteinmpnn",
             ),
         }
         contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
