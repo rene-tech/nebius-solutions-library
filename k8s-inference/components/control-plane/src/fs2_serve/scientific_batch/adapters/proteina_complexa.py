@@ -94,6 +94,25 @@ TARGET_BUNDLE_MEDIA_TYPE = "application/x-tar"
 AF2_ARTIFACT_ID = "alphafold2-params"
 RF3_ARTIFACT_ID = "rosettafold3-checkpoint"
 
+# The pinned upstream binder pipeline writes these scalar ``self`` metrics
+# without the historical ``_res_`` prefix.  Keep this allow-list exact: the
+# same CSV also contains list-valued ``*_all`` columns and arbitrary metadata,
+# neither of which is scientific scalar evidence for the public contract.
+CURRENT_SCALAR_METRIC_FIELDS = frozenset(
+    {
+        "self_complex_pLDDT",
+        "self_complex_pAE",
+        "self_complex_i_pAE",
+        "self_binder_scRMSD",
+        "self_binder_scRMSD_ca",
+        "self_binder_scRMSD_bb3",
+        "self_binder_scRMSD_bb3o",
+        "self_binder_scRMSD_allatom",
+        "self_complex_scRMSD",
+        "self_complex_scRMSD_ca",
+    }
+)
+
 # AlphaFold2 parameters are published as one 5,587,968,000-byte tar and consumed
 # as a directory of parameter files. ColabDesign resolves
 # ``AF2_DIR/params/params_<model>.npz`` and then ``AF2_DIR/params_<model>.npz``,
@@ -488,9 +507,12 @@ def validate_output(
         metric_fields = tuple(
             field
             for field in fields
-            if field.startswith("_res_")
-            and not field.endswith("_all")
-            and any(marker in field.lower() for marker in ("plddt", "pae", "rmsd"))
+            if field in CURRENT_SCALAR_METRIC_FIELDS
+            or (
+                field.startswith("_res_")
+                and not field.endswith("_all")
+                and any(marker in field.lower() for marker in ("plddt", "pae", "rmsd"))
+            )
         )
         if not metric_fields:
             raise ScientificAdapterError("Proteina result CSV contains no recognized scientific metrics")

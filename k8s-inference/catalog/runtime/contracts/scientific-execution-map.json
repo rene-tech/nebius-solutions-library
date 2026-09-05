@@ -486,7 +486,7 @@
       "model_id": "proteina-complexa",
       "variant_id": "upstream-dev-20260827",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "7397dd80ce1764d997eb124f3bc7fd172df81ff72473283db8621c0dbe85630f",
+      "execution_identity_sha256": "d7d11a6f66c914c6f69bb14c84f5d35ccadb128acd87f5cb634c490954ee85de",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
