@@ -13,12 +13,12 @@
     "digest": "sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
     "workspace_uid": 10001,
     "workspace_gid": 10001,
-    "state": "build-only-not-semantic-qualified"
+    "state": "semantic-h100-qualified"
   },
   "activation": {
-    "profile_state": "candidate-unqualified",
-    "route_exposed": false,
-    "semantic_h100_qualified": false
+    "profile_state": "active",
+    "route_exposed": true,
+    "semantic_h100_qualified": true
   },
   "interface": {
     "parameter_schema": "fs2-serve.nebius.ai/esmfold2-fast-biohub-v3-4-0-parameters/v1",

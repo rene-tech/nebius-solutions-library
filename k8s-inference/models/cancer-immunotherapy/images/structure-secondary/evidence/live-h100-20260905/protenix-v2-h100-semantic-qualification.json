@@ -1,0 +1,141 @@
+{
+  "schema": "fs2.nebius.ai/structure-secondary-h100-semantic-evidence/v1",
+  "status": "passed",
+  "observed_at": "2026-09-05T00:12:44Z",
+  "scope": {
+    "cluster": "k8s-inference-h100",
+    "namespace": "fs2-academic-poc",
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "routes": "unchanged-closed",
+    "qualification_task": "fs2-structure-successor-h100-qualification-r20260905"
+  },
+  "provenance": {
+    "image_publication_evidence": "models/cancer-immunotherapy/images/structure-secondary/evidence/localization-marker-successor-publication-20260904.json",
+    "image_publication_evidence_sha256": "a79f9f1c79acd9da088c2d4c1e72cb4d23a6ac7262ceacf9a5b9f1ece6b5f62b",
+    "renderer": "models/cancer-immunotherapy/images/structure-secondary/qualification/render_secondary_semantic_job.py",
+    "renderer_sha256": "76970ef7d86dfed4bcad97290edbe322eb0b8c668fa8de93cc671514bfc30c0f",
+    "job_source_commit_annotation": "5cb7cad6a372db1fbe44407778b618a014592727",
+    "raw_capture_sha256": {
+      "rendered_resources_json": "2029e97749923891910e5262ae7bbeaeeddc5abb56e22c60e4b836ad738ad119",
+      "job_api_json": "7e316db12e4d1f7f3c411da8a1723fd6287f77c44f951d971eb9cf5f0bad4283",
+      "pod_api_json": "73184a5623d3105f06d71fb23b7966d1d94146f4ea8995684cfa9e4e93f38c58",
+      "container_log": "68d4c740e4d169fd7844ce7ecaf3333aa170aed8f5426175fb0d137778c533b2",
+      "qualification_result_json": "3157e1a4d77d3e295a3b80f0e7417def8fb574aef62e1bbddcb86fc171771661",
+      "batch_summary_json": "bd197eb6a6592710ea73bcd9773f31e2d02d559af6a14e3aaef95a2f6c124c16"
+    }
+  },
+  "job": {
+    "name": "secondary-protenix-v2-0d2bcfa9f347",
+    "uid": "9082b692-8c1f-4138-b492-545dba36936e",
+    "pod": "secondary-protenix-v2-0d2bcfa9f347-t948t",
+    "pod_uid": "a04c0a7d-a77e-4e39-a3a2-ad776371473f",
+    "node": "computeinstance-e00m0hsph76ajt9sdb",
+    "created_at": "2026-09-05T00:11:06Z",
+    "container_started_at": "2026-09-05T00:11:08Z",
+    "container_finished_at": "2026-09-05T00:12:41Z",
+    "completed_at": "2026-09-05T00:12:44Z",
+    "exit_code": 0,
+    "restart_count": 0
+  },
+  "runtime": {
+    "model_id": "protenix-v2",
+    "runtime_id": "protenix-v2",
+    "variant_id": "upstream-v2-0-0",
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
+    "kubelet_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
+    "resources": {
+      "cpu_request": "8",
+      "cpu_limit": "16",
+      "memory_request": "64Gi",
+      "memory_limit": "112Gi",
+      "gpu": 1,
+      "accelerator_class": "nvidia-h100-sxm5-80gb"
+    },
+    "identity": {
+      "gid": 10001,
+      "supplemental_groups": [
+        44,
+        992,
+        1000,
+        10001
+      ],
+      "uid": 10001
+    }
+  },
+  "artifact_access": {
+    "artifact_id": "protenix-v2",
+    "content_digest": "sha256:5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
+    "localization_receipt_digest": "sha256:ea301407e2ac427bf87d4617136629f178a75d55f67e3aea882de4bc19ce04b4",
+    "expected_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+    "host_path": "/mnt/fs2-reference-data/data",
+    "sub_path": "scientific-localization/public/generations/protenix-v2/sha256/5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
+    "mount_path": "/models/protenix-v2",
+    "read_only": true,
+    "runtime_marker": {
+      "path": "/var/run/fs2-runtime-sample-structure.json",
+      "bytes": 908,
+      "sha256": "89c30714e375149a244dd4b2c78e51e36ff4e9f2c92cc145dbaba2942cb9b784"
+    }
+  },
+  "runtime_localization_marker": {
+    "path": "/var/run/fs2-runtime-sample-structure.json",
+    "bytes": 908,
+    "sha256": "a3a452e978bd84696db6a45829c059ec2b26cbb497a7e991028130c04291c461"
+  },
+  "qualification_result_file": {
+    "path": "/outputs/qualification-result.json",
+    "bytes": 1369,
+    "sha256": "3157e1a4d77d3e295a3b80f0e7417def8fb574aef62e1bbddcb86fc171771661",
+    "recovery": "The exact pretty JSON bytes are deterministically reconstructed from the retained FS2_QUALIFICATION_RESULT log envelope."
+  },
+  "timings": {
+    "job_wall_seconds": 98,
+    "container_wall_seconds": 93,
+    "semantic_duration_seconds": 93.325,
+    "schedule_and_image_start_seconds": 2
+  },
+  "result": {
+    "accelerator": {
+      "compute_capability": [
+        9,
+        0
+      ],
+      "cuda_runtime": "12.6",
+      "device_name": "NVIDIA H100 80GB HBM3",
+      "torch": "2.7.1+cu126"
+    },
+    "attempt_id": "b31cd3d1-2c65-522d-80c2-1c5d07809ebb",
+    "confidence": {
+      "path": "confidence.json",
+      "result_count": 1,
+      "sha256": "b6d309c64dbe9cac26d2e9b1592c1830b35284555c9a28cafaac2132ccfd653c"
+    },
+    "duration_seconds": 93.325,
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
+    "operation_id": "46cdb2b2-e6d1-592a-ab3a-f9c035560d53",
+    "runtime_id": "protenix-v2",
+    "runtime_identity": {
+      "gid": 10001,
+      "supplemental_groups": [
+        44,
+        992,
+        1000,
+        10001
+      ],
+      "uid": 10001
+    },
+    "runtime_localization_marker_sha256": "a3a452e978bd84696db6a45829c059ec2b26cbb497a7e991028130c04291c461",
+    "schema": "fs2.nebius.ai/structure-secondary-h100-semantic-result/v1",
+    "source_commit": "5cb7cad6a372db1fbe44407778b618a014592727",
+    "status": "passed",
+    "structures": [
+      {
+        "atom_records": 321,
+        "bytes": 32475,
+        "path": "fs2-protenix-v2-h100-smoke/seed_101/predictions/fs2-protenix-v2-h100-smoke_sample_0.cif",
+        "sha256": "e013900e3620e6a1858b8a4733a0bec9e5bfe4ad93d4c63eb5c5ff403a67a199"
+      }
+    ]
+  }
+}

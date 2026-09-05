@@ -1317,7 +1317,7 @@
       "model_id": "esmfold2",
       "variant_id": "biohub-v3-4-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "4a9ebc3a4bd5a9efb6a60feec774ce6c728a4bd4c4d3455ead4a345c905e9428",
+      "execution_identity_sha256": "6e582d5c947687ccd27e45fcf962c6862c88ca5c284f046cf24a386086234ae5",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1421,7 +1421,7 @@
       "stages": [
         {
           "stage_id": "prepare-input",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
           "collector_id": "esmfold2-prepare-collector-v1",
           "validator_id": "esmfold2-prepare-validator-v1",
           "mounts": [
@@ -1457,7 +1457,7 @@
         },
         {
           "stage_id": "fold",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
           "collector_id": "esmfold2-result-collector-v1",
           "validator_id": "esmfold2-biohub-v3-4-0",
           "mounts": [
@@ -1528,7 +1528,7 @@
       "model_id": "esmfold2-fast",
       "variant_id": "biohub-v3-4-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "c6fe09705a19df52e496a067f4f870c87153e3ad31e751550d7d1c4ce61d1ea9",
+      "execution_identity_sha256": "7d9318d3a15719bb984d7d29ec69a42966ce943f88b0f1e24500574b373dca52",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1632,7 +1632,7 @@
       "stages": [
         {
           "stage_id": "prepare-input",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
           "collector_id": "esmfold2-fast-prepare-collector-v1",
           "validator_id": "esmfold2-fast-prepare-validator-v1",
           "mounts": [
@@ -1668,7 +1668,7 @@
         },
         {
           "stage_id": "fold",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
           "collector_id": "esmfold2-fast-result-collector-v1",
           "validator_id": "esmfold2-fast-biohub-v3-4-0",
           "mounts": [
@@ -1739,7 +1739,7 @@
       "model_id": "openfold3-openbind",
       "variant_id": "upstream-openbind-v0-5-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "17a5fb6ce50e66eb4eac4921bc362d22a5e544ea8e9dd543afacfa089e0a8eb8",
+      "execution_identity_sha256": "a04de6ad3383d7a435cb988b9b30fd390ca91c4fe79109a6a4836c3276e5c1e7",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1775,7 +1775,7 @@
       "stages": [
         {
           "stage_id": "data-pipeline",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
           "collector_id": "openfold3-data-collector-v1",
           "validator_id": "openfold3-data-validator-v1",
           "mounts": [
@@ -1811,7 +1811,7 @@
         },
         {
           "stage_id": "inference",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
           "collector_id": "openfold3-result-collector-v1",
           "validator_id": "openfold3-upstream-openbind-v0-5-0",
           "mounts": [
@@ -1886,7 +1886,7 @@
       "model_id": "protenix-v2",
       "variant_id": "upstream-v2-0-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "222d0e9145fbc87c252ce4bb092342e584d40de8db2af41c1e2d037f967ef863",
+      "execution_identity_sha256": "679c3200b08e661ff420ca87a55c4a4fb9cf246fbb57f7450c4e0055e0c5cc9f",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1939,7 +1939,7 @@
       "stages": [
         {
           "stage_id": "prepare-data",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
           "collector_id": "protenix-v2-prep-collector-v1",
           "validator_id": "protenix-v2-prep-validator-v1",
           "mounts": [
@@ -2000,7 +2000,7 @@
         },
         {
           "stage_id": "sample-structure",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
           "collector_id": "protenix-v2-result-collector-v1",
           "validator_id": "protenix-v2-upstream-v2-0-0",
           "mounts": [

@@ -14,12 +14,12 @@
     "digest": "sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
     "workspace_uid": 10001,
     "workspace_gid": 10001,
-    "state": "build-only-not-semantic-qualified"
+    "state": "semantic-h100-qualified"
   },
   "activation": {
-    "profile_state": "candidate-unqualified",
-    "route_exposed": false,
-    "semantic_h100_qualified": false
+    "profile_state": "active",
+    "route_exposed": true,
+    "semantic_h100_qualified": true
   },
   "interface": {
     "parameter_schema": "fs2-serve.nebius.ai/openfold3-upstream-openbind-v0-5-0-parameters/v1",

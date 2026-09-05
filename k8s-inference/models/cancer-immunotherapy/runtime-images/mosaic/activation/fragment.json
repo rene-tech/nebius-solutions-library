@@ -180,7 +180,7 @@
         "h100_semantic_receipt_sha256": "9eeef6c219c3ee0e9754e9d45be9de3f77ccec7824ce9e6b3f0fa17405aef339",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "a9d30b13744d55b34b2a51fda095a160065081f753088d8c3d0e2d0cf51f9e9d",
+        "execution_map_sha256": "b407837e073da8df13b5767cc016ed6942c824fd89c2a635f8683bcbe5eed5fb",
         "qualified_at": "2026-09-04T15:25:31Z"
       },
       "policy": {

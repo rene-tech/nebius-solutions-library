@@ -1429,10 +1429,10 @@ def test_production_companion_publishes_result_manifest_and_validation(model_id:
 
 def test_contract_documents_match_code_and_the_published_successor_handoff() -> None:
     handoff = json.loads(IMAGE_HANDOFF.read_text(encoding="utf-8"))
-    assert handoff["state"] == "published-build-only-not-activated"
+    assert handoff["state"] == "semantic-h100-qualified-ready-for-activation"
     assert handoff["production_protocol_compatible"] is True
-    assert handoff["semantic_h100_qualification"] is False
-    assert handoff["route_activation_allowed"] is False
+    assert handoff["semantic_h100_qualification"] is True
+    assert handoff["route_activation_allowed"] is True
     assert "alphafold3" not in {item["model_id"] for item in handoff["images"]}
     images = {item["model_id"]: item for item in handoff["images"]}
     assert set(images) == set(MODULES)
@@ -1442,10 +1442,10 @@ def test_contract_documents_match_code_and_the_published_successor_handoff() -> 
         assert value["variant_id"] == module.VARIANT_ID
         assert value["source"]["repository"] == module.SOURCE_REPOSITORY
         assert value["source"]["revision"] == module.SOURCE_REVISION
-        semantic_qualified = False
+        semantic_qualified = True
         assert value["activation"] == {
-            "profile_state": "candidate-unqualified",
-            "route_exposed": False,
+            "profile_state": "active",
+            "route_exposed": True,
             "semantic_h100_qualified": semantic_qualified,
         }
         assert value["runtime_image"]["repository"] == images[model_id]["repository"]
@@ -1469,6 +1469,7 @@ def test_contract_documents_match_code_and_the_published_successor_handoff() -> 
 def test_committed_publication_evidence_matches_the_exact_image_handoff() -> None:
     handoff = json.loads(IMAGE_HANDOFF.read_text(encoding="utf-8"))
     evidence_path = SOLUTION_ROOT / handoff["evidence"]["source"]
+    assert hashlib.sha256(evidence_path.read_bytes()).hexdigest() == handoff["evidence"]["source_sha256"]
     evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
     assert evidence["image_source_revision"] == handoff["image_source_commit"]
     assert evidence["qualification"] == {
@@ -1485,3 +1486,13 @@ def test_committed_publication_evidence_matches_the_exact_image_handoff() -> Non
         assert item["image_default_gid"] == 10001
         assert item["smoke_mode"] == "build-only-not-semantic-readiness"
         assert re.fullmatch(r"[0-9a-f]{64}", item["sbom"]["sha256"])
+
+    semantic_path = SOLUTION_ROOT / handoff["evidence"]["semantic_h100_source"]
+    assert hashlib.sha256(semantic_path.read_bytes()).hexdigest() == handoff["evidence"]["semantic_h100_sha256"]
+    semantic = json.loads(semantic_path.read_text(encoding="utf-8"))
+    assert semantic["status"] == "passed"
+    assert semantic["passed_count"] == semantic["total_count"] == len(handoff["images"])
+    assert semantic["scope"]["routes"] == "unchanged-closed"
+    semantic_images = {item["model_id"]: item["image"] for item in semantic["results"]}
+    for image in handoff["images"]:
+        assert semantic_images[image["model_id"]] == f"{image['repository']}@{image['digest']}"

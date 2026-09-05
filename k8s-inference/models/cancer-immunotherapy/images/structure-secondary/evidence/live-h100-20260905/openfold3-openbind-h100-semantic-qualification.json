@@ -1,0 +1,157 @@
+{
+  "schema": "fs2.nebius.ai/structure-secondary-h100-semantic-evidence/v1",
+  "status": "passed",
+  "observed_at": "2026-09-05T00:12:15Z",
+  "scope": {
+    "cluster": "k8s-inference-h100",
+    "namespace": "fs2-academic-poc",
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "routes": "unchanged-closed",
+    "qualification_task": "fs2-structure-successor-h100-qualification-r20260905"
+  },
+  "provenance": {
+    "image_publication_evidence": "models/cancer-immunotherapy/images/structure-secondary/evidence/localization-marker-successor-publication-20260904.json",
+    "image_publication_evidence_sha256": "a79f9f1c79acd9da088c2d4c1e72cb4d23a6ac7262ceacf9a5b9f1ece6b5f62b",
+    "renderer": "models/cancer-immunotherapy/images/structure-secondary/qualification/render_semantic_job.py",
+    "renderer_sha256": "d037e74df50cd1feb81e6d75a1516c96b03d68f716e5ca91d4fd603d475c7a43",
+    "job_source_commit_annotation": "5cb7cad6a372db1fbe44407778b618a014592727",
+    "raw_capture_sha256": {
+      "rendered_resources_json": "bba6f2e676aab9f2d4e2e363c252a7c908b88f5127177bcd311a902d2b0fab1b",
+      "job_api_json": "a5e2729ecc4e7d947cc441473adb997b5371cda252a5dc03bb2534a4e0025785",
+      "pod_api_json": "e49f7e137a3e331ac2a68942f6f13a4b6e926dc0342eaa1b7c9d9a1c66f6b2c4",
+      "container_log": "47242b51e5cc185b27bf226c12a51ea1c79b527a00ed8fbb8aec9751fd35dc69",
+      "qualification_result_json": "63ca5361bef705557e083dcdb040d3e40ebf8c2c818ea2689e99ccf6796198bc",
+      "batch_summary_json": "bd197eb6a6592710ea73bcd9773f31e2d02d559af6a14e3aaef95a2f6c124c16"
+    }
+  },
+  "job": {
+    "name": "secondary-openfold3-d4bb39a33447",
+    "uid": "77eb18f6-c9fd-4d64-9ccc-0cbc85ffcd62",
+    "pod": "secondary-openfold3-d4bb39a33447-6xc49",
+    "pod_uid": "9c932427-7e04-4773-b431-5d6eb12b3ab6",
+    "node": "computeinstance-e00p3acr87k9k4mckj",
+    "created_at": "2026-09-05T00:11:10Z",
+    "container_started_at": "2026-09-05T00:11:12Z",
+    "container_finished_at": "2026-09-05T00:12:12Z",
+    "completed_at": "2026-09-05T00:12:15Z",
+    "exit_code": 0,
+    "restart_count": 0
+  },
+  "runtime": {
+    "model_id": "openfold3-openbind",
+    "runtime_id": "openfold3",
+    "variant_id": "upstream-openbind-v0-5-0",
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
+    "kubelet_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
+    "resources": {
+      "cpu_request": "8",
+      "cpu_limit": "16",
+      "memory_request": "64Gi",
+      "memory_limit": "96Gi",
+      "gpu": 1,
+      "accelerator_class": "nvidia-h100-sxm5-80gb"
+    },
+    "identity": {
+      "gid": 10001,
+      "supplemental_groups": [
+        44,
+        992,
+        1000,
+        10001
+      ],
+      "uid": 10001
+    }
+  },
+  "artifact_access": [
+    {
+      "artifact_id": "openfold3-openbind-0",
+      "content_digest": "sha256:f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
+      "localization_receipt_digest": "sha256:fd39c6ef471c575f0b797e5e7777c948d04151d59b31c5c32f4f0ede728a780c",
+      "sub_path": "model-artifacts/public/v1/objects/openfold3-openbind-0/sha256/f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
+      "mount_path": "/models/openfold3",
+      "read_only": true
+    },
+    {
+      "artifact_id": "openfold3-components-bcif",
+      "content_digest": "sha256:ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
+      "localization_receipt_digest": "sha256:c8195ee346b3bffad1940c0ff600e52bb2e1ba3046e579627f3ad0329ee0fcc6",
+      "sub_path": "model-artifacts/public/v1/objects/openfold3-components-bcif/sha256/ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
+      "mount_path": "/databases/openfold3",
+      "read_only": true
+    }
+  ],
+  "runtime_localization_marker": {
+    "path": "/var/run/fs2-runtime-localization.json",
+    "bytes": 1389,
+    "sha256": "076c5288403c72f537c0ffec5836dd27f5b95d63dcc9abc6e9a38a73fc7120f5"
+  },
+  "qualification_result_file": {
+    "path": "/outputs/qualification-result.json",
+    "bytes": 1346,
+    "sha256": "63ca5361bef705557e083dcdb040d3e40ebf8c2c818ea2689e99ccf6796198bc",
+    "recovery": "The exact pretty JSON bytes are deterministically reconstructed from the retained FS2_QUALIFICATION_RESULT log envelope."
+  },
+  "timings": {
+    "job_wall_seconds": 65,
+    "container_wall_seconds": 60,
+    "semantic_duration_seconds": 59.906,
+    "schedule_and_image_start_seconds": 2
+  },
+  "result": {
+    "accelerator": {
+      "compute_capability": [
+        9,
+        0
+      ],
+      "cuda_runtime": "12.9",
+      "device_name": "NVIDIA H100 80GB HBM3",
+      "torch": "2.10.0"
+    },
+    "attempt_id": "6fc25b85-e475-5e22-b5e9-e01838953aa5",
+    "confidence": {
+      "path": "confidence.json",
+      "result_count": 1,
+      "sha256": "32b28c755e44bc47b5f47825889e9837e986fadbdfce2bd881942ceeaedec968"
+    },
+    "duration_seconds": 59.906,
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
+    "operation_id": "e1270220-accb-5cb7-95e0-f8c373eab26b",
+    "runtime_id": "openfold3",
+    "runtime_identity": {
+      "gid": 10001,
+      "supplemental_groups": [
+        44,
+        992,
+        1000,
+        10001
+      ],
+      "uid": 10001
+    },
+    "runtime_localization_marker_sha256": "076c5288403c72f537c0ffec5836dd27f5b95d63dcc9abc6e9a38a73fc7120f5",
+    "schema": "fs2.nebius.ai/structure-secondary-h100-semantic-result/v1",
+    "source_commit": "5cb7cad6a372db1fbe44407778b618a014592727",
+    "status": "passed",
+    "structures": [
+      {
+        "atom_records": 197,
+        "bytes": 22232,
+        "path": "qualification/seed_101/qualification_seed_101_sample_1_model.cif",
+        "sha256": "21246e0791ae0b688a905473c663a2f276e43d865c811e830062af948f68616f"
+      }
+    ]
+  },
+  "runner_delivery": {
+    "path": "/opt/fs2/runtime/openfold3/runner-base.yaml",
+    "bytes": 102,
+    "sha256": "c42271cdfc4c9dd01ceca7a9e0c2d0a207c2d8106a2bb03146d491d54b601469",
+    "source": "immutable-image-filesystem",
+    "configmap_key_present": false,
+    "configmap_mount_at_runtime_path": false,
+    "input_configmap_keys": [
+      "raw-input.json",
+      "runtime-localization.json",
+      "verify_outputs.py"
+    ]
+  }
+}

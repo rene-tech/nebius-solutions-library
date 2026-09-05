@@ -1,0 +1,100 @@
+{
+  "schema": "fs2.nebius.ai/structure-successor-h100-qualification-summary/v1",
+  "status": "passed",
+  "scope": {
+    "cluster": "k8s-inference-h100",
+    "namespace": "fs2-academic-poc",
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "routes": "unchanged-closed"
+  },
+  "qualification_task": "fs2-structure-successor-h100-qualification-r20260905",
+  "passed_count": 4,
+  "total_count": 4,
+  "results": [
+    {
+      "model_id": "esmfold2-fast",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+      "evidence_file": "esmfold2-fast-h100-semantic-qualification.json",
+      "evidence_file_sha256": "b78dce5a942472b9427ca4f84a2a0b00baed1c3beca40d230913f1745c7df545",
+      "qualification_result_sha256": "6839bb504ca7eee01157ed7e9241c41d3b6f1075af396b6f5e95c433ae423542",
+      "job": "secondary-esmfold2-fast-ec3eebef1808",
+      "job_uid": "f88aef9f-195b-4e84-bdeb-2a3987a3452e",
+      "completed_at": "2026-09-05T00:11:48Z",
+      "semantic_duration_seconds": 39.991,
+      "accelerator": {
+        "compute_capability": [
+          9,
+          0
+        ],
+        "cuda_runtime": "13.0",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "torch": "2.11.0+cu130"
+      },
+      "status": "passed"
+    },
+    {
+      "model_id": "esmfold2",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
+      "evidence_file": "esmfold2-h100-semantic-qualification.json",
+      "evidence_file_sha256": "e52236de244cfb52ec5e6d6486812e1518d0f6c9e0ade18608b9d063cc8971c2",
+      "qualification_result_sha256": "0142a5c39b56bb2496342cb2c64fcae025f244fc409c07614ba10c6c57ce5a98",
+      "job": "secondary-esmfold2-694d800f43d6",
+      "job_uid": "ed284c42-7e14-4352-b8d8-3f47b8aed7b8",
+      "completed_at": "2026-09-05T00:11:48Z",
+      "semantic_duration_seconds": 43.008,
+      "accelerator": {
+        "compute_capability": [
+          9,
+          0
+        ],
+        "cuda_runtime": "13.0",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "torch": "2.11.0+cu130"
+      },
+      "status": "passed"
+    },
+    {
+      "model_id": "openfold3-openbind",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
+      "evidence_file": "openfold3-openbind-h100-semantic-qualification.json",
+      "evidence_file_sha256": "2590708d8932ddef795957a91215dd20ca7e8f8666b4aa9d50e782b212029d09",
+      "qualification_result_sha256": "63ca5361bef705557e083dcdb040d3e40ebf8c2c818ea2689e99ccf6796198bc",
+      "job": "secondary-openfold3-d4bb39a33447",
+      "job_uid": "77eb18f6-c9fd-4d64-9ccc-0cbc85ffcd62",
+      "completed_at": "2026-09-05T00:12:15Z",
+      "semantic_duration_seconds": 59.906,
+      "accelerator": {
+        "compute_capability": [
+          9,
+          0
+        ],
+        "cuda_runtime": "12.9",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "torch": "2.10.0"
+      },
+      "status": "passed"
+    },
+    {
+      "model_id": "protenix-v2",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
+      "evidence_file": "protenix-v2-h100-semantic-qualification.json",
+      "evidence_file_sha256": "e2935d0c8596573d7934a25468a6740dace8cb1e53fec3b8bf8cd5c5e52cb33a",
+      "qualification_result_sha256": "3157e1a4d77d3e295a3b80f0e7417def8fb574aef62e1bbddcb86fc171771661",
+      "job": "secondary-protenix-v2-0d2bcfa9f347",
+      "job_uid": "9082b692-8c1f-4138-b492-545dba36936e",
+      "completed_at": "2026-09-05T00:12:44Z",
+      "semantic_duration_seconds": 93.325,
+      "accelerator": {
+        "compute_capability": [
+          9,
+          0
+        ],
+        "cuda_runtime": "12.6",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "torch": "2.7.1+cu126"
+      },
+      "status": "passed"
+    }
+  ]
+}

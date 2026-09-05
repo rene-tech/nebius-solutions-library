@@ -17,11 +17,11 @@
     },
     "execution_identity": {
       "model_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
-      "runtime_image_digest": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
-      "runtime_recipe_sha256": "1041d8787275b62ccaa4fea7f3d283ce73787c1f3100a28c906d4e5899448cae",
+      "runtime_image_digest": "sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
+      "runtime_recipe_sha256": "24f3aaeacb26265826cb9e417ae9babb17cfc67a24b3d5831e5d36c04b8895b3",
       "workload_recipe_sha256": "73a463f3d28d658780d6a52c10b7826301d9a510e6899e7d117ffaa1d800fcbe",
       "artifact_manifest_digest": "c4cc2c59313470ee7498f37d377485328785e09080ccb2136edfeef754a573bb",
-      "execution_identity_sha256": "17a5fb6ce50e66eb4eac4921bc362d22a5e544ea8e9dd543afacfa089e0a8eb8"
+      "execution_identity_sha256": "a04de6ad3383d7a435cb988b9b30fd390ca91c4fe79109a6a4836c3276e5c1e7"
     },
     "interface": {
       "protocol": "scientific-batch-v1",
@@ -130,17 +130,17 @@
       "state": "active"
     },
     "qualification": {
-      "h100_semantic_receipt_sha256": "120aa9c48ab7108e23fd09e47943f9203aedd7d39e405727033a94bb986bdbef",
+      "h100_semantic_receipt_sha256": "2590708d8932ddef795957a91215dd20ca7e8f8666b4aa9d50e782b212029d09",
       "public_completion_receipt_sha256": null,
       "scheduler_eligibility_receipt_sha256": null,
-      "execution_map_sha256": "a9d30b13744d55b34b2a51fda095a160065081f753088d8c3d0e2d0cf51f9e9d",
-      "qualified_at": "2026-09-04T17:53:27Z"
+      "execution_map_sha256": "b407837e073da8df13b5767cc016ed6942c824fd89c2a635f8683bcbe5eed5fb",
+      "qualified_at": "2026-09-05T00:12:15Z"
     },
     "policy": {
       "commercial_use": "allowed",
       "non_clinical": true,
       "limitations": [
-        "The r5 image is superseded because its 0444 runner parent directory was not traversable by UID 10001; r6 bakes the exact 102-byte runner below a 0555 parent and passed exact-artifact H100 semantics without a runtime ConfigMap projection.",
+        "The r7 localization-compatible successor retains the exact 102-byte baked runner below a traversable 0555 parent and passed exact-artifact H100 semantics with the enriched runtime marker and no runtime ConfigMap projection.",
         "OpenFold3 is an independent, non-equivalent backend to AlphaFold 3: distinct code, weights, license and results; it is never reported as AlphaFold 3.",
         "The public scientific identity is openfold3-openbind so it cannot collide with the existing openfold3 HTTP catalog record; the legacy runtime-emitted openfold3 label is accepted only inside this adapter's output-validation boundary.",
         "The OpenBind-0 checkpoint and components.bcif are bound to immutable localization receipts; public completion and scheduler-eligibility receipts remain pending."

@@ -583,7 +583,9 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertNotIn(phrase, reviewed_text)
 
-    def test_successor_publication_digests_are_immutable_and_fail_closed(self) -> None:
+    def test_successor_publication_digests_are_immutable_and_h100_qualified(
+        self,
+    ) -> None:
         expected = {
             "esmfold2": "sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
             "esmfold2-fast": "sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
@@ -597,10 +599,10 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
         self.assertEqual(
             {image["id"]: image["deployable"] for image in LOCK["images"]},
             {
-                "esmfold2": False,
-                "esmfold2-fast": False,
-                "protenix-v2": False,
-                "openfold3": False,
+                "esmfold2": True,
+                "esmfold2-fast": True,
+                "protenix-v2": True,
+                "openfold3": True,
             },
         )
 
@@ -609,10 +611,10 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             "explicit-non-overwriting-build-checked-tags",
         )
         expected_h100_states = {
-            "esmfold2": "pending-exact-artifact-semantic-test",
-            "esmfold2-fast": "pending-exact-artifact-semantic-test",
-            "protenix-v2": "pending-exact-checkpoint-semantic-test",
-            "openfold3": "pending-exact-artifact-semantic-test",
+            "esmfold2": "qualified-exact-artifact-semantic",
+            "esmfold2-fast": "qualified-exact-artifact-semantic",
+            "protenix-v2": "qualified-exact-artifact-semantic",
+            "openfold3": "qualified-exact-artifact-semantic",
         }
         for image in LOCK["images"]:
             with self.subTest(image=image["id"]):
@@ -703,7 +705,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
     ) -> None:
         images = {image["id"]: image for image in LOCK["images"]}
         expected_level_states = {
-            "L1": "candidate-published-build-only-not-semantic-qualified",
+            "L1": "qualified-regional-image-and-exact-artifact-h100-semantic",
             "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
             "L3": "unavailable-no-local-disk-cached-snapshot",
             "L4": "unavailable-no-system-ram-retained-model",
@@ -711,10 +713,10 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
         for image in images.values():
             fast_start = image["fast_start"]
             self.assertEqual(fast_start["maximum_candidate_level"], "L1")
-            self.assertIsNone(fast_start["qualified_level"])
+            self.assertEqual(fast_start["qualified_level"], "L1")
             self.assertEqual(
                 fast_start["qualification_state"],
-                "published-build-only-not-semantic-qualified",
+                "qualified-exact-artifact-h100-semantic",
             )
             self.assertEqual(fast_start["level_states"], expected_level_states)
 
@@ -780,7 +782,8 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
         self.assertIn("L4: the model retained in system RAM for GPU swap", readme)
         self.assertIn("cannot qualify L2", readme)
         self.assertIn("maximum_candidate_level: L1", readme)
-        self.assertIn("L2, L3, and L4 are explicitly", readme)
+        self.assertIn("L2, L3,", readme)
+        self.assertIn("and L4 are explicitly unavailable", readme)
 
     def test_build_cache_smoke_contract_exactly_matches_image_lock(self) -> None:
         smoke = load_module("image_smoke")
@@ -948,8 +951,9 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             image["accelerator_support"]["blackwell"]["status"], "unsupported"
         )
         self.assertIn("libtorch", image["accelerator_support"]["blackwell"]["scope"])
-        self.assertIn(
-            "pending-exact-checkpoint", image["accelerator_support"]["h100"]["status"]
+        self.assertEqual(
+            image["accelerator_support"]["h100"]["status"],
+            "qualified-exact-artifact-semantic",
         )
         self.assertEqual(
             image["runtime_contract"]["required_mounts"], ["/models/protenix-v2"]
@@ -2257,15 +2261,15 @@ for seed in seeds:
         self.assertIn("concrete runtime adapter worktree is required", blocked.stdout)
         self.assertNotIn("SOURCE id=", blocked.stdout)
 
-    def test_narrow_adapter_evidence_is_build_only_and_external_activation_stays_open(
+    def test_narrow_adapter_evidence_records_h100_qualification_and_external_activation(
         self,
     ) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("a25251748608f3f437277e3c1c3c91896d5dc482", readme)
         self.assertIn("model-owned adapter contracts", readme)
         self.assertIn("pending-external-activation", readme)
-        self.assertIn("build-only-not-semantic-qualified", readme)
-        self.assertIn("require fresh exact-digest H100 semantic receipts", readme)
+        self.assertIn("qualified-exact-artifact-h100-semantic", readme)
+        self.assertIn("live-h100-20260905", readme)
 
     def test_shell_entrypoints_are_syntactically_valid(self) -> None:
         for name in (

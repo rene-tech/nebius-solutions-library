@@ -17,11 +17,11 @@
     },
     "execution_identity": {
       "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
-      "runtime_image_digest": "sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
-      "runtime_recipe_sha256": "35a7b410197523ea2cfcb8f8b7118b674659e1bac7849e9da784593822e65372",
+      "runtime_image_digest": "sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+      "runtime_recipe_sha256": "64679b3cea6247b5f5333d8e313e01b607b5bf8bb4040ddc9014a07cdd8ac730",
       "workload_recipe_sha256": "febe1c6511e2db35468cf46cf215bccb8c651df79d778c28a45afea9a56bf731",
       "artifact_manifest_digest": "5cbdf1f33aeaa1be79a678fdd3aa851ee6cbdd86dfc03c66b97ea8647b5d52c0",
-      "execution_identity_sha256": "c6fe09705a19df52e496a067f4f870c87153e3ad31e751550d7d1c4ce61d1ea9"
+      "execution_identity_sha256": "7d9318d3a15719bb984d7d29ec69a42966ce943f88b0f1e24500574b373dca52"
     },
     "interface": {
       "protocol": "scientific-batch-v1",
@@ -135,9 +135,9 @@
       "commercial_use": "allowed",
       "non_clinical": true,
       "limitations": [
-        "Image sha256:fc7b86878495...2702e0 completed exact-digest semantic H100 inference with the checksum-verified trunk, ESMC-6B and CCD objects; public completion and scheduler eligibility receipts remain pending.",
+        "Localization-compatible image sha256:6eaf386a9bb4...c8fa35 completed exact-digest semantic H100 inference with the checksum-verified trunk, ESMC-6B and CCD objects; public completion and scheduler eligibility receipts remain pending.",
         "The shared ESMC-6B object is bound by terminal localization receipt 14599935...0962 and mounted read-only with storage supplemental group 1000.",
-        "The fast trunk, ESMC-6B and CCD artifacts are catalog manifests without a localization generation or node admission receipt."
+        "The fast trunk, ESMC-6B and CCD objects are bound by immutable localization receipts and mounted read-only from content-addressed generations."
       ]
     },
     "runtime_artifacts": [
@@ -263,11 +263,11 @@
       }
     ],
     "qualification": {
-      "h100_semantic_receipt_sha256": "d1ed9458bf2a4745c66a9a1c6387721cc2a5d7195c6e57e8f7a7867a7dc8370d",
+      "h100_semantic_receipt_sha256": "b78dce5a942472b9427ca4f84a2a0b00baed1c3beca40d230913f1745c7df545",
       "public_completion_receipt_sha256": null,
       "scheduler_eligibility_receipt_sha256": null,
-      "execution_map_sha256": "a9d30b13744d55b34b2a51fda095a160065081f753088d8c3d0e2d0cf51f9e9d",
-      "qualified_at": "2026-09-04T17:28:47Z"
+      "execution_map_sha256": "b407837e073da8df13b5767cc016ed6942c824fd89c2a635f8683bcbe5eed5fb",
+      "qualified_at": "2026-09-05T00:11:48Z"
     }
   }
 }

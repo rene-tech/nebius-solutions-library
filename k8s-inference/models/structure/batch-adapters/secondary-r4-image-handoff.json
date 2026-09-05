@@ -1,11 +1,11 @@
 {
   "schema": "fs2.nebius.ai/secondary-successor-image-handoff/v1",
-  "state": "published-build-only-not-activated",
+  "state": "semantic-h100-qualified-ready-for-activation",
   "image_source_commit": "a25251748608f3f437277e3c1c3c91896d5dc482",
-  "semantic_h100_qualification": false,
-  "route_activation_allowed": false,
+  "semantic_h100_qualification": true,
+  "route_activation_allowed": true,
   "production_protocol_compatible": true,
-  "successor_requirement": "The localization-compatible successors are published. Perform exact-artifact H100 semantic qualification for each new digest before route activation.",
+  "successor_requirement": "Satisfied by four exact-digest, artifact-backed H100 semantic PASS receipts retained under live-h100-20260905.",
   "images": [
     {
       "model_id": "esmfold2",
@@ -35,7 +35,10 @@
   ],
   "evidence": {
     "source": "models/cancer-immunotherapy/images/structure-secondary/evidence/localization-marker-successor-publication-20260904.json",
-    "scope": "Repository-owned evidence for immutable registry publication, exact source identity, offline non-root smoke, and SPDX SBOM hashes. It is not H100 or semantic qualification evidence.",
-    "activation_gate": "Promote only after immutable artifact localization, exact runtime cache delivery where declared, and successful semantic H100 inference."
+    "source_sha256": "a79f9f1c79acd9da088c2d4c1e72cb4d23a6ac7262ceacf9a5b9f1ece6b5f62b",
+    "semantic_h100_source": "models/cancer-immunotherapy/images/structure-secondary/evidence/live-h100-20260905/qualification-summary.json",
+    "semantic_h100_sha256": "4811cdd65d5cefd55f2e88d45231e2608ff79762dbd5483d53fcfacb37953bce",
+    "scope": "Four immutable successor digests passed exact-artifact H100 semantic inference with non-root runtime identity, content-addressed artifact mounts, and non-empty validated structures.",
+    "activation_gate": "satisfied"
   }
 }

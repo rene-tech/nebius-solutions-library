@@ -14,18 +14,12 @@ ADAPTER_DIRECTORIES = {
     for model_id in MODEL_IDS
 }
 SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
-SEMANTICALLY_H100_QUALIFIED: set[str] = set()
+SEMANTICALLY_H100_QUALIFIED = set(MODEL_IDS)
 IMAGE_GENERATIONS = {
     "esmfold2": "h100-r6",
     "esmfold2-fast": "h100-r6",
     "protenix-v2": "h100-r6",
     "openfold3-openbind": "h100-r7",
-}
-PREDECESSOR_ACTIVATION_DIGESTS = {
-    "esmfold2": "sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
-    "esmfold2-fast": "sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
-    "protenix-v2": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
-    "openfold3-openbind": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
 }
 
 
@@ -58,14 +52,16 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
             for model_id in MODEL_IDS
         }
 
-    def test_handoff_is_exactly_four_non_af3_published_repaired_images(self) -> None:
+    def test_handoff_is_exactly_four_h100_qualified_non_af3_images(self) -> None:
         self.assertEqual(set(self.images), set(MODEL_IDS))
         self.assertNotIn("alphafold3", self.images)
-        self.assertEqual(self.handoff["state"], "published-build-only-not-activated")
-        self.assertIs(self.handoff["semantic_h100_qualification"], False)
-        self.assertIs(self.handoff["route_activation_allowed"], False)
+        self.assertEqual(
+            self.handoff["state"], "semantic-h100-qualified-ready-for-activation"
+        )
+        self.assertIs(self.handoff["semantic_h100_qualification"], True)
+        self.assertIs(self.handoff["route_activation_allowed"], True)
         self.assertIs(self.handoff["production_protocol_compatible"], True)
-        self.assertIn("qualification", str(self.handoff["successor_requirement"]))
+        self.assertIn("Satisfied", str(self.handoff["successor_requirement"]))
         self.assertRegex(str(self.handoff["image_source_commit"]), r"^[0-9a-f]{40}$")
         for model_id, image in self.images.items():
             self.assertTrue(
@@ -97,8 +93,8 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
                 self.assertEqual(
                     contract["activation"],
                     {
-                        "profile_state": "candidate-unqualified",
-                        "route_exposed": False,
+                        "profile_state": "active",
+                        "route_exposed": True,
                         "semantic_h100_qualified": semantic_qualified,
                     },
                 )
@@ -106,12 +102,7 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
                 self.assertEqual(profile["model_id"], model_id)
                 self.assertEqual(
                     profile["execution_identity"]["runtime_image_digest"],
-                    PREDECESSOR_ACTIVATION_DIGESTS[model_id],
-                )
-                self.assertNotEqual(
-                    profile["execution_identity"]["runtime_image_digest"],
                     image["digest"],
-                    "a predecessor H100 receipt must not qualify a successor image",
                 )
                 seam = str(contract["seam"])
                 self.assertIn("scheduler", seam)

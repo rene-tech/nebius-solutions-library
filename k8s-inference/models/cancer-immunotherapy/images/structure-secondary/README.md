@@ -70,9 +70,9 @@ claimed. The immutable publication evidence is recorded under `evidence/`.
 | OpenFold3 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:3686e5303cbe51b18949b5f5815336db8ca31100b72c8d4b676f848fb193b1de` |
 
 The r5 images carry the repaired atomic handoff, frozen input/invocation
-identity, bounded collectors, and shared workspace protocol. Their adapter
-contracts remain `build-only-not-semantic-qualified` and every route remains
-closed pending exact-artifact H100 inference.
+identity, bounded collectors, and shared workspace protocol. They are retained
+as superseded evidence: their earlier semantic receipts do not transfer across
+the later localization-marker protocol change.
 
 The controller's production artifact localizer subsequently enriched each v1
 runtime marker record with manifest, readiness, authorization, and localization
@@ -94,14 +94,17 @@ checks:
 
 All four passed the publisher's offline network-disabled non-root smoke, direct
 CLI check, exact generated-adapter-argv contract, registry readback, and SPDX
-generation. They remain `build-only-not-semantic-qualified`, non-deployable in
-the image lock, and require fresh exact-digest H100 semantic receipts before
-their activation projections may move to these identities. Evidence is in
-`evidence/localization-marker-successor-publication-20260904.json`.
+generation. Fresh exact-digest H100 Jobs then loaded the content-addressed
+external artifacts and produced non-empty validated structures. The current
+lock state is `qualified-exact-artifact-h100-semantic`, all four digests are
+deployable, and their active workload projections use these exact identities.
+Publication evidence remains in
+`evidence/localization-marker-successor-publication-20260904.json`; the H100
+receipts and four-model summary are retained in `evidence/live-h100-20260905/`.
 
-Publication alone does not qualify semantic H100 readiness, Blackwell
-portability, or any numbered fast-start level. Those states remain pending
-exact artifact-backed H100 evidence below.
+This evidence qualifies H100 semantics and L1 regional image caching. It does
+not qualify Blackwell portability or the L2-L4 snapshot and memory-retention
+levels.
 
 ### H100 image-start evidence
 
@@ -128,12 +131,15 @@ and 105.434 s for Protenix on the former. Approximate
 container-start-to-final-JSON times were 11.5 s, 21.5 s, 11.2 s, and 5.8 s.
 All task Jobs and topology anchors were deleted after evidence capture.
 
-These were build-only GPU runtime tests. Their smokes deliberately proved that
-`/models` and `/databases` were empty and therefore did not run inference.
-Semantic qualification remains blocked on live source-cache and localization
-receipts from the operator-owned reference-data plane, plus the declared
-Protenix and OpenFold writable cache claims. The required catalog candidate
-identities must not be replaced with synthetic mounts or receipts.
+Those earlier image-start measurements were build-only GPU runtime tests. Their
+smokes deliberately proved that `/models` and `/databases` were empty and did
+not qualify inference. The successor qualification campaign on 2026-09-05 used
+the operator-owned reference-data plane and the exact enriched localization
+markers. ESMFold2, ESMFold2-Fast, Protenix v2, and OpenFold3 passed in 43.008 s,
+39.991 s, 93.325 s, and 59.906 s of semantic runtime respectively. Every Job
+and Pod succeeded, each result image matched the kubelet digest, and every
+result contained a checksummed structure. Shared routes were unchanged during
+the campaign.
 
 OpenFold3 is an independent, non-equivalent backend; it is never reported as
 native AlphaFold3. The Protenix v2 checkpoint was recovered from the immutable
@@ -264,15 +270,15 @@ The fixed user-level taxonomy is:
 Compiler caches, external-artifact caches, and their first-versus-warm timing
 cannot qualify L2. No GPU/process snapshot exists for these images, and there
 is no local-disk snapshot or system-RAM-retained model evidence. Every lock
-entry therefore has `maximum_candidate_level: L1`, `qualified_level: null`, and
-pending regional image-cache evidence; L2, L3, and L4 are explicitly
-unavailable.
+entry therefore has `maximum_candidate_level: L1`, `qualified_level: L1`, and
+exact-artifact H100 semantic evidence for the regional image identity; L2, L3,
+and L4 are explicitly unavailable.
 
 | Runtime | Exact H100 state | Blackwell state |
 |---|---|---|
-| ESMFold2 / Fast | pending semantic run with exact trunk, ESMC-6B, and CCD | not qualified; only an explicit SDPA portability path exists |
-| Protenix v2 | pending exact-checkpoint H100 run; CPU installed-path teardown previously exited 139 | **unsupported** in this image: pinned PyTorch 2.7.1+cu126 libtorch has neither Blackwell cubins nor PTX |
-| OpenFold3 | pending OpenBind-0 plus exact CCD H100 run | not qualified |
+| ESMFold2 / Fast | exact successor digest qualified with trunk, ESMC-6B, and CCD | not qualified; only an explicit SDPA portability path exists |
+| Protenix v2 | exact successor digest qualified with the localized composite v2 tree | **unsupported** in this image: pinned PyTorch 2.7.1+cu126 libtorch has neither Blackwell cubins nor PTX |
+| OpenFold3 | exact successor digest qualified with OpenBind-0 plus exact CCD | not qualified |
 
 Protenix’s task-owned layer-normalization extension is prebuilt with an SM90
 cubin and compute_90 PTX, then its CUDA source, build metadata, and `nvcc` path
@@ -449,5 +455,6 @@ Eleven task-owned historical or rejected manifests are retained under
 are the prior production candidates that reject the current enriched
 localization-marker fields. The historical AF3 image evidence is owned by the
 dedicated AF3 successor and is not repeated here. The corrected earlier
-publications remain immutable evidence; the current successor digests still
-require exact-artifact offline semantic H100 runs before activation.
+publications remain immutable evidence. The current successor digests passed
+their exact-artifact offline semantic H100 runs; the retained receipts are
+under `evidence/live-h100-20260905/`.

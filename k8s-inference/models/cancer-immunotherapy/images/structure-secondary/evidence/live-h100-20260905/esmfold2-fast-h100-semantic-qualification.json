@@ -1,0 +1,158 @@
+{
+  "schema": "fs2.nebius.ai/structure-secondary-h100-semantic-evidence/v1",
+  "status": "passed",
+  "observed_at": "2026-09-05T00:11:48Z",
+  "scope": {
+    "cluster": "k8s-inference-h100",
+    "namespace": "fs2-academic-poc",
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "routes": "unchanged-closed",
+    "qualification_task": "fs2-structure-successor-h100-qualification-r20260905"
+  },
+  "provenance": {
+    "image_publication_evidence": "models/cancer-immunotherapy/images/structure-secondary/evidence/localization-marker-successor-publication-20260904.json",
+    "image_publication_evidence_sha256": "a79f9f1c79acd9da088c2d4c1e72cb4d23a6ac7262ceacf9a5b9f1ece6b5f62b",
+    "renderer": "models/cancer-immunotherapy/images/structure-secondary/qualification/render_secondary_semantic_job.py",
+    "renderer_sha256": "76970ef7d86dfed4bcad97290edbe322eb0b8c668fa8de93cc671514bfc30c0f",
+    "job_source_commit_annotation": "5cb7cad6a372db1fbe44407778b618a014592727",
+    "raw_capture_sha256": {
+      "rendered_resources_json": "ab0f106d1277e6e0198fc159a6aa20bd4a10e2c8519272448e289387f7098018",
+      "job_api_json": "dbe09d773498a7445020accc7315176b3131e5d5076d49ab857fe4e2717a2983",
+      "pod_api_json": "047b724bf70f5e13f53b45f7cc188e1d4439452224aee2090fad3c344a579a2b",
+      "container_log": "a4b6ba9c8024d16b3c3413e60079ac026ada37ce3028b112347e096f5628d41f",
+      "qualification_result_json": "6839bb504ca7eee01157ed7e9241c41d3b6f1075af396b6f5e95c433ae423542",
+      "batch_summary_json": "bd197eb6a6592710ea73bcd9773f31e2d02d559af6a14e3aaef95a2f6c124c16"
+    }
+  },
+  "job": {
+    "name": "secondary-esmfold2-fast-ec3eebef1808",
+    "uid": "f88aef9f-195b-4e84-bdeb-2a3987a3452e",
+    "pod": "secondary-esmfold2-fast-ec3eebef1808-ssxq5",
+    "pod_uid": "d4c83304-8209-4d4e-80e4-c46f7c27fead",
+    "node": "computeinstance-e00p3acr87k9k4mckj",
+    "created_at": "2026-09-05T00:11:03Z",
+    "container_started_at": "2026-09-05T00:11:05Z",
+    "container_finished_at": "2026-09-05T00:11:45Z",
+    "completed_at": "2026-09-05T00:11:48Z",
+    "exit_code": 0,
+    "restart_count": 0
+  },
+  "runtime": {
+    "model_id": "esmfold2-fast",
+    "runtime_id": "esmfold2-fast",
+    "variant_id": "biohub-v3-4-0",
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+    "kubelet_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+    "resources": {
+      "cpu_request": "8",
+      "cpu_limit": "16",
+      "memory_request": "64Gi",
+      "memory_limit": "112Gi",
+      "gpu": 1,
+      "accelerator_class": "nvidia-h100-sxm5-80gb"
+    },
+    "identity": {
+      "gid": 10001,
+      "supplemental_groups": [
+        44,
+        992,
+        1000,
+        10001
+      ],
+      "uid": 10001
+    }
+  },
+  "artifact_access": [
+    {
+      "artifact_id": "esmfold2-fast-trunk",
+      "content_digest": "sha256:19ceaffb5860acf160ea199599fb719b0566519e4cc2fa7a7aa5ef547942ad63",
+      "localization_receipt_digest": "sha256:a74aed10ce5a80d8406c3869f15166c59a28b59c666ca852057ab37b7dc18685",
+      "receipt_file_sha256": "79d8e66d2aad8c86b11b6ac361bf0198f3647fb05ea596dc479414173d548e61",
+      "receipt_sub_path": "model-artifacts/public/v1/receipts/esmfold2-fast-trunk/f1db1f446c521e65b69dd93a8f05441c4b9d1367d11b81d966be4c116bbe679b.json",
+      "sub_path": "model-artifacts/public/v1/objects/esmfold2-fast-trunk/sha256/19ceaffb5860acf160ea199599fb719b0566519e4cc2fa7a7aa5ef547942ad63",
+      "mount_path": "/models/esmfold2-fast",
+      "read_only": true
+    },
+    {
+      "artifact_id": "esmc-6b",
+      "content_digest": "sha256:8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+      "localization_receipt_digest": "sha256:14599935d3e48e949cb8218d3192bb35e5947a15bacdc96796dbbee097860962",
+      "receipt_file_sha256": "d817a572a0df622e350585c600ba84de3fc51fc3b76c740515d3824857a054e7",
+      "receipt_sub_path": "model-artifacts/public/v1/receipts/esmc-6b/b1f18d241536d3d24ab60b9b240c1e0ae22787e71ec43ceb95c8a9f98cd4454a.json",
+      "sub_path": "model-artifacts/public/v1/objects/esmc-6b/sha256/8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+      "mount_path": "/models/esmc-6b",
+      "read_only": true
+    },
+    {
+      "artifact_id": "esmfold2-ccd",
+      "content_digest": "sha256:b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+      "localization_receipt_digest": "sha256:e1584e950890ca2be08bfb385148c7a66d3078d9b35cc42ef40a2e6b45b3cad8",
+      "receipt_file_sha256": "bf9402b023385cb75e0ea247d2097f0b7833dd7ec4d4e6a2b11251a9d6b2b598",
+      "receipt_sub_path": "model-artifacts/public/v1/receipts/esmfold2-ccd/4b701f8db3ca2d75353db710e0f6624fec6e1cb48f86cf435ec1bfa191b5bf4c.json",
+      "sub_path": "model-artifacts/public/v1/objects/esmfold2-ccd/sha256/b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+      "mount_path": "/databases/esmfold2",
+      "read_only": true
+    }
+  ],
+  "runtime_localization_marker": {
+    "path": "/var/run/fs2-runtime-fold.json",
+    "bytes": 1861,
+    "sha256": "2b2a1fd1bb07ad4bf2d6b268ab415e298ffbbde6877e850ebb81e62cf91dfa5c"
+  },
+  "qualification_result_file": {
+    "path": "/outputs/qualification-result.json",
+    "bytes": 1318,
+    "sha256": "6839bb504ca7eee01157ed7e9241c41d3b6f1075af396b6f5e95c433ae423542",
+    "recovery": "The exact pretty JSON bytes are deterministically reconstructed from the retained FS2_QUALIFICATION_RESULT log envelope."
+  },
+  "timings": {
+    "job_wall_seconds": 45,
+    "container_wall_seconds": 40,
+    "semantic_duration_seconds": 39.991,
+    "schedule_and_image_start_seconds": 2
+  },
+  "result": {
+    "accelerator": {
+      "compute_capability": [
+        9,
+        0
+      ],
+      "cuda_runtime": "13.0",
+      "device_name": "NVIDIA H100 80GB HBM3",
+      "torch": "2.11.0+cu130"
+    },
+    "attempt_id": "8ff367a8-bdc3-58bd-8beb-eeb61b46f539",
+    "confidence": {
+      "path": "confidence.json",
+      "result_count": 1,
+      "sha256": "f9b2a0b90ded50db4b43797d845e62bebb7db2434085a808337d6b03081d2be2"
+    },
+    "duration_seconds": 39.991,
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+    "operation_id": "b2a675bc-2ef9-56c4-8a38-a4dd9c73a857",
+    "runtime_id": "esmfold2-fast",
+    "runtime_identity": {
+      "gid": 10001,
+      "supplemental_groups": [
+        44,
+        992,
+        1000,
+        10001
+      ],
+      "uid": 10001
+    },
+    "runtime_localization_marker_sha256": "2b2a1fd1bb07ad4bf2d6b268ab415e298ffbbde6877e850ebb81e62cf91dfa5c",
+    "schema": "fs2.nebius.ai/structure-secondary-h100-semantic-result/v1",
+    "source_commit": "5cb7cad6a372db1fbe44407778b618a014592727",
+    "status": "passed",
+    "structures": [
+      {
+        "atom_records": 320,
+        "bytes": 27589,
+        "path": "fs2-secondary-esmfold2-fast.cif",
+        "sha256": "4449e682cc71f5b377de4d272a650c3026f1864e7ccde0c345b3c3d13d408f42"
+      }
+    ]
+  }
+}

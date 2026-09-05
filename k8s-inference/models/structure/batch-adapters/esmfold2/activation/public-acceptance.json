@@ -32,7 +32,7 @@
     "payload_path": "models/structure/batch-adapters/esmfold2/activation/public-input.json",
     "sha256": "effc08e211b66f0af2c6d51bf19e997febbae3baa38af757669d806bfe24e17c",
     "size_bytes": 137,
-    "h100_evidence": "models/cancer-immunotherapy/images/structure-secondary/evidence/live-h100-20260904/esmfold2-h100-semantic-qualification.json"
+    "h100_evidence": "models/cancer-immunotherapy/images/structure-secondary/evidence/live-h100-20260905/esmfold2-h100-semantic-qualification.json"
   },
   "activation_gate": {
     "route_exposed": false,

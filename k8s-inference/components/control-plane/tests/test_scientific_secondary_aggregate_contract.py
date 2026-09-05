@@ -12,7 +12,7 @@ from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog
 
 SECONDARY_ACTIVE = {
     "esmfold2": {
-        "digest": "sha256:870b9f647f41bb02cfcbf08d5eec6cdf6b5171e8771c776248c5865c2f762a4a",
+        "digest": "sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
         "variant": "biohub-v3-4-0",
         "namespace": "fs2-models",
         "stages": ("prepare-input", "fold"),
@@ -21,12 +21,12 @@ SECONDARY_ACTIVE = {
         "cache_stages": (),
         "uid": 10001,
         "gid": 10001,
-        "receipt": "82b38d4a9d7c9aaa006b4b8e6dd40ffa701a9f5220e1d0314fc8fc4edec9d129",
+        "receipt": "e52236de244cfb52ec5e6d6486812e1518d0f6c9e0ade18608b9d063cc8971c2",
         "evidence": "esmfold2-h100-semantic-qualification.json",
-        "qualified_at": "2026-09-04T17:28:47Z",
+        "qualified_at": "2026-09-05T00:11:48Z",
     },
     "esmfold2-fast": {
-        "digest": "sha256:fc7b8687849511a04b04afd9c477bcc0fb85a2837eac6ac658609e8b7e2702e0",
+        "digest": "sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
         "variant": "biohub-v3-4-0",
         "namespace": "fs2-models",
         "stages": ("prepare-input", "fold"),
@@ -38,12 +38,12 @@ SECONDARY_ACTIVE = {
         "cache_stages": (),
         "uid": 10001,
         "gid": 10001,
-        "receipt": "d1ed9458bf2a4745c66a9a1c6387721cc2a5d7195c6e57e8f7a7867a7dc8370d",
+        "receipt": "b78dce5a942472b9427ca4f84a2a0b00baed1c3beca40d230913f1745c7df545",
         "evidence": "esmfold2-fast-h100-semantic-qualification.json",
-        "qualified_at": "2026-09-04T17:28:47Z",
+        "qualified_at": "2026-09-05T00:11:48Z",
     },
     "protenix-v2": {
-        "digest": "sha256:b90a02bdffe3eefa8a251eb1e3666f3748a72e68fdec0b3cd867c2f08b426af8",
+        "digest": "sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
         "variant": "upstream-v2-0-0",
         "namespace": "fs2-models",
         "stages": ("prepare-data", "sample-structure"),
@@ -52,12 +52,12 @@ SECONDARY_ACTIVE = {
         "cache_stages": ("prepare-data", "sample-structure"),
         "uid": 10001,
         "gid": 10001,
-        "receipt": "33a54067af682bef43b282e12a46067b6891115a9e198eb214c9df46e1437f0a",
+        "receipt": "e2935d0c8596573d7934a25468a6740dace8cb1e53fec3b8bf8cd5c5e52cb33a",
         "evidence": "protenix-v2-h100-semantic-qualification.json",
-        "qualified_at": "2026-09-04T16:49:30Z",
+        "qualified_at": "2026-09-05T00:12:44Z",
     },
     "openfold3-openbind": {
-        "digest": "sha256:f44860c3216a9f526d055be61aecc2a2041594d3dd091ba8059ad825be1952d5",
+        "digest": "sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
         "variant": "upstream-openbind-v0-5-0",
         "namespace": "fs2-models",
         "stages": ("data-pipeline", "inference"),
@@ -69,9 +69,9 @@ SECONDARY_ACTIVE = {
         "cache_stages": ("inference",),
         "uid": 10001,
         "gid": 10001,
-        "receipt": "120aa9c48ab7108e23fd09e47943f9203aedd7d39e405727033a94bb986bdbef",
-        "evidence": "openfold3-runner-baked-h100-semantic-qualification.json",
-        "qualified_at": "2026-09-04T17:53:27Z",
+        "receipt": "2590708d8932ddef795957a91215dd20ca7e8f8666b4aa9d50e782b212029d09",
+        "evidence": "openfold3-openbind-h100-semantic-qualification.json",
+        "qualified_at": "2026-09-05T00:12:15Z",
     },
     "alphafold3": {
         "digest": "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
@@ -141,9 +141,11 @@ def test_complete_fleet_is_serialized_as_an_active_pre_acceptance_bridge() -> No
             "execution_map_sha256": profiles["boltzgen"]["qualification"]["execution_map_sha256"],
             "qualified_at": expected["qualified_at"],
         }
+        evidence_directory = "live-h100-20260904" if model_id == "alphafold3" else "live-h100-20260905"
         evidence = (
             SOLUTION_ROOT
-            / "models/cancer-immunotherapy/images/structure-secondary/evidence/live-h100-20260904"
+            / "models/cancer-immunotherapy/images/structure-secondary/evidence"
+            / evidence_directory
             / expected["evidence"]
         )
         assert hashlib.sha256(evidence.read_bytes()).hexdigest() == expected["receipt"]

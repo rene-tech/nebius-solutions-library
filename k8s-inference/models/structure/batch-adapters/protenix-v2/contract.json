@@ -13,12 +13,12 @@
     "digest": "sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
     "workspace_uid": 10001,
     "workspace_gid": 10001,
-    "state": "build-only-not-semantic-qualified"
+    "state": "semantic-h100-qualified"
   },
   "activation": {
-    "profile_state": "candidate-unqualified",
-    "route_exposed": false,
-    "semantic_h100_qualified": false
+    "profile_state": "active",
+    "route_exposed": true,
+    "semantic_h100_qualified": true
   },
   "interface": {
     "parameter_schema": "fs2-serve.nebius.ai/protenix-v2-upstream-v2-0-0-parameters/v1",

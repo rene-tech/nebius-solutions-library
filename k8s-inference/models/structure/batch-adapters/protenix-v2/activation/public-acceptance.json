@@ -32,7 +32,7 @@
     "payload_path": "model-artifacts/smoke/protenix-v2-minimal.json",
     "sha256": "616cbd11f2c07e57c4e0c6ac121bfc891e593ec072946a577f921993c2e9f50e",
     "size_bytes": 215,
-    "h100_evidence": "models/cancer-immunotherapy/images/structure-secondary/evidence/live-h100-20260904/protenix-v2-h100-semantic-qualification.json"
+    "h100_evidence": "models/cancer-immunotherapy/images/structure-secondary/evidence/live-h100-20260905/protenix-v2-h100-semantic-qualification.json"
   },
   "activation_gate": {
     "route_exposed": false,
