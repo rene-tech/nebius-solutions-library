@@ -25,6 +25,10 @@ locals {
       maxReplicas                    = var.control_plane_autoscaling.max_replicas
       targetCPUUtilizationPercentage = var.control_plane_autoscaling.target_cpu_utilization_percentage
     }
+    rolloutStrategy = {
+      maxUnavailable = var.control_plane_rollout.max_unavailable
+      maxSurge       = var.control_plane_rollout.max_surge
+    }
     image = {
       repository = var.control_plane_image.repository
       digest     = var.control_plane_image.digest

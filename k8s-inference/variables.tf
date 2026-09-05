@@ -617,6 +617,10 @@ variable "deployment" {
           max_replicas                      = optional(number, 8)
           target_cpu_utilization_percentage = optional(number, 70)
         }), {})
+        rollout = optional(object({
+          max_unavailable = optional(number, 1)
+          max_surge       = optional(number, 0)
+        }), {})
       })
       admin_console = object({
         repository = string
@@ -920,6 +924,13 @@ variable "deployment" {
       var.deployment.applications.control_plane.autoscaling.max_replicas <= 64 &&
       var.deployment.applications.control_plane.autoscaling.target_cpu_utilization_percentage >= 1 &&
       var.deployment.applications.control_plane.autoscaling.target_cpu_utilization_percentage <= 100 &&
+      floor(var.deployment.applications.control_plane.rollout.max_unavailable) == var.deployment.applications.control_plane.rollout.max_unavailable &&
+      floor(var.deployment.applications.control_plane.rollout.max_surge) == var.deployment.applications.control_plane.rollout.max_surge &&
+      var.deployment.applications.control_plane.rollout.max_unavailable >= 0 &&
+      var.deployment.applications.control_plane.rollout.max_unavailable < var.deployment.applications.control_plane.autoscaling.min_replicas &&
+      var.deployment.applications.control_plane.rollout.max_surge >= 0 &&
+      var.deployment.applications.control_plane.rollout.max_surge <= 64 &&
+      var.deployment.applications.control_plane.rollout.max_unavailable + var.deployment.applications.control_plane.rollout.max_surge >= 1 &&
       can(regex("^[a-zA-Z0-9._:/-]+$", var.deployment.applications.admin_console.repository)) &&
       can(regex("^sha256:[0-9a-f]{64}$", var.deployment.applications.admin_console.digest)) &&
       can(regex("^[0-9a-f]{40}$", var.deployment.applications.admin_console.provenance.source_commit)) &&
@@ -929,7 +940,7 @@ variable "deployment" {
       floor(var.deployment.applications.admin_console.replica_count) == var.deployment.applications.admin_console.replica_count &&
       var.deployment.applications.admin_console.replica_count >= 1
     )
-    error_message = "applications must provide immutable control-plane and admin-console OCI repositories/digests plus provenance, and a bounded whole-number control-plane autoscaling envelope."
+    error_message = "applications must provide immutable control-plane and admin-console OCI repositories/digests plus provenance, a bounded whole-number control-plane autoscaling envelope, and a rollout budget that preserves at least one minimum replica."
   }
 
   validation {

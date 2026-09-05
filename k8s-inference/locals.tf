@@ -1127,6 +1127,7 @@ locals {
       digest     = var.deployment.applications.control_plane.digest
     }
     control_plane_autoscaling = var.deployment.applications.control_plane.autoscaling
+    control_plane_rollout     = var.deployment.applications.control_plane.rollout
     catalog_rollout_digest    = var.deployment.applications.control_plane.catalog_rollout_digest
     admin_console = {
       image = {

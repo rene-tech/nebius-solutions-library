@@ -238,8 +238,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+      maxUnavailable: {{ .Values.rolloutStrategy.maxUnavailable }}
+      maxSurge: {{ .Values.rolloutStrategy.maxSurge }}
   selector:
     matchLabels:
       {{- include "fs2-serve.runtimeSelectorLabels" . | nindent 6 }}

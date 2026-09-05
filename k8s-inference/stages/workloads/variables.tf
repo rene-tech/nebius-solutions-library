@@ -1448,6 +1448,31 @@ variable "control_plane_autoscaling" {
   }
 }
 
+variable "control_plane_rollout" {
+  description = "Customer-configurable rolling-update budget for the control-plane API. Zero surge permits upgrades when system-node CPU has no spare slot."
+  type = object({
+    max_unavailable = number
+    max_surge       = number
+  })
+  default = {
+    max_unavailable = 1
+    max_surge       = 0
+  }
+
+  validation {
+    condition = (
+      floor(var.control_plane_rollout.max_unavailable) == var.control_plane_rollout.max_unavailable &&
+      floor(var.control_plane_rollout.max_surge) == var.control_plane_rollout.max_surge &&
+      var.control_plane_rollout.max_unavailable >= 0 &&
+      var.control_plane_rollout.max_unavailable < var.control_plane_autoscaling.min_replicas &&
+      var.control_plane_rollout.max_surge >= 0 &&
+      var.control_plane_rollout.max_surge <= 64 &&
+      var.control_plane_rollout.max_unavailable + var.control_plane_rollout.max_surge >= 1
+    )
+    error_message = "control_plane_rollout requires whole non-negative values, at least one unavailable-or-surge slot, and max_unavailable below min_replicas."
+  }
+}
+
 variable "catalog_rollout_digest" {
   description = "Canonical catalog digest packaged in control_plane_image."
   type        = string

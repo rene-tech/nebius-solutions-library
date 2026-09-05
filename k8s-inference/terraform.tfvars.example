@@ -537,6 +537,11 @@ deployment = {
         max_replicas                      = 8
         target_cpu_utilization_percentage = 70
       }
+      # Set zero surge where the system pool has no spare pod slot.
+      rollout = {
+        max_unavailable = 1
+        max_surge       = 0
+      }
     }
     admin_console = {
       repository = "registry.example.invalid/k8s-inference/admin-console"

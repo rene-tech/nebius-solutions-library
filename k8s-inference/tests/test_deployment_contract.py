@@ -349,6 +349,10 @@ class DeploymentContractTests(unittest.TestCase):
                 "target_cpu_utilization_percentage": 70,
             },
         )
+        self.assertEqual(
+            contract["stages"]["workloads"]["control_plane_rollout"],
+            {"max_unavailable": 1, "max_surge": 0},
+        )
 
         identity = json.dumps(
             {
@@ -386,6 +390,10 @@ class DeploymentContractTests(unittest.TestCase):
             "max_replicas": 3,
             "target_cpu_utilization_percentage": 75,
         }
+        applications["control_plane"]["rollout"] = {
+            "max_unavailable": 1,
+            "max_surge": 0,
+        }
         deployment = {
             "schema_version": 1,
             "name": "fs2-control-plane-hpa",
@@ -402,12 +410,22 @@ class DeploymentContractTests(unittest.TestCase):
             ],
             applications["control_plane"]["autoscaling"],
         )
+        self.assertEqual(
+            outputs["deployment_contract"]["stages"]["workloads"][
+                "control_plane_rollout"
+            ],
+            applications["control_plane"]["rollout"],
+        )
 
         control_plane_source = (
             DEPLOY_ROOT / "stages/workloads/control_plane.tf"
         ).read_text(encoding="utf-8")
         self.assertIn(
             "maxReplicas                    = var.control_plane_autoscaling.max_replicas",
+            control_plane_source,
+        )
+        self.assertIn(
+            "maxUnavailable = var.control_plane_rollout.max_unavailable",
             control_plane_source,
         )
 
