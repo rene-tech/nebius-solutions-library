@@ -82,6 +82,32 @@ run "fresh_empty_volume_status_rollout_is_service_ready" {
   }
 }
 
+run "reference_queue_admits_every_declared_consumer_namespace" {
+  command = plan
+
+  plan_options {
+    target = [kubernetes_manifest.cpu_cluster_queue]
+  }
+
+  variables {
+    queue = {
+      additional_namespaces = ["fs2-academic-poc", "fs2-models"]
+    }
+  }
+
+  assert {
+    condition = (
+      kubernetes_manifest.cpu_cluster_queue.manifest.spec.namespaceSelector.matchExpressions[0].key ==
+      "kubernetes.io/metadata.name" &&
+      kubernetes_manifest.cpu_cluster_queue.manifest.spec.namespaceSelector.matchExpressions[0].operator ==
+      "In" &&
+      jsonencode(kubernetes_manifest.cpu_cluster_queue.manifest.spec.namespaceSelector.matchExpressions[0].values) ==
+      jsonencode(["fs2-academic-poc", "fs2-models", "fs2-reference-data"])
+    )
+    error_message = "The reference-data ClusterQueue must admit its own namespace and every namespace with a published LocalQueue."
+  }
+}
+
 run "replacement_credential_identity_gets_a_new_immutable_secret_name" {
   command = apply
 

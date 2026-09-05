@@ -431,7 +431,7 @@ run "licensed_lanes_and_cpu_class_are_rendered_by_the_stage" {
         "fs2-models",
       )
     )
-    error_message = "Both the accelerator ClusterQueue and the externally owned reference CPU ClusterQueue must admit the claim namespace."
+    error_message = "Both the scheduling contract and the reference-data owner must admit every namespace to which they publish a LocalQueue."
   }
 
   assert {

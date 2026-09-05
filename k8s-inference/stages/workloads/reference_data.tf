@@ -1,3 +1,10 @@
+locals {
+  reference_data_queue_additional_namespaces = sort(distinct(compact([
+    local.academic_cpu_lane_enabled ? var.academic_assets.namespace : "",
+    local.model_reference_cpu_lane_enabled ? var.scientific_batch.namespace : "",
+  ])))
+}
+
 module "reference_data" {
   count  = var.reference_data.enabled ? 1 : 0
   source = "../../reference-data/terraform"
@@ -14,11 +21,12 @@ module "reference_data" {
   namespace                   = var.reference_data.namespace
   shared_filesystem_host_path = try(var.reference_data.storage_contract.filesystem.host_path, "/mnt/fs2-reference-data/data")
   cpu_pool                    = var.reference_data.storage_contract.cpu_pool
-  # The reference CPU ClusterQueue must admit the licensed namespace when
-  # academic execution runs CPU data stages there. Its own owner renders the
-  # selector; this only passes the namespace it has to admit.
+  # The reference CPU ClusterQueue must admit every namespace to which this
+  # stage publishes a LocalQueue. That includes both licensed raw-data stages
+  # and model-owned preprocessing stages in the scientific workload namespace.
+  # Its own owner renders the closed namespace selector from this exact list.
   queue = merge(var.reference_data.queue, {
-    additional_namespaces = local.academic_cpu_lane_enabled ? [var.academic_assets.namespace] : []
+    additional_namespaces = local.reference_data_queue_additional_namespaces
   })
 
   object_storage_egress_fqdns = [

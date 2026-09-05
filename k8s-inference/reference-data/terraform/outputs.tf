@@ -37,6 +37,7 @@ output "dynamic_configuration" {
     }
     local_queue                 = var.queue.local_queue
     cluster_queue               = var.queue.cluster_queue
+    cluster_queue_namespaces    = sort(distinct(concat([var.namespace], var.queue.additional_namespaces)))
     resource_flavor             = var.queue.resource_flavor
     tools_config_map            = local.tools_config_map
     object_storage_secret       = local.credentials_secret
