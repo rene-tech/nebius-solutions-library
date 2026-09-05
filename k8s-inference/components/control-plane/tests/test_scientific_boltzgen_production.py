@@ -741,11 +741,19 @@ def test_filtering_collects_exact_csv_and_mmcif_outputs_from_global_registry(tmp
     workspace = tmp_path / "filtering"
     structures = workspace / "final_ranked_designs/final_2_designs"
     structures.mkdir(parents=True)
-    rows = ["id,file_name,designed_chain_sequence,design_to_target_iptm,designfolding-filter_rmsd"]
+    rows = [
+        "id,file_name,designed_chain_sequence,design_to_target_iptm,"
+        "designfolding-filter_rmsd,pass_filters"
+    ]
     for index in (1, 2):
         name = f"design-{index}.cif"
-        (structures / name).write_bytes(_mmcif())
-        rows.append(f"design-{index},{name},ACDEFGHIKLMNPQRSTVWY,0.75,1.1")
+        (structures / f"rank{index}_{name}").write_bytes(_mmcif())
+        # The upstream filter still selects the best budget-sized set when no
+        # candidate passes every production threshold. It retains the original
+        # basename in the CSV but rank-prefixes the copied physical mmCIF.
+        rows.append(
+            f"design-{index},{name},ACDEFGHIKLMNPQRSTVWY,0.75,1.1,False"
+        )
     (workspace / "final_ranked_designs/final_designs_metrics_2.csv").write_text(
         "\n".join(rows) + "\n", encoding="utf-8"
     )
@@ -760,3 +768,36 @@ def test_filtering_collects_exact_csv_and_mmcif_outputs_from_global_registry(tmp
     assert output.validation["status"] == "passed"
     assert output.validation["design_count"] == 2
     assert output.validation["atom_count"] == 8
+    assert [item.name for item in output.artifacts[1:]] == [
+        boltzgen._structure_entry_name("pdl1-a", "design-1.cif"),
+        boltzgen._structure_entry_name("pdl1-a", "design-2.cif"),
+    ]
+
+
+def test_filtering_rejects_ambiguous_or_unbound_ranked_structure_copies(
+    tmp_path: Path,
+) -> None:
+    _catalog, _renderer_value, plan = _bound_plan()
+    invocation = next(item for item in plan.invocations if item.stage_id == "filtering")
+    workspace = tmp_path / "filtering"
+    structures = workspace / "final_ranked_designs/final_2_designs"
+    structures.mkdir(parents=True)
+    rows = [
+        "id,file_name,designed_chain_sequence,design_to_target_iptm,designfolding-filter_rmsd",
+        "design-1,design-1.cif,ACDEFGHIKLMNPQRSTVWY,0.75,1.1",
+        "design-2,design-2.cif,ACDEFGHIKLMNPQRSTVWY,0.75,1.1",
+    ]
+    (workspace / "final_ranked_designs/final_designs_metrics_2.csv").write_text(
+        "\n".join(rows) + "\n", encoding="utf-8"
+    )
+    _publish_completion(invocation, workspace)
+
+    # Two physical files both claim the first logical CSV basename, while the
+    # second logical result has no copy. Counts alone therefore cannot pass it.
+    (structures / "design-1.cif").write_bytes(_mmcif())
+    (structures / "rank1_design-1.cif").write_bytes(_mmcif())
+    with pytest.raises(
+        ScientificAdapterError,
+        match="ranking filenames do not match emitted structure artifacts",
+    ):
+        collect_stage_output(invocation, workspace)
