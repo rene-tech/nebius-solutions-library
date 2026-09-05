@@ -211,9 +211,7 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
                 )
 
         if profile["state"] == "qualified":
-            assert fragment["accepted_evidence"]["h100"]["state"] == (
-                "semantic-qualified-public-accepted"
-            )
+            assert fragment["accepted_evidence"]["h100"]["state"] == ("semantic-qualified-public-accepted")
             assert fragment["activation_gate"]["public_platform_run_required"] is False
         else:
             assert fragment["accepted_evidence"]["h100"]["state"] == (
@@ -311,9 +309,7 @@ def test_bindcraft_private_runtime_tree_is_exact_and_read_only() -> None:
         "alphafold2-params",
         "pyrosetta",
     }
-    assert stages["aggregate"]["required_node_labels"] == {
-        "storage.fs2.nebius/reference-data": "true"
-    }
+    assert stages["aggregate"]["required_node_labels"] == {"storage.fs2.nebius/reference-data": "true"}
 
 
 def test_boltzgen_final_cpu_stages_mount_only_the_molecule_generation() -> None:

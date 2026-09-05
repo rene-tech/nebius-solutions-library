@@ -427,9 +427,7 @@ def scheduling_with_academic_route(*, shadow: bool = False) -> dict[str, object]
         ("academic-general-cpu", namespace),
         ("academic-scientific-cpu", namespace),
     ):
-        resolved_cluster_queue = (
-            "reference-data-cpu" if queue_name == "academic-scientific-cpu" else "general-cpu"
-        )
+        resolved_cluster_queue = "reference-data-cpu" if queue_name == "academic-scientific-cpu" else "general-cpu"
         contract["local_queues"][queue_name] = {
             "metadata": {"name": queue_name, "namespace": queue_namespace},
             "spec": {"clusterQueue": resolved_cluster_queue},
