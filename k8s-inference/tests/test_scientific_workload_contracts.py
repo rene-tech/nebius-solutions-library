@@ -368,6 +368,27 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                 self.assertEqual([], list(request_validator.iter_errors(request)))
                 self.assertEqual([], list(self.validator(schema_name).iter_errors(request["parameters"])))
 
+    def test_bindcraft_public_canary_matches_the_qualified_r20_input(self) -> None:
+        request = self.load(
+            ROOT / "models/cancer-immunotherapy/images/bindcraft-native/activation/public-request.json"
+        )
+        evidence = self.load(
+            ROOT
+            / "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-20260905/"
+            "bindcraft-r20-h100-semantic-qualification.json"
+        )
+        parameters = request["parameters"]
+        qualified = evidence["input"]
+
+        self.assertEqual("passed", evidence["verdict"]["state"])
+        self.assertEqual(qualified["target"]["hotspots"], parameters["target"]["hotspot_residues"])
+        self.assertEqual(qualified["binder_length"], parameters["binder_length"])
+        self.assertEqual(qualified["base_seed"], parameters["seed"])
+        self.assertEqual(qualified["shard_count"], parameters["designs"])
+        self.assertEqual("soluble", parameters["mpnn_lane"])
+        self.assertEqual("soluble", qualified["settings"]["mpnn_weights"])
+        self.assertEqual(1, qualified["max_trajectories_per_shard"])
+
     def test_artifact_localization_contract_matches_its_schema(self) -> None:
         contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
         self.assert_valid("scientific-artifact-localization.schema.json", contract)
