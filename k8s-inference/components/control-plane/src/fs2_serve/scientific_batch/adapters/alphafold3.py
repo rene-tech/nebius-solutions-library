@@ -559,12 +559,47 @@ def collect_result(invocation: StageInvocation, workspace: Path) -> CollectedSta
     output_root = root / "outputs"
     if not output_root.is_dir() or output_root.is_symlink():
         raise CollectionPendingError("AlphaFold 3 inference outputs are not available yet")
-    structures = sorted(output_root.rglob("*_model.cif"))
-    summaries = sorted(output_root.rglob("*_summary_confidences.json"))
-    if len(structures) != 1 or len(summaries) != 1:
-        raise ScientificAdapterError("AlphaFold 3 result requires one top model and one confidence summary")
-    structure = _contained_regular_file(root, structures[0], label="AlphaFold 3 top model")
-    summary = _contained_regular_file(root, summaries[0], label="AlphaFold 3 confidence summary")
+    handoff_input = receipt.get("handoff_input")
+    if not isinstance(handoff_input, Mapping):
+        raise ScientificAdapterError("AlphaFold 3 inference receipt has no unambiguous fold job")
+    fold_job = handoff_input.get("fold_job")
+    available_fold_jobs = handoff_input.get("available_fold_jobs")
+    if (
+        not isinstance(fold_job, str)
+        or not 1 <= len(fold_job) <= 128
+        or fold_job.strip() != fold_job
+        or fold_job in {".", ".."}
+        or any(character in fold_job for character in ("/", "\\"))
+        or any(ord(character) < 32 or ord(character) == 127 for character in fold_job)
+        or not isinstance(available_fold_jobs, list)
+        or not available_fold_jobs
+        or any(not isinstance(value, str) for value in available_fold_jobs)
+        or len(set(available_fold_jobs)) != len(available_fold_jobs)
+        or fold_job not in available_fold_jobs
+        or handoff_input.get("relative_path") != f"{fold_job}/{fold_job}_data.json"
+    ):
+        raise ScientificAdapterError("AlphaFold 3 inference receipt has no unambiguous fold job")
+    if "--fold-job" in invocation.argv:
+        if _argument(invocation, "--fold-job") != fold_job:
+            raise ScientificAdapterError("AlphaFold 3 inference receipt selected another fold job")
+    elif available_fold_jobs != [fold_job]:
+        raise ScientificAdapterError("AlphaFold 3 inference receipt has an ambiguous fold job")
+
+    # AlphaFold 3 writes one canonical top-ranked pair directly below the
+    # selected job directory, plus one pair in every seed/sample subdirectory.
+    # Recursive discovery therefore treats a normal multi-sample run as
+    # ambiguous. Bind collection to the selected handoff job and accept only
+    # its direct canonical pair; sample outputs remain supporting evidence and
+    # are intentionally not published as the top result.
+    job_output = output_root / fold_job
+    expected_structure = job_output / f"{fold_job}_model.cif"
+    expected_summary = job_output / f"{fold_job}_summary_confidences.json"
+    structures = sorted(job_output.glob("*_model.cif"))
+    summaries = sorted(job_output.glob("*_summary_confidences.json"))
+    if structures != [expected_structure] or summaries != [expected_summary]:
+        raise ScientificAdapterError("AlphaFold 3 result requires one canonical top model and one confidence summary")
+    structure = _contained_regular_file(root, expected_structure, label="AlphaFold 3 top model")
+    summary = _contained_regular_file(root, expected_summary, label="AlphaFold 3 confidence summary")
     structure_bytes = structure.read_bytes()
     summary_bytes = summary.read_bytes()
     if not structure_bytes.startswith(b"data_") or not any(

@@ -267,11 +267,19 @@ def test_only_verified_inner_fold_input_is_compiled() -> None:
         compile_plan(inputs=(verified_input(artifact_id=outer),))
 
 
-def _inference_workspace(tmp_path: Path) -> Path:
+def _inference_workspace(tmp_path: Path, *, sample_count: int = 0) -> Path:
     output = tmp_path / "outputs/pdl1-binder"
     output.mkdir(parents=True)
     (output / "pdl1-binder_model.cif").write_bytes(b"data_pdl1_binder\n#\nATOM 1 C CA A 1 0.0 0.0 0.0\n#\n")
     (output / "pdl1-binder_summary_confidences.json").write_text(json.dumps({"ranking_score": 0.87}), encoding="utf-8")
+    for sample_index in range(sample_count):
+        sample = output / f"seed-1_sample-{sample_index}"
+        sample.mkdir()
+        prefix = f"pdl1-binder_seed-1_sample-{sample_index}"
+        (sample / f"{prefix}_model.cif").write_bytes(b"data_pdl1_binder_sample\n#\nATOM 1 C CA A 1 1.0 1.0 1.0\n#\n")
+        (sample / f"{prefix}_summary_confidences.json").write_text(
+            json.dumps({"ranking_score": 0.8 - sample_index / 100}), encoding="utf-8"
+        )
     receipt = load(RUNTIME_FIXTURES / "inference-stage-receipt.json")
     receipt.update(
         {
@@ -290,6 +298,15 @@ def _inference_workspace(tmp_path: Path) -> Path:
                 "upstream": "/app/alphafold/run_alphafold.py",
                 "exit_code": 0,
                 "terminal_state": "succeeded",
+            },
+            "handoff_input": {
+                "fold_job": "pdl1-binder",
+                "relative_path": "pdl1-binder/pdl1-binder_data.json",
+                "sha256": "b" * 64,
+                "bytes": 867,
+                "available_fold_jobs": ["pdl1-binder"],
+                "resolved_under_mount": "/handoff",
+                "reconstructed_locally": True,
             },
         }
     )
@@ -358,12 +375,30 @@ def _data_workspace(tmp_path: Path, *, publish_receipt: bool = True) -> tuple[Pa
 
 def test_result_collector_is_registered_once_in_the_global_companion_registry(tmp_path: Path) -> None:
     invocation = compile_plan().invocation(af3.INFERENCE_STAGE_ID, "main")
-    collected = collect_stage_output(invocation, _inference_workspace(tmp_path / "result"))
+    workspace = _inference_workspace(tmp_path / "result", sample_count=5)
+    collected = collect_stage_output(invocation, workspace)
     assert [item.name for item in collected.artifacts] == ["structure", "summary-confidence"]
+    assert collected.artifacts[0].path == workspace / "outputs/pdl1-binder/pdl1-binder_model.cif"
+    assert collected.artifacts[1].path == (workspace / "outputs/pdl1-binder/pdl1-binder_summary_confidences.json")
     assert collected.validation["status"] == "passed"
     assert collected.validation["validator_id"] == af3.VALIDATOR_ID
     with pytest.raises(CollectionPendingError):
         collect_stage_output(compile_plan().invocation(af3.DATA_STAGE_ID, "main"), tmp_path / "pending")
+
+
+def test_result_collector_rejects_missing_or_ambiguous_canonical_top_output(tmp_path: Path) -> None:
+    invocation = compile_plan().invocation(af3.INFERENCE_STAGE_ID, "main")
+    incomplete = _inference_workspace(tmp_path / "incomplete", sample_count=5)
+    (incomplete / "outputs/pdl1-binder/pdl1-binder_summary_confidences.json").unlink()
+    with pytest.raises(ScientificAdapterError, match="one canonical top model"):
+        collect_stage_output(invocation, incomplete)
+
+    ambiguous = _inference_workspace(tmp_path / "ambiguous", sample_count=5)
+    (ambiguous / "outputs/pdl1-binder/unexpected_model.cif").write_bytes(
+        b"data_unexpected\n#\nATOM 1 C CA A 1 0.0 0.0 0.0\n#\n"
+    )
+    with pytest.raises(ScientificAdapterError, match="one canonical top model"):
+        collect_stage_output(invocation, ambiguous)
 
 
 def test_data_collector_waits_for_atomic_terminal_receipt_publication(tmp_path: Path) -> None:
