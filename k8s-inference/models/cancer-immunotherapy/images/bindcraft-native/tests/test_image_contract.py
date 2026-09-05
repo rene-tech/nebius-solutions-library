@@ -260,8 +260,14 @@ class ImageLockTests(unittest.TestCase):
             "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@"
             "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
         )
-        if image["qualification_state"] == "publication-pending":
-            self.assertIsNone(image["published_digest"])
+        if image["qualification_state"] in {
+            "publication-pending",
+            "published-awaiting-h100-semantic-qualification",
+        }:
+            if image["qualification_state"] == "publication-pending":
+                self.assertIsNone(image["published_digest"])
+            else:
+                self.assertRegex(image["published_digest"], r"^sha256:[0-9a-f]{64}$")
             self.assertIsNone(image["qualification_evidence"])
         else:
             self.assertEqual(image["qualification_state"], "h100-semantic-qualified-active")
@@ -281,7 +287,10 @@ class ImageLockTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        if lock["qualification_state"] == "publication-pending":
+        if lock["qualification_state"] in {
+            "publication-pending",
+            "published-awaiting-h100-semantic-qualification",
+        }:
             # Publication is deliberately separate from live H100
             # qualification. Until that proof exists, r19 remains active and
             # is exactly the digest r20 declares it supersedes.

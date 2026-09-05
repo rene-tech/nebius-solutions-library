@@ -15,17 +15,17 @@
       "attested_source": {
         "context_path": "k8s-inference/models/cancer-immunotherapy/images/bindcraft-native",
         "reachable_from": [
-          "origin/agent/fs2-bindcraft-wrapper-normalization-r20260905"
+          "origin/agent/fs2-bindcraft-exact-quota-r20260905"
         ],
-        "revision": "8e183490201df80b346b955baa4c2c463bc3f4a4",
+        "revision": "a5ecd61a2120e068be452c35c6529c2e92c68eff",
         "source": "https://github.com/rene-tech/nebius-solutions-library.git",
-        "source_fingerprint": "1197397d5509d2aef64b07cac562f2fc8b76833b1c98cfe94ac5c6752da0fb2b"
+        "source_fingerprint": "2154c8dbb45ee87965dcf45c0bb9de0a7373f89276b76799e9fc1ad50daf8ea4"
       },
-      "digest": "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
-      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+      "digest": "sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
+      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
       "id": "bindcraft-academic",
-      "manifest_sha256": "9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
-      "pull_stdout_sha256": "d18b681967e973cb1afd5d6c399fed4a612871b4f70d7073bd742b9f7c0375b0",
+      "manifest_sha256": "0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
+      "pull_stdout_sha256": "4cf3a86e1e34f0392654bfcdfe40cc76f2171199d9cfe87c6d7c57e6da4710af",
       "smoke": [
         {
           "command": [
@@ -36,7 +36,7 @@
             "linux/amd64",
             "--network",
             "none",
-            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
             "--fs2-image-smoke"
           ],
           "last_line": "{\"cuda_available\": false, \"cuda_build\": \"12.1\", \"embedded_model_artifacts\": false, \"embedded_pyrosetta\": false, \"gpu_evidence\": {}, \"gpu_required_imports_deferred\": [], \"imports\": {\"Bio\": \"1.85\", \"colabdesign\": \"imported\", \"jax\": \"0.4.28\", \"jaxlib\": \"0.4.28+cuda12.cudnn89\", \"torch\": \"2.3.0\"}, \"runtime\": \"bindcraft-academic\", \"schema\": \"fs2.nebius.ai/runtime-image-smoke/v1\", \"source_revision\": \"7cd4ace1b7407adf66a50dfefa47de2270f5e4a9\"}",
@@ -53,7 +53,7 @@
             "none",
             "--entrypoint",
             "/opt/fs2/bin/bindcraft-batch",
-            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
             "run-trajectory",
             "--help"
           ],
@@ -71,7 +71,7 @@
             "none",
             "--entrypoint",
             "/opt/fs2/bin/bindcraft-batch",
-            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
             "aggregate",
             "--help"
           ],
@@ -89,8 +89,8 @@
           {
             "path": "/opt/fs2/bindcraft/runtime_entrypoint.py",
             "repository_path": "runtime/bindcraft_runtime_entrypoint.py",
-            "sha256": "0adba8ec1d57490bbafe1e926708520454c1b6e2e9f85370598aab727e9aee29",
-            "size_bytes": 42038
+            "sha256": "0f3841cab240c48c0aea9793b0df60222cc53f2637290873d1067321f8c0e227",
+            "size_bytes": 42759
           },
           {
             "path": "/opt/fs2/bindcraft/tree_identity.py",
@@ -119,12 +119,12 @@
         ],
         "match": true,
         "method": "SHA-256 of each executable source file read from the pulled digest",
-        "verified_against": "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1"
+        "verified_against": "sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3"
       },
-      "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r19"
+      "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r20"
     }
   ],
   "platform": "linux/amd64",
-  "recorded_at": "2026-09-05T00:18:02.560266Z",
+  "recorded_at": "2026-09-05T01:34:12.804923Z",
   "schema": "fs2.nebius.ai/cancer-runtime-image-publication/v1"
 }
