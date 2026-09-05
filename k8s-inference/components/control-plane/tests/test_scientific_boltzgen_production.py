@@ -68,7 +68,7 @@ def test_public_acceptance_fixture_compiles_the_bounded_production_plan() -> Non
     assert request["parameters"]["batches"] == [
         {
             "shard_id": "pdl1-face",
-            "num_designs": 4,
+            "num_designs": 20,
             "budget": 1,
             "reuse_completed": False,
         }

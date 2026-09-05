@@ -62,11 +62,12 @@ artifact IDs, digests, sizes, media types, and compression declarations remain
 independent; `application/x-tar` is not in the deployed artifact media-type
 allowlist.
 
-The route-level public acceptance request deliberately generates four bounded
-candidates and retains the best one. A one-candidate smoke can legitimately
-produce no result when BoltzGen's own composition filters reject that design;
-the small oversampling bound keeps the example reliable without weakening the
-scientific output validator or changing the one-result response contract.
+The route-level public acceptance request deliberately generates twenty
+bounded candidates (the adapter's per-batch maximum) and retains the best one.
+A smaller smoke can legitimately produce no result when BoltzGen's own
+composition filters reject every design; using the bounded maximum makes the
+example robust without weakening the scientific output validator or changing
+the one-result response contract.
 
 ## Semantic boundary
 

@@ -472,6 +472,23 @@ def _idempotency_key(run_id: str, purpose: str, digest: str) -> str:
     return f"fs2-scientific-acceptance-{identity}"
 
 
+def _traceparent(run_id: str, model_id: str, request_digest: str) -> str:
+    """Return one stable, non-secret W3C trace context per submitted run."""
+
+    identity = hashlib.sha256(
+        f"{run_id}\0{model_id}\0submit\0{request_digest}".encode()
+    ).hexdigest()
+    trace_id = identity[:32]
+    parent_id = identity[32:48]
+    # W3C reserves all-zero IDs. Keep validity unconditional even though a
+    # cryptographic digest reaching either value is vanishingly unlikely.
+    if int(trace_id, 16) == 0:
+        trace_id = "0" * 31 + "1"
+    if int(parent_id, 16) == 0:
+        parent_id = "0" * 15 + "1"
+    return f"00-{trace_id}-{parent_id}-01"
+
+
 def _content_path(value: object, *, operation_id: str, upload_id: str) -> str:
     if not isinstance(value, str):
         raise AcceptanceError("upload_content_path_invalid")
@@ -769,7 +786,10 @@ def _submit(
         "POST",
         f"/v1/models/{model_id}:submit",
         json_body=request,
-        headers={"Idempotency-Key": _idempotency_key(run_id, "submit", request_digest)},
+        headers={
+            "Idempotency-Key": _idempotency_key(run_id, "submit", request_digest),
+            "traceparent": _traceparent(run_id, model_id, request_digest),
+        },
     )
     submitted = _json_response(submitted_response, 202, "submit")
     operation_id = _uuid(

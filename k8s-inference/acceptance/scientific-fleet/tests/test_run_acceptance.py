@@ -80,6 +80,7 @@ class ApiState:
     reservations: dict[str, dict[str, Any]] = field(default_factory=dict)
     uploaded: list[dict[str, Any]] = field(default_factory=list)
     submitted: dict[str, Any] | None = None
+    submitted_traceparent: str | None = None
     authorized_requests: int = 0
     status_requests: int = 0
 
@@ -336,6 +337,7 @@ class FakeApi:
                         )
                         return
                     state.submitted = self._json()
+                    state.submitted_traceparent = self.headers.get("traceparent")
                     self._send(
                         202,
                         state.status(False),
@@ -553,6 +555,15 @@ class AcceptanceRunnerTest(unittest.TestCase):
             self.assertEqual(
                 receipt["execution_identity"]["execution_identity_sha256"],
                 EXECUTION_IDENTITY,
+            )
+            request_digest = hashlib.sha256(canonical(api.state.submitted)).hexdigest()
+            self.assertEqual(
+                api.state.submitted_traceparent,
+                MODULE._traceparent("offline-test-run", MODEL_ID, request_digest),
+            )
+            self.assertRegex(
+                api.state.submitted_traceparent or "",
+                r"^00-[0-9a-f]{32}-[0-9a-f]{16}-01$",
             )
             body = config.receipt_path.read_text()
             self.assertNotIn("never-record-this", body)
