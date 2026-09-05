@@ -1292,20 +1292,23 @@ def test_proteina_companion_collects_only_runner_completed_handoffs_and_final_ou
             assert all(not name.startswith("logs") for name in members)
 
     terminal_workspace = tmp_path / "analyze"
-    structure = terminal_workspace / "evaluation" / "design-1" / "design-1.pdb"
-    structure.parent.mkdir(parents=True)
-    structure.write_bytes(pdb_bytes())
+    maximum_designs = request["parameters"]["num_samples"] * proteina_complexa.BEST_OF_N_REPLICAS
+    rows = ["id_gen,pdb_path,_res_pLDDT_self,_res_i_pae_self,_res_scRMSD_self"]
+    for index in range(1, maximum_designs + 1):
+        structure = terminal_workspace / "evaluation" / f"design-{index}" / f"design-{index}.pdb"
+        structure.parent.mkdir(parents=True)
+        structure.write_bytes(pdb_bytes())
+        rows.append(f"design-{index},{structure},0.81,4.2,1.1")
     csv_path = terminal_workspace / "evaluation" / "RAW_binder_results_pipeline_combined.csv"
-    csv_path.write_text(
-        f"id_gen,pdb_path,_res_pLDDT_self,_res_i_pae_self,_res_scRMSD_self\ndesign-1,{structure},0.81,4.2,1.1\n",
-        encoding="utf-8",
-    )
+    csv_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
     terminal = plan.invocation("analyze", "main")
+    assert terminal.max_output_artifacts == maximum_designs + 1
     terminal_completion = publish_stage_completion(terminal, terminal_workspace)
     collected = proteina_complexa.collect_companion_output(terminal, terminal_workspace)
     assert collected.validation["completion_marker_sha256"] == terminal_completion
-    assert collected.validation["design_count"] == 1
+    assert collected.validation["design_count"] == maximum_designs
     assert collected.validation["status"] == "passed"
+    assert len(collected.artifacts) == maximum_designs + 1
     assert {item.semantic_type for item in collected.artifacts} == {
         "proteina-complexa-results-csv/v1",
         "protein-complex-structure/v1",
