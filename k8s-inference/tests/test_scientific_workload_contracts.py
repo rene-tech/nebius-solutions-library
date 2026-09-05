@@ -368,7 +368,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                 self.assertEqual([], list(request_validator.iter_errors(request)))
                 self.assertEqual([], list(self.validator(schema_name).iter_errors(request["parameters"])))
 
-    def test_bindcraft_public_canary_matches_the_qualified_r20_input(self) -> None:
+    def test_bindcraft_public_canary_is_one_bounded_run_against_the_pdl1_face(self) -> None:
         request = self.load(
             ROOT / "models/cancer-immunotherapy/images/bindcraft-native/activation/public-request.json"
         )
@@ -377,17 +377,42 @@ class ScientificWorkloadContractTests(unittest.TestCase):
             / "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-20260905/"
             "bindcraft-r20-h100-semantic-qualification.json"
         )
+        adapter_fixture = self.load(
+            ROOT / "models/structure/batch-adapters/bindcraft/fixtures/positive-soluble-lane.json"
+        )
         parameters = request["parameters"]
         qualified = evidence["input"]
+        hotspots = parameters["target"]["hotspot_residues"]
 
         self.assertEqual("passed", evidence["verdict"]["state"])
-        self.assertEqual(qualified["target"]["hotspots"], parameters["target"]["hotspot_residues"])
+        # The qualified A56 residue remains mandatory, while the public replay
+        # names the same bounded PD-L1 face as the adapter's soluble fixture.
+        # This keeps a real 4-Angstrom atomic-contact gate without betting the
+        # fleet qualification on one soft-guidance residue and one stochastic
+        # ProteinMPNN winner.
+        self.assertEqual([56, 66, 115], hotspots)
+        self.assertEqual(
+            adapter_fixture["parameters"]["target"], parameters["target"]
+        )
+        self.assertTrue(set(qualified["target"]["hotspots"]).issubset(hotspots))
         self.assertEqual(qualified["binder_length"], parameters["binder_length"])
         self.assertEqual(qualified["base_seed"], parameters["seed"])
         self.assertEqual(qualified["shard_count"], parameters["designs"])
+        self.assertEqual(1, parameters["designs"])
         self.assertEqual("soluble", parameters["mpnn_lane"])
         self.assertEqual("soluble", qualified["settings"]["mpnn_weights"])
         self.assertEqual(1, qualified["max_trajectories_per_shard"])
+
+        target = (
+            ROOT
+            / "models/cancer-immunotherapy/runtime-images/proteina-complexa/tests/fixtures/PD-L1.pdb"
+        ).read_text(encoding="ascii")
+        target_residues = {
+            int(line[22:26])
+            for line in target.splitlines()
+            if line.startswith("ATOM") and line[21:22] == "A"
+        }
+        self.assertTrue(set(hotspots).issubset(target_residues))
 
     def test_artifact_localization_contract_matches_its_schema(self) -> None:
         contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")

@@ -58,6 +58,19 @@ respective repository/archive roots, duplicate archive members are rejected,
 and the same byte-stable tar/gzip encoding is used. BoltzGen uses this form for
 the exact projected public PD-L1 mmCIF plus its one-design campaign YAML.
 
+BindCraft's public fixture is also deliberately bounded to one design, one GPU
+shard, a fixed 67-residue binder length, the soluble MPNN lane, and seed
+`912083`. The seed fixes the upstream trajectory, but the pinned ColabDesign
+ProteinMPNN implementation initializes its own sampling key from process
+entropy, so a single accepted winner is not bit-for-bit replay stable. The
+fixture therefore requests the exact three-residue PD-L1 face already used by
+the adapter contract (`A56`, `A66`, and `A115`) instead of making the whole
+fleet depend on contact with A56 alone. This does not relax result validation:
+every exported winner must still pass the pinned production filters and prove
+a measured atom-to-atom contact of at most 4.0 Angstrom to at least one residue
+the request names. All three residues must exist in the content-addressed input
+structure, and the adapter's one-design trajectory budget remains bounded.
+
 Use a token that can upload and invoke the selected model and read its
 operation result. The token is accepted only through an environment variable:
 

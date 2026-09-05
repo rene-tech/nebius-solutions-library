@@ -756,6 +756,7 @@ def publish_shard(
     status: str = "succeeded",
     generation: str = "generation-test",
     interface_residue_count: int | float = 3,
+    contacted_hotspot_position: int | None = 0,
 ) -> None:
     request = request or fixture("positive-default-lane")
     parameters = bindcraft.BindCraftParameters.parse(request["parameters"])
@@ -792,7 +793,7 @@ def publish_shard(
             "chain": parameters.target_chain,
             "residue": residue,
             "closest_binder_atom_angstrom": 3.0 + position / 100,
-            "in_contact": position == 0,
+            "in_contact": position == contacted_hotspot_position,
         }
         for position, residue in enumerate(parameters.hotspot_residues)
     ]
@@ -815,7 +816,7 @@ def publish_shard(
                     "hotspot_geometry": {
                         "contact_cutoff_angstrom": 4.0,
                         "requested": requested_contacts,
-                        "contacted": 1,
+                        "contacted": 0 if contacted_hotspot_position is None else 1,
                     },
                 },
                 sort_keys=True,
@@ -976,6 +977,32 @@ def test_design_collector_accepts_a_fractional_cross_model_interface_average(tmp
     publish_shard(empty, index=0, request=request, interface_residue_count=0)
     with pytest.raises(ScientificAdapterError, match="no interface residues"):
         bindcraft.collect_design_output(request, empty)
+
+
+def test_design_collector_requires_atomic_contact_with_the_named_hotspot_face(tmp_path: Path) -> None:
+    request = fixture("positive-soluble-lane")
+    request["parameters"]["designs"] = 1
+
+    later_face_residue = tmp_path / "later-face-residue"
+    publish_shard(
+        later_face_residue,
+        index=0,
+        request=request,
+        contacted_hotspot_position=2,
+    )
+    assert bindcraft.collect_design_output(request, later_face_residue).manifest["manifest_id"] == (
+        "bindcraft.shard.000.handoff"
+    )
+
+    no_atomic_contact = tmp_path / "no-atomic-contact"
+    publish_shard(
+        no_atomic_contact,
+        index=0,
+        request=request,
+        contacted_hotspot_position=None,
+    )
+    with pytest.raises(ScientificAdapterError, match="contacts none of the requested hotspots"):
+        bindcraft.collect_design_output(request, no_atomic_contact)
 
 
 def test_design_collector_rejects_semantic_and_content_address_tampering(tmp_path: Path) -> None:
