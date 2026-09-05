@@ -422,11 +422,12 @@ def test_proteina_commands_and_artifact_handoffs_are_exact_and_shell_free() -> N
             f"{invocation.working_directory}/.fs2/stage-runner.py",
             "--",
         )
-        assert invocation.argv[3:6] == (
-            "complexa",
-            stage_id,
-            "/opt/fs2/source/configs/search_ligand_binder_local_pipeline.yaml",
-        )
+        assert invocation.argv[3:5] == ("complexa", stage_id)
+        config_index = 5
+        if stage_id == "filter":
+            assert invocation.argv[5] == "--verbose"
+            config_index = 6
+        assert invocation.argv[config_index] == "/opt/fs2/source/configs/search_ligand_binder_local_pipeline.yaml"
         assert invocation.argv[0] not in {"sh", "bash"}
         assert invocation.consumes == (previous,)
         assert invocation.produces.startswith("run.")
@@ -488,8 +489,8 @@ def test_proteina_filter_reuses_generated_workspace_without_a_gpu(
     assert filter_invocation.argv[3:] == (
         "complexa",
         "filter",
-        proteina_complexa.VARIANTS[variant].config,
         "--verbose",
+        proteina_complexa.VARIANTS[variant].config,
         *common_overrides,
         (f"++root_path=./inference/{config_stem}_{parameters['target_id']}_{parameters['run_name']}"),
     )
