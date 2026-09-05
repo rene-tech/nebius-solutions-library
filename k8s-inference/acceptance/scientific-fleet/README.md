@@ -174,10 +174,13 @@ successful per-model receipt must remain together, regular files with mode
 
 The command verifies their exact bytes and projections, the model/variant and
 full execution identity against the canonical profile and execution map, and a
-successful scheduler admission for every declared stage. A GPU decision must
-use the profile's exact GPU count and ordered compatible-pool set; its successful
-admission must resolve to one of those pools. CPU stages must have zero GPU
-resources.
+successful scheduler admission for every stage selected by the run-specific
+controller plan. Selected stages must be a non-empty, canonically ordered,
+dependency-complete subset of the catalog stages; this preserves request-driven
+optional stages such as BoltzGen affinity without treating an unrecognized or
+disconnected stage set as evidence. A GPU decision must use the profile's exact
+GPU count and ordered compatible-pool set; its successful admission must resolve
+to one of those pools. CPU stages must have zero GPU resources.
 
 First verify that the checked-out profile/map digest chain is current:
 

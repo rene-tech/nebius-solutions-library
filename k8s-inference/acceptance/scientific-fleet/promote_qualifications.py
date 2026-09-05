@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema import Draft202012Validator, FormatChecker  # type: ignore[import-untyped]
 
 AGGREGATE_SCHEMA = "fs2-serve.nebius.ai/scientific-fleet-aggregate-receipt/v1"
 MODEL_RECEIPT_SCHEMA = "fs2-serve.nebius.ai/scientific-fleet-acceptance-receipt/v1"
@@ -394,13 +394,13 @@ def _load_repository(
     raw_executions = execution_document.get("models")
     if not isinstance(raw_profiles, list) or not isinstance(raw_executions, list):
         raise PromotionError("catalog_shape_invalid")
-    profiles = {
-        item.get("model_id"): item
+    profiles: dict[str, dict[str, Any]] = {
+        cast(str, item.get("model_id")): item
         for item in raw_profiles
         if isinstance(item, dict) and isinstance(item.get("model_id"), str)
     }
-    executions = {
-        item.get("model_id"): item
+    executions: dict[str, dict[str, Any]] = {
+        cast(str, item.get("model_id")): item
         for item in raw_executions
         if isinstance(item, dict) and isinstance(item.get("model_id"), str)
     }
@@ -843,14 +843,34 @@ def _successful_admissions(
         for item in decisions
         if isinstance(item, dict) and isinstance(item.get("stage_id"), str)
     }
-    if len(by_stage) != len(decisions) or set(by_stage) != set(profile_stages):
+    selected_stage_ids = tuple(by_stage)
+    selected_stage_set = set(selected_stage_ids)
+    if (
+        not selected_stage_ids
+        or len(by_stage) != len(decisions)
+        or not selected_stage_set.issubset(profile_stages)
+    ):
         raise ModelNotEligible("scheduler_stage_set_mismatch")
+    canonical_selected_order = tuple(
+        stage_id for stage_id in profile_stages if stage_id in selected_stage_set
+    )
+    if selected_stage_ids != canonical_selected_order:
+        raise ModelNotEligible("scheduler_stage_order_mismatch")
+    for stage_id in selected_stage_ids:
+        needs = profile_stages[stage_id].get("needs")
+        if not isinstance(needs, list) or not all(
+            isinstance(dependency, str) for dependency in needs
+        ):
+            raise ModelNotEligible("profile_stage_dependencies_invalid")
+        if not set(needs).issubset(selected_stage_set):
+            raise ModelNotEligible("scheduler_stage_dependency_mismatch")
     resources = _object(profile.get("resources"), "profile_resources_invalid")
     compatible_pools = resources.get("compatible_pool_ids")
     gpu_count = resources.get("gpu_count")
     if not isinstance(compatible_pools, list) or not isinstance(gpu_count, int):
         raise ModelNotEligible("profile_resources_invalid")
-    for stage_id, expected in profile_stages.items():
+    for stage_id in selected_stage_ids:
+        expected = profile_stages[stage_id]
         decision = cast(dict[str, Any], by_stage[stage_id])
         if decision.get("resource_class") != expected.get(
             "resource_class"
@@ -880,7 +900,7 @@ def _successful_admissions(
         for item in observed_values
         if isinstance(item, dict) and isinstance(item.get("stage_id"), str)
     }
-    if len(observed) != len(observed_values) or set(observed) != set(profile_stages):
+    if len(observed) != len(observed_values) or tuple(observed) != selected_stage_ids:
         raise ModelNotEligible("scheduler_observed_stage_set_mismatch")
     if any(item.get("status") != "succeeded" for item in observed.values()):
         raise ModelNotEligible("scheduler_observed_stage_failed")
@@ -976,7 +996,7 @@ def _successful_admissions(
             }
         )
         succeeded_stages.add(cast(str, stage_id))
-    if succeeded_stages != set(profile_stages):
+    if succeeded_stages != selected_stage_set:
         raise ModelNotEligible("scheduler_stage_success_incomplete")
     promoted.sort(
         key=lambda item: (

@@ -562,6 +562,89 @@ class ScientificQualificationPromotionTests(unittest.TestCase):
             self.fixture.profiles["openfold3-openbind"],
         )
 
+    def test_request_selected_optional_stage_subset_is_promoted(self) -> None:
+        def omit_affinity(receipt: dict[str, Any]) -> None:
+            receipt["queue"]["stage_decisions"] = [
+                item
+                for item in receipt["queue"]["stage_decisions"]
+                if item["stage_id"] != "affinity"
+            ]
+            receipt["queue"]["observed_stages"] = [
+                item
+                for item in receipt["queue"]["observed_stages"]
+                if item["stage_id"] != "affinity"
+            ]
+            receipt["attempts"] = [
+                item for item in receipt["attempts"] if item["stage_id"] != "affinity"
+            ]
+
+        aggregate = self.fixture.aggregate({"boltzgen": omit_affinity})
+
+        result = MODULE.promote(
+            repository_root=self.fixture.root,
+            aggregate_path=aggregate,
+            write=True,
+        )
+
+        boltzgen = next(
+            item for item in result.decisions if item.model_id == "boltzgen"
+        )
+        self.assertEqual(boltzgen.action, "promote")
+        owner = MODULE._discover_owners(self.fixture.root)["boltzgen"]
+        eligibility_path = next(
+            owner.eligibility_directory.glob("scheduler-eligibility-*.json")
+        )
+        eligibility = self.fixture.load(eligibility_path)
+        self.assertEqual(
+            [
+                item["stage_id"]
+                for item in eligibility["scheduling_snapshot"]["stage_decisions"]
+            ],
+            [
+                "configure",
+                "design",
+                "inverse-folding",
+                "folding",
+                "design-folding",
+                "analysis",
+                "filtering",
+            ],
+        )
+        self.assertNotIn(
+            "affinity",
+            {item["stage_id"] for item in eligibility["successful_admissions"]},
+        )
+
+    def test_selected_stage_subset_must_preserve_declared_dependencies(self) -> None:
+        def omit_folding(receipt: dict[str, Any]) -> None:
+            receipt["queue"]["stage_decisions"] = [
+                item
+                for item in receipt["queue"]["stage_decisions"]
+                if item["stage_id"] != "folding"
+            ]
+            receipt["queue"]["observed_stages"] = [
+                item
+                for item in receipt["queue"]["observed_stages"]
+                if item["stage_id"] != "folding"
+            ]
+            receipt["attempts"] = [
+                item for item in receipt["attempts"] if item["stage_id"] != "folding"
+            ]
+
+        aggregate = self.fixture.aggregate({"boltzgen": omit_folding})
+
+        result = MODULE.promote(
+            repository_root=self.fixture.root,
+            aggregate_path=aggregate,
+            write=True,
+        )
+
+        boltzgen = next(
+            item for item in result.decisions if item.model_id == "boltzgen"
+        )
+        self.assertEqual(boltzgen.action, "skip")
+        self.assertEqual(boltzgen.reason, "scheduler_stage_dependency_mismatch")
+
     def test_private_canonical_aggregate_and_exact_input_digest_are_required(
         self,
     ) -> None:
