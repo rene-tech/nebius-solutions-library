@@ -286,7 +286,9 @@ recorded separately. Likewise, this scientific-batch receipt does not assign a
 customer L1-L4 level because it has no model-endpoint-ready boundary.
 
 Run only after all ten routes are deployed and the admin model preflight lists
-all ten as published batch profiles:
+all ten with `readiness=qualified` as published batch profiles. The runner
+checks that state before submitting the first fleet operation and fails closed
+if any profile is still a candidate:
 
 ```bash
 export FS2_INFERENCE_TOKEN='...'
