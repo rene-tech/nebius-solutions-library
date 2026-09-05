@@ -486,7 +486,7 @@
       "model_id": "proteina-complexa",
       "variant_id": "upstream-dev-20260827",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "128aef413090392e2f4d88e21d52d924f2f8e4ce11ef2732f5c48aadca70e302",
+      "execution_identity_sha256": "d346aee7e5b341133b133910df4abd205b494fd843a289faadef8425ab5739e3",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -2067,7 +2067,7 @@
       "model_id": "alphafold3",
       "variant_id": "upstream-v3-0-4",
       "workload_namespace": "fs2-academic-poc",
-      "execution_identity_sha256": "3b4d29e0a78d934f8fb955bb647fd8df628e25021ef03216aa3db292a7a91b65",
+      "execution_identity_sha256": "f9fe97a0abf6122c22ab6a3f68fb1785b3850b6ef0ef34c12f20d73950874854",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
