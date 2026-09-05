@@ -220,14 +220,16 @@ def _argv(parameters: ProteinaParameters, stage_id: str) -> tuple[str, ...]:
     values = [
         "complexa",
         stage_id,
-        variant.config,
     ]
     if stage_id == "filter":
         # The upstream CLI otherwise suppresses the subprocess traceback, and
         # its implicit workspace setup asserts that CUDA is available. Point
         # the CPU-only filter at the deterministic workspace produced by the
-        # generate stage so it skips that accelerator-only setup path.
+        # generate stage so it skips that accelerator-only setup path. argparse
+        # cannot resume the trailing ``overrides`` nargs="*" positional after
+        # an optional follows ``config``, so --verbose must precede config.
         values.append("--verbose")
+    values.append(variant.config)
     values.extend(
         (
             f"++run_name={parameters.run_name}",
