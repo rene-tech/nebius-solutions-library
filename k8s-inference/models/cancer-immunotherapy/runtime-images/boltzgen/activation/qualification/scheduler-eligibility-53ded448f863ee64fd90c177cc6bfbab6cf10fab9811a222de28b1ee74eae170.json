@@ -120,9 +120,7 @@
         "preemption_mode": "restartable",
         "resolved_cluster_queue": "reference-data-cpu",
         "resolved_local_queue": "model-reference-data",
-        "resolved_pool_preference": [
-          "mk8snodegroup-e00ha8zfdnxn12qmbj"
-        ],
+        "resolved_pool_preference": [],
         "resource_class": "cpu",
         "stage_id": "analysis",
         "workload_priority_class": "standard",
@@ -137,9 +135,7 @@
         "preemption_mode": "restartable",
         "resolved_cluster_queue": "reference-data-cpu",
         "resolved_local_queue": "model-reference-data",
-        "resolved_pool_preference": [
-          "mk8snodegroup-e00ha8zfdnxn12qmbj"
-        ],
+        "resolved_pool_preference": [],
         "resource_class": "cpu",
         "stage_id": "filtering",
         "workload_priority_class": "standard",

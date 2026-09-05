@@ -176,7 +176,7 @@
       "qualification": {
         "h100_semantic_receipt_sha256": "9f4d97dd49666b2a67fd54d0ff5ba2133b99757a6e6e794bdebd003df540c66f",
         "public_completion_receipt_sha256": "5aaa649116315541f5882c305bd820f9b9e6867da6657a99805414994f9c53d4",
-        "scheduler_eligibility_receipt_sha256": "cad66d1cb923e0d25a05b0839ff45b5c79141baaacd50c0ff1df7aa7287a2b69",
+        "scheduler_eligibility_receipt_sha256": "e30820677ec79e76b6f17dc6df3379f6078bcbbe1d89f33f17d416eeaa722940",
         "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
         "qualified_at": "2026-09-05T06:40:31.924548Z"
       },

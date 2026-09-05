@@ -213,7 +213,7 @@
       "qualification": {
         "h100_semantic_receipt_sha256": "380441981a4170c8f2427a47ef4b25898f0ab14e33cc5efe7fdd65ebc1b45c4b",
         "public_completion_receipt_sha256": "90583adfb2c6ea19bcf2d3a7eec9a9276a9b68b21dbec0277c42bd05cc56d2bf",
-        "scheduler_eligibility_receipt_sha256": "d3bf102b7b123715b60473ee853ce2c05eaa3ef6b442918dff8732febf6cc8bb",
+        "scheduler_eligibility_receipt_sha256": "d77141dac97651a4b489c3f7d6459734b422a5848088112cb9abaf0c9b8783d7",
         "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
         "qualified_at": "2026-09-05T06:47:47.456690Z"
       },

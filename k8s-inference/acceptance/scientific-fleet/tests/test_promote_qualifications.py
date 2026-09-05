@@ -679,6 +679,61 @@ class ScientificQualificationPromotionTests(unittest.TestCase):
             {item["stage_id"] for item in eligibility["successful_admissions"]},
         )
 
+    def test_public_eligibility_omits_private_cpu_pool_ids(self) -> None:
+        private_pool_id = "mk8snodegroup-" + "e00privatepoolidentity"
+
+        def use_provider_cpu_pool(receipt: dict[str, Any]) -> None:
+            for decision in receipt["queue"]["stage_decisions"]:
+                if decision["resource_class"] == "cpu":
+                    decision["resolved_pool_preference"] = [private_pool_id]
+
+        aggregate = self.fixture.aggregate({"bindcraft": use_provider_cpu_pool})
+        result = MODULE.promote(
+            repository_root=self.fixture.root,
+            aggregate_path=aggregate,
+            write=True,
+        )
+
+        bindcraft = next(
+            item for item in result.decisions if item.model_id == "bindcraft"
+        )
+        self.assertEqual(bindcraft.action, "promote")
+        owner = MODULE._discover_owners(self.fixture.root)["bindcraft"]
+        eligibility_path = next(
+            owner.eligibility_directory.glob("scheduler-eligibility-*.json")
+        )
+        eligibility_raw = eligibility_path.read_bytes()
+        self.assertNotIn(private_pool_id.encode(), eligibility_raw)
+        eligibility = self.fixture.load(eligibility_path)
+        decisions = eligibility["scheduling_snapshot"]["stage_decisions"]
+        for decision in decisions:
+            if decision["resource_class"] == "cpu":
+                self.assertEqual(decision["resolved_pool_preference"], [])
+            else:
+                self.assertEqual(
+                    decision["resolved_pool_preference"],
+                    self.fixture.profiles["bindcraft"]["resources"][
+                        "compatible_pool_ids"
+                    ],
+                )
+
+        schema = self.fixture.load(
+            self.fixture.root / MODULE.ELIGIBILITY_SCHEMA_RELATIVE
+        )
+        validator = Draft202012Validator(schema, format_checker=FormatChecker())
+        validator.validate(eligibility)
+        cpu_decision = next(
+            item for item in decisions if item["resource_class"] == "cpu"
+        )
+        cpu_decision["resolved_pool_preference"] = [private_pool_id]
+        self.assertTrue(list(validator.iter_errors(eligibility)))
+        cpu_decision["resolved_pool_preference"] = []
+        gpu_decision = next(
+            item for item in decisions if item["resource_class"] == "gpu"
+        )
+        gpu_decision["resolved_pool_preference"] = []
+        self.assertTrue(list(validator.iter_errors(eligibility)))
+
     def test_selected_stage_subset_must_preserve_declared_dependencies(self) -> None:
         def omit_folding(receipt: dict[str, Any]) -> None:
             receipt["queue"]["stage_decisions"] = [

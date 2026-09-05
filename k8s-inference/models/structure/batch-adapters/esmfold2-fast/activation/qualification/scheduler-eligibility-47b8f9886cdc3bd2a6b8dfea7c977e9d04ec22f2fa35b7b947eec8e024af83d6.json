@@ -1,25 +1,25 @@
 {
   "schema": "fs2-serve.nebius.ai/scientific-scheduler-eligibility-receipt/v1",
-  "model_id": "protenix-v2",
-  "variant_id": "upstream-v2-0-0",
-  "execution_identity_sha256": "68d69f91087b2cd0e2ec87fa16ca6179dd1e4bdfd2fcfa409a9ed6bea6b2bbb0",
+  "model_id": "esmfold2-fast",
+  "variant_id": "biohub-v3-4-0",
+  "execution_identity_sha256": "d0d2e34752d4ea18d7e740ee4f3ac0673fe732912bef46af24faa96da65e071b",
   "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
   "acceptance_execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
-  "model_execution_map_entry_sha256": "9a85902420884718f31cba468df5a3dab2a5d906d1bdac0c901fd7bdc98d2ca5",
-  "public_completion_receipt_sha256": "3e989094f7a633022db7384c452bf909de13b163046e32f6265b26854414f683",
+  "model_execution_map_entry_sha256": "7e1fe8b9d224d3889788447b2aabc80688ca07f8f9b88da7d07cc88907656d5b",
+  "public_completion_receipt_sha256": "eec47667f5f941e16bd375bf80f64e27a7f30020f46ee3ae2e65b1b74de5fdf6",
   "fleet_aggregate_sha256": "b25b3e02acdb34b8939c0a6fa510a72bf6bc1178238afda42782e1cff6e5569a",
   "acceptance_input": {
     "kind": "secondary-public-acceptance",
-    "path": "models/structure/batch-adapters/protenix-v2/activation/public-acceptance.json",
-    "sha256": "0f1358c242cb762855143b289353fa3fbc85f72bbf5d5e027f7aa4333c49bcf7"
+    "path": "models/structure/batch-adapters/esmfold2-fast/activation/public-acceptance.json",
+    "sha256": "31bfa5b970ddc1f5d555a8b483b5e940ce77b7dd0ee573188d1fda0ada45e0c1"
   },
   "scheduling_snapshot": {
-    "digest": "sha256:90b344a604feee1fd82999ccdb25a2dba03f861ee530720a7e09586ccb9fc415",
+    "digest": "sha256:b84f7ea68296e93d674dcf594250b24d1b2155ac95001399171711284715710d",
     "policy_revision": "a1b1191140b29df4414e0774f32cea89fecb25ed5d43c6c70224405bab581266",
-    "captured_at": "2026-09-05T06:33:15.434376Z",
+    "captured_at": "2026-09-05T06:31:27.468691Z",
     "service_class": "customer-batch",
     "tenant_queue": "inference-models",
-    "model_lane": "protenix-v2",
+    "model_lane": "esmfold2-fast",
     "stage_decisions": [
       {
         "accelerator_count": 0,
@@ -28,13 +28,11 @@
         "max_execution_seconds": null,
         "max_queue_seconds": null,
         "preemption_mode": "restartable",
-        "resolved_cluster_queue": "reference-data-cpu",
-        "resolved_local_queue": "model-reference-data",
-        "resolved_pool_preference": [
-          "mk8snodegroup-e00ha8zfdnxn12qmbj"
-        ],
+        "resolved_cluster_queue": "general-cpu",
+        "resolved_local_queue": "general-cpu",
+        "resolved_pool_preference": [],
         "resource_class": "cpu",
-        "stage_id": "prepare-data",
+        "stage_id": "prepare-input",
         "workload_priority_class": "standard",
         "workload_priority_value": 0
       },
@@ -52,7 +50,7 @@
           "h100-1x"
         ],
         "resource_class": "gpu",
-        "stage_id": "sample-structure",
+        "stage_id": "fold",
         "workload_priority_class": "standard",
         "workload_priority_value": 0
       }
@@ -60,26 +58,26 @@
   },
   "successful_admissions": [
     {
-      "stage_id": "prepare-data",
-      "shard_id": "main",
-      "attempt_number": 1,
-      "resolved_pool_id": null,
-      "admitted_resource_flavor": null,
-      "accelerator_resource_name": null,
-      "accelerator_count": 0,
-      "admitted_at": "2026-09-05T06:33:16Z"
-    },
-    {
-      "stage_id": "sample-structure",
+      "stage_id": "fold",
       "shard_id": "main",
       "attempt_number": 1,
       "resolved_pool_id": "h100-reserved-8x",
       "admitted_resource_flavor": "inference-h100-reserved-8x",
       "accelerator_resource_name": "nvidia.com/gpu",
       "accelerator_count": 1,
-      "admitted_at": "2026-09-05T06:33:51Z"
+      "admitted_at": "2026-09-05T06:45:35Z"
+    },
+    {
+      "stage_id": "prepare-input",
+      "shard_id": "main",
+      "attempt_number": 1,
+      "resolved_pool_id": null,
+      "admitted_resource_flavor": null,
+      "accelerator_resource_name": null,
+      "accelerator_count": 0,
+      "admitted_at": "2026-09-05T06:31:27Z"
     }
   ],
-  "prior_profile_qualified_at": "2026-09-05T00:12:44Z",
-  "qualified_at": "2026-09-05T06:35:46.990078Z"
+  "prior_profile_qualified_at": "2026-09-05T00:11:48Z",
+  "qualified_at": "2026-09-05T06:47:01.367226Z"
 }

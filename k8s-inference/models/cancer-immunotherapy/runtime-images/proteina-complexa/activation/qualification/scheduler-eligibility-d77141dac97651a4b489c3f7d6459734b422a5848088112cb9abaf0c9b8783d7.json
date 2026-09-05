@@ -48,9 +48,7 @@
         "preemption_mode": "restartable",
         "resolved_cluster_queue": "general-cpu",
         "resolved_local_queue": "general-cpu",
-        "resolved_pool_preference": [
-          "batch-cpu"
-        ],
+        "resolved_pool_preference": [],
         "resource_class": "cpu",
         "stage_id": "filter",
         "workload_priority_class": "standard",
@@ -83,9 +81,7 @@
         "preemption_mode": "restartable",
         "resolved_cluster_queue": "general-cpu",
         "resolved_local_queue": "general-cpu",
-        "resolved_pool_preference": [
-          "batch-cpu"
-        ],
+        "resolved_pool_preference": [],
         "resource_class": "cpu",
         "stage_id": "analyze",
         "workload_priority_class": "standard",

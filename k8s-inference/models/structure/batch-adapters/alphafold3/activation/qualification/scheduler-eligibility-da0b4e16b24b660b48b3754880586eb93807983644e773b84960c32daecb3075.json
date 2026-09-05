@@ -30,9 +30,7 @@
         "preemption_mode": "restartable",
         "resolved_cluster_queue": "reference-data-cpu",
         "resolved_local_queue": "academic-scientific-cpu",
-        "resolved_pool_preference": [
-          "mk8snodegroup-e00ha8zfdnxn12qmbj"
-        ],
+        "resolved_pool_preference": [],
         "resource_class": "cpu",
         "stage_id": "data-pipeline",
         "workload_priority_class": "standard",

@@ -244,6 +244,14 @@ projections plus these receipts are written as one rollback-safe transaction.
 Replaying the same aggregate is idempotent; conflicting evidence never replaces
 an existing qualification.
 
+The private receipt is still validated against every original stage decision.
+The checked-in projection preserves the scheduler snapshot digest, logical
+queues, service class, priority and checkpoint policy, but publishes an empty
+`resolved_pool_preference` for CPU stages because provider CPU node-group IDs
+are deployment-private infrastructure identities. GPU stages retain their
+non-empty logical, model-qualified pool preferences. The eligibility schema
+enforces that CPU/GPU distinction.
+
 After `--write`, review the generated files and run:
 
 ```bash

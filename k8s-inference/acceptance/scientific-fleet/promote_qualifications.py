@@ -1006,6 +1006,15 @@ def _successful_admissions(
             item["admitted_at"],
         )
     )
+    # The private receipt is validated above with its exact provider pool
+    # decision intact.  CPU pool IDs are infrastructure identities rather than
+    # portable scheduler eligibility, so omit them from the checked-in public
+    # projection.  GPU preferences are logical, model-qualified pool IDs and
+    # remain necessary to prove accelerator eligibility.
+    projected_decisions = copy.deepcopy(decisions)
+    for decision in projected_decisions:
+        if decision["resource_class"] == "cpu":
+            decision["resolved_pool_preference"] = []
     queue_projection = {
         "digest": snapshot_digest,
         "policy_revision": queue.get("policy_revision"),
@@ -1013,7 +1022,7 @@ def _successful_admissions(
         "service_class": queue.get("service_class"),
         "tenant_queue": queue.get("tenant_queue"),
         "model_lane": queue.get("model_lane"),
-        "stage_decisions": decisions,
+        "stage_decisions": projected_decisions,
     }
     return queue_projection, promoted
 

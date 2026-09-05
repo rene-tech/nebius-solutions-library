@@ -182,7 +182,7 @@
       "qualification": {
         "h100_semantic_receipt_sha256": "1f392018020143dbc81695632cdfef02b9582f49e0187f72e6a172c0e8b80765",
         "public_completion_receipt_sha256": "372200793b151f22045a1c5e286b6b4be25d887b32ccf11d84b6148968d6ec05",
-        "scheduler_eligibility_receipt_sha256": "ae79860b7c2664fd0028a0414aff0bf51bb68801e044400e3e436fbb9b683df6",
+        "scheduler_eligibility_receipt_sha256": "039c358663a40356966d3713dfa6da94ef054758d7d1962de2aa1fa7ee007158",
         "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
         "qualified_at": "2026-09-05T06:42:56.225594Z"
       },
