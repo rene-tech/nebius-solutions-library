@@ -14,7 +14,7 @@
     "batches": [
       {
         "shard_id": "pdl1-face",
-        "num_designs": 1,
+        "num_designs": 4,
         "budget": 1,
         "reuse_completed": false
       }

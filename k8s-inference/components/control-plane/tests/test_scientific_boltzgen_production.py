@@ -65,6 +65,14 @@ def _input() -> ScientificInputArtifact:
 
 def test_public_acceptance_fixture_compiles_the_bounded_production_plan() -> None:
     request = json.loads((ACTIVATION_ROOT / "public-request.json").read_text(encoding="utf-8"))
+    assert request["parameters"]["batches"] == [
+        {
+            "shard_id": "pdl1-face",
+            "num_designs": 4,
+            "budget": 1,
+            "reuse_completed": False,
+        }
+    ]
     manifest = json.loads((ACTIVATION_ROOT / "input-manifest.json").read_text(encoding="utf-8"))
     entry = manifest["entries"][0]
     pointer = entry["artifact"]
