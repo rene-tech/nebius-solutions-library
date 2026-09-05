@@ -226,7 +226,10 @@ serviceAccounts:
 # Pods. Terraform enables it alongside the Kubernetes lifecycle reader.
 runtimeAttribution:
   enabled: false
+  # `modelNamespace` is retained as the fallback for older values files.
+  # New callers pass the complete, bounded namespace set through `namespaces`.
   modelNamespace: fs2-models
+  namespaces: []
   kubernetesApiUrl: https://kubernetes.default.svc
   tokenExpirationSeconds: 600
   pollSeconds: "1"

@@ -289,13 +289,20 @@ def test_admin_console_is_disabled_by_default() -> None:
 def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -> None:
     assert not any(document["kind"] == "DaemonSet" for document in render())
 
-    documents = render("--set", "runtimeAttribution.enabled=true")
+    documents = render(
+        "--set",
+        "runtimeAttribution.enabled=true",
+        "--set",
+        "runtimeAttribution.namespaces={fs2-models,fs2-academic-poc}",
+    )
     daemonset = next(document for document in documents if document["kind"] == "DaemonSet")
     pod_spec = daemonset["spec"]["template"]["spec"]
     container = pod_spec["containers"][0]
     assert daemonset["metadata"]["name"] == "fs2-serve-control-plane-gpu-observer"
     assert pod_spec["nodeSelector"] == {"nebius.com/gpu": "true"}
     assert container["args"] == ["gpu-allocation-observer"]
+    environment = {item["name"]: item.get("value") for item in container["env"]}
+    assert environment["FS2_GPU_ALLOCATION_OBSERVER_NAMESPACES"] == '["fs2-academic-poc","fs2-models"]'
     assert container["volumeMounts"][0] == {
         "name": "kubelet-device-plugins",
         "mountPath": "/var/lib/kubelet/device-plugins",
@@ -305,12 +312,39 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
         "path": "/var/lib/kubelet/device-plugins",
         "type": "Directory",
     }
-    role = next(
+    roles = [
         document
         for document in documents
         if document["kind"] == "Role" and document["metadata"]["name"] == daemonset["metadata"]["name"]
+    ]
+    assert {role["metadata"]["namespace"] for role in roles} == {"fs2-models", "fs2-academic-poc"}
+    assert all(
+        role["rules"] == [{"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list", "patch"]}]
+        for role in roles
     )
-    assert role["rules"] == [{"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list", "patch"]}]
+    bindings = [
+        document
+        for document in documents
+        if document["kind"] == "RoleBinding" and document["metadata"]["name"] == daemonset["metadata"]["name"]
+    ]
+    assert {binding["metadata"]["namespace"] for binding in bindings} == {"fs2-models", "fs2-academic-poc"}
+
+    legacy_documents = render(
+        "--set",
+        "runtimeAttribution.enabled=true",
+        "--set",
+        "runtimeAttribution.modelNamespace=legacy-models",
+    )
+    legacy_daemonset = next(document for document in legacy_documents if document["kind"] == "DaemonSet")
+    legacy_environment = {
+        item["name"]: item.get("value") for item in legacy_daemonset["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    assert legacy_environment["FS2_GPU_ALLOCATION_OBSERVER_NAMESPACES"] == '["legacy-models"]'
+    assert {
+        document["metadata"]["namespace"]
+        for document in legacy_documents
+        if document["kind"] == "Role" and document["metadata"]["name"] == legacy_daemonset["metadata"]["name"]
+    } == {"legacy-models"}
 
 
 def test_admin_console_renders_digest_bound_workload_route_and_network_boundary() -> None:

@@ -34,9 +34,11 @@ LOGGER = logging.getLogger(__name__)
 MAX_CHECKPOINT_BYTES = 4 * 1024 * 1024
 MAX_POD_LIST_BYTES = 4 * 1024 * 1024
 MAX_PODS = 4096
+MAX_NAMESPACES = 32
 SCIENTIFIC_MODEL_ID_LABEL = "fs2.nebius.ai/model-id"
 _GPU_UUID = re.compile(r"^(?:GPU|MIG)-[A-Za-z0-9_.:/-]{1,123}$")
 _POD_UID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+_NAMESPACE = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$")
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
@@ -111,7 +113,7 @@ class KubernetesGpuAllocationPublisher:
     base_url: str
     token_file: Path
     ca_file: Path
-    namespace: str
+    namespaces: tuple[str, ...]
     node_name: str
     poll_seconds: float
 
@@ -126,6 +128,13 @@ class KubernetesGpuAllocationPublisher:
             or parsed.path not in {"", "/"}
         ):
             raise ValueError("GPU observer Kubernetes API URL must be credential-free HTTPS")
+        if (
+            not self.namespaces
+            or len(self.namespaces) > MAX_NAMESPACES
+            or len(set(self.namespaces)) != len(self.namespaces)
+            or any(_NAMESPACE.fullmatch(namespace) is None for namespace in self.namespaces)
+        ):
+            raise ValueError("GPU observer namespaces are invalid")
 
     def _headers(self) -> dict[str, str]:
         try:
@@ -146,8 +155,26 @@ class KubernetesGpuAllocationPublisher:
         # Projected service-account tokens rotate; reload before every bounded
         # poll instead of pinning the bootstrap token for the process lifetime.
         client.headers.update(self._headers())
+        published = 0
+        for namespace in self.namespaces:
+            published += await self._publish_namespace(
+                client,
+                allocations,
+                namespace=namespace,
+                observed_at=observed_at,
+            )
+        return published
+
+    async def _publish_namespace(
+        self,
+        client: httpx.AsyncClient,
+        allocations: Mapping[str, tuple[str, ...]],
+        *,
+        namespace: str,
+        observed_at: datetime,
+    ) -> int:
         response = await client.get(
-            f"/api/v1/namespaces/{self.namespace}/pods",
+            f"/api/v1/namespaces/{namespace}/pods",
             params={"fieldSelector": f"spec.nodeName={self.node_name}", "limit": str(MAX_PODS)},
         )
         if response.status_code != 200 or len(response.content) > MAX_POD_LIST_BYTES:
@@ -205,7 +232,7 @@ class KubernetesGpuAllocationPublisher:
                 }
             }
             patched = await client.patch(
-                f"/api/v1/namespaces/{self.namespace}/pods/{pod_name}",
+                f"/api/v1/namespaces/{namespace}/pods/{pod_name}",
                 headers={"content-type": "application/merge-patch+json"},
                 content=json.dumps(body, separators=(",", ":")).encode(),
             )

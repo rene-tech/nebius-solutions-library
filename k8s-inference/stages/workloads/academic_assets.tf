@@ -113,7 +113,8 @@ module "academic_assets" {
 # default even when the root facade enabled the feature.
 resource "terraform_data" "academic_assets_contract" {
   input = {
-    helm_values = local.academic_chart_values
+    helm_values                    = local.academic_chart_values
+    runtime_attribution_namespaces = local.runtime_attribution_namespaces
     delivery = {
       mode                 = var.academic_assets.delivery.mode
       embed_licensed_bytes = var.academic_assets.delivery.embed_licensed_bytes

@@ -939,6 +939,7 @@
       "required": [
         "enabled",
         "modelNamespace",
+        "namespaces",
         "kubernetesApiUrl",
         "tokenExpirationSeconds",
         "pollSeconds",
@@ -950,6 +951,12 @@
       "properties": {
         "enabled": {"type": "boolean"},
         "modelNamespace": {"$ref": "#/$defs/dnsName"},
+        "namespaces": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/dnsName"}
+        },
         "kubernetesApiUrl": {
           "type": "string",
           "minLength": 1,

@@ -140,12 +140,17 @@ class Settings(BaseSettings):
         max_length=63,
         pattern=r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
     )
+    # The plural setting is the current contract. Keep the singular namespace
+    # above as a legacy fallback so an older release override still observes
+    # the same namespace after the observer gains multi-namespace support.
+    gpu_allocation_observer_namespaces: tuple[str, ...] = Field(
+        default=(),
+        max_length=32,
+    )
     gpu_allocation_observer_api_url: str = Field(default="https://kubernetes.default.svc", max_length=2048)
     gpu_allocation_observer_token_file: Path = Path("/var/run/secrets/fs2-serve/gpu-observer/token")
     gpu_allocation_observer_ca_file: Path = Path("/var/run/secrets/fs2-serve/gpu-observer/ca.crt")
-    gpu_allocation_observer_checkpoint_file: Path = Path(
-        "/var/lib/kubelet/device-plugins/kubelet_internal_checkpoint"
-    )
+    gpu_allocation_observer_checkpoint_file: Path = Path("/var/lib/kubelet/device-plugins/kubelet_internal_checkpoint")
     gpu_allocation_observer_poll_seconds: float = Field(default=1, ge=0.1, le=30)
     admin_node_scaler_provider: Literal["nebius-managed-node-group-autoscaler"] | None = None
     admin_prometheus_url: str | None = Field(default=None, max_length=2048)
@@ -312,8 +317,24 @@ class Settings(BaseSettings):
     run_workers: bool = True
     allow_non_cluster_urls: bool = False
 
+    def gpu_allocation_observer_namespace_set(self) -> tuple[str, ...]:
+        namespaces = self.gpu_allocation_observer_namespaces or (self.gpu_allocation_observer_namespace,)
+        if len(set(namespaces)) != len(namespaces):
+            raise ValueError("GPU allocation observer namespaces must be unique")
+        if (
+            not namespaces
+            or len(namespaces) > 32
+            or any(
+                len(namespace) > 63 or re.fullmatch(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?", namespace) is None
+                for namespace in namespaces
+            )
+        ):
+            raise ValueError("GPU allocation observer namespaces are invalid")
+        return namespaces
+
     @model_validator(mode="after")
     def validate_urls(self) -> Settings:
+        self.gpu_allocation_observer_namespace_set()
         if not self.database_url.startswith(("postgresql://", "postgresql+asyncpg://")):
             raise ValueError("database_url must be PostgreSQL")
         parsed = _validated_public_url(self.public_base_url, allow_http=self.allow_non_cluster_urls)

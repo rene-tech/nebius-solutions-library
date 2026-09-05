@@ -127,7 +127,7 @@ async def observe_gpu_allocations(settings: Settings) -> None:
             base_url=settings.gpu_allocation_observer_api_url,
             token_file=settings.gpu_allocation_observer_token_file,
             ca_file=settings.gpu_allocation_observer_ca_file,
-            namespace=settings.gpu_allocation_observer_namespace,
+            namespaces=settings.gpu_allocation_observer_namespace_set(),
             node_name=settings.gpu_allocation_observer_node_name,
             poll_seconds=settings.gpu_allocation_observer_poll_seconds,
         ),

@@ -39,6 +39,7 @@ from fs2_serve.runtime_kubernetes import (
     GPU_UUIDS_ANNOTATION,
     KubernetesRuntimeMetadataProvider,
 )
+from fs2_serve.settings import Settings
 
 NOW = datetime(2026, 9, 4, 17, 39, tzinfo=UTC)
 GPU_UUID = "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
@@ -199,6 +200,14 @@ def test_kubelet_checkpoint_parser_extracts_only_exact_nvidia_allocations() -> N
     assert parse_kubelet_device_checkpoint(json.dumps(checkpoint).encode()) == {"pod-uid-1": (GPU_UUID,)}
 
 
+def test_gpu_observer_settings_use_plural_namespaces_with_legacy_fallback() -> None:
+    assert Settings().gpu_allocation_observer_namespace_set() == ("fs2-models",)
+    assert Settings(
+        gpu_allocation_observer_namespace="legacy-ignored",
+        gpu_allocation_observer_namespaces=("fs2-academic-poc", "fs2-models"),
+    ).gpu_allocation_observer_namespace_set() == ("fs2-academic-poc", "fs2-models")
+
+
 @pytest.mark.asyncio
 async def test_gpu_observer_publishes_first_observation_without_overwriting(tmp_path: Path) -> None:
     patches: list[dict[str, Any]] = []
@@ -216,7 +225,7 @@ async def test_gpu_observer_publishes_first_observation_without_overwriting(tmp_
         base_url="https://kubernetes.default.svc",
         token_file=token_file,
         ca_file=Path("/unused"),
-        namespace="fs2-models",
+        namespaces=("fs2-models",),
         node_name="gpu-node-1",
         poll_seconds=1,
     )
@@ -259,7 +268,7 @@ async def test_gpu_observer_publishes_scientific_pod_allocation(tmp_path: Path) 
         base_url="https://kubernetes.default.svc",
         token_file=token_file,
         ca_file=Path("/unused"),
-        namespace="fs2-models",
+        namespaces=("fs2-models",),
         node_name="gpu-node-1",
         poll_seconds=1,
     )
@@ -279,6 +288,51 @@ async def test_gpu_observer_publishes_scientific_pod_allocation(tmp_path: Path) 
 
 
 @pytest.mark.asyncio
+async def test_gpu_observer_publishes_across_exact_namespaces(tmp_path: Path) -> None:
+    paths: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.method == "GET":
+            items = (
+                [_pod("alphafold3", model_label=SCIENTIFIC_MODEL_ID_LABEL)]
+                if request.url.path.endswith("/fs2-academic-poc/pods")
+                else []
+            )
+            return httpx.Response(200, json={"items": items})
+        assert request.method == "PATCH"
+        return httpx.Response(200, json={})
+
+    token_file = tmp_path / "token"
+    token_file.write_text("t" * 32, encoding="utf-8")
+    publisher = KubernetesGpuAllocationPublisher(
+        base_url="https://kubernetes.default.svc",
+        token_file=token_file,
+        ca_file=Path("/unused"),
+        namespaces=("fs2-models", "fs2-academic-poc"),
+        node_name="gpu-node-1",
+        poll_seconds=1,
+    )
+    async with httpx.AsyncClient(
+        base_url=publisher.base_url,
+        transport=httpx.MockTransport(handler),
+        trust_env=False,
+    ) as client:
+        published = await publisher.publish_once(
+            client,
+            {"pod-uid-1": (GPU_UUID,)},
+            observed_at=NOW + timedelta(seconds=12),
+        )
+
+    assert published == 1
+    assert paths == [
+        "/api/v1/namespaces/fs2-models/pods",
+        "/api/v1/namespaces/fs2-academic-poc/pods",
+        "/api/v1/namespaces/fs2-academic-poc/pods/alphafold3-runtime",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_gpu_observer_rejects_conflicting_model_labels(tmp_path: Path) -> None:
     pod = _pod("rfdiffusion", model_label=SCIENTIFIC_MODEL_ID_LABEL)
     pod["metadata"]["labels"][MODEL_ID_LABEL] = "different-model"
@@ -293,7 +347,7 @@ async def test_gpu_observer_rejects_conflicting_model_labels(tmp_path: Path) -> 
         base_url="https://kubernetes.default.svc",
         token_file=token_file,
         ca_file=Path("/unused"),
-        namespace="fs2-models",
+        namespaces=("fs2-models",),
         node_name="gpu-node-1",
         poll_seconds=1,
     )

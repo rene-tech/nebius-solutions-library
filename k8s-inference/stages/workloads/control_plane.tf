@@ -17,6 +17,10 @@ locals {
     ) : namespace
     if namespace != local.admin_model_namespace
   ]))
+  runtime_attribution_namespaces = sort(distinct(concat(
+    [local.admin_model_namespace],
+    local.admin_scientific_namespaces,
+  )))
   control_plane_overrides = {
     replicaCount = 2
     autoscaling = {
@@ -163,8 +167,8 @@ locals {
     # Publish exact kubelet Pod -> GPU UUID observations for the lifecycle
     # ledger. This is GPU-model agnostic and schedules only on Nebius GPU nodes.
     runtimeAttribution = {
-      enabled        = true
-      modelNamespace = local.admin_model_namespace
+      enabled    = true
+      namespaces = local.runtime_attribution_namespaces
     }
     modelController = {
       enabled                             = var.model_controller.enabled
@@ -256,6 +260,11 @@ resource "helm_release" "control_plane" {
     precondition {
       condition     = length(local.admin_scientific_namespaces) <= 32
       error_message = "The admin capacity projection supports at most 32 distinct non-model queue namespaces; reduce or consolidate scheduling.local_queues, scientific_batch.namespace, and reference_data.namespace."
+    }
+
+    precondition {
+      condition     = length(local.runtime_attribution_namespaces) <= 32
+      error_message = "Runtime GPU attribution supports at most 32 distinct model and scientific workload namespaces."
     }
   }
 

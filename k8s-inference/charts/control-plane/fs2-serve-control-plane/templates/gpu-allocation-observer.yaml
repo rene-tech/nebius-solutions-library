@@ -1,13 +1,19 @@
 {{- if .Values.runtimeAttribution.enabled }}
 {{- $name := printf "%s-gpu-observer" (include "fs2-serve.fullname" .) }}
 {{- $serviceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "gpu-observer") }}
+{{- $namespaces := .Values.runtimeAttribution.namespaces }}
+{{- if eq (len $namespaces) 0 }}
+{{- $namespaces = list .Values.runtimeAttribution.modelNamespace }}
+{{- end }}
+{{- $namespaces = sortAlpha (uniq $namespaces) }}
+{{- range $namespace := $namespaces }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: {{ $name }}
-  namespace: {{ .Values.runtimeAttribution.modelNamespace }}
+  namespace: {{ $namespace }}
   labels:
-    {{- include "fs2-serve.labels" . | nindent 4 }}
+    {{- include "fs2-serve.labels" $ | nindent 4 }}
     app.kubernetes.io/component: gpu-allocation-observer
 rules:
   - apiGroups: [""]
@@ -18,9 +24,9 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ $name }}
-  namespace: {{ .Values.runtimeAttribution.modelNamespace }}
+  namespace: {{ $namespace }}
   labels:
-    {{- include "fs2-serve.labels" . | nindent 4 }}
+    {{- include "fs2-serve.labels" $ | nindent 4 }}
     app.kubernetes.io/component: gpu-allocation-observer
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -29,8 +35,9 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: {{ $serviceAccount }}
-    namespace: {{ .Release.Namespace }}
+    namespace: {{ $.Release.Namespace }}
 ---
+{{- end }}
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -71,8 +78,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-            - name: FS2_GPU_ALLOCATION_OBSERVER_NAMESPACE
-              value: {{ .Values.runtimeAttribution.modelNamespace | quote }}
+            - name: FS2_GPU_ALLOCATION_OBSERVER_NAMESPACES
+              value: {{ toJson $namespaces | quote }}
             - name: FS2_GPU_ALLOCATION_OBSERVER_API_URL
               value: {{ .Values.runtimeAttribution.kubernetesApiUrl | quote }}
             - name: FS2_GPU_ALLOCATION_OBSERVER_TOKEN_FILE

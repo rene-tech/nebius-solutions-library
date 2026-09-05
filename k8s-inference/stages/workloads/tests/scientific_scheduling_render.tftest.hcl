@@ -390,6 +390,14 @@ run "academic_chart_receives_both_stage_queues" {
     )
     error_message = "The Helm handoff must identify both the academic accelerator lane and the namespace-local reference-data CPU lane."
   }
+
+  assert {
+    condition = (
+      tolist(terraform_data.academic_assets_contract.input.runtime_attribution_namespaces) ==
+      tolist(["fs2-academic-poc", "fs2-models", "fs2-reference-data"])
+    )
+    error_message = "The GPU observer must receive the sorted union of the model namespace and all scientific scheduling namespaces."
+  }
 }
 
 run "licensed_lanes_and_cpu_class_are_rendered_by_the_stage" {
