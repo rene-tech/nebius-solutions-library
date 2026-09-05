@@ -142,17 +142,28 @@ def read_bundle(path: Path) -> tuple[dict[str, Any], int, bool]:
 
 
 def secret_values(bundle: Mapping[str, Any]) -> tuple[str, ...]:
-    """Every credential string in the bundle, so a receipt can be proven free of them."""
+    """Secret credential values that must never be written to a receipt.
+
+    The Grafana username is a credential field, but it is an operator identity
+    rather than a secret.  Including it here makes common usernames such as
+    ``admin`` collide with ordinary receipt field names and prevents a valid
+    value-suppressed receipt from being written.
+    """
 
     values: list[str] = []
     credentials = bundle.get("credentials", {})
     if isinstance(credentials, Mapping):
-        for value in credentials.values():
-            if isinstance(value, str) and value:
-                values.append(value)
-            elif isinstance(value, Mapping):
-                values.extend(item for item in value.values() if isinstance(item, str) and item)
-    return tuple(values)
+        values.extend(
+            value
+            for name in REQUIRED_CREDENTIALS
+            if isinstance((value := credentials.get(name)), str) and value
+        )
+        grafana = credentials.get("grafana", {})
+        if isinstance(grafana, Mapping):
+            password = grafana.get("password")
+            if isinstance(password, str) and password:
+                values.append(password)
+    return tuple(dict.fromkeys(values))
 
 
 def evaluate_bundle(bundle: Mapping[str, Any], mode: int, owner_is_current_user: bool) -> Check:
@@ -290,6 +301,35 @@ def evaluate_kubernetes_release(
             "model-controller": rows[2]["ready"],
         },
     }
+    return evidence, passed
+
+
+def evaluate_cluster_contract(
+    resource: Mapping[str, Any],
+    *,
+    bundle_cluster: Mapping[str, Any],
+    source_commit: str,
+) -> Check:
+    """Bind the caller-supplied source identity to Terraform-owned live state."""
+
+    data = resource.get("data", {})
+    if not isinstance(data, Mapping):
+        data = {}
+    expected = {
+        "cluster_id": bundle_cluster.get("cluster_id"),
+        "cluster_name": bundle_cluster.get("cluster_name"),
+        "infrastructure_project_id": bundle_cluster.get("project_id"),
+        "kube_context": bundle_cluster.get("kube_context"),
+        "source_commit": source_commit,
+        "target_region": bundle_cluster.get("region"),
+    }
+    matches = {name: data.get(name) == value for name, value in expected.items()}
+    evidence = {
+        "contract_schema": data.get("schema"),
+        "identity_matches": dict(sorted(matches.items())),
+        "source_commit": data.get("source_commit"),
+    }
+    passed = data.get("schema") == "fs2-serve.nebius.ai/terraform-cluster-contract/v2" and all(matches.values())
     return evidence, passed
 
 
@@ -810,6 +850,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         observer,
         control_plane_digest=args.control_plane_digest,
         admin_console_digest=args.admin_console_digest,
+    )
+    cluster_contract = kubectl_json(
+        args.kubeconfig, args.context, "-n", "fs2-system", "get", "configmap", "fs2-terraform-cluster-contract"
+    )
+    checks["terraform_cluster_contract"] = evaluate_cluster_contract(
+        cluster_contract,
+        bundle_cluster=bundle["cluster"],
+        source_commit=args.source_commit,
     )
 
     cluster_queues_value = kubectl_json(args.kubeconfig, args.context, "get", "clusterqueue")

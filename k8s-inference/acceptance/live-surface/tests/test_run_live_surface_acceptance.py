@@ -226,6 +226,36 @@ class ReleaseTests(unittest.TestCase):
             )[1]
         )
 
+    def test_cluster_contract_binds_source_and_bundle_identity(self) -> None:
+        cluster = bundle()["cluster"]
+        source_commit = "a" * 40
+        resource = {
+            "data": {
+                "schema": "fs2-serve.nebius.ai/terraform-cluster-contract/v2",
+                "cluster_id": cluster["cluster_id"],
+                "cluster_name": cluster["cluster_name"],
+                "infrastructure_project_id": cluster["project_id"],
+                "kube_context": cluster["kube_context"],
+                "source_commit": source_commit,
+                "target_region": cluster["region"],
+            }
+        }
+        evidence, passed = MODULE.evaluate_cluster_contract(
+            resource,
+            bundle_cluster=cluster,
+            source_commit=source_commit,
+        )
+        self.assertTrue(passed, evidence)
+        self.assertTrue(all(evidence["identity_matches"].values()))
+        resource["data"]["source_commit"] = "b" * 40
+        self.assertFalse(
+            MODULE.evaluate_cluster_contract(
+                resource,
+                bundle_cluster=cluster,
+                source_commit=source_commit,
+            )[1]
+        )
+
     def test_kueue_requires_exact_queues_flavors_and_active_conditions(self) -> None:
         value = expectations()
         cluster_queues = {name: active(name) for name in value["cluster_queues"]}
@@ -519,10 +549,13 @@ class ReceiptTests(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text())["status"], "PASS")
 
     def test_secret_values_cover_nested_credentials(self) -> None:
-        values = MODULE.secret_values(bundle())
+        document = bundle()
+        document["credentials"]["grafana"]["username"] = "admin"
+        values = MODULE.secret_values(document)
         self.assertIn(SECRET + "-grafana", values)
         self.assertIn(SECRET + "-scientific", values)
-        self.assertNotIn("grafana-user", values[:0])
+        self.assertNotIn("admin", values)
+        MODULE.assert_value_free({"check": "admin_backend_fully_qualified"}, values)
 
     def test_main_rejects_malformed_identities_before_probing(self) -> None:
         with self.assertRaises(MODULE.AcceptanceInputError):

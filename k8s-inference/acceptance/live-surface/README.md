@@ -41,6 +41,7 @@ touched.
 | `tls_normal_trust` | The public host completes a TLS 1.3 handshake under the default trust store with at least one subject alternative name. |
 | `public_pages` | Admin portal, `/readyz`, Grafana API health, Alertmanager and Tempo explore all return 200. |
 | `kubernetes_release` | Gateway, model controller, and admin console Deployments are fully rolled out on the exact digests; the GPU observer DaemonSet is complete on the control-plane digest. |
+| `terraform_cluster_contract` | The Terraform-owned live contract matches the bundle's cluster, project, region and context and carries the requested exact source commit. |
 | `kueue` | Exactly the expected cluster queues and resource flavors exist and are active, every local queue is active, and the scientific priority classes exist. |
 | `admin_backend_fully_qualified` | Session cookie round trip, server-authoritative context, exactly the expected general models with no unknown state, every scientific profile `qualified`, all observability launches enabled, and the node scaler available. |
 | `general_mcp_scoped_catalog` | The general PAT sees the general models and the scientific catalog minus the licensed profiles, with private zero-TTL discovery on the expected protocol version. |
@@ -75,10 +76,12 @@ uv run --project components/control-plane python acceptance/live-surface/run_liv
   --receipt /private/run/acceptance/live-surface-$(git rev-parse --short HEAD).json
 ```
 
-The command exits `0` only when every check passes, `1` on a failed check with
-the receipt still written, and `2` when an input is malformed and nothing was
-probed. The chat probe consumes one short completion on the hot general model
-and no scientific GPU time.
+The command exits `0` only when every completed check passes, `1` on a failed
+check or an unexpected collection failure, and `2` when an input is malformed.
+A receipt is written after a complete evaluation; a transport or `kubectl`
+failure may stop collection before a receipt can be assembled. The chat probe
+consumes one short completion on the hot general model and no scientific GPU
+time.
 
 Run the offline tests with:
 
