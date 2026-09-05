@@ -1453,6 +1453,7 @@ async def test_public_http_and_mcp_share_scientific_operation_lifecycle(registry
             result = await client.get(f"/v1/operations/{operation_id}/result")
             assert status.status_code == events.status_code == artifact.status_code == result.status_code == 200
             assert status.json()["batch"]["status"] == "succeeded"
+            assert status.json()["operation"]["result_available"] is True
             assert status.json()["batch"]["variant_id"] == "protein-design-h100"
             actual_admission = status.json()["batch"]["stages"][0]["attempts"][0]["scheduling_admission"]
             assert actual_admission == {

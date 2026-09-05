@@ -363,6 +363,12 @@ class ScientificBatchService:
 
     @staticmethod
     def _state_view(operation: OperationView, state: ScientificBatchState) -> dict[str, Any]:
+        # Scientific results are committed to the artifact plane rather than the
+        # generic operation response ciphertext.  Project the artifact
+        # controller's publication state into the shared Operation view so a
+        # caller does not see ``result_available=false`` beside a successfully
+        # retrievable ``/result`` document.
+        operation = operation.model_copy(update={"result_available": state.result_published})
         view = ScientificBatchStatusResponse(
             operation=operation,
             batch=ScientificBatchView(
