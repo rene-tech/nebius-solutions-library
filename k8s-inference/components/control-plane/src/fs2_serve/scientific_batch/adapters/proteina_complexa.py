@@ -69,6 +69,15 @@ COLLECTOR_ID = "proteina-complexa-v1"
 VALIDATOR_ID = "proteina-complexa-v1"
 STAGE_HANDOFF_NAME = "stage-handoff"
 STAGE_HANDOFF_SEMANTIC_TYPE = "proteina-complexa-workspace-handoff-tar/v1"
+# Complexa/Hydra creates logs independently of scientific stage state.  In
+# particular, the CPU filter creates an empty ``filter.log`` even after a
+# successful run.  Keep handoffs bound to the directories consumed by the
+# next stage instead of transporting incidental logs or other workspace data.
+STAGE_HANDOFF_PATHS = {
+    "generate": ("assets", "inference"),
+    "filter": ("assets", "inference"),
+    "evaluate": ("assets", "inference", "evaluation_results"),
+}
 PUBLIC_REQUEST_DOCUMENT = ".fs2/public-request.json"
 REFERENCE_DATA_SUPPLEMENTAL_GROUP = 1000
 REQUIRES_VERIFIED_INPUT_ARTIFACTS = True
@@ -558,6 +567,10 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
     if invocation.collector_id != COLLECTOR_ID or invocation.validator_id != VALIDATOR_ID:
         raise ScientificAdapterError("Proteina-Complexa collector received another execution identity")
     if invocation.stage_id != "analyze":
+        try:
+            included_paths = STAGE_HANDOFF_PATHS[invocation.stage_id]
+        except KeyError as error:
+            raise ScientificAdapterError("Proteina-Complexa collector received an unsupported stage") from error
         return collect_workspace_handoff(
             invocation,
             workspace,
@@ -567,6 +580,7 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
             maximum_members=MAX_STAGE_HANDOFF_MEMBERS,
             maximum_content_bytes=MAX_STAGE_HANDOFF_CONTENT_BYTES,
             maximum_archive_bytes=MAX_STAGE_HANDOFF_BYTES,
+            included_paths=included_paths,
         )
     if invocation.handoff_name is not None:
         raise ScientificAdapterError("Proteina-Complexa terminal stage declares an intermediate handoff")
