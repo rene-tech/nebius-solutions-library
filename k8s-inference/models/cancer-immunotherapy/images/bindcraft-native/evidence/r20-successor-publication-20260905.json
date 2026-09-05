@@ -1,0 +1,41 @@
+{
+  "schema": "fs2.nebius.ai/bindcraft-successor-publication-evidence/v1",
+  "scope": "registry-publication-and-offline-contract-smoke-only",
+  "published_at": "2026-09-05T01:34:12.804923Z",
+  "image_source_revision": "a5ecd61a2120e068be452c35c6529c2e92c68eff",
+  "upstream_source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+  "platform": "linux/amd64",
+  "image": {
+    "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r20",
+    "digest": "sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
+    "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
+    "supersedes": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1"
+  },
+  "publisher_receipt": {
+    "path": "evidence/published-images.json",
+    "schema": "fs2.nebius.ai/cancer-runtime-image-publication/v1",
+    "sha256": "7cfd44e599ea1ca941af115a25d88cddbfa7a9fb6aa1cf6a78b8e23f474d8c0b",
+    "source_fingerprint": "2154c8dbb45ee87965dcf45c0bb9de0a7373f89276b76799e9fc1ad50daf8ea4"
+  },
+  "verification": {
+    "target_was_absent_before_push": true,
+    "pulled_and_verified_by_digest": true,
+    "attested_source_revision_matches": true,
+    "attested_context_path": "k8s-inference/models/cancer-immunotherapy/images/bindcraft-native",
+    "attestation_predicate_types": [
+      "https://slsa.dev/provenance/v1",
+      "https://spdx.dev/Document"
+    ],
+    "offline_smoke_commands": 3,
+    "offline_smoke_state": "passed",
+    "executable_source_files_verified": 5,
+    "executable_source_identity_match": true,
+    "interface_semantics": "After upstream reranks final_design_stats.csv by Average_i_pTM, the wrapper fails on underfill and exports exactly the requested leading rows; the strict collector still rejects oversupply."
+  },
+  "qualification": {
+    "semantic_h100": "not-run",
+    "route_activation_allowed": false,
+    "predecessor_receipt_transfer_allowed": false,
+    "note": "Historical run bcr19-20260905b qualifies only r19 digest sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1."
+  }
+}
