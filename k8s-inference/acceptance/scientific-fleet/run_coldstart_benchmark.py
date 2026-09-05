@@ -414,6 +414,8 @@ def _model_snapshot(client: Any, cookie: str) -> tuple[dict[str, dict[str, Any]]
             continue
         if model_id in selected:
             raise BenchmarkError("admin_model_duplicate")
+        if item.get("readiness") != "qualified":
+            raise BenchmarkError("admin_model_not_qualified")
         if item.get("workload_profile") != "published" or item.get("batch_supported") is not True:
             raise BenchmarkError("admin_model_not_batch_ready")
         selected[model_id] = {

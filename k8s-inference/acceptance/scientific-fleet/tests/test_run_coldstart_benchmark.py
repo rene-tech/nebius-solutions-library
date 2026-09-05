@@ -204,8 +204,14 @@ def pool(pool_id: str, capacity_type: str) -> dict[str, Any]:
 
 
 class FakeAdminClient:
-    def __init__(self, operations: dict[str, tuple[str, str]]) -> None:
+    def __init__(
+        self,
+        operations: dict[str, tuple[str, str]],
+        *,
+        model_readiness: str = "qualified",
+    ) -> None:
         self.operations = operations
+        self.model_readiness = model_readiness
         self.deleted = False
 
     def request(
@@ -234,7 +240,7 @@ class FakeAdminClient:
             items = [
                 {
                     "model_id": model_id,
-                    "readiness": "qualified",
+                    "readiness": self.model_readiness,
                     "workload_profile": "published",
                     "batch_supported": True,
                     "backend": {
@@ -271,6 +277,14 @@ class FakeAdminClient:
 
 
 class ScientificColdStartBenchmarkTest(unittest.TestCase):
+    def test_candidate_model_set_is_rejected_by_preflight(self) -> None:
+        client = FakeAdminClient({}, model_readiness="candidate")
+
+        with self.assertRaisesRegex(
+            MODULE.BenchmarkError, "admin_model_not_qualified"
+        ):
+            MODULE._model_snapshot(client, "__Host-fs2_admin_session=session-value")
+
     def test_attempt_preserves_phase_placement_and_exact_lifecycle(self) -> None:
         operation_id = str(uuid5(NAMESPACE_URL, "operation/boltzgen"))
         with TemporaryDirectory() as directory:
