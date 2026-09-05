@@ -270,7 +270,23 @@ def test_only_verified_inner_fold_input_is_compiled() -> None:
 def _inference_workspace(tmp_path: Path, *, sample_count: int = 0) -> Path:
     output = tmp_path / "outputs/pdl1-binder"
     output.mkdir(parents=True)
-    (output / "pdl1-binder_model.cif").write_bytes(b"data_pdl1_binder\n#\nATOM 1 C CA A 1 0.0 0.0 0.0\n#\n")
+    (output / "pdl1-binder_model.cif").write_bytes(
+        b"# AlphaFold 3 terms-of-use notice\n"
+        b"data_pdl1_binder\n"
+        b"#\n"
+        b"loop_\n"
+        b"_atom_site.group_PDB\n"
+        b"_atom_site.id\n"
+        b"_atom_site.type_symbol\n"
+        b"_atom_site.label_atom_id\n"
+        b"_atom_site.label_asym_id\n"
+        b"_atom_site.label_seq_id\n"
+        b"_atom_site.Cartn_x\n"
+        b"_atom_site.Cartn_y\n"
+        b"_atom_site.Cartn_z\n"
+        b"ATOM 1 C CA A 1 0.0 0.0 0.0\n"
+        b"#\n"
+    )
     (output / "pdl1-binder_summary_confidences.json").write_text(json.dumps({"ranking_score": 0.87}), encoding="utf-8")
     for sample_index in range(sample_count):
         sample = output / f"seed-1_sample-{sample_index}"
@@ -376,6 +392,7 @@ def _data_workspace(tmp_path: Path, *, publish_receipt: bool = True) -> tuple[Pa
 def test_result_collector_is_registered_once_in_the_global_companion_registry(tmp_path: Path) -> None:
     invocation = compile_plan().invocation(af3.INFERENCE_STAGE_ID, "main")
     workspace = _inference_workspace(tmp_path / "result", sample_count=5)
+    assert (workspace / "outputs/pdl1-binder/pdl1-binder_model.cif").read_bytes().startswith(b"#")
     collected = collect_stage_output(invocation, workspace)
     assert [item.name for item in collected.artifacts] == ["structure", "summary-confidence"]
     assert collected.artifacts[0].path == workspace / "outputs/pdl1-binder/pdl1-binder_model.cif"
@@ -384,6 +401,16 @@ def test_result_collector_is_registered_once_in_the_global_companion_registry(tm
     assert collected.validation["validator_id"] == af3.VALIDATOR_ID
     with pytest.raises(CollectionPendingError):
         collect_stage_output(compile_plan().invocation(af3.DATA_STAGE_ID, "main"), tmp_path / "pending")
+
+
+def test_result_collector_rejects_comment_prefixed_file_without_an_atom_site_loop(tmp_path: Path) -> None:
+    invocation = compile_plan().invocation(af3.INFERENCE_STAGE_ID, "main")
+    workspace = _inference_workspace(tmp_path / "invalid")
+    (workspace / "outputs/pdl1-binder/pdl1-binder_model.cif").write_bytes(
+        b"# AlphaFold 3 terms-of-use notice\ndata_pdl1_binder\n#\n"
+    )
+    with pytest.raises(ScientificAdapterError, match="not a non-empty mmCIF structure"):
+        collect_stage_output(invocation, workspace)
 
 
 def test_result_collector_rejects_missing_or_ambiguous_canonical_top_output(tmp_path: Path) -> None:
