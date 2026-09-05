@@ -74,6 +74,8 @@ ROUTE_NAMESPACE_ANNOTATION = "fs2.nebius.ai/route-namespace"
 # Pod. Workload containers cannot forge it because scientific Pods do not mount
 # a service-account token. The observer rejects partial or mismatched values.
 GPU_UUIDS_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-uuids"
+GPU_ALLOCATION_OBSERVED_AT_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-allocation-observed-at"
+GPU_OBSERVER_RESOLUTION_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-observer-resolution-seconds"
 KUEUE_JOB_UID_LABEL = "kueue.x-k8s.io/job-uid"
 POOL_LABEL = "accelerator.fs2.nebius/pool-id"
 NODE_POOL_LABEL = POOL_LABEL
@@ -352,12 +354,25 @@ def _pod_gpu_count(spec: Mapping[str, Any], resource_name: str | None) -> int:
     return 0
 
 
-def _gpu_uuids(metadata: Mapping[str, Any], gpu_count: int) -> tuple[str, ...]:
+def _gpu_allocation(
+    metadata: Mapping[str, Any],
+    gpu_count: int,
+) -> tuple[tuple[str, ...], datetime | None, float]:
     annotations = metadata.get("annotations", {})
-    if not isinstance(annotations, Mapping) or GPU_UUIDS_ANNOTATION not in annotations:
-        return ()
+    if not isinstance(annotations, Mapping):
+        return (), None, 0.0
+    keys = (
+        GPU_UUIDS_ANNOTATION,
+        GPU_ALLOCATION_OBSERVED_AT_ANNOTATION,
+        GPU_OBSERVER_RESOLUTION_ANNOTATION,
+    )
+    present = tuple(key in annotations for key in keys)
+    if not any(present):
+        return (), None, 0.0
+    if not all(present):
+        raise ScientificKubernetesError("trusted GPU allocation annotations are incomplete")
     raw = annotations[GPU_UUIDS_ANNOTATION]
-    if not isinstance(raw, str):
+    if not isinstance(raw, str) or len(raw) > 16_384:
         raise ScientificKubernetesError("trusted GPU UUID annotation is invalid")
     try:
         values = json.loads(raw)
@@ -365,6 +380,24 @@ def _gpu_uuids(metadata: Mapping[str, Any], gpu_count: int) -> tuple[str, ...]:
         raise ScientificKubernetesError("trusted GPU UUID annotation is invalid JSON") from error
     if not isinstance(values, list) or not all(isinstance(value, str) for value in values) or len(values) != gpu_count:
         raise ScientificKubernetesError("trusted GPU UUID annotation differs from the Pod allocation")
+    raw_observed_at = annotations[GPU_ALLOCATION_OBSERVED_AT_ANNOTATION]
+    if not isinstance(raw_observed_at, str) or not 20 <= len(raw_observed_at) <= 40:
+        raise ScientificKubernetesError("trusted GPU allocation observation time is invalid")
+    device_observed_at = _optional_time(raw_observed_at, "GPU allocation observation")
+    assert device_observed_at is not None
+    raw_resolution = annotations[GPU_OBSERVER_RESOLUTION_ANNOTATION]
+    if (
+        isinstance(raw_resolution, bool)
+        or not isinstance(raw_resolution, str | int | float)
+        or (isinstance(raw_resolution, str) and len(raw_resolution) > 32)
+    ):
+        raise ScientificKubernetesError("trusted GPU observer resolution is invalid")
+    try:
+        resolution = float(raw_resolution)
+    except ValueError as error:
+        raise ScientificKubernetesError("trusted GPU observer resolution is invalid") from error
+    if not 0 <= resolution <= 300:
+        raise ScientificKubernetesError("trusted GPU observer resolution is outside the bound")
     try:
         return PodLifecycleObservation(
             pod_uid="validation",
@@ -373,12 +406,44 @@ def _gpu_uuids(metadata: Mapping[str, Any], gpu_count: int) -> tuple[str, ...]:
             node_uid=None,
             created_at=datetime(1970, 1, 1, tzinfo=UTC),
             observed_at=datetime(1970, 1, 1, tzinfo=UTC),
-            scheduled_at=None,
+            scheduled_at=datetime(1970, 1, 1, tzinfo=UTC),
             gpu_count=gpu_count,
             gpu_uuids=tuple(values),
-        ).gpu_uuids
+            device_allocation_observed_at=datetime(1970, 1, 1, tzinfo=UTC),
+            device_observation_resolution_seconds=resolution,
+        ).gpu_uuids, device_observed_at, resolution
     except ValueError as error:
         raise ScientificKubernetesError("trusted GPU UUID annotation contains an invalid device") from error
+
+
+def _pod_completed_at(status: Mapping[str, Any]) -> datetime | None:
+    """Return a factual terminal-container boundary for a terminal Pod."""
+
+    phase = status.get("phase")
+    if phase not in {"Succeeded", "Failed"}:
+        return None
+    finished: list[datetime] = []
+    for field in ("initContainerStatuses", "containerStatuses", "ephemeralContainerStatuses"):
+        raw_statuses = status.get(field, [])
+        for raw_container in raw_statuses if isinstance(raw_statuses, list) else []:
+            if not isinstance(raw_container, Mapping):
+                return None
+            state = raw_container.get("state")
+            if not isinstance(state, Mapping):
+                return None
+            terminated = state.get("terminated")
+            if isinstance(terminated, Mapping):
+                value = _finished_at(terminated)
+                if value is None:
+                    return None
+                finished.append(value)
+                continue
+            # A failed init container can leave later containers waiting. It
+            # still owns a factual terminal timestamp; a running container
+            # means the Pod is not a trustworthy terminal observation.
+            if "running" in state or phase != "Failed" or "waiting" not in state:
+                return None
+    return max(finished, default=None)
 
 
 def _pod_lifecycle(
@@ -410,7 +475,8 @@ def _pod_lifecycle(
         raise ScientificKubernetesError("Kubernetes Pod creation timestamp is absent")
     pod_started_at = _optional_time(status.get("startTime"), "Pod start")
     gpu_count = _pod_gpu_count(spec, accelerator_resource_name)
-    gpu_uuids = _gpu_uuids(metadata, gpu_count)
+    gpu_uuids, device_observed_at, device_resolution = _gpu_allocation(metadata, gpu_count)
+    completed_at = _pod_completed_at(status)
     if scheduled_at is None:
         # Unscheduled Pods own no accelerator allocation. Preserve their UID
         # for correlation, but leave GPU clocks and runtime phases empty until
@@ -425,6 +491,9 @@ def _pod_lifecycle(
             scheduled_at=None,
             gpu_count=gpu_count,
             gpu_uuids=gpu_uuids,
+            device_allocation_observed_at=device_observed_at,
+            device_observation_resolution_seconds=device_resolution,
+            completed_at=completed_at,
         )
     fallback_start = scheduled_at or pod_started_at or created_at or observed_at
     init_specs = spec.get("initContainers", [])
@@ -509,6 +578,9 @@ def _pod_lifecycle(
         scheduled_at=scheduled_at,
         gpu_count=gpu_count,
         gpu_uuids=gpu_uuids,
+        device_allocation_observed_at=device_observed_at,
+        device_observation_resolution_seconds=device_resolution,
+        completed_at=completed_at,
         phases=_canonical_phase_intervals(phases),
     )
 

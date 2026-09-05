@@ -335,6 +335,25 @@ class ScientificColdStartBenchmarkTest(unittest.TestCase):
         self.assertFalse(result["scheduler_occupied_gpu_seconds"]["exact"])
         self.assertEqual(result["data_gaps"], ["device-allocation-clock"])
 
+    def test_gap_free_application_observation_is_exact_but_estimates_are_not(self) -> None:
+        operation_id = str(uuid5(NAMESPACE_URL, "operation/application-observed"))
+        document = lifecycle(operation_id)
+        rollup = document["items"][0]["rollup"]
+        rollup["quality"] = "application_observed"
+
+        result = MODULE._lifecycle_accounting(document, None)
+
+        self.assertTrue(result["exact"])
+        self.assertEqual(result["quality"], "application_observed")
+        self.assertTrue(result["scheduler_occupied_gpu_seconds"]["exact"])
+
+        for quality in ("estimated", "unavailable"):
+            with self.subTest(quality=quality):
+                rollup["quality"] = quality
+                inexact = MODULE._lifecycle_accounting(document, None)
+                self.assertFalse(inexact["exact"])
+                self.assertFalse(inexact["scheduler_occupied_gpu_seconds"]["exact"])
+
     def test_statistics_are_split_by_exact_pool_cohort(self) -> None:
         def attempt(repetition: int, pool_id: str) -> dict[str, Any]:
             measurements = {

@@ -1842,6 +1842,9 @@ class PodLifecycleObservation:
     scheduled_at: datetime | None
     gpu_count: int
     gpu_uuids: tuple[str, ...] = ()
+    device_allocation_observed_at: datetime | None = None
+    device_observation_resolution_seconds: float = 0.0
+    completed_at: datetime | None = None
     phases: tuple[PodPhaseInterval, ...] = ()
 
     def __post_init__(self) -> None:
@@ -1861,6 +1864,25 @@ class PodLifecycleObservation:
             self.scheduled_at.tzinfo is None or self.scheduled_at.utcoffset() is None
         ):
             raise ValueError("Pod scheduling time must be timezone-aware")
+        if self.device_allocation_observed_at is not None and (
+            self.device_allocation_observed_at.tzinfo is None
+            or self.device_allocation_observed_at.utcoffset() is None
+        ):
+            raise ValueError("device allocation observation time must be timezone-aware")
+        if not 0 <= self.device_observation_resolution_seconds <= 300:
+            raise ValueError("device allocation observation resolution is outside the bound")
+        if self.completed_at is not None and (
+            self.completed_at.tzinfo is None or self.completed_at.utcoffset() is None
+        ):
+            raise ValueError("Pod completion time must be timezone-aware")
+        if self.completed_at is not None and self.completed_at < self.created_at:
+            raise ValueError("Pod completion precedes Pod creation")
+        if (
+            self.completed_at is not None
+            and self.scheduled_at is not None
+            and self.completed_at < self.scheduled_at
+        ):
+            raise ValueError("Pod completion precedes Pod scheduling")
         if not 0 <= self.gpu_count <= 1024:
             raise ValueError("observed Pod GPU count is outside the bound")
         if len(self.gpu_uuids) != len(set(self.gpu_uuids)):
@@ -1869,6 +1891,12 @@ class PodLifecycleObservation:
             raise ValueError("observed GPU UUID count differs from the Pod allocation")
         if any(re.fullmatch(r"^(?:GPU|MIG)-[A-Za-z0-9_.:/-]{1,123}$", value) is None for value in self.gpu_uuids):
             raise ValueError("observed GPU UUID is invalid")
+        if bool(self.gpu_uuids) != (self.device_allocation_observed_at is not None):
+            raise ValueError("device identities and allocation observation must be published together")
+        if self.device_allocation_observed_at is None and self.device_observation_resolution_seconds != 0:
+            raise ValueError("device allocation resolution has no observation")
+        if self.device_allocation_observed_at is not None and self.scheduled_at is None:
+            raise ValueError("device allocation observation has no Pod scheduling evidence")
         identities = [(item.phase, item.started_at) for item in self.phases]
         if len(identities) != len(set(identities)):
             raise ValueError("observed Pod phase starts must be unique")

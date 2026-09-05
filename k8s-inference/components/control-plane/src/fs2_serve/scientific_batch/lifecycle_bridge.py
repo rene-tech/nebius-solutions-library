@@ -553,18 +553,18 @@ class ScientificLifecycleBridge:
             )
         ]
         # A node or device is not allocated while the Pod is unscheduled.
-        # Publish these correlations only after Kubernetes exposes its
-        # immutable PodScheduled transition, and use that transition for
-        # replay-stable correlation time even when enrichment arrives later.
+        # Node placement is established by PodScheduled. Device identity is a
+        # later, independently sampled kubelet fact and keeps that observer's
+        # immutable timestamp rather than pretending allocation began when the
+        # scheduler bound the Pod.
         if pod.scheduled_at is None:
             return result
-        allocation_observed_at = pod.scheduled_at
         if pod.node_uid is not None:
             result.append(
                 LifecycleCorrelation(
                     correlation_key=f"{prefix}:node:{pod.node_uid}",
                     subject_id=attempt.attempt_id,
-                    observed_at=allocation_observed_at,
+                    observed_at=pod.scheduled_at,
                     source=LifecycleSource.KUBERNETES,
                     attempt=attempt.attempt_number,
                     cluster=self.cluster,
@@ -578,11 +578,12 @@ class ScientificLifecycleBridge:
                 )
             )
         for rank, gpu_uuid in enumerate(pod.gpu_uuids):
+            assert pod.device_allocation_observed_at is not None
             result.append(
                 LifecycleCorrelation(
                     correlation_key=f"{prefix}:device:{gpu_uuid}:{rank}",
                     subject_id=attempt.attempt_id,
-                    observed_at=allocation_observed_at,
+                    observed_at=pod.device_allocation_observed_at,
                     source=LifecycleSource.KUBELET,
                     attempt=attempt.attempt_number,
                     cluster=self.cluster,
@@ -626,10 +627,27 @@ class ScientificLifecycleBridge:
                     pod=pod,
                 )
             )
-        device_start = pod.scheduled_at or min(
-            (phase.started_at for phase in pod.phases),
-            default=None,
-        )
+            if pod.completed_at is not None:
+                signals.append(
+                    self._signal(
+                        event_key=f"{interval}:completion-end",
+                        subject_id=attempt.attempt_id,
+                        occurred_at=max(pod.scheduled_at, pod.completed_at),
+                        observed_at=pod.completed_at,
+                        phase=LedgerPhase.GPU_ALLOCATION,
+                        edge=LifecycleEdge.END,
+                        clock=LifecycleClock.SCHEDULER_OCCUPIED,
+                        interval_key=interval,
+                        attempt=attempt,
+                        source=LifecycleSource.KUBERNETES,
+                        quality=MeasurementQuality.APPLICATION_OBSERVED,
+                        source_resolution_seconds=self.source_resolution_seconds,
+                        gpu_count=pod.gpu_count,
+                        cluster=self.cluster,
+                        pod=pod,
+                    )
+                )
+        device_start = pod.device_allocation_observed_at
         if device_start is not None:
             for rank, gpu_uuid in enumerate(pod.gpu_uuids):
                 interval = f"{prefix}:device:{gpu_uuid}:{rank}"
@@ -646,7 +664,7 @@ class ScientificLifecycleBridge:
                         attempt=attempt,
                         source=LifecycleSource.KUBELET,
                         quality=MeasurementQuality.MEASURED,
-                        source_resolution_seconds=self.source_resolution_seconds,
+                        source_resolution_seconds=pod.device_observation_resolution_seconds,
                         gpu_count=1,
                         cluster=self.cluster,
                         pod=pod,
@@ -654,6 +672,28 @@ class ScientificLifecycleBridge:
                         gpu_rank=rank,
                     )
                 )
+                if pod.completed_at is not None:
+                    signals.append(
+                        self._signal(
+                            event_key=f"{interval}:completion-end",
+                            subject_id=attempt.attempt_id,
+                            occurred_at=max(device_start, pod.completed_at),
+                            observed_at=pod.completed_at,
+                            phase=LedgerPhase.GPU_ALLOCATION,
+                            edge=LifecycleEdge.END,
+                            clock=LifecycleClock.DEVICE_ALLOCATED,
+                            interval_key=interval,
+                            attempt=attempt,
+                            source=LifecycleSource.KUBERNETES,
+                            quality=MeasurementQuality.APPLICATION_OBSERVED,
+                            source_resolution_seconds=pod.device_observation_resolution_seconds,
+                            gpu_count=1,
+                            cluster=self.cluster,
+                            pod=pod,
+                            gpu_uuid=gpu_uuid,
+                            gpu_rank=rank,
+                        )
+                    )
         for value in pod.phases:
             phase = _phase_for_event(state, attempt, value.phase)
             interval = f"{prefix}:phase:{phase.value}:{value.started_at.timestamp():.6f}"

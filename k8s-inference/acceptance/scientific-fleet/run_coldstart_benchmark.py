@@ -732,7 +732,7 @@ def _lifecycle_accounting(
         and terminal
         and reconciled
         and not gaps
-        and quality == "measured"
+        and quality in {"measured", "application_observed"}
     )
     reason = None if exact else "Lifecycle values are preserved but the aggregate is not fully measured and reconciled."
     return {

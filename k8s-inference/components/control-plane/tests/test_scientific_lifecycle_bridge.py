@@ -16,7 +16,7 @@ from fs2_serve.lifecycle import (
     LifecyclePhase as LedgerPhase,
 )
 from fs2_serve.models import OperationStatus, OperationView
-from fs2_serve.scientific_batch.kubernetes import _pod_lifecycle
+from fs2_serve.scientific_batch.kubernetes import ScientificKubernetesError, _pod_lifecycle
 from fs2_serve.scientific_batch.lifecycle_bridge import ScientificLifecycleBridge
 from fs2_serve.scientific_batch.models import (
     AttemptOutcome,
@@ -268,6 +268,9 @@ def pod_observation(
         scheduled_at=at(2),
         gpu_count=1,
         gpu_uuids=(GPU_UUID,),
+        device_allocation_observed_at=at(3),
+        device_observation_resolution_seconds=5,
+        completed_at=at(10),
         phases=(
             PodPhaseInterval(LifecyclePhase.IMAGE_LOADING, at(2), at(3)),
             PodPhaseInterval(LifecyclePhase.ARTIFACT_LOADING, at(3), at(4)),
@@ -329,7 +332,11 @@ def raw_pod(*, init_finished: bool) -> dict[str, object]:
             "uid": "pod-uid-1",
             "name": "fs2-design-target-a1-abcde",
             "creationTimestamp": NOW.isoformat(),
-            "annotations": {"telemetry.fs2.nebius.ai/gpu-uuids": f'["{GPU_UUID}"]'},
+            "annotations": {
+                "telemetry.fs2.nebius.ai/gpu-uuids": f'["{GPU_UUID}"]',
+                "telemetry.fs2.nebius.ai/gpu-allocation-observed-at": at(2).isoformat(),
+                "telemetry.fs2.nebius.ai/gpu-observer-resolution-seconds": "5",
+            },
         },
         "spec": {
             "nodeName": "h100-node-1",
@@ -422,6 +429,62 @@ def test_running_init_does_not_synthesize_future_init_phase_evidence() -> None:
     assert len(identities) == len(set(identities))
 
 
+def test_terminal_pod_retains_device_observation_and_container_completion() -> None:
+    raw = raw_pod(init_finished=True)
+    status = raw["status"]
+    assert isinstance(status, dict)
+    status["phase"] = "Succeeded"
+    status["containerStatuses"] = [
+        {
+            "name": "scientific-stage",
+            "state": {
+                "terminated": {
+                    "startedAt": at(5).isoformat(),
+                    "finishedAt": at(9).isoformat(),
+                    "exitCode": 0,
+                }
+            },
+        },
+        {
+            "name": "artifact-collector",
+            "state": {
+                "terminated": {
+                    "startedAt": at(5).isoformat(),
+                    "finishedAt": at(10).isoformat(),
+                    "exitCode": 0,
+                }
+            },
+        },
+    ]
+
+    observed = _pod_lifecycle(
+        raw,
+        accelerator_resource_name="nvidia.com/gpu",
+        observed_at=at(11),
+    )
+
+    assert observed is not None
+    assert observed.device_allocation_observed_at == at(2)
+    assert observed.device_observation_resolution_seconds == 5
+    assert observed.completed_at == at(10)
+
+
+def test_partial_gpu_observer_annotations_fail_closed() -> None:
+    raw = raw_pod(init_finished=True)
+    metadata = raw["metadata"]
+    assert isinstance(metadata, dict)
+    annotations = metadata["annotations"]
+    assert isinstance(annotations, dict)
+    del annotations["telemetry.fs2.nebius.ai/gpu-allocation-observed-at"]
+
+    with pytest.raises(ScientificKubernetesError, match="annotations are incomplete"):
+        _pod_lifecycle(
+            raw,
+            accelerator_resource_name="nvidia.com/gpu",
+            observed_at=at(6),
+        )
+
+
 @pytest.mark.asyncio
 async def test_subject_retains_operation_trace_context_without_exposing_traceparent() -> None:
     state, attempt = terminal_state(AttemptOutcome.SUCCEEDED)
@@ -479,11 +542,12 @@ async def test_terminal_cleanup_gap_is_teardown_and_never_active_compute() -> No
 
     detail = await repository.get_workload(attempt.attempt_id, tenant_id=state.tenant_id)
     assert detail is not None and detail.rollup is not None
-    assert detail.rollup.scheduler_occupied_gpu_seconds == 10
+    assert detail.rollup.scheduler_occupied_gpu_seconds == 8
     assert detail.rollup.active_gpu_seconds == 3
-    assert detail.rollup.phase_gpu_seconds["teardown"] == 2
+    assert detail.rollup.phase_gpu_seconds["teardown"] == 0
     assert detail.rollup.phase_gpu_seconds["unclassified"] == 0
-    assert detail.rollup.quality.value == "estimated"
+    assert detail.rollup.quality.value == "application_observed"
+    assert detail.rollup.reconciled is True
     assert "phase_classification_incomplete" not in detail.rollup.data_gaps
 
 
@@ -496,6 +560,10 @@ async def test_pod_correlations_are_stable_across_unscheduled_to_scheduled_enric
         scheduled_pod,
         observed_at=at(1),
         scheduled_at=None,
+        gpu_uuids=(),
+        device_allocation_observed_at=None,
+        device_observation_resolution_seconds=0,
+        completed_at=None,
         phases=(),
     )
     unscheduled = replace(scheduled, phases=(), pod_lifecycle=(unscheduled_pod,))
@@ -524,7 +592,10 @@ async def test_pod_correlations_are_stable_across_unscheduled_to_scheduled_enric
     correlations = {value.correlation_key: value for value in detail.correlations}
     assert correlations[pod_key].observed_at == scheduled_pod.created_at
     assert correlations[f"{pod_key}:node:{scheduled_pod.node_uid}"].observed_at == scheduled_pod.scheduled_at
-    assert correlations[f"{pod_key}:device:{GPU_UUID}:0"].observed_at == scheduled_pod.scheduled_at
+    assert (
+        correlations[f"{pod_key}:device:{GPU_UUID}:0"].observed_at
+        == scheduled_pod.device_allocation_observed_at
+    )
     assert len(correlations) == 3
 
     changed_identity = replace(
@@ -720,15 +791,17 @@ async def test_duplicate_restart_preemption_and_cancellation_never_double_charge
     assert {value.gpu_uuid for value in detail.correlations} >= {GPU_UUID}
 
     assert detail.rollup.quota_reserved_gpu_seconds == 11
-    assert detail.rollup.scheduler_occupied_gpu_seconds == 10
-    assert detail.rollup.device_allocated_gpu_seconds == 10
+    assert detail.rollup.scheduler_occupied_gpu_seconds == 8
+    assert detail.rollup.device_allocated_gpu_seconds == 7
     assert detail.rollup.active_gpu_seconds == 3
     assert detail.rollup.phase_gpu_seconds["image_pull"] == 1
     assert detail.rollup.phase_gpu_seconds["artifact_load"] == 1
     assert detail.rollup.phase_gpu_seconds["restore"] == 1
     assert detail.rollup.phase_gpu_seconds["warmup"] == 1
     assert detail.rollup.phase_gpu_seconds["resident_idle"] == 1
-    assert detail.rollup.phase_gpu_seconds["checkpoint_drain"] == 2
+    assert detail.rollup.phase_gpu_seconds["checkpoint_drain"] == 0
+    assert detail.rollup.reconciled is True
+    assert detail.rollup.quality.value == "application_observed"
     assert detail.rollup.terminal is True
     assert detail.rollup.outcome == outcome.value
 
@@ -755,3 +828,9 @@ async def test_duplicate_restart_preemption_and_cancellation_never_double_charge
     ]
     assert len(preemptions) == (1 if outcome is AttemptOutcome.PREEMPTED else 0)
     assert len([value for value in detail.signals if value.clock is LifecycleClock.DEVICE_ALLOCATED]) == 2
+    device_signals = [
+        value for value in detail.signals if value.clock is LifecycleClock.DEVICE_ALLOCATED
+    ]
+    assert next(value for value in device_signals if value.edge is LifecycleEdge.START).occurred_at == at(3)
+    assert next(value for value in device_signals if value.edge is LifecycleEdge.END).occurred_at == at(10)
+    assert {value.source_resolution_seconds for value in device_signals} == {5}
