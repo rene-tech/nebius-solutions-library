@@ -36,6 +36,7 @@ from . import CollectedArtifactFile, CollectedStageOutput, CollectionPendingErro
 from .common import (
     PublicRunRequest,
     ScientificAdapterError,
+    _mmcif_atom_summary,
     assert_profile_identity,
     build_execution_plan,
     logical_stage_artifact,
@@ -602,10 +603,24 @@ def collect_result(invocation: StageInvocation, workspace: Path) -> CollectedSta
     summary = _contained_regular_file(root, expected_summary, label="AlphaFold 3 confidence summary")
     structure_bytes = structure.read_bytes()
     summary_bytes = summary.read_bytes()
-    if not structure_bytes.startswith(b"data_") or not any(
-        line.startswith((b"ATOM ", b"HETATM ")) for line in structure_bytes.splitlines()
-    ):
+    try:
+        structure_text = structure_bytes.decode("ascii")
+    except UnicodeDecodeError as error:
+        raise ScientificAdapterError("AlphaFold 3 top model is not a non-empty mmCIF structure") from error
+    first_semantic_line = next(
+        (
+            line.strip()
+            for line in structure_text.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ),
+        "",
+    )
+    if not first_semantic_line.lower().startswith("data_"):
         raise ScientificAdapterError("AlphaFold 3 top model is not a non-empty mmCIF structure")
+    try:
+        _mmcif_atom_summary(structure_text, label="AlphaFold 3 top model")
+    except ScientificAdapterError as error:
+        raise ScientificAdapterError("AlphaFold 3 top model is not a non-empty mmCIF structure") from error
     summary_value = _load_json_file(summary, label="AlphaFold 3 confidence summary", maximum_bytes=MAX_METADATA_BYTES)
     ranking = summary_value.get("ranking_score")
     if isinstance(ranking, bool) or not isinstance(ranking, int | float) or not math.isfinite(float(ranking)):
