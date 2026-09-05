@@ -1159,13 +1159,13 @@ def test_stage_preflight_requires_a_registered_contract(boltzgen_configure: Stag
         preflight_stage_trees(boltzgen_configure, {}, {})
 
 
-def test_a_stage_with_no_bound_tree_needs_no_mount() -> None:
+def test_analysis_stage_retains_its_exact_molecules_tree() -> None:
     plan = boltzgen.compile_run(
         _profile("boltzgen"), _fixture("boltzgen", "positive-design.json"), operation_id="op-cpu"
     )
     analysis = plan.invocation("analysis", "pdl1-a")
-    assert analysis.runtime_trees == ()
-    assert preflight_stage_trees(analysis, {}, {}) == ()
+    assert len(analysis.runtime_trees) == 1
+    assert analysis.runtime_trees[0].artifact_id == MOLECULES_ID
 
 
 # ---------------------------------------------------------------------------
