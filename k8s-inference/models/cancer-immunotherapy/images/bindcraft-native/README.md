@@ -17,8 +17,9 @@ qualification evidence, and the tests and docs for exactly that.
 | Source | BindCraft `7cd4ace1b7407adf66a50dfefa47de2270f5e4a9`, archive `cada0f51…` |
 | Base | `pytorch/pytorch@sha256:0279f7aa…` (PyTorch 2.3.0, CUDA 12.1, Python 3.10.14) |
 | Successor tag | `…/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r19` |
+| Successor digest | `sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1` |
 | Attestations | SPDX SBOM and SLSA provenance, attesting a revision reachable from a pushed branch |
-| Qualification | r19 publication/qualification pending; r18 alone is **H100 semantic-qualified** by real outer-entrypoint run `bcr18-20260903f` |
+| Qualification | r19 is **published build-only**, not H100-qualified or activated; r18 alone is **H100 semantic-qualified** by real outer-entrypoint run `bcr18-20260903f` |
 
 ## Academic PoC authorization
 
@@ -147,8 +148,9 @@ Real upstream-accepted rows can and do violate that invented equality.
 
 `r19` removes only that false equality, canonicalizes and validates every
 model-specific residue identifier independently, and preserves the bounded
-cross-model mean without truncating fractional values. It is a new immutable
-successor and does not inherit r18's H100 qualification.
+cross-model mean without truncating fractional values. Its immutable registry
+digest is recorded above and in `evidence/published-images.json`; it does not
+inherit r18's H100 qualification.
 
 From `r16` onward the runtime reads the columns upstream actually writes
 (`Average_n_InterfaceResidues`, `Average_dSASA`,
