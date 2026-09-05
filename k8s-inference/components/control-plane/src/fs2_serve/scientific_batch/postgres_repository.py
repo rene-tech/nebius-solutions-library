@@ -10,6 +10,7 @@ from uuid import UUID
 
 import asyncpg
 
+from ..postgres_retry import retry_serialization
 from .codec import state_from_value, state_to_json
 from .models import (
     PUBLIC_ARTIFACT_ACCESS_CONTEXT,
@@ -94,6 +95,7 @@ class PostgresScientificBatchRepository:
             return BatchRepositoryConflictError("database rejected conflicting scientific-batch state")
         return None
 
+    @retry_serialization
     async def create(
         self,
         *,
@@ -125,8 +127,11 @@ class PostgresScientificBatchRepository:
         payload = state_to_json(proposed)
         try:
             async with self.pool.acquire() as connection, connection.transaction():
+                # Admission never changes the public Operation. A key-share
+                # lock keeps its identity/FK target stable without forming an
+                # operation->batch lock-order cycle with active reconcilers.
                 operation = await connection.fetchrow(
-                    "SELECT tenant_id,model_id,protocol,status FROM fs2_operations WHERE id=$1 FOR UPDATE",
+                    "SELECT tenant_id,model_id,protocol,status FROM fs2_operations WHERE id=$1 FOR KEY SHARE",
                     operation_id,
                 )
                 if operation is None or operation["tenant_id"] != tenant_id:

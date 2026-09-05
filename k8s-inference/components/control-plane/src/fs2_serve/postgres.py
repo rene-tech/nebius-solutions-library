@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import copy
-import functools
 import hashlib
 import json
 import secrets
@@ -83,6 +82,7 @@ from .models import (
     TokenCreate,
     TokenView,
 )
+from .postgres_retry import retry_serialization
 from .postgresql_release import validate_migration_set
 from .runtime import sanitize_error_detail
 from .store import (
@@ -288,23 +288,6 @@ def _upgrade_legacy_model_deployment_status(value: dict[str, Any]) -> dict[str, 
                 pool.pop(field_name, None)
 
     return upgraded if changed else value
-
-
-def retry_serialization(method: Any) -> Any:
-    """Retry a whole idempotent transaction on PostgreSQL deadlock/serialization abort."""
-
-    @functools.wraps(method)
-    async def wrapped(self: PostgresStore, *args: Any, **kwargs: Any) -> Any:
-        for attempt in range(3):
-            try:
-                return await method(self, *args, **kwargs)
-            except asyncpg.PostgresError as exc:
-                if getattr(exc, "sqlstate", None) not in {"40P01", "40001"} or attempt == 2:
-                    raise
-                await asyncio.sleep(0.01 * (2**attempt))
-        raise AssertionError("unreachable")
-
-    return wrapped
 
 
 class PostgresStore:
