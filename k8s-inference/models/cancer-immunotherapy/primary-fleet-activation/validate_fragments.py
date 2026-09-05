@@ -93,6 +93,10 @@ BOLTZGEN_MOLECULE_MOUNT = {
 }
 REFERENCE_DATA_NODE_LABELS = {"storage.fs2.nebius/reference-data": "true"}
 INTEGRATION_SOURCE_REVISION = "897c04aafbb4bb7b1879ae459527caf70aeeb94e"
+# The primary lane's accepted recipe source above remains immutable evidence.
+# Shared aggregate authorship is compared from the later serialized integration
+# that promoted the independently qualified secondary structure successors.
+AGGREGATE_BASELINE_REVISION = "ec28259430dc3e1bcba7fbb1610c06c154223494"
 SHARED_RUNTIME_RECIPE_PATHS = frozenset(
     {
         "components/control-plane/src/fs2_serve/scientific_batch/__init__.py",
@@ -622,7 +626,7 @@ def _json_leaves(
 
 def _aggregate_at_baseline(relative: str) -> Any:
     completed = subprocess.run(
-        ["git", "show", f"{INTEGRATION_SOURCE_REVISION}:{REPOSITORY_PREFIX}{relative}"],
+        ["git", "show", f"{AGGREGATE_BASELINE_REVISION}:{REPOSITORY_PREFIX}{relative}"],
         cwd=ROOT,
         check=True,
         text=True,
@@ -831,7 +835,7 @@ def validate_no_aggregate_edits() -> list[str]:
             "diff",
             "--relative",
             "--name-only",
-            INTEGRATION_SOURCE_REVISION,
+            AGGREGATE_BASELINE_REVISION,
             "--",
         ],
         cwd=ROOT,
