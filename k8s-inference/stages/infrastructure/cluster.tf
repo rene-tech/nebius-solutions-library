@@ -91,10 +91,11 @@ YAML
       id = local.reference_data_filesystem_id
     }
   }] : []
-  system_filesystem_attachment = concat(
+  shared_cache_reference_data_filesystem_attachment = concat(
     local.filesystem_attachment,
     local.reference_data_filesystem_attachment,
   )
+  system_filesystem_attachment        = local.shared_cache_reference_data_filesystem_attachment
   reference_data_cloud_init_user_data = <<-YAML
     #cloud-config
     package_update: false
@@ -259,6 +260,7 @@ resource "nebius_mk8s_v1_node_group" "reference_data" {
         "capacity.fs2.nebius/type"           = "regular"
         "capacity.fs2.nebius/pool"           = "reference-data"
         "lifecycle.fs2.nebius/run"           = var.run_id
+        "storage.fs2.nebius/shared-cache"    = "true"
         "storage.fs2.nebius/reference-data"  = "true"
       }
     }
@@ -271,7 +273,10 @@ resource "nebius_mk8s_v1_node_group" "reference_data" {
       size_gibibytes = var.reference_data.cpu_pool.boot_disk_gib
       type           = var.reference_data.cpu_pool.boot_disk_type
     }
-    filesystems        = local.reference_data_filesystem_attachment
+    # Reference-data preprocessing can also require writable runtime caches
+    # (for example Protenix compilation caches). Keep the node label, actual
+    # attachments and CSI node-plugin affinity truthful as one boundary.
+    filesystems        = local.shared_cache_reference_data_filesystem_attachment
     network_interfaces = local.worker_network_interfaces
     os                 = "ubuntu24.04"
     reservation_policy = { policy = "FORBID" }
@@ -281,7 +286,7 @@ resource "nebius_mk8s_v1_node_group" "reference_data" {
     }
     service_account_id   = nebius_iam_v1_service_account.nodepull.id
     underlay_required    = false
-    cloud_init_user_data = local.reference_data_cloud_init_user_data
+    cloud_init_user_data = local.shared_cache_reference_data_cloud_init_user_data
   }
 
   depends_on = [
@@ -289,6 +294,7 @@ resource "nebius_mk8s_v1_node_group" "reference_data" {
     nebius_iam_v1_group_membership.nodepull_external_registry,
     nebius_iam_v1_access_permit.nodepull_registry,
     nebius_iam_v1_access_permit.nodepull_external_registry,
+    nebius_compute_v1_filesystem.cache,
     nebius_compute_v1_filesystem.reference_data,
   ]
 }

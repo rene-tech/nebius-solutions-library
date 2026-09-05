@@ -119,6 +119,43 @@ class DisposableTerraformContractTests(unittest.TestCase):
         self.assertNotIn('retention_mode = "retain"', reference_default)
         self.assertNotIn("forbid_deletion  = true", reference_default)
 
+    def test_reference_data_nodes_mount_both_filesystems_for_runtime_cache_pvcs(
+        self,
+    ) -> None:
+        cluster = (ROOT / "cluster.tf").read_text(encoding="utf-8")
+        reference_data = cluster.split(
+            'resource "nebius_mk8s_v1_node_group" "reference_data"', 1
+        )[1].split(
+            'resource "nebius_mk8s_v1_node_group" "general_cpu"', 1
+        )[0]
+
+        self.assertIn(
+            '"storage.fs2.nebius/shared-cache"    = "true"', reference_data
+        )
+        self.assertIn(
+            '"storage.fs2.nebius/reference-data"  = "true"', reference_data
+        )
+        self.assertIn(
+            "filesystems        = local.shared_cache_reference_data_filesystem_attachment",
+            reference_data,
+        )
+        self.assertIn(
+            "cloud_init_user_data = local.shared_cache_reference_data_cloud_init_user_data",
+            reference_data,
+        )
+        self.assertIn("nebius_compute_v1_filesystem.cache", reference_data)
+        self.assertIn("nebius_compute_v1_filesystem.reference_data", reference_data)
+
+        # The CSI chart remains fail-closed: its node plugin runs only where
+        # Terraform truthfully attached and mounted the shared filesystem.
+        foundation = (
+            ROOT.parents[0] / "foundation" / "releases.tf"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'key      = "storage.fs2.nebius/shared-cache"', foundation
+        )
+        self.assertIn('values   = ["true"]', foundation)
+
     def test_current_gpu_resources_derive_from_typed_b300_pool_profile(self) -> None:
         cluster = (ROOT / "cluster.tf").read_text(encoding="utf-8")
         variables = (ROOT / "variables.tf").read_text(encoding="utf-8")
