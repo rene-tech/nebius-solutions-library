@@ -1522,7 +1522,7 @@ def collect_stage_output(
         return collect_design_output(request_value, workspace)
     if collector_id == AGGREGATE_COLLECTOR_ID:
         if runtime_image_digest is None:
-            raise ScientificAdapterError("BindCraft aggregate collector requires the admitted runtime digest")
+            raise ScientificAdapterError("BindCraft aggregate collector requires an immutable execution image digest")
         return collect_aggregate_output(
             request_value,
             workspace,
@@ -1573,7 +1573,7 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
         raise ScientificAdapterError("BindCraft aggregate collector received another stage contract")
     runtime_image_digest = os.environ.get("FS2_RUNTIME_IMAGE_DIGEST")
     if runtime_image_digest is None:
-        raise ScientificAdapterError("BindCraft aggregate collector has no admitted runtime image digest")
+        raise ScientificAdapterError("BindCraft aggregate collector has no immutable execution image digest")
     collected = collect_aggregate_output(
         request,
         workspace,

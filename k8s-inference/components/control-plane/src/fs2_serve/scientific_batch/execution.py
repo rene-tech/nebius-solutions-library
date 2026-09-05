@@ -1391,6 +1391,13 @@ class FileScientificManifestRenderer:
         }
         runtime_marker_json = json.dumps(runtime_marker, sort_keys=True, separators=(",", ":"))
         runtime_marker_path = f"{invocation.working_directory}/.fs2/runtime-localization.json"
+        # Accelerator admission has no runtime digest for CPU stages.  The
+        # execution map does: every stage image was already verified against
+        # the profile's immutable image digest while loading the map.  Give
+        # both the model container and its collector that same identity so a
+        # CPU finalizer can validate model-produced provenance without
+        # inventing an accelerator admission.
+        runtime_image_digest = execution.image.rsplit("@", 1)[1]
         env = [
             {"name": key, "value": value}
             for key, value in sorted(
@@ -1414,7 +1421,7 @@ class FileScientificManifestRenderer:
                     "FS2_LOGICAL_OUTPUT_ID": invocation.produces,
                     "FS2_RUNTIME_ARTIFACTS_JSON": runtime_marker_json,
                     "FS2_RUNTIME_LOCALIZATION_MARKER": runtime_marker_path,
-                    "FS2_RUNTIME_IMAGE_DIGEST": execution.image.rsplit("@", 1)[1],
+                    "FS2_RUNTIME_IMAGE_DIGEST": runtime_image_digest,
                 }.items()
             )
         ]
@@ -1515,6 +1522,7 @@ class FileScientificManifestRenderer:
             {"name": "FS2_SCIENTIFIC_INTERNAL_API_URL", "value": self.internal_api_url},
             {"name": "FS2_SCIENTIFIC_WORKLOAD_CAPABILITY", "value": capability},
             {"name": "FS2_STAGE_INVOCATION_JSON", "value": _invocation_json(invocation)},
+            {"name": "FS2_RUNTIME_IMAGE_DIGEST", "value": runtime_image_digest},
             # Helm binds tools_image to this same immutable control-plane
             # image. Its Dockerfile publishes the canonical catalog here;
             # workload Pods do not mount the gateway's optional catalog PVC.
