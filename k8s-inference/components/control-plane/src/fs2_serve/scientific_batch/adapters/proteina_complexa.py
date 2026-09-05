@@ -221,10 +221,23 @@ def _argv(parameters: ProteinaParameters, stage_id: str) -> tuple[str, ...]:
         "complexa",
         stage_id,
         variant.config,
-        f"++run_name={parameters.run_name}",
-        f"++generation.task_name={parameters.target_id}",
-        f"++seed={parameters.seed}",
     ]
+    if stage_id == "filter":
+        # The upstream CLI otherwise suppresses the subprocess traceback, and
+        # its implicit workspace setup asserts that CUDA is available. Point
+        # the CPU-only filter at the deterministic workspace produced by the
+        # generate stage so it skips that accelerator-only setup path.
+        values.append("--verbose")
+    values.extend(
+        (
+            f"++run_name={parameters.run_name}",
+            f"++generation.task_name={parameters.target_id}",
+            f"++seed={parameters.seed}",
+        )
+    )
+    if stage_id == "filter":
+        config_stem = Path(variant.config).stem
+        values.append(f"++root_path=./inference/{config_stem}_{parameters.target_id}_{parameters.run_name}")
     if stage_id == "generate":
         weights_root = model_file(variant.runtime_artifact_id, variant.checkpoint).rsplit("/", 1)[0]
         values.extend(
