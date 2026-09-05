@@ -18,10 +18,10 @@
     "execution_identity": {
       "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
       "runtime_image_digest": "sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
-      "runtime_recipe_sha256": "4d88e10419e08a383dd9fa13876de476f7f12493828d0d4b7ffc9e82789cc7ad",
+      "runtime_recipe_sha256": "a0debd9fa5780a26fc6b56a14ebc38e8bb18e3e7c62a68c876c3715a575bdc5b",
       "workload_recipe_sha256": "febe1c6511e2db35468cf46cf215bccb8c651df79d778c28a45afea9a56bf731",
       "artifact_manifest_digest": "5cbdf1f33aeaa1be79a678fdd3aa851ee6cbdd86dfc03c66b97ea8647b5d52c0",
-      "execution_identity_sha256": "e243536869e78c4b6a77df2090ac92027fa4df34d0daff1b8ec893f5e5c50d47"
+      "execution_identity_sha256": "55fb510d53b48029f15c64fa6d1c6b24e7fe90ac9f1414ead1ed75558ee31dd4"
     },
     "interface": {
       "protocol": "scientific-batch-v1",
@@ -266,7 +266,7 @@
       "h100_semantic_receipt_sha256": "b78dce5a942472b9427ca4f84a2a0b00baed1c3beca40d230913f1745c7df545",
       "public_completion_receipt_sha256": null,
       "scheduler_eligibility_receipt_sha256": null,
-      "execution_map_sha256": "122347c627df4a1d3ab969c9cd2e282443f65e065e489265276054b936cd53af",
+      "execution_map_sha256": "801338f119860eb4924a73c5e6e96bcb2bfa31a8623a084bce9355506252a7a7",
       "qualified_at": "2026-09-05T00:11:48Z"
     }
   }

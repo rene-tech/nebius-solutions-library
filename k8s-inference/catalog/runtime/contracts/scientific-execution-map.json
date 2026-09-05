@@ -5,7 +5,7 @@
       "model_id": "boltzgen",
       "variant_id": "upstream-v0-3-2",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "61246f1e0ee61c112c7fc5f9a5a5002dc33f9f1503a18084e2e0970a519c699e",
+      "execution_identity_sha256": "1e79a35d5560421f6ca276ebb995cce6354343e1d89045a4d6b67a4c394a4fe4",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -486,7 +486,7 @@
       "model_id": "proteina-complexa",
       "variant_id": "upstream-dev-20260827",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "7397dd80ce1764d997eb124f3bc7fd172df81ff72473283db8621c0dbe85630f",
+      "execution_identity_sha256": "7d35c39baa508ca8d53873cda12cc2e1ad715195360c71ba11a72fa362000102",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -804,7 +804,7 @@
       "model_id": "bindcraft",
       "variant_id": "v1-5-3-pyrosetta-academic",
       "workload_namespace": "fs2-academic-poc",
-      "execution_identity_sha256": "97ace96e0171409bd999d200ea89496864dc28e3b87e6ad80d92266e44be663c",
+      "execution_identity_sha256": "39bbc1cdb9676d5aa2cce9f9a127b0d8b64774fca1600fbfeb9f1e2dde6272ad",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1022,7 +1022,7 @@
       "model_id": "mosaic",
       "variant_id": "mosaic-boltz2-proteinmpnn-v1",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "e1177c0c72c746de64383013de137a4058732964cfd0fd882a45cc03449e0eb1",
+      "execution_identity_sha256": "7117e606b8fecfb23efe1f22f0b598a93b38b5cc7f0939c9fca171c1ed75e153",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1200,7 +1200,7 @@
       "model_id": "rfdiffusion",
       "variant_id": "rfdiffusion-v1-1-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "94ea55b78b5c7e50b7175755afe0a9c9774d67fc86d0109f67f1e98ea53f33f4",
+      "execution_identity_sha256": "447361650fd77920922b1ac46d6d0ccad43609703936cfb8c376a38cd1b6bb03",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1317,7 +1317,7 @@
       "model_id": "esmfold2",
       "variant_id": "biohub-v3-4-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "957971ac8e78f9923cc3487169cd1b6f9cf9162ea9b564677bb8d4b92e8a7542",
+      "execution_identity_sha256": "b2d4c6c65e243bb440ce9fd1dd403715367de1c64bc72f4d1d20a98e1a38ba82",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1528,7 +1528,7 @@
       "model_id": "esmfold2-fast",
       "variant_id": "biohub-v3-4-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "e243536869e78c4b6a77df2090ac92027fa4df34d0daff1b8ec893f5e5c50d47",
+      "execution_identity_sha256": "55fb510d53b48029f15c64fa6d1c6b24e7fe90ac9f1414ead1ed75558ee31dd4",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1739,7 +1739,7 @@
       "model_id": "openfold3-openbind",
       "variant_id": "upstream-openbind-v0-5-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "06e21f971f62d9857c99a897caed629fbf0b8858eab66d5f66c423d220909d06",
+      "execution_identity_sha256": "b516518202eea9ebadd5d002265c77085d976a9df13a78773407e67392e98b8a",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1886,7 +1886,7 @@
       "model_id": "protenix-v2",
       "variant_id": "upstream-v2-0-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "ba985fd1a280de77527450ac29e3cdf9af98f1e74a613a4855c5eb1a460f2b28",
+      "execution_identity_sha256": "82ef81abecf75dec2410fc3eb125dd28472616882aefc843411e8c933775ade2",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -2067,7 +2067,7 @@
       "model_id": "alphafold3",
       "variant_id": "upstream-v3-0-4",
       "workload_namespace": "fs2-academic-poc",
-      "execution_identity_sha256": "f9fe97a0abf6122c22ab6a3f68fb1785b3850b6ef0ef34c12f20d73950874854",
+      "execution_identity_sha256": "8cd90b451767efd5ed8c7229b070689488fa320434627287b6c0ccedf107b4a8",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
