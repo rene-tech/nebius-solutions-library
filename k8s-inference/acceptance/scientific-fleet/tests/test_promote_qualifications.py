@@ -75,9 +75,10 @@ def private_write(path: Path, body: bytes) -> None:
 
 
 class QualificationFixture:
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path, *, source_root: Path = SOURCE_ROOT) -> None:
         self.root = directory / "repository"
         self.receipts = directory / "receipts"
+        directory.mkdir(parents=True, exist_ok=True)
         self.root.mkdir()
         self.receipts.mkdir(mode=0o700)
         relative_files = {
@@ -88,26 +89,61 @@ class QualificationFixture:
             MODULE.PRIMARY_SCHEMA_RELATIVE,
         }
         relative_files.update(
-            path.relative_to(SOURCE_ROOT) for path in SOURCE_ROOT.glob(PRIMARY_GLOB)
+            path.relative_to(source_root) for path in source_root.glob(PRIMARY_GLOB)
         )
         relative_files.update(
-            path.relative_to(SOURCE_ROOT) for path in SOURCE_ROOT.glob(SECONDARY_GLOB)
+            path.relative_to(source_root) for path in source_root.glob(SECONDARY_GLOB)
         )
         relative_files.update(
-            path.relative_to(SOURCE_ROOT)
-            for path in SOURCE_ROOT.glob(
+            path.relative_to(source_root)
+            for path in source_root.glob(
                 "models/structure/batch-adapters/*/activation/public-acceptance.json"
             )
         )
         for relative in relative_files:
             destination = self.root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(SOURCE_ROOT / relative, destination)
+            shutil.copy2(source_root / relative, destination)
+        self._restore_active_baseline(source_root)
         profile_set = self.load(self.root / MODULE.PROFILE_RELATIVE)
         execution_map = self.load(self.root / MODULE.EXECUTION_MAP_RELATIVE)
         self.profiles = {item["model_id"]: item for item in profile_set["profiles"]}
         self.executions = {item["model_id"]: item for item in execution_map["models"]}
         self.owners = MODULE._discover_owners(self.root)
+
+    def _restore_active_baseline(self, source_root: Path) -> None:
+        """Make fixture inputs independent of committed promotion state."""
+
+        profile_path = self.root / MODULE.PROFILE_RELATIVE
+        profile_set = self.load(profile_path)
+        profiles = {item["model_id"]: item for item in profile_set["profiles"]}
+        qualified = {
+            model_id: profile
+            for model_id, profile in profiles.items()
+            if profile["state"] == "qualified"
+        }
+        if not qualified:
+            return
+
+        source_owners = MODULE._discover_owners(source_root)
+        copied_owners = MODULE._discover_owners(self.root)
+        for model_id, profile in qualified.items():
+            eligibility, _ = MODULE._existing_eligibility(
+                source_owners[model_id], profile
+            )
+            active_document = MODULE._active_owner_document(
+                copied_owners[model_id], eligibility
+            )
+            copied_owners[model_id].path.write_bytes(
+                MODULE._pretty_bytes(active_document)
+            )
+            active_owner = MODULE._discover_owners(self.root)[model_id]
+            profiles[model_id] = active_owner.profile
+
+        profile_set["profiles"] = [
+            profiles[item["model_id"]] for item in profile_set["profiles"]
+        ]
+        profile_path.write_bytes(MODULE._pretty_bytes(profile_set))
 
     @staticmethod
     def load(path: Path) -> dict[str, Any]:
@@ -517,6 +553,34 @@ class ScientificQualificationPromotionTests(unittest.TestCase):
         )
         self.assertEqual((repeated.promoted, repeated.unchanged), (0, 2))
         self.assertEqual(repeated.written_paths, ())
+
+    def test_fixture_restores_exact_active_baseline_from_qualified_source(
+        self,
+    ) -> None:
+        aggregate = self.fixture.aggregate({"esmfold2": None, "mosaic": None})
+        promoted = MODULE.promote(
+            repository_root=self.fixture.root,
+            aggregate_path=aggregate,
+            write=True,
+        )
+        self.assertEqual(promoted.promoted, 2)
+
+        copied = QualificationFixture(
+            Path(self.temporary.name) / "qualified-source-copy",
+            source_root=self.fixture.root,
+        )
+
+        self.assertEqual(copied.profiles, self.fixture.profiles)
+        self.assertTrue(
+            all(item["state"] == "active" for item in copied.profiles.values())
+        )
+        copied_aggregate = copied.aggregate({"esmfold2": None, "mosaic": None})
+        result = MODULE.promote(
+            repository_root=copied.root,
+            aggregate_path=copied_aggregate,
+            write=True,
+        )
+        self.assertEqual((result.promoted, result.unchanged, result.skipped), (2, 0, 8))
 
     def test_only_exact_identity_and_scheduler_matches_are_promoted(self) -> None:
         def stale_identity(receipt: dict[str, Any]) -> None:
