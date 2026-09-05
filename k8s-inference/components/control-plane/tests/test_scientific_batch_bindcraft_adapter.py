@@ -34,8 +34,11 @@ SOLUTION_ROOT = Path(__file__).resolve().parents[3]
 ADAPTER_ROOT = SOLUTION_ROOT / "models/structure/batch-adapters/bindcraft"
 LOCALIZATION_CONTRACT = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-artifact-localization.json"
 PROFILE_PATH = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-workload-profiles.json"
-R18_RUNTIME_SHA256 = "b30c37773f480e6eea771d927944d02e57f052bda14f9e46eaeaef86753a071c"
-R18_IMAGE_DIGEST = "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d"
+CURRENT_RUNTIME_SHA256 = "0adba8ec1d57490bbafe1e926708520454c1b6e2e9f85370598aab727e9aee29"
+# This suite exercises the current source contract without claiming a registry
+# or accelerator qualification. Publication identity is verified by the image
+# package's source-bound receipt tests.
+CONTRACT_TEST_IMAGE_DIGEST = "sha256:" + "d" * 64
 
 
 def fixture(name: str) -> dict[str, Any]:
@@ -752,6 +755,7 @@ def publish_shard(
     source_revision: str = bindcraft.SOURCE_REVISION,
     status: str = "succeeded",
     generation: str = "generation-test",
+    interface_residue_count: int | float = 3,
 ) -> None:
     request = request or fixture("positive-default-lane")
     parameters = bindcraft.BindCraftParameters.parse(request["parameters"])
@@ -805,7 +809,7 @@ def publish_shard(
                     "scoring_engine": scoring_engine,
                     "filter_set_sha256": bindcraft.FILTERS_SHA256,
                     "iptm": 0.82,
-                    "interface_residue_count": 3,
+                    "interface_residue_count": interface_residue_count,
                     "buried_interface_area": 750.0,
                     "binder_energy_score": -42.0,
                     "hotspot_geometry": {
@@ -951,6 +955,20 @@ def test_design_companion_binds_completion_request_and_exact_handoff(tmp_path: P
     assert collected.validation["status"] == "passed"
 
 
+def test_design_collector_accepts_a_fractional_cross_model_interface_average(tmp_path: Path) -> None:
+    request = fixture("positive-default-lane")
+    fractional = tmp_path / "fractional-average"
+    publish_shard(fractional, index=0, request=request, interface_residue_count=7.4)
+    assert bindcraft.collect_design_output(request, fractional).manifest["manifest_id"] == (
+        "bindcraft.shard.000.handoff"
+    )
+
+    empty = tmp_path / "empty-average"
+    publish_shard(empty, index=0, request=request, interface_residue_count=0)
+    with pytest.raises(ScientificAdapterError, match="no interface residues"):
+        bindcraft.collect_design_output(request, empty)
+
+
 def test_design_collector_rejects_semantic_and_content_address_tampering(tmp_path: Path) -> None:
     request = fixture("positive-default-lane")
     workspace = tmp_path / "wrong-engine"
@@ -1006,28 +1024,28 @@ def test_the_profile_matches_the_catalog_when_published() -> None:
     assert entry["workload"]["stages"][0]["max_parallelism"] == bindcraft.MAX_DESIGN_SHARDS
 
 
-def _r18_runtime() -> ModuleType:
-    configured = os.environ.get("FS2_BINDCRAFT_R18_RUNTIME_SOURCE")
+def _current_successor_runtime() -> ModuleType:
+    configured = os.environ.get("FS2_BINDCRAFT_RUNTIME_SOURCE")
     candidates = [
         Path(configured) if configured else None,
         SOLUTION_ROOT / "models/cancer-immunotherapy/images/bindcraft-native/runtime/bindcraft_runtime_entrypoint.py",
     ]
     source = next((candidate for candidate in candidates if candidate is not None and candidate.is_file()), None)
     if source is None:
-        pytest.skip("the separately reviewed r18 image source is not present on this branch")
-    assert hashlib.sha256(source.read_bytes()).hexdigest() == R18_RUNTIME_SHA256
-    spec = importlib.util.spec_from_file_location("fs2_bindcraft_r18_contract_test", source)
+        pytest.skip("the reviewed BindCraft successor runtime source is not present on this branch")
+    assert hashlib.sha256(source.read_bytes()).hexdigest() == CURRENT_RUNTIME_SHA256
+    spec = importlib.util.spec_from_file_location("fs2_bindcraft_successor_contract_test", source)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def test_compiled_argv_and_native_document_execute_the_real_r18_parser_contract(
+def test_compiled_argv_and_native_document_execute_the_current_successor_parser_contract(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    runtime = _r18_runtime()
+    runtime = _current_successor_runtime()
     request = fixture("positive-default-lane")
     target = tmp_path / "target.pdb"
     target.write_text(_pdb(complex_structure=True), encoding="ascii")
@@ -1040,7 +1058,7 @@ def test_compiled_argv_and_native_document_execute_the_real_r18_parser_contract(
     plan = bindcraft.compile_run(
         granted(),
         request,
-        operation_id="op-bindcraft-r18-parser",
+        operation_id="op-bindcraft-successor-parser",
         input_artifacts=(admitted,),
     )
     public, parameters = bindcraft._request(request)
@@ -1087,17 +1105,17 @@ def test_compiled_argv_and_native_document_execute_the_real_r18_parser_contract(
     assert settings["chains"] == "A"
 
 
-def test_r18_aggregate_consumes_the_bundle_and_the_final_collector_returns_every_file(
+def test_successor_aggregate_consumes_the_bundle_and_final_collector_returns_every_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    runtime = _r18_runtime()
+    runtime = _current_successor_runtime()
     request = fixture("positive-default-lane")
     request["parameters"]["designs"] = 2
     plan = bindcraft.compile_run(
         granted(),
         request,
-        operation_id="op-r18-aggregate",
+        operation_id="op-successor-aggregate",
         input_artifacts=(verified_target(),),
     )
     aggregate = tmp_path / "aggregate"
@@ -1121,7 +1139,7 @@ def test_r18_aggregate_consumes_the_bundle_and_the_final_collector_returns_every
     marker = metadata / "runtime-localization.json"
     marker.write_text(json.dumps({"generation": "generation-test"}, sort_keys=True) + "\n", encoding="ascii")
     (aggregate / "output").mkdir()
-    monkeypatch.setenv("FS2_RUNTIME_IMAGE_DIGEST", R18_IMAGE_DIGEST)
+    monkeypatch.setenv("FS2_RUNTIME_IMAGE_DIGEST", CONTRACT_TEST_IMAGE_DIGEST)
     runtime.aggregate(
         Namespace(
             backend_id=bindcraft.BACKEND_ID,
@@ -1140,7 +1158,7 @@ def test_r18_aggregate_consumes_the_bundle_and_the_final_collector_returns_every
         bindcraft.AGGREGATE_COLLECTOR_ID,
         request,
         aggregate,
-        runtime_image_digest=R18_IMAGE_DIGEST,
+        runtime_image_digest=CONTRACT_TEST_IMAGE_DIGEST,
     )
     entries = collected.manifest["entries"]
     by_name = {entry["name"]: entry for entry in entries}  # type: ignore[union-attr]
@@ -1166,7 +1184,7 @@ def test_r18_aggregate_consumes_the_bundle_and_the_final_collector_returns_every
     assert companion_output.validation["completion_marker_sha256"] == completion_sha256
     assert companion_output.validation["design_count"] == 2
     assert companion_output.validation["shard_count"] == 2
-    assert companion_output.validation["runtime_image_digest"] == R18_IMAGE_DIGEST
+    assert companion_output.validation["runtime_image_digest"] == CONTRACT_TEST_IMAGE_DIGEST
     assert companion_output.validation["status"] == "passed"
     with pytest.raises(ScientificAdapterError, match="unsupported BindCraft collector"):
         bindcraft.collect_stage_output("bindcraft-unknown-v1", request, aggregate)

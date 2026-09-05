@@ -991,13 +991,13 @@ def _validate_candidate_metrics(
     if not parameters.minimum_length <= len(sequence) <= parameters.maximum_length:
         raise ScientificAdapterError("BindCraft candidate sequence violates the requested binder length")
     finite_number(value.get("iptm"), minimum=0.0, maximum=1.0, label="BindCraft iPTM")
-    interface_count = bounded_int(
+    interface_count = finite_number(
         value.get("interface_residue_count"),
-        minimum=1,
-        maximum=10_000,
-        label="BindCraft interface residue count",
+        minimum=0.0,
+        maximum=10_000.0,
+        label="BindCraft average interface residue count",
     )
-    if not interface_count:
+    if interface_count <= 0:
         raise ScientificAdapterError("BindCraft candidate has no interface residues")
     if (
         finite_number(

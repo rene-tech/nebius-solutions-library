@@ -16,9 +16,9 @@ qualification evidence, and the tests and docs for exactly that.
 |---|---|
 | Source | BindCraft `7cd4ace1b7407adf66a50dfefa47de2270f5e4a9`, archive `cada0f51…` |
 | Base | `pytorch/pytorch@sha256:0279f7aa…` (PyTorch 2.3.0, CUDA 12.1, Python 3.10.14) |
-| Final tag | `…/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r18` |
+| Successor tag | `…/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r19` |
 | Attestations | SPDX SBOM and SLSA provenance, attesting a revision reachable from a pushed branch |
-| Qualification | **H100 semantic-qualified** by real outer-entrypoint run `bcr18-20260903f`; catalog route remains gated on private generation promotion |
+| Qualification | r19 publication/qualification pending; r18 alone is **H100 semantic-qualified** by real outer-entrypoint run `bcr18-20260903f` |
 
 ## Academic PoC authorization
 
@@ -109,7 +109,7 @@ is not checked, so both documents' on-disk formatting is free. The bytes that
 matter scientifically are still gated: the materialized target structure's size
 and SHA-256 are verified against the manifest entry before design starts.
 
-## Why r18, and what each predecessor got wrong
+## Why r19, and what each predecessor got wrong
 
 `r12` through `r16` are superseded and must not be consumed. Tags are never
 overwritten; the number advances because something in the contract changed.
@@ -140,7 +140,15 @@ because a content digest cannot dangle.
 `r17` still rejected every accepted immutable generation because the artifact
 plane writes `.fs2-runtime-tree.json` inside each root. `r18` excludes exactly
 that reserved terminal marker from both identity algorithms, records root
-ownership in the admission receipt, and is the digest qualified below.
+ownership in the admission receipt, and is the digest qualified below. It also
+incorrectly required the final CSV's model-specific `InterfaceResidues` list to
+have the same cardinality as `Average_n_InterfaceResidues`, a cross-model mean.
+Real upstream-accepted rows can and do violate that invented equality.
+
+`r19` removes only that false equality, canonicalizes and validates every
+model-specific residue identifier independently, and preserves the bounded
+cross-model mean without truncating fractional values. It is a new immutable
+successor and does not inherit r18's H100 qualification.
 
 From `r16` onward the runtime reads the columns upstream actually writes
 (`Average_n_InterfaceResidues`, `Average_dSASA`,
@@ -150,6 +158,15 @@ measures hotspot geometry from the accepted complex at upstream's own 4.0 Å
 contact criterion, because `target_hotspot_residues` is a loss preference and
 the interface residues upstream records are binder-side, so no upstream column
 answers whether the binder reached the requested site.
+
+`InterfaceResidues` and `Average_n_InterfaceResidues` are deliberately checked
+independently. At the pinned upstream revision, the first is the residue list
+from the last AF2 model scored, while the second is the production-filtered mean
+across all available AF2 models; the accepted PDB is selected separately by
+highest pLDDT. The wrapper canonicalizes and validates every binder residue ID,
+but does not require that model-specific list's length to equal the cross-model
+average. Integral averages remain JSON integers and valid fractional averages
+remain numbers instead of being silently truncated.
 
 ## Build and publish
 
@@ -167,8 +184,10 @@ attestations; re-hashes every build input afterwards and refuses if any changed
 during the build; re-pulls by digest; runs the artifact-free canary and both
 batch subcommands; reads the published provenance back and refuses unless the
 attested revision and context path are the ones it built; and only then writes
-`evidence/published-images.json`. **Commit and push before publishing** — an
-unpushed revision is rejected by design.
+`evidence/published-images.json`. It also reads all executable contract sources
+back from the pulled digest and compares their byte counts and SHA-256 values to
+the repository. **Commit and push before publishing** — an unpushed revision is
+rejected by design.
 
 The image consumes the adapter's published `bindcraft-batch` wrapper from
 `models/structure/runtime/bindcraft-native/bin/` through a read-only BuildKit
@@ -178,11 +197,10 @@ does not own.
 
 `runtime/runtime_entrypoint.py` is the shared outer entrypoint and still names
 the split-out runtimes in its import and artifact-scan tables. That is
-intentional: it is byte-identical to the file that produced the published r16
-digest, and trimming it would break that match for no behavioural gain, since
+intentional: trimming it would change the successor for no behavioural gain, since
 this image only ever sets `FS2_RUNTIME_NAME=bindcraft-academic`. A test pins the
-SHA-256 of all five in-image files against the qualification evidence so the
-match cannot be lost by accident.
+SHA-256 of all five executable in-image files against the publication receipt;
+the historical r18 qualification remains immutable and separate.
 
 ## Direct live H100 qualification before private promotion
 
@@ -201,7 +219,10 @@ marker so this qualification cannot be mistaken for catalog localization or
 route readiness. Normal rendering stays fail-closed until every handoff
 generation is published.
 
-## Live H100 semantic acceptance — passed
+## Historical r18 live H100 semantic acceptance — passed
+
+This evidence qualifies only r18. It is retained to explain the predecessor's
+known-good scope and must not be cited as r19 qualification.
 
 Run `bcr18-20260903f` passed on a regular capacity-block 8x H100 node in
 `project-e00rene` / `eu-north1`; the exact cloud node ID is retained in the

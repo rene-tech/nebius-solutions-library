@@ -37,7 +37,7 @@
       "run-trajectory",
       "aggregate"
     ],
-    "qualified_against": "offline contract only: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d; no live H100 semantic qualification is claimed"
+    "qualified_against": "The active predecessor r18 parser/collector contract is covered by historical H100 receipt bcr18-20260903f. The corrected r19 successor remains publication-pending and has no H100 semantic qualification."
   },
   "stages": [
     {
@@ -50,7 +50,7 @@
         "semantic_type": "bindcraft-native-shard-bundle-tar/v1",
         "media_type": "application/octet-stream",
         "materialization": "overlay-tar",
-        "note": "collect_design_output validates the r18 shard descriptor, its exact content-addressed closure and assigned quota, then emits a byte-deterministic zstd-compressed USTAR. The aggregate stage overlays it at shards/<index>, because the reviewed wrapper reads a whole directory, not one JSON document.",
+        "note": "collect_design_output validates the shard descriptor, including a positive bounded numeric cross-model interface-residue average, its exact content-addressed closure and assigned quota, then emits a byte-deterministic zstd-compressed USTAR. The aggregate stage overlays it at shards/<index>, because the reviewed wrapper reads a whole directory, not one JSON document.",
         "media_type_note": "The artifact service's allowlist has no tar entry; the tar-ness is carried by the semantic type.",
         "contents": "shard-output.json plus exactly the artifact_paths closure, never the whole output directory",
         "bounds": "256 MiB and 4096 members, matching the controller's overlay materialization limits, checked against the written archive"
@@ -90,10 +90,23 @@
   },
   "runtime_image": {
     "digest": null,
-    "state": "pending-reviewed-live-h100-qualification",
-    "targets": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r18, sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
-    "provenance": "attests revision aadd4a88; supersedes r17, which could not read an accepted generation. Do not cite r16 or r17.",
-    "note": "The generations are rendered, not published: the accepted handoff reports generations_published false and the host plane has no generations directory. No live run exists. The private academic plane is repaired and conforming; public immutable generation publication remains the runtime gate."
+    "state": "successor-publication-pending-not-activated",
+    "active_predecessor": {
+      "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r18",
+      "digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+      "qualification": "H100 semantic-qualified by historical run bcr18-20260903f",
+      "known_failure": "Rejects valid accepted rows when the last-scored model-specific InterfaceResidues cardinality differs from the cross-model Average_n_InterfaceResidues."
+    },
+    "successor": {
+      "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r19",
+      "digest": null,
+      "publication": "pending",
+      "semantic_h100_qualification": false,
+      "route_activation_allowed": false,
+      "handoff": "models/structure/batch-adapters/bindcraft/r19-image-handoff.json"
+    },
+    "provenance": "r19 must attest the clean pushed source commit, package context, SPDX SBOM, SLSA provenance, offline smoke, and exact executable source bytes before its publication handoff can close.",
+    "note": "The active r18 digest and its historical receipt are intentionally unchanged. Publishing r19 does not authorize activation or transfer r18 qualification."
   },
   "controller_requirements": [
     "Resolve the public uncompressed scientific-manifest pointer through the artifact service and pass exactly one verified target_structure / protein-structure-pdb/v1 / chemical/x-pdb entry to the adapter; never materialize the outer manifest as the PDB.",
@@ -103,8 +116,8 @@
     "Keep exporting FS2_RUNTIME_IMAGE_DIGEST; the reviewed wrapper's aggregate subcommand requires it."
   ],
   "open_dependencies": [
-    "The controller execution map supplies each runtime artifact's claim and immutable content-addressed sub path. The adapter binds no sub path, so the blocked localization candidate cannot leak a mutable read-write-many path into a rendered Job.",
-    "runtime_image.digest stays null until the reviewed live H100 qualification exists."
+    "The controller execution map supplies each runtime artifact's claim and immutable content-addressed sub path. The adapter binds no sub path, so a mutable read-write-many path cannot leak into a rendered Job.",
+    "runtime_image.digest and the successor route stay unset until r19 has immutable publication evidence and a reviewed exact-r19 live H100 qualification."
   ],
   "canonical_bytes": {
     "owner": "fs2_serve_catalog.artifacts.canonical_bytes",
@@ -123,19 +136,19 @@
     "masking_hazard": "RESOLVED for the private plane by the repair. While the trees were uid 65532 / gid 10001, a Pod reached them through its primary group 10001 whether or not the supplemental-group contract held, so no green run could evidence the delivery. Now that they are gid 65532, a reader can only reach them through supplemental 65532, which is the contract itself -- so a passing run on the private plane is now real evidence. Two caveats stand: the recurrence risk is unchanged, since a pod that mounts this claim with fsGroup would chown it again and no policy prevents that; and nothing here says anything about the public generations, which are not published yet."
   },
   "blocked_on": [
-    "The BindCraft workload profile is not in the published catalog yet; the runtime-onboarding task owns it. The adapter's tests build the profile shape and test_the_profile_matches_the_catalog_when_published binds them once it lands.",
-    "Public generation publication is in progress; the localize-stage job for the public plane has not completed. r18 sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d stays unbound and runtime_image_digest stays null until the terminal public receipts and probes land and a reviewed live run exists.",
-    "runtime_recipe_sha256 has no bindcraft entry yet. Registering one needs the parameter schema and the model-side adapter shim that arrive with the workload profile, so it lands with the onboarding task's profile rather than here, where it would reference files that do not exist."
+    "The r19 successor must be immutably published with its source-bound receipt.",
+    "The published r19 digest must complete a new exact-artifact H100 semantic run before activation. The existing r18 qualification cannot satisfy that gate.",
+    "After qualification, the activation owner must deliberately update the workload profile, execution map, runtime recipe identity and route together; this publication task does not retie those active r18 records."
   ],
   "seam": {
     "dispatch": "fs2_serve.scientific_batch.adapters.compile_adapter_run, explicit allow-list; the adapter adds one branch",
     "plan_type": "AdapterExecutionPlan with RuntimeTreeBinding per localized tree",
     "collector_dispatch": "Every invocation freezes FS2_SCIENTIFIC_COLLECTOR_ID. bindcraft.collect_stage_output is an explicit two-value allow-list that dispatches to the design bundle or final aggregate collector and rejects every other value.",
-    "native_document_handoff": "Every invocation carries canonical FS2_BINDCRAFT_REQUEST_JSON and FS2_BINDCRAFT_INPUT_MANIFEST_JSON bytes plus the exact controller-owned destinations named in argv. materialize_runtime_documents performs the executable, idempotent bytes-to-files handoff. Tests pass the compiled argv and translated request through the real immutable r18 parser/settings code, then feed the deterministic design bundles into r18 aggregate and collect its actual result.",
+    "native_document_handoff": "Every invocation carries canonical FS2_BINDCRAFT_REQUEST_JSON and FS2_BINDCRAFT_INPUT_MANIFEST_JSON bytes plus the exact controller-owned destinations named in argv. materialize_runtime_documents performs the executable, idempotent bytes-to-files handoff. Tests pass the compiled argv and translated request through the current r19 candidate parser/settings code, then feed deterministic design bundles into its aggregate path and collect the actual result.",
     "note": "Rebuilt against the accepted localization foundation on main. The earlier revision targeted the unaccepted controller branch's richer seam (RuntimeArtifactMount, execution-map bindings, a registry) which main does not have."
   },
   "known_defects": [
-    "r18's aggregate display name for each relaxed complex advances after the structure entry, so its human name is one ordinal late. Artifact IDs retain the exact shard/local candidate identity. collect_aggregate_output derives candidate identity from those immutable IDs, validates all three files together, and emits corrected customer-facing ordinals; it does not trust the defective display name. A future image can fix the label without changing this adapter contract."
+    "r18 and the r19 candidate's aggregate display name for each relaxed complex advances after the structure entry, so its human name is one ordinal late. Artifact IDs retain the exact shard/local candidate identity. collect_aggregate_output derives candidate identity from those immutable IDs, validates all three files together, and emits corrected customer-facing ordinals; it does not trust the defective display name. A future image can fix the label without changing this adapter contract."
   ],
   "shared_fixes": [
     "adapters/common.py collect_output_files derived media type with branches only for CSV and mmCIF, so every JSON result was labelled chemical/x-pdb. BindCraft is the first JSON-emitting adapter to hit it. Fixed here: a JSON branch keyed on the semantic type or a .json suffix, ordered after CSV so nothing else moves. Regression tests cover JSON, PDB, mmCIF and CSV through the shared helper directly, and the BindCraft collector asserts typed metrics plus PDB structures with content-addressed pointers. Because runtime_recipe_sha256 hashes common.py, the recorded recipe digests for boltzgen and proteina-complexa moved with it and were recomputed; clean main passes that test, so the change is the cause and the update is its completion."

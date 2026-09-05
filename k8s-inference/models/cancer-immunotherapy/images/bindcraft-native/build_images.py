@@ -31,6 +31,16 @@ ABSENT_MARKERS = (
 SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
 HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 FULL_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+SOURCE_BINDINGS = (
+    ("runtime/bindcraft_runtime_entrypoint.py", "/opt/fs2/bindcraft/runtime_entrypoint.py"),
+    ("runtime/tree_identity.py", "/opt/fs2/bindcraft/tree_identity.py"),
+    ("runtime/runtime_entrypoint.py", "/opt/fs2/runtime_entrypoint.py"),
+    ("runtime/artifact_gate.py", "/opt/fs2/artifact_gate.py"),
+    (
+        "models/structure/runtime/bindcraft-native/bin/bindcraft-batch",
+        "/opt/fs2/bin/bindcraft-batch",
+    ),
+)
 
 
 class BuildError(RuntimeError):
@@ -316,6 +326,89 @@ def smoke(image: dict[str, Any], reference: str) -> list[dict[str, Any]]:
     return evidence
 
 
+def published_source_identity(reference: str, digest: str) -> dict[str, Any]:
+    """Prove the pulled digest contains the repository bytes it executes.
+
+    H100 qualification is deliberately a separate concern: a successor can be
+    immutably published and source-bound without inheriting an older digest's
+    semantic qualification. Keeping this proof in the publication receipt lets
+    the repository advance while retaining the prior live receipt as immutable
+    historical evidence.
+    """
+
+    image_paths = [image_path for _repository_path, image_path in SOURCE_BINDINGS]
+    script = """\
+import hashlib
+import json
+import pathlib
+import sys
+
+paths = json.loads(sys.argv[1])
+records = []
+for value in paths:
+    path = pathlib.Path(value)
+    content = path.read_bytes()
+    records.append({
+        "path": value,
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "size_bytes": len(content),
+    })
+print(json.dumps(records, separators=(",", ":"), sort_keys=True))
+"""
+    completed = run(
+        [
+            "docker", "run", "--rm", "--platform", "linux/amd64", "--network", "none",
+            "--entrypoint", "python", reference, "-c", script,
+            json.dumps(image_paths, separators=(",", ":")),
+        ],
+        capture=True,
+    )
+    try:
+        measured = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise BuildError("published image source identity is not readable JSON") from exc
+    if not isinstance(measured, list) or len(measured) != len(SOURCE_BINDINGS):
+        raise BuildError("published image returned an incomplete source identity")
+
+    by_path: dict[str, dict[str, Any]] = {}
+    for record in measured:
+        if not isinstance(record, dict) or not isinstance(record.get("path"), str):
+            raise BuildError("published image returned a malformed source identity")
+        path = record["path"]
+        if path in by_path:
+            raise BuildError("published image returned duplicate source identity paths")
+        by_path[path] = record
+
+    files: list[dict[str, Any]] = []
+    for repository_path, image_path in SOURCE_BINDINGS:
+        record = by_path.get(image_path)
+        if record is None:
+            raise BuildError(f"published image omitted source identity for {image_path}")
+        source_path = (
+            REPOSITORY_ROOT / repository_path
+            if repository_path.startswith("models/")
+            else ROOT / repository_path
+        )
+        content = source_path.read_bytes()
+        expected_sha256 = hashlib.sha256(content).hexdigest()
+        if record.get("sha256") != expected_sha256 or record.get("size_bytes") != len(content):
+            raise BuildError(f"published image source differs from repository source: {repository_path}")
+        files.append({
+            "path": image_path,
+            "sha256": expected_sha256,
+            "size_bytes": len(content),
+            "repository_path": repository_path,
+        })
+    if set(by_path) != set(image_paths):
+        raise BuildError("published image returned unexpected source identity paths")
+    return {
+        "method": "SHA-256 of each executable source file read from the pulled digest",
+        "match": True,
+        "files": files,
+        "verified_against": digest,
+    }
+
+
 def raw_manifest(target: str) -> tuple[str, int, list[str]]:
     completed = run(["skopeo", "inspect", "--raw", f"docker://{target}"], capture=True)
     raw = completed.stdout.encode()
@@ -370,6 +463,7 @@ def verify_published(
         "attestation_predicate_types": predicate_types,
         "pull_stdout_sha256": hashlib.sha256(pulled.stdout.encode()).hexdigest(),
         "smoke": smoke_evidence,
+        "source_identity_in_published_image": published_source_identity(digest_reference, digest),
     }
     if expected is not None:
         vcs = attested_vcs(digest_reference)

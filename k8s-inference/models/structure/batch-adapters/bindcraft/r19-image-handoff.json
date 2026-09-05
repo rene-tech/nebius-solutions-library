@@ -1,0 +1,31 @@
+{
+  "schema": "fs2.nebius.ai/bindcraft-successor-image-handoff/v1",
+  "state": "publication-pending-not-activated",
+  "image_source_commit": null,
+  "semantic_h100_qualification": false,
+  "route_activation_allowed": false,
+  "production_protocol_compatible": false,
+  "successor_requirement": "Publish the immutable r19 image, then run exact-artifact H100 semantic qualification before replacing the active r18 digest.",
+  "predecessor": {
+    "tag": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r18",
+    "digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+    "qualification": "historical H100 semantic qualification; does not transfer to r19",
+    "defect": "Equates the last-scored AF2 model's InterfaceResidues cardinality with Average_n_InterfaceResidues, which is calculated across all scored AF2 models."
+  },
+  "successor": {
+    "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft",
+    "tag": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r19",
+    "digest": null,
+    "upstream_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+    "behavior": "Validates and canonicalizes the model-specific binder residue list independently from the bounded cross-model average and preserves fractional averages."
+  },
+  "evidence": {
+    "publication": "pending repository-owned publisher receipt",
+    "source_contract": "models/cancer-immunotherapy/images/bindcraft-native/runtime/bindcraft_runtime_entrypoint.py",
+    "regression_tests": [
+      "models/cancer-immunotherapy/images/bindcraft-native/tests/test_image_contract.py",
+      "components/control-plane/tests/test_scientific_batch_bindcraft_adapter.py"
+    ],
+    "scope": "Source and offline parser/collector contract only; no registry, GPU, or semantic qualification claim exists until its corresponding evidence is recorded."
+  }
+}
