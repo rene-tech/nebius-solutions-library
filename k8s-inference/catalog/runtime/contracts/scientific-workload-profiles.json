@@ -6,7 +6,7 @@
       "model_id": "boltzgen",
       "display_name": "BoltzGen v0.3.2",
       "execution_mode": "scientific-batch",
-      "state": "active",
+      "state": "qualified",
       "route_exposed": true,
       "source": {
         "kind": "git",
@@ -200,7 +200,7 @@
       },
       "semantic_validation": {
         "validator_id": "boltzgen-v0-3-2",
-        "state": "active"
+        "state": "qualified"
       },
       "policy": {
         "commercial_use": "allowed",
@@ -213,10 +213,10 @@
       },
       "qualification": {
         "h100_semantic_receipt_sha256": "f4a36ad7b8367e3383f584f96377313d39a26b5a08343d789311a41b04b79a46",
-        "public_completion_receipt_sha256": null,
-        "scheduler_eligibility_receipt_sha256": null,
+        "public_completion_receipt_sha256": "555590429049d660121ff0b8d68d4b0ccb1635fcb168b02a0908a37760e80fe0",
+        "scheduler_eligibility_receipt_sha256": "1bc7dd98863a880548b7334f72bc10627986136034feac0fb1ec73d1de94c7a2",
         "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
-        "qualified_at": "2026-09-03T07:34:56Z"
+        "qualified_at": "2026-09-05T06:38:42.135439Z"
       },
       "runtime_artifacts": [
         {
@@ -246,7 +246,7 @@
       "model_id": "proteina-complexa",
       "display_name": "Proteina-Complexa",
       "execution_mode": "scientific-batch",
-      "state": "active",
+      "state": "qualified",
       "route_exposed": true,
       "source": {
         "kind": "git",
@@ -392,14 +392,14 @@
       },
       "semantic_validation": {
         "validator_id": "proteina-complexa-v1",
-        "state": "active"
+        "state": "qualified"
       },
       "qualification": {
         "h100_semantic_receipt_sha256": "380441981a4170c8f2427a47ef4b25898f0ab14e33cc5efe7fdd65ebc1b45c4b",
-        "public_completion_receipt_sha256": null,
-        "scheduler_eligibility_receipt_sha256": null,
+        "public_completion_receipt_sha256": "90583adfb2c6ea19bcf2d3a7eec9a9276a9b68b21dbec0277c42bd05cc56d2bf",
+        "scheduler_eligibility_receipt_sha256": "d3bf102b7b123715b60473ee853ce2c05eaa3ef6b442918dff8732febf6cc8bb",
         "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
-        "qualified_at": "2026-09-03T13:53:21Z"
+        "qualified_at": "2026-09-05T06:47:47.456690Z"
       },
       "policy": {
         "commercial_use": "license-dependent",
@@ -467,7 +467,7 @@
       "model_id": "bindcraft",
       "display_name": "BindCraft academic",
       "execution_mode": "scientific-batch",
-      "state": "active",
+      "state": "qualified",
       "route_exposed": true,
       "source": {
         "kind": "git",
@@ -577,14 +577,14 @@
       },
       "semantic_validation": {
         "validator_id": "bindcraft-v1",
-        "state": "active"
+        "state": "qualified"
       },
       "qualification": {
         "h100_semantic_receipt_sha256": "9f4d97dd49666b2a67fd54d0ff5ba2133b99757a6e6e794bdebd003df540c66f",
-        "public_completion_receipt_sha256": null,
-        "scheduler_eligibility_receipt_sha256": null,
+        "public_completion_receipt_sha256": "5aaa649116315541f5882c305bd820f9b9e6867da6657a99805414994f9c53d4",
+        "scheduler_eligibility_receipt_sha256": "cad66d1cb923e0d25a05b0839ff45b5c79141baaacd50c0ff1df7aa7287a2b69",
         "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
-        "qualified_at": "2026-09-05T01:59:05Z"
+        "qualified_at": "2026-09-05T06:40:31.924548Z"
       },
       "policy": {
         "commercial_use": "license-dependent",
@@ -650,7 +650,7 @@
       "model_id": "mosaic",
       "display_name": "Mosaic protein design",
       "execution_mode": "scientific-batch",
-      "state": "active",
+      "state": "qualified",
       "route_exposed": true,
       "source": {
         "kind": "git",
@@ -760,14 +760,14 @@
       },
       "semantic_validation": {
         "validator_id": "mosaic-boltz2-proteinmpnn-v1",
-        "state": "active"
+        "state": "qualified"
       },
       "qualification": {
         "h100_semantic_receipt_sha256": "9eeef6c219c3ee0e9754e9d45be9de3f77ccec7824ce9e6b3f0fa17405aef339",
-        "public_completion_receipt_sha256": null,
-        "scheduler_eligibility_receipt_sha256": null,
+        "public_completion_receipt_sha256": "7cac00c2027638e869843e27005e25eda4d83f310b425d599c6d8bcca6e39328",
+        "scheduler_eligibility_receipt_sha256": "0bd627ff5fe26d9991c638a94ad08d35e3972b11c376d1388c02bd3a2c647960",
         "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
-        "qualified_at": "2026-09-04T15:25:31Z"
+        "qualified_at": "2026-09-05T06:39:29.154837Z"
       },
       "policy": {
         "commercial_use": "allowed",
@@ -823,7 +823,7 @@
       "model_id": "rfdiffusion",
       "display_name": "RFdiffusion v1.1.0",
       "execution_mode": "scientific-batch",
-      "state": "active",
+      "state": "qualified",
       "route_exposed": true,
       "source": {
         "kind": "git",
@@ -934,14 +934,14 @@
       },
       "semantic_validation": {
         "validator_id": "rfdiffusion-v1-1-0",
-        "state": "active"
+        "state": "qualified"
       },
       "qualification": {
         "h100_semantic_receipt_sha256": "1f392018020143dbc81695632cdfef02b9582f49e0187f72e6a172c0e8b80765",
-        "public_completion_receipt_sha256": null,
-        "scheduler_eligibility_receipt_sha256": null,
+        "public_completion_receipt_sha256": "372200793b151f22045a1c5e286b6b4be25d887b32ccf11d84b6148968d6ec05",
+        "scheduler_eligibility_receipt_sha256": "ae79860b7c2664fd0028a0414aff0bf51bb68801e044400e3e436fbb9b683df6",
         "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
-        "qualified_at": "2026-09-04T15:21:42Z"
+        "qualified_at": "2026-09-05T06:42:56.225594Z"
       },
       "policy": {
         "commercial_use": "allowed",
@@ -969,7 +969,7 @@
       "model_id": "esmfold2",
       "display_name": "ESMFold2 v3.4.0 (Biohub esm)",
       "execution_mode": "scientific-batch",
-      "state": "active",
+      "state": "qualified",
       "route_exposed": true,
       "source": {
         "kind": "git",
@@ -1091,7 +1091,7 @@
       },
       "semantic_validation": {
         "validator_id": "esmfold2-biohub-v3-4-0",
-        "state": "active"
+        "state": "qualified"
       },
       "policy": {
         "commercial_use": "allowed",
@@ -1226,10 +1226,10 @@
       ],
       "qualification": {
         "h100_semantic_receipt_sha256": "e52236de244cfb52ec5e6d6486812e1518d0f6c9e0ade18608b9d063cc8971c2",
-        "public_completion_receipt_sha256": null,
-        "scheduler_eligibility_receipt_sha256": null,
+        "public_completion_receipt_sha256": "d448fa19fe52bd1a7bc01fd27b1d9e3900b32a4b94e018ae8c728b3e1147149e",
+        "scheduler_eligibility_receipt_sha256": "22b9eb66d243eb89af0a0fb268b94e3a3b15a4cd8cf3fdbbf9ed18adcd4a39e1",
         "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
-        "qualified_at": "2026-09-05T00:11:48Z"
+        "qualified_at": "2026-09-05T06:40:48.697501Z"
       }
     },
     {
@@ -1237,7 +1237,7 @@
       "model_id": "esmfold2-fast",
       "display_name": "ESMFold2-Fast v3.4.0 (Biohub esm)",
       "execution_mode": "scientific-batch",
-      "state": "active",
+      "state": "qualified",
       "route_exposed": true,
       "source": {
         "kind": "git",
@@ -1360,7 +1360,7 @@
       },
       "semantic_validation": {
         "validator_id": "esmfold2-fast-biohub-v3-4-0",
-        "state": "active"
+        "state": "qualified"
       },
       "policy": {
         "commercial_use": "allowed",
@@ -1495,10 +1495,10 @@
       ],
       "qualification": {
         "h100_semantic_receipt_sha256": "b78dce5a942472b9427ca4f84a2a0b00baed1c3beca40d230913f1745c7df545",
-        "public_completion_receipt_sha256": null,
-        "scheduler_eligibility_receipt_sha256": null,
+        "public_completion_receipt_sha256": "eec47667f5f941e16bd375bf80f64e27a7f30020f46ee3ae2e65b1b74de5fdf6",
+        "scheduler_eligibility_receipt_sha256": "bd9c96167bfa4edf82fd88739396fac54da8b43fb11b2a356da4290b082fd698",
         "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
-        "qualified_at": "2026-09-05T00:11:48Z"
+        "qualified_at": "2026-09-05T06:47:01.367226Z"
       }
     },
     {
@@ -1506,7 +1506,7 @@
       "model_id": "openfold3-openbind",
       "display_name": "OpenFold3 OpenBind v0.5.0",
       "execution_mode": "scientific-batch",
-      "state": "active",
+      "state": "qualified",
       "route_exposed": true,
       "source": {
         "kind": "git",
@@ -1627,14 +1627,14 @@
       },
       "semantic_validation": {
         "validator_id": "openfold3-upstream-openbind-v0-5-0",
-        "state": "active"
+        "state": "qualified"
       },
       "qualification": {
         "h100_semantic_receipt_sha256": "2590708d8932ddef795957a91215dd20ca7e8f8666b4aa9d50e782b212029d09",
-        "public_completion_receipt_sha256": null,
-        "scheduler_eligibility_receipt_sha256": null,
+        "public_completion_receipt_sha256": "42c27e8aa2ce41e34e1b54e84f4d59660a038bd0f37362ab5fa38099687b3b21",
+        "scheduler_eligibility_receipt_sha256": "81270f256fd80a9d3febd252fcb996dcc9dda8338a523b18a700d694eff2ba6c",
         "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
-        "qualified_at": "2026-09-05T00:12:15Z"
+        "qualified_at": "2026-09-05T06:40:37.632230Z"
       },
       "policy": {
         "commercial_use": "allowed",
@@ -1690,7 +1690,7 @@
       "model_id": "protenix-v2",
       "display_name": "Protenix v2.0.0",
       "execution_mode": "scientific-batch",
-      "state": "active",
+      "state": "qualified",
       "route_exposed": true,
       "source": {
         "kind": "git",
@@ -1811,14 +1811,14 @@
       },
       "semantic_validation": {
         "validator_id": "protenix-v2-upstream-v2-0-0",
-        "state": "active"
+        "state": "qualified"
       },
       "qualification": {
         "h100_semantic_receipt_sha256": "e2935d0c8596573d7934a25468a6740dace8cb1e53fec3b8bf8cd5c5e52cb33a",
-        "public_completion_receipt_sha256": null,
-        "scheduler_eligibility_receipt_sha256": null,
+        "public_completion_receipt_sha256": "3e989094f7a633022db7384c452bf909de13b163046e32f6265b26854414f683",
+        "scheduler_eligibility_receipt_sha256": "0d7133b179133c9b092c02b550bfcf814e12980acef7727d7d8a8a5956112b05",
         "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
-        "qualified_at": "2026-09-05T00:12:44Z"
+        "qualified_at": "2026-09-05T06:35:46.990078Z"
       },
       "policy": {
         "commercial_use": "allowed",
@@ -1892,7 +1892,7 @@
       "model_id": "alphafold3",
       "display_name": "AlphaFold 3 v3.0.4",
       "execution_mode": "scientific-batch",
-      "state": "active",
+      "state": "qualified",
       "route_exposed": true,
       "source": {
         "kind": "git",
@@ -2013,14 +2013,14 @@
       },
       "semantic_validation": {
         "validator_id": "alphafold3-upstream-v3-0-4",
-        "state": "active"
+        "state": "qualified"
       },
       "qualification": {
         "h100_semantic_receipt_sha256": "095e4d8da54621329d65a1bdae0e9f5b70d9bb305165d7d3f8e26315fe604b75",
-        "public_completion_receipt_sha256": null,
-        "scheduler_eligibility_receipt_sha256": null,
+        "public_completion_receipt_sha256": "e4c7af72569c597ab0ce4f3a14523851b5092ea2298a66cf0b5eb49aaae8f8b1",
+        "scheduler_eligibility_receipt_sha256": "b1505679ef46ff0726f2e567d877eed331bccd102c7f2d8a5af17941af0ed265",
         "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
-        "qualified_at": "2026-09-04T16:57:43Z"
+        "qualified_at": "2026-09-05T06:33:08.079061Z"
       },
       "policy": {
         "commercial_use": "prohibited",

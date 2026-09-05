@@ -6,7 +6,7 @@
     "model_id": "openfold3-openbind",
     "display_name": "OpenFold3 OpenBind v0.5.0",
     "execution_mode": "scientific-batch",
-    "state": "active",
+    "state": "qualified",
     "route_exposed": true,
     "source": {
       "kind": "git",
@@ -127,14 +127,14 @@
     },
     "semantic_validation": {
       "validator_id": "openfold3-upstream-openbind-v0-5-0",
-      "state": "active"
+      "state": "qualified"
     },
     "qualification": {
       "h100_semantic_receipt_sha256": "2590708d8932ddef795957a91215dd20ca7e8f8666b4aa9d50e782b212029d09",
-      "public_completion_receipt_sha256": null,
-      "scheduler_eligibility_receipt_sha256": null,
+      "public_completion_receipt_sha256": "42c27e8aa2ce41e34e1b54e84f4d59660a038bd0f37362ab5fa38099687b3b21",
+      "scheduler_eligibility_receipt_sha256": "81270f256fd80a9d3febd252fcb996dcc9dda8338a523b18a700d694eff2ba6c",
       "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
-      "qualified_at": "2026-09-05T00:12:15Z"
+      "qualified_at": "2026-09-05T06:40:37.632230Z"
     },
     "policy": {
       "commercial_use": "allowed",

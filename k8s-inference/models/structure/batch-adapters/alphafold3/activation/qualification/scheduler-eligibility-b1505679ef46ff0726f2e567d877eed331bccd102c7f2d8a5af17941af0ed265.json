@@ -1,0 +1,85 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-scheduler-eligibility-receipt/v1",
+  "model_id": "alphafold3",
+  "variant_id": "upstream-v3-0-4",
+  "execution_identity_sha256": "670fc65110b203ecbaa04dbd6e86735854ead4e5819b3885a08cae23dcff5e81",
+  "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
+  "acceptance_execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
+  "model_execution_map_entry_sha256": "3847e7f3e846477a8ed16806023becfed4d7dc65297af53679f667cdc27af4c4",
+  "public_completion_receipt_sha256": "e4c7af72569c597ab0ce4f3a14523851b5092ea2298a66cf0b5eb49aaae8f8b1",
+  "fleet_aggregate_sha256": "b25b3e02acdb34b8939c0a6fa510a72bf6bc1178238afda42782e1cff6e5569a",
+  "acceptance_input": {
+    "kind": "secondary-public-acceptance",
+    "path": "models/structure/batch-adapters/alphafold3/activation/public-acceptance.json",
+    "sha256": "0ff70dea0b79c398b0106a50b4776373ef4d90eebcb9adc65ed46fb1164db938"
+  },
+  "scheduling_snapshot": {
+    "digest": "sha256:03354bb67ebbded146f53b588ba333201e93ea2713f4fbcb052d1aa16dc70b15",
+    "policy_revision": "a1b1191140b29df4414e0774f32cea89fecb25ed5d43c6c70224405bab581266",
+    "captured_at": "2026-09-05T06:31:27.456519Z",
+    "service_class": "customer-batch",
+    "tenant_queue": "academic-scientific",
+    "model_lane": "alphafold3",
+    "stage_decisions": [
+      {
+        "accelerator_count": 0,
+        "accelerator_resource_name": null,
+        "checkpoint_mode": "none",
+        "max_execution_seconds": null,
+        "max_queue_seconds": null,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "reference-data-cpu",
+        "resolved_local_queue": "academic-scientific-cpu",
+        "resolved_pool_preference": [
+          "mk8snodegroup-e00ha8zfdnxn12qmbj"
+        ],
+        "resource_class": "cpu",
+        "stage_id": "data-pipeline",
+        "workload_priority_class": "standard",
+        "workload_priority_value": 0
+      },
+      {
+        "accelerator_count": 1,
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "checkpoint_mode": "restart",
+        "max_execution_seconds": null,
+        "max_queue_seconds": null,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "inference-accelerators",
+        "resolved_local_queue": "academic-scientific",
+        "resolved_pool_preference": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "resource_class": "gpu",
+        "stage_id": "inference",
+        "workload_priority_class": "standard",
+        "workload_priority_value": 0
+      }
+    ]
+  },
+  "successful_admissions": [
+    {
+      "stage_id": "data-pipeline",
+      "shard_id": "main",
+      "attempt_number": 1,
+      "resolved_pool_id": null,
+      "admitted_resource_flavor": null,
+      "accelerator_resource_name": null,
+      "accelerator_count": 0,
+      "admitted_at": "2026-09-05T06:31:27Z"
+    },
+    {
+      "stage_id": "inference",
+      "shard_id": "main",
+      "attempt_number": 1,
+      "resolved_pool_id": "h100-reserved-8x",
+      "admitted_resource_flavor": "inference-h100-reserved-8x",
+      "accelerator_resource_name": "nvidia.com/gpu",
+      "accelerator_count": 1,
+      "admitted_at": "2026-09-05T06:32:02Z"
+    }
+  ],
+  "prior_profile_qualified_at": "2026-09-04T16:57:43Z",
+  "qualified_at": "2026-09-05T06:33:08.079061Z"
+}

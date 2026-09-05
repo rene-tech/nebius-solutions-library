@@ -43,7 +43,7 @@
       ]
     },
     "h100": {
-      "state": "semantic-qualified-active-awaiting-public-acceptance",
+      "state": "semantic-qualified-public-accepted",
       "accelerator_class": "nvidia-h100-sxm5-80gb",
       "evidence_paths": [
         "models/cancer-immunotherapy/runtime-images/boltzgen/evidence/h100-qualification-receipt.json"
@@ -63,7 +63,7 @@
       "model_id": "boltzgen",
       "display_name": "BoltzGen v0.3.2",
       "execution_mode": "scientific-batch",
-      "state": "active",
+      "state": "qualified",
       "route_exposed": true,
       "source": {
         "kind": "git",
@@ -257,7 +257,7 @@
       },
       "semantic_validation": {
         "validator_id": "boltzgen-v0-3-2",
-        "state": "active"
+        "state": "qualified"
       },
       "policy": {
         "commercial_use": "allowed",
@@ -270,10 +270,10 @@
       },
       "qualification": {
         "h100_semantic_receipt_sha256": "f4a36ad7b8367e3383f584f96377313d39a26b5a08343d789311a41b04b79a46",
-        "public_completion_receipt_sha256": null,
-        "scheduler_eligibility_receipt_sha256": null,
+        "public_completion_receipt_sha256": "555590429049d660121ff0b8d68d4b0ccb1635fcb168b02a0908a37760e80fe0",
+        "scheduler_eligibility_receipt_sha256": "1bc7dd98863a880548b7334f72bc10627986136034feac0fb1ec73d1de94c7a2",
         "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
-        "qualified_at": "2026-09-03T07:34:56Z"
+        "qualified_at": "2026-09-05T06:38:42.135439Z"
       },
       "runtime_artifacts": [
         {
@@ -531,6 +531,6 @@
   "activation_gate": {
     "route_exposed": true,
     "ready_for_route": true,
-    "public_platform_run_required": true
+    "public_platform_run_required": false
   }
 }

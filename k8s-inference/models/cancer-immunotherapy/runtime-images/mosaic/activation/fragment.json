@@ -44,7 +44,7 @@
       ]
     },
     "h100": {
-      "state": "semantic-qualified-active-awaiting-public-acceptance",
+      "state": "semantic-qualified-public-accepted",
       "accelerator_class": "nvidia-h100-sxm5-80gb",
       "evidence_paths": [
         "models/cancer-immunotherapy/runtime-images/mosaic/evidence/h100-v6-split-root-qualification-20260904.json",
@@ -64,7 +64,7 @@
       "model_id": "mosaic",
       "display_name": "Mosaic protein design",
       "execution_mode": "scientific-batch",
-      "state": "active",
+      "state": "qualified",
       "route_exposed": true,
       "source": {
         "kind": "git",
@@ -174,14 +174,14 @@
       },
       "semantic_validation": {
         "validator_id": "mosaic-boltz2-proteinmpnn-v1",
-        "state": "active"
+        "state": "qualified"
       },
       "qualification": {
         "h100_semantic_receipt_sha256": "9eeef6c219c3ee0e9754e9d45be9de3f77ccec7824ce9e6b3f0fa17405aef339",
-        "public_completion_receipt_sha256": null,
-        "scheduler_eligibility_receipt_sha256": null,
+        "public_completion_receipt_sha256": "7cac00c2027638e869843e27005e25eda4d83f310b425d599c6d8bcca6e39328",
+        "scheduler_eligibility_receipt_sha256": "0bd627ff5fe26d9991c638a94ad08d35e3972b11c376d1388c02bd3a2c647960",
         "execution_map_sha256": "500f1141b164929e71127cd0d32c26e6f84fe3f77db133aa9546df26cbb15ba3",
-        "qualified_at": "2026-09-04T15:25:31Z"
+        "qualified_at": "2026-09-05T06:39:29.154837Z"
       },
       "policy": {
         "commercial_use": "allowed",
@@ -354,6 +354,6 @@
   "activation_gate": {
     "route_exposed": true,
     "ready_for_route": true,
-    "public_platform_run_required": true
+    "public_platform_run_required": false
   }
 }
