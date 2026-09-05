@@ -804,7 +804,7 @@
       "model_id": "bindcraft",
       "variant_id": "v1-5-3-pyrosetta-academic",
       "workload_namespace": "fs2-academic-poc",
-      "execution_identity_sha256": "b9a2fda1158b06f9477e551550473274e73d070a7392e9fa85f8194d8a265882",
+      "execution_identity_sha256": "3f62dfe79e8e38a458fc6a89d041620e0d536228500701cebb0b58f9bb2abf21",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -886,7 +886,7 @@
       "stages": [
         {
           "stage_id": "design",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
           "collector_id": "bindcraft-design-output-v1",
           "validator_id": "bindcraft-v1",
           "mounts": [
@@ -961,7 +961,7 @@
         },
         {
           "stage_id": "aggregate",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
           "collector_id": "bindcraft-aggregate-output-v1",
           "validator_id": "bindcraft-v1",
           "mounts": [

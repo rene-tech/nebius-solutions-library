@@ -7,7 +7,7 @@ from conftest import CATALOG_ROOT
 from jsonschema import Draft202012Validator, FormatChecker
 
 SOLUTION_ROOT = CATALOG_ROOT.parents[1]
-EXECUTION_MAP_SHA256 = "b407837e073da8df13b5767cc016ed6942c824fd89c2a635f8683bcbe5eed5fb"
+EXECUTION_MAP_SHA256 = "3326dc17fb85036b255d143929ac2c22137e60756a685bdab3cc6264555b1a6e"
 PRIMARY_ACTIVE_BRIDGE = {
     "boltzgen": {
         "digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
@@ -65,12 +65,15 @@ PRIMARY_ACTIVE_BRIDGE = {
         },
     },
     "bindcraft": {
-        "digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+        "digest": "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
         "artifact_manifest_digest": "a933ad20fd8c9e065c3ba77e96ff36c78303841b79a33d1b0308ec7d9873d641",
-        "receipt": "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-qualification-20260903.json",
-        "receipt_sha256": "162a1705d3f8b301cfb98426c3717fea63f9c9cb4c5c8ed4f21e2a60a1250944",
+        "receipt": (
+            "models/cancer-immunotherapy/images/bindcraft-native/evidence/"
+            "live-h100-20260905/bindcraft-r19-h100-semantic-qualification.json"
+        ),
+        "receipt_sha256": "e81a454348ec7196437343eafc63cf6c1fe87c1c6c546d74f53fe158de3fa214",
         "receipt_image_path": ("image", "index_digest"),
-        "qualified_at": "2026-09-03T07:04:28Z",
+        "qualified_at": "2026-09-05T00:40:40Z",
         "fragment": "models/cancer-immunotherapy/images/bindcraft-native/activation/fragment.json",
         "access": {
             "profile": "academic",

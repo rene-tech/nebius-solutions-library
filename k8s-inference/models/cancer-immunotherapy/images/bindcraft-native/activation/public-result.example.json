@@ -10,11 +10,11 @@
     "model_id": "bindcraft",
     "variant_id": "v1-5-3-pyrosetta-academic",
     "model_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
-    "runtime_image_digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
-    "runtime_recipe_sha256": "9220fb79a987301202ce353318e38ded9b6e4f976c011375a2529b3f5c7aee7e",
+    "runtime_image_digest": "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+    "runtime_recipe_sha256": "ecb91aa32fcc2ff50df3537cab0ca64633c77c43a4857982366ad37c264ce6c6",
     "workload_recipe_sha256": "ad880c5ee2e2f25462b98c5278454290d3090810762037f6df8c4fea99c7a4cb",
     "model_artifact_manifest_digest": "115ba5116f04aa4798facdf15ba334cd8f9e5821481dafe29949299246a56a48",
-    "execution_identity_sha256": "273dc4e5dfe0daffffcb1df576b6d40a60be11bc5fc9bd9c72512b96b4a7d9c0"
+    "execution_identity_sha256": "1cf3eff157079a8b04f1ff7c113c4989d151565be6cb6626fea607f71a9c05d8"
   },
   "access_admission": {
     "profile": "academic",

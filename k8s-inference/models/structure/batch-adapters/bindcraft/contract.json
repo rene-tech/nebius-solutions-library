@@ -37,7 +37,7 @@
       "run-trajectory",
       "aggregate"
     ],
-    "qualified_against": "The active predecessor r18 parser/collector contract is covered by historical H100 receipt bcr18-20260903f. The corrected r19 successor is immutably published with offline evidence only and has no H100 semantic qualification."
+    "qualified_against": "The active r19 parser/collector contract is covered by exact-digest H100 semantic receipt bcr19-20260905b. Its accepted row is the concrete regression witness: 14 model-specific InterfaceResidues and fractional cross-model Average_n_InterfaceResidues 15.5 are validated independently and preserved."
   },
   "stages": [
     {
@@ -89,8 +89,8 @@
     "admission": "deployment-bound-granted-authorized"
   },
   "runtime_image": {
-    "digest": null,
-    "state": "published-successor-awaiting-h100-qualification",
+    "digest": "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+    "state": "h100-semantic-qualified-active",
     "active_predecessor": {
       "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r18",
       "digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
@@ -100,14 +100,16 @@
     "successor": {
       "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r19",
       "digest": "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
-      "publication": "published-build-only",
-      "semantic_h100_qualification": false,
-      "route_activation_allowed": false,
+      "publication": "published-and-h100-semantic-qualified",
+      "semantic_h100_qualification": true,
+      "route_activation_allowed": true,
       "handoff": "models/structure/batch-adapters/bindcraft/r19-image-handoff.json",
-      "evidence": "models/cancer-immunotherapy/images/bindcraft-native/evidence/r19-successor-publication-20260905.json"
+      "publication_evidence": "models/cancer-immunotherapy/images/bindcraft-native/evidence/r19-successor-publication-20260905.json",
+      "qualification_evidence": "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-20260905/bindcraft-r19-h100-semantic-qualification.json",
+      "qualification_evidence_sha256": "e81a454348ec7196437343eafc63cf6c1fe87c1c6c546d74f53fe158de3fa214"
     },
     "provenance": "r19 attests clean pushed source commit 8e183490201df80b346b955baa4c2c463bc3f4a4, the exact package context, SPDX SBOM, SLSA provenance, three offline smokes, and five executable source files read back from the pulled digest.",
-    "note": "The active r18 digest and its historical receipt are intentionally unchanged. Publishing r19 does not authorize activation or transfer r18 qualification."
+    "note": "r18 and its historical receipt remain immutable predecessor evidence. r19 activation is authorized only by its own exact-digest H100 receipt bcr19-20260905b; no qualification was transferred."
   },
   "controller_requirements": [
     "Resolve the public uncompressed scientific-manifest pointer through the artifact service and pass exactly one verified target_structure / protein-structure-pdb/v1 / chemical/x-pdb entry to the adapter; never materialize the outer manifest as the PDB.",
@@ -116,10 +118,7 @@
     "Publish .fs2/external-trees.json in schema fs2.nebius.ai/bindcraft-external-tree-admission/v1, using the four roles and roots in FS2_BINDCRAFT_EXTERNAL_TREE_ROLES and filling each tree's sha256 from the localization the controller itself verified. The adapter supplies no digest on purpose, so the pending four-tree generation is bound in exactly one place.",
     "Keep exporting FS2_RUNTIME_IMAGE_DIGEST; the reviewed wrapper's aggregate subcommand requires it."
   ],
-  "open_dependencies": [
-    "The controller execution map supplies each runtime artifact's claim and immutable content-addressed sub path. The adapter binds no sub path, so a mutable read-write-many path cannot leak into a rendered Job.",
-    "runtime_image.digest and the successor route stay unset until r19 has immutable publication evidence and a reviewed exact-r19 live H100 qualification."
-  ],
+  "open_dependencies": [],
   "canonical_bytes": {
     "owner": "fs2_serve_catalog.artifacts.canonical_bytes",
     "trailing_newline": true,
@@ -133,13 +132,10 @@
     "authority": "catalog/runtime/contracts/scientific-artifact-localization.json, merged on main; every identity is pinned to it by test_every_tree_binding_matches_the_merged_localization_contract.",
     "supplemental_groups": "Not an adapter concern on this seam. RuntimeTreeBinding carries no group; the localization renderer derives supplementalGroups [1000, 65532] from the planes a stage actually mounts -- 1000 for the reference-data host plane and 65532 for the private academic claim. A mixed-plane consumer joins both. The private claim has since been repaired to gid 65532; 10001 is neither declared nor accepted as the contract.",
     "generation_shape": "A generation is per artifact and equals that tree's own identity digest; there is no run-level generation token. Public sub paths are full generation paths, scientific-localization/public/generations/<artifact_id>/sha256/<digest>, mounted as three subPaths off one hostPath volume at /mnt/fs2-reference-data/data. Every generation carries .fs2-runtime-tree.json inside it, excluded from both inventory algorithms by that one reserved name.",
-    "delivery_state": "Private plane CONFORMING as of the 2026-09-03 ownership repair v2. The gated trees are uid/gid 65532 with modes restored, 9,481 paths verified and 0 violations, and a conforming reader (uid 12345, supplemental 65532, no fsGroup) reads the AlphaFold 3 parameters, the PyRosetta wheel and the installed tree. Corroborated read-only from this task: job academic-ownership-repair-v2 completed once, its pod ran runAsUser 65532 with no fsGroup so the kubelet performed no recursive chown, and the before/after probe pods ran in exactly the conforming shape. Public generation publication is still in progress, so the live BindCraft route stays gated.",
-    "masking_hazard": "RESOLVED for the private plane by the repair. While the trees were uid 65532 / gid 10001, a Pod reached them through its primary group 10001 whether or not the supplemental-group contract held, so no green run could evidence the delivery. Now that they are gid 65532, a reader can only reach them through supplemental 65532, which is the contract itself -- so a passing run on the private plane is now real evidence. Two caveats stand: the recurrence risk is unchanged, since a pod that mounts this claim with fsGroup would chown it again and no policy prevents that; and nothing here says anything about the public generations, which are not published yet."
+    "delivery_state": "CONFORMING. Exact-digest run bcr19-20260905b read 8,928,285,965 bytes across all four immutable trees, observed public roots uid/gid 1000 mode 0555 and the private PyRosetta root uid/gid 65532 mode 0550, and completed without Pod fsGroup. The active execution map retains the promoted content-addressed public and private generation paths.",
+    "masking_hazard": "RESOLVED for the qualified path. While the private tree was uid 65532 / gid 10001, a Pod reached it through primary group 10001 whether or not the supplemental-group contract held, so no green run could evidence delivery. It is now gid 65532 and exact run bcr19-20260905b also admitted all three immutable public generations. The recurrence risk remains: a Pod that mounts the academic claim with fsGroup could chown it again, so production rendering must continue to omit fsGroup and retain the exact supplemental groups."
   },
-  "blocked_on": [
-    "The published r19 digest must complete a new exact-artifact H100 semantic run before activation. The existing r18 qualification cannot satisfy that gate.",
-    "After qualification, the activation owner must deliberately update the workload profile, execution map, runtime recipe identity and route together; this publication task does not retie those active r18 records."
-  ],
+  "blocked_on": [],
   "seam": {
     "dispatch": "fs2_serve.scientific_batch.adapters.compile_adapter_run, explicit allow-list; the adapter adds one branch",
     "plan_type": "AdapterExecutionPlan with RuntimeTreeBinding per localized tree",
@@ -148,7 +144,7 @@
     "note": "Rebuilt against the accepted localization foundation on main. The earlier revision targeted the unaccepted controller branch's richer seam (RuntimeArtifactMount, execution-map bindings, a registry) which main does not have."
   },
   "known_defects": [
-    "r18 and the r19 candidate's aggregate display name for each relaxed complex advances after the structure entry, so its human name is one ordinal late. Artifact IDs retain the exact shard/local candidate identity. collect_aggregate_output derives candidate identity from those immutable IDs, validates all three files together, and emits corrected customer-facing ordinals; it does not trust the defective display name. A future image can fix the label without changing this adapter contract."
+    "r18 and r19's aggregate display name for each relaxed complex advances after the structure entry, so its human name is one ordinal late. Artifact IDs retain the exact shard/local candidate identity. collect_aggregate_output derives candidate identity from those immutable IDs, validates all three files together, and emits corrected customer-facing ordinals; it does not trust the defective display name. A future image can fix the label without changing this adapter contract."
   ],
   "shared_fixes": [
     "adapters/common.py collect_output_files derived media type with branches only for CSV and mmCIF, so every JSON result was labelled chemical/x-pdb. BindCraft is the first JSON-emitting adapter to hit it. Fixed here: a JSON branch keyed on the semantic type or a .json suffix, ordered after CSV so nothing else moves. Regression tests cover JSON, PDB, mmCIF and CSV through the shared helper directly, and the BindCraft collector asserts typed metrics plus PDB structures with content-addressed pointers. Because runtime_recipe_sha256 hashes common.py, the recorded recipe digests for boltzgen and proteina-complexa moved with it and were recomputed; clean main passes that test, so the change is the cause and the update is its completion."
