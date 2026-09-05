@@ -32,6 +32,13 @@ The activation state is the schema-supported active bridge:
   public controller run is still required before promotion from `active` to
   `qualified`.
 
+When that run exists, the repository promotion path is
+`acceptance/scientific-fleet/promote_qualifications.py`. It verifies the exact
+fleet aggregate, execution identity and successful per-stage scheduler
+admissions before changing the canonical profile and this fragment together.
+The generated content-addressed scheduler receipt is then required by this
+directory's validator; editing a profile to `qualified` by hand does not pass.
+
 Mosaic and RFdiffusion now have canonical localization generations, reviewed
 controller compilers/collectors, and exact successor-image H100 evidence. The
 historical accepted-image mismatch and remaining public promotion gates are recorded in
@@ -49,8 +56,9 @@ update it if a new schema or adapter-shim input joins the runtime closure.
 
 `validate_fragments.py` validates the custom generator-input schema, the
 canonical profile/request/result schemas, referenced evidence, source/image
-identity, artifact/stage joins, placement portability, and the active
-pre-acceptance bridge. It independently recomputes runtime recipes, workload
+identity, artifact/stage joins, placement portability, and either the active
+pre-acceptance bridge or its content-addressed qualified successor. It
+independently recomputes runtime recipes, workload
 recipes, artifact identities, qualification evidence, and public-result
 execution identities from the pinned source. It also emits deterministic
 integration material without writing shared aggregates:

@@ -70,6 +70,7 @@
               "enum": [
                 "semantic-qualified-route-disabled",
                 "semantic-qualified-active-awaiting-public-acceptance",
+                "semantic-qualified-public-accepted",
                 "published-successor-awaiting-h100-controller-qualification"
               ]
             },
@@ -220,10 +221,57 @@
       "properties": {
         "route_exposed": {"const": true},
         "ready_for_route": {"const": true},
-        "public_platform_run_required": {"const": true}
+        "public_platform_run_required": {"type": "boolean"}
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "profile_projection": {
+            "properties": {
+              "profile": {
+                "properties": {
+                  "state": {"const": "qualified"}
+                },
+                "required": ["state"]
+              }
+            },
+            "required": ["profile"]
+          }
+        },
+        "required": ["profile_projection"]
+      },
+      "then": {
+        "properties": {
+          "accepted_evidence": {
+            "properties": {
+              "h100": {
+                "properties": {
+                  "state": {"const": "semantic-qualified-public-accepted"}
+                }
+              }
+            }
+          },
+          "activation_gate": {
+            "properties": {
+              "public_platform_run_required": {"const": false}
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "activation_gate": {
+            "properties": {
+              "public_platform_run_required": {"const": true}
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "k8s_name": {
       "type": "string",

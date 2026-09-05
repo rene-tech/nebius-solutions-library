@@ -215,11 +215,11 @@ def test_fragment_dag_compiles_through_global_registry_with_exact_shell_free_inv
 ) -> None:
     fragment = _fragment(model_id)
     profile = fragment["profile_projection"]["profile"]
-    assert profile["state"] == "active"
+    assert profile["state"] in {"active", "qualified"}
     assert profile["route_exposed"] is True
     assert profile["source"]["classification"] == "qualified-input"
     assert profile["interface"]["mcp"]["invocable"] is True
-    assert profile["semantic_validation"]["state"] == "active"
+    assert profile["semantic_validation"]["state"] == profile["state"]
     assert fragment["execution_projection"]["state"] == "ready-for-serialized-integration"
 
     plan = _plan(model_id, count=2)

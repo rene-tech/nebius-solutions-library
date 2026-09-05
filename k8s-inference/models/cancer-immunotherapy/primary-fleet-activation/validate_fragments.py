@@ -28,6 +28,10 @@ ACCEPTANCE_RUNNER = importlib.util.module_from_spec(ACCEPTANCE_SPEC)
 sys.modules[ACCEPTANCE_SPEC.name] = ACCEPTANCE_RUNNER
 ACCEPTANCE_SPEC.loader.exec_module(ACCEPTANCE_RUNNER)
 PROFILE_SCHEMA = ROOT / "catalog/runtime/schema/scientific-workload-profile.schema.json"
+SCHEDULER_ELIGIBILITY_SCHEMA = (
+    ROOT
+    / "catalog/runtime/schema/scientific-scheduler-eligibility-receipt.schema.json"
+)
 REQUEST_SCHEMA = ROOT / "catalog/runtime/schema/scientific-run-request.schema.json"
 RESULT_SCHEMA = ROOT / "catalog/runtime/schema/scientific-run-result.schema.json"
 ARTIFACT_MANIFEST_SCHEMA = (
@@ -249,14 +253,18 @@ def validate_fragment_document(fragment: dict[str, Any], path: Path) -> list[str
     errors.extend(validate_schema(profile, PROFILE_SCHEMA, f"{model_id}.profile"))
     if profile["model_id"] != model_id:
         errors.append(f"{model_id}: profile model_id differs")
-    if profile["state"] != "active" or not profile["route_exposed"]:
-        errors.append(f"{model_id}: profile must be the active pre-acceptance bridge")
+    profile_state = profile["state"]
+    if profile_state not in {"active", "qualified"} or not profile["route_exposed"]:
+        errors.append(f"{model_id}: profile must be active or evidence-qualified")
     if profile["source"]["classification"] != "qualified-input":
         errors.append(f"{model_id}: active profile source must be qualified-input")
-    if accepted["h100"]["state"] != (
-        "semantic-qualified-active-awaiting-public-acceptance"
-    ):
-        errors.append(f"{model_id}: accepted H100 state is not the active bridge")
+    expected_h100_state = (
+        "semantic-qualified-public-accepted"
+        if profile_state == "qualified"
+        else "semantic-qualified-active-awaiting-public-acceptance"
+    )
+    if accepted["h100"]["state"] != expected_h100_state:
+        errors.append(f"{model_id}: accepted H100 state differs from profile state")
     if profile["source"]["revision"] != source["revision"]:
         errors.append(f"{model_id}: accepted and profile source revisions differ")
     identity = profile["execution_identity"]
@@ -311,24 +319,87 @@ def validate_fragment_document(fragment: dict[str, Any], path: Path) -> list[str
             errors.append(f"{model_id}: active execution identity is stale")
     if not profile["interface"]["mcp"]["invocable"]:
         errors.append(f"{model_id}: active MCP tool must be invocable")
-    if profile["semantic_validation"]["state"] != "active":
-        errors.append(f"{model_id}: semantic state must be active")
+    if profile["semantic_validation"]["state"] != profile_state:
+        errors.append(f"{model_id}: semantic state must match profile state")
     qualification = profile.get("qualification")
     if not isinstance(qualification, dict):
         errors.append(f"{model_id}: active profile has no qualification bridge")
     else:
-        if any(
-            qualification.get(key) is not None
-            for key in (
-                "public_completion_receipt_sha256",
-                "scheduler_eligibility_receipt_sha256",
-            )
+        receipt_fields = (
+            "public_completion_receipt_sha256",
+            "scheduler_eligibility_receipt_sha256",
+        )
+        if profile_state == "active" and any(
+            qualification.get(key) is not None for key in receipt_fields
         ):
             errors.append(f"{model_id}: pre-acceptance receipts must remain null")
+        if profile_state == "qualified" and any(
+            not isinstance(qualification.get(key), str)
+            or re.fullmatch(r"[0-9a-f]{64}", qualification[key]) is None
+            for key in receipt_fields
+        ):
+            errors.append(f"{model_id}: qualified receipt digests are incomplete")
         if not re.fullmatch(
             r"[0-9a-f]{64}", str(qualification.get("execution_map_sha256", ""))
         ):
             errors.append(f"{model_id}: execution-map bridge digest is incomplete")
+        if profile_state == "qualified":
+            scheduler_digest = qualification.get(
+                "scheduler_eligibility_receipt_sha256"
+            )
+            scheduler_path = (
+                path.parent
+                / "qualification"
+                / f"scheduler-eligibility-{scheduler_digest}.json"
+            )
+            if not scheduler_path.is_file():
+                errors.append(
+                    f"{model_id}: scheduler eligibility receipt is missing"
+                )
+            else:
+                scheduler_bytes = scheduler_path.read_bytes()
+                if hashlib.sha256(scheduler_bytes).hexdigest() != scheduler_digest:
+                    errors.append(
+                        f"{model_id}: scheduler eligibility receipt digest differs"
+                    )
+                try:
+                    scheduler_receipt = json.loads(scheduler_bytes)
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    errors.append(
+                        f"{model_id}: scheduler eligibility receipt is invalid JSON"
+                    )
+                else:
+                    errors.extend(
+                        validate_schema(
+                            scheduler_receipt,
+                            SCHEDULER_ELIGIBILITY_SCHEMA,
+                            f"{model_id}.scheduler_eligibility",
+                        )
+                    )
+                    expected_scheduler_fields = {
+                        "model_id": model_id,
+                        "execution_identity_sha256": identity[
+                            "execution_identity_sha256"
+                        ],
+                        "execution_map_sha256": qualification[
+                            "execution_map_sha256"
+                        ],
+                        "public_completion_receipt_sha256": qualification[
+                            "public_completion_receipt_sha256"
+                        ],
+                        "qualified_at": qualification["qualified_at"],
+                    }
+                    if any(
+                        scheduler_receipt.get(key) != value
+                        for key, value in expected_scheduler_fields.items()
+                    ):
+                        errors.append(
+                            f"{model_id}: scheduler eligibility identity differs"
+                        )
+
+    public_required = fragment["activation_gate"]["public_platform_run_required"]
+    if public_required is not (profile_state != "qualified"):
+        errors.append(f"{model_id}: public acceptance gate differs from profile state")
 
     lock_path = repository_path(image["lock_path"])
     digest_evidence_path = repository_path(image["digest_evidence_path"])
@@ -774,6 +845,102 @@ def _normalize_serialized_model_reference_data_repair(
         )
 
 
+def _qualification_receipt_matches(profile: dict[str, Any]) -> bool:
+    """Recognize only a content-addressed receipt emitted by the promotion flow."""
+
+    model_id = profile.get("model_id")
+    identity = profile.get("execution_identity")
+    qualification = profile.get("qualification")
+    if not isinstance(model_id, str) or not isinstance(identity, dict) or not isinstance(
+        qualification, dict
+    ):
+        return False
+    digest = qualification.get("scheduler_eligibility_receipt_sha256")
+    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        return False
+    candidates = list(
+        ROOT.glob(
+            f"models/**/activation/qualification/scheduler-eligibility-{digest}.json"
+        )
+    )
+    if len(candidates) != 1:
+        return False
+    receipt_bytes = candidates[0].read_bytes()
+    if hashlib.sha256(receipt_bytes).hexdigest() != digest:
+        return False
+    try:
+        receipt = json.loads(receipt_bytes)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    if validate_schema(
+        receipt,
+        SCHEDULER_ELIGIBILITY_SCHEMA,
+        f"{model_id}.scheduler_eligibility",
+    ):
+        return False
+    expected = {
+        "model_id": model_id,
+        "execution_identity_sha256": identity.get("execution_identity_sha256"),
+        "execution_map_sha256": qualification.get("execution_map_sha256"),
+        "public_completion_receipt_sha256": qualification.get(
+            "public_completion_receipt_sha256"
+        ),
+        "qualified_at": qualification.get("qualified_at"),
+    }
+    return all(receipt.get(key) == value for key, value in expected.items())
+
+
+def _normalize_evidence_qualified_profiles(
+    relative: str, baseline: dict[str, Any], current: dict[str, Any]
+) -> None:
+    """Normalize only active-to-qualified transitions with repository evidence."""
+
+    if relative != "catalog/runtime/contracts/scientific-workload-profiles.json":
+        return
+    baseline_profiles = {
+        item.get("model_id"): item
+        for item in baseline.get("profiles", [])
+        if isinstance(item, dict)
+    }
+    current_profiles = {
+        item.get("model_id"): item
+        for item in current.get("profiles", [])
+        if isinstance(item, dict)
+    }
+    for model_id, current_profile in current_profiles.items():
+        baseline_profile = baseline_profiles.get(model_id)
+        if (
+            not isinstance(baseline_profile, dict)
+            or baseline_profile.get("state") != "active"
+            or current_profile.get("state") != "qualified"
+            or not _qualification_receipt_matches(current_profile)
+        ):
+            continue
+        normalized = json.loads(json.dumps(baseline_profile))
+        normalized["state"] = "qualified"
+        normalized["semantic_validation"]["state"] = "qualified"
+        for field in (
+            "public_completion_receipt_sha256",
+            "scheduler_eligibility_receipt_sha256",
+            "qualified_at",
+        ):
+            normalized["qualification"][field] = current_profile["qualification"][
+                field
+            ]
+        normalized_leaves = dict(_json_leaves(normalized))
+        current_leaves = dict(_json_leaves(current_profile))
+        if (
+            set(normalized_leaves) == set(current_leaves)
+            and all(
+                key[-1] in DERIVED_IDENTITY_FIELDS
+                for key in set(normalized_leaves) & set(current_leaves)
+                if normalized_leaves[key] != current_leaves[key]
+            )
+        ):
+            baseline_profile.clear()
+            baseline_profile.update(normalized)
+
+
 def _derived_identity_refresh_only(relative: str) -> list[str]:
     """Classify a change to a shared aggregate as derived-only, or report why not.
 
@@ -801,6 +968,9 @@ def _derived_identity_refresh_only(relative: str) -> list[str]:
         relative, baseline_document, current_document
     )
     _normalize_serialized_model_reference_data_repair(
+        relative, baseline_document, current_document
+    )
+    _normalize_evidence_qualified_profiles(
         relative, baseline_document, current_document
     )
     baseline = dict(_json_leaves(baseline_document))

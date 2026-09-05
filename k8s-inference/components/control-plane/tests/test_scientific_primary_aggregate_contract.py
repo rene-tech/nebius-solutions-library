@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 
 from conftest import CATALOG_ROOT
 from jsonschema import Draft202012Validator, FormatChecker
@@ -181,26 +182,45 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
             identity = candidate["execution_identity"]
             mcp = candidate["interface"]["mcp"]
             qualification = candidate["qualification"]
-            assert candidate["state"] == "active"
+            assert candidate["state"] in {"active", "qualified"}
             assert candidate["route_exposed"] is True
             assert candidate["source"]["classification"] == "qualified-input"
             assert candidate["access"] == expected["access"]
             assert mcp["discoverable"] is True
             assert mcp["invocable"] is True
-            assert candidate["semantic_validation"]["state"] == "active"
+            assert candidate["semantic_validation"]["state"] == candidate["state"]
             assert identity["runtime_image_digest"] == expected["digest"]
             assert artifact_manifest_digest == expected["artifact_manifest_digest"]
             assert identity["artifact_manifest_digest"] == artifact_manifest_digest
             identity_payload = dict(identity)
             recorded_identity = identity_payload.pop("execution_identity_sha256")
             assert recorded_identity == _canonical_sha256(identity_payload)
-            assert qualification == {
-                "h100_semantic_receipt_sha256": expected["receipt_sha256"],
-                "public_completion_receipt_sha256": None,
-                "scheduler_eligibility_receipt_sha256": None,
-                "execution_map_sha256": EXECUTION_MAP_SHA256,
-                "qualified_at": expected["qualified_at"],
-            }
+            assert qualification["h100_semantic_receipt_sha256"] == expected["receipt_sha256"]
+            assert qualification["execution_map_sha256"] == EXECUTION_MAP_SHA256
+            if candidate["state"] == "active":
+                assert qualification["public_completion_receipt_sha256"] is None
+                assert qualification["scheduler_eligibility_receipt_sha256"] is None
+                assert qualification["qualified_at"] == expected["qualified_at"]
+            else:
+                assert re.fullmatch(
+                    r"[a-f0-9]{64}",
+                    qualification["public_completion_receipt_sha256"],
+                )
+                assert re.fullmatch(
+                    r"[a-f0-9]{64}",
+                    qualification["scheduler_eligibility_receipt_sha256"],
+                )
+
+        if profile["state"] == "qualified":
+            assert fragment["accepted_evidence"]["h100"]["state"] == (
+                "semantic-qualified-public-accepted"
+            )
+            assert fragment["activation_gate"]["public_platform_run_required"] is False
+        else:
+            assert fragment["accepted_evidence"]["h100"]["state"] == (
+                "semantic-qualified-active-awaiting-public-acceptance"
+            )
+            assert fragment["activation_gate"]["public_platform_run_required"] is True
 
         receipt_path = SOLUTION_ROOT / expected["receipt"]
         receipt_bytes = receipt_path.read_bytes()

@@ -114,7 +114,7 @@ def _covers(mount_path: str, artifact_path: str) -> bool:
     return mount == artifact or mount in artifact.parents
 
 
-def test_complete_fleet_is_serialized_as_an_active_pre_acceptance_bridge() -> None:
+def test_complete_fleet_has_consistent_public_acceptance_evidence_state() -> None:
     profiles_document, execution_document = _documents()
     profiles = {item["model_id"]: item for item in profiles_document["profiles"]}
     executions = {item["model_id"]: item for item in execution_document["models"]}
@@ -127,20 +127,27 @@ def test_complete_fleet_is_serialized_as_an_active_pre_acceptance_bridge() -> No
     for model_id, expected in SECONDARY_ACTIVE.items():
         profile = profiles[model_id]
         identity = profile["execution_identity"]
-        assert profile["state"] == "active"
+        assert profile["state"] in {"active", "qualified"}
         assert profile["route_exposed"] is True
         assert profile["source"]["classification"] == "qualified-input"
         assert profile["interface"]["mcp"]["discoverable"] is True
         assert profile["interface"]["mcp"]["invocable"] is True
-        assert profile["semantic_validation"]["state"] == "active"
+        assert profile["semantic_validation"]["state"] == profile["state"]
         qualification = profile["qualification"]
-        assert qualification == {
-            "h100_semantic_receipt_sha256": expected["receipt"],
-            "public_completion_receipt_sha256": None,
-            "scheduler_eligibility_receipt_sha256": None,
-            "execution_map_sha256": profiles["boltzgen"]["qualification"]["execution_map_sha256"],
-            "qualified_at": expected["qualified_at"],
-        }
+        assert qualification["h100_semantic_receipt_sha256"] == expected["receipt"]
+        assert qualification["execution_map_sha256"] == profiles["boltzgen"]["qualification"]["execution_map_sha256"]
+        if profile["state"] == "active":
+            assert qualification["public_completion_receipt_sha256"] is None
+            assert qualification["scheduler_eligibility_receipt_sha256"] is None
+            assert qualification["qualified_at"] == expected["qualified_at"]
+        else:
+            assert re.fullmatch(
+                r"[a-f0-9]{64}", qualification["public_completion_receipt_sha256"]
+            )
+            assert re.fullmatch(
+                r"[a-f0-9]{64}",
+                qualification["scheduler_eligibility_receipt_sha256"],
+            )
         evidence_directory = "live-h100-20260904" if model_id == "alphafold3" else "live-h100-20260905"
         evidence = (
             SOLUTION_ROOT

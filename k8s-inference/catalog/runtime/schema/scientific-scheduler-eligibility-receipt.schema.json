@@ -1,0 +1,368 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/scientific-scheduler-eligibility-receipt/v1",
+  "title": "Scientific scheduler eligibility receipt",
+  "description": "Secret-free, content-addressed projection of a successful public scientific run. The promotion tool verifies the private source receipt and emits only immutable execution, accepted and current map, aggregate, scheduler-decision, and successful-admission evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "model_id",
+    "variant_id",
+    "execution_identity_sha256",
+    "execution_map_sha256",
+    "acceptance_execution_map_sha256",
+    "model_execution_map_entry_sha256",
+    "public_completion_receipt_sha256",
+    "fleet_aggregate_sha256",
+    "acceptance_input",
+    "scheduling_snapshot",
+    "successful_admissions",
+    "prior_profile_qualified_at",
+    "qualified_at"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/scientific-scheduler-eligibility-receipt/v1"
+    },
+    "model_id": {
+      "$ref": "#/$defs/k8s_name"
+    },
+    "variant_id": {
+      "$ref": "#/$defs/k8s_name"
+    },
+    "execution_identity_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "execution_map_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "acceptance_execution_map_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "model_execution_map_entry_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "public_completion_receipt_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "fleet_aggregate_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "acceptance_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "sha256"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "primary-activation-fragment",
+            "secondary-public-acceptance"
+          ]
+        },
+        "path": {
+          "$ref": "#/$defs/repository_path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "scheduling_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "digest",
+        "policy_revision",
+        "captured_at",
+        "service_class",
+        "tenant_queue",
+        "model_lane",
+        "stage_decisions"
+      ],
+      "properties": {
+        "digest": {
+          "$ref": "#/$defs/tagged_sha256"
+        },
+        "policy_revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "captured_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "service_class": {
+          "enum": [
+            "presentation",
+            "interactive",
+            "customer-batch",
+            "bulk-backfill"
+          ]
+        },
+        "tenant_queue": {
+          "$ref": "#/$defs/k8s_name"
+        },
+        "model_lane": {
+          "$ref": "#/$defs/k8s_name"
+        },
+        "stage_decisions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/stage_decision"
+          }
+        }
+      }
+    },
+    "successful_admissions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/admission"
+      }
+    },
+    "prior_profile_qualified_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "qualified_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "tagged_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "k8s_name": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "repository_path": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$",
+      "maxLength": 1024
+    },
+    "nullable_k8s_name": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/k8s_name"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "stage_decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage_id",
+        "resource_class",
+        "resolved_cluster_queue",
+        "resolved_local_queue",
+        "workload_priority_class",
+        "workload_priority_value",
+        "resolved_pool_preference",
+        "accelerator_resource_name",
+        "accelerator_count",
+        "max_queue_seconds",
+        "max_execution_seconds",
+        "checkpoint_mode",
+        "preemption_mode"
+      ],
+      "properties": {
+        "stage_id": {
+          "$ref": "#/$defs/k8s_name"
+        },
+        "resource_class": {
+          "enum": ["cpu", "gpu"]
+        },
+        "resolved_cluster_queue": {
+          "$ref": "#/$defs/k8s_name"
+        },
+        "resolved_local_queue": {
+          "$ref": "#/$defs/k8s_name"
+        },
+        "workload_priority_class": {
+          "$ref": "#/$defs/k8s_name"
+        },
+        "workload_priority_value": {
+          "type": "integer"
+        },
+        "resolved_pool_preference": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/k8s_name"
+          }
+        },
+        "accelerator_resource_name": {
+          "oneOf": [
+            {
+              "const": "nvidia.com/gpu"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "accelerator_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "max_queue_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "max_execution_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "checkpoint_mode": {
+          "enum": ["none", "restart", "resume"]
+        },
+        "preemption_mode": {
+          "enum": ["non_preemptible", "restartable", "checkpointable"]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "resource_class": {
+                "const": "cpu"
+              }
+            },
+            "required": ["resource_class"]
+          },
+          "then": {
+            "properties": {
+              "accelerator_resource_name": {
+                "type": "null"
+              },
+              "accelerator_count": {
+                "const": 0
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "accelerator_resource_name": {
+                "const": "nvidia.com/gpu"
+              },
+              "accelerator_count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 8
+              }
+            }
+          }
+        }
+      ]
+    },
+    "admission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage_id",
+        "shard_id",
+        "attempt_number",
+        "resolved_pool_id",
+        "admitted_resource_flavor",
+        "accelerator_resource_name",
+        "accelerator_count",
+        "admitted_at"
+      ],
+      "properties": {
+        "stage_id": {
+          "$ref": "#/$defs/k8s_name"
+        },
+        "shard_id": {
+          "$ref": "#/$defs/nullable_k8s_name"
+        },
+        "attempt_number": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "resolved_pool_id": {
+          "$ref": "#/$defs/nullable_k8s_name"
+        },
+        "admitted_resource_flavor": {
+          "$ref": "#/$defs/nullable_k8s_name"
+        },
+        "accelerator_resource_name": {
+          "oneOf": [
+            {
+              "const": "nvidia.com/gpu"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "accelerator_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "admitted_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "accelerator_count": {
+                "const": 0
+              }
+            },
+            "required": ["accelerator_count"]
+          },
+          "then": {
+            "properties": {
+              "resolved_pool_id": {
+                "type": "null"
+              },
+              "admitted_resource_flavor": {
+                "type": "null"
+              },
+              "accelerator_resource_name": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "resolved_pool_id": {
+                "$ref": "#/$defs/k8s_name"
+              },
+              "admitted_resource_flavor": {
+                "$ref": "#/$defs/k8s_name"
+              },
+              "accelerator_resource_name": {
+                "const": "nvidia.com/gpu"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
