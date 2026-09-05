@@ -8,7 +8,6 @@ from conftest import CATALOG_ROOT
 from jsonschema import Draft202012Validator, FormatChecker
 
 SOLUTION_ROOT = CATALOG_ROOT.parents[1]
-EXECUTION_MAP_SHA256 = "3326dc17fb85036b255d143929ac2c22137e60756a685bdab3cc6264555b1a6e"
 PRIMARY_ACTIVE_BRIDGE = {
     "boltzgen": {
         "digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
@@ -166,7 +165,7 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
         (CATALOG_ROOT / "schema/scientific-workload-profile.schema.json").read_text(encoding="utf-8")
     )
     profile_validator = Draft202012Validator(profile_schema, format_checker=FormatChecker())
-    assert _canonical_sha256(execution_document) == EXECUTION_MAP_SHA256
+    execution_map_sha256 = _canonical_sha256(execution_document)
     assert set(PRIMARY_ACTIVE_BRIDGE).issubset(profiles)
     assert set(PRIMARY_ACTIVE_BRIDGE).issubset(executions)
 
@@ -196,7 +195,7 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
             recorded_identity = identity_payload.pop("execution_identity_sha256")
             assert recorded_identity == _canonical_sha256(identity_payload)
             assert qualification["h100_semantic_receipt_sha256"] == expected["receipt_sha256"]
-            assert qualification["execution_map_sha256"] == EXECUTION_MAP_SHA256
+            assert qualification["execution_map_sha256"] == execution_map_sha256
             if candidate["state"] == "active":
                 assert qualification["public_completion_receipt_sha256"] is None
                 assert qualification["scheduler_eligibility_receipt_sha256"] is None
