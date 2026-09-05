@@ -35,6 +35,7 @@ PROFILE_OWNER_GLOBS = (
 PRIMARY_FRAGMENT_SCHEMA = "fs2.nebius.ai/primary-scientific-activation-fragment/v1"
 SECONDARY_PROJECTION_SCHEMA = "fs2-serve.nebius.ai/scientific-workload-profile-projection/v1"
 PROFILE_MERGE_TARGET = "catalog/runtime/contracts/scientific-workload-profiles.json"
+PENDING_RESULT_ERROR = "PUBLIC_ACCEPTANCE_PENDING"
 
 sys.path.insert(0, str(CONTROL_PLANE_ROOT / "src"))
 
@@ -165,11 +166,11 @@ def _derive_contracts(
         if model_id in seen_models:
             raise SystemExit(f"scientific execution map repeats {model_id}")
         seen_models.add(model_id)
-        profile = profiles.get(model_id)
+        mapped_profile = profiles.get(model_id)
         identity = derived_identities.get(model_id)
-        if profile is None:
+        if mapped_profile is None:
             raise SystemExit(f"execution-map model {model_id} has no profile identity")
-        if identity is None and profile.get("state") != "candidate-unqualified":
+        if identity is None and mapped_profile.get("state") != "candidate-unqualified":
             raise SystemExit(f"execution-map model {model_id} has no complete profile identity")
         _replace(
             model,
@@ -178,7 +179,7 @@ def _derive_contracts(
             f"{model_id} execution-map identity",
             drifted,
         )
-        mapped_profiles.append(profile)
+        mapped_profiles.append(mapped_profile)
 
     execution_map_sha256 = hashlib.sha256(_helm_to_json_bytes(execution_map)).hexdigest()
     for profile in mapped_profiles:
@@ -306,15 +307,108 @@ def _profile_owner_payloads(
     payloads: dict[Path, bytes] = {}
     for model_id, profile in profiles.items():
         path, document, owned_profile = owners[model_id]
-        if owned_profile == profile:
-            continue
-        if document.get("schema") == PRIMARY_FRAGMENT_SCHEMA:
-            document["profile_projection"]["profile"] = profile
-        else:
-            document["profile"] = profile
-        drifted.append(f"{model_id} model-owned profile projection")
-        payloads[path] = (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+        primary = document.get("schema") == PRIMARY_FRAGMENT_SCHEMA
+        if owned_profile != profile:
+            if primary:
+                document["profile_projection"]["profile"] = profile
+            else:
+                document["profile"] = profile
+            drifted.append(f"{model_id} model-owned profile projection")
+            payloads[path] = (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+        if primary:
+            pending_result = _pending_result_payload(
+                model_id,
+                profile,
+                document,
+                solution_root=solution_root,
+                drifted=drifted,
+            )
+            if pending_result is not None:
+                result_path, result_payload = pending_result
+                payloads[result_path] = result_payload
     return payloads
+
+
+def _pending_result_payload(
+    model_id: str,
+    profile: dict[str, Any],
+    fragment: dict[str, Any],
+    *,
+    solution_root: Path,
+    drifted: list[str],
+) -> tuple[Path, bytes] | None:
+    """Refresh only a non-success example result, never acceptance evidence."""
+
+    public_fixtures = fragment.get("public_fixtures")
+    if not isinstance(public_fixtures, dict):
+        return None
+    relative = public_fixtures.get("result")
+    if not isinstance(relative, str) or not relative:
+        raise SystemExit(f"{model_id} primary fragment has no public result fixture")
+    root = solution_root.resolve()
+    result_path = (root / relative).resolve()
+    try:
+        result_path.relative_to(root)
+    except ValueError as error:
+        raise SystemExit(f"{model_id} public result fixture escapes the solution root") from error
+    try:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"{model_id} public result fixture is unreadable: {result_path}") from error
+    if not isinstance(result, dict):
+        raise SystemExit(f"{model_id} public result fixture is malformed: {result_path}")
+    if (
+        result.get("terminal_status") != "failed"
+        or not isinstance(result.get("semantic_validation"), dict)
+        or result["semantic_validation"].get("status") != "not-run"
+        or not isinstance(result.get("error"), dict)
+        or result["error"].get("code") != PENDING_RESULT_ERROR
+    ):
+        raise SystemExit(f"{model_id} public result is not a refreshable pending fixture: {result_path}")
+
+    profile_identity = profile.get("execution_identity")
+    accepted = fragment.get("accepted_evidence")
+    execution = fragment.get("execution_projection")
+    if not isinstance(profile_identity, dict) or not isinstance(accepted, dict) or not isinstance(execution, dict):
+        raise SystemExit(f"{model_id} primary fragment has no refreshable execution identity")
+    source = accepted.get("source")
+    image = accepted.get("runtime_image")
+    artifact_inputs = execution.get("artifact_identity_inputs")
+    if (
+        not isinstance(source, dict)
+        or not isinstance(image, dict)
+        or not isinstance(artifact_inputs, list)
+        or not all(isinstance(value, str) for value in artifact_inputs)
+    ):
+        raise SystemExit(f"{model_id} primary fragment has malformed execution identity inputs")
+    if profile_identity.get("model_revision") != source.get("revision") or profile_identity.get(
+        "runtime_image_digest"
+    ) != image.get("digest"):
+        raise SystemExit(f"{model_id} profile identity differs from accepted source or image")
+
+    executable_identity = {
+        "model_id": model_id,
+        "variant_id": execution.get("variant_id"),
+        "model_revision": source.get("revision"),
+        "runtime_image_digest": image.get("digest"),
+        "runtime_recipe_sha256": profile_identity.get("runtime_recipe_sha256"),
+        "workload_recipe_sha256": profile_identity.get("workload_recipe_sha256"),
+        "model_artifact_manifest_digest": hashlib.sha256(
+            json.dumps(sorted(artifact_inputs), separators=(",", ":")).encode("ascii")
+        ).hexdigest(),
+    }
+    expected_identity = {
+        **executable_identity,
+        "execution_identity_sha256": _sha256(executable_identity),
+    }
+    if result.get("execution_identity") == expected_identity:
+        return None
+    current_identity = result.get("execution_identity")
+    if not isinstance(current_identity, dict) or set(current_identity) != set(expected_identity):
+        raise SystemExit(f"{model_id} pending public result execution identity is malformed")
+    result["execution_identity"] = expected_identity
+    drifted.append(f"{model_id} pending public result execution identity")
+    return result_path, (json.dumps(result, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:

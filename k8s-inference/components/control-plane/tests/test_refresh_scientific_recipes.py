@@ -140,24 +140,54 @@ def test_write_mode_refreshes_the_complete_digest_chain(tmp_path: Path, monkeypa
     assert execution_map_path.read_bytes() == refreshed_map
 
 
-def test_write_mode_atomically_refreshes_model_owned_profile_projection(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_write_mode_atomically_refreshes_model_owner_and_pending_result_identity(tmp_path: Path, monkeypatch) -> None:
     module = load_script()
     profile_path, execution_map_path = write_fixture(tmp_path)
     configure(module, monkeypatch, tmp_path, profile_path, execution_map_path)
     original_profile = json.loads(profile_path.read_text(encoding="utf-8"))["profiles"][0]
     owner_path = tmp_path / "models/example/activation/fragment.json"
     owner_path.parent.mkdir(parents=True)
+    result_path = owner_path.parent / "public-result.example.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "terminal_status": "failed",
+                "semantic_validation": {"status": "not-run"},
+                "error": {"code": module.PENDING_RESULT_ERROR},
+                "execution_identity": {
+                    "model_id": "boltzgen",
+                    "variant_id": "unit-v1",
+                    "model_revision": original_profile["execution_identity"]["model_revision"],
+                    "runtime_image_digest": original_profile["execution_identity"]["runtime_image_digest"],
+                    "runtime_recipe_sha256": "0" * 64,
+                    "workload_recipe_sha256": "0" * 64,
+                    "model_artifact_manifest_digest": "0" * 64,
+                    "execution_identity_sha256": "0" * 64,
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     owner_path.write_text(
         json.dumps(
             {
                 "schema": module.PRIMARY_FRAGMENT_SCHEMA,
                 "model_id": "boltzgen",
+                "accepted_evidence": {
+                    "source": {"revision": original_profile["execution_identity"]["model_revision"]},
+                    "runtime_image": {"digest": original_profile["execution_identity"]["runtime_image_digest"]},
+                },
                 "profile_projection": {
                     "merge_target": module.PROFILE_MERGE_TARGET,
                     "profile": original_profile,
                 },
+                "execution_projection": {
+                    "variant_id": "unit-v1",
+                    "artifact_identity_inputs": ["a" * 64, "b" * 64],
+                },
+                "public_fixtures": {"result": result_path.relative_to(tmp_path).as_posix()},
             },
             indent=2,
         )
@@ -169,7 +199,33 @@ def test_write_mode_atomically_refreshes_model_owned_profile_projection(
     refreshed_profile = json.loads(profile_path.read_text(encoding="utf-8"))["profiles"][0]
     owner = json.loads(owner_path.read_text(encoding="utf-8"))
     assert owner["profile_projection"]["profile"] == refreshed_profile
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    executable_identity = {
+        "model_id": "boltzgen",
+        "variant_id": "unit-v1",
+        "model_revision": refreshed_profile["execution_identity"]["model_revision"],
+        "runtime_image_digest": refreshed_profile["execution_identity"]["runtime_image_digest"],
+        "runtime_recipe_sha256": refreshed_profile["execution_identity"]["runtime_recipe_sha256"],
+        "workload_recipe_sha256": refreshed_profile["execution_identity"]["workload_recipe_sha256"],
+        "model_artifact_manifest_digest": hashlib.sha256(
+            module._canonical_bytes(sorted(["a" * 64, "b" * 64]))
+        ).hexdigest(),
+    }
+    assert result["execution_identity"] == {
+        **executable_identity,
+        "execution_identity_sha256": hashlib.sha256(module._canonical_bytes(executable_identity)).hexdigest(),
+    }
     assert module.main(["--check"]) == 0
+
+    result["terminal_status"] = "succeeded"
+    result_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    before_profiles = profile_path.read_bytes()
+    before_result = result_path.read_bytes()
+    monkeypatch.setattr(module, "runtime_recipe_sha256", lambda _root, _model_id: "a" * 64)
+    with pytest.raises(SystemExit, match="not a refreshable pending fixture"):
+        module.main([])
+    assert profile_path.read_bytes() == before_profiles
+    assert result_path.read_bytes() == before_result
 
 
 def test_derivation_failure_writes_neither_contract(tmp_path: Path, monkeypatch) -> None:
