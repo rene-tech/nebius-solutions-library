@@ -486,7 +486,7 @@
       "model_id": "proteina-complexa",
       "variant_id": "upstream-dev-20260827",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "c7af4b4853f88451383925dd1432b5469da5748b2e4f087090934c76029a47f5",
+      "execution_identity_sha256": "7397dd80ce1764d997eb124f3bc7fd172df81ff72473283db8621c0dbe85630f",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1317,7 +1317,7 @@
       "model_id": "esmfold2",
       "variant_id": "biohub-v3-4-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "6e582d5c947687ccd27e45fcf962c6862c88ca5c284f046cf24a386086234ae5",
+      "execution_identity_sha256": "957971ac8e78f9923cc3487169cd1b6f9cf9162ea9b564677bb8d4b92e8a7542",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1528,7 +1528,7 @@
       "model_id": "esmfold2-fast",
       "variant_id": "biohub-v3-4-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "7d9318d3a15719bb984d7d29ec69a42966ce943f88b0f1e24500574b373dca52",
+      "execution_identity_sha256": "e243536869e78c4b6a77df2090ac92027fa4df34d0daff1b8ec893f5e5c50d47",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1739,7 +1739,7 @@
       "model_id": "openfold3-openbind",
       "variant_id": "upstream-openbind-v0-5-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "a04de6ad3383d7a435cb988b9b30fd390ca91c4fe79109a6a4836c3276e5c1e7",
+      "execution_identity_sha256": "06e21f971f62d9857c99a897caed629fbf0b8858eab66d5f66c423d220909d06",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1886,7 +1886,7 @@
       "model_id": "protenix-v2",
       "variant_id": "upstream-v2-0-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "6979aa189e82504af5865fd545314cace639012e62fc5e221a58ad13f0018f32",
+      "execution_identity_sha256": "ba985fd1a280de77527450ac29e3cdf9af98f1e74a613a4855c5eb1a460f2b28",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
