@@ -224,6 +224,7 @@ def compile_run(
                 RuntimeArtifactMount(
                     artifact_id=MODEL_ARTIFACT,
                     mount_path="/models/protenix-v2",
+                    expected_manifest_sha256=LOCALIZATION_MANIFEST_SHA256,
                     read_only=True,
                     supplemental_groups=(PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP,),
                 ),
@@ -291,6 +292,7 @@ def compile_run(
                 RuntimeArtifactMount(
                     artifact_id=MODEL_ARTIFACT,
                     mount_path="/models/protenix-v2",
+                    expected_manifest_sha256=LOCALIZATION_MANIFEST_SHA256,
                     read_only=True,
                     supplemental_groups=(PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP,),
                 ),
