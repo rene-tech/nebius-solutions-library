@@ -913,10 +913,7 @@ def _native_manifest_target(value: object) -> ArtifactPointer:
         required=frozenset({"schema", "manifest_id", "entries"}),
         label="BindCraft native input manifest",
     )
-    if (
-        manifest["schema"] != ARTIFACT_MANIFEST_SCHEMA
-        or manifest["manifest_id"] != NATIVE_INPUT_MANIFEST_ID
-    ):
+    if manifest["schema"] != ARTIFACT_MANIFEST_SCHEMA or manifest["manifest_id"] != NATIVE_INPUT_MANIFEST_ID:
         raise ScientificAdapterError("BindCraft native input manifest identity is unsupported")
     entries = manifest["entries"]
     if not isinstance(entries, list) or len(entries) != 1:
