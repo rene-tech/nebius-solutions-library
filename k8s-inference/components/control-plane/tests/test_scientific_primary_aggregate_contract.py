@@ -7,7 +7,7 @@ from conftest import CATALOG_ROOT
 from jsonschema import Draft202012Validator, FormatChecker
 
 SOLUTION_ROOT = CATALOG_ROOT.parents[1]
-EXECUTION_MAP_SHA256 = "55f1ea1c20099c461ef3ee76a228b06b31b393a7108eb4ade43d40c03355ddaf"
+EXECUTION_MAP_SHA256 = "a9d30b13744d55b34b2a51fda095a160065081f753088d8c3d0e2d0cf51f9e9d"
 PRIMARY_ACTIVE_BRIDGE = {
     "boltzgen": {
         "digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",

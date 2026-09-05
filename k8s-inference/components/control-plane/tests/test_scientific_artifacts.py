@@ -388,6 +388,25 @@ async def test_terminal_result_matches_the_canonical_run_result_schema() -> None
             gpu_uuids=("GPU-1",),
         )
     )
+    snapshot = scheduling_snapshot()
+    snapshot["stages"].insert(
+        0,
+        {
+            "stage_id": "prepare-input",
+            "resource_class": "cpu",
+            "resolved_cluster_queue": "scientific-cpu",
+            "resolved_local_queue": "scientific-reference-data",
+            "workload_priority_class": "customer-batch",
+            "workload_priority_value": 500,
+            "resolved_pool_preference": ["batch-cpu"],
+            "accelerator_resource_name": None,
+            "accelerator_count": 0,
+            "max_queue_seconds": 3600,
+            "max_execution_seconds": 21600,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable",
+        },
+    )
     record = await service.commit_run_result(
         RunResultDraft(
             operation_id=operation_id,
@@ -396,7 +415,7 @@ async def test_terminal_result_matches_the_canonical_run_result_schema() -> None
             submitted_at=NOW,
             completed_at=NOW + timedelta(minutes=5),
             execution_identity=execution_identity(),
-            scheduling_snapshot=scheduling_snapshot(),
+            scheduling_snapshot=snapshot,
             input_manifest_artifact_id=inputs.artifact_id,
             output_manifest_artifact_id=outputs.artifact_id,
             validator_id="proteina-complexa-validator",
@@ -407,6 +426,9 @@ async def test_terminal_result_matches_the_canonical_run_result_schema() -> None
     document = record.result.to_document()
     RESULT_SCHEMA.validate(document)
     assert document["schema"] == "fs2-serve.nebius.ai/scientific-run-result/v1"
+    assert document["scheduling_snapshot"]["stages"][0]["resolved_pool_preference"] == ["batch-cpu"]
+    assert document["scheduling_snapshot"]["stages"][0]["accelerator_resource_name"] is None
+    assert document["scheduling_snapshot"]["stages"][0]["accelerator_count"] == 0
     assert document["attempts"][0]["scheduling_admission"]["accelerator_count"] == 1
     assert document["attempts"][0]["shard_id"] == "candidate-0001"
     assert document["attempts"][0]["gpu_uuids"] == ["GPU-1"]

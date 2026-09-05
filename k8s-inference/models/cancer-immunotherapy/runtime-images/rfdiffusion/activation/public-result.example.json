@@ -11,10 +11,10 @@
     "variant_id": "rfdiffusion-v1-1-0",
     "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
     "runtime_image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
-    "runtime_recipe_sha256": "2e94ee67c779130962e75fde6952d23636b7a4b55e432d926aac6d22f02bd8e7",
+    "runtime_recipe_sha256": "317640ceb1f8f0778ba06844c4f228fc62ac5a86afa51a8aae5c9f0fd2110ff0",
     "workload_recipe_sha256": "625ac765fe08415199b937a1ddb8b6289ed7924e0b88b9f5f342391076891bde",
     "model_artifact_manifest_digest": "e8e779d3d87881efd714fd47d84712d33b3afd9eafcc13d7157d07b42b5edc7b",
-    "execution_identity_sha256": "1213e45e73276ec7adea28d64f41d1138db37e2666f46d0587bdb74bffcb561d"
+    "execution_identity_sha256": "1539d9f739874c85580d5c6e79b7075c94b7cea4ad6b54bb75aa8eb96ffbe598"
   },
   "access_admission": {
     "profile": "standard",

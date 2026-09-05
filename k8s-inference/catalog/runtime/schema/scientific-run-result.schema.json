@@ -477,9 +477,6 @@
           },
           "else": {
             "properties": {
-              "resolved_pool_preference": {
-                "maxItems": 0
-              },
               "accelerator_resource_name": {
                 "type": "null"
               },
