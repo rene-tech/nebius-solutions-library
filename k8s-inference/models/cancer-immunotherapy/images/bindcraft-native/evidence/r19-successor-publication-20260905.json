@@ -1,0 +1,41 @@
+{
+  "schema": "fs2.nebius.ai/bindcraft-successor-publication-evidence/v1",
+  "scope": "registry-publication-and-offline-contract-smoke-only",
+  "published_at": "2026-09-05T00:18:02.560266Z",
+  "image_source_revision": "8e183490201df80b346b955baa4c2c463bc3f4a4",
+  "upstream_source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+  "platform": "linux/amd64",
+  "image": {
+    "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r19",
+    "digest": "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+    "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+    "supersedes": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d"
+  },
+  "publisher_receipt": {
+    "path": "evidence/published-images.json",
+    "schema": "fs2.nebius.ai/cancer-runtime-image-publication/v1",
+    "sha256": "8e9f4321df37f7c3a7385bb4b2e40d813d497c72ef7523a2a5f235726884396a",
+    "source_fingerprint": "1197397d5509d2aef64b07cac562f2fc8b76833b1c98cfe94ac5c6752da0fb2b"
+  },
+  "verification": {
+    "target_was_absent_before_push": true,
+    "pulled_and_verified_by_digest": true,
+    "attested_source_revision_matches": true,
+    "attested_context_path": "k8s-inference/models/cancer-immunotherapy/images/bindcraft-native",
+    "attestation_predicate_types": [
+      "https://slsa.dev/provenance/v1",
+      "https://spdx.dev/Document"
+    ],
+    "offline_smoke_commands": 3,
+    "offline_smoke_state": "passed",
+    "executable_source_files_verified": 5,
+    "executable_source_identity_match": true,
+    "interface_semantics": "The model-specific InterfaceResidues list is canonicalized and validated independently from the bounded cross-model Average_n_InterfaceResidues value; fractional averages are preserved."
+  },
+  "qualification": {
+    "semantic_h100": "not-run",
+    "route_activation_allowed": false,
+    "predecessor_receipt_transfer_allowed": false,
+    "note": "Historical run bcr18-20260903f qualifies only r18 digest sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d."
+  }
+}

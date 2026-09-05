@@ -37,7 +37,7 @@
       "run-trajectory",
       "aggregate"
     ],
-    "qualified_against": "The active predecessor r18 parser/collector contract is covered by historical H100 receipt bcr18-20260903f. The corrected r19 successor remains publication-pending and has no H100 semantic qualification."
+    "qualified_against": "The active predecessor r18 parser/collector contract is covered by historical H100 receipt bcr18-20260903f. The corrected r19 successor is immutably published with offline evidence only and has no H100 semantic qualification."
   },
   "stages": [
     {
@@ -90,7 +90,7 @@
   },
   "runtime_image": {
     "digest": null,
-    "state": "successor-publication-pending-not-activated",
+    "state": "published-successor-awaiting-h100-qualification",
     "active_predecessor": {
       "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r18",
       "digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
@@ -99,13 +99,14 @@
     },
     "successor": {
       "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r19",
-      "digest": null,
-      "publication": "pending",
+      "digest": "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+      "publication": "published-build-only",
       "semantic_h100_qualification": false,
       "route_activation_allowed": false,
-      "handoff": "models/structure/batch-adapters/bindcraft/r19-image-handoff.json"
+      "handoff": "models/structure/batch-adapters/bindcraft/r19-image-handoff.json",
+      "evidence": "models/cancer-immunotherapy/images/bindcraft-native/evidence/r19-successor-publication-20260905.json"
     },
-    "provenance": "r19 must attest the clean pushed source commit, package context, SPDX SBOM, SLSA provenance, offline smoke, and exact executable source bytes before its publication handoff can close.",
+    "provenance": "r19 attests clean pushed source commit 8e183490201df80b346b955baa4c2c463bc3f4a4, the exact package context, SPDX SBOM, SLSA provenance, three offline smokes, and five executable source files read back from the pulled digest.",
     "note": "The active r18 digest and its historical receipt are intentionally unchanged. Publishing r19 does not authorize activation or transfer r18 qualification."
   },
   "controller_requirements": [
@@ -136,7 +137,6 @@
     "masking_hazard": "RESOLVED for the private plane by the repair. While the trees were uid 65532 / gid 10001, a Pod reached them through its primary group 10001 whether or not the supplemental-group contract held, so no green run could evidence the delivery. Now that they are gid 65532, a reader can only reach them through supplemental 65532, which is the contract itself -- so a passing run on the private plane is now real evidence. Two caveats stand: the recurrence risk is unchanged, since a pod that mounts this claim with fsGroup would chown it again and no policy prevents that; and nothing here says anything about the public generations, which are not published yet."
   },
   "blocked_on": [
-    "The r19 successor must be immutably published with its source-bound receipt.",
     "The published r19 digest must complete a new exact-artifact H100 semantic run before activation. The existing r18 qualification cannot satisfy that gate.",
     "After qualification, the activation owner must deliberately update the workload profile, execution map, runtime recipe identity and route together; this publication task does not retie those active r18 records."
   ],

@@ -271,6 +271,14 @@ class ImageLockTests(unittest.TestCase):
             "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@"
             "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
         )
+        self.assertEqual(
+            image["published_digest"],
+            "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+        )
+        self.assertEqual(
+            image["qualification_state"], "published-build-only-not-semantic-qualified"
+        )
+        self.assertFalse(image["deployable"])
 
     def test_successor_handoff_separates_publication_from_h100_qualification(self) -> None:
         lock = build_images.load_lock()["images"][0]
@@ -312,6 +320,22 @@ class ImageLockTests(unittest.TestCase):
             self.assertEqual(handoff["state"], "published-build-only-not-activated")
             self.assertEqual(handoff["successor"]["digest"], receipt["digest"])
             self.assertEqual(handoff["image_source_commit"], receipt["attested_source"]["revision"])
+            evidence = json.loads(
+                (ROOT / "evidence" / "r19-successor-publication-20260905.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(evidence["image"]["target"], lock["target"])
+            self.assertEqual(evidence["image"]["digest"], receipt["digest"])
+            self.assertEqual(evidence["image_source_revision"], handoff["image_source_commit"])
+            self.assertEqual(
+                evidence["publisher_receipt"]["sha256"],
+                hashlib.sha256(
+                    (ROOT / "evidence" / "published-images.json").read_bytes()
+                ).hexdigest(),
+            )
+            self.assertEqual(evidence["qualification"]["semantic_h100"], "not-run")
+            self.assertFalse(evidence["qualification"]["route_activation_allowed"])
 
     def test_the_adapter_wrapper_is_consumed_as_a_build_context(self) -> None:
         # The wrapper is the adapter's published interface and the only file this
