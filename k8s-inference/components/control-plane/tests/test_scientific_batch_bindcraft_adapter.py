@@ -134,7 +134,7 @@ def profile(*, authorization: dict[str, Any] | None = None) -> dict[str, Any]:
                     "max_parallelism": 1,
                     "checkpoint_mode": "none",
                     "preemption_mode": "non_preemptible",
-                    "placement": {"class": "academic-cpu"},
+                    "placement": {"class": "reference-data"},
                     "resources": {
                         "cpu_millis": 2000,
                         "memory_bytes": 8 * 1024**3,
@@ -612,7 +612,7 @@ def test_the_stage_topology_is_a_gpu_fanout_and_one_cpu_aggregate() -> None:
     assert tuple(stage.stage_id for stage in stages) == ("design", "aggregate")
     assert stages[0].resource_class is ResourceClass.GPU
     assert stages[1].resource_class is ResourceClass.CPU
-    assert stages[1].placement_class is StagePlacementClass.ACADEMIC_CPU
+    assert stages[1].placement_class is StagePlacementClass.REFERENCE_DATA_CPU
     assert stages[1].depends_on == ("design",)
     assert stages[1].shards == ("main",)
 

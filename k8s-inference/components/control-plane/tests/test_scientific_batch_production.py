@@ -370,6 +370,36 @@ def scheduling_with_academic_route(*, shadow: bool = False) -> dict[str, object]
             "ephemeral_storage_mib": 114688,
         },
     }
+    reference_data_cpu = {
+        "local_queue": "academic-scientific-cpu",
+        "cluster_queue": "reference-data-cpu",
+        "namespace": namespace,
+        "resource_flavor": "reference-data-cpu",
+        "eligible_pool_ids": ["reference-cpu"],
+        "pool_resolution": {"mode": "per-pool-flavor", "pool_id": "reference-cpu"},
+        "node_selector": {
+            "capacity.fs2.nebius/pool": "reference-data",
+            "capacity.fs2.nebius/type": "regular",
+            "storage.fs2.nebius/reference-data": "true",
+            "workload.fs2.nebius/reference-data": "true",
+        },
+        "tolerations": [
+            {
+                "key": "workload.fs2.nebius/reference-data",
+                "operator": "Equal",
+                "value": "true",
+                "effect": "NoSchedule",
+            }
+        ],
+        "schedulable_capacity": {
+            "cpu": "30000m",
+            "memory": "114688Mi",
+            "ephemeral_storage": "114688Mi",
+            "cpu_millicores": 30000,
+            "memory_mib": 114688,
+            "ephemeral_storage_mib": 114688,
+        },
+    }
     contract["cpu_classes_schema"] = "fs2-serve.nebius.ai/cpu-stage-classes/v1"
     contract["cpu_classes"] = {
         "general-cpu": general_cpu,
@@ -378,23 +408,35 @@ def scheduling_with_academic_route(*, shadow: bool = False) -> dict[str, object]
             "local_queue": "academic-general-cpu",
             "namespace": namespace,
         },
+        "reference-data": reference_data_cpu,
     }
-    contract["cpu_stage_requests"] = {"academic-cpu": {"cpu_millicores": 2000, "memory_mib": 8192}}
+    contract["cpu_stage_requests"] = {
+        "academic-cpu": {"cpu_millicores": 2000, "memory_mib": 8192},
+        "reference-data": {"cpu_millicores": 16000, "memory_mib": 65536},
+    }
     contract["cluster_queues"]["general-cpu"] = {
         "metadata": {"name": "general-cpu"},
+        "spec": {"resourceGroups": []},
+    }
+    contract["cluster_queues"]["reference-data-cpu"] = {
+        "metadata": {"name": "reference-data-cpu"},
         "spec": {"resourceGroups": []},
     }
     for queue_name, queue_namespace in (
         ("general-cpu", "fs2-models"),
         ("academic-general-cpu", namespace),
+        ("academic-scientific-cpu", namespace),
     ):
+        resolved_cluster_queue = (
+            "reference-data-cpu" if queue_name == "academic-scientific-cpu" else "general-cpu"
+        )
         contract["local_queues"][queue_name] = {
             "metadata": {"name": queue_name, "namespace": queue_namespace},
-            "spec": {"clusterQueue": "general-cpu"},
+            "spec": {"clusterQueue": resolved_cluster_queue},
         }
         contract["local_queue_routes"][queue_name] = {
             "namespace": queue_namespace,
-            "cluster_queue": "general-cpu",
+            "cluster_queue": resolved_cluster_queue,
             "model_ids": [],
             "tenant_ids": [],
             "service_classes": [],
@@ -1673,12 +1715,14 @@ def test_scheduling_resolver_freezes_academic_execution_and_localqueue_namespace
         )
 
 
-def test_bindcraft_aggregate_stays_academic_on_the_general_cpu_backing() -> None:
+def test_bindcraft_aggregate_uses_the_academic_reference_data_lane() -> None:
     published = json.loads((CATALOG_ROOT / "contracts" / "scientific-workload-profiles.json").read_text())
     profile = next(item for item in published["profiles"] if item["model_id"] == "bindcraft")
     plan = scientific_plan_from_catalog_profile(profile)
+    contract = scheduling_with_academic_route()
+    reference_data_class = contract["cpu_classes"]["reference-data"]
 
-    frozen = SchedulingContractResolver(scheduling_with_academic_route()).freeze(
+    frozen = SchedulingContractResolver(contract).freeze(
         service_class="customer-batch",
         model_id="bindcraft",
         tenant_id=ACADEMIC_TENANT_ID,
@@ -1691,13 +1735,30 @@ def test_bindcraft_aggregate_stays_academic_on_the_general_cpu_backing() -> None
     aggregate = frozen.stage("aggregate")
     assert design.workload_namespace == aggregate.workload_namespace == "fs2-academic-poc"
     assert design.resolved_local_queue == "academic-scientific"
-    assert aggregate.placement_class is StagePlacementClass.ACADEMIC_CPU
-    assert aggregate.resolved_local_queue == "academic-general-cpu"
-    assert aggregate.resolved_cluster_queue == "general-cpu"
-    assert aggregate.requested_resource_flavor == "general-cpu"
-    assert aggregate.resolved_pool_preference == ("general-cpu-8x",)
-    assert ("workload.fs2.nebius/general-cpu", "true") in aggregate.node_selector
-    assert aggregate.resolved_cluster_queue != "reference-data-cpu"
+    assert reference_data_class["schedulable_capacity"] == {
+        "cpu": "30000m",
+        "memory": "114688Mi",
+        "ephemeral_storage": "114688Mi",
+        "cpu_millicores": 30000,
+        "memory_mib": 114688,
+        "ephemeral_storage_mib": 114688,
+    }
+    assert aggregate.placement_class is StagePlacementClass.REFERENCE_DATA_CPU
+    assert aggregate.resolved_local_queue == "academic-scientific-cpu"
+    assert aggregate.resolved_cluster_queue == "reference-data-cpu"
+    assert aggregate.requested_resource_flavor == "reference-data-cpu"
+    assert aggregate.resolved_pool_preference == ("reference-cpu",)
+    assert dict(aggregate.node_selector) == reference_data_class["node_selector"]
+    assert [
+        {
+            "key": item.key,
+            "operator": item.operator,
+            "value": item.value,
+            "effect": item.effect,
+        }
+        for item in aggregate.tolerations
+    ] == reference_data_class["tolerations"]
+    assert ("workload.fs2.nebius/general-cpu", "true") not in aggregate.node_selector
 
 
 def test_scheduling_resolver_rejects_ambiguous_model_tenant_execution_namespaces() -> None:

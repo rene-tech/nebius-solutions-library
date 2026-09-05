@@ -799,6 +799,32 @@ def _normalize_serialized_model_reference_data_repair(
                     baseline_stages[stage_id]["placement"]["class"] = (
                         "model-reference-data"
                     )
+        baseline_bindcraft = baseline_models.get("bindcraft")
+        current_bindcraft = current_models.get("bindcraft")
+        if isinstance(baseline_bindcraft, dict) and isinstance(
+            current_bindcraft, dict
+        ):
+            baseline_stages = {
+                item.get("id"): item
+                for item in baseline_bindcraft.get("workload", {}).get("stages", [])
+                if isinstance(item, dict)
+            }
+            current_stages = {
+                item.get("id"): item
+                for item in current_bindcraft.get("workload", {}).get("stages", [])
+                if isinstance(item, dict)
+            }
+            baseline_aggregate = baseline_stages.get("aggregate")
+            current_aggregate = current_stages.get("aggregate")
+            if (
+                isinstance(baseline_aggregate, dict)
+                and isinstance(current_aggregate, dict)
+                and baseline_aggregate.get("placement", {}).get("class")
+                == "academic-cpu"
+                and current_aggregate.get("placement", {}).get("class")
+                == "reference-data"
+            ):
+                baseline_aggregate["placement"]["class"] = "reference-data"
         return
 
     if relative != "catalog/runtime/contracts/scientific-execution-map.json":

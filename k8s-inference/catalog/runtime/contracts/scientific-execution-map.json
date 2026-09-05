@@ -804,7 +804,7 @@
       "model_id": "bindcraft",
       "variant_id": "v1-5-3-pyrosetta-academic",
       "workload_namespace": "fs2-academic-poc",
-      "execution_identity_sha256": "b0c7bb4d8f73dbfd8f5fcdb066b775037d7c116ad3a671451390461e83447857",
+      "execution_identity_sha256": "97ace96e0171409bd999d200ea89496864dc28e3b87e6ad80d92266e44be663c",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"

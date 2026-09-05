@@ -74,9 +74,9 @@
         "model_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
         "runtime_image_digest": "sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
         "runtime_recipe_sha256": "720f16436c0084b7054d939e6ece6a69e6237d4f1d18f9c73ec09f76463d108f",
-        "workload_recipe_sha256": "ad880c5ee2e2f25462b98c5278454290d3090810762037f6df8c4fea99c7a4cb",
+        "workload_recipe_sha256": "213b1bdef5386c61f32789c7f03e2194af2803a1c9ec0c2663bdd41cb2f2e79d",
         "artifact_manifest_digest": "a933ad20fd8c9e065c3ba77e96ff36c78303841b79a33d1b0308ec7d9873d641",
-        "execution_identity_sha256": "b0c7bb4d8f73dbfd8f5fcdb066b775037d7c116ad3a671451390461e83447857"
+        "execution_identity_sha256": "97ace96e0171409bd999d200ea89496864dc28e3b87e6ad80d92266e44be663c"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -143,7 +143,7 @@
             "checkpoint_mode": "none",
             "preemption_mode": "non_preemptible",
             "placement": {
-              "class": "academic-cpu"
+              "class": "reference-data"
             },
             "resources": {
               "cpu_millis": 2000,
@@ -177,7 +177,7 @@
         "h100_semantic_receipt_sha256": "9f4d97dd49666b2a67fd54d0ff5ba2133b99757a6e6e794bdebd003df540c66f",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "7fa2c745f1e89b615580f9e7ccaa827e8a5935d0878807a7f6efe4cbdb61355d",
+        "execution_map_sha256": "122347c627df4a1d3ab969c9cd2e282443f65e065e489265276054b936cd53af",
         "qualified_at": "2026-09-05T01:59:05Z"
       },
       "policy": {

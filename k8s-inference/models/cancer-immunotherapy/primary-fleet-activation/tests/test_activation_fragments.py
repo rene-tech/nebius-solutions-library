@@ -177,6 +177,47 @@ class PrimaryActivationFragmentTests(unittest.TestCase):
     def test_shared_aggregates_carry_no_authored_change(self) -> None:
         self.assertEqual(activation.validate_no_aggregate_edits(), [])
 
+    def test_bindcraft_aggregate_normalizes_only_the_reviewed_reference_data_repair(
+        self,
+    ) -> None:
+        baseline = {
+            "profiles": [
+                {
+                    "model_id": "bindcraft",
+                    "workload": {
+                        "stages": [
+                            {
+                                "id": "aggregate",
+                                "placement": {"class": "academic-cpu"},
+                            }
+                        ]
+                    },
+                }
+            ]
+        }
+        current = json.loads(json.dumps(baseline))
+        current["profiles"][0]["workload"]["stages"][0]["placement"][
+            "class"
+        ] = "reference-data"
+
+        activation._normalize_serialized_model_reference_data_repair(
+            "catalog/runtime/contracts/scientific-workload-profiles.json",
+            baseline,
+            current,
+        )
+        self.assertEqual(baseline, current)
+
+        unreviewed = json.loads(json.dumps(current))
+        unreviewed["profiles"][0]["workload"]["stages"][0]["placement"][
+            "class"
+        ] = "general-cpu"
+        activation._normalize_serialized_model_reference_data_repair(
+            "catalog/runtime/contracts/scientific-workload-profiles.json",
+            current,
+            unreviewed,
+        )
+        self.assertNotEqual(current, unreviewed)
+
     def test_evidence_qualified_transition_is_the_only_normalized_state_change(self) -> None:
         baseline = {
             "profiles": [
