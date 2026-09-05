@@ -179,6 +179,10 @@ async def test_catalog_adapter_never_turns_a_request_time_licence_receipt_into_a
 
 
 async def test_delivered_catalog_joins_every_published_candidate(registry: Registry) -> None:
+    delivered_profiles = json.loads(
+        (DELIVERED_CATALOG / "contracts/scientific-workload-profiles.json").read_text(encoding="utf-8")
+    )
+    boltzgen_profile = next(profile for profile in delivered_profiles["profiles"] if profile["model_id"] == "boltzgen")
     delivered = ScientificCatalogFileAdapter(
         registry=registry,
         receipts_file=scientific_receipts_file(DELIVERED_CATALOG),
@@ -210,8 +214,9 @@ async def test_delivered_catalog_joins_every_published_candidate(registry: Regis
     assert boltzgen.backend.runtime_image_digest == (
         "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e"
     )
-    assert boltzgen.backend.execution_identity_digest == (
-        "9ac595d609b394d40e48433c7ec40e0f30b5b332294078edfd3e89b3b8d2a530"
+    assert (
+        boltzgen.backend.execution_identity_digest
+        == boltzgen_profile["execution_identity"]["execution_identity_sha256"]
     )
     assert boltzgen.available_upgrade is not None
     assert boltzgen.available_upgrade.source_repository == "HannesStark/boltzgen"
