@@ -65,6 +65,11 @@ MAX_OUTPUT_BYTES = 2 * 1024 * 1024 * 1024
 MAX_STAGE_HANDOFF_CONTENT_BYTES = MAX_OUTPUT_BYTES
 MAX_STAGE_HANDOFF_BYTES = 3 * 1024 * 1024 * 1024
 MAX_STAGE_HANDOFF_MEMBERS = 16_384
+# Every pinned upstream Complexa pipeline uses BestOfNSearch with two replicas.
+# ``num_samples`` controls the input batch, while the terminal evaluation CSV
+# contains one design for each sample/replica pair.  Keep that expansion
+# explicit and bounded instead of treating legitimate replicas as extra input.
+BEST_OF_N_REPLICAS = 2
 COLLECTOR_ID = "proteina-complexa-v1"
 VALIDATOR_ID = "proteina-complexa-v1"
 STAGE_HANDOFF_NAME = "stage-handoff"
@@ -202,6 +207,10 @@ class ProteinaParameters:
 def _request(value: object) -> tuple[PublicRunRequest, ProteinaParameters]:
     request = parse_public_request(value, maximum_input_bytes=MAX_INPUT_BYTES)
     return request, ProteinaParameters.parse(request.parameters)
+
+
+def _maximum_designs(parameters: ProteinaParameters) -> int:
+    return parameters.num_samples * BEST_OF_N_REPLICAS
 
 
 def _environment(parameters: ProteinaParameters, stage_id: str, workspace: str) -> tuple[tuple[str, str], ...]:
@@ -455,10 +464,11 @@ def validate_output(
     """Validate immutable final artifacts without accepting public file paths."""
 
     request, parameters = _request(request_value)
+    maximum_designs = _maximum_designs(parameters)
     artifacts = load_output_manifest(
         output_manifest,
         artifact_loader=artifact_loader,
-        maximum_entries=parameters.num_samples + 1,
+        maximum_entries=maximum_designs + 1,
         maximum_total_bytes=MAX_OUTPUT_BYTES,
     )
     result_items = [item for item in artifacts if item.semantic_type == "proteina-complexa-results-csv/v1"]
@@ -471,7 +481,7 @@ def validate_output(
         fields, rows = parse_csv_artifact(
             result.content,
             label="Proteina upstream results",
-            maximum_rows=parameters.num_samples,
+            maximum_rows=maximum_designs,
         )
         if "id_gen" not in fields or any("path" in field.lower() for field in fields):
             raise ScientificAdapterError("Proteina result CSV identity or path sanitization is invalid")
@@ -506,7 +516,7 @@ def validate_output(
             if observed == 0:
                 raise ScientificAdapterError("Proteina result row has no finite scalar scientific metric")
         design_count += len(rows)
-    if not 1 <= design_count <= parameters.num_samples or len(structures) != design_count:
+    if not 1 <= design_count <= maximum_designs or len(structures) != design_count:
         raise ScientificAdapterError("Proteina result rows and structures do not match the request bound")
     atom_count = sum(structure_atom_count(item, require_two_chains=True) for item in structures)
     return {
@@ -523,6 +533,7 @@ def collect_output(request_value: object, workspace: Path) -> CollectedOutput:
     """Collect upstream combined binder CSV rows and their referenced PDBs."""
 
     _request_value, parameters = _request(request_value)
+    maximum_designs = _maximum_designs(parameters)
     root = workspace.resolve(strict=True)
     csv_paths = sorted(root.rglob("RAW_*binder*_results_*_combined.csv"))
     if not csv_paths:
@@ -535,7 +546,7 @@ def collect_output(request_value: object, workspace: Path) -> CollectedOutput:
         fields, rows = parse_csv_artifact(
             csv_path.read_bytes(),
             label="Proteina upstream results",
-            maximum_rows=parameters.num_samples,
+            maximum_rows=maximum_designs,
         )
         if "pdb_path" not in fields:
             raise ScientificAdapterError("Proteina upstream result CSV has no pdb_path column")
@@ -547,7 +558,7 @@ def collect_output(request_value: object, workspace: Path) -> CollectedOutput:
                 raise ScientificAdapterError("Proteina upstream CSV references a structure outside the workspace")
             structure_paths[resolved] = None
         entries.append((f"results.{csv_index}", "proteina-complexa-results-csv/v1", csv_path, True))
-    if not 1 <= len(structure_paths) <= parameters.num_samples:
+    if not 1 <= len(structure_paths) <= maximum_designs:
         raise ScientificAdapterError("Proteina collector structure count is outside the request bound")
     entries.extend(
         (f"structure.{index}", "protein-complex-structure/v1", path, False)
