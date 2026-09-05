@@ -816,7 +816,16 @@ def _poll(
         if operation_state in TERMINAL or batch_state in TERMINAL:
             if operation_state != "succeeded" or batch_state != "succeeded":
                 raise AcceptanceError("operation_terminal_failure")
-            return status
+            # Terminal result publication commits the public Operation before
+            # the controller records its batch-side acknowledgement. Keep
+            # polling through that short, valid window so acceptance observes
+            # one coherent terminal snapshot instead of reporting a false
+            # semantic failure.
+            if (
+                _object(status["batch"], "batch_status_invalid").get("result_published")
+                is True
+            ):
+                return status
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise AcceptanceError("operation_timeout")

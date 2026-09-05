@@ -81,6 +81,7 @@ class ApiState:
     uploaded: list[dict[str, Any]] = field(default_factory=list)
     submitted: dict[str, Any] | None = None
     authorized_requests: int = 0
+    status_requests: int = 0
 
     def status(self, terminal: bool) -> dict[str, Any]:
         state = "succeeded" if terminal else "queued"
@@ -381,7 +382,11 @@ class FakeApi:
                 if not self._authorized():
                     return
                 if self.path == f"/v1/operations/{OPERATION_ID}":
-                    self._send(200, state.status(state.mode != "timeout"))
+                    state.status_requests += 1
+                    status = state.status(state.mode != "timeout")
+                    if state.mode == "publish-lag" and state.status_requests == 1:
+                        status["batch"]["result_published"] = False
+                    self._send(200, status)
                     return
                 if self.path == f"/v1/operations/{OPERATION_ID}/result":
                     self._send(200, state.result())
@@ -904,6 +909,19 @@ class AcceptanceRunnerTest(unittest.TestCase):
                     ),
                 )
             self.assertFalse(config.receipt_path.exists())
+
+    def test_terminal_publication_lag_is_polled_to_a_coherent_snapshot(self) -> None:
+        with TemporaryDirectory() as directory, FakeApi("publish-lag") as api:
+            root = Path(directory)
+            fragment = self._direct_fixture(root)
+            config = self._config(root, fragment, api)
+            receipt = MODULE.run_acceptance(
+                config,
+                MODULE.PublicApiClient(api.endpoint, "test-token", timeout_seconds=2),
+            )
+
+            self.assertGreaterEqual(api.state.status_requests, 2)
+            self.assertEqual(receipt["terminal_state"]["semantic_validation"], "passed")
 
 
 def rebuilt_manifest_id(state: ApiState) -> str:

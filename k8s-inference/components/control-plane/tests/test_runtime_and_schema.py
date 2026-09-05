@@ -457,6 +457,7 @@ def test_migration_enforces_cipher_envelopes_and_contains_no_plaintext_payload_c
 
 def test_store_uses_only_migration_global_lock_and_bounded_skip_locked_janitors() -> None:
     source = (CONTROL_ROOT / "src" / "fs2_serve" / "postgres.py").read_text(encoding="utf-8")
+    retry_source = (CONTROL_ROOT / "src" / "fs2_serve" / "postgres_retry.py").read_text(encoding="utf-8")
     normalized = " ".join(source.lower().split())
     assert "727201920002" not in source
     # Migration, per-token, configuration-chain, per-model scale, dynamic-model
@@ -470,7 +471,7 @@ def test_store_uses_only_migration_global_lock_and_bounded_skip_locked_janitors(
     assert source.count("SKIP LOCKED") >= 4
     assert "async def expire_deadline_operations" in source
     assert "deadline_expired" in source
-    assert "sqlstate" in source and '"40P01", "40001"' in source
+    assert "sqlstate" in retry_source and '"40P01", "40001"' in retry_source
     assert (
         "join fs2_tokens t on t.id=o.token_id and t.revoked_at is null "
         "and (t.expires_at is null or t.expires_at>clock_timestamp())"
