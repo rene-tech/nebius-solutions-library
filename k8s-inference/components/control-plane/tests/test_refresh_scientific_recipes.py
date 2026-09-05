@@ -140,6 +140,38 @@ def test_write_mode_refreshes_the_complete_digest_chain(tmp_path: Path, monkeypa
     assert execution_map_path.read_bytes() == refreshed_map
 
 
+def test_write_mode_atomically_refreshes_model_owned_profile_projection(
+    tmp_path: Path, monkeypatch
+) -> None:
+    module = load_script()
+    profile_path, execution_map_path = write_fixture(tmp_path)
+    configure(module, monkeypatch, tmp_path, profile_path, execution_map_path)
+    original_profile = json.loads(profile_path.read_text(encoding="utf-8"))["profiles"][0]
+    owner_path = tmp_path / "models/example/activation/fragment.json"
+    owner_path.parent.mkdir(parents=True)
+    owner_path.write_text(
+        json.dumps(
+            {
+                "schema": module.PRIMARY_FRAGMENT_SCHEMA,
+                "model_id": "boltzgen",
+                "profile_projection": {
+                    "merge_target": module.PROFILE_MERGE_TARGET,
+                    "profile": original_profile,
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert module.main([]) == 0
+    refreshed_profile = json.loads(profile_path.read_text(encoding="utf-8"))["profiles"][0]
+    owner = json.loads(owner_path.read_text(encoding="utf-8"))
+    assert owner["profile_projection"]["profile"] == refreshed_profile
+    assert module.main(["--check"]) == 0
+
+
 def test_derivation_failure_writes_neither_contract(tmp_path: Path, monkeypatch) -> None:
     module = load_script()
     profile_path, execution_map_path = write_fixture(tmp_path, qualification=False)

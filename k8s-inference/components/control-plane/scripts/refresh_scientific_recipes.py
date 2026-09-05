@@ -27,6 +27,14 @@ CONTROL_PLANE_ROOT = Path(__file__).resolve().parents[1]
 SOLUTION_ROOT = CONTROL_PLANE_ROOT.parents[1]
 PROFILE_PATH = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-workload-profiles.json"
 EXECUTION_MAP_PATH = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-execution-map.json"
+PROFILE_OWNER_GLOBS = (
+    "models/**/activation/fragment.json",
+    "models/**/activation/workload-profile.json",
+)
+
+PRIMARY_FRAGMENT_SCHEMA = "fs2.nebius.ai/primary-scientific-activation-fragment/v1"
+SECONDARY_PROJECTION_SCHEMA = "fs2-serve.nebius.ai/scientific-workload-profile-projection/v1"
+PROFILE_MERGE_TARGET = "catalog/runtime/contracts/scientific-workload-profiles.json"
 
 sys.path.insert(0, str(CONTROL_PLANE_ROOT / "src"))
 
@@ -246,6 +254,69 @@ def _atomic_write(payloads: dict[Path, bytes]) -> None:
                 temporary_path.unlink(missing_ok=True)
 
 
+def _profile_owner_payloads(
+    profiles: dict[str, dict[str, Any]],
+    *,
+    solution_root: Path,
+    drifted: list[str],
+) -> dict[Path, bytes]:
+    """Project refreshed profiles back to their model-owned source documents.
+
+    The canonical profile set and the model-owned activation records are one
+    contract. Updating only the aggregate leaves onboarding, qualification and
+    deployment readers with different execution identities.
+    """
+
+    owners: dict[str, tuple[Path, dict[str, Any], dict[str, Any]]] = {}
+    for pattern in PROFILE_OWNER_GLOBS:
+        for path in sorted(solution_root.glob(pattern)):
+            try:
+                document = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise SystemExit(f"scientific profile owner is unreadable: {path}") from error
+            if not isinstance(document, dict):
+                continue
+            schema = document.get("schema")
+            if schema == PRIMARY_FRAGMENT_SCHEMA:
+                projection = document.get("profile_projection")
+                if not isinstance(projection, dict) or projection.get("merge_target") != PROFILE_MERGE_TARGET:
+                    raise SystemExit(f"scientific primary profile owner is malformed: {path}")
+                owned_profile = projection.get("profile")
+                model_id = document.get("model_id")
+            elif schema == SECONDARY_PROJECTION_SCHEMA:
+                if document.get("merge_target") != PROFILE_MERGE_TARGET:
+                    raise SystemExit(f"scientific secondary profile owner is malformed: {path}")
+                owned_profile = document.get("profile")
+                model_id = owned_profile.get("model_id") if isinstance(owned_profile, dict) else None
+            else:
+                continue
+            if not isinstance(model_id, str) or not isinstance(owned_profile, dict):
+                raise SystemExit(f"scientific profile owner has no model profile: {path}")
+            if model_id in owners:
+                raise SystemExit(f"scientific profile owner is duplicated for {model_id}")
+            owners[model_id] = (path, document, owned_profile)
+
+    if not owners:
+        return {}
+    if set(owners) != set(profiles):
+        missing = sorted(set(profiles) - set(owners))
+        extra = sorted(set(owners) - set(profiles))
+        raise SystemExit(f"scientific profile owner set differs (missing={missing}, extra={extra})")
+
+    payloads: dict[Path, bytes] = {}
+    for model_id, profile in profiles.items():
+        path, document, owned_profile = owners[model_id]
+        if owned_profile == profile:
+            continue
+        if document.get("schema") == PRIMARY_FRAGMENT_SCHEMA:
+            document["profile_projection"]["profile"] = profile
+        else:
+            document["profile"] = profile
+        drifted.append(f"{model_id} model-owned profile projection")
+        payloads[path] = (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    return payloads
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="report drift instead of rewriting")
@@ -261,6 +332,16 @@ def main(argv: list[str] | None = None) -> int:
         solution_root=SOLUTION_ROOT,
         recipe_digest=runtime_recipe_sha256,
     )
+    profiles = {
+        profile["model_id"]: profile
+        for profile in profile_document["profiles"]
+        if isinstance(profile, dict) and isinstance(profile.get("model_id"), str)
+    }
+    owner_payloads = _profile_owner_payloads(
+        profiles,
+        solution_root=SOLUTION_ROOT,
+        drifted=drifted,
+    )
 
     if not drifted:
         print("scientific runtime recipes are current")
@@ -274,6 +355,7 @@ def main(argv: list[str] | None = None) -> int:
         {
             PROFILE_PATH: (json.dumps(profile_document, indent=2, ensure_ascii=False) + "\n").encode("utf-8"),
             EXECUTION_MAP_PATH: (json.dumps(execution_map, indent=2, ensure_ascii=False) + "\n").encode("utf-8"),
+            **owner_payloads,
         }
     )
     for row in drifted:
