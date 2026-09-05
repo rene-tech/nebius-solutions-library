@@ -10,7 +10,7 @@ import sys
 import tarfile
 from dataclasses import replace
 from pathlib import Path
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import httpx
 import pytest
@@ -331,6 +331,169 @@ def test_workload_download_stops_after_transient_retry_bound(
             expected_media_type="application/octet-stream",
         )
     assert attempts == companion._ARTIFACT_DOWNLOAD_MAX_ATTEMPTS
+    assert sleeps == [0.5, 1.0, 2.0, 4.0]
+
+
+def test_workload_upload_retries_each_idempotent_step_after_transient_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content = b"canonical scientific output"
+    digest = hashlib.sha256(content).hexdigest()
+    identity = "run.test.prepare.main:stage-handoff"
+    expected_upload_id = str(uuid5(NAMESPACE_URL, f"fs2-scientific-upload:{identity}:{digest}"))
+    attempts = {"begin": 0, "put": 0, "finalize": 0}
+    begin_documents: list[dict[str, object]] = []
+    sleeps: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/internal/scientific-workloads/uploads":
+            attempts["begin"] += 1
+            begin_documents.append(json.loads(request.content))
+            if attempts["begin"] == 1:
+                raise httpx.ConnectError("connection refused", request=request)
+            if attempts["begin"] == 2:
+                return httpx.Response(503)
+            return httpx.Response(
+                201,
+                json={
+                    "upload_id": expected_upload_id,
+                    "handle": {
+                        "method": "PUT",
+                        "url": "https://objects.test/output.bin",
+                        "headers": {"x-fs2-upload": "signed"},
+                    },
+                },
+            )
+        if request.url.host == "objects.test":
+            attempts["put"] += 1
+            assert request.method == "PUT"
+            assert request.headers["x-fs2-upload"] == "signed"
+            assert request.content == content
+            if attempts["put"] == 1:
+                raise httpx.ConnectTimeout("connect timed out", request=request)
+            if attempts["put"] == 2:
+                return httpx.Response(429)
+            return httpx.Response(200)
+        attempts["finalize"] += 1
+        assert request.url.path == f"/internal/scientific-workloads/uploads/{expected_upload_id}:finalize"
+        if attempts["finalize"] == 1:
+            return httpx.Response(502)
+        return httpx.Response(
+            200,
+            json={
+                "artifact_id": "00000000-0000-4000-8000-000000000021",
+                "sha256": digest,
+                "size_bytes": len(content),
+                "media_type": "application/octet-stream",
+                "compression": "none",
+            },
+        )
+
+    monkeypatch.setattr(companion.time, "sleep", sleeps.append)
+    client = companion.WorkloadArtifactHttpClient(
+        base_url="https://artifacts.internal",
+        capability="test-capability",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = client.upload(
+        identity=identity,
+        content=content,
+        media_type="application/octet-stream",
+        compression=None,
+    )
+
+    assert result["sha256"] == digest
+    assert attempts == {"begin": 3, "put": 3, "finalize": 2}
+    assert begin_documents == [begin_documents[0]] * 3
+    assert begin_documents[0]["upload_id"] == expected_upload_id
+    assert sleeps == [0.5, 1.0, 0.5, 1.0, 0.5]
+
+
+@pytest.mark.parametrize(
+    ("failed_step", "status"),
+    [("begin", 401), ("put", 403), ("finalize", 409), ("finalize", 422)],
+)
+def test_workload_upload_does_not_retry_auth_or_content_failures(
+    failed_step: str,
+    status: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = {"begin": 0, "put": 0, "finalize": 0}
+    sleeps: list[float] = []
+    content = b"invalid for this reservation"
+    identity = "run.test.prepare.main:stage-handoff"
+    upload_id = str(
+        uuid5(NAMESPACE_URL, f"fs2-scientific-upload:{identity}:{hashlib.sha256(content).hexdigest()}")
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/internal/scientific-workloads/uploads":
+            attempts["begin"] += 1
+            if failed_step == "begin":
+                return httpx.Response(status)
+            return httpx.Response(
+                201,
+                json={
+                    "upload_id": upload_id,
+                    "handle": {"method": "PUT", "url": "https://objects.test/output.bin", "headers": {}},
+                },
+            )
+        if request.url.host == "objects.test":
+            attempts["put"] += 1
+            if failed_step == "put":
+                return httpx.Response(status)
+            return httpx.Response(200)
+        attempts["finalize"] += 1
+        assert request.url.path == f"/internal/scientific-workloads/uploads/{upload_id}:finalize"
+        return httpx.Response(status)
+
+    monkeypatch.setattr(companion.time, "sleep", sleeps.append)
+    client = companion.WorkloadArtifactHttpClient(
+        base_url="https://artifacts.internal",
+        capability="test-capability",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        client.upload(
+            identity=identity,
+            content=content,
+            media_type="application/octet-stream",
+            compression=None,
+        )
+
+    assert attempts[failed_step] == 1
+    assert sleeps == []
+
+
+def test_workload_upload_stops_after_transient_retry_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    sleeps: list[float] = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(503)
+
+    monkeypatch.setattr(companion.time, "sleep", sleeps.append)
+    client = companion.WorkloadArtifactHttpClient(
+        base_url="https://artifacts.internal",
+        capability="test-capability",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        client.upload(
+            identity="run.test.prepare.main:stage-handoff",
+            content=b"never accepted",
+            media_type="application/octet-stream",
+            compression=None,
+        )
+
+    assert attempts == companion._ARTIFACT_UPLOAD_MAX_ATTEMPTS
     assert sleeps == [0.5, 1.0, 2.0, 4.0]
 
 

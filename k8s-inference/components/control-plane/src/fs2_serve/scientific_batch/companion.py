@@ -43,6 +43,8 @@ _BOLTZGEN_INPUT_MAX_BYTES = 16 * 1024 * 1024
 _MAX_RUNTIME_MARKER_BYTES = 64 * 1024
 _ARTIFACT_DOWNLOAD_MAX_ATTEMPTS = 5
 _ARTIFACT_DOWNLOAD_BASE_BACKOFF_SECONDS = 0.5
+_ARTIFACT_UPLOAD_MAX_ATTEMPTS = 5
+_ARTIFACT_UPLOAD_BASE_BACKOFF_SECONDS = 0.5
 RUNTIME_LOCALIZATION_SCHEMA = "fs2-serve.nebius.ai/runtime-localization-marker/v1"
 RUNTIME_TREE_IDENTITY_SCHEMA = "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
 RUNTIME_TREE_IDENTITY_FILE = ".fs2-runtime-tree.json"
@@ -615,6 +617,48 @@ class WorkloadArtifactHttpClient:
             time.sleep(_ARTIFACT_DOWNLOAD_BASE_BACKOFF_SECONDS * (2**attempt))
         raise RuntimeError("artifact download retry bound was not enforced")  # pragma: no cover
 
+    def _upload_request(
+        self,
+        method: Literal["POST", "PUT"],
+        url: str,
+        *,
+        headers: Mapping[str, str],
+        json_body: Mapping[str, Any] | None = None,
+        content: bytes | None = None,
+    ) -> httpx.Response:
+        """Run one idempotent upload step with bounded transient-only retries.
+
+        The caller supplies a deterministic upload identity for both lifecycle
+        POSTs and the PUT always repeats the same complete, content-addressed
+        byte string.  Retrying those operations is therefore safe when a
+        gateway address is briefly unavailable or returns 429/5xx.  Every
+        other response, including auth, stale-capability and digest errors,
+        remains fail-fast.
+        """
+
+        for attempt in range(_ARTIFACT_UPLOAD_MAX_ATTEMPTS):
+            retry = False
+            try:
+                response = self.client.request(
+                    method,
+                    url,
+                    headers=headers,
+                    json=json_body,
+                    content=content,
+                )
+                retry = response.status_code == 429 or 500 <= response.status_code < 600
+                if not retry or attempt + 1 == _ARTIFACT_UPLOAD_MAX_ATTEMPTS:
+                    response.raise_for_status()
+                    return response
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                if attempt + 1 == _ARTIFACT_UPLOAD_MAX_ATTEMPTS:
+                    raise
+                retry = True
+            if not retry:  # pragma: no cover - all non-retry paths return or raise above.
+                raise RuntimeError("artifact upload retry state is invalid")
+            time.sleep(_ARTIFACT_UPLOAD_BASE_BACKOFF_SECONDS * (2**attempt))
+        raise RuntimeError("artifact upload retry bound was not enforced")  # pragma: no cover
+
     def download(
         self,
         artifact_id: UUID,
@@ -682,22 +726,26 @@ class WorkloadArtifactHttpClient:
             "media_type": media_type,
             "compression": compression,
         }
-        begun = self.client.post(
+        begun = self._upload_request(
+            "POST",
             f"{self.base_url}/internal/scientific-workloads/uploads",
             headers=self.headers,
-            json=request,
+            json_body=request,
         )
-        begun.raise_for_status()
         handle = begun.json()["handle"]
         if handle.get("method") != "PUT":
             raise ValueError("artifact service returned a non-upload handle")
-        stored = self.client.put(handle["url"], headers=handle.get("headers", {}), content=content)
-        stored.raise_for_status()
-        finalized = self.client.post(
+        self._upload_request(
+            "PUT",
+            handle["url"],
+            headers=handle.get("headers", {}),
+            content=content,
+        )
+        finalized = self._upload_request(
+            "POST",
             f"{self.base_url}/internal/scientific-workloads/uploads/{upload_id}:finalize",
             headers=self.headers,
         )
-        finalized.raise_for_status()
         return cast(dict[str, Any], finalized.json())
 
 
