@@ -11,10 +11,10 @@
     "variant_id": "upstream-v0-3-2",
     "model_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
     "runtime_image_digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
-    "runtime_recipe_sha256": "3a1a2659f7a7ad250b5f59811ec4eb8e816fd11b02b7d0e3ecd5d2dd1717f134",
+    "runtime_recipe_sha256": "28a40c81dd04654008e769f459b80b44065c226caab06111bd4f31f2f7ef4f79",
     "workload_recipe_sha256": "9990f584f6779d4e261aa0a93c901a0a761ef2d5d3cd2557ad89363b3bbb4f0a",
     "model_artifact_manifest_digest": "11675abe2450d38b2b8033bef278c8152271de6453c002e23beda4cd19780cf2",
-    "execution_identity_sha256": "4eaa65d763cf5498a8295f1de681a18430113f8a850b1702160c23d0ba4ef509"
+    "execution_identity_sha256": "a19ec683ab2452ab57919ade9696df6d3167c6c7890554741a441d603153ac7d"
   },
   "access_admission": {
     "profile": "standard",
