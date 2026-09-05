@@ -107,6 +107,34 @@ def _json_object(content: bytes, *, label: str) -> dict[str, object]:
     return document
 
 
+def _protenix_jobs(content: bytes) -> list[dict[str, object]]:
+    """Parse the upstream Protenix JSON-array input consumed by ``pred``."""
+
+    try:
+        document = json.loads(content.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise ScientificAdapterError("stage handoff payload is not valid UTF-8 JSON") from error
+    if not isinstance(document, list) or not 1 <= len(document) <= 1024:
+        raise ScientificAdapterError("Protenix handoff must contain a bounded non-empty JSON array")
+    names: set[str] = set()
+    for job in document:
+        if not isinstance(job, dict) or not job:
+            raise ScientificAdapterError("Protenix handoff jobs must be non-empty JSON objects")
+        name = job.get("name")
+        sequences = job.get("sequences")
+        if (
+            not isinstance(name, str)
+            or not 1 <= len(name) <= 255
+            or name in names
+            or not isinstance(sequences, list)
+            or not 1 <= len(sequences) <= 4096
+            or any(not isinstance(sequence, dict) or not sequence for sequence in sequences)
+        ):
+            raise ScientificAdapterError("Protenix handoff job identity or sequences are invalid")
+        names.add(name)
+    return document
+
+
 def _validate_esm_prepared(
     content: bytes, *, expected_provenance: Mapping[str, object] | None
 ) -> None:
@@ -201,7 +229,11 @@ def _validate_archive_handoff(
                 contents[member.name] = payload
     except tarfile.TarError as error:
         raise ScientificAdapterError("stage handoff is not a valid tar archive") from error
-    payload_document = _json_object(contents[payload_name], label="stage handoff payload")
+    payload_document: dict[str, object] | list[dict[str, object]]
+    if schema == _PROTENIX_HANDOFF_SCHEMA:
+        payload_document = _protenix_jobs(contents[payload_name])
+    else:
+        payload_document = _json_object(contents[payload_name], label="stage handoff payload")
     if not payload_document:
         raise ScientificAdapterError("stage handoff payload must not be empty")
     provenance = _json_object(contents["provenance.json"], label="stage handoff provenance")
@@ -219,6 +251,7 @@ def _validate_archive_handoff(
         if not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
             raise ScientificAdapterError("stage handoff provenance digest is invalid")
     if schema == _OPENFOLD_HANDOFF_SCHEMA:
+        assert isinstance(payload_document, dict)
         seeds = provenance.get("model_seeds")
         queries = payload_document.get("queries")
         if (

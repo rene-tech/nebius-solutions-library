@@ -47,6 +47,7 @@ from fs2_serve.scientific_batch.adapters import (
     esmfold2_fast,
     openfold3,
     protenix_v2,
+    secondary_structure,
 )
 from fs2_serve.scientific_batch.adapters import (
     collect_stage_output as collect_registered_stage_output,
@@ -237,7 +238,7 @@ def _valid_prepared_handoff(model_id: str, invocation=None) -> tuple[str, bytes]
     if model_id == "protenix-v2":
         payload = (
             json.dumps(
-                {"name": "collector-fixture", "sequences": [{"proteinChain": {"sequence": "ACDE"}}]},
+                [{"name": "collector-fixture", "sequences": [{"proteinChain": {"sequence": "ACDE"}}]}],
                 sort_keys=True,
                 separators=(",", ":"),
             ).encode()
@@ -319,6 +320,21 @@ def _valid_prepared_handoff(model_id: str, invocation=None) -> tuple[str, bytes]
             info.mtime = 0
             archive.addfile(info, io.BytesIO(content))
     return "handoff.tar.zst", zstandard.ZstdCompressor().compress(tar_stream.getvalue())
+
+
+def test_protenix_handoff_payload_matches_the_upstream_array_contract() -> None:
+    jobs = [{"name": "job-1", "sequences": [{"proteinChain": {"sequence": "ACDE"}}]}]
+    assert secondary_structure._protenix_jobs(json.dumps(jobs).encode()) == jobs  # noqa: SLF001
+
+    for invalid in (
+        {"name": "legacy-object", "sequences": []},
+        [],
+        [None],
+        [{"name": "job-1"}],
+        [*jobs, *jobs],
+    ):
+        with pytest.raises(ScientificAdapterError, match="Protenix handoff"):
+            secondary_structure._protenix_jobs(json.dumps(invalid).encode())  # noqa: SLF001
 
 
 def scheduling() -> SchedulingContractResolver:
