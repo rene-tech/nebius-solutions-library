@@ -269,13 +269,19 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
 
 
 def test_bindcraft_private_runtime_tree_is_exact_and_read_only() -> None:
+    profiles_document = json.loads(
+        (CATALOG_ROOT / "contracts/scientific-workload-profiles.json").read_text(encoding="utf-8")
+    )
     execution_document = json.loads(
         (CATALOG_ROOT / "contracts/scientific-execution-map.json").read_text(encoding="utf-8")
     )
+    profile = next(item for item in profiles_document["profiles"] if item["model_id"] == "bindcraft")
     bindcraft = next(item for item in execution_document["models"] if item["model_id"] == "bindcraft")
+    profile_stages = {item["id"]: item for item in profile["workload"]["stages"]}
     stages = {item["stage_id"]: item for item in bindcraft["stages"]}
 
     assert bindcraft["access_profile"] == "academic"
+    assert profile_stages["aggregate"]["placement"] == {"class": "reference-data"}
     af2 = next(item for item in bindcraft["runtime_artifacts"] if item["artifact_id"] == "alphafold2-params-bindcraft")
     assert af2["aggregate_tree"]["file_count"] == 17
     assert af2["aggregate_tree"]["expanded_bytes"] == 5_587_959_437
@@ -304,6 +310,9 @@ def test_bindcraft_private_runtime_tree_is_exact_and_read_only() -> None:
         "artifact-workspace",
         "alphafold2-params",
         "pyrosetta",
+    }
+    assert stages["aggregate"]["required_node_labels"] == {
+        "storage.fs2.nebius/reference-data": "true"
     }
 
 

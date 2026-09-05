@@ -12,9 +12,9 @@
     "model_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
     "runtime_image_digest": "sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
     "runtime_recipe_sha256": "720f16436c0084b7054d939e6ece6a69e6237d4f1d18f9c73ec09f76463d108f",
-    "workload_recipe_sha256": "ad880c5ee2e2f25462b98c5278454290d3090810762037f6df8c4fea99c7a4cb",
+    "workload_recipe_sha256": "213b1bdef5386c61f32789c7f03e2194af2803a1c9ec0c2663bdd41cb2f2e79d",
     "model_artifact_manifest_digest": "115ba5116f04aa4798facdf15ba334cd8f9e5821481dafe29949299246a56a48",
-    "execution_identity_sha256": "57cd6b723b2acb10c7b84f77b163d7b22c553d242a7e5c0fac360c7593b86c68"
+    "execution_identity_sha256": "a219989bc802565683ed6dc33050087cab0699c92abefcb110fe8d4c2699f7b5"
   },
   "access_admission": {
     "profile": "academic",
@@ -49,8 +49,8 @@
       {
         "stage_id": "aggregate",
         "resource_class": "cpu",
-        "resolved_cluster_queue": "scientific-cpu",
-        "resolved_local_queue": "fs2-academic-poc-async",
+        "resolved_cluster_queue": "reference-data-cpu",
+        "resolved_local_queue": "academic-scientific-cpu",
         "workload_priority_class": "customer-batch",
         "workload_priority_value": 500,
         "resolved_pool_preference": [],
