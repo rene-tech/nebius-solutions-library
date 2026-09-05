@@ -93,7 +93,9 @@
   "adapter": {
     "repository_path": "components/control-plane/src/fs2_serve/scientific_batch/adapters/boltzgen.py",
     "base_commit": "0d5343c7cda15f1e3cdbdd7bc2c5bebfa32fd659",
-    "source_sha256": "07f8faca5c952ad10380b6dc8e4c8fb23fb3d1fdae37cdf6fe7e698b025afc80",
+    "source_sha256": "96cf9516003d36c919d4b2232e47ae29c3d8bc372e6110f0e703d5795a5ba975",
+    "qualified_source_sha256": "07f8faca5c952ad10380b6dc8e4c8fb23fb3d1fdae37cdf6fe7e698b025afc80",
+    "qualification_compatibility": "The current adapter appends analysis-only Hydra overrides to the configure command: it retains every candidate and processes them sequentially. The design-stage command, image, generated design configuration, checkpoints, artifacts, and semantic result boundary are unchanged; current route qualification remains separately acceptance-gated.",
     "operation": "design-binders",
     "service_class": "customer-batch",
     "local_queue": "inference-models",

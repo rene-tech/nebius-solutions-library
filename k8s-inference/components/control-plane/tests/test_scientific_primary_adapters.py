@@ -743,6 +743,13 @@ def test_boltzgen_uses_one_gpu_shard_commands_and_every_exact_checkpoint_identit
         assert argv[argv.index("--folding_checkpoint") + 1].endswith("boltz2_conf_final.ckpt")
         assert argv[argv.index("--affinity_checkpoint") + 1].endswith("boltz2_aff.ckpt")
         assert argv[argv.index("--moldir") + 1] == "/opt/fs2/artifacts/boltzgen-inference-molecules"
+        analysis_config = argv[argv.index("--config") + 1 :]
+        assert analysis_config == (
+            "analysis",
+            f"num_processes={boltzgen.ANALYSIS_MAX_PROCESSES}",
+            f"data.cfg.num_workers={boltzgen.ANALYSIS_DATA_WORKERS}",
+            "data.cfg.pin_memory=false",
+        )
         assert invocation.runtime_artifacts == ("boltzgen-checkpoints", "boltzgen-inference-molecules")
         assert invocation.materializations[0].yaml_name == f"design-specs/{invocation.shard_id}.yaml"
         environment = dict(invocation.environment)

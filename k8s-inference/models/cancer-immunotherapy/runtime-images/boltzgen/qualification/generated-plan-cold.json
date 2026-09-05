@@ -34,7 +34,12 @@
     "folding",
     "design_folding",
     "analysis",
-    "filtering"
+    "filtering",
+    "--config",
+    "analysis",
+    "num_processes=1",
+    "data.cfg.num_workers=0",
+    "data.cfg.pin_memory=false"
   ],
   "design_argv": [
     "boltzgen",
@@ -44,19 +49,25 @@
     "design"
   ],
   "environment": {
+    "FS2_BOLTZGEN_BUDGET": "1",
+    "FS2_BOLTZGEN_NUM_DESIGNS": "1",
+    "FS2_BOLTZGEN_REQUEST_SHA256": "bc979b7201807f2cc8ead97aad0fd07c6bf95de060ef8dd07c39353dd332d768",
     "HF_HUB_DISABLE_TELEMETRY": "1",
     "HF_HUB_OFFLINE": "1",
     "TRANSFORMERS_OFFLINE": "1"
   },
-  "input_artifact_bytes": 143360,
-  "input_artifact_sha256": "74e4d125b60b884938b858dab6b14405a071bed940c6931605170a172dcd765c",
+  "input_artifact_bytes": 45777,
+  "input_artifact_sha256": "ba1d5102de31b98be83ea6e44852618bc66c1698a1c5404bf818625074194af7",
+  "input_manifest_bytes": 399,
+  "input_manifest_sha256": "a4d812a756f5829fe4a2d0f70455043fc671e03dc6a9d1cb757c7543ed3292d7",
   "operation_id": "boltzgen-qual-cold-r20260903",
   "request": {
     "input_manifest": {
-      "artifact_id": "boltzgen.qual.pdl1.r20260903",
-      "media_type": "application/x-tar",
-      "sha256": "74e4d125b60b884938b858dab6b14405a071bed940c6931605170a172dcd765c",
-      "size_bytes": 143360
+      "artifact_id": "00000000-0000-0000-0000-000000000002",
+      "compression": "none",
+      "media_type": "application/vnd.fs2.scientific-manifest+json",
+      "sha256": "a4d812a756f5829fe4a2d0f70455043fc671e03dc6a9d1cb757c7543ed3292d7",
+      "size_bytes": 399
     },
     "operation": "design-binders",
     "parameters": {
@@ -73,7 +84,7 @@
     "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
     "service_class": "customer-batch"
   },
-  "request_sha256": "71d3584742548893cefb27fd34cb10bb62335130ee2127e6a4e889277f2d9e26",
+  "request_sha256": "bc979b7201807f2cc8ead97aad0fd07c6bf95de060ef8dd07c39353dd332d768",
   "runtime_artifacts": [
     "boltzgen-checkpoints",
     "boltzgen-inference-molecules"
@@ -100,5 +111,22 @@
     "workload_priority_value": -100
   },
   "schema": "fs2-serve.nebius.ai/boltzgen-h100-generated-plan/v1",
+  "scientific_manifest": {
+    "entries": [
+      {
+        "artifact": {
+          "artifact_id": "00000000-0000-0000-0000-000000000001",
+          "compression": "gzip",
+          "media_type": "application/gzip",
+          "sha256": "ba1d5102de31b98be83ea6e44852618bc66c1698a1c5404bf818625074194af7",
+          "size_bytes": 45777
+        },
+        "name": "campaign-input",
+        "semantic_type": "boltzgen-campaign-input/v1"
+      }
+    ],
+    "manifest_id": "boltzgen-pdl1-inputs",
+    "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1"
+  },
   "working_directory": "/mnt/fs2-scientific/work/boltzgen/ad062d0f5b7f4527caf7/pdl1-face"
 }

@@ -25,6 +25,15 @@ adapter source, cluster identity, and the explicit B300 prohibition.  The
 checkpoint localization receipt records which predecessor bytes were reused
 and the content-addressed publication result.
 
+The lock retains the adapter digest used by the original image-level
+configure/design qualification as `qualified_source_sha256`, separately from
+the current production `source_sha256`. The later route adapter change appends
+analysis-only Hydra overrides to the configure command. It does not alter the
+image, generated design configuration, design-stage invocation, checkpoints,
+artifacts, or design-stage semantic boundary. Current route qualification is
+still acceptance-gated, and the original H100 receipt remains byte-for-byte
+unchanged.
+
 ## Reproduce the contract checks
 
 From this directory:
@@ -67,7 +76,12 @@ bounded candidates (the adapter's per-batch maximum) and retains the best one.
 A smaller smoke can legitimately produce no result when BoltzGen's own
 composition filters reject every design; using the bounded maximum makes the
 example robust without weakening the scientific output validator or changing
-the one-result response contract.
+the one-result response contract. The generated upstream analysis config sets
+`num_processes=1`, `data.cfg.num_workers=0`, and `data.cfg.pin_memory=false`.
+This processes all twenty candidates sequentially instead of inheriting
+upstream's 32-process default, bounding peak CPU memory without raising the
+stage resource envelope or dropping any candidate before the scientific
+analysis and filtering gates.
 
 ## Semantic boundary
 

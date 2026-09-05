@@ -121,6 +121,14 @@ MAX_BATCHES = 2
 MAX_DESIGNS_PER_BATCH = 20
 MAX_BUDGET_PER_BATCH = 3
 MAX_TOTAL_DESIGNS = 24
+# Upstream analysis defaults to 32 spawned processes. Each worker materializes
+# its own structure/metric working set, so even this adapter's bounded 20-design
+# shard can multiply memory until Kubernetes terminates the CPU stage. Process
+# one candidate at a time instead: all oversampled designs still reach the
+# upstream analysis and filtering gates, while peak analysis memory is bounded
+# independently of the host's visible CPU count.
+ANALYSIS_MAX_PROCESSES = 1
+ANALYSIS_DATA_WORKERS = 0
 INPUT_MANIFEST_MEDIA_TYPE = "application/vnd.fs2.scientific-manifest+json"
 CAMPAIGN_INPUT_ID = "campaign-input"
 CAMPAIGN_INPUT_SEMANTIC_TYPE = "boltzgen-campaign-input/v1"
@@ -281,6 +289,11 @@ def _configure_argv(parameters: BoltzGenParameters, batch: DesignBatch, operatio
         molecules_tree_binding().mount_path,
         "--steps",
         *selected,
+        "--config",
+        "analysis",
+        f"num_processes={ANALYSIS_MAX_PROCESSES}",
+        f"data.cfg.num_workers={ANALYSIS_DATA_WORKERS}",
+        "data.cfg.pin_memory=false",
     ]
     if batch.reuse_completed:
         values.append("--reuse")

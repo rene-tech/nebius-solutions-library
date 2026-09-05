@@ -177,7 +177,7 @@
         "h100_semantic_receipt_sha256": "9f4d97dd49666b2a67fd54d0ff5ba2133b99757a6e6e794bdebd003df540c66f",
         "public_completion_receipt_sha256": "5aaa649116315541f5882c305bd820f9b9e6867da6657a99805414994f9c53d4",
         "scheduler_eligibility_receipt_sha256": "e30820677ec79e76b6f17dc6df3379f6078bcbbe1d89f33f17d416eeaa722940",
-        "execution_map_sha256": "08979cbc3e16ed964b9333a36158e79ae3cfacccfccf56faa9d0e750e0470415",
+        "execution_map_sha256": "7278eb3d38e96413fb576b2a95b843a3a3d58048719dc5a7a6e55033b7f69c2b",
         "qualified_at": "2026-09-05T06:40:31.924548Z"
       },
       "policy": {

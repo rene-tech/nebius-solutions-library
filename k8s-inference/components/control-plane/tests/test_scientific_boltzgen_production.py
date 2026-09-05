@@ -98,7 +98,17 @@ def test_public_acceptance_fixture_compiles_the_bounded_production_plan() -> Non
     )
 
     assert plan.controller_plan.stage("configure").shards == ("pdl1-face",)
-    assert plan.invocation("configure", "pdl1-face").consumes == (boltzgen.CAMPAIGN_INPUT_ID,)
+    configure = plan.invocation("configure", "pdl1-face")
+    assert configure.consumes == (boltzgen.CAMPAIGN_INPUT_ID,)
+    argv = configure.argv[3:]
+    assert argv[argv.index("--num_designs") + 1] == "20"
+    assert argv[argv.index("--budget") + 1] == "1"
+    assert argv[argv.index("--config") + 1 :] == (
+        "analysis",
+        "num_processes=1",
+        "data.cfg.num_workers=0",
+        "data.cfg.pin_memory=false",
+    )
     assert [stage.stage_id for stage in plan.controller_plan.stages] == [
         "configure",
         "design",

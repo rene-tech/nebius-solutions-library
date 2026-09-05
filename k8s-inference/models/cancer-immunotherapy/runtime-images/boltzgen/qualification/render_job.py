@@ -152,6 +152,15 @@ def compile_plan(
     )
     configure = execution.invocation("configure", "pdl1-face")
     design = execution.invocation("design", "pdl1-face")
+    standalone_argv: dict[str, list[str]] = {}
+    for name, invocation in (("configure", configure), ("design", design)):
+        expected_runner = f"{invocation.working_directory}/{boltzgen.STAGE_RUNNER_RELATIVE_PATH}"
+        if invocation.argv[:3] != ("python", expected_runner, "--") or len(invocation.argv) < 4:
+            raise SystemExit(f"adapter {name} stage does not use the trusted completion publisher")
+        # The production controller materializes the publisher into the stage
+        # workspace. This standalone image qualifier predates that companion
+        # and executes only the frozen upstream argv inside its own driver.
+        standalone_argv[name] = list(invocation.argv[3:])
     adapter_path = SOLUTION_ROOT / lock["adapter"]["repository_path"]
     if sha256(adapter_path.read_bytes()) != lock["adapter"]["source_sha256"]:
         raise SystemExit("checked-in BoltzGen adapter differs from image-lock.json")
@@ -173,8 +182,8 @@ def compile_plan(
         "input_artifact_bytes": len(input_bundle.campaign_payload),
         "input_manifest_sha256": sha256(input_bundle.scientific_manifest_payload),
         "input_manifest_bytes": len(input_bundle.scientific_manifest_payload),
-        "configure_argv": list(configure.argv),
-        "design_argv": list(design.argv),
+        "configure_argv": standalone_argv["configure"],
+        "design_argv": standalone_argv["design"],
         "environment": dict(design.environment),
         "working_directory": expected_workspace,
         "runtime_artifacts": list(design.runtime_artifacts),
