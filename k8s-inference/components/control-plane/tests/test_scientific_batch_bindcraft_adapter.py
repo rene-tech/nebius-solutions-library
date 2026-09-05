@@ -1188,6 +1188,13 @@ def test_successor_aggregate_consumes_the_bundle_and_final_collector_returns_eve
 
     aggregate_invocation = plan.invocation("aggregate", "main")
     completion_sha256 = publish_stage_completion(aggregate_invocation, aggregate)
+    monkeypatch.delenv("FS2_RUNTIME_IMAGE_DIGEST")
+    with pytest.raises(ScientificAdapterError, match="immutable execution image digest"):
+        bindcraft.collect_companion_output(aggregate_invocation, aggregate)
+    monkeypatch.setenv("FS2_RUNTIME_IMAGE_DIGEST", "latest")
+    with pytest.raises(ScientificAdapterError, match="immutable runtime image digest"):
+        bindcraft.collect_companion_output(aggregate_invocation, aggregate)
+    monkeypatch.setenv("FS2_RUNTIME_IMAGE_DIGEST", CONTRACT_TEST_IMAGE_DIGEST)
     companion_output = bindcraft.collect_companion_output(aggregate_invocation, aggregate)
     assert len(companion_output.artifacts) == len(entries)
     assert companion_output.validation["completion_marker_sha256"] == completion_sha256

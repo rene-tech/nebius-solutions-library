@@ -689,6 +689,13 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
     collector = next(item for item in pod["containers"] if item["name"] == "artifact-collector")
     collector_environment = {item["name"]: item["value"] for item in collector["env"]}
     assert collector_environment["FS2_CATALOG_DIR"] == "/opt/fs2/catalog"
+    # This is a CPU stage, so its scheduling admission correctly has no
+    # accelerator digest.  The collector receives the independently verified
+    # execution-map image identity used by the model container.
+    assert resource.scheduling.accelerator_resource_name is None
+    assert resource.scheduling.accelerator_count == 0
+    assert collector_environment["FS2_RUNTIME_IMAGE_DIGEST"] == "sha256:" + "a" * 64
+    assert collector_environment["FS2_RUNTIME_IMAGE_DIGEST"] == model_environment["FS2_RUNTIME_IMAGE_DIGEST"]
 
     tampered = replace(resource, runtime_artifacts=(replace(localized[0], mount_path="/models/changed"),))
     with pytest.raises(ScientificExecutionMapError, match="lost its verified localization"):
