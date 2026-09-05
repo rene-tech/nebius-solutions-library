@@ -1,0 +1,34 @@
+{
+  "schema": "fs2.nebius.ai/bindcraft-successor-image-handoff/v1",
+  "state": "h100-semantic-qualified-active",
+  "image_source_commit": "a5ecd61a2120e068be452c35c6529c2e92c68eff",
+  "semantic_h100_qualification": true,
+  "route_activation_allowed": true,
+  "production_protocol_compatible": true,
+  "successor_requirement": "Satisfied by exact-digest H100 semantic run bcr20-20260905b: upstream emitted two reranked accepted rows for a one-design shard quota, and r20 exported only rank zero before content-addressed aggregation.",
+  "predecessor": {
+    "tag": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r19",
+    "digest": "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+    "qualification": "historical H100 semantic qualification; does not transfer to r20",
+    "defect": "Exports every accepted row when one upstream trajectory overshoots the remaining exact shard quota."
+  },
+  "successor": {
+    "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft",
+    "tag": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r20",
+    "digest": "sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
+    "upstream_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+    "behavior": "Requires upstream accepted-row count to meet the exact quota, then exports only the leading rows from upstream's Average_i_pTM rerank."
+  },
+  "evidence": {
+    "publication": "models/cancer-immunotherapy/images/bindcraft-native/evidence/r20-successor-publication-20260905.json",
+    "publisher_receipt": "models/cancer-immunotherapy/images/bindcraft-native/evidence/published-images.json",
+    "h100_semantic_qualification": "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-20260905/bindcraft-r20-h100-semantic-qualification.json",
+    "h100_semantic_qualification_sha256": "9f4d97dd49666b2a67fd54d0ff5ba2133b99757a6e6e794bdebd003df540c66f",
+    "source_contract": "models/cancer-immunotherapy/images/bindcraft-native/runtime/bindcraft_runtime_entrypoint.py",
+    "regression_tests": [
+      "models/cancer-immunotherapy/images/bindcraft-native/tests/test_image_contract.py",
+      "components/control-plane/tests/test_scientific_batch_bindcraft_adapter.py"
+    ],
+    "scope": "Immutable registry publication, parser/collector and artifact-free image smokes, SLSA/SPDX attestations, executable source identity, and exact-artifact live H100 semantic qualification with an observed upstream quota overshoot."
+  }
+}

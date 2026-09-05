@@ -8,10 +8,10 @@
       "license": "MIT code; PyRosetta academic terms"
     },
     "runtime_image": {
-      "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
-      "digest": "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+      "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
+      "digest": "sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
       "lock_path": "models/cancer-immunotherapy/images/bindcraft-native/image-lock.json",
-      "digest_evidence_path": "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-20260905/bindcraft-r19-h100-semantic-qualification.json"
+      "digest_evidence_path": "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-20260905/bindcraft-r20-h100-semantic-qualification.json"
     },
     "runtime_recipe": {
       "source_revision": "897c04aafbb4bb7b1879ae459527caf70aeeb94e",
@@ -46,12 +46,12 @@
       "state": "semantic-qualified-active-awaiting-public-acceptance",
       "accelerator_class": "nvidia-h100-sxm5-80gb",
       "evidence_paths": [
-        "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-20260905/bindcraft-r19-h100-semantic-qualification.json"
+        "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-20260905/bindcraft-r20-h100-semantic-qualification.json"
       ]
     },
     "main_commits": [
-      "29c759c33c2273d22d83ce1acb958e6553bbdc26",
-      "3a8aa9f6b3d6e4033dbdaf2990f34fa7493184a9"
+      "a5ecd61a2120e068be452c35c6529c2e92c68eff",
+      "eea229381b384cc29849d1e750f3fab4208e170d"
     ]
   },
   "profile_projection": {
@@ -72,11 +72,11 @@
       },
       "execution_identity": {
         "model_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
-        "runtime_image_digest": "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
-        "runtime_recipe_sha256": "ecb91aa32fcc2ff50df3537cab0ca64633c77c43a4857982366ad37c264ce6c6",
+        "runtime_image_digest": "sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
+        "runtime_recipe_sha256": "720f16436c0084b7054d939e6ece6a69e6237d4f1d18f9c73ec09f76463d108f",
         "workload_recipe_sha256": "ad880c5ee2e2f25462b98c5278454290d3090810762037f6df8c4fea99c7a4cb",
         "artifact_manifest_digest": "a933ad20fd8c9e065c3ba77e96ff36c78303841b79a33d1b0308ec7d9873d641",
-        "execution_identity_sha256": "3f62dfe79e8e38a458fc6a89d041620e0d536228500701cebb0b58f9bb2abf21"
+        "execution_identity_sha256": "b0c7bb4d8f73dbfd8f5fcdb066b775037d7c116ad3a671451390461e83447857"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -174,18 +174,18 @@
         "state": "active"
       },
       "qualification": {
-        "h100_semantic_receipt_sha256": "e81a454348ec7196437343eafc63cf6c1fe87c1c6c546d74f53fe158de3fa214",
+        "h100_semantic_receipt_sha256": "9f4d97dd49666b2a67fd54d0ff5ba2133b99757a6e6e794bdebd003df540c66f",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "7b3056c7daff3dd8aa2f67df190cd067a7e07f5aedba4458b204b5ee889c1829",
-        "qualified_at": "2026-09-05T00:40:40Z"
+        "execution_map_sha256": "ce2008f71c00f9b29e731ecbbacb1c50a18b31adbc47bbddee16562e63aac6a6",
+        "qualified_at": "2026-09-05T01:59:05Z"
       },
       "policy": {
         "commercial_use": "license-dependent",
         "non_clinical": true,
         "limitations": [
-          "The exact r19 image and private PyRosetta tree passed real H100 semantics under the authorized academic PoC path, including the fractional interface-average regression witness.",
-          "The active bridge is anchored to the r19 exact-digest receipt, mixed-plane mounts, collection contract, and H100 semantic evidence; public completion and scheduler acceptance receipts remain pending."
+          "The exact r20 image and private PyRosetta tree passed real H100 semantics under the authorized academic PoC path, including a two-row upstream overshoot reduced to its exact one-design shard quota.",
+          "The active bridge is anchored to the r20 exact-digest receipt, mixed-plane mounts, collection contract, and H100 semantic evidence; public completion and scheduler acceptance receipts remain pending."
         ]
       },
       "runtime_artifacts": [
@@ -323,7 +323,7 @@
       {
         "id": "design",
         "resource_class": "gpu",
-        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
         "runtime_artifacts": [
           "alphafold2-params-bindcraft",
           "colabdesign-mpnn-weights-vanilla",
@@ -347,7 +347,7 @@
       {
         "id": "aggregate",
         "resource_class": "cpu",
-        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
         "runtime_artifacts": [
           "alphafold2-params-bindcraft",
           "bindcraft-pyrosetta-installed-tree"

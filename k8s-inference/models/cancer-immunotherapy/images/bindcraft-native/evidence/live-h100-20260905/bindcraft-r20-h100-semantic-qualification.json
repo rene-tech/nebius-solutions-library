@@ -1,0 +1,216 @@
+{
+  "schema": "fs2.nebius.ai/bindcraft-native-live-h100-qualification/v3",
+  "recorded_at": "2026-09-05T02:03:05Z",
+  "task_id": "fs2-bindcraft-r20-h100-semantic-qualification-r20260905",
+  "verdict": {
+    "state": "passed",
+    "meaning": "The immutable r20 digest completed the real outer entrypoint on H100, admitted the external runtime trees, imported the authorized academic PyRosetta tree, reduced an upstream two-row accepted-design overshoot to the exact one-design shard quota by selecting rank zero, and completed content-addressed aggregation.",
+    "semantic_h100_qualification": true,
+    "route_activation_allowed": true,
+    "live_routes_mutated": false,
+    "qualification_scope": "exact digest, production settings and filters, upstream two-row quota overshoot, exact top-ranked one-row export, content-addressed aggregate"
+  },
+  "provenance": {
+    "source_fix_commit": "a5ecd61a2120e068be452c35c6529c2e92c68eff",
+    "publication_commit": "eea22938",
+    "publication_evidence": "models/cancer-immunotherapy/images/bindcraft-native/evidence/r20-successor-publication-20260905.json",
+    "publication_evidence_sha256": "5fea9fb1e393bbc704af157783c818025ef990a0b615fa4cfc5d92e7d05538ee",
+    "renderer": "models/cancer-immunotherapy/images/bindcraft-native/qualification/render_semantic_job.py",
+    "renderer_sha256": "c8b6b0552f25057303b040b6cb37d059bdb6e34ab4fe28b3aacd5ecd072e966d",
+    "direct_live_canonical_pyrosetta": true,
+    "route_free_renderer": true
+  },
+  "environment": {
+    "project": "project-e00rene",
+    "region": "eu-north1",
+    "cluster_context": "k8s-inference-h100",
+    "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+    "namespace": "fs2-academic-poc",
+    "node": "computeinstance-e00p3acr87k9k4mckj",
+    "node_uid": "5700ea19-0b46-4020-afa5-c8f1a105dcdd",
+    "node_group_id": "mk8snodegroup-e00zswm0km7v78tp2m",
+    "accelerator": "NVIDIA H100 80GB HBM3",
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "node_gpu_capacity": 8,
+    "capacity_source": "capacity-block",
+    "capacity_type": "regular",
+    "resource_preset": "8gpu-128vcpu-1600gb",
+    "kubelet": "v1.35.6",
+    "container_runtime": "containerd://2.2.6",
+    "kernel": "6.11.0-1016-nvidia",
+    "node_ready_at_capture": true
+  },
+  "image": {
+    "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r20",
+    "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
+    "index_digest": "sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
+    "kubelet_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
+    "image_pull_policy": "IfNotPresent",
+    "bindcraft_source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+    "runtime_entrypoint": [
+      "python",
+      "/opt/fs2/runtime_entrypoint.py"
+    ]
+  },
+  "authorization": {
+    "profile": "academic",
+    "pyrosetta_version": "2026.29+releasequarterly.80a0635615",
+    "academic_asset_id": "pyrosetta-bindcraft",
+    "academic_artifact_sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+    "licensed_bytes_embedded_in_image": false,
+    "private_claim": "academic-assets-runtime-rwx",
+    "private_claim_mounted_read_only": true
+  },
+  "input": {
+    "operation": "design-binder",
+    "backend_id": "bindcraft-v1-5-3-pyrosetta-academic",
+    "run_id": "bcr20-20260905b",
+    "request_sha256": "1ad56fdae03cfdff217807cad5334048788d9c58fa61737dc96ccf825fd71fb7",
+    "target": {
+      "chain": "A",
+      "hotspots": [
+        56
+      ]
+    },
+    "base_seed": 912083,
+    "binder_length": {
+      "minimum": 67,
+      "maximum": 67
+    },
+    "accepted_designs_per_shard": 1,
+    "max_trajectories_per_shard": 1,
+    "shard_count": 1,
+    "settings": {
+      "num_recycles_validation": 3,
+      "num_seqs": 20,
+      "max_mpnn_sequences": 2,
+      "mpnn_weights": "soluble",
+      "model_path": "v_48_020"
+    }
+  },
+  "jobs": {
+    "design": {
+      "name": "fs2-bcr20-20260905b-design",
+      "uid": "3dc2d510-03c8-45a7-876b-cb489487f67e",
+      "pod": "fs2-bcr20-20260905b-design-bv56r",
+      "pod_uid": "5c4d735b-576b-47e7-9aff-ab13bcb44680",
+      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "created_at": "2026-09-05T01:52:37Z",
+      "main_started_at": "2026-09-05T01:52:41Z",
+      "main_finished_at": "2026-09-05T01:58:24Z",
+      "job_completed_at": "2026-09-05T01:58:27Z",
+      "exit_code": 0,
+      "restarts": 0,
+      "gpu_request": 1
+    },
+    "aggregate": {
+      "name": "fs2-bcr20-20260905b-aggregate",
+      "uid": "283c0d74-9c0d-4aae-8c51-a1dc3d584da7",
+      "pod": "fs2-bcr20-20260905b-aggregate-xbq5m",
+      "pod_uid": "0701077c-9d14-4b34-814b-bed3b5a110b3",
+      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "created_at": "2026-09-05T01:58:51Z",
+      "main_started_at": "2026-09-05T01:58:57Z",
+      "main_finished_at": "2026-09-05T01:59:02Z",
+      "job_completed_at": "2026-09-05T01:59:05Z",
+      "exit_code": 0,
+      "restarts": 0,
+      "gpu_request": 0
+    }
+  },
+  "timings_seconds": {
+    "design_job_wall": 350,
+    "design_main_container": 343,
+    "aggregate_job_wall": 14,
+    "aggregate_main_container": 5,
+    "external_tree_admission": 18.119,
+    "pyrosetta_bind": 1.433,
+    "upstream": 316.183,
+    "post_processing": 0.04,
+    "restore": 0.0,
+    "grace_or_drain": 0.0
+  },
+  "semantic_results": {
+    "trajectory_rows": 1,
+    "upstream_accepted_design_rows": 2,
+    "upstream_ranked_designs": [
+      "fs2_s000_l67_s912083_mpnn2",
+      "fs2_s000_l67_s912083_mpnn5"
+    ],
+    "upstream_ranked_average_i_ptm": [
+      0.79,
+      0.73
+    ],
+    "exact_assigned_quota": 1,
+    "exported_candidate_rows": 1,
+    "exported_candidate_ids": [
+      "artifact.bindcraft.native.s000.c000.pdb"
+    ],
+    "exported_sequence_matches_upstream_rank_zero": true,
+    "all_shard_artifact_digests_reverified": true,
+    "immutable_runtime_exact_quota_probe": {
+      "input_rows": [
+        "rank-zero",
+        "rank-one"
+      ],
+      "quota": 1,
+      "returned_rows": [
+        "rank-zero"
+      ],
+      "underfill_rejected": true
+    },
+    "collector_oversupply_regression": {
+      "state": "passed",
+      "test": "components/control-plane/tests/test_scientific_batch_bindcraft_adapter.py::test_collect_design_output_rejects_oversupplied_shard"
+    }
+  },
+  "output": {
+    "manifest_id": "manifest.bindcraft.native.output",
+    "manifest_sha256": "b983cdb641d2fa1cee2ef90cc87f5204be34a8dd07da13a34f08a970a96d79b8",
+    "manifest_entries": 5,
+    "all_declared_sizes_and_sha256_reverified": true,
+    "aggregate": {
+      "sha256": "e6aa9a482ee6bf6439c82c525a38c2c5a3f4b6d4fc1a35a81f58fa4d076ec5a3",
+      "atomic_commit": true,
+      "succeeded_shards": 1,
+      "expected_shards": 1,
+      "runtime_image_digest": "sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
+      "source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
+    }
+  },
+  "non_winning_attempt": {
+    "run_id": "bcr20-20260905a",
+    "classification": "bounded semantic replay stopped after its first trajectory produced no accepted designs; no image or wrapper failure",
+    "live_routes_mutated": false
+  },
+  "safety": {
+    "shared_service_deployed": false,
+    "controller_routes_changed": false,
+    "task_owned_jobs_only": true,
+    "shared_claims_mounted_read_only": true,
+    "workspace_claim_task_owned": true,
+    "b300_touched": false
+  },
+  "cleanup": {
+    "state": "complete",
+    "jobs_deleted": [
+      "fs2-bcr20-20260905b-design",
+      "fs2-bcr20-20260905b-aggregate"
+    ],
+    "standalone_pods_deleted": [
+      "fs2-bcr20-20260905a-evidence"
+    ],
+    "configmaps_deleted": [
+      "fs2-run-bcr20-20260905a",
+      "fs2-run-bcr20-20260905b"
+    ],
+    "workspace_pvc_deleted": "fs2-bcr20-workspace-20260905a",
+    "workspace_pv_deleted": "pvc-64ad3480-7aab-4c60-bfe9-568d5a00877b",
+    "workspace_capacity": "128Gi",
+    "verified_remaining_labeled_resources": 0,
+    "academic_assets_claim_preserved": "academic-assets-runtime-rwx",
+    "academic_assets_claim_state": "Bound",
+    "task_owned_resources_remaining": false,
+    "verified_at": "2026-09-05T02:04:17Z"
+  }
+}
