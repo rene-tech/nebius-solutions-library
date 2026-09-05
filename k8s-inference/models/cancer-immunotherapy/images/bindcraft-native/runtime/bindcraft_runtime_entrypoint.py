@@ -75,6 +75,8 @@ FINAL_STAT_COLUMNS = {
 }
 TARGET_CHAIN = "A"
 BINDER_CHAIN = "B"
+INTERFACE_RESIDUE = re.compile(rf"{BINDER_CHAIN}[1-9][0-9]*")
+MAX_INTERFACE_RESIDUES = 10_000
 # Upstream biopython_utils.hotspot_residues calls an interface contact at 4.0 A
 # between any pair of atoms; the same criterion is used here so the hotspot
 # geometry this runtime reports means what BindCraft means by contact.
@@ -540,6 +542,34 @@ def _statistic(row: dict[str, Any], key: str) -> float:
     return value
 
 
+def _interface_residue_evidence(row: dict[str, Any], average_count: float) -> tuple[str, int | float]:
+    """Normalize the model-specific residue list independently of its average.
+
+    Pinned upstream writes ``InterfaceResidues`` from the last AF2 model it
+    scores, while ``Average_n_InterfaceResidues`` is calculated across all
+    available AF2 models.  Their cardinalities can legitimately differ.  The
+    former must still be a canonical, unique list of binder residue IDs, and
+    the latter remains the production-filtered aggregate statistic.
+    """
+
+    raw = row.get("InterfaceResidues")
+    if not isinstance(raw, str) or not raw.strip():
+        raise ContractError("accepted design records no interface residues")
+    residues = tuple(part.strip() for part in raw.split(","))
+    if (
+        not residues
+        or len(residues) > MAX_INTERFACE_RESIDUES
+        or any(INTERFACE_RESIDUE.fullmatch(residue) is None for residue in residues)
+    ):
+        raise ContractError("accepted design interface residue list is malformed")
+    if len(set(residues)) != len(residues):
+        raise ContractError("accepted design interface residue list contains duplicates")
+    if not 0 < average_count <= MAX_INTERFACE_RESIDUES:
+        raise ContractError("accepted design has no bounded average interface residue count")
+    normalized_average: int | float = int(average_count) if average_count.is_integer() else average_count
+    return ",".join(residues), normalized_average
+
+
 def _artifact(artifact_id: str, path: Path, media_type: str) -> dict[str, Any]:
     return {
         "artifact_id": artifact_id,
@@ -616,15 +646,10 @@ def run_trajectory(args: argparse.Namespace) -> None:
             raise ContractError("accepted binder sequence differs from its binder-only PDB")
         if str(row.get("Target_Hotspot", "")).strip() != hotspot_specification:
             raise ContractError("accepted design was not designed against the requested hotspots")
-        interface_residues = str(row.get("InterfaceResidues", "")).strip()
-        if not interface_residues:
-            raise ContractError("accepted design records no interface residues")
         statistics = {key: _statistic(row, key) for key in FINAL_STAT_COLUMNS}
-        interface_residue_count = int(statistics["interface_residue_count"])
-        if interface_residue_count <= 0:
-            raise ContractError("accepted design has no interface residues")
-        if len(interface_residues.split(",")) != interface_residue_count:
-            raise ContractError("interface residue list and count disagree")
+        interface_residues, interface_residue_count = _interface_residue_evidence(
+            row, statistics["interface_residue_count"]
+        )
         if statistics["buried_interface_area"] <= 0.0:
             raise ContractError("accepted design buries no interface area")
         if statistics["binder_energy_score"] == 0.0:

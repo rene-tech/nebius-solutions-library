@@ -66,12 +66,12 @@ class ImageLockTests(unittest.TestCase):
         )
 
     def test_in_image_sources_match_the_recorded_publication_identity(self) -> None:
-        """Keep the source and the evidence describing the image in step.
+        """Keep current publication evidence and its executable sources in step.
 
-        The qualification evidence records the SHA-256 of every file the build
-        copies into the image, and the publisher fails closed unless the pulled
-        image contains exactly those bytes. Editing one without re-recording it
-        would leave the evidence describing an image nobody built.
+        Publication records the SHA-256 of every executable source file and the
+        publisher fails closed unless the pulled image contains exactly those
+        bytes. H100 qualification remains separate, so a successor publication
+        cannot rewrite or inherit an older digest's semantic evidence.
 
         runtime_entrypoint.py is the reason this test exists. It is the shared
         outer entrypoint and still names the RFdiffusion, ProteinMPNN and
@@ -80,10 +80,21 @@ class ImageLockTests(unittest.TestCase):
         gain, because this image only ever sets FS2_RUNTIME_NAME=bindcraft-academic.
         """
 
-        evidence = json.loads(
-            (ROOT / "evidence" / "native-final-image-qualification.json").read_text(encoding="utf-8")
+        receipt = json.loads(
+            (ROOT / "evidence" / "published-images.json").read_text(encoding="utf-8")
         )
-        recorded = evidence["source_identity_in_published_image"]["files"]
+        publication = receipt["images"][0]
+        lock = build_images.load_lock()["images"][0]
+        if publication["tag"] != lock["target"]:
+            # A source commit precedes immutable publication. During that
+            # bounded state the old receipt must be exactly what the new lock
+            # supersedes; the publication commit replaces it with r19 proof.
+            self.assertEqual(publication["digest_reference"], lock["supersedes"])
+            return
+        identity = publication["source_identity_in_published_image"]
+        self.assertTrue(identity["match"])
+        self.assertEqual(identity["verified_against"], publication["digest"])
+        recorded = identity["files"]
         self.assertEqual(len(recorded), 5)
         for entry in recorded:
             repository_path = entry["repository_path"]
@@ -248,18 +259,59 @@ class ImageLockTests(unittest.TestCase):
             self.assertIn(pyrosetta_patch.PATCHED_IMPORT, patched)
             self.assertIn(pyrosetta_patch.PATCHED_CALL, patched)
 
-    def test_final_tag_is_r18_and_names_the_digest_it_supersedes(self) -> None:
+    def test_successor_tag_is_r19_and_names_the_digest_it_supersedes(self) -> None:
         image = build_images.load_lock()["images"][0]
-        self.assertEqual(image["build_tag_suffix"], "-cuda121-r18")
-        self.assertTrue(image["target"].endswith(image["source"]["revision"] + "-cuda121-r18"))
-        # r17 was reconstructible but could not read the accepted localization
-        # generations: it rejected the marker the artifact plane writes inside
-        # every one of them.
+        self.assertEqual(image["build_tag_suffix"], "-cuda121-r19")
+        self.assertTrue(image["target"].endswith(image["source"]["revision"] + "-cuda121-r19"))
+        # r18 is the previously published and H100-qualified digest. It cannot
+        # process every accepted row because it equates a model-specific list
+        # with a cross-model average, so r19 must be a new immutable target.
         self.assertEqual(
             image["supersedes"],
             "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@"
-            "sha256:aefd9b1cfd3002182b0b19a147e86cb138b39af315f1b061bf4a10c119654850",
+            "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
         )
+
+    def test_successor_handoff_separates_publication_from_h100_qualification(self) -> None:
+        lock = build_images.load_lock()["images"][0]
+        handoff = json.loads(
+            (
+                build_images.REPOSITORY_ROOT
+                / "models/structure/batch-adapters/bindcraft/r19-image-handoff.json"
+            ).read_text(encoding="utf-8")
+        )
+        contract = json.loads(
+            (
+                build_images.REPOSITORY_ROOT
+                / "models/structure/batch-adapters/bindcraft/contract.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertFalse(handoff["semantic_h100_qualification"])
+        self.assertFalse(handoff["route_activation_allowed"])
+        self.assertEqual(
+            handoff["predecessor"]["digest"], lock["supersedes"].rsplit("@", 1)[1]
+        )
+        self.assertEqual(
+            f"{handoff['successor']['repository']}:{handoff['successor']['tag']}",
+            lock["target"],
+        )
+        runtime = contract["runtime_image"]
+        self.assertEqual(runtime["active_predecessor"]["digest"], handoff["predecessor"]["digest"])
+        self.assertEqual(runtime["successor"]["tag"], lock["target"])
+        self.assertFalse(runtime["successor"]["semantic_h100_qualification"])
+        self.assertFalse(runtime["successor"]["route_activation_allowed"])
+
+        receipt = json.loads(
+            (ROOT / "evidence" / "published-images.json").read_text(encoding="utf-8")
+        )["images"][0]
+        if handoff["state"] == "publication-pending-not-activated":
+            self.assertIsNone(handoff["image_source_commit"])
+            self.assertIsNone(handoff["successor"]["digest"])
+            self.assertEqual(receipt["digest_reference"], lock["supersedes"])
+        else:
+            self.assertEqual(handoff["state"], "published-build-only-not-activated")
+            self.assertEqual(handoff["successor"]["digest"], receipt["digest"])
+            self.assertEqual(handoff["image_source_commit"], receipt["attested_source"]["revision"])
 
     def test_the_adapter_wrapper_is_consumed_as_a_build_context(self) -> None:
         # The wrapper is the adapter's published interface and the only file this
@@ -366,6 +418,41 @@ class ImageLockTests(unittest.TestCase):
              ):
             with self.assertRaisesRegex(build_images.BuildError, "SLSA provenance"):
                 build_images.verify_published(build_images.load_lock(), image)
+
+    def test_publisher_binds_executable_sources_to_the_pulled_digest(self) -> None:
+        measured = []
+        for repository_path, image_path in build_images.SOURCE_BINDINGS:
+            source = (
+                build_images.REPOSITORY_ROOT / repository_path
+                if repository_path.startswith("models/")
+                else ROOT / repository_path
+            )
+            content = source.read_bytes()
+            measured.append({
+                "path": image_path,
+                "sha256": hashlib.sha256(content).hexdigest(),
+                "size_bytes": len(content),
+            })
+        completed = mock.Mock(stdout=json.dumps(measured))
+        with mock.patch.object(build_images, "run", return_value=completed):
+            identity = build_images.published_source_identity(
+                "registry.test/image@sha256:test", "sha256:" + "1" * 64
+            )
+        self.assertTrue(identity["match"])
+        self.assertEqual(identity["verified_against"], "sha256:" + "1" * 64)
+        self.assertEqual(
+            [entry["repository_path"] for entry in identity["files"]],
+            [repository_path for repository_path, _image_path in build_images.SOURCE_BINDINGS],
+        )
+
+        measured[0]["sha256"] = "0" * 64
+        with mock.patch.object(
+            build_images, "run", return_value=mock.Mock(stdout=json.dumps(measured))
+        ):
+            with self.assertRaisesRegex(build_images.BuildError, "differs from repository"):
+                build_images.published_source_identity(
+                    "registry.test/image@sha256:test", "sha256:" + "1" * 64
+                )
 
 
 class ArtifactGateTests(unittest.TestCase):
@@ -872,6 +959,7 @@ class LocalizationMarkerTests(unittest.TestCase):
 class NativeDesignEvidenceTests(unittest.TestCase):
     def row(self, **overrides: object) -> dict[str, str]:
         value = {
+            "InterfaceResidues": "B1,B2,B3",
             "Average_i_pTM": "0.71",
             "Average_pLDDT": "0.86",
             "Average_dG": "-42.5",
@@ -912,6 +1000,42 @@ class NativeDesignEvidenceTests(unittest.TestCase):
             bindcraft_runner._statistic(self.row(Average_dSASA="n/a"), "buried_interface_area")
         with self.assertRaisesRegex(bindcraft_runner.ContractError, "not finite"):
             bindcraft_runner._statistic(self.row(Average_dSASA="inf"), "buried_interface_area")
+
+    def test_model_specific_residue_list_is_not_equated_with_the_cross_model_average(self) -> None:
+        # This is the shape of the real rejected row: pinned upstream copies the
+        # list from one scored AF2 model but averages the count across models.
+        # Whitespace is CSV presentation, not residue identity.
+        row = self.row(
+            InterfaceResidues=" B2, B4, B9, B11 ",
+            Average_n_InterfaceResidues="7.0",
+        )
+        residues, average = bindcraft_runner._interface_residue_evidence(
+            row,
+            bindcraft_runner._statistic(row, "interface_residue_count"),
+        )
+        self.assertEqual(residues, "B2,B4,B9,B11")
+        self.assertEqual(average, 7)
+        self.assertNotEqual(len(residues.split(",")), average)
+
+    def test_fractional_cross_model_interface_average_is_preserved(self) -> None:
+        row = self.row(Average_n_InterfaceResidues="7.4")
+        _, average = bindcraft_runner._interface_residue_evidence(
+            row,
+            bindcraft_runner._statistic(row, "interface_residue_count"),
+        )
+        self.assertEqual(average, 7.4)
+
+    def test_interface_residue_list_remains_strictly_validated(self) -> None:
+        malformed = ("", "B1,,B3", "A1,B2", "B0,B2", "B1,B1")
+        for value in malformed:
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(bindcraft_runner.ContractError, "interface residue"):
+                    bindcraft_runner._interface_residue_evidence(
+                        self.row(InterfaceResidues=value),
+                        3.0,
+                    )
+        with self.assertRaisesRegex(bindcraft_runner.ContractError, "bounded average"):
+            bindcraft_runner._interface_residue_evidence(self.row(), 0.0)
 
     def atom_record(
         self, serial: int, residue: str, chain: str, number: int, x: float
