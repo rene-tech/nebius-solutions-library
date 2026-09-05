@@ -12,7 +12,7 @@
   "parameters": {
     "target": {
       "chain": "A",
-      "hotspot_residues": [56, 66, 115]
+      "hotspot_residues": [37, 39, 98, 104, 106]
     },
     "binder_length": {
       "minimum": 55,

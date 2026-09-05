@@ -62,14 +62,29 @@ BindCraft's public fixture is also deliberately bounded to one design, one GPU
 shard, a fixed 67-residue binder length, the soluble MPNN lane, and seed
 `912083`. The seed fixes the upstream trajectory, but the pinned ColabDesign
 ProteinMPNN implementation initializes its own sampling key from process
-entropy, so a single accepted winner is not bit-for-bit replay stable. The
-fixture therefore requests the exact three-residue PD-L1 face already used by
-the adapter contract (`A56`, `A66`, and `A115`) instead of making the whole
-fleet depend on contact with A56 alone. This does not relax result validation:
-every exported winner must still pass the pinned production filters and prove
-a measured atom-to-atom contact of at most 4.0 Angstrom to at least one residue
-the request names. All three residues must exist in the content-addressed input
-structure, and the adapter's one-design trajectory budget remains bounded.
+entropy, so a single accepted winner is not bit-for-bit replay stable.
+
+The content-addressed target is exactly human PD-L1 UniProt Q9NZQ7 residues
+18..132, renumbered as PDB chain A residues 1..115. The all-human 4ZQK
+PD-1/PD-L1 structure identifies I54, Y56, M115, A121, and Y123 as the central
+hydrophobic core on PD-L1's PD-1-binding surface. In this target's coordinate
+namespace the compact panel is `A37`, `A39`, `A98`, `A104`, and `A106`; its
+maximum alpha-carbon span is 11.540 Angstrom. Supplying the canonical numbers
+without the target's -17 numbering translation names unrelated residues and is
+guarded against by repository tests. The numbering and sequence are anchored
+to [UniProt Q9NZQ7](https://rest.uniprot.org/uniprotkb/Q9NZQ7.fasta), and the
+five-residue core comes directly from the primary human-complex analysis
+[PMCID PMC4752817](https://pmc.ncbi.nlm.nih.gov/articles/PMC4752817/).
+
+This does not relax result validation: every exported winner must still pass
+the pinned production filters and prove a measured atom-to-atom contact of at
+most 4.0 Angstrom to at least one explicitly named crystallographic core
+residue. All five residues must exist with their expected amino-acid identities
+in the content-addressed input structure, the panel must remain spatially
+compact, and the adapter's one-design trajectory budget remains bounded. An
+offline replay of the exact runtime geometry algorithm against the captured
+`425e393d` winner measured all five core residues within 2.676 Angstrom; the
+content-addressed analysis is retained beside the H100 qualification evidence.
 
 Use a token that can upload and invoke the selected model and read its
 operation result. The token is accepted only through an environment variable:

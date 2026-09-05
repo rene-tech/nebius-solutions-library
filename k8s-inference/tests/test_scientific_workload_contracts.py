@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 import re
 import unittest
 from pathlib import Path
@@ -368,7 +369,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                 self.assertEqual([], list(request_validator.iter_errors(request)))
                 self.assertEqual([], list(self.validator(schema_name).iter_errors(request["parameters"])))
 
-    def test_bindcraft_public_canary_is_one_bounded_run_against_the_pdl1_face(self) -> None:
+    def test_bindcraft_public_canary_uses_the_renumbered_crystallographic_pdl1_core(self) -> None:
         request = self.load(
             ROOT / "models/cancer-immunotherapy/images/bindcraft-native/activation/public-request.json"
         )
@@ -380,21 +381,31 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         adapter_fixture = self.load(
             ROOT / "models/structure/batch-adapters/bindcraft/fixtures/positive-soluble-lane.json"
         )
+        panel_analysis = self.load(
+            ROOT
+            / "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-20260905/"
+            "bindcraft-425e-canary-epitope-analysis.json"
+        )
+        input_manifest = self.load(
+            ROOT / "models/cancer-immunotherapy/images/bindcraft-native/activation/input-manifest.json"
+        )
         parameters = request["parameters"]
         qualified = evidence["input"]
         hotspots = parameters["target"]["hotspot_residues"]
 
         self.assertEqual("passed", evidence["verdict"]["state"])
-        # The qualified A56 residue remains mandatory, while the public replay
-        # names the same bounded PD-L1 face as the adapter's soluble fixture.
-        # This keeps a real 4-Angstrom atomic-contact gate without betting the
-        # fleet qualification on one soft-guidance residue and one stochastic
-        # ProteinMPNN winner.
-        self.assertEqual([56, 66, 115], hotspots)
+        # The target is UniProt Q9NZQ7 residues 18..132 renumbered to 1..115,
+        # so canonical PD-L1 residue N is PDB residue N-17. Supplying the
+        # canonical numbers directly names unrelated residues in this PDB.
+        canonical_core = {54: "ILE", 56: "TYR", 115: "MET", 121: "ALA", 123: "TYR"}
+        local_core = {
+            canonical_residue - 17: residue_name
+            for canonical_residue, residue_name in canonical_core.items()
+        }
+        self.assertEqual(sorted(local_core), hotspots)
         self.assertEqual(
             adapter_fixture["parameters"]["target"], parameters["target"]
         )
-        self.assertTrue(set(qualified["target"]["hotspots"]).issubset(hotspots))
         self.assertEqual(qualified["binder_length"], parameters["binder_length"])
         self.assertEqual(qualified["base_seed"], parameters["seed"])
         self.assertEqual(qualified["shard_count"], parameters["designs"])
@@ -403,16 +414,57 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         self.assertEqual("soluble", qualified["settings"]["mpnn_weights"])
         self.assertEqual(1, qualified["max_trajectories_per_shard"])
 
-        target = (
+        target_path = (
             ROOT
             / "models/cancer-immunotherapy/runtime-images/proteina-complexa/tests/fixtures/PD-L1.pdb"
-        ).read_text(encoding="ascii")
-        target_residues = {
-            int(line[22:26])
-            for line in target.splitlines()
+        )
+        target_bytes = target_path.read_bytes()
+        target_atoms = [
+            line
+            for line in target_bytes.decode("ascii").splitlines()
             if line.startswith("ATOM") and line[21:22] == "A"
+        ]
+        target_residue_names = {int(line[22:26]): line[17:20] for line in target_atoms}
+        self.assertEqual(list(range(1, 116)), sorted(target_residue_names))
+        self.assertEqual(local_core, {residue: target_residue_names[residue] for residue in hotspots})
+
+        target_sha256 = hashlib.sha256(target_bytes).hexdigest()
+        self.assertEqual(input_manifest["entries"][0]["artifact"]["sha256"], target_sha256)
+        self.assertEqual(panel_analysis["target"]["sha256"], target_sha256)
+
+        alpha_carbons = {
+            int(line[22:26]): (
+                float(line[30:38]),
+                float(line[38:46]),
+                float(line[46:54]),
+            )
+            for line in target_atoms
+            if line[12:16].strip() == "CA" and int(line[22:26]) in local_core
         }
-        self.assertTrue(set(hotspots).issubset(target_residues))
+        self.assertEqual(set(local_core), set(alpha_carbons))
+        maximum_span = max(
+            math.dist(alpha_carbons[left], alpha_carbons[right])
+            for position, left in enumerate(hotspots)
+            for right in hotspots[position + 1 :]
+        )
+        panel = panel_analysis["selected_human_complex_hydrophobic_core"]
+        self.assertLess(maximum_span, 12.0)
+        self.assertAlmostEqual(maximum_span, panel["maximum_alpha_carbon_span_angstrom"], places=3)
+        self.assertEqual(list(canonical_core), [item["number"] for item in panel["canonical_residues"]])
+        self.assertEqual(hotspots, [item["number"] for item in panel["target_residues"]])
+
+        geometry = panel_analysis["runtime_geometry_replay"]
+        self.assertEqual(4.0, geometry["contact_cutoff_angstrom"])
+        self.assertEqual(hotspots, [item["residue"] for item in geometry["requested"]])
+        self.assertEqual(len(hotspots), geometry["contacted"])
+        self.assertTrue(
+            all(
+                item["in_contact"]
+                and item["closest_binder_atom_angstrom"] <= geometry["contact_cutoff_angstrom"]
+                for item in geometry["requested"]
+            )
+        )
+        self.assertFalse(geometry["validation_changed"])
 
     def test_artifact_localization_contract_matches_its_schema(self) -> None:
         contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")

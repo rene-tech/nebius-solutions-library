@@ -1,0 +1,61 @@
+{
+  "schema": "fs2.nebius.ai/bindcraft-canary-epitope-analysis/v1",
+  "source_run": {
+    "repository_revision": "425e393dd248a94117a60aaab346fe8d5c7ff310",
+    "run_id": "scientific-fleet-final-425e393d-20260905T053600Z",
+    "job_name": "fs2-design-design-000-a1-9fde7a2b0022",
+    "requested_target_residues": [56, 66, 115],
+    "accepted_relaxed_complex_sha256": "3e6a2ebe0450ec23e255799e117fd93918ea5895e24eeca2f557f560583ad489"
+  },
+  "target": {
+    "path": "models/cancer-immunotherapy/runtime-images/proteina-complexa/tests/fixtures/PD-L1.pdb",
+    "sha256": "5e949950d8255ec3bf390b8bf24f5c71c6ac8fc65bc553d7e477563c9599b93e",
+    "chain": "A",
+    "pdb_residue_range": [1, 115],
+    "uniprot": {
+      "accession": "Q9NZQ7",
+      "sequence_range": [18, 132],
+      "pdb_residue_number_offset": -17,
+      "sequence_matches_exactly": true,
+      "source": "https://rest.uniprot.org/uniprotkb/Q9NZQ7.fasta"
+    }
+  },
+  "selected_human_complex_hydrophobic_core": {
+    "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4752817/",
+    "canonical_residues": [
+      {"number": 54, "amino_acid": "ILE"},
+      {"number": 56, "amino_acid": "TYR"},
+      {"number": 115, "amino_acid": "MET"},
+      {"number": 121, "amino_acid": "ALA"},
+      {"number": 123, "amino_acid": "TYR"}
+    ],
+    "target_residues": [
+      {"number": 37, "amino_acid": "ILE"},
+      {"number": 39, "amino_acid": "TYR"},
+      {"number": 98, "amino_acid": "MET"},
+      {"number": 104, "amino_acid": "ALA"},
+      {"number": 106, "amino_acid": "TYR"}
+    ],
+    "maximum_alpha_carbon_span_angstrom": 11.54
+  },
+  "supporting_3bik_contact_face": {
+    "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC2268576/#T1",
+    "canonical_residues": [19, 20, 26, 54, 56, 66, 113, 115, 117, 121, 122, 123, 124, 125],
+    "target_residues": [2, 3, 9, 37, 39, 49, 96, 98, 100, 104, 105, 106, 107, 108],
+    "accepted_winner_contacted_target_residues": [37, 39, 49, 96, 98, 100, 104, 105, 106, 108]
+  },
+  "runtime_geometry_replay": {
+    "algorithm_path": "models/cancer-immunotherapy/images/bindcraft-native/runtime/bindcraft_runtime_entrypoint.py",
+    "contact_cutoff_angstrom": 4.0,
+    "requested": [
+      {"chain": "A", "residue": 37, "closest_binder_atom_angstrom": 2.676, "in_contact": true},
+      {"chain": "A", "residue": 39, "closest_binder_atom_angstrom": 2.183, "in_contact": true},
+      {"chain": "A", "residue": 98, "closest_binder_atom_angstrom": 2.278, "in_contact": true},
+      {"chain": "A", "residue": 104, "closest_binder_atom_angstrom": 2.136, "in_contact": true},
+      {"chain": "A", "residue": 106, "closest_binder_atom_angstrom": 1.29, "in_contact": true}
+    ],
+    "contacted": 5,
+    "validation_changed": false
+  },
+  "conclusion": "The former request mixed canonical PD-L1 numbering with a renumbered PDB. The corrected five-residue panel is the compact all-human crystallographic PD-1/PD-L1 hydrophobic core, and the unchanged runtime atomic-contact gate accepts the captured stochastic winner against all five named core residues."
+}
