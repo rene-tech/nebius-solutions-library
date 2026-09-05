@@ -95,8 +95,9 @@ REFERENCE_DATA_NODE_LABELS = {"storage.fs2.nebius/reference-data": "true"}
 INTEGRATION_SOURCE_REVISION = "897c04aafbb4bb7b1879ae459527caf70aeeb94e"
 # The primary lane's accepted recipe source above remains immutable evidence.
 # Shared aggregate authorship is compared from the later serialized integration
-# that promoted the independently qualified secondary structure successors.
-AGGREGATE_BASELINE_REVISION = "ec28259430dc3e1bcba7fbb1610c06c154223494"
+# that promoted the independently qualified structure successors and BindCraft
+# r19. Each promotion remains anchored to its own exact-digest H100 receipt.
+AGGREGATE_BASELINE_REVISION = "53700828399ebe1584c3f0326f94b08243ec81d8"
 SHARED_RUNTIME_RECIPE_PATHS = frozenset(
     {
         "components/control-plane/src/fs2_serve/scientific_batch/__init__.py",
