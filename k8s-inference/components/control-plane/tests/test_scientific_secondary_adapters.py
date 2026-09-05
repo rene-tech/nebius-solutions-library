@@ -479,6 +479,11 @@ def _qualified_profile(model_id: str) -> ScientificWorkloadProfile:
         {
             "artifact_id": item["artifact_id"],
             "content_digest_sha256": item["content_sha256"],
+            **(
+                {"localization_manifest_sha256": item["localization_manifest_sha256"]}
+                if "localization_manifest_sha256" in item
+                else {}
+            ),
             "required_files": ["content.marker"],
             "file_manifest": [{"path": "content.marker", "sha256": item["content_sha256"], "size_bytes": 1}],
         }
@@ -817,6 +822,15 @@ async def test_service_bridge_scheduler_controller_and_renderer_use_one_frozen_c
     if model_id == "protenix-v2":
         assert pod["securityContext"]["supplementalGroups"] == [PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP]
         assert "fsGroup" not in pod["securityContext"]
+        runtime_marker = json.loads(
+            next(item["value"] for item in model_container["env"] if item["name"] == "FS2_RUNTIME_ARTIFACTS_JSON")
+        )
+        assert runtime_marker["artifacts"][0]["content_digest"] == (
+            "sha256:" + protenix_v2.LOCALIZED_TREE_CONTENT_SHA256
+        )
+        assert runtime_marker["artifacts"][0]["artifact_manifest_sha256"] == (
+            protenix_v2.LOCALIZATION_MANIFEST_SHA256
+        )
     else:
         assert "supplementalGroups" not in pod["securityContext"]
 
@@ -884,6 +898,10 @@ def test_public_runtime_artifact_mounts_are_exact_read_only_and_group_readable(m
         assert all(
             mount.supplemental_groups == (PUBLIC_ARTIFACT_SUPPLEMENTAL_GROUP,) for mount in invocation.runtime_mounts
         )
+        if model_id == "protenix-v2":
+            assert {mount.expected_manifest_sha256 for mount in invocation.runtime_mounts} == {
+                protenix_v2.LOCALIZATION_MANIFEST_SHA256
+            }
 
 
 @pytest.mark.parametrize("model_id", tuple(MODULES))
