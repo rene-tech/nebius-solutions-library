@@ -274,7 +274,10 @@ class ScientificBatchService:
         class using the profile's minimum legal plan.
         """
 
-        if tenant_id is None or surface not in {"admin", "mcp"}:
+        # ``http`` is the public REST twin of ``mcp``: HTTP submission never
+        # requires MCP exposure, so the MCP discoverability flags gate only the
+        # MCP surface while every other static admission gate stays identical.
+        if tenant_id is None or surface not in {"admin", "http", "mcp"}:
             return ()
         discovered: list[ScientificProfileDiscovery] = []
         for profile in self.profiles.list():

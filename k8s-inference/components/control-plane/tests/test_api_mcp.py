@@ -444,6 +444,98 @@ def test_api_auth_model_list_openai_admission_revoke_and_nonleak(registry, ciphe
     assert all(secret not in rendered_logs for secret in (SECRET_PROMPT, token, CALLER_IDENTITY))
 
 
+def test_public_catalog_reports_the_admitted_pool_accelerator_class(registry, cipher, hasher) -> None:
+    """A dynamic model is listed with the accelerator class it is admitted on.
+
+    The canonical catalog record keeps the class of the original qualification
+    (B300 for Qwen) while the retained deployment admits the same model on an
+    H100 pool.  ``/v1/models`` and MCP ``list_models`` must report the admitted
+    pool's configured class, exactly like the admin identity does, and must
+    degrade to the canonical class when no platform configuration is readable.
+    """
+
+    from test_admin_configuration import qualified_configuration
+    from test_dynamic_routes import _revision
+    from test_model_deployment_publication import status_view
+
+    from fs2_serve.api import _pool_accelerator_classes
+    from fs2_serve.configuration import TERRAFORM_BOOTSTRAP_ACTOR
+    from fs2_serve.configuration_models import PlatformConfiguration
+    from fs2_serve.model_deployment_publication import project_dynamic_publications
+
+    revision = _revision(registry)
+    snapshot = project_dynamic_publications(
+        [revision],
+        {(revision.namespace, revision.name): status_view(revision)},
+    )
+    assert registry.set_dynamic_publications(snapshot, valid_until=datetime.now(UTC) + timedelta(minutes=5))
+    admitted_pool = snapshot.publications[0].admitted_pool_ref
+    canonical_class = registry.get("qwen3-8b").gateway.gpu_class
+    assert canonical_class == "NVIDIA-B300-SXM6-288GB"
+
+    configuration, _ = qualified_configuration()
+    pool = configuration.pools["elastic-qualified"].model_copy(update={"accelerator_class": "nvidia-h100-sxm5-80gb"})
+    model = configuration.models["qwen3-8b"]
+    seeded = PlatformConfiguration(
+        pools={admitted_pool: pool},
+        models={
+            "qwen3-8b": model.model_copy(
+                update={"placement": model.placement.model_copy(update={"pool_ids": [admitted_pool]})}
+            )
+        },
+    )
+    store = MemoryStore(cipher, hasher)
+    asyncio.run(store.configuration_ensure_initial(seeded, actor=TERRAFORM_BOOTSTRAP_ACTOR))
+    runtime = build_runtime(registry, cipher, hasher, store=store)
+    assert asyncio.run(_pool_accelerator_classes(runtime)) == {admitted_pool: "nvidia-h100-sxm5-80gb"}
+    app = create_app(runtime)
+    with TestClient(app) as client:
+        token = issue(client, principal="rene", scopes=["catalog.read", "inference.invoke", "mcp.invoke"])
+        auth = {"authorization": f"Bearer {token}"}
+        listed = client.get("/v1/models", headers=auth)
+        assert listed.status_code == 200
+        qwen = next(item for item in listed.json()["data"] if item["id"] == "qwen3-8b")
+        assert qwen["gpu_class"] == "nvidia-h100-sxm5-80gb"
+        assert qwen["gpu_count"] == 1
+
+    async def mcp_listing() -> dict[str, object]:
+        server = build_mcp_server(runtime)
+        access = await PATTokenVerifier(runtime).verify_token(token)
+        assert access is not None
+        context = Context(mcp_server=server, subscriptions=server._subscriptions)  # type: ignore[attr-defined]
+        auth_token = auth_context_var.set(AuthenticatedUser(access))
+        try:
+            return await server._tool_manager.call_tool(  # type: ignore[attr-defined, no-any-return]
+                "list_models", {}, context, convert_result=False
+            )
+        finally:
+            auth_context_var.reset(auth_token)
+
+    mcp_models = asyncio.run(mcp_listing())
+    assert {item["id"]: item["gpu_class"] for item in mcp_models["data"]}["qwen3-8b"] == "nvidia-h100-sxm5-80gb"
+
+    # The projection alone stays canonical without a matching configured pool,
+    # and a failing or empty configuration read degrades, never errors.
+    dynamic_model = registry.get("qwen3-8b")
+    assert _model_view(dynamic_model)["gpu_class"] == canonical_class
+    assert _model_view(dynamic_model, pool_accelerator_classes={"other-pool": "x"})["gpu_class"] == canonical_class
+    empty_runtime = build_runtime(registry, cipher, hasher)
+    assert asyncio.run(_pool_accelerator_classes(empty_runtime)) == {}
+
+    class _FailingStore:
+        async def configuration_current(self) -> None:
+            raise RuntimeError("configuration unavailable")
+
+    failing = SimpleNamespace(store=_FailingStore(), settings=SimpleNamespace(admin_adapter_timeout_seconds=0.5))
+    assert asyncio.run(_pool_accelerator_classes(failing)) == {}  # type: ignore[arg-type]
+    with TestClient(create_app(empty_runtime)) as client:
+        token = issue(client, principal="rene", scopes=["catalog.read", "inference.invoke"])
+        fallback = client.get("/v1/models", headers={"authorization": f"Bearer {token}"})
+        assert fallback.status_code == 200
+        fallback_qwen = next(item for item in fallback.json()["data"] if item["id"] == "qwen3-8b")
+        assert fallback_qwen["gpu_class"] == canonical_class
+
+
 def test_ip_public_authority_is_enforced_on_v1_mcp_and_both_metadata_paths(registry, cipher, hasher) -> None:
     runtime = build_runtime(registry, cipher, hasher)
     runtime.settings = Settings(

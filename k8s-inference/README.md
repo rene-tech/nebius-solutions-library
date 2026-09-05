@@ -32,6 +32,9 @@ its exact runtime qualification, Terraform switch, metrics, and rollback.
 [Shared GPU scheduling and lifecycle telemetry](docs/QUEUE_AND_GPU_TELEMETRY.md)
 documents Kueue floors/borrowing, customer service classes, exact correlation
 labels, DCGM cadence, and the OTel/Loki/Tempo data path.
+[Scientific batch API quick start](docs/SCIENTIFIC_BATCH_API.md) walks a
+researcher or hackathon team through discovering, uploading, submitting,
+following, and downloading a scientific run over HTTPS or MCP.
 
 ## Accelerator and qualification boundary
 
@@ -683,3 +686,11 @@ legacy exact-address plan verifiers remain maintainer acceptance gates for the
 two B300 fixtures. Custom and heterogeneous pools use the generic v2 contract,
 live provider preflight, exact per-model pool binding, and staged Terraform
 preconditions during every plan.
+
+After a deployment, [`acceptance/live-surface`](acceptance/live-surface/README.md)
+re-accepts the public surface from the outside with a value-suppressed
+receipt: TLS trust, public pages, exact release digests, Kueue, the admin
+backend, both MCP catalogs, the OpenAI and HTTP scientific catalogs, and one
+real chat completion. [`acceptance/scientific-fleet`](acceptance/scientific-fleet/README.md)
+runs the ten scientific profiles end to end and the cold-start campaign that
+[Live acceptance](LIVE_ACCEPTANCE.md) records.

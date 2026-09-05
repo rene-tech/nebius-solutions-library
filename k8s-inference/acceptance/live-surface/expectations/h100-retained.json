@@ -1,0 +1,42 @@
+{
+  "schema": "fs2-serve.nebius.ai/live-surface-expectations/v1",
+  "description": "Retained eu-north1 H100 deployment: two general serving models, ten qualified scientific profiles, nine observability launches.",
+  "general_model_ids": ["cosmos3-nano", "qwen3-8b"],
+  "openai_model_ids": ["qwen3-8b"],
+  "scientific_model_ids": [
+    "alphafold3",
+    "bindcraft",
+    "boltzgen",
+    "esmfold2",
+    "esmfold2-fast",
+    "mosaic",
+    "openfold3-openbind",
+    "proteina-complexa",
+    "protenix-v2",
+    "rfdiffusion"
+  ],
+  "general_token_excluded_scientific_model_ids": ["alphafold3", "bindcraft"],
+  "observability_components": [
+    "alertmanager",
+    "dcgm",
+    "grafana",
+    "keda",
+    "kueue",
+    "loki",
+    "otel",
+    "prometheus",
+    "tempo"
+  ],
+  "cluster_queues": ["general-cpu", "inference-accelerators", "reference-data-cpu"],
+  "resource_flavors": ["general-cpu", "inference-h100-1x", "inference-h100-reserved-8x", "reference-data-cpu"],
+  "workload_priority_classes": ["batch", "interactive", "platform-critical", "presentation", "standard"],
+  "required_mcp_tools": ["list_models", "list_scientific_models", "submit_scientific_run"],
+  "mcp_protocol_version": "2026-07-28",
+  "chat_probe": {
+    "model_id": "qwen3-8b",
+    "marker": "FS2_LIVE_SURFACE_OK",
+    "max_tokens": 512,
+    "request_overrides": {"chat_template_kwargs": {"enable_thinking": false}},
+    "poll_timeout_seconds": 600
+  }
+}

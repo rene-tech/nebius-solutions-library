@@ -644,7 +644,11 @@ async def principal(store: MemoryStore) -> Principal:
 
 
 def scientific_runtime(
-    registry, cipher, hasher
+    registry,
+    cipher,
+    hasher,
+    *,
+    profile_document: dict[str, object] | None = None,
 ) -> tuple[
     AppRuntime,
     ScientificBatchController,
@@ -671,7 +675,7 @@ def scientific_runtime(
         store=store,
         repository=repository,
         controller=controller,
-        profiles=profile_catalog(),
+        profiles=profile_catalog_for("protein-design", profile_document=profile_document),
         scheduling=scheduling(),
         artifacts=FakeArtifactAccess(pointer),
         execution_binding=FakeExecutionBinding(),
@@ -1397,6 +1401,111 @@ async def test_terminal_event_lookup_reaches_past_one_thousand_earlier_events() 
 
 
 @pytest.mark.asyncio
+async def test_http_scientific_discovery_mirrors_submission_gates_not_mcp_exposure(registry, cipher, hasher) -> None:
+    """``GET /v1/scientific-models`` is the REST twin of ``list_scientific_models``.
+
+    HTTP submission never requires MCP exposure, so a profile hidden from MCP
+    discovery is still listed to an HTTP caller, while the scope and static
+    admission gates stay exactly those of submission itself.
+    """
+
+    hidden = profile_value()
+    interface = dict(hidden["interface"])  # type: ignore[arg-type]
+    interface["mcp"] = {**interface["mcp"], "discoverable": False, "invocable": False}  # type: ignore[dict-item]
+    hidden["interface"] = interface
+    runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher, profile_document=hidden)
+    full = await runtime.tokens.issue(
+        TokenCreate(
+            principal_id="scientist-a",
+            tenant_id="tenant-a",
+            scopes={Scope.CATALOG_READ, Scope.INFERENCE_INVOKE, Scope.MCP_INVOKE},
+            models={"protein-design"},
+            max_concurrency=4,
+        ),
+        created_by="test",
+    )
+    read_only = await runtime.tokens.issue(
+        TokenCreate(
+            principal_id="reader-a",
+            tenant_id="tenant-a",
+            scopes={Scope.CATALOG_READ},
+            models={"protein-design"},
+            max_concurrency=4,
+        ),
+        created_by="test",
+    )
+    other_model = await runtime.tokens.issue(
+        TokenCreate(
+            principal_id="scientist-b",
+            tenant_id="tenant-a",
+            scopes={Scope.CATALOG_READ, Scope.INFERENCE_INVOKE},
+            models={"qwen3-8b"},
+            max_concurrency=4,
+        ),
+        created_by="test",
+    )
+    app = create_app(runtime)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="https://inference.test.invalid",
+        ) as client:
+            anonymous = await client.get("/v1/scientific-models")
+            assert anonymous.status_code == 401
+
+            listed = await client.get("/v1/scientific-models", headers={"authorization": f"Bearer {full.token}"})
+            assert listed.status_code == 200
+            assert [item["model_id"] for item in listed.json()["data"]] == ["protein-design"]
+            assert listed.json()["data"][0]["parameter_schema"] == PARAMETER_SCHEMA
+            assert listed.json()["data"][0]["mcp_tool_name"] == "submit_protein_design"
+
+            # Discovery never lists what the caller could not submit: a token
+            # without inference.invoke or without this model in its policy gets
+            # the same empty list, and one without catalog.read is refused.
+            no_invoke = await client.get(
+                "/v1/scientific-models", headers={"authorization": f"Bearer {read_only.token}"}
+            )
+            assert no_invoke.status_code == 200
+            assert no_invoke.json() == {"object": "list", "data": []}
+            scoped_out = await client.get(
+                "/v1/scientific-models", headers={"authorization": f"Bearer {other_model.token}"}
+            )
+            assert scoped_out.status_code == 200
+            assert scoped_out.json() == {"object": "list", "data": []}
+
+            runtime.scientific_batches = None
+            disabled = await client.get("/v1/scientific-models", headers={"authorization": f"Bearer {full.token}"})
+            assert disabled.status_code == 200
+            assert disabled.json() == {"object": "list", "data": []}
+
+    hidden_runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher, profile_document=hidden)
+    server = build_mcp_server(hidden_runtime)
+    access = await PATTokenVerifier(hidden_runtime).verify_token(full.token)
+    if access is None:
+        issued = await hidden_runtime.tokens.issue(
+            TokenCreate(
+                principal_id="scientist-a",
+                tenant_id="tenant-a",
+                scopes={Scope.CATALOG_READ, Scope.INFERENCE_INVOKE, Scope.MCP_INVOKE},
+                models={"protein-design"},
+                max_concurrency=4,
+            ),
+            created_by="test",
+        )
+        access = await PATTokenVerifier(hidden_runtime).verify_token(issued.token)
+    assert access is not None
+    context = Context(mcp_server=server, subscriptions=server._subscriptions)  # type: ignore[attr-defined]
+    auth_token = auth_context_var.set(AuthenticatedUser(access))
+    try:
+        discovered_mcp = await server._tool_manager.call_tool(  # type: ignore[attr-defined]
+            "list_scientific_models", {}, context, convert_result=False
+        )
+    finally:
+        auth_context_var.reset(auth_token)
+    assert discovered_mcp == {"object": "list", "data": []}
+
+
+@pytest.mark.asyncio
 async def test_public_http_and_mcp_share_scientific_operation_lifecycle(registry, cipher, hasher) -> None:
     runtime, controller, repository, cluster, pointer = scientific_runtime(registry, cipher, hasher)
     scopes = {
@@ -1431,6 +1540,12 @@ async def test_public_http_and_mcp_share_scientific_operation_lifecycle(registry
             base_url="https://inference.test.invalid",
             headers={"authorization": f"Bearer {issued.token}"},
         ) as client:
+            discovered = await client.get("/v1/scientific-models")
+            assert discovered.status_code == 200
+            assert discovered.headers["cache-control"] == "no-store"
+            assert [item["model_id"] for item in discovered.json()["data"]] == ["protein-design"]
+            assert discovered.json()["data"][0]["operations"] == ["design"]
+            assert discovered.json()["data"][0]["service_classes"] == ["customer-batch"]
             submitted = await client.post(
                 "/v1/models/protein-design:submit",
                 headers={"idempotency-key": "scientific-http-0001"},

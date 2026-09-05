@@ -26,7 +26,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Send
 from starlette.types import Scope as ASGIScope
 
-from .api import AppRuntime, _model_view
+from .api import AppRuntime, _model_view, _pool_accelerator_classes
 from .auth import AuthenticationError, require_operation_access
 from .models import (
     MAX_IDEMPOTENCY_KEY_LENGTH,
@@ -336,9 +336,13 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
     async def list_models() -> dict[str, Any]:
         principal = _principal()
         principal.require(Scope.CATALOG_READ)
+        pool_classes = await _pool_accelerator_classes(runtime)
         return {
             "object": "list",
-            "data": [_model_view(model) for model in runtime.registry.allowed_for_principal(principal, surface="mcp")],
+            "data": [
+                _model_view(model, pool_accelerator_classes=pool_classes)
+                for model in runtime.registry.allowed_for_principal(principal, surface="mcp")
+            ],
         }
 
     async def list_scientific_models() -> dict[str, Any]:

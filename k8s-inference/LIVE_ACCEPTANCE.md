@@ -8,16 +8,30 @@ and dynamic-model qualification. Historical measurements remain labeled with
 their original topology. The document contains no credentials, Terraform
 state, kubeconfig, or private environment values.
 
-## Current retained H100 topology (2026-09-02)
+## Current retained H100 topology (2026-09-05)
 
 The retained `k8s-inference-h100` deployment is in `eu-north1`. Its GPU
 capacity is heterogeneous by capacity policy while keeping one accelerator
-class:
+class, and it now carries two CPU-only planes for scientific batch work:
 
 | Pool | Capacity | Node bounds | GPUs per node | Local NVMe |
 | --- | --- | --- | --- | --- |
 | `h100-reserved-8x` | regular, strict capacity block | fixed at 2 | 8x H100 80 GB | disabled |
 | `h100-1x` | preemptible | 0..2 | 1x H100 80 GB | disabled |
+| `batch-cpu` | regular, elastic CPU (`cpu-d3` 8 vCPU / 32 GB) | 0..2 | none | none |
+| reference-data CPU pool | regular (`cpu-d3` 32 vCPU / 128 GB) | fixed at 2 | none | none |
+
+The `batch-cpu` pool hosts scientific configure, preprocessing and aggregation
+stages and scales from zero; the reference-data pool hosts the AlphaFold 3
+data pipeline against the retained 2 TiB reference filesystem. Both GPU pools
+mount the shared model cache and the reference-data filesystem. The staged
+scientific batch controller, JobSet 0.12.0, Kueue 0.17.8 with the
+`general-cpu`, `inference-accelerators` and `reference-data-cpu` cluster
+queues, and the dedicated scientific artifact bucket are all Terraform-owned
+from the same `terraform.tfvars`. Section
+[Scientific fleet acceptance](#scientific-fleet-acceptance-2026-09-05) records
+the ten qualified scientific profiles; the serving-model material below is
+unchanged.
 
 Both selected models, `qwen3-8b` and `cosmos3-nano`, carry the same durable
 `placement.poolRefs = ["h100-1x", "h100-reserved-8x"]` desired revision. That is
@@ -46,6 +60,117 @@ Because placement is runtime material, the controller applies such a change as a
 cold cutover: the model is drained to zero, re-placed while cold, and re-enabled.
 That whole cutover is live and reversible inside the existing Terraform-owned
 capacity envelope, and never requires a Terraform run.
+
+## Scientific fleet acceptance (2026-09-05)
+
+Ten cancer-immunotherapy scientific profiles are live on the retained H100
+deployment as qualified batch models: `alphafold3`, `bindcraft`, `boltzgen`,
+`esmfold2`, `esmfold2-fast`, `mosaic`, `openfold3-openbind`,
+`proteina-complexa`, `protenix-v2` and `rfdiffusion`. Each is submitted
+through the public `POST /v1/models/{model_id}:submit` route or the MCP
+`submit_scientific_run` tool and returns one terminal, semantically validated
+result document; [Scientific batch API quick start](docs/SCIENTIFIC_BATCH_API.md)
+describes the customer contract. AlphaFold 3 and BindCraft are licensed
+academic profiles and are visible only to the academic tenant's scientific
+token; the general serving token discovers the other eight.
+
+### Final live-surface acceptance
+
+Exact source `87d3aacc039c02c6e9ac239ad0be693fa39ffef1` (tree
+`f2157fdce45232de15ebd1135c4e599982173a37`) was deployed through the
+`inference-stack` Terraform wrapper as control-plane OCI index
+`sha256:6df5ba12ca40d86dd1bea9717ce8bc19de8393596a757595cd41bfa84a0156d0`.
+The registry image carries those exact revision and tree labels. The
+value-suppressed live-surface receipt (SHA-256
+`84820d86addd4869d0c52275b48e6ed746d53cfff84998f8e6e8b17252f25da4`) passed
+every check: owner-only access bundle with distinct admin, inference and
+scientific credentials; TLS 1.3 under normal trust; admin, `/readyz`, Grafana,
+Alertmanager and Tempo all HTTP 200; gateway, model controller, admin console
+and the two-node GPU observer on the exact digests; three active cluster
+queues, seven local queues, four resource flavors and the five scientific
+priority classes; all ten scientific profiles `qualified` with nine
+observability launches enabled; and both MCP catalogs scoped per token with
+private zero-TTL discovery. The committed
+[`acceptance/live-surface`](acceptance/live-surface/README.md) runner
+reproduces that acceptance from the outside and additionally proves the
+OpenAI catalog, the HTTP scientific discovery route and one real chat
+completion.
+
+### Immutable ten-model cold-start campaign
+
+The final campaign ran three complete fleet repetitions at parallelism eight
+against the public endpoint with
+`acceptance/scientific-fleet/run_coldstart_benchmark.py`, bound to the
+reviewed H100 environment qualification set (SHA-256
+`9ee09fb7351a437ee60d00567da8cb6e35a66ae80bfebe340793ad579b36c8c5`, pools
+`h100-reserved-8x` and `h100-1x`). Result: 30 of 30 attempts succeeded with a
+passed semantic validation, 30 of 30 carried an exact, reconciled
+`application_observed` GPU lifecycle with no data gaps, every attempt was
+admitted on `h100-reserved-8x`, and the desired model state was byte-identical
+before and after (snapshot SHA-256
+`77ae8653645081b5fe80c0619132ca894481a3f54f770607fe35fe67470a625e`). The
+canonical receipt SHA-256 is
+`42b429f33d0f16cea08bb9689e08c70808c2fb3da734d570f3cd4819c3a45d59` and its
+validation seal SHA-256 is
+`eda49ee72898ef5e26bed2b3e4d8da571d7f6fb6fbf16f38c798ec0a5d50ad74`; both
+remain in operator custody because they name operation and workload
+identities.
+
+Medians over the three repetitions, in seconds, as measured by the public
+operation clock and the scientific controller events:
+
+| Model | Capacity wait | Image pull | Artifact localization | Active compute | Accepted to validated result | Scheduler-occupied GPU s | Active GPU s | Occupied-idle GPU s |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `alphafold3` | 1.9 | 2.5 | 48.3 | 35.7 | 99.3 | 61 | 34 | 27 |
+| `bindcraft` | 1.5 | 3.2 | 47.2 | 395.3 | 456.9 | 415 | 389 | 26 |
+| `boltzgen` | 5.0 | 10.3 | 159.9 | 683.8 | 899.0 | 769 | 641 | 124 |
+| `esmfold2` | 24.7 | 3.0 | 70.4 | 33.0 | 135.2 | 81 | 29 | 52 |
+| `esmfold2-fast` | 1.6 | 3.0 | 69.6 | 38.8 | 114.9 | 80 | 27 | 53 |
+| `mosaic` | 2.5 | 7.1 | 67.4 | 77.4 | 341.8 | 105 | 78 | 27 |
+| `openfold3-openbind` | 28.3 | 2.6 | 344.6 | 50.2 | 434.2 | 74 | 48 | 25 |
+| `proteina-complexa` | 3.2 | 5.2 | 232.1 | 222.7 | 481.0 | 199 | 147 | 52 |
+| `protenix-v2` | 1.2 | 2.9 | 51.3 | 86.5 | 151.0 | 111 | 84 | 27 |
+| `rfdiffusion` | 1.3 | 3.2 | 231.1 | 61.2 | 309.8 | 84 | 58 | 25 |
+
+Dispersion is preserved in the receipt rather than averaged away. The first
+repetition of six models paid a much larger artifact localization than the
+second and third (ESMFold2 409.7 s then 70.4 and 68.5 s; ESMFold2-Fast 219.8
+then 68.0 and 69.6 s; Mosaic 383.3, 67.4 and 42.7 s; OpenFold3 487.6, 344.6
+and 42.8 s; Proteina-Complexa 523.8, 116.9 and 232.1 s; RFdiffusion 287.2,
+231.1 and 156.8 s), so a first request after a fresh publication is
+materially slower than steady state. Queue wait was under 10 ms for every
+attempt, and the elastic CPU stages were the only capacity waits above a few
+seconds (ESMFold2 and OpenFold3 waited 24.7 and 28.3 s for a `batch-cpu` node
+to join). The dedicated API cold-start scalar and a runtime/model-load boundary
+remain truthfully unavailable in the public operation contract; the receipt
+carries measured localization, scheduler, active/idle GPU and first
+semantic-result clocks instead, and no attempt was joined to an exact
+fast-start cache tier (`not-observed`).
+
+Benchmark implications for the next optimization round, none of which changes
+the accepted contract: artifact localization dominates every model's
+wall-clock outside active compute and is repeated per attempt even on the
+shared-filesystem cache tier; BoltzGen's twenty-design campaign and BindCraft's
+one-design trajectory are compute-bound and would not benefit from a cache;
+occupied-idle GPU seconds (25 to 124 s per attempt) are the localization and
+teardown windows in which a GPU is held but not computing.
+
+### Known limitations after this acceptance
+
+- Public and MCP model listings now report the accelerator class of the pool a
+  dynamic model is admitted on; Prometheus `gpu_class` labels for those two
+  serving models still carry the canonical catalog class from their original
+  qualification.
+- The Kueue pod webhook occasionally denies the first Pod of the per-minute
+  control-plane maintenance Job with `Job.batch ... not found`; the Job
+  controller retries within the same minute and every maintenance Job
+  completes, so this is event noise rather than a missed run.
+- A second Nebius-managed `cilium-operator` replica stays Pending on the
+  single-node system pool because its host ports are already bound; this is
+  provider add-on scheduling and does not affect the platform.
+- Leftover qualification Jobs from other review-state tasks remain in
+  `fs2-models` (RFdiffusion `r13`, Mosaic `v6`, one Proteina forward pass)
+  until their owning tasks close; they hold no GPU.
 
 ## Historical 2026-08-31 topology
 

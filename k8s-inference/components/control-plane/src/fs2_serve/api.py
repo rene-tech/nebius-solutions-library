@@ -1,11 +1,12 @@
 """FastAPI public/admin surface for durable fs2-serve admission."""
 
+import asyncio
 import json
 import logging
 import math
 import secrets
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -331,7 +332,52 @@ def _error(status_code: int, kind: str, message: str) -> JSONResponse:
     )
 
 
-def _model_view(model: OperationalModel) -> dict[str, Any]:
+def _public_gpu_class(model: OperationalModel, pool_accelerator_classes: Mapping[str, str] | None) -> str:
+    """Report the accelerator class the model is actually admitted on.
+
+    A dynamic ``ModelDeployment`` keeps the canonical catalog record as its
+    qualification base, and that record names the accelerator class of the
+    original qualification, not of this deployment.  The configured pool the
+    controller admitted the model on is the truthful public answer, so a model
+    admitted on an H100 pool is never listed with the class it was first
+    qualified on elsewhere.  Static lean routes already carry their exact
+    Terraform placement class and are left unchanged.
+    """
+
+    policy = model.dynamic_policy
+    if policy is not None and pool_accelerator_classes:
+        admitted = pool_accelerator_classes.get(policy.publication.admitted_pool_ref)
+        if admitted is not None:
+            return admitted
+    return model.gateway.gpu_class
+
+
+async def _pool_accelerator_classes(runtime: AppRuntime) -> Mapping[str, str]:
+    """Return the deployment's configured pool accelerator classes, or nothing.
+
+    The Terraform-rendered platform configuration is the same authority the
+    admin console uses for a model's identity.  A missing, slow, or failing
+    configuration read must not make the public catalog unavailable, so any
+    failure degrades to the canonical catalog class instead of an error.
+    """
+
+    try:
+        current = await asyncio.wait_for(
+            runtime.store.configuration_current(),
+            timeout=runtime.settings.admin_adapter_timeout_seconds,
+        )
+    except Exception:
+        return {}
+    if current is None:
+        return {}
+    return {pool_id: pool.accelerator_class for pool_id, pool in current.desired.pools.items()}
+
+
+def _model_view(
+    model: OperationalModel,
+    *,
+    pool_accelerator_classes: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
     projection = model.gateway.qualification
     runtime_origin = None if projection is None else projection["runtime_origin"]
     qualification = (
@@ -356,7 +402,7 @@ def _model_view(model: OperationalModel) -> dict[str, Any]:
         "operations": sorted(model.gateway.policy_operations),
         "execution_mode": model.gateway.execution_mode,
         "activation": model.activation_mechanism,
-        "gpu_class": model.gateway.gpu_class,
+        "gpu_class": _public_gpu_class(model, pool_accelerator_classes),
         "gpu_count": model.gateway.gpu_allocation_count,
         "active_runtime": (
             None
@@ -842,7 +888,26 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         identity.require(Scope.CATALOG_READ)
         await runtime.revalidate_routes()
         visible = runtime.registry.allowed_for_principal(identity, surface="openai")
-        return {"object": "list", "data": [_model_view(model) for model in visible]}
+        pool_classes = await _pool_accelerator_classes(runtime)
+        return {
+            "object": "list",
+            "data": [_model_view(model, pool_accelerator_classes=pool_classes) for model in visible],
+        }
+
+    @app.get("/v1/scientific-models")
+    async def scientific_models(identity: Annotated[Principal, Depends(principal)]) -> dict[str, Any]:
+        """List the scientific profiles this exact caller may submit over HTTP.
+
+        This is the HTTP twin of the MCP ``list_scientific_models`` tool: the
+        same fail-closed, tenant-specific projection that submission itself
+        requires, so an HTTP-only client can discover operations, service
+        classes, and the parameter schema without an MCP session.
+        """
+
+        if runtime.scientific_batches is None:
+            identity.require(Scope.CATALOG_READ)
+            return {"object": "list", "data": []}
+        return runtime.scientific_batches.discover(identity, surface="http")
 
     async def invoke(
         *,
