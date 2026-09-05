@@ -392,7 +392,9 @@ def test_each_invocation_carries_its_exact_native_request_and_input_manifest() -
         assert native["parameters"]["accepted_designs_per_shard"] == parameters.accepted_designs(index)
         assert native["parameters"]["max_trajectories_per_shard"] == parameters.max_trajectories(index)
         assert native["parameters"]["target_chains"] == ["A"]
-        assert native["parameters"]["hotspots"] == [{"chain": "A", "residue": residue} for residue in (56, 66, 115)]
+        assert native["parameters"]["hotspots"] == [
+            {"chain": "A", "residue": residue} for residue in (37, 39, 98, 104, 106)
+        ]
         assert environment["FS2_BINDCRAFT_INPUT_MANIFEST_JSON"].encode() == expected_manifest_bytes
         assert native["input_manifest"]["sha256"] == hashlib.sha256(expected_manifest_bytes).hexdigest()
         assert environment["FS2_BINDCRAFT_TARGET_PDB"].endswith("/inputs/target_structure.pdb")
@@ -988,7 +990,7 @@ def test_design_collector_requires_atomic_contact_with_the_named_hotspot_face(tm
         later_face_residue,
         index=0,
         request=request,
-        contacted_hotspot_position=2,
+        contacted_hotspot_position=4,
     )
     assert bindcraft.collect_design_output(request, later_face_residue).manifest["manifest_id"] == (
         "bindcraft.shard.000.handoff"
@@ -1137,7 +1139,7 @@ def test_compiled_argv_and_native_document_execute_the_current_successor_parser_
     )
     settings = json.loads(settings_path.read_text(encoding="utf-8"))
     assert settings["number_of_final_designs"] == parameters.accepted_designs(0)
-    assert settings["target_hotspot_residues"] == "56,66,115"
+    assert settings["target_hotspot_residues"] == "37,39,98,104,106"
     assert settings["chains"] == "A"
 
 
