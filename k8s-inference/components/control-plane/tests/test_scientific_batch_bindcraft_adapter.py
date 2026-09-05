@@ -34,7 +34,7 @@ SOLUTION_ROOT = Path(__file__).resolve().parents[3]
 ADAPTER_ROOT = SOLUTION_ROOT / "models/structure/batch-adapters/bindcraft"
 LOCALIZATION_CONTRACT = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-artifact-localization.json"
 PROFILE_PATH = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-workload-profiles.json"
-CURRENT_RUNTIME_SHA256 = "0adba8ec1d57490bbafe1e926708520454c1b6e2e9f85370598aab727e9aee29"
+CURRENT_RUNTIME_SHA256 = "0f3841cab240c48c0aea9793b0df60222cc53f2637290873d1067321f8c0e227"
 # This suite exercises the current source contract without claiming a registry
 # or accelerator qualification. Publication identity is verified by the image
 # package's source-bound receipt tests.
@@ -930,6 +930,15 @@ def test_design_collector_publishes_one_deterministic_bounded_overlay_bundle(tmp
         "artifacts/candidate-001.pdb",
         "artifacts/candidate-001-relaxed-complex.pdb",
     }
+
+
+def test_design_collector_keeps_oversupply_as_a_runtime_contract_failure(tmp_path: Path) -> None:
+    request = fixture("positive-default-lane")
+    workspace = tmp_path / "design-000"
+    publish_shard(workspace, index=0, request=request, designs=2)
+
+    with pytest.raises(ScientificAdapterError, match="exact assigned candidate quota"):
+        bindcraft.collect_design_output(request, workspace)
 
 
 def test_design_companion_binds_completion_request_and_exact_handoff(tmp_path: Path) -> None:
