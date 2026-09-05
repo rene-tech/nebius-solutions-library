@@ -33,7 +33,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
 
     def test_all_scientific_schemas_are_valid_draft_2020_12(self) -> None:
         schemas = sorted(SCHEMA_ROOT.glob("scientific-*.schema.json"))
-        self.assertEqual(10, len(schemas))
+        self.assertEqual(11, len(schemas))
         for schema_path in schemas:
             with self.subTest(schema=schema_path.name):
                 Draft202012Validator.check_schema(self.load(schema_path))
@@ -202,7 +202,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         academic = {item["model_id"] for item in receipts["receipts"] if item["access_profile"] == "academic"}
         self.assertEqual({"alphafold3", "bindcraft"}, academic)
 
-    ACTIVE_PREQUALIFICATION_FLEET = {
+    PROMOTABLE_SCIENTIFIC_FLEET = {
         "alphafold3",
         "bindcraft",
         "boltzgen",
@@ -215,21 +215,73 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         "rfdiffusion",
     }
 
-    def test_scientific_fleet_is_schema_valid_active_and_awaiting_public_completion(self) -> None:
+    def test_scientific_fleet_is_schema_valid_and_evidence_state_is_consistent(self) -> None:
         profiles = self.load(CONTRACT_ROOT / "scientific-workload-profiles.json")
         self.assert_valid("scientific-workload-profiles.schema.json", profiles)
         full_validator = self.validator("scientific-workload-profile.schema.json")
-        self.assertEqual(self.ACTIVE_PREQUALIFICATION_FLEET, {profile["model_id"] for profile in profiles["profiles"]})
+        self.assertEqual(self.PROMOTABLE_SCIENTIFIC_FLEET, {profile["model_id"] for profile in profiles["profiles"]})
         for profile in profiles["profiles"]:
             with self.subTest(model_id=profile["model_id"]):
                 self.assertEqual([], list(full_validator.iter_errors(profile)))
-                self.assertEqual("active", profile["state"])
+                self.assertIn(profile["state"], {"active", "qualified"})
                 self.assertTrue(profile["route_exposed"])
                 self.assertTrue(profile["interface"]["mcp"]["discoverable"])
                 self.assertTrue(profile["interface"]["mcp"]["invocable"])
                 qualification = profile["qualification"]
-                self.assertIsNone(qualification["public_completion_receipt_sha256"])
-                self.assertIsNone(qualification["scheduler_eligibility_receipt_sha256"])
+                self.assertEqual(
+                    profile["semantic_validation"]["state"], profile["state"]
+                )
+                if profile["state"] == "active":
+                    self.assertIsNone(
+                        qualification["public_completion_receipt_sha256"]
+                    )
+                    self.assertIsNone(
+                        qualification["scheduler_eligibility_receipt_sha256"]
+                    )
+                else:
+                    self.assertRegex(
+                        qualification["public_completion_receipt_sha256"],
+                        r"^[a-f0-9]{64}$",
+                    )
+                    scheduler_digest = qualification[
+                        "scheduler_eligibility_receipt_sha256"
+                    ]
+                    self.assertRegex(
+                        scheduler_digest,
+                        r"^[a-f0-9]{64}$",
+                    )
+                    receipt_paths = list(
+                        ROOT.glob(
+                            "models/**/activation/qualification/"
+                            f"scheduler-eligibility-{scheduler_digest}.json"
+                        )
+                    )
+                    self.assertEqual(1, len(receipt_paths))
+                    receipt_raw = receipt_paths[0].read_bytes()
+                    self.assertEqual(
+                        scheduler_digest, hashlib.sha256(receipt_raw).hexdigest()
+                    )
+                    receipt = json.loads(receipt_raw)
+                    self.assert_valid(
+                        "scientific-scheduler-eligibility-receipt.schema.json",
+                        receipt,
+                    )
+                    self.assertEqual(profile["model_id"], receipt["model_id"])
+                    self.assertEqual(
+                        profile["execution_identity"]["execution_identity_sha256"],
+                        receipt["execution_identity_sha256"],
+                    )
+                    self.assertEqual(
+                        qualification["execution_map_sha256"],
+                        receipt["execution_map_sha256"],
+                    )
+                    self.assertEqual(
+                        qualification["public_completion_receipt_sha256"],
+                        receipt["public_completion_receipt_sha256"],
+                    )
+                    self.assertEqual(
+                        qualification["qualified_at"], receipt["qualified_at"]
+                    )
                 self.assertRegex(qualification["h100_semantic_receipt_sha256"], r"^[a-f0-9]{64}$")
                 self.assertRegex(profile["execution_identity"]["artifact_manifest_digest"], r"^[a-f0-9]{64}$")
                 self.assertRegex(profile["execution_identity"]["execution_identity_sha256"], r"^[a-f0-9]{64}$")

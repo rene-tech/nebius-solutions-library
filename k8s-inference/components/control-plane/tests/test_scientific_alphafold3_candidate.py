@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 from uuid import UUID
 
@@ -179,18 +180,27 @@ def test_active_bridge_keeps_academic_planes_separate() -> None:
     # The model contract preserves the original fail-closed handoff; the
     # model-owned activation projection is the evidence-backed current state.
     assert contract["route_gate"]["route_exposed"] is False
-    assert active_profile["state"] == "active"
+    assert active_profile["state"] in {"active", "qualified"}
     assert active_profile["route_exposed"] is True
     assert active_profile["source"]["classification"] == "qualified-input"
     assert active_profile["interface"]["mcp"]["invocable"] is True
-    assert active_profile["semantic_validation"]["state"] == "active"
-    assert active_profile["qualification"] == {
-        "h100_semantic_receipt_sha256": "095e4d8da54621329d65a1bdae0e9f5b70d9bb305165d7d3f8e26315fe604b75",
-        "public_completion_receipt_sha256": None,
-        "scheduler_eligibility_receipt_sha256": None,
-        "execution_map_sha256": active_profile["qualification"]["execution_map_sha256"],
-        "qualified_at": "2026-09-04T16:57:43Z",
-    }
+    assert active_profile["semantic_validation"]["state"] == active_profile["state"]
+    qualification = active_profile["qualification"]
+    assert qualification["h100_semantic_receipt_sha256"] == (
+        "095e4d8da54621329d65a1bdae0e9f5b70d9bb305165d7d3f8e26315fe604b75"
+    )
+    if active_profile["state"] == "active":
+        assert qualification["public_completion_receipt_sha256"] is None
+        assert qualification["scheduler_eligibility_receipt_sha256"] is None
+        assert qualification["qualified_at"] == "2026-09-04T16:57:43Z"
+    else:
+        assert re.fullmatch(
+            r"[a-f0-9]{64}", qualification["public_completion_receipt_sha256"]
+        )
+        assert re.fullmatch(
+            r"[a-f0-9]{64}",
+            qualification["scheduler_eligibility_receipt_sha256"],
+        )
     assert active_profile["resources"]["compatible_pool_ids"] == [
         "h100-reserved-8x",
         "h100-1x",

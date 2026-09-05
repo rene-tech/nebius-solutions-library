@@ -136,6 +136,96 @@ wall-clock timestamps. Failed rows contain only the model/input identity and a
 stable non-secret failure code. Reusing a run ID fails before any network call
 unless `--overwrite` is explicit.
 
+## Promote successful public runs
+
+`promote_qualifications.py` is the offline, reviewable bridge from fleet
+acceptance to catalog qualification. Prefer to run it in the same repository
+revision that supplied the acceptance inputs. The aggregate and every
+successful per-model receipt must remain together, regular files with mode
+`0600`.
+
+The command verifies their exact bytes and projections, the model/variant and
+full execution identity against the canonical profile and execution map, and a
+successful scheduler admission for every declared stage. A GPU decision must
+use the profile's exact GPU count and ordered compatible-pool set; its successful
+admission must resolve to one of those pools. CPU stages must have zero GPU
+resources.
+
+First verify that the checked-out profile/map digest chain is current:
+
+```bash
+uv run --project components/control-plane \
+  python components/control-plane/scripts/refresh_scientific_recipes.py --check
+```
+
+The default is a read-only plan:
+
+```bash
+python3 acceptance/scientific-fleet/promote_qualifications.py \
+  --aggregate /secure/fs2-acceptance/<run-id>/aggregate.json
+```
+
+Review every per-model action and reason, then apply the same evidence:
+
+```bash
+python3 acceptance/scientific-fleet/promote_qualifications.py \
+  --aggregate /secure/fs2-acceptance/<run-id>/aggregate.json \
+  --write
+```
+
+If an unrelated model changed after acceptance and the deterministic refresh
+therefore changed the fleet-wide `execution_map_sha256`, point the tool at a
+read-only checkout of the exact accepted revision:
+
+```bash
+python3 acceptance/scientific-fleet/promote_qualifications.py \
+  --aggregate /secure/fs2-acceptance/<run-id>/aggregate.json \
+  --acceptance-repository-root /read-only/accepted-revision
+```
+
+This is not a general stale-evidence override. The aggregate input digest must
+match that checkout, and the current and accepted model-owned documents and
+that model's complete execution-map entry must be identical after normalizing
+only the fleet-wide map digest (and an idempotent prior promotion). A changed
+target model is skipped. The generated receipt retains both fleet map digests
+and a digest of the unchanged model entry, so reviewers can audit why evidence
+survived unrelated fleet drift. Run the read-only plan before adding `--write`.
+
+Only successful rows whose complete evidence matches are changed. Failed or
+stale rows stay `active` and are reported as `skip`; one mismatch cannot lend
+qualification to another model. Each accepted model becomes `qualified` in
+the canonical catalog and its model-owned profile projection. Primary
+activation fragments also close `public_platform_run_required` and record the
+public-accepted H100 state. The raw public receipt remains in operator custody;
+its exact SHA-256 is recorded as `public_completion_receipt_sha256`.
+On the next catalog load, the global scientific admin projection treats that
+complete pinned profile as qualified without borrowing evidence from an online
+serving lane. This is also what lets a mapped batch backend such as RFdiffusion
+supersede a pre-promotion serving-lane identity mismatch truthfully.
+
+For each promoted model the tool commits a secret-free, content-addressed
+`activation/qualification/scheduler-eligibility-<sha256>.json` projection. It
+chains the aggregate, acceptance input, execution map and execution identity to
+the frozen scheduler decision and successful admissions without copying pod,
+node, GPU, workload, operation or tenant identities. The exact bytes of that
+file provide `scheduler_eligibility_receipt_sha256`. Catalog and owner
+projections plus these receipts are written as one rollback-safe transaction.
+Replaying the same aggregate is idempotent; conflicting evidence never replaces
+an existing qualification.
+
+After `--write`, review the generated files and run:
+
+```bash
+uv run --project components/control-plane \
+  python components/control-plane/scripts/refresh_scientific_recipes.py --check
+acceptance/scientific-fleet/run_checks.sh
+models/cancer-immunotherapy/primary-fleet-activation/run_checks.sh
+```
+
+Do not substitute hand-authored digests when a live fleet receipt is absent.
+The repository intentionally retains `active`/null evidence until an exact
+public run exists.
+
 The customer operation/result contract does not currently return the exact
 per-attempt lifecycle rollup. The operator summary at
 `GET /admin/api/v1/scientific-runs/{operation_id}` is useful for joining the

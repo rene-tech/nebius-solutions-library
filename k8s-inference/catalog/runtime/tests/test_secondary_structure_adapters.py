@@ -169,24 +169,29 @@ class SecondaryStructureAdapterContractTests(unittest.TestCase):
             "independent-non-equivalent-alternative-to-alphafold3",
         )
 
-    def test_model_owned_profiles_are_active_and_prefer_reserved_capacity(self) -> None:
+    def test_model_owned_profiles_have_consistent_evidence_and_prefer_reserved_capacity(self) -> None:
         for model_id, profile in self.profiles.items():
             with self.subTest(model_id=model_id):
-                self.assertEqual(profile["state"], "active")
+                self.assertIn(profile["state"], {"active", "qualified"})
                 self.assertIs(profile["route_exposed"], True)
                 self.assertEqual(profile["source"]["classification"], "qualified-input")
                 self.assertIs(profile["interface"]["mcp"]["invocable"], True)
-                self.assertEqual(profile["semantic_validation"]["state"], "active")
+                self.assertEqual(
+                    profile["semantic_validation"]["state"], profile["state"]
+                )
                 self.assertRegex(
                     profile["qualification"]["h100_semantic_receipt_sha256"],
                     r"^[0-9a-f]{64}$",
                 )
-                self.assertIsNone(
-                    profile["qualification"]["public_completion_receipt_sha256"]
-                )
-                self.assertIsNone(
-                    profile["qualification"]["scheduler_eligibility_receipt_sha256"]
-                )
+                for field in (
+                    "public_completion_receipt_sha256",
+                    "scheduler_eligibility_receipt_sha256",
+                ):
+                    value = profile["qualification"][field]
+                    if profile["state"] == "active":
+                        self.assertIsNone(value)
+                    else:
+                        self.assertRegex(value, r"^[0-9a-f]{64}$")
                 self.assertEqual(
                     profile["resources"]["compatible_pool_ids"],
                     ["h100-reserved-8x", "h100-1x"],

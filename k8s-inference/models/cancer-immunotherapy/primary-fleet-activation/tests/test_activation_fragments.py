@@ -5,6 +5,7 @@ import importlib.util
 import json
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "validate_fragments.py"
@@ -175,6 +176,65 @@ class PrimaryActivationFragmentTests(unittest.TestCase):
 
     def test_shared_aggregates_carry_no_authored_change(self) -> None:
         self.assertEqual(activation.validate_no_aggregate_edits(), [])
+
+    def test_evidence_qualified_transition_is_the_only_normalized_state_change(self) -> None:
+        baseline = {
+            "profiles": [
+                {
+                    "model_id": "mosaic",
+                    "state": "active",
+                    "route_exposed": True,
+                    "semantic_validation": {"state": "active"},
+                    "qualification": {
+                        "public_completion_receipt_sha256": None,
+                        "scheduler_eligibility_receipt_sha256": None,
+                        "execution_map_sha256": "0" * 64,
+                        "qualified_at": "2026-09-04T00:00:00Z",
+                    },
+                }
+            ]
+        }
+        current = json.loads(json.dumps(baseline))
+        current_profile = current["profiles"][0]
+        current_profile["state"] = "qualified"
+        current_profile["semantic_validation"]["state"] = "qualified"
+        current_profile["qualification"]["execution_map_sha256"] = "f" * 64
+        current_profile["qualification"].update(
+            public_completion_receipt_sha256="1" * 64,
+            scheduler_eligibility_receipt_sha256="2" * 64,
+            qualified_at="2026-09-05T01:00:00Z",
+        )
+        with mock.patch.object(
+            activation, "_qualification_receipt_matches", return_value=True
+        ):
+            activation._normalize_evidence_qualified_profiles(
+                "catalog/runtime/contracts/scientific-workload-profiles.json",
+                baseline,
+                current,
+            )
+        self.assertEqual(baseline["profiles"][0]["state"], "qualified")
+        baseline_leaves = dict(activation._json_leaves(baseline))
+        current_leaves = dict(activation._json_leaves(current))
+        remaining = {
+            key
+            for key in baseline_leaves
+            if baseline_leaves[key] != current_leaves[key]
+        }
+        self.assertEqual(
+            remaining,
+            {("profiles", 0, "qualification", "execution_map_sha256")},
+        )
+
+        baseline["profiles"][0]["route_exposed"] = False
+        with mock.patch.object(
+            activation, "_qualification_receipt_matches", return_value=True
+        ):
+            activation._normalize_evidence_qualified_profiles(
+                "catalog/runtime/contracts/scientific-workload-profiles.json",
+                baseline,
+                current,
+            )
+        self.assertNotEqual(baseline, current)
 
     def test_serialized_boltz_mount_cleanup_is_in_the_integration_baseline(
         self,
