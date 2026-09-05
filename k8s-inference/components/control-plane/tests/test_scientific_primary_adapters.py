@@ -229,6 +229,15 @@ def output_manifest(items: list[tuple[str, str, str, bytes]]) -> tuple[dict[str,
     )
 
 
+def proteina_output_manifest(results: bytes) -> tuple[dict[str, object], dict[str, bytes]]:
+    return output_manifest(
+        [
+            ("design-1-structure", "protein-complex-structure/v1", "proteina.structure.1", pdb_bytes()),
+            ("results.1", "proteina-complexa-results-csv/v1", "proteina.results.1", results),
+        ]
+    )
+
+
 def test_real_catalog_profiles_project_to_canonical_controller_types() -> None:
     proteina_request = proteina_manifest_request()
     proteina = compile_adapter_run(
@@ -931,6 +940,73 @@ def test_proteina_semantics_bind_request_structure_and_finite_metrics() -> None:
     )
     with pytest.raises(ScientificAdapterError, match="finite"):
         proteina_complexa.validate_output(request, invalid_manifest, artifact_loader=invalid_blobs.__getitem__)
+
+
+@pytest.mark.parametrize(
+    ("metric_name", "metric_value"),
+    (
+        ("self_complex_pLDDT", "0.91"),
+        ("self_complex_pAE", "4.2"),
+        ("self_complex_i_pAE", "3.8"),
+        ("self_binder_scRMSD", "1.1"),
+        ("self_binder_scRMSD_ca", "1.1"),
+        ("self_binder_scRMSD_bb3", "1.2"),
+        ("self_binder_scRMSD_bb3o", "1.3"),
+        ("self_binder_scRMSD_allatom", "1.4"),
+        ("self_complex_scRMSD", "1.5"),
+        ("self_complex_scRMSD_ca", "1.5"),
+    ),
+)
+def test_proteina_semantics_accept_pinned_upstream_scalar_metrics(
+    metric_name: str,
+    metric_value: str,
+) -> None:
+    request = fixture("proteina-complexa", "positive-protein.json")
+    results = f"id_gen,{metric_name}\ndesign-1,{metric_value}\n".encode()
+    manifest, blobs = proteina_output_manifest(results)
+
+    validation = proteina_complexa.validate_output(request, manifest, artifact_loader=blobs.__getitem__)
+
+    assert validation["status"] == "passed"
+    assert validation["design_count"] == 1
+
+
+@pytest.mark.parametrize(
+    "header",
+    (
+        "self_complex_pTM",
+        "self_complex_i_pTM",
+        "mpnn_complex_pLDDT",
+        "self_complex_i_pAE_all",
+        "self_binder_scRMSD_all",
+        "self_binder_scRMSD_unknown",
+    ),
+)
+def test_proteina_semantics_reject_unknown_or_array_only_metrics(header: str) -> None:
+    request = fixture("proteina-complexa", "positive-protein.json")
+    results = f'id_gen,{header}\ndesign-1,"[0.8, 0.9]"\n'.encode()
+    manifest, blobs = proteina_output_manifest(results)
+
+    with pytest.raises(ScientificAdapterError, match="no recognized scientific metrics"):
+        proteina_complexa.validate_output(request, manifest, artifact_loader=blobs.__getitem__)
+
+
+@pytest.mark.parametrize(
+    ("metric_name", "metric_value"),
+    (
+        ("self_complex_pLDDT", "1.01"),
+        ("self_complex_pAE", "100.01"),
+        ("self_complex_i_pAE", "NaN"),
+        ("self_binder_scRMSD_ca", "-0.01"),
+    ),
+)
+def test_proteina_semantics_bound_current_scalar_metrics(metric_name: str, metric_value: str) -> None:
+    request = fixture("proteina-complexa", "positive-protein.json")
+    results = f"id_gen,{metric_name}\ndesign-1,{metric_value}\n".encode()
+    manifest, blobs = proteina_output_manifest(results)
+
+    with pytest.raises(ScientificAdapterError, match="must be finite"):
+        proteina_complexa.validate_output(request, manifest, artifact_loader=blobs.__getitem__)
 
 
 def test_boltzgen_semantics_enforce_identity_budget_and_degenerate_sequence_gate() -> None:
