@@ -14,6 +14,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+import zstandard
 from scientific_batch_fakes import FakeScientificBatchCluster, FakeScientificBatchRepository
 
 from fs2_serve.scientific_batch import (
@@ -1133,18 +1134,54 @@ def test_proteina_companion_collects_only_runner_completed_handoffs_and_final_ou
         operation_id="op-proteina-companion",
     )
 
-    intermediate_workspace = tmp_path / "generate"
-    generated = intermediate_workspace / "generation" / "sample.json"
-    generated.parent.mkdir(parents=True)
-    generated.write_text('{"status":"generated"}', encoding="utf-8")
-    intermediate = plan.invocation("generate", "main")
-    completion_sha256 = publish_stage_completion(intermediate, intermediate_workspace)
-    handoff = proteina_complexa.collect_companion_output(intermediate, intermediate_workspace)
-    assert tuple(item.name for item in handoff.artifacts) == (proteina_complexa.STAGE_HANDOFF_NAME,)
-    assert handoff.artifacts[0].semantic_type == proteina_complexa.STAGE_HANDOFF_SEMANTIC_TYPE
-    assert handoff.artifacts[0].compression == "zstd"
-    assert handoff.validation["completion_marker_sha256"] == completion_sha256
-    assert handoff.validation["status"] == "passed"
+    expected_by_stage = {
+        "generate": {"assets/target_data/target.pdb", "inference/run/sample.pdb"},
+        "filter": {"assets/target_data/target.pdb", "inference/run/sample.pdb"},
+        "evaluate": {
+            "assets/target_data/target.pdb",
+            "inference/run/sample.pdb",
+            "evaluation_results/run/result.csv",
+        },
+    }
+    for stage_id, expected_files in expected_by_stage.items():
+        intermediate_workspace = tmp_path / stage_id
+        for relative_path, content in (
+            ("assets/target_data/target.pdb", pdb_bytes()),
+            ("inference/run/sample.pdb", pdb_bytes()),
+        ):
+            path = intermediate_workspace / relative_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+        if stage_id == "evaluate":
+            result = intermediate_workspace / "evaluation_results" / "run" / "result.csv"
+            result.parent.mkdir(parents=True)
+            result.write_bytes(b"id,score\ndesign-1,0.81\n")
+        # Successful upstream filter runs create this empty Hydra file. It is
+        # not downstream scientific state and must neither make a handoff fail
+        # nor leak into the next stage.
+        incidental_log = intermediate_workspace / "logs" / "hydra_outputs" / "filter.log"
+        incidental_log.parent.mkdir(parents=True)
+        incidental_log.touch()
+        intermediate = plan.invocation(stage_id, "main")
+        completion_sha256 = publish_stage_completion(intermediate, intermediate_workspace)
+        handoff = proteina_complexa.collect_companion_output(intermediate, intermediate_workspace)
+        assert tuple(item.name for item in handoff.artifacts) == (proteina_complexa.STAGE_HANDOFF_NAME,)
+        assert handoff.artifacts[0].semantic_type == proteina_complexa.STAGE_HANDOFF_SEMANTIC_TYPE
+        assert handoff.artifacts[0].compression == "zstd"
+        assert handoff.validation["completion_marker_sha256"] == completion_sha256
+        assert handoff.validation["status"] == "passed"
+        raw_handoff = zstandard.ZstdDecompressor().decompress(
+            handoff.artifacts[0].path.read_bytes(),
+            max_output_size=proteina_complexa.MAX_STAGE_HANDOFF_BYTES,
+        )
+        with tarfile.open(fileobj=io.BytesIO(raw_handoff), mode="r:") as archive:
+            members = {member.name.rstrip("/"): member for member in archive.getmembers()}
+            observed_files = {name for name, member in members.items() if member.isfile()}
+            assert observed_files == expected_files
+            for name in expected_files:
+                source = archive.extractfile(members[name])
+                assert source is not None and source.read()
+            assert all(not name.startswith("logs") for name in members)
 
     terminal_workspace = tmp_path / "analyze"
     structure = terminal_workspace / "evaluation" / "design-1" / "design-1.pdb"
