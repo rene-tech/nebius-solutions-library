@@ -325,6 +325,48 @@ def _structure_entry_name(shard_id: str, file_name: str) -> str:
     return f"structure.{shard_id}.{filename_digest}"
 
 
+def _bind_ranked_structures(
+    shard_id: str,
+    ranked_names: tuple[str, ...],
+    structures: tuple[Path, ...],
+) -> tuple[tuple[str, Path], ...]:
+    """Bind CSV names to upstream copies without trusting rank prefixes.
+
+    BoltzGen keeps the original basename in ``final_designs_metrics_*.csv``
+    while copying each selected structure as ``rank<integer>_<basename>``.
+    Accept that exact deterministic transformation (and the legacy unchanged
+    basename), but require a complete one-to-one association so an ambiguous,
+    missing, or extra structure remains a hard failure.
+    """
+
+    bound: list[tuple[str, Path]] = []
+    used: set[Path] = set()
+    for ranked_name in ranked_names:
+        _structure_entry_name(shard_id, ranked_name)
+        suffix = f"_{ranked_name}"
+        matches: list[Path] = []
+        for structure in structures:
+            if structure in used:
+                continue
+            physical_name = structure.name
+            prefix = physical_name[: -len(suffix)] if physical_name.endswith(suffix) else ""
+            if physical_name == ranked_name or (
+                prefix.startswith("rank") and prefix.removeprefix("rank").isdigit()
+            ):
+                matches.append(structure)
+        if len(matches) != 1:
+            raise ScientificAdapterError(
+                "BoltzGen ranking filenames do not match emitted structure artifacts"
+            )
+        used.add(matches[0])
+        bound.append((ranked_name, matches[0]))
+    if len(used) != len(structures):
+        raise ScientificAdapterError(
+            "BoltzGen ranking filenames do not match emitted structure artifacts"
+        )
+    return tuple(bound)
+
+
 def _campaign_input(
     request: PublicRunRequest,
     input_artifacts: tuple[ScientificInputArtifact, ...] | None,
@@ -564,18 +606,23 @@ def collect_output(request_value: object, workspaces: Mapping[str, Path]) -> Col
         )
         if "file_name" not in fields or len(rows) != batch.budget:
             raise ScientificAdapterError("BoltzGen ranking CSV does not account for the requested budget")
-        ranked_names = {row["file_name"] for row in rows}
-        if len(ranked_names) != batch.budget or ranked_names != {structure.name for structure in structures}:
-            raise ScientificAdapterError("BoltzGen ranking filenames do not match collected structures")
+        ranked_names = tuple(row["file_name"] for row in rows)
+        if len(set(ranked_names)) != batch.budget:
+            raise ScientificAdapterError("BoltzGen ranking contains duplicate structure filenames")
+        bound_structures = _bind_ranked_structures(
+            batch.shard_id,
+            ranked_names,
+            tuple(structures),
+        )
         entries = [(f"ranking.{batch.shard_id}", "boltzgen-ranking-csv/v1", ranking, True)]
         entries.extend(
             (
-                _structure_entry_name(batch.shard_id, structure.name),
+                _structure_entry_name(batch.shard_id, ranked_name),
                 "protein-complex-structure/v1",
                 structure,
                 False,
             )
-            for structure in structures
+            for ranked_name, structure in bound_structures
         )
         collected.append(
             collect_output_files(
@@ -864,11 +911,13 @@ def _collect_final_stage(
     if confidence_key not in fields or rmsd_key not in fields:
         raise ScientificAdapterError("BoltzGen ranking CSV lacks confidence or refold RMSD")
     ranked_names: set[str] = set()
+    ranked_names_in_order: list[str] = []
     for row in rows:
         _structure_entry_name(invocation.shard_id, row["file_name"])
         if row["file_name"] in ranked_names:
             raise ScientificAdapterError("BoltzGen ranking contains a duplicate structure filename")
         ranked_names.add(row["file_name"])
+        ranked_names_in_order.append(row["file_name"])
         sequence = protein_sequence(row["designed_chain_sequence"], label="BoltzGen sequence")
         if max(Counter(sequence).values()) / len(sequence) > 0.30:
             raise ScientificAdapterError("BoltzGen sequence fails the composition-bias gate")
@@ -877,8 +926,11 @@ def _collect_final_stage(
         finite_number(float(row[rmsd_key]), minimum=0.0, maximum=10.0, label=rmsd_key)
         if "unresolved_residues" in fields and row["unresolved_residues"] not in {"0", "0.0"}:
             raise ScientificAdapterError("BoltzGen design contains unresolved residues")
-    if ranked_names != {path.name for path in structures}:
-        raise ScientificAdapterError("BoltzGen ranking filenames do not match emitted structure artifacts")
+    bound_structures = _bind_ranked_structures(
+        invocation.shard_id,
+        tuple(ranked_names_in_order),
+        tuple(structures),
+    )
 
     sanitized_ranking = canonicalize_upstream_csv(
         ranking_content,
@@ -897,7 +949,7 @@ def _collect_final_stage(
     ]
     atom_count = 0
     total_bytes = len(sanitized_ranking)
-    for index, structure in enumerate(structures):
+    for index, (ranked_name, structure) in enumerate(bound_structures):
         try:
             resolved = structure.resolve(strict=True)
         except OSError as error:
@@ -914,7 +966,7 @@ def _collect_final_stage(
             size_bytes=len(content),
             media_type=FINAL_STRUCTURE_MEDIA_TYPE,
         )
-        name = _structure_entry_name(invocation.shard_id, resolved.name)
+        name = _structure_entry_name(invocation.shard_id, ranked_name)
         atom_count += structure_atom_count(
             LoadedArtifact(name, "protein-complex-structure/v1", pointer, content),
             require_two_chains=True,
