@@ -1126,6 +1126,38 @@ def test_collectors_consume_real_upstream_csv_and_structures_without_exposing_pa
     )
 
 
+def test_proteina_collector_bounds_the_pinned_best_of_n_expansion(tmp_path: Path) -> None:
+    request = fixture("proteina-complexa", "positive-protein.json")
+    assert request["parameters"]["num_samples"] == 2
+    root = tmp_path / "proteina-best-of-n"
+    csv_path = root / "evaluation" / "RAW_binder_results_pipeline_combined.csv"
+    rows = ["id_gen,pdb_path,_res_pLDDT_self,_res_i_pae_self,_res_scRMSD_self"]
+    for index in range(4):
+        structure = root / "evaluation" / f"design-{index}" / f"design-{index}.pdb"
+        structure.parent.mkdir(parents=True)
+        structure.write_bytes(pdb_bytes())
+        rows.append(f"design-{index},{structure},0.81,4.2,1.1")
+    csv_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+    collected = proteina_complexa.collect_output(request, root)
+    semantic = proteina_complexa.validate_output(
+        request,
+        collected.manifest,
+        artifact_loader=collected.blobs.__getitem__,
+    )
+    assert semantic["design_count"] == 4
+
+    fifth = root / "evaluation" / "design-4" / "design-4.pdb"
+    fifth.parent.mkdir(parents=True)
+    fifth.write_bytes(pdb_bytes())
+    csv_path.write_text(
+        "\n".join((*rows, f"design-4,{fifth},0.81,4.2,1.1")) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ScientificAdapterError, match="exceeds the CSV row bound"):
+        proteina_complexa.collect_output(request, root)
+
+
 def test_proteina_companion_collects_only_runner_completed_handoffs_and_final_outputs(tmp_path: Path) -> None:
     request = fixture("proteina-complexa", "positive-protein.json")
     plan = proteina_complexa.compile_run(
