@@ -338,6 +338,75 @@ def test_three_clocks_and_overlapping_phases_reconcile_without_rank_double_count
     assert rollup.data_gaps == []
 
 
+def test_zero_duration_unavailable_placeholders_do_not_degrade_real_interval_quality() -> None:
+    current = subject()
+    base = [
+        *interval(
+            current,
+            key="scheduler",
+            start=0,
+            end=10,
+            clock=LifecycleClock.SCHEDULER_OCCUPIED,
+            phase=LifecyclePhase.GPU_ALLOCATION,
+            gpu_count=1,
+            pod_uid="pod-uid-1",
+        ),
+        *interval(
+            current,
+            key="active",
+            start=0,
+            end=10,
+            clock=LifecycleClock.PHASE,
+            phase=LifecyclePhase.ACTIVE_COMPUTE,
+            pod_uid="pod-uid-1",
+        ),
+    ]
+    placeholder = [
+        signal.model_copy(
+            update={
+                "source": LifecycleSource.DERIVED,
+                "quality": MeasurementQuality.UNAVAILABLE,
+            }
+        )
+        for signal in interval(
+            current,
+            key="unobserved-restore",
+            start=10,
+            end=10,
+            clock=LifecycleClock.PHASE,
+            phase=LifecyclePhase.RESTORE,
+        )
+    ]
+
+    rollup = reconcile_lifecycle(current, [*base, *placeholder], terminal=False, outcome=None, generated_at=NOW)
+    assert rollup.quality is MeasurementQuality.MEASURED
+
+    elapsed_unobserved = [
+        signal.model_copy(
+            update={
+                "source": LifecycleSource.DERIVED,
+                "quality": MeasurementQuality.UNAVAILABLE,
+            }
+        )
+        for signal in interval(
+            current,
+            key="unobserved-elapsed",
+            start=8,
+            end=9,
+            clock=LifecycleClock.PHASE,
+            phase=LifecyclePhase.RESTORE,
+        )
+    ]
+    degraded = reconcile_lifecycle(
+        current,
+        [*base, *elapsed_unobserved],
+        terminal=False,
+        outcome=None,
+        generated_at=NOW,
+    )
+    assert degraded.quality is MeasurementQuality.UNAVAILABLE
+
+
 @pytest.mark.asyncio
 async def test_memory_repository_is_append_only_idempotent_and_tenant_scoped() -> None:
     repository = MemoryLifecycleRepository()

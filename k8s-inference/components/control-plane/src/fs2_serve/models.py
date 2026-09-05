@@ -347,6 +347,10 @@ class OperationView(StrictModel):
     protocol: str
     operation: str
     idempotency_key: IdempotencyKey
+    # Internal correlation context.  Excluding it keeps the public operation
+    # response unchanged while lifecycle projectors can retain the immutable
+    # request trace identity.
+    traceparent: str | None = Field(default=None, max_length=128, exclude=True)
     status: OperationStatus
     accepted_at: AwareDatetime
     available_at: AwareDatetime

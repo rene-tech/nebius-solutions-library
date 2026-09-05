@@ -86,7 +86,12 @@ class OperationSource:
         return self.operation
 
 
-def operation(operation_id: UUID, *, status: OperationStatus) -> OperationView:
+def operation(
+    operation_id: UUID,
+    *,
+    status: OperationStatus,
+    traceparent: str | None = None,
+) -> OperationView:
     return OperationView(
         id=operation_id,
         tenant_id="oncology-a",
@@ -97,6 +102,7 @@ def operation(operation_id: UUID, *, status: OperationStatus) -> OperationView:
         protocol="scientific-batch-v1",
         operation="design",
         idempotency_key="scientific-lifecycle-test",
+        traceparent=traceparent,
         status=status,
         accepted_at=NOW,
         available_at=NOW,
@@ -414,6 +420,71 @@ def test_running_init_does_not_synthesize_future_init_phase_evidence() -> None:
     assert with_future_init == baseline
     identities = [(value.phase, value.started_at) for value in with_future_init.phases]
     assert len(identities) == len(set(identities))
+
+
+@pytest.mark.asyncio
+async def test_subject_retains_operation_trace_context_without_exposing_traceparent() -> None:
+    state, attempt = terminal_state(AttemptOutcome.SUCCEEDED)
+    traceparent = "00-11111111111111111111111111111111-2222222222222222-01"
+    operation_view = operation(
+        state.operation_id,
+        status=OperationStatus.SUCCEEDED,
+        traceparent=traceparent,
+    )
+    repository = MemoryLifecycleRepository()
+    bridge = ScientificLifecycleBridge(
+        lifecycle=repository,
+        batches=EventSource(lifecycle_events(state, attempt, preempted=False)),
+        operations=OperationSource(operation_view),
+    )
+
+    await bridge.sync(state)
+
+    detail = await repository.get_workload(attempt.attempt_id, tenant_id=state.tenant_id)
+    assert detail is not None
+    assert detail.subject.trace_id == "1" * 32
+    assert detail.subject.parent_span_id == "2" * 16
+    assert "traceparent" not in operation_view.model_dump(mode="json")
+
+
+@pytest.mark.asyncio
+async def test_terminal_cleanup_gap_is_teardown_and_never_active_compute() -> None:
+    state, original_attempt = terminal_state(AttemptOutcome.SUCCEEDED)
+    attempt = replace(original_attempt, completed_at=at(10))
+    state = replace(
+        state,
+        stages=(ScientificStageState(stage_id="design", status=StageStatus.SUCCEEDED, attempts=(attempt,)),),
+    )
+    events = [
+        event
+        for event in lifecycle_events(state, attempt, preempted=False)
+        if event.draft.phase is not LifecyclePhase.GRACE_DRAIN
+    ]
+    repository = MemoryLifecycleRepository()
+    bridge = ScientificLifecycleBridge(
+        lifecycle=repository,
+        batches=EventSource(events),
+        operations=OperationSource(
+            operation(
+                state.operation_id,
+                status=OperationStatus.SUCCEEDED,
+                traceparent="00-11111111111111111111111111111111-2222222222222222-01",
+            )
+        ),
+        cluster="k8s-inference-h100",
+    )
+
+    await bridge.observe(state, attempt, pod_observation(attempt, observed_at=at(10)))
+    await bridge.sync(state)
+
+    detail = await repository.get_workload(attempt.attempt_id, tenant_id=state.tenant_id)
+    assert detail is not None and detail.rollup is not None
+    assert detail.rollup.scheduler_occupied_gpu_seconds == 10
+    assert detail.rollup.active_gpu_seconds == 3
+    assert detail.rollup.phase_gpu_seconds["teardown"] == 2
+    assert detail.rollup.phase_gpu_seconds["unclassified"] == 0
+    assert detail.rollup.quality.value == "estimated"
+    assert "phase_classification_incomplete" not in detail.rollup.data_gaps
 
 
 @pytest.mark.asyncio

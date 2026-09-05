@@ -865,7 +865,15 @@ def reconcile_lifecycle(
             "scheduler_occupancy_clock_missing",
         }
     }
-    quality = _worst_quality(item.quality for item in intervals)
+    # A zero-duration unavailable interval is an explicit schema placeholder,
+    # not missing elapsed accounting.  It must not lower the quality of real
+    # measured intervals.  Any unavailable interval with positive duration is
+    # still retained and remains fail-closed.
+    quality = _worst_quality(
+        item.quality
+        for item in intervals
+        if item.quality is not MeasurementQuality.UNAVAILABLE or item.end > item.start
+    )
     active = phase_totals[LifecyclePhase.ACTIVE_COMPUTE.value]
     return LifecycleRollup(
         rollup_id=uuid4(),

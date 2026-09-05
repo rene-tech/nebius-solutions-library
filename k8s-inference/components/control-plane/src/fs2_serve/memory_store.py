@@ -213,7 +213,10 @@ class MemoryStore:
             and row.view.payload_expires_at is not None
             and row.view.payload_expires_at > datetime.now(UTC)
         )
-        updates: dict[str, Any] = {"result_available": available}
+        updates: dict[str, Any] = {
+            "result_available": available,
+            "traceparent": row.traceparent,
+        }
         if reused is not None:
             updates["reused"] = reused
         return row.view.model_copy(update=updates, deep=True)

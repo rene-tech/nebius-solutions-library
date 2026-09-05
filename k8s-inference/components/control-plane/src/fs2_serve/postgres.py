@@ -855,6 +855,7 @@ class PostgresStore:
             protocol=row["protocol"],
             operation=row["operation"],
             idempotency_key=row["idempotency_key"],
+            traceparent=row["traceparent"],
             status=OperationStatus(row["status"]),
             accepted_at=row["accepted_at"],
             available_at=row["available_at"],

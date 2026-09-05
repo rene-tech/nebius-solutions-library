@@ -19,6 +19,7 @@ from ..lifecycle import (
     ReproducibilityMetadata,
     WorkloadTelemetryKind,
     api_key_id_hash,
+    trace_identity,
 )
 from ..lifecycle import (
     LifecyclePhase as LedgerPhase,
@@ -156,6 +157,7 @@ class ScientificLifecycleBridge:
             or operation.protocol != "scientific-batch-v1"
         ):
             raise RuntimeError("scientific lifecycle operation identity differs from the frozen batch")
+        trace_id, parent_span_id = trace_identity(operation.traceparent)
         await self.lifecycle.register_subject(
             LifecycleSubject(
                 subject_id=attempt.attempt_id,
@@ -172,6 +174,8 @@ class ScientificLifecycleBridge:
                 model_id=state.model_id,
                 model_revision=operation.model_revision,
                 protocol=operation.protocol,
+                trace_id=trace_id,
+                parent_span_id=parent_span_id,
                 accepted_at=operation.accepted_at,
                 reproducibility=ReproducibilityMetadata(),
             )
@@ -435,9 +439,22 @@ class ScientificLifecycleBridge:
             for event in transition_events
             if event.draft.phase in {LifecyclePhase.GRACE_DRAIN, LifecyclePhase.TEARDOWN}
         ]
+        grace_drain_at = _event_time(attempt_events, LifecyclePhase.GRACE_DRAIN)
         for event in accounting_events:
             assert event.draft.phase is not None
             phase = _phase_for_event(state, attempt, event.draft.phase)
+            # A successful/non-graceful workload is terminal from
+            # ``completed_at`` until the controller observes UID-fenced
+            # resource release.  Account that scheduler-occupied interval as
+            # teardown; it is known not to be active model compute.  Graceful
+            # attempts already have their exact grace/drain interval.
+            started_at = event.occurred_at
+            if (
+                event.draft.phase is LifecyclePhase.TEARDOWN
+                and grace_drain_at is None
+                and attempt.completed_at is not None
+            ):
+                started_at = min(attempt.completed_at, event.occurred_at)
             end = next(
                 (candidate.occurred_at for candidate in transition_events if candidate.sequence > event.sequence),
                 teardown_at,
@@ -447,7 +464,7 @@ class ScientificLifecycleBridge:
                 self._signal(
                     event_key=f"{interval}:start",
                     subject_id=attempt.attempt_id,
-                    occurred_at=event.occurred_at,
+                    occurred_at=started_at,
                     phase=phase,
                     edge=LifecycleEdge.START,
                     clock=LifecycleClock.PHASE,
@@ -464,7 +481,7 @@ class ScientificLifecycleBridge:
                     self._signal(
                         event_key=f"{interval}:end",
                         subject_id=attempt.attempt_id,
-                        occurred_at=max(event.occurred_at, end),
+                        occurred_at=max(started_at, end),
                         phase=phase,
                         edge=LifecycleEdge.END,
                         clock=LifecycleClock.PHASE,
