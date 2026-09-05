@@ -458,6 +458,49 @@ def test_proteina_commands_and_artifact_handoffs_are_exact_and_shell_free() -> N
     assert "++metric.sequence_types=[self]" in result.invocations[2].argv
 
 
+@pytest.mark.parametrize(
+    ("variant", "config_stem"),
+    (
+        ("protein-target", "search_binder_local_pipeline"),
+        ("ligand-target", "search_ligand_binder_local_pipeline"),
+        ("ame", "search_ame_local_pipeline"),
+    ),
+)
+def test_proteina_filter_reuses_generated_workspace_without_a_gpu(
+    variant: str,
+    config_stem: str,
+) -> None:
+    request = fixture("proteina-complexa", "positive-protein.json")
+    request["parameters"]["variant"] = variant
+    parameters = request["parameters"]
+    result = proteina_complexa.compile_run(
+        profile("proteina-complexa"),
+        request,
+        operation_id=f"op-{variant}-cpu-filter",
+    )
+
+    filter_invocation = result.invocations[1]
+    common_overrides = (
+        f"++run_name={parameters['run_name']}",
+        f"++generation.task_name={parameters['target_id']}",
+        f"++seed={parameters['seed']}",
+    )
+    assert filter_invocation.argv[3:] == (
+        "complexa",
+        "filter",
+        proteina_complexa.VARIANTS[variant].config,
+        "--verbose",
+        *common_overrides,
+        (f"++root_path=./inference/{config_stem}_{parameters['target_id']}_{parameters['run_name']}"),
+    )
+    assert result.controller_plan.stage("filter").resource_class is ResourceClass.CPU
+
+    for invocation in (result.invocations[0], *result.invocations[2:]):
+        assert invocation.argv[6:9] == common_overrides
+        assert "--verbose" not in invocation.argv
+        assert not any(argument.startswith("++root_path=") for argument in invocation.argv)
+
+
 def test_proteina_runtime_dependencies_are_variant_specific_and_operation_isolated() -> None:
     cases = (
         ("protein-target", "complexa-protein", "alphafold2-params"),
