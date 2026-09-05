@@ -580,6 +580,25 @@ def _artifact(artifact_id: str, path: Path, media_type: str) -> dict[str, Any]:
     }
 
 
+def _exact_ranked_rows(path: Path, quota: int) -> list[dict[str, str]]:
+    """Return exactly the requested top-ranked upstream designs.
+
+    BindCraft checks ``number_of_final_designs`` only between trajectories.  A
+    single trajectory may therefore append as many accepted rows as
+    ``max_mpnn_sequences`` and overshoot the remaining quota.  Its terminal
+    check reranks ``final_design_stats.csv`` by ``Average_i_pTM`` before
+    returning, so the leading rows are the deterministic winners to export.
+    """
+
+    with path.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    if len(rows) < quota:
+        raise ContractError(
+            f"upstream BindCraft published {len(rows)} accepted designs for an exact quota of {quota}"
+        )
+    return rows[:quota]
+
+
 def run_trajectory(args: argparse.Namespace) -> None:
     if args.backend_id != BACKEND_ID or not args.pyrosetta_required:
         raise ContractError("native academic backend identity and PyRosetta requirement are mandatory")
@@ -620,10 +639,10 @@ def run_trajectory(args: argparse.Namespace) -> None:
         trajectory_rows = list(csv.DictReader(handle))
     if not trajectory_rows:
         raise ContractError("upstream BindCraft recorded no trajectory")
-    with final_csv.open(encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle))
-    if not rows:
-        raise ContractError("bounded upstream trajectory produced no accepted design")
+    rows = _exact_ranked_rows(
+        final_csv,
+        request["parameters"]["accepted_designs_per_shard"],
+    )
 
     hotspot_specification = _hotspot_specification(request["parameters"])
     artifacts_dir = output / "artifacts"

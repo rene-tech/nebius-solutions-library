@@ -20,12 +20,12 @@
         "archive_sha256": "cada0f51f221af568ad0ee84ada2e68317501adad233008d073d66839b1afb8d"
       },
       "dockerfile": "Dockerfile.bindcraft",
-      "build_tag_suffix": "-cuda121-r19",
-      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r19",
-      "supersedes": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
-      "published_digest": "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
-      "qualification_state": "h100-semantic-qualified-active",
-      "qualification_evidence": "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-20260905/bindcraft-r19-h100-semantic-qualification.json",
+      "build_tag_suffix": "-cuda121-r20",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r20",
+      "supersedes": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+      "published_digest": null,
+      "qualification_state": "publication-pending",
+      "qualification_evidence": null,
       "deployable": true,
       "artifact_kind": "bindcraft-af2-params",
       "external_artifacts": [

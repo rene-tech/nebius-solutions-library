@@ -86,7 +86,7 @@ class ImageLockTests(unittest.TestCase):
         if publication["tag"] != lock["target"]:
             # A source commit precedes immutable publication. During that
             # bounded state the old receipt must be exactly what the new lock
-            # supersedes; the publication commit replaces it with r19 proof.
+            # supersedes; the publication commit replaces it with successor proof.
             self.assertEqual(publication["digest_reference"], lock["supersedes"])
             return
         identity = publication["source_identity_in_published_image"]
@@ -248,29 +248,26 @@ class ImageLockTests(unittest.TestCase):
             self.assertIn(pyrosetta_patch.PATCHED_IMPORT, patched)
             self.assertIn(pyrosetta_patch.PATCHED_CALL, patched)
 
-    def test_successor_tag_is_r19_and_names_the_digest_it_supersedes(self) -> None:
+    def test_successor_tag_is_r20_and_names_the_digest_it_supersedes(self) -> None:
         image = build_images.load_lock()["images"][0]
-        self.assertEqual(image["build_tag_suffix"], "-cuda121-r19")
-        self.assertTrue(image["target"].endswith(image["source"]["revision"] + "-cuda121-r19"))
-        # r18 is the previously published and H100-qualified digest. It cannot
-        # process every accepted row because it equates a model-specific list
-        # with a cross-model average, so r19 must be a new immutable target.
+        self.assertEqual(image["build_tag_suffix"], "-cuda121-r20")
+        self.assertTrue(image["target"].endswith(image["source"]["revision"] + "-cuda121-r20"))
+        # r19 is the active H100-qualified digest. Its wrapper exports every
+        # accepted row when one upstream trajectory overshoots the remaining
+        # shard quota, so r20 must be a new immutable target.
         self.assertEqual(
             image["supersedes"],
             "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@"
-            "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
-        )
-        self.assertEqual(
-            image["published_digest"],
             "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
         )
-        self.assertEqual(image["qualification_state"], "h100-semantic-qualified-active")
+        if image["qualification_state"] == "publication-pending":
+            self.assertIsNone(image["published_digest"])
+            self.assertIsNone(image["qualification_evidence"])
+        else:
+            self.assertEqual(image["qualification_state"], "h100-semantic-qualified-active")
+            self.assertRegex(image["published_digest"], r"^sha256:[0-9a-f]{64}$")
+            self.assertTrue(image["qualification_evidence"].endswith("semantic-qualification.json"))
         self.assertTrue(image["deployable"])
-        self.assertEqual(
-            image["qualification_evidence"],
-            "models/cancer-immunotherapy/images/bindcraft-native/evidence/"
-            "live-h100-20260905/bindcraft-r19-h100-semantic-qualification.json",
-        )
 
     def test_successor_handoff_requires_its_own_exact_h100_qualification(self) -> None:
         lock = build_images.load_lock()["images"][0]
@@ -284,6 +281,16 @@ class ImageLockTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+        if lock["qualification_state"] == "publication-pending":
+            # Publication is deliberately separate from live H100
+            # qualification. Until that proof exists, r19 remains active and
+            # is exactly the digest r20 declares it supersedes.
+            self.assertEqual(handoff["successor"]["digest"], lock["supersedes"].rsplit("@", 1)[1])
+            self.assertNotEqual(
+                f"{handoff['successor']['repository']}:{handoff['successor']['tag']}",
+                lock["target"],
+            )
+            return
         self.assertTrue(handoff["semantic_h100_qualification"])
         self.assertTrue(handoff["route_activation_allowed"])
         self.assertEqual(handoff["predecessor"]["digest"], lock["supersedes"].rsplit("@", 1)[1])
@@ -1186,6 +1193,36 @@ class NativeDesignEvidenceTests(unittest.TestCase):
             settings = json.loads((output / "target-settings.json").read_text())
             self.assertEqual(settings["target_hotspot_residues"], "56")
             self.assertEqual(settings["number_of_final_designs"], 1)
+
+    def test_exact_ranked_rows_exports_only_the_requested_top_ranked_designs(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            final_csv = Path(name) / "final_design_stats.csv"
+            final_csv.write_text(
+                "Rank,Design,Average_i_pTM\n"
+                "1,top-ranked,0.91\n"
+                "2,second-ranked,0.88\n",
+                encoding="utf-8",
+            )
+
+            rows = bindcraft_runner._exact_ranked_rows(final_csv, 1)
+
+            self.assertEqual([row["Design"] for row in rows], ["top-ranked"])
+            self.assertEqual(rows[0]["Rank"], "1")
+
+    def test_exact_ranked_rows_rejects_underfilled_upstream_output(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            final_csv = Path(name) / "final_design_stats.csv"
+            final_csv.write_text(
+                "Rank,Design,Average_i_pTM\n"
+                "1,only-ranked,0.91\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                bindcraft_runner.ContractError,
+                "published 1 accepted designs for an exact quota of 2",
+            ):
+                bindcraft_runner._exact_ranked_rows(final_csv, 2)
 
 
 class CrossJobHandoffTests(unittest.TestCase):
