@@ -12,6 +12,7 @@ import pytest
 
 from fs2_serve.admission import AdmissionService
 from fs2_serve.gpu_allocation_observer import (
+    SCIENTIFIC_MODEL_ID_LABEL,
     KubernetesGpuAllocationPublisher,
     parse_kubelet_device_checkpoint,
 )
@@ -22,6 +23,7 @@ from fs2_serve.lifecycle import (
     ReproducibilityMetadata,
     WorkloadTelemetryKind,
 )
+from fs2_serve.model_deployment import MODEL_ID_LABEL
 from fs2_serve.models import (
     ClaimedOperation,
     OperationStatus,
@@ -41,8 +43,7 @@ from fs2_serve.runtime_kubernetes import (
 NOW = datetime(2026, 9, 4, 17, 39, tzinfo=UTC)
 GPU_UUID = "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
 EVIDENCE = (
-    Path(__file__).resolve().parents[3]
-    / "catalog/profiles/evidence/h100-qwen-cosmos-live-benchmark-20260904.json"
+    Path(__file__).resolve().parents[3] / "catalog/profiles/evidence/h100-qwen-cosmos-live-benchmark-20260904.json"
 )
 
 
@@ -50,7 +51,13 @@ def _iso(offset: float) -> str:
     return (NOW + timedelta(seconds=offset)).isoformat().replace("+00:00", "Z")
 
 
-def _pod(model_id: str, *, uid: str = "pod-uid-1", annotations: Mapping[str, str] | None = None) -> dict[str, Any]:
+def _pod(
+    model_id: str,
+    *,
+    uid: str = "pod-uid-1",
+    annotations: Mapping[str, str] | None = None,
+    model_label: str = MODEL_ID_LABEL,
+) -> dict[str, Any]:
     return {
         "metadata": {
             "name": f"{model_id}-runtime",
@@ -58,7 +65,7 @@ def _pod(model_id: str, *, uid: str = "pod-uid-1", annotations: Mapping[str, str
             "uid": uid,
             "resourceVersion": "42",
             "creationTimestamp": _iso(1),
-            "labels": {"fs2-serve.nebius.ai/model-id": model_id},
+            "labels": {model_label: model_id},
             "annotations": dict(annotations or {}),
         },
         "spec": {
@@ -79,9 +86,7 @@ def _pod(model_id: str, *, uid: str = "pod-uid-1", annotations: Mapping[str, str
                 {"type": "PodScheduled", "status": "True", "lastTransitionTime": _iso(10)},
                 {"type": "Ready", "status": "True", "lastTransitionTime": _iso(100)},
             ],
-            "containerStatuses": [
-                {"name": "runtime", "state": {"running": {"startedAt": _iso(20)}}}
-            ],
+            "containerStatuses": [{"name": "runtime", "state": {"running": {"startedAt": _iso(20)}}}],
         },
     }
 
@@ -232,6 +237,78 @@ async def test_gpu_observer_publishes_first_observation_without_overwriting(tmp_
         GPU_ALLOCATION_OBSERVED_AT_ANNOTATION: _iso(12),
         GPU_OBSERVER_RESOLUTION_ANNOTATION: "1",
     }
+
+
+@pytest.mark.asyncio
+async def test_gpu_observer_publishes_scientific_pod_allocation(tmp_path: Path) -> None:
+    patches: list[dict[str, Any]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"items": [_pod("rfdiffusion", model_label=SCIENTIFIC_MODEL_ID_LABEL)]},
+            )
+        assert request.method == "PATCH"
+        patches.append(json.loads(request.content))
+        return httpx.Response(200, json={})
+
+    token_file = tmp_path / "token"
+    token_file.write_text("t" * 32, encoding="utf-8")
+    publisher = KubernetesGpuAllocationPublisher(
+        base_url="https://kubernetes.default.svc",
+        token_file=token_file,
+        ca_file=Path("/unused"),
+        namespace="fs2-models",
+        node_name="gpu-node-1",
+        poll_seconds=1,
+    )
+    async with httpx.AsyncClient(
+        base_url=publisher.base_url,
+        transport=httpx.MockTransport(handler),
+        trust_env=False,
+    ) as client:
+        published = await publisher.publish_once(
+            client,
+            {"pod-uid-1": (GPU_UUID,)},
+            observed_at=NOW + timedelta(seconds=12),
+        )
+
+    assert published == 1
+    assert len(patches) == 1
+
+
+@pytest.mark.asyncio
+async def test_gpu_observer_rejects_conflicting_model_labels(tmp_path: Path) -> None:
+    pod = _pod("rfdiffusion", model_label=SCIENTIFIC_MODEL_ID_LABEL)
+    pod["metadata"]["labels"][MODEL_ID_LABEL] = "different-model"
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        return httpx.Response(200, json={"items": [pod]})
+
+    token_file = tmp_path / "token"
+    token_file.write_text("t" * 32, encoding="utf-8")
+    publisher = KubernetesGpuAllocationPublisher(
+        base_url="https://kubernetes.default.svc",
+        token_file=token_file,
+        ca_file=Path("/unused"),
+        namespace="fs2-models",
+        node_name="gpu-node-1",
+        poll_seconds=1,
+    )
+    async with httpx.AsyncClient(
+        base_url=publisher.base_url,
+        transport=httpx.MockTransport(handler),
+        trust_env=False,
+    ) as client:
+        published = await publisher.publish_once(
+            client,
+            {"pod-uid-1": (GPU_UUID,)},
+            observed_at=NOW + timedelta(seconds=12),
+        )
+
+    assert published == 0
 
 
 def _claimed(operation_id: UUID) -> ClaimedOperation:

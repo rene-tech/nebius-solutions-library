@@ -34,6 +34,7 @@ LOGGER = logging.getLogger(__name__)
 MAX_CHECKPOINT_BYTES = 4 * 1024 * 1024
 MAX_POD_LIST_BYTES = 4 * 1024 * 1024
 MAX_PODS = 4096
+SCIENTIFIC_MODEL_ID_LABEL = "fs2.nebius.ai/model-id"
 _GPU_UUID = re.compile(r"^(?:GPU|MIG)-[A-Za-z0-9_.:/-]{1,123}$")
 _POD_UID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 
@@ -94,6 +95,15 @@ def read_kubelet_device_checkpoint(path: Path) -> dict[str, tuple[str, ...]]:
     except OSError as exc:
         raise ValueError("kubelet device checkpoint is unavailable") from exc
     return parse_kubelet_device_checkpoint(payload)
+
+
+def _has_unambiguous_model_label(labels: Mapping[str, Any]) -> bool:
+    """Accept serving and scientific Pods, but reject conflicting identities."""
+
+    serving_model_id = labels.get(MODEL_ID_LABEL)
+    scientific_model_id = labels.get(SCIENTIFIC_MODEL_ID_LABEL)
+    values = [value for value in (serving_model_id, scientific_model_id) if isinstance(value, str) and value]
+    return bool(values) and len(set(values)) == 1
 
 
 @dataclass(frozen=True)
@@ -159,7 +169,7 @@ class KubernetesGpuAllocationPublisher:
             pod_name = metadata.get("name")
             resource_version = metadata.get("resourceVersion")
             if (
-                MODEL_ID_LABEL not in labels
+                not _has_unambiguous_model_label(labels)
                 or not isinstance(pod_uid, str)
                 or not isinstance(pod_name, str)
                 or not isinstance(resource_version, str)
@@ -187,9 +197,9 @@ class KubernetesGpuAllocationPublisher:
                     "resourceVersion": resource_version,
                     "annotations": {
                         GPU_UUIDS_ANNOTATION: expected_gpu_json,
-                        GPU_ALLOCATION_OBSERVED_AT_ANNOTATION: observed_at.astimezone(UTC).isoformat().replace(
-                            "+00:00", "Z"
-                        ),
+                        GPU_ALLOCATION_OBSERVED_AT_ANNOTATION: observed_at.astimezone(UTC)
+                        .isoformat()
+                        .replace("+00:00", "Z"),
                         GPU_OBSERVER_RESOLUTION_ANNOTATION: str(self.poll_seconds),
                     },
                 }
