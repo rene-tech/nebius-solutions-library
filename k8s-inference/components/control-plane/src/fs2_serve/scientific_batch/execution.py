@@ -1227,9 +1227,9 @@ class FileScientificManifestRenderer:
             )
             if not expected_artifacts or set(by_artifact) != expected_artifacts:
                 raise ScientificExecutionMapError("BindCraft stage runtime artifacts differ from its exact contract")
-            af2 = by_artifact[BINDCRAFT_AF2_ARTIFACT]
+            af2_mounts = by_artifact[BINDCRAFT_AF2_ARTIFACT]
             pyrosetta_mounts = by_artifact[BINDCRAFT_PYROSETTA_ARTIFACT]
-            if len(af2) != 1 or af2[0].mount_path != "/models/alphafold2":
+            if len(af2_mounts) != 1 or af2_mounts[0].mount_path != "/models/alphafold2":
                 raise ScientificExecutionMapError("BindCraft AlphaFold2 parameters use the wrong target")
             if (
                 len(pyrosetta_mounts) != 1
