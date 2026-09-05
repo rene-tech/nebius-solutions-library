@@ -804,7 +804,7 @@
       "model_id": "bindcraft",
       "variant_id": "v1-5-3-pyrosetta-academic",
       "workload_namespace": "fs2-academic-poc",
-      "execution_identity_sha256": "3f62dfe79e8e38a458fc6a89d041620e0d536228500701cebb0b58f9bb2abf21",
+      "execution_identity_sha256": "b0c7bb4d8f73dbfd8f5fcdb066b775037d7c116ad3a671451390461e83447857",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -886,7 +886,7 @@
       "stages": [
         {
           "stage_id": "design",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
           "collector_id": "bindcraft-design-output-v1",
           "validator_id": "bindcraft-v1",
           "mounts": [
@@ -961,7 +961,7 @@
         },
         {
           "stage_id": "aggregate",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
           "collector_id": "bindcraft-aggregate-output-v1",
           "validator_id": "bindcraft-v1",
           "mounts": [
@@ -2067,7 +2067,7 @@
       "model_id": "alphafold3",
       "variant_id": "upstream-v3-0-4",
       "workload_namespace": "fs2-academic-poc",
-      "execution_identity_sha256": "3b4d29e0a78d934f8fb955bb647fd8df628e25021ef03216aa3db292a7a91b65",
+      "execution_identity_sha256": "83548575757c3cf9f14f26d77038dd55a8ce1c9a46d013956044b6ae7bce3afd",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"

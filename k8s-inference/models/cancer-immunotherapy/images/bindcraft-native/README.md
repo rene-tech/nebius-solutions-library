@@ -16,10 +16,10 @@ qualification evidence, and the tests and docs for exactly that.
 |---|---|
 | Source | BindCraft `7cd4ace1b7407adf66a50dfefa47de2270f5e4a9`, archive `cada0f51…` |
 | Base | `pytorch/pytorch@sha256:0279f7aa…` (PyTorch 2.3.0, CUDA 12.1, Python 3.10.14) |
-| Successor tag | `…/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r19` |
-| Successor digest | `sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1` |
+| Successor tag | `…/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r20` |
+| Successor digest | `sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3` |
 | Attestations | SPDX SBOM and SLSA provenance, attesting a revision reachable from a pushed branch |
-| Qualification | r19 is **H100 semantic-qualified and active** by exact-digest outer-entrypoint run `bcr19-20260905b`; r18 remains immutable predecessor evidence only |
+| Qualification | r20 is **H100 semantic-qualified and active** by exact-digest outer-entrypoint run `bcr20-20260905b`; older receipts remain immutable predecessor evidence only |
 
 ## Academic PoC authorization
 
@@ -206,7 +206,24 @@ this image only ever sets `FS2_RUNTIME_NAME=bindcraft-academic`. A test pins the
 SHA-256 of all five executable in-image files against the publication receipt;
 the historical r18 qualification remains immutable and separate.
 
-## r19 live H100 semantic acceptance — passed
+## r20 live H100 exact-quota acceptance — passed
+
+Exact-digest run `bcr20-20260905b` exercised the real outer entrypoint and
+production settings on H100. One upstream trajectory produced two accepted,
+reranked designs even though the shard's exact quota was one. r20 exported only
+the rank-zero design (Average i_pTM 0.79), emitted exactly one candidate triplet,
+and the separate CPU aggregate reverified every content-addressed artifact.
+
+The same immutable runtime was probed with two synthetic ranked rows and quota
+one, returning only rank zero; an underfilled quota was rejected. The control
+plane's strict oversupply rejection remains independently covered. Design took
+343 seconds in the main container and aggregation took 5 seconds. The full
+receipt is
+`evidence/live-h100-20260905/bindcraft-r20-h100-semantic-qualification.json`.
+No shared route or Terraform-owned resource was changed, and all task-owned
+qualification resources were removed afterwards.
+
+## Historical r19 live H100 semantic acceptance — passed
 
 Exact-digest run `bcr19-20260905b` passed on a capacity-block H100 node in
 `project-e00rene` / `eu-north1`. The GPU design Job exited zero after 499 seconds

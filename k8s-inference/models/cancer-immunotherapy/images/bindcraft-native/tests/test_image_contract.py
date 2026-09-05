@@ -279,7 +279,7 @@ class ImageLockTests(unittest.TestCase):
         lock = build_images.load_lock()["images"][0]
         handoff = json.loads(
             (
-                build_images.REPOSITORY_ROOT / "models/structure/batch-adapters/bindcraft/r19-image-handoff.json"
+                build_images.REPOSITORY_ROOT / "models/structure/batch-adapters/bindcraft/r20-image-handoff.json"
             ).read_text(encoding="utf-8")
         )
         contract = json.loads(
@@ -319,7 +319,7 @@ class ImageLockTests(unittest.TestCase):
         self.assertEqual(handoff["successor"]["digest"], receipt["digest"])
         self.assertEqual(handoff["image_source_commit"], receipt["attested_source"]["revision"])
         publication = json.loads(
-            (ROOT / "evidence" / "r19-successor-publication-20260905.json").read_text(encoding="utf-8")
+            (ROOT / "evidence" / "r20-successor-publication-20260905.json").read_text(encoding="utf-8")
         )
         self.assertEqual(publication["image"]["target"], lock["target"])
         self.assertEqual(publication["image"]["digest"], receipt["digest"])
@@ -332,24 +332,39 @@ class ImageLockTests(unittest.TestCase):
         # activation is authorized by the later exact-digest receipt below.
         self.assertEqual(publication["qualification"]["semantic_h100"], "not-run")
         qualification_path = (
-            ROOT / "evidence" / "live-h100-20260905" / ("bindcraft-r19-h100-semantic-qualification.json")
+            ROOT / "evidence" / "live-h100-20260905" / ("bindcraft-r20-h100-semantic-qualification.json")
         )
         qualification = json.loads(qualification_path.read_text(encoding="utf-8"))
         self.assertEqual(qualification["verdict"]["state"], "passed")
         self.assertEqual(qualification["image"]["index_digest"], receipt["digest"])
         self.assertEqual(
-            qualification["semantic_results"]["r19_regression_witness"],
+            qualification["semantic_results"],
             {
-                "model_specific_interface_residues": ("B31,B35,B38,B39,B42,B45,B46,B51,B54,B55,B58,B61,B62,B65"),
-                "model_specific_interface_residue_count": 14,
-                "average_n_interface_residues": 15.5,
-                "preserved_metric_value": 15.5,
-                "expected_behavior": (
-                    "validate the canonical model-specific residue list and the bounded "
-                    "cross-model numeric average independently"
-                ),
-                "predecessor_behavior": ("r18 would reject this valid row because 14 differs from int(15.5)"),
-                "result": "passed",
+                "trajectory_rows": 1,
+                "upstream_accepted_design_rows": 2,
+                "upstream_ranked_designs": [
+                    "fs2_s000_l67_s912083_mpnn2",
+                    "fs2_s000_l67_s912083_mpnn5",
+                ],
+                "upstream_ranked_average_i_ptm": [0.79, 0.73],
+                "exact_assigned_quota": 1,
+                "exported_candidate_rows": 1,
+                "exported_candidate_ids": ["artifact.bindcraft.native.s000.c000.pdb"],
+                "exported_sequence_matches_upstream_rank_zero": True,
+                "all_shard_artifact_digests_reverified": True,
+                "immutable_runtime_exact_quota_probe": {
+                    "input_rows": ["rank-zero", "rank-one"],
+                    "quota": 1,
+                    "returned_rows": ["rank-zero"],
+                    "underfill_rejected": True,
+                },
+                "collector_oversupply_regression": {
+                    "state": "passed",
+                    "test": (
+                        "components/control-plane/tests/test_scientific_batch_bindcraft_adapter.py::"
+                        "test_collect_design_output_rejects_oversupplied_shard"
+                    ),
+                },
             },
         )
         self.assertEqual(
