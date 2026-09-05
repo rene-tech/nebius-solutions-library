@@ -19,7 +19,7 @@ qualification evidence, and the tests and docs for exactly that.
 | Successor tag | `…/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r19` |
 | Successor digest | `sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1` |
 | Attestations | SPDX SBOM and SLSA provenance, attesting a revision reachable from a pushed branch |
-| Qualification | r19 is **published build-only**, not H100-qualified or activated; r18 alone is **H100 semantic-qualified** by real outer-entrypoint run `bcr18-20260903f` |
+| Qualification | r19 is **H100 semantic-qualified and active** by exact-digest outer-entrypoint run `bcr19-20260905b`; r18 remains immutable predecessor evidence only |
 
 ## Academic PoC authorization
 
@@ -149,8 +149,10 @@ Real upstream-accepted rows can and do violate that invented equality.
 `r19` removes only that false equality, canonicalizes and validates every
 model-specific residue identifier independently, and preserves the bounded
 cross-model mean without truncating fractional values. Its immutable registry
-digest is recorded above and in `evidence/published-images.json`; it does not
-inherit r18's H100 qualification.
+digest is recorded above and in `evidence/published-images.json`. It did not
+inherit r18's qualification: exact-digest run `bcr19-20260905b` independently
+qualified it with a real accepted row containing 14 model-specific interface
+residues and a cross-model mean of 15.5.
 
 From `r16` onward the runtime reads the columns upstream actually writes
 (`Average_n_InterfaceResidues`, `Average_dSASA`,
@@ -203,6 +205,30 @@ intentional: trimming it would change the successor for no behavioural gain, sin
 this image only ever sets `FS2_RUNTIME_NAME=bindcraft-academic`. A test pins the
 SHA-256 of all five executable in-image files against the publication receipt;
 the historical r18 qualification remains immutable and separate.
+
+## r19 live H100 semantic acceptance — passed
+
+Exact-digest run `bcr19-20260905b` passed on a capacity-block H100 node in
+`project-e00rene` / `eu-north1`. The GPU design Job exited zero after 499 seconds
+and the separate CPU aggregate exited zero after 6 seconds. The runtime read and
+verified 8,928,285,965 external bytes, used the checked-in production settings
+and filters, imported PyRosetta 2026.29 from the read-only academic claim, and
+returned one content-addressed accepted design.
+
+The accepted upstream row is the regression witness r19 was built for:
+`InterfaceResidues` names 14 canonical binder residues while
+`Average_n_InterfaceResidues` is the fractional cross-model value 15.5. The
+wrapper validated the two values independently and preserved 15.5 in its typed
+metrics. The design also independently passed all 50 applicable production
+threshold leaves, reached requested hotspot A56 at 2.171 Å, and produced a
+67-residue binder plus a two-chain relaxed complex. The aggregate re-hashed all
+five manifest entries and bound its request, localization marker, image digest,
+source revision, academic asset and shard count.
+
+The exact Jobs, timings, model metrics, artifact digests, tree identities,
+expected non-winning semantic rejection and cleanup are recorded in
+`evidence/live-h100-20260905/bindcraft-r19-h100-semantic-qualification.json`.
+The run used the route-free renderer; no live controller route was changed.
 
 ## Direct live H100 qualification before private promotion
 

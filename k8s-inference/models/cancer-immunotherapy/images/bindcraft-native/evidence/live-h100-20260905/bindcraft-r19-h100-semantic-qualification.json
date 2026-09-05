@@ -1,0 +1,363 @@
+{
+  "schema": "fs2.nebius.ai/bindcraft-native-live-h100-qualification/v2",
+  "recorded_at": "2026-09-05T00:53:14Z",
+  "task_id": "fs2-bindcraft-r19-h100-semantic-qualification-r20260905",
+  "verdict": {
+    "state": "passed",
+    "meaning": "The immutable r19 digest completed the real outer entrypoint on H100, admitted all four external runtime trees by full content, imported the authorized academic PyRosetta tree, preserved a fractional cross-model interface-residue average independently from the model-specific residue list, produced one design accepted by the checked-in production filters, and completed content-addressed aggregation.",
+    "semantic_h100_qualification": true,
+    "route_activation_allowed": true,
+    "live_routes_mutated": false,
+    "qualification_scope": "exact digest, exact production settings and filters, one accepted binder, one content-addressed aggregate"
+  },
+  "provenance": {
+    "source_fix_commit": "29c759c33c2273d22d83ce1acb958e6553bbdc26",
+    "publication_commit": "3a8aa9f6b3d6e4033dbdaf2990f34fa7493184a9",
+    "publication_evidence": "models/cancer-immunotherapy/images/bindcraft-native/evidence/r19-successor-publication-20260905.json",
+    "publication_evidence_sha256": "54c30a2a4892c252b651853ff96b10ee8c668b65d9cdadf5a4706422f6d9404a",
+    "renderer": "models/cancer-immunotherapy/images/bindcraft-native/qualification/render_semantic_job.py",
+    "renderer_sha256": "c8b6b0552f25057303b040b6cb37d059bdb6e34ab4fe28b3aacd5ecd072e966d",
+    "direct_live_canonical_pyrosetta": true,
+    "route_free_renderer": true
+  },
+  "environment": {
+    "project": "project-e00rene",
+    "region": "eu-north1",
+    "cluster_context": "k8s-inference-h100",
+    "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+    "namespace": "fs2-academic-poc",
+    "node": "computeinstance-e00p3acr87k9k4mckj",
+    "node_uid": "5700ea19-0b46-4020-afa5-c8f1a105dcdd",
+    "node_group_id": "mk8snodegroup-e00zswm0km7v78tp2m",
+    "accelerator": "NVIDIA H100 80GB HBM3",
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "node_gpu_capacity": 8,
+    "capacity_source": "capacity-block",
+    "capacity_type": "regular",
+    "resource_preset": "8gpu-128vcpu-1600gb",
+    "driver": "580.159.04-1ubuntu1",
+    "cuda_driver_bundle": "13.0.3-1",
+    "kernel": "6.11.0-1016-nvidia",
+    "kubelet": "v1.35.6",
+    "container_runtime": "containerd://2.2.6",
+    "node_ready_at_capture": true
+  },
+  "image": {
+    "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r19",
+    "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+    "index_digest": "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+    "kubelet_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+    "compressed_size_bytes": 4246068092,
+    "initial_pull_seconds": 0.267,
+    "image_pull_policy": "IfNotPresent",
+    "bindcraft_source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+    "runtime_entrypoint": [
+      "python",
+      "/opt/fs2/runtime_entrypoint.py"
+    ]
+  },
+  "authorization": {
+    "profile": "academic",
+    "pyrosetta_version": "2026.29+releasequarterly.80a0635615",
+    "pyrosetta_dist_info": "pyrosetta-2026.29+releasequarterly.80a0635615.dist-info",
+    "academic_asset_id": "pyrosetta-bindcraft",
+    "academic_artifact_sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+    "licensed_bytes_embedded_in_image": false,
+    "private_claim": "academic-assets-runtime-rwx",
+    "private_claim_mounted_read_only": true
+  },
+  "input": {
+    "operation": "design-binder",
+    "backend_id": "bindcraft-v1-5-3-pyrosetta-academic",
+    "run_id": "bcr19-20260905b",
+    "request_document_projected_sha256": "79feec292b01f7e50f70787aba06650db6b64713832127cac7724c36e98cbe2f",
+    "canonical_request_sha256": "1ad56fdae03cfdff217807cad5334048788d9c58fa61737dc96ccf825fd71fb7",
+    "input_manifest_projected_sha256": "14aabdfb835b8f327c7e9280c5b78c912b2634e6ed667e4b4ec2f266c331f7ef",
+    "external_trees_projected_sha256": "b57cd7569bbe44fcd7337c9548d7f1c82fb79e0152bc21363e66fa2bf9d614a7",
+    "runtime_localization_projected_sha256": "cd50eb46e296faff72f5cd2be0f783960f5ec8c624214e87572de936e0cfa36f",
+    "runtime_localization_canonical_sha256": "2ac235e43d24249cdf592ebef681d73821f302f3905e8ccb6d201c08e8071fcf",
+    "target": {
+      "chain": "A",
+      "hotspots": [
+        56
+      ]
+    },
+    "base_seed": 912083,
+    "binder_length": {
+      "minimum": 67,
+      "maximum": 67
+    },
+    "accepted_designs_per_shard": 1,
+    "max_trajectories_per_shard": 1,
+    "shard_count": 1,
+    "settings": {
+      "path": "/opt/bindcraft/settings_advanced/default_4stage_multimer.json",
+      "sha256": "4124733af9dff65fb23e6a5f52b2329fc0d7a4ce5c50b6df225422f77fe467d6",
+      "resolved_num_recycles_validation": 3,
+      "resolved_num_seqs": 20,
+      "resolved_max_mpnn_sequences": 2,
+      "resolved_mpnn_weights": "soluble"
+    },
+    "filters": {
+      "path": "/opt/bindcraft/settings_filters/default_filters.json",
+      "sha256": "4faeae2ed4a78b82ff8f9c3c763985ff0f0b97ebb9e10072d5d572424bb73206",
+      "numeric_thresholds_configured": 54,
+      "nested_composition_thresholds_configured": 2,
+      "active_threshold_leaves": 56
+    }
+  },
+  "external_tree_admission": {
+    "schema": "fs2.nebius.ai/bindcraft-external-tree-admission/v1",
+    "verified_bytes": 8928285965,
+    "admission_seconds": 18.25,
+    "localization_generation": "",
+    "trees": {
+      "alphafold2-params": {
+        "artifact_id": "alphafold2-params-bindcraft",
+        "plane": "immutable public generation",
+        "algorithm": "fs2-flat-tree-inventory/v1",
+        "sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+        "entries": 17,
+        "bytes": 5587959437,
+        "ownership": {
+          "uid": 1000,
+          "gid": 1000,
+          "mode": "0o555"
+        }
+      },
+      "colabdesign-mpnn-weights-vanilla": {
+        "artifact_id": "colabdesign-mpnn-weights-vanilla",
+        "plane": "immutable public generation",
+        "algorithm": "fs2-flat-tree-inventory/v1",
+        "sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+        "entries": 5,
+        "bytes": 26602793,
+        "ownership": {
+          "uid": 1000,
+          "gid": 1000,
+          "mode": "0o555"
+        }
+      },
+      "colabdesign-mpnn-weights-soluble": {
+        "artifact_id": "colabdesign-mpnn-weights-soluble",
+        "plane": "immutable public generation",
+        "algorithm": "fs2-flat-tree-inventory/v1",
+        "sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+        "entries": 5,
+        "bytes": 26601241,
+        "ownership": {
+          "uid": 1000,
+          "gid": 1000,
+          "mode": "0o555"
+        }
+      },
+      "pyrosetta-site-packages": {
+        "artifact_id": "bindcraft-pyrosetta-installed-tree",
+        "plane": "tenant-private academic generation",
+        "algorithm": "fs2-tree-manifest/v1",
+        "sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+        "files": 8697,
+        "symlinks": 0,
+        "bytes": 3287122494,
+        "ownership": {
+          "uid": 65532,
+          "gid": 65532,
+          "mode": "0o550"
+        }
+      }
+    },
+    "ownership_contract_conformance": "passed: private role gid 65532 and public roles gid 1000"
+  },
+  "jobs": {
+    "design": {
+      "name": "fs2-bcr19-20260905b-design",
+      "uid": "36aae351-3e48-4bc7-82d3-950a6f240a5e",
+      "pod": "fs2-bcr19-20260905b-design-fdjrf",
+      "pod_uid": "5edb5a93-3b10-4305-a89e-f452f2f228c9",
+      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "created_at": "2026-09-05T00:31:34Z",
+      "main_started_at": "2026-09-05T00:31:39Z",
+      "main_finished_at": "2026-09-05T00:39:58Z",
+      "job_completed_at": "2026-09-05T00:40:00Z",
+      "exit_code": 0,
+      "restarts": 0,
+      "gpu_request": 1,
+      "cpu_request": "16",
+      "memory_request": "96Gi",
+      "image_digest_verified_by_kubelet": true
+    },
+    "aggregate": {
+      "name": "fs2-bcr19-20260905b-aggregate",
+      "uid": "41dcf90e-9b7c-448a-b9af-2085b8933e39",
+      "pod": "fs2-bcr19-20260905b-aggregate-2znzk",
+      "pod_uid": "f3545c00-a5f2-45b1-b4c1-f7e4ae9c1051",
+      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "created_at": "2026-09-05T00:40:28Z",
+      "main_started_at": "2026-09-05T00:40:32Z",
+      "main_finished_at": "2026-09-05T00:40:38Z",
+      "job_completed_at": "2026-09-05T00:40:40Z",
+      "exit_code": 0,
+      "restarts": 0,
+      "gpu_request": 0,
+      "cpu_request": "2",
+      "memory_request": "8Gi",
+      "image_digest_verified_by_kubelet": true
+    }
+  },
+  "timings_seconds": {
+    "design_job_wall": 506,
+    "design_main_container": 499,
+    "aggregate_job_wall": 12,
+    "aggregate_main_container": 6,
+    "external_tree_admission": 18.25,
+    "pyrosetta_bind": 1.437,
+    "upstream": 471.764,
+    "post_processing": 0.044,
+    "restore": 0.0,
+    "grace_or_drain": 0.0
+  },
+  "semantic_results": {
+    "trajectory_rows": 1,
+    "accepted_design_rows": 1,
+    "trajectories_recorded_by_wrapper": 1,
+    "upstream_accepted_design": "fs2_s000_l67_s912083_mpnn10",
+    "candidate": {
+      "candidate_id": "native-s000-c000",
+      "length": 67,
+      "sequence": "SLEKKKEEIIEEFEKRANELISTLDEPQKAFMTGFLGNWLEFLKKMEDLEELELIAEQVLRIFEQQA",
+      "mean_plddt": 0.93,
+      "iptm": 0.69,
+      "binder_energy_score": -176.5,
+      "interface_dg": -41.33,
+      "buried_interface_area": 1467.9,
+      "shape_complementarity": 0.71,
+      "binder_rmsd": 1.15,
+      "requested_hotspot": "A56",
+      "hotspot_closest_binder_atom_angstrom": 2.171,
+      "hotspot_in_contact": true,
+      "filter_violations": 0
+    },
+    "r19_regression_witness": {
+      "model_specific_interface_residues": "B31,B35,B38,B39,B42,B45,B46,B51,B54,B55,B58,B61,B62,B65",
+      "model_specific_interface_residue_count": 14,
+      "average_n_interface_residues": 15.5,
+      "preserved_metric_value": 15.5,
+      "expected_behavior": "validate the canonical model-specific residue list and the bounded cross-model numeric average independently",
+      "predecessor_behavior": "r18 would reject this valid row because 14 differs from int(15.5)",
+      "result": "passed"
+    },
+    "production_filter_validation": {
+      "numeric_thresholds_configured": 54,
+      "numeric_thresholds_checked": 48,
+      "nested_composition_thresholds_configured": 2,
+      "nested_composition_thresholds_checked": 2,
+      "total_active_threshold_leaves": 56,
+      "total_checked": 50,
+      "inapplicable_empty_columns": [
+        "3_Binder_RMSD",
+        "3_Binder_pLDDT",
+        "4_Binder_RMSD",
+        "4_Binder_pLDDT",
+        "5_Binder_RMSD",
+        "5_Binder_pLDDT"
+      ],
+      "violations": 0
+    },
+    "independent_structure_validation": {
+      "binder_atom_records": 1127,
+      "binder_chains": [
+        "B"
+      ],
+      "binder_residues": 67,
+      "relaxed_complex_atom_records": 2979,
+      "relaxed_complex_chains": [
+        "A",
+        "B"
+      ],
+      "relaxed_complex_residues": 182,
+      "hotspot_A56_closest_binder_atom_angstrom": 2.171,
+      "contact_cutoff_angstrom": 4.0,
+      "contact_recomputed": true
+    }
+  },
+  "output": {
+    "manifest_id": "manifest.bindcraft.native.output",
+    "manifest_sha256": "97c50608d96d950f3975465be5c2a7939a76b67b26c1b44dbc654f047c7c5f95",
+    "manifest_size_bytes": 2092,
+    "manifest_entries": 5,
+    "all_declared_sizes_and_sha256_reverified": true,
+    "aggregate": {
+      "sha256": "626c8e8305ffd95966f93b98a85fb4f7d40d4b8e371d1f709da1322c758301f8",
+      "size_bytes": 654,
+      "atomic_commit": true,
+      "succeeded_shards": 1,
+      "expected_shards": 1,
+      "runtime_image_digest": "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
+      "source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
+    },
+    "artifacts": [
+      {
+        "artifact_id": "artifact.bindcraft.native.shard.000",
+        "sha256": "c8b756961007c19a13a58800a1b52fbde2fc0c77e2c0ab5feec8e98afb22594d",
+        "size_bytes": 159
+      },
+      {
+        "artifact_id": "artifact.bindcraft.native.s000.c000.metrics",
+        "sha256": "59d11b1f721461a6d23c60a2a1ac9de01b848e73f2533abb42366d6785226309",
+        "size_bytes": 737
+      },
+      {
+        "artifact_id": "artifact.bindcraft.native.s000.c000.pdb",
+        "sha256": "88fa36ac9abbd0fcdb5250d95d3105972f00a9b7517c60f43d6b6086694734a3",
+        "size_bytes": 91295
+      },
+      {
+        "artifact_id": "artifact.bindcraft.native.s000.c000.relaxed-complex",
+        "sha256": "72eab3de9257fed216e75f17408ba95c2e27a5f339cf07791afba0ba2fa00334",
+        "size_bytes": 241461
+      }
+    ]
+  },
+  "non_winning_attempt": {
+    "run_id": "bcr19-20260905a",
+    "job": "fs2-bcr19-20260905a-design",
+    "job_uid": "494af323-c0e3-4308-bfa6-6161d9da4e44",
+    "pod": "fs2-bcr19-20260905a-design-8cjlf",
+    "pod_uid": "caf1bfe6-6030-4dc8-aa05-fa016ad9850b",
+    "exit_code": 78,
+    "reason": "No requested hotspot was in atomic contact with the accepted binder.",
+    "classification": "expected semantic rejection, not an image or wrapper failure"
+  },
+  "safety": {
+    "shared_service_deployed": false,
+    "controller_routes_changed": false,
+    "task_owned_jobs_only": true,
+    "shared_claims_mounted_read_only": true,
+    "workspace_claim_task_owned": true,
+    "pod_fs_group_set": false,
+    "b300_touched": false
+  },
+  "cleanup": {
+    "state": "complete",
+    "jobs_deleted": [
+      "fs2-bcr19-20260905a-design",
+      "fs2-bcr19-20260905b-design",
+      "fs2-bcr19-20260905b-aggregate"
+    ],
+    "standalone_pods_deleted": [
+      "fs2-bcr19-20260905-evidence"
+    ],
+    "configmaps_deleted": [
+      "fs2-run-bcr19-20260905a",
+      "fs2-run-bcr19-20260905b"
+    ],
+    "workspace_pvc_deleted": "fs2-bcr19-workspace-20260905a",
+    "workspace_pv_deleted": "pvc-c7082d02-3202-48a5-b87f-70493ef32c7c",
+    "workspace_capacity": "128Gi",
+    "verified_remaining_labeled_resources": 0,
+    "academic_assets_claim_preserved": "academic-assets-runtime-rwx",
+    "academic_assets_claim_state": "Bound",
+    "task_owned_resources_remaining": false,
+    "verified_at": "2026-09-05T00:53:14Z"
+  }
+}

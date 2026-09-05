@@ -25,12 +25,8 @@ def load_module(name: str, path: Path):
 
 build_images = load_module("build_images", ROOT / "build_images.py")
 artifact_gate = load_module("artifact_gate", ROOT / "runtime" / "artifact_gate.py")
-pyrosetta_patch = load_module(
-    "patch_bindcraft_pyrosetta", ROOT / "runtime" / "patch_bindcraft_pyrosetta.py"
-)
-bindcraft_runner = load_module(
-    "bindcraft_runtime_entrypoint", ROOT / "runtime" / "bindcraft_runtime_entrypoint.py"
-)
+pyrosetta_patch = load_module("patch_bindcraft_pyrosetta", ROOT / "runtime" / "patch_bindcraft_pyrosetta.py")
+bindcraft_runner = load_module("bindcraft_runtime_entrypoint", ROOT / "runtime" / "bindcraft_runtime_entrypoint.py")
 tree_identity = load_module("tree_identity", ROOT / "runtime" / "tree_identity.py")
 renderer = load_module("render_semantic_job", ROOT / "qualification" / "render_semantic_job.py")
 
@@ -57,13 +53,17 @@ class ImageLockTests(unittest.TestCase):
         dockerfile = (ROOT / "Dockerfile.bindcraft").read_text(encoding="utf-8")
         self.assertNotIn("3475ce0ee8efdf2d3ccbcc65651ab11fe7cb34fe", dockerfile)
         self.assertIn("adapter.wrapper.sha256", dockerfile)
-        self.assertEqual(sorted(lock["shared_sources"]), [
-            "colabdesign", "jaxlib_cuda12_cudnn89_wheel", "nvidia_cuda_nvcc_cuda121_wheel",
-            "nvidia_cusparse_cuda121_wheel", "nvidia_nvjitlink_cuda121_wheel",
-        ])
         self.assertEqual(
-            sorted(path.name for path in ROOT.glob("Dockerfile*")), ["Dockerfile.bindcraft"]
+            sorted(lock["shared_sources"]),
+            [
+                "colabdesign",
+                "jaxlib_cuda12_cudnn89_wheel",
+                "nvidia_cuda_nvcc_cuda121_wheel",
+                "nvidia_cusparse_cuda121_wheel",
+                "nvidia_nvjitlink_cuda121_wheel",
+            ],
         )
+        self.assertEqual(sorted(path.name for path in ROOT.glob("Dockerfile*")), ["Dockerfile.bindcraft"])
 
     def test_in_image_sources_match_the_recorded_publication_identity(self) -> None:
         """Keep current publication evidence and its executable sources in step.
@@ -80,9 +80,7 @@ class ImageLockTests(unittest.TestCase):
         gain, because this image only ever sets FS2_RUNTIME_NAME=bindcraft-academic.
         """
 
-        receipt = json.loads(
-            (ROOT / "evidence" / "published-images.json").read_text(encoding="utf-8")
-        )
+        receipt = json.loads((ROOT / "evidence" / "published-images.json").read_text(encoding="utf-8"))
         publication = receipt["images"][0]
         lock = build_images.load_lock()["images"][0]
         if publication["tag"] != lock["target"]:
@@ -115,9 +113,7 @@ class ImageLockTests(unittest.TestCase):
         and the checked-in receipt has to retain those measurements.
         """
 
-        evidence = json.loads(
-            (ROOT / "evidence" / "native-final-image-qualification.json").read_text(encoding="utf-8")
-        )
+        evidence = json.loads((ROOT / "evidence" / "native-final-image-qualification.json").read_text(encoding="utf-8"))
         live = evidence["live_semantic_acceptance"]
         ownership = live["runtime_tree_ownership"]
         self.assertEqual(set(ownership["per_role"]), bindcraft_runner.REQUIRED_TREE_ROLES)
@@ -139,18 +135,11 @@ class ImageLockTests(unittest.TestCase):
                 )
                 for role in bindcraft_runner.REQUIRED_TREE_ROLES
             }
-            conformant = all(
-                value["gid"] == expected_gids[role]
-                for role, value in ownership["per_role"].items()
-            )
+            conformant = all(value["gid"] == expected_gids[role] for role, value in ownership["per_role"].items())
             self.assertEqual(ownership["contract_conformance"], "proven" if conformant else "unproven")
 
     def test_live_h100_receipt_is_semantic_and_not_a_route_claim(self) -> None:
-        receipt = json.loads(
-            (ROOT / "evidence" / "live-h100-qualification-20260903.json").read_text(
-                encoding="utf-8"
-            )
-        )
+        receipt = json.loads((ROOT / "evidence" / "live-h100-qualification-20260903.json").read_text(encoding="utf-8"))
         self.assertEqual(receipt["verdict"]["state"], "passed")
         self.assertFalse(receipt["verdict"]["route_ready"])
         self.assertEqual(
@@ -217,7 +206,7 @@ class ImageLockTests(unittest.TestCase):
         wrapper = (ROOT / "runtime" / "bindcraft_runtime_entrypoint.py").read_text(encoding="utf-8")
         self.assertIn("tenant-private preinstalled PyRosetta tree", wrapper)
         self.assertNotIn("FS2_PYROSETTA_WHEEL", wrapper)
-        self.assertIn("importlib.metadata.distribution(\"pyrosetta\")", wrapper)
+        self.assertIn('importlib.metadata.distribution("pyrosetta")', wrapper)
         self.assertIn("PYROSETTA_EXPECTED_VERSION", wrapper)
         self.assertIn("version_api_status", wrapper)
 
@@ -275,30 +264,29 @@ class ImageLockTests(unittest.TestCase):
             image["published_digest"],
             "sha256:9b8ae5ce4b33a2781d6ded0178511724454adbf3d12f8624c2e87cffa7b385b1",
         )
+        self.assertEqual(image["qualification_state"], "h100-semantic-qualified-active")
+        self.assertTrue(image["deployable"])
         self.assertEqual(
-            image["qualification_state"], "published-build-only-not-semantic-qualified"
+            image["qualification_evidence"],
+            "models/cancer-immunotherapy/images/bindcraft-native/evidence/"
+            "live-h100-20260905/bindcraft-r19-h100-semantic-qualification.json",
         )
-        self.assertFalse(image["deployable"])
 
-    def test_successor_handoff_separates_publication_from_h100_qualification(self) -> None:
+    def test_successor_handoff_requires_its_own_exact_h100_qualification(self) -> None:
         lock = build_images.load_lock()["images"][0]
         handoff = json.loads(
             (
-                build_images.REPOSITORY_ROOT
-                / "models/structure/batch-adapters/bindcraft/r19-image-handoff.json"
+                build_images.REPOSITORY_ROOT / "models/structure/batch-adapters/bindcraft/r19-image-handoff.json"
             ).read_text(encoding="utf-8")
         )
         contract = json.loads(
-            (
-                build_images.REPOSITORY_ROOT
-                / "models/structure/batch-adapters/bindcraft/contract.json"
-            ).read_text(encoding="utf-8")
+            (build_images.REPOSITORY_ROOT / "models/structure/batch-adapters/bindcraft/contract.json").read_text(
+                encoding="utf-8"
+            )
         )
-        self.assertFalse(handoff["semantic_h100_qualification"])
-        self.assertFalse(handoff["route_activation_allowed"])
-        self.assertEqual(
-            handoff["predecessor"]["digest"], lock["supersedes"].rsplit("@", 1)[1]
-        )
+        self.assertTrue(handoff["semantic_h100_qualification"])
+        self.assertTrue(handoff["route_activation_allowed"])
+        self.assertEqual(handoff["predecessor"]["digest"], lock["supersedes"].rsplit("@", 1)[1])
         self.assertEqual(
             f"{handoff['successor']['repository']}:{handoff['successor']['tag']}",
             lock["target"],
@@ -306,36 +294,52 @@ class ImageLockTests(unittest.TestCase):
         runtime = contract["runtime_image"]
         self.assertEqual(runtime["active_predecessor"]["digest"], handoff["predecessor"]["digest"])
         self.assertEqual(runtime["successor"]["tag"], lock["target"])
-        self.assertFalse(runtime["successor"]["semantic_h100_qualification"])
-        self.assertFalse(runtime["successor"]["route_activation_allowed"])
+        self.assertEqual(runtime["digest"], lock["published_digest"])
+        self.assertTrue(runtime["successor"]["semantic_h100_qualification"])
+        self.assertTrue(runtime["successor"]["route_activation_allowed"])
 
-        receipt = json.loads(
-            (ROOT / "evidence" / "published-images.json").read_text(encoding="utf-8")
-        )["images"][0]
-        if handoff["state"] == "publication-pending-not-activated":
-            self.assertIsNone(handoff["image_source_commit"])
-            self.assertIsNone(handoff["successor"]["digest"])
-            self.assertEqual(receipt["digest_reference"], lock["supersedes"])
-        else:
-            self.assertEqual(handoff["state"], "published-build-only-not-activated")
-            self.assertEqual(handoff["successor"]["digest"], receipt["digest"])
-            self.assertEqual(handoff["image_source_commit"], receipt["attested_source"]["revision"])
-            evidence = json.loads(
-                (ROOT / "evidence" / "r19-successor-publication-20260905.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertEqual(evidence["image"]["target"], lock["target"])
-            self.assertEqual(evidence["image"]["digest"], receipt["digest"])
-            self.assertEqual(evidence["image_source_revision"], handoff["image_source_commit"])
-            self.assertEqual(
-                evidence["publisher_receipt"]["sha256"],
-                hashlib.sha256(
-                    (ROOT / "evidence" / "published-images.json").read_bytes()
-                ).hexdigest(),
-            )
-            self.assertEqual(evidence["qualification"]["semantic_h100"], "not-run")
-            self.assertFalse(evidence["qualification"]["route_activation_allowed"])
+        receipt = json.loads((ROOT / "evidence" / "published-images.json").read_text(encoding="utf-8"))["images"][0]
+        self.assertEqual(handoff["state"], "h100-semantic-qualified-active")
+        self.assertEqual(handoff["successor"]["digest"], receipt["digest"])
+        self.assertEqual(handoff["image_source_commit"], receipt["attested_source"]["revision"])
+        publication = json.loads(
+            (ROOT / "evidence" / "r19-successor-publication-20260905.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(publication["image"]["target"], lock["target"])
+        self.assertEqual(publication["image"]["digest"], receipt["digest"])
+        self.assertEqual(publication["image_source_revision"], handoff["image_source_commit"])
+        self.assertEqual(
+            publication["publisher_receipt"]["sha256"],
+            hashlib.sha256((ROOT / "evidence" / "published-images.json").read_bytes()).hexdigest(),
+        )
+        # The immutable publication receipt remains honest about its own scope;
+        # activation is authorized by the later exact-digest receipt below.
+        self.assertEqual(publication["qualification"]["semantic_h100"], "not-run")
+        qualification_path = (
+            ROOT / "evidence" / "live-h100-20260905" / ("bindcraft-r19-h100-semantic-qualification.json")
+        )
+        qualification = json.loads(qualification_path.read_text(encoding="utf-8"))
+        self.assertEqual(qualification["verdict"]["state"], "passed")
+        self.assertEqual(qualification["image"]["index_digest"], receipt["digest"])
+        self.assertEqual(
+            qualification["semantic_results"]["r19_regression_witness"],
+            {
+                "model_specific_interface_residues": ("B31,B35,B38,B39,B42,B45,B46,B51,B54,B55,B58,B61,B62,B65"),
+                "model_specific_interface_residue_count": 14,
+                "average_n_interface_residues": 15.5,
+                "preserved_metric_value": 15.5,
+                "expected_behavior": (
+                    "validate the canonical model-specific residue list and the bounded "
+                    "cross-model numeric average independently"
+                ),
+                "predecessor_behavior": ("r18 would reject this valid row because 14 differs from int(15.5)"),
+                "result": "passed",
+            },
+        )
+        self.assertEqual(
+            hashlib.sha256(qualification_path.read_bytes()).hexdigest(),
+            handoff["evidence"]["h100_semantic_qualification_sha256"],
+        )
 
     def test_the_adapter_wrapper_is_consumed_as_a_build_context(self) -> None:
         # The wrapper is the adapter's published interface and the only file this
@@ -432,14 +436,16 @@ class ImageLockTests(unittest.TestCase):
 
     def test_published_verifier_requires_sbom_and_provenance_predicates(self) -> None:
         image = build_images.load_lock()["images"][0]
-        with mock.patch.object(build_images, "inspect_target", return_value="sha256:" + "1" * 64), \
-             mock.patch.object(build_images, "run", return_value=mock.Mock(stdout="pulled")), \
-             mock.patch.object(build_images, "smoke", return_value=[]), \
-             mock.patch.object(
-                 build_images,
-                 "raw_manifest",
-                 return_value=("2" * 64, 1, ["https://spdx.dev/Document"]),
-             ):
+        with (
+            mock.patch.object(build_images, "inspect_target", return_value="sha256:" + "1" * 64),
+            mock.patch.object(build_images, "run", return_value=mock.Mock(stdout="pulled")),
+            mock.patch.object(build_images, "smoke", return_value=[]),
+            mock.patch.object(
+                build_images,
+                "raw_manifest",
+                return_value=("2" * 64, 1, ["https://spdx.dev/Document"]),
+            ),
+        ):
             with self.assertRaisesRegex(build_images.BuildError, "SLSA provenance"):
                 build_images.verify_published(build_images.load_lock(), image)
 
@@ -452,16 +458,16 @@ class ImageLockTests(unittest.TestCase):
                 else ROOT / repository_path
             )
             content = source.read_bytes()
-            measured.append({
-                "path": image_path,
-                "sha256": hashlib.sha256(content).hexdigest(),
-                "size_bytes": len(content),
-            })
+            measured.append(
+                {
+                    "path": image_path,
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                    "size_bytes": len(content),
+                }
+            )
         completed = mock.Mock(stdout=json.dumps(measured))
         with mock.patch.object(build_images, "run", return_value=completed):
-            identity = build_images.published_source_identity(
-                "registry.test/image@sha256:test", "sha256:" + "1" * 64
-            )
+            identity = build_images.published_source_identity("registry.test/image@sha256:test", "sha256:" + "1" * 64)
         self.assertTrue(identity["match"])
         self.assertEqual(identity["verified_against"], "sha256:" + "1" * 64)
         self.assertEqual(
@@ -470,13 +476,9 @@ class ImageLockTests(unittest.TestCase):
         )
 
         measured[0]["sha256"] = "0" * 64
-        with mock.patch.object(
-            build_images, "run", return_value=mock.Mock(stdout=json.dumps(measured))
-        ):
+        with mock.patch.object(build_images, "run", return_value=mock.Mock(stdout=json.dumps(measured))):
             with self.assertRaisesRegex(build_images.BuildError, "differs from repository"):
-                build_images.published_source_identity(
-                    "registry.test/image@sha256:test", "sha256:" + "1" * 64
-                )
+                build_images.published_source_identity("registry.test/image@sha256:test", "sha256:" + "1" * 64)
 
 
 class ArtifactGateTests(unittest.TestCase):
@@ -559,8 +561,7 @@ class AcceptedLocalizationHandoffTests(unittest.TestCase):
     """
 
     HANDOFF = (
-        build_images.REPOSITORY_ROOT
-        / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json"
+        build_images.REPOSITORY_ROOT / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json"
     )
 
     def bindcraft_artifacts(self) -> dict[str, dict]:
@@ -587,9 +588,7 @@ class AcceptedLocalizationHandoffTests(unittest.TestCase):
         licensed = self.bindcraft_artifacts()["bindcraft-pyrosetta-installed-tree"]
         identity = licensed["tree_identity"]
         self.assertEqual(identity["inventory_algorithm"], tree_identity.TREE_MANIFEST_ALGORITHM)
-        self.assertEqual(
-            identity["inventory_sha256"], bindcraft_runner.PYROSETTA_TREE_MANIFEST_SHA256
-        )
+        self.assertEqual(identity["inventory_sha256"], bindcraft_runner.PYROSETTA_TREE_MANIFEST_SHA256)
         self.assertEqual(licensed["visibility"], "tenant-private")
         self.assertEqual(licensed["volume"]["kind"], "persistent-volume-claim")
 
@@ -605,9 +604,7 @@ class AcceptedLocalizationHandoffTests(unittest.TestCase):
             )
             self.assertEqual(artifact["volume"]["kind"], "host-path", name)
             self.assertEqual(artifact["volume"]["plane"], "reference-data-host", name)
-            self.assertEqual(
-                artifact["volume"]["node_selector"], {"storage.fs2.nebius/reference-data": "true"}, name
-            )
+            self.assertEqual(artifact["volume"]["node_selector"], {"storage.fs2.nebius/reference-data": "true"}, name)
 
     def test_every_accepted_generation_carries_the_marker_this_runtime_excludes(self) -> None:
         # This is why the exclusion is mandatory rather than an optimisation.
@@ -629,9 +626,7 @@ class TreeIdentityTests(unittest.TestCase):
         (root / "v_48_020.pkl").write_bytes(b"weights" * 512)
 
     def test_tree_manifest_reproduces_the_installer_identity(self) -> None:
-        installer = load_module(
-            "install_tree", ROOT.parents[3] / "academic-assets" / "scripts" / "install_tree.py"
-        )
+        installer = load_module("install_tree", ROOT.parents[3] / "academic-assets" / "scripts" / "install_tree.py")
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             self.nested(root)
@@ -658,18 +653,14 @@ class TreeIdentityTests(unittest.TestCase):
             expected = tree_identity.flat_tree_inventory(root)["inventory_sha256"]
             entries = tree_identity.flat_tree_inventory(root)["entry_count"]
             (root / tree_identity.RUNTIME_MARKER_NAME).write_bytes(marker)
-            receipt = tree_identity.verify_flat_tree(
-                root, artifact_id="mpnn", expected_inventory_sha256=expected
-            )
+            receipt = tree_identity.verify_flat_tree(root, artifact_id="mpnn", expected_inventory_sha256=expected)
             self.assertEqual(receipt["entry_count"], entries)
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             self.nested(root)
             expected = tree_identity.tree_manifest(root)["tree_manifest_sha256"]
             (root / tree_identity.RUNTIME_MARKER_NAME).write_bytes(marker)
-            tree_identity.verify_tree(
-                root, artifact_id="licensed", expected_tree_manifest_sha256=expected
-            )
+            tree_identity.verify_tree(root, artifact_id="licensed", expected_tree_manifest_sha256=expected)
 
     def test_no_other_dotfile_is_admitted(self) -> None:
         # Only the one reserved name is excluded; anything else with a leading
@@ -713,9 +704,7 @@ class TreeIdentityTests(unittest.TestCase):
             self.assertEqual(receipt["file_count"], 3)
             (root / "pkg" / "__init__.py").write_bytes(b"x = 2\n")
             with self.assertRaisesRegex(tree_identity.TreeIdentityError, "not the immutable tree"):
-                tree_identity.verify_tree(
-                    root, artifact_id="licensed-tree", expected_tree_manifest_sha256=expected
-                )
+                tree_identity.verify_tree(root, artifact_id="licensed-tree", expected_tree_manifest_sha256=expected)
 
     def test_flat_inventory_binds_content_and_refuses_unsafe_trees(self) -> None:
         with tempfile.TemporaryDirectory() as name:
@@ -728,9 +717,7 @@ class TreeIdentityTests(unittest.TestCase):
             self.assertEqual(receipt["entry_count"], 2)
             (root / "v_48_020.pkl").write_bytes(b"swapped" * 512)
             with self.assertRaisesRegex(tree_identity.TreeIdentityError, "not the immutable tree"):
-                tree_identity.verify_flat_tree(
-                    root, artifact_id="mpnn-weights", expected_inventory_sha256=expected
-                )
+                tree_identity.verify_flat_tree(root, artifact_id="mpnn-weights", expected_inventory_sha256=expected)
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             self.flat(root)
@@ -743,9 +730,7 @@ class TreeIdentityTests(unittest.TestCase):
             root = Path(name)
             self.flat(root)
             with self.assertRaisesRegex(tree_identity.TreeIdentityError, "lowercase SHA-256"):
-                tree_identity.verify_flat_tree(
-                    root, artifact_id="mpnn-weights", expected_inventory_sha256="ABC"
-                )
+                tree_identity.verify_flat_tree(root, artifact_id="mpnn-weights", expected_inventory_sha256="ABC")
 
 
 class ExternalTreeAdmissionTests(unittest.TestCase):
@@ -786,11 +771,13 @@ class ExternalTreeAdmissionTests(unittest.TestCase):
             trees.append({"role": role, "artifact_id": role, "root": str(tree_root), "sha256": digest})
         path = root / "external-trees.json"
         path.write_text(
-            json.dumps({
-                "schema": bindcraft_runner.EXTERNAL_TREE_ADMISSION_SCHEMA,
-                "generation": self.GENERATION if generation is None else generation,
-                "trees": trees,
-            }),
+            json.dumps(
+                {
+                    "schema": bindcraft_runner.EXTERNAL_TREE_ADMISSION_SCHEMA,
+                    "generation": self.GENERATION if generation is None else generation,
+                    "trees": trees,
+                }
+            ),
             encoding="utf-8",
         )
         return path
@@ -826,9 +813,7 @@ class ExternalTreeAdmissionTests(unittest.TestCase):
         """
 
         identity = tree_identity.tree_manifest(roots[bindcraft_runner.PYROSETTA_ROLE])
-        return mock.patch.object(
-            bindcraft_runner, "PYROSETTA_TREE_MANIFEST_SHA256", identity["tree_manifest_sha256"]
-        )
+        return mock.patch.object(bindcraft_runner, "PYROSETTA_TREE_MANIFEST_SHA256", identity["tree_manifest_sha256"])
 
     def test_admission_verifies_all_four_trees_by_content(self) -> None:
         with tempfile.TemporaryDirectory() as name:
@@ -857,9 +842,7 @@ class ExternalTreeAdmissionTests(unittest.TestCase):
             roots = self.build(root)
             path = self.declaration(root, roots)
             value = json.loads(path.read_text())
-            value["trees"] = [
-                tree for tree in value["trees"] if tree["role"] != bindcraft_runner.MPNN_VANILLA_ROLE
-            ]
+            value["trees"] = [tree for tree in value["trees"] if tree["role"] != bindcraft_runner.MPNN_VANILLA_ROLE]
             path.write_text(json.dumps(value), encoding="utf-8")
             with self.assertRaisesRegex(bindcraft_runner.ContractError, "missing roles"):
                 self.admit(path, roots)
@@ -889,9 +872,7 @@ class ExternalTreeAdmissionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             marker = self.marker(root)
-            with mock.patch.dict(
-                os.environ, {"FS2_BINDCRAFT_EXTERNAL_TREES": str(root / "absent.json")}
-            ):
+            with mock.patch.dict(os.environ, {"FS2_BINDCRAFT_EXTERNAL_TREES": str(root / "absent.json")}):
                 with self.assertRaisesRegex(bindcraft_runner.ContractError, "unavailable"):
                     bindcraft_runner._admit_external_trees(marker)
 
@@ -913,9 +894,7 @@ class ExternalTreeAdmissionTests(unittest.TestCase):
             root = Path(name)
             roots = self.build(root)
             with self.pinned(roots):
-                receipt = self.admit(
-                    self.declaration(root, roots), roots, self.marker(root, generation=False)
-                )
+                receipt = self.admit(self.declaration(root, roots), roots, self.marker(root, generation=False))
             self.assertEqual(receipt["localization_generation"], self.GENERATION)
 
 
@@ -957,26 +936,62 @@ class LocalizationMarkerTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(bindcraft_runner.ContractError, "argv and environment"):
                     bindcraft_runner._localization_marker(str(path))
-            with mock.patch.dict(
-                os.environ, {bindcraft_runner.RUNTIME_LOCALIZATION_MARKER_ENV: str(path)}
-            ):
+            with mock.patch.dict(os.environ, {bindcraft_runner.RUNTIME_LOCALIZATION_MARKER_ENV: str(path)}):
                 self.assertEqual(bindcraft_runner._localization_marker(str(path))["generation"], "g1")
 
     def test_both_subcommands_accept_the_marker(self) -> None:
         parser = bindcraft_runner.parser()
-        run = parser.parse_args([
-            "run-trajectory", "--backend-id", "b", "--request", "r", "--input-manifest", "m",
-            "--settings-template", "s", "--settings-sha256", "d", "--filters", "f",
-            "--filters-sha256", "d", "--output", "o", "--shard-index", "0", "--seed", "1",
-            "--pyrosetta-required", "--runtime-localization-marker", "/w/.fs2/runtime-localization.json",
-        ])
+        run = parser.parse_args(
+            [
+                "run-trajectory",
+                "--backend-id",
+                "b",
+                "--request",
+                "r",
+                "--input-manifest",
+                "m",
+                "--settings-template",
+                "s",
+                "--settings-sha256",
+                "d",
+                "--filters",
+                "f",
+                "--filters-sha256",
+                "d",
+                "--output",
+                "o",
+                "--shard-index",
+                "0",
+                "--seed",
+                "1",
+                "--pyrosetta-required",
+                "--runtime-localization-marker",
+                "/w/.fs2/runtime-localization.json",
+            ]
+        )
         self.assertEqual(run.runtime_localization_marker, "/w/.fs2/runtime-localization.json")
-        combine = parser.parse_args([
-            "aggregate", "--backend-id", "b", "--request", "r", "--input-manifest", "m",
-            "--shards", "s", "--expected-shards", "1", "--staging-manifest", "t",
-            "--output-manifest", "o", "--atomic-rename",
-            "--runtime-localization-marker", "/w/.fs2/runtime-localization.json",
-        ])
+        combine = parser.parse_args(
+            [
+                "aggregate",
+                "--backend-id",
+                "b",
+                "--request",
+                "r",
+                "--input-manifest",
+                "m",
+                "--shards",
+                "s",
+                "--expected-shards",
+                "1",
+                "--staging-manifest",
+                "t",
+                "--output-manifest",
+                "o",
+                "--atomic-rename",
+                "--runtime-localization-marker",
+                "/w/.fs2/runtime-localization.json",
+            ]
+        )
         self.assertEqual(combine.runtime_localization_marker, "/w/.fs2/runtime-localization.json")
 
 
@@ -1006,9 +1021,7 @@ class NativeDesignEvidenceTests(unittest.TestCase):
             bindcraft_runner.FINAL_STAT_COLUMNS["interface_residue_count"],
             "Average_n_InterfaceResidues",
         )
-        self.assertEqual(
-            bindcraft_runner.FINAL_STAT_COLUMNS["buried_interface_area"], "Average_dSASA"
-        )
+        self.assertEqual(bindcraft_runner.FINAL_STAT_COLUMNS["buried_interface_area"], "Average_dSASA")
 
     def test_missing_statistic_is_rejected_instead_of_defaulted_to_zero(self) -> None:
         row = self.row()
@@ -1061,9 +1074,7 @@ class NativeDesignEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(bindcraft_runner.ContractError, "bounded average"):
             bindcraft_runner._interface_residue_evidence(self.row(), 0.0)
 
-    def atom_record(
-        self, serial: int, residue: str, chain: str, number: int, x: float
-    ) -> str:
+    def atom_record(self, serial: int, residue: str, chain: str, number: int, x: float) -> str:
         """One fixed-column PDB ATOM record; coordinates must land in 31-54."""
 
         return (
@@ -1087,14 +1098,10 @@ class NativeDesignEvidenceTests(unittest.TestCase):
 
     def test_hotspot_geometry_measures_real_contact_on_the_accepted_complex(self) -> None:
         parameters = {"hotspots": [{"chain": "A", "residue": 56}]}
-        geometry = bindcraft_runner._hotspot_geometry(
-            self.complex_atoms(separation=3.5), parameters
-        )
+        geometry = bindcraft_runner._hotspot_geometry(self.complex_atoms(separation=3.5), parameters)
         self.assertEqual(geometry["contacted"], 1)
         self.assertEqual(geometry["requested"][0]["closest_binder_atom_angstrom"], 3.5)
-        self.assertEqual(
-            geometry["contact_cutoff_angstrom"], bindcraft_runner.HOTSPOT_CONTACT_ANGSTROM
-        )
+        self.assertEqual(geometry["contact_cutoff_angstrom"], bindcraft_runner.HOTSPOT_CONTACT_ANGSTROM)
 
     def test_hotspot_geometry_rejects_a_binder_that_missed_the_requested_site(self) -> None:
         parameters = {"hotspots": [{"chain": "A", "residue": 56}]}
@@ -1122,16 +1129,12 @@ class NativeDesignEvidenceTests(unittest.TestCase):
                 3,
             )
             self.assertEqual(
-                bindcraft_runner._overridable(
-                    template, "num_seqs", "FS2_BINDCRAFT_MPNN_SEQUENCES", int
-                ),
+                bindcraft_runner._overridable(template, "num_seqs", "FS2_BINDCRAFT_MPNN_SEQUENCES", int),
                 20,
             )
         with mock.patch.dict(os.environ, {"FS2_BINDCRAFT_MPNN_SEQUENCES": "4"}):
             self.assertEqual(
-                bindcraft_runner._overridable(
-                    template, "num_seqs", "FS2_BINDCRAFT_MPNN_SEQUENCES", int
-                ),
+                bindcraft_runner._overridable(template, "num_seqs", "FS2_BINDCRAFT_MPNN_SEQUENCES", int),
                 4,
             )
         with mock.patch.dict(os.environ, {}, clear=True):
@@ -1143,20 +1146,30 @@ class NativeDesignEvidenceTests(unittest.TestCase):
             root = Path(name)
             template = root / "advanced.json"
             template.write_text(
-                json.dumps({
-                    "num_recycles_design": 1, "num_recycles_validation": 3, "num_seqs": 20,
-                    "max_mpnn_sequences": 2, "model_path": "v_48_020", "mpnn_weights": "soluble",
-                    "af_params_dir": "", "max_trajectories": False, "optimise_beta": True,
-                    "enable_rejection_check": True,
-                }),
+                json.dumps(
+                    {
+                        "num_recycles_design": 1,
+                        "num_recycles_validation": 3,
+                        "num_seqs": 20,
+                        "max_mpnn_sequences": 2,
+                        "model_path": "v_48_020",
+                        "mpnn_weights": "soluble",
+                        "af_params_dir": "",
+                        "max_trajectories": False,
+                        "optimise_beta": True,
+                        "enable_rejection_check": True,
+                    }
+                ),
                 encoding="utf-8",
             )
             request = {
                 "parameters": {
-                    "_shard_index": 0, "target_chains": ["A"],
+                    "_shard_index": 0,
+                    "target_chains": ["A"],
                     "hotspots": [{"chain": "A", "residue": 56}],
                     "binder_length": {"minimum": 60, "maximum": 75},
-                    "accepted_designs_per_shard": 1, "max_trajectories_per_shard": 30,
+                    "accepted_designs_per_shard": 1,
+                    "max_trajectories_per_shard": 30,
                 }
             }
             output = root / "out"
@@ -1203,9 +1216,7 @@ class CrossJobHandoffTests(unittest.TestCase):
 
         return {
             "shard": {"name": "shard-000", "artifact": artifact("shard.000", payload)},
-            "candidates": [
-                {"name": "candidate-000-structure", "artifact": artifact("cand.000", candidate)}
-            ],
+            "candidates": [{"name": "candidate-000-structure", "artifact": artifact("cand.000", candidate)}],
             "artifact_paths": {
                 "shard.000": "artifacts/shard.json",
                 "cand.000": "artifacts/candidate-000.pdb",
@@ -1275,11 +1286,16 @@ class SemanticJobRenderTests(unittest.TestCase):
 
     def render(self, path: Path, **overrides: object):
         argv = [
-            "--handoff", str(path),
-            "--image", "cr.eu-north1.nebius.cloud/x/fs2-models/bindcraft@sha256:" + "b" * 64,
-            "--run-id", "r17acceptance",
-            "--job-name", "fs2-bindcraft-r17-acceptance",
-            "--workspace-claim", "fs2-bindcraft-acceptance-workspace",
+            "--handoff",
+            str(path),
+            "--image",
+            "cr.eu-north1.nebius.cloud/x/fs2-models/bindcraft@sha256:" + "b" * 64,
+            "--run-id",
+            "r17acceptance",
+            "--job-name",
+            "fs2-bindcraft-r17-acceptance",
+            "--workspace-claim",
+            "fs2-bindcraft-acceptance-workspace",
         ]
         if "stage" not in overrides:
             argv += ["--stage", "design"]
@@ -1324,21 +1340,15 @@ class SemanticJobRenderTests(unittest.TestCase):
             for stage in self.stages(path):
                 command = stage["command"]
                 self.assertIn("--runtime-localization-marker", command)
-                self.assertEqual(
-                    command[command.index("--runtime-localization-marker") + 1], renderer.MARKER_PATH
-                )
+                self.assertEqual(command[command.index("--runtime-localization-marker") + 1], renderer.MARKER_PATH)
                 environment = {item["name"]: item["value"] for item in stage["env"]}
-                self.assertEqual(
-                    environment[bindcraft_runner.RUNTIME_LOCALIZATION_MARKER_ENV], renderer.MARKER_PATH
-                )
+                self.assertEqual(environment[bindcraft_runner.RUNTIME_LOCALIZATION_MARKER_ENV], renderer.MARKER_PATH)
             marker = json.loads(config_map["data"]["runtime-localization.json"])
             admission = json.loads(config_map["data"]["external-trees.json"])
             # A generation is per artifact in the accepted contract and equals
             # that tree's own identity, so no run-level token is invented.
             identities = {tree["role"]: tree["sha256"] for tree in admission["trees"]}
-            self.assertEqual(
-                {role: entry["generation"] for role, entry in marker["trees"].items()}, identities
-            )
+            self.assertEqual({role: entry["generation"] for role, entry in marker["trees"].items()}, identities)
 
     def test_rendered_job_uses_the_checked_in_production_settings_and_filters(self) -> None:
         with tempfile.TemporaryDirectory() as name:
@@ -1353,11 +1363,8 @@ class SemanticJobRenderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as name:
             path = self.handoff(Path(name))
             for stage in self.stages(path):
-                self.assertNotIn(
-                    "FS2_BINDCRAFT_MPNN_WEIGHTS", {item["name"] for item in stage["env"]}
-                )
-            vanilla = [self.render(path, stage=s, mpnn_weights="original")[1]
-                       for s in ("design", "aggregate")]
+                self.assertNotIn("FS2_BINDCRAFT_MPNN_WEIGHTS", {item["name"] for item in stage["env"]})
+            vanilla = [self.render(path, stage=s, mpnn_weights="original")[1] for s in ("design", "aggregate")]
             for stage in [job["spec"]["template"]["spec"]["containers"][0] for job in vanilla]:
                 environment = {item["name"]: item["value"] for item in stage["env"]}
                 self.assertEqual(environment["FS2_BINDCRAFT_MPNN_WEIGHTS"], "original")
@@ -1373,17 +1380,13 @@ class SemanticJobRenderTests(unittest.TestCase):
             container = spec["containers"][0]
             volumes = {volume["name"]: volume for volume in spec["volumes"]}
             mounted = {
-                mount["mountPath"]: mount
-                for mount in container["volumeMounts"]
-                if mount["name"].startswith("trees-")
+                mount["mountPath"]: mount for mount in container["volumeMounts"] if mount["name"].startswith("trees-")
             }
             self.assertEqual(set(mounted), set(renderer.MOUNT_PATH_BY_ROLE.values()))
             self.assertEqual(len(mounted), 4)
 
             licensed = mounted[renderer.MOUNT_PATH_BY_ROLE[bindcraft_runner.PYROSETTA_ROLE]]
-            self.assertEqual(
-                volumes[licensed["name"]]["persistentVolumeClaim"]["claimName"], self.ACADEMIC_CLAIM
-            )
+            self.assertEqual(volumes[licensed["name"]]["persistentVolumeClaim"]["claimName"], self.ACADEMIC_CLAIM)
             self.assertTrue(
                 licensed["subPath"].startswith("scientific-localization/private/generations/"),
                 licensed["subPath"],
@@ -1392,9 +1395,7 @@ class SemanticJobRenderTests(unittest.TestCase):
             public_paths = set(renderer.MOUNT_PATH_BY_ROLE.values()) - {licensed["mountPath"]}
             for mount_path in public_paths:
                 mount = mounted[mount_path]
-                self.assertEqual(
-                    volumes[mount["name"]]["hostPath"]["path"], self.REFERENCE_PLANE_HOST_PATH
-                )
+                self.assertEqual(volumes[mount["name"]]["hostPath"]["path"], self.REFERENCE_PLANE_HOST_PATH)
                 self.assertIn("/sha256/", mount["subPath"], mount_path)
                 self.assertTrue(
                     mount["subPath"].startswith("scientific-localization/public/generations/"),
@@ -1426,14 +1427,14 @@ class SemanticJobRenderTests(unittest.TestCase):
             with self.assertRaisesRegex(renderer.RenderError, "generations as not published"):
                 self.render(original, stage="design")
             config_map, job = self.render(
-                original, stage="design", direct_live_canonical_pyrosetta=True,
+                original,
+                stage="design",
+                direct_live_canonical_pyrosetta=True,
             )
             spec = job["spec"]["template"]["spec"]
             container = spec["containers"][0]
             mounted = {
-                mount["mountPath"]: mount
-                for mount in container["volumeMounts"]
-                if mount["name"].startswith("trees-")
+                mount["mountPath"]: mount for mount in container["volumeMounts"] if mount["name"].startswith("trees-")
             }
             private = mounted[renderer.MOUNT_PATH_BY_ROLE[bindcraft_runner.PYROSETTA_ROLE]]
             self.assertEqual(private["subPath"], renderer.CANONICAL_PYROSETTA_SUB_PATH)
@@ -1518,10 +1519,16 @@ class SemanticJobRenderTests(unittest.TestCase):
     def test_the_licensed_tree_may_not_be_served_from_a_public_volume(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
-            path = self.mutate(root, "bindcraft-pyrosetta-installed-tree", volume={
-                "kind": "host-path", "host_root": self.REFERENCE_PLANE_HOST_PATH,
-                "sub_path": "scientific-localization/public/x", "node_selector": self.NODE_SELECTOR,
-            })
+            path = self.mutate(
+                root,
+                "bindcraft-pyrosetta-installed-tree",
+                volume={
+                    "kind": "host-path",
+                    "host_root": self.REFERENCE_PLANE_HOST_PATH,
+                    "sub_path": "scientific-localization/public/x",
+                    "node_selector": self.NODE_SELECTOR,
+                },
+            )
             with self.assertRaisesRegex(renderer.RenderError, "private academic claim"):
                 self.render(path, stage="design")
 
@@ -1529,9 +1536,7 @@ class SemanticJobRenderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             licensed = json.loads(self.handoff(root).read_text())
-            claim_volume = dict(
-                self.artifact(licensed, "bindcraft-pyrosetta-installed-tree")["volume"]
-            )
+            claim_volume = dict(self.artifact(licensed, "bindcraft-pyrosetta-installed-tree")["volume"])
             path = self.mutate(root, "alphafold2-params-bindcraft", volume=claim_volume)
             with self.assertRaisesRegex(renderer.RenderError, "must not be served from the private"):
                 self.render(path, stage="design")
@@ -1557,9 +1562,7 @@ class SemanticJobRenderTests(unittest.TestCase):
             self.assertTrue(design["metadata"]["name"].endswith("-design"))
             self.assertTrue(aggregate["metadata"]["name"].endswith("-aggregate"))
             self.assertEqual(
-                design["spec"]["template"]["spec"]["containers"][0]["resources"]["limits"][
-                    "nvidia.com/gpu"
-                ],
+                design["spec"]["template"]["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"],
                 1,
             )
             self.assertNotIn(
@@ -1585,9 +1588,7 @@ class SemanticJobRenderTests(unittest.TestCase):
             self.assertEqual(init["command"][:2], ["python", "-c"])
             for filename in renderer.REQUEST_FILENAMES:
                 self.assertIn(filename, init["command"][2])
-            main_mounts = {
-                mount["name"]: mount for mount in spec["containers"][0]["volumeMounts"]
-            }
+            main_mounts = {mount["name"]: mount for mount in spec["containers"][0]["volumeMounts"]}
             self.assertEqual(main_mounts["request"]["mountPath"], "/var/run/fs2")
             self.assertNotIn("request-source", main_mounts)
 
@@ -1599,9 +1600,7 @@ class SemanticJobRenderTests(unittest.TestCase):
             self.assertEqual(prepare["name"], "prepare-workspace")
             self.assertEqual(prepare["securityContext"]["runAsUser"], 0)
             self.assertFalse(prepare["securityContext"]["runAsNonRoot"])
-            self.assertEqual(
-                prepare["volumeMounts"], [{"name": "workspace", "mountPath": "/workspace"}]
-            )
+            self.assertEqual(prepare["volumeMounts"], [{"name": "workspace", "mountPath": "/workspace"}])
             self.assertNotIn("fsGroup", spec["securityContext"])
             self.assertIn("/workspace/runs/r17acceptance", prepare["command"][2])
             self.assertNotIn("chown", prepare["command"][2])
@@ -1622,13 +1621,9 @@ class SemanticJobRenderTests(unittest.TestCase):
             config_map, _ = self.render(self.handoff(Path(name)))
             manifest_bytes = config_map["data"]["input-manifest.json"].encode()
             value = json.loads(config_map["data"]["request.json"])
-            self.assertEqual(
-                value["input_manifest"]["sha256"], hashlib.sha256(manifest_bytes).hexdigest()
-            )
+            self.assertEqual(value["input_manifest"]["sha256"], hashlib.sha256(manifest_bytes).hexdigest())
             self.assertEqual(value["input_manifest"]["size_bytes"], len(manifest_bytes))
-            self.assertEqual(
-                value["input_manifest"]["artifact_id"], json.loads(manifest_bytes)["manifest_id"]
-            )
+            self.assertEqual(value["input_manifest"]["artifact_id"], json.loads(manifest_bytes)["manifest_id"])
             self.assertEqual(value["parameters"]["hotspots"], [{"chain": "A", "residue": 56}])
 
     def test_render_rejects_a_handoff_that_is_not_the_licensed_tree(self) -> None:
@@ -1636,10 +1631,10 @@ class SemanticJobRenderTests(unittest.TestCase):
             root = Path(name)
             foreign = "0" * 64
             path = self.mutate(
-                root, "bindcraft-pyrosetta-installed-tree",
+                root,
+                "bindcraft-pyrosetta-installed-tree",
                 generation=foreign,
-                tree_identity={"inventory_algorithm": "fs2-tree-manifest/v1",
-                               "inventory_sha256": foreign},
+                tree_identity={"inventory_algorithm": "fs2-tree-manifest/v1", "inventory_sha256": foreign},
             )
             with self.assertRaisesRegex(renderer.RenderError, "licensed tree this image"):
                 self.render(path, stage="design")
@@ -1662,15 +1657,14 @@ class SemanticJobRenderTests(unittest.TestCase):
             path = self.mutate(root, "colabdesign-mpnn-weights-vanilla", volume=volume)
             with self.assertRaisesRegex(renderer.RenderError, "unsafe"):
                 self.render(path, stage="design")
+
     def test_no_tree_location_is_hard_coded(self) -> None:
         # Every location comes from the handoff. Asserting the real document's
         # own paths are absent from the source is stronger than a keyword ban:
         # it fails if any concrete generation path is ever pasted in.
         source = (ROOT / "qualification" / "render_semantic_job.py").read_text(encoding="utf-8")
         runtime = (ROOT / "runtime" / "bindcraft_runtime_entrypoint.py").read_text(encoding="utf-8")
-        document = json.loads(
-            AcceptedLocalizationHandoffTests.HANDOFF.read_text(encoding="utf-8")
-        )
+        document = json.loads(AcceptedLocalizationHandoffTests.HANDOFF.read_text(encoding="utf-8"))
         located = set()
         for artifact in document["artifacts"]:
             volume = artifact["volume"]
@@ -1691,9 +1685,7 @@ class SemanticJobRenderTests(unittest.TestCase):
             self.assertNotIn("kueue.x-k8s.io/queue-name", unqueued["metadata"]["labels"])
             _, queued = self.render(path, local_queue="academic-execution")
             self.assertTrue(queued["spec"]["suspend"])
-            self.assertEqual(
-                queued["metadata"]["labels"]["kueue.x-k8s.io/queue-name"], "academic-execution"
-            )
+            self.assertEqual(queued["metadata"]["labels"]["kueue.x-k8s.io/queue-name"], "academic-execution")
 
 
 if __name__ == "__main__":

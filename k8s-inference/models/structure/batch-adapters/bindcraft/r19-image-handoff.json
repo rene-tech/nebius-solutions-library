@@ -1,11 +1,11 @@
 {
   "schema": "fs2.nebius.ai/bindcraft-successor-image-handoff/v1",
-  "state": "published-build-only-not-activated",
+  "state": "h100-semantic-qualified-active",
   "image_source_commit": "8e183490201df80b346b955baa4c2c463bc3f4a4",
-  "semantic_h100_qualification": false,
-  "route_activation_allowed": false,
+  "semantic_h100_qualification": true,
+  "route_activation_allowed": true,
   "production_protocol_compatible": true,
-  "successor_requirement": "The immutable r19 image is published and passes its offline parser, collector, smoke, source-identity and supply-chain checks. Run exact-artifact H100 semantic qualification before replacing the active r18 digest.",
+  "successor_requirement": "Satisfied by exact-digest H100 semantic run bcr19-20260905b, including a real accepted upstream row whose 14 model-specific interface residues coexist with a fractional cross-model average of 15.5.",
   "predecessor": {
     "tag": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r18",
     "digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
@@ -22,11 +22,13 @@
   "evidence": {
     "publication": "models/cancer-immunotherapy/images/bindcraft-native/evidence/r19-successor-publication-20260905.json",
     "publisher_receipt": "models/cancer-immunotherapy/images/bindcraft-native/evidence/published-images.json",
+    "h100_semantic_qualification": "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-20260905/bindcraft-r19-h100-semantic-qualification.json",
+    "h100_semantic_qualification_sha256": "e81a454348ec7196437343eafc63cf6c1fe87c1c6c546d74f53fe158de3fa214",
     "source_contract": "models/cancer-immunotherapy/images/bindcraft-native/runtime/bindcraft_runtime_entrypoint.py",
     "regression_tests": [
       "models/cancer-immunotherapy/images/bindcraft-native/tests/test_image_contract.py",
       "components/control-plane/tests/test_scientific_batch_bindcraft_adapter.py"
     ],
-    "scope": "Immutable registry publication, offline parser/collector and artifact-free image smoke, SLSA/SPDX attestations, and executable source identity. This is not GPU or semantic qualification evidence."
+    "scope": "Immutable registry publication, offline parser/collector and artifact-free image smoke, SLSA/SPDX attestations, executable source identity, and exact-artifact live H100 semantic qualification."
   }
 }
