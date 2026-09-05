@@ -11,10 +11,10 @@
     "variant_id": "mosaic-boltz2-proteinmpnn-v1",
     "model_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
     "runtime_image_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
-    "runtime_recipe_sha256": "e9cf556c06a11e22ec8ac67e0f87e4d92c239835774d28d9a32e3b1c760226fe",
+    "runtime_recipe_sha256": "3f9601d4602ef9aa69e93331520066b8af6c711ce43808b3b0953c101de3997d",
     "workload_recipe_sha256": "4d2f21deaafd20c839ee3a81490bbaae2f3d1857294d8a3593916e77b4b06083",
     "model_artifact_manifest_digest": "607bbc8876228a058d3d072c9ee400d4a422a36de077eb9ae03c60176ee07fdd",
-    "execution_identity_sha256": "cfd330c10c68e803213b115966e47e27f2c88eaca3a3c57dc5453b466d3ff93e"
+    "execution_identity_sha256": "bb73910099251367e2fec1678530e17b71c1400eb3098d64b55b5c3ad8e88a89"
   },
   "access_admission": {
     "profile": "standard",
