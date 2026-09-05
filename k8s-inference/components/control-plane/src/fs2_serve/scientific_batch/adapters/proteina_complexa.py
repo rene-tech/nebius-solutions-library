@@ -437,7 +437,7 @@ def compile_run(
                 collector_id=COLLECTOR_ID,
                 validator_id=VALIDATOR_ID,
                 handoff_name=(STAGE_HANDOFF_NAME if stage_id != stage_ids[-1] else None),
-                max_output_artifacts=(1 if stage_id != stage_ids[-1] else parameters.num_samples + 1),
+                max_output_artifacts=(1 if stage_id != stage_ids[-1] else _maximum_designs(parameters) + 1),
                 max_output_bytes=(MAX_STAGE_HANDOFF_BYTES if stage_id != stage_ids[-1] else MAX_OUTPUT_BYTES),
                 materializations=(
                     ArtifactMaterialization(
