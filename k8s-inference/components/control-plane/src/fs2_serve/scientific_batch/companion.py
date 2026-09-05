@@ -10,7 +10,7 @@ import tarfile
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path, PurePosixPath
-from typing import Any, Literal, cast
+from typing import Any, Literal, TypeVar, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import httpx
@@ -41,6 +41,8 @@ _MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
 _BOLTZGEN_INPUT_MAX_FILES = 128
 _BOLTZGEN_INPUT_MAX_BYTES = 16 * 1024 * 1024
 _MAX_RUNTIME_MARKER_BYTES = 64 * 1024
+_ARTIFACT_DOWNLOAD_MAX_ATTEMPTS = 5
+_ARTIFACT_DOWNLOAD_BASE_BACKOFF_SECONDS = 0.5
 RUNTIME_LOCALIZATION_SCHEMA = "fs2-serve.nebius.ai/runtime-localization-marker/v1"
 RUNTIME_TREE_IDENTITY_SCHEMA = "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
 RUNTIME_TREE_IDENTITY_FILE = ".fs2-runtime-tree.json"
@@ -578,11 +580,40 @@ def _rewrite_paths(value: object, root: Path, *, depth: int = 0) -> object:
     raise ValueError("BoltzGen YAML contains an unsupported value")
 
 
+_ResponseValue = TypeVar("_ResponseValue")
+
+
 class WorkloadArtifactHttpClient:
     def __init__(self, *, base_url: str, capability: str, client: httpx.Client | None = None) -> None:
         self.client = client or httpx.Client(timeout=60, follow_redirects=False)
         self.base_url = base_url.rstrip("/")
         self.headers = {"Authorization": f"Bearer {capability}"}
+
+    def _download_get(
+        self,
+        url: str,
+        *,
+        headers: Mapping[str, str],
+        read: Callable[[httpx.Response], _ResponseValue],
+    ) -> _ResponseValue:
+        """Read one download response with bounded transient-only retries."""
+
+        for attempt in range(_ARTIFACT_DOWNLOAD_MAX_ATTEMPTS):
+            retry = False
+            try:
+                with self.client.stream("GET", url, headers=headers) as response:
+                    retry = response.status_code == 429 or 500 <= response.status_code < 600
+                    if not retry or attempt + 1 == _ARTIFACT_DOWNLOAD_MAX_ATTEMPTS:
+                        response.raise_for_status()
+                        return read(response)
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                if attempt + 1 == _ARTIFACT_DOWNLOAD_MAX_ATTEMPTS:
+                    raise
+                retry = True
+            if not retry:  # pragma: no cover - all non-retry paths return or raise above.
+                raise RuntimeError("artifact download retry state is invalid")
+            time.sleep(_ARTIFACT_DOWNLOAD_BASE_BACKOFF_SECONDS * (2**attempt))
+        raise RuntimeError("artifact download retry bound was not enforced")  # pragma: no cover
 
     def download(
         self,
@@ -592,12 +623,15 @@ class WorkloadArtifactHttpClient:
         expected_size_bytes: int,
         expected_media_type: str,
     ) -> bytes:
-        response = self.client.get(
+        def read_pointer(response: httpx.Response) -> dict[str, Any]:
+            response.read()
+            return cast(dict[str, Any], response.json())
+
+        value = self._download_get(
             f"{self.base_url}/internal/scientific-workloads/artifacts/{artifact_id}:download",
             headers=self.headers,
+            read=read_pointer,
         )
-        response.raise_for_status()
-        value = response.json()
         artifact = cast(dict[str, Any], value["artifact"])
         handle = cast(dict[str, Any], value["handle"])
         if (
@@ -608,21 +642,28 @@ class WorkloadArtifactHttpClient:
             raise ValueError("artifact service pointer differs from the frozen materialization")
         if handle.get("method") != "GET":
             raise ValueError("artifact service returned a non-download handle")
+
         # Artifact digests cover the exact bytes persisted in object storage.
         # A compressed artifact also carries ``Content-Encoding`` metadata and
         # httpx decodes such responses when ``Response.content`` is read.  Read
         # the raw stream instead so a gzip/zstd transport header cannot change
         # the bytes being verified or handed to the materializer.
-        content = bytearray()
-        with self.client.stream("GET", handle["url"], headers=handle.get("headers", {})) as stored:
-            stored.raise_for_status()
+        def read_content(stored: httpx.Response) -> bytes:
+            content = bytearray()
             for chunk in stored.iter_raw():
                 if len(content) + len(chunk) > artifact["size_bytes"]:
                     raise ValueError("downloaded artifact exceeds its immutable pointer")
                 content.extend(chunk)
+            return bytes(content)
+
+        content = self._download_get(
+            handle["url"],
+            headers=handle.get("headers", {}),
+            read=read_content,
+        )
         if len(content) != artifact["size_bytes"] or hashlib.sha256(content).hexdigest() != artifact["sha256"]:
             raise ValueError("downloaded artifact differs from its immutable pointer")
-        return bytes(content)
+        return content
 
     def upload(
         self,

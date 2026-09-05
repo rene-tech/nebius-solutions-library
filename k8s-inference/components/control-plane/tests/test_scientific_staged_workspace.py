@@ -173,6 +173,167 @@ def test_workload_download_rejects_raw_bytes_beyond_the_frozen_size() -> None:
         )
 
 
+def test_workload_download_retries_bounded_transient_pointer_and_object_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact_id = UUID("00000000-0000-4000-8000-000000000014")
+    content = b"eventually available"
+    digest = hashlib.sha256(content).hexdigest()
+    pointer_attempts = 0
+    object_attempts = 0
+    sleeps: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal object_attempts, pointer_attempts
+        if request.url.host == "artifacts.internal":
+            pointer_attempts += 1
+            if pointer_attempts == 1:
+                raise httpx.ConnectError("connection refused", request=request)
+            if pointer_attempts == 2:
+                return httpx.Response(503)
+            return httpx.Response(
+                200,
+                json={
+                    "artifact": {
+                        "sha256": digest,
+                        "size_bytes": len(content),
+                        "media_type": "application/octet-stream",
+                    },
+                    "handle": {
+                        "method": "GET",
+                        "url": "https://objects.test/input.bin",
+                        "headers": {},
+                    },
+                },
+            )
+        object_attempts += 1
+        if object_attempts == 1:
+            return httpx.Response(429)
+        return httpx.Response(200, stream=httpx.ByteStream(content))
+
+    monkeypatch.setattr(companion.time, "sleep", sleeps.append)
+    client = companion.WorkloadArtifactHttpClient(
+        base_url="https://artifacts.internal",
+        capability="test-capability",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert (
+        client.download(
+            artifact_id,
+            expected_digest=f"sha256:{digest}",
+            expected_size_bytes=len(content),
+            expected_media_type="application/octet-stream",
+        )
+        == content
+    )
+    assert pointer_attempts == 3
+    assert object_attempts == 2
+    assert sleeps == [0.5, 1.0, 0.5]
+
+
+def test_workload_download_does_not_retry_immutable_pointer_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    sleeps: list[float] = []
+    expected = b"frozen"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        assert request.url.host == "artifacts.internal"
+        return httpx.Response(
+            200,
+            json={
+                "artifact": {
+                    "sha256": hashlib.sha256(b"different").hexdigest(),
+                    "size_bytes": len(expected),
+                    "media_type": "application/octet-stream",
+                },
+                "handle": {
+                    "method": "GET",
+                    "url": "https://objects.test/input.bin",
+                    "headers": {},
+                },
+            },
+        )
+
+    monkeypatch.setattr(companion.time, "sleep", sleeps.append)
+    client = companion.WorkloadArtifactHttpClient(
+        base_url="https://artifacts.internal",
+        capability="test-capability",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(ValueError, match="pointer differs"):
+        client.download(
+            UUID("00000000-0000-4000-8000-000000000017"),
+            expected_digest=f"sha256:{hashlib.sha256(expected).hexdigest()}",
+            expected_size_bytes=len(expected),
+            expected_media_type="application/octet-stream",
+        )
+    assert attempts == 1
+    assert sleeps == []
+
+
+@pytest.mark.parametrize("status", [401, 404])
+def test_workload_download_does_not_retry_auth_or_not_found(status: int, monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts = 0
+    sleeps: list[float] = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(status)
+
+    monkeypatch.setattr(companion.time, "sleep", sleeps.append)
+    client = companion.WorkloadArtifactHttpClient(
+        base_url="https://artifacts.internal",
+        capability="test-capability",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        client.download(
+            UUID("00000000-0000-4000-8000-000000000015"),
+            expected_digest=f"sha256:{'0' * 64}",
+            expected_size_bytes=1,
+            expected_media_type="application/octet-stream",
+        )
+    assert attempts == 1
+    assert sleeps == []
+
+
+def test_workload_download_stops_after_transient_retry_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    sleeps: list[float] = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(503)
+
+    monkeypatch.setattr(companion.time, "sleep", sleeps.append)
+    client = companion.WorkloadArtifactHttpClient(
+        base_url="https://artifacts.internal",
+        capability="test-capability",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        client.download(
+            UUID("00000000-0000-4000-8000-000000000016"),
+            expected_digest=f"sha256:{'0' * 64}",
+            expected_size_bytes=1,
+            expected_media_type="application/octet-stream",
+        )
+    assert attempts == companion._ARTIFACT_DOWNLOAD_MAX_ATTEMPTS
+    assert sleeps == [0.5, 1.0, 2.0, 4.0]
+
+
 def test_proteina_initial_archive_materializes_beside_trusted_prepared_workspace_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
