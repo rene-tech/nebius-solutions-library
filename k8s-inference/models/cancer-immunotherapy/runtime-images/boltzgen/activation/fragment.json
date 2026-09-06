@@ -272,7 +272,7 @@
         "h100_semantic_receipt_sha256": "f4a36ad7b8367e3383f584f96377313d39a26b5a08343d789311a41b04b79a46",
         "public_completion_receipt_sha256": "555590429049d660121ff0b8d68d4b0ccb1635fcb168b02a0908a37760e80fe0",
         "scheduler_eligibility_receipt_sha256": "53ded448f863ee64fd90c177cc6bfbab6cf10fab9811a222de28b1ee74eae170",
-        "execution_map_sha256": "35b2efdecf847aeced3b9754a7e6886096a7607ebae0889c1b8411ed67ad0a18",
+        "execution_map_sha256": "20ae0156abea1054bd4b292be31eab7b664d11651ed3f42f69ba51ae0826d9eb",
         "qualified_at": "2026-09-05T06:38:42.135439Z"
       },
       "runtime_artifacts": [

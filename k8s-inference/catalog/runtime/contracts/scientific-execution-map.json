@@ -1201,7 +1201,7 @@
       "model_id": "rfdiffusion",
       "variant_id": "rfdiffusion-v1-1-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "8c9cc97450dcd66cfcfe0f09a77921735821460bd6f4964d0ecf0b1a1302cd2d",
+      "execution_identity_sha256": "d505777dabb4e6d3f783996c592ff5e6cba3b8749579a4c5b35aa778aed1cfc1",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
