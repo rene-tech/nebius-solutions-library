@@ -1,0 +1,83 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-scheduler-eligibility-receipt/v1",
+  "model_id": "esmfold2-fast",
+  "variant_id": "biohub-v3-4-0",
+  "execution_identity_sha256": "ca4ec685c5567a5cf01a4c4946c4c9dd120bc296d279f3511435533a58b2ab95",
+  "execution_map_sha256": "cafe5eaa551f213a4919b79e3c782da58e381838dee50b984eba32c5004b2e09",
+  "acceptance_execution_map_sha256": "cafe5eaa551f213a4919b79e3c782da58e381838dee50b984eba32c5004b2e09",
+  "model_execution_map_entry_sha256": "6cd2646b436a14434b76367553afb846b1f820011d24bb8d4ebe3f060f988190",
+  "public_completion_receipt_sha256": "d970dad8f184c15f09d1c6556dfa2ac5492f6b66eea9b7f92babc7e671b1571b",
+  "fleet_aggregate_sha256": "0fcb8b38233467f9ae06fa63c3aebb92be09efdd18ed7dbf3e9e43b04b89d635",
+  "acceptance_input": {
+    "kind": "secondary-public-acceptance",
+    "path": "models/structure/batch-adapters/esmfold2-fast/activation/public-acceptance.json",
+    "sha256": "31bfa5b970ddc1f5d555a8b483b5e940ce77b7dd0ee573188d1fda0ada45e0c1"
+  },
+  "scheduling_snapshot": {
+    "digest": "sha256:97da46e06fd74055e663c27b2868be2edcda9cbc4f48e53ae80f7c0d6a04e91e",
+    "policy_revision": "8117761333018ce7cac0ccf29421960a4945244df396a27e75a67549fc380c9b",
+    "captured_at": "2026-09-06T22:50:24.611740Z",
+    "service_class": "customer-batch",
+    "tenant_queue": "inference-models",
+    "model_lane": "esmfold2-fast",
+    "stage_decisions": [
+      {
+        "accelerator_count": 0,
+        "accelerator_resource_name": null,
+        "checkpoint_mode": "restart",
+        "max_execution_seconds": null,
+        "max_queue_seconds": null,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "general-cpu",
+        "resolved_local_queue": "general-cpu",
+        "resolved_pool_preference": [],
+        "resource_class": "cpu",
+        "stage_id": "prepare-input",
+        "workload_priority_class": "standard",
+        "workload_priority_value": 0
+      },
+      {
+        "accelerator_count": 1,
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "checkpoint_mode": "restart",
+        "max_execution_seconds": null,
+        "max_queue_seconds": null,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "inference-accelerators",
+        "resolved_local_queue": "inference-models",
+        "resolved_pool_preference": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "resource_class": "gpu",
+        "stage_id": "fold",
+        "workload_priority_class": "standard",
+        "workload_priority_value": 0
+      }
+    ]
+  },
+  "successful_admissions": [
+    {
+      "stage_id": "fold",
+      "shard_id": "main",
+      "attempt_number": 1,
+      "resolved_pool_id": "h100-reserved-8x",
+      "admitted_resource_flavor": "inference-h100-reserved-8x",
+      "accelerator_resource_name": "nvidia.com/gpu",
+      "accelerator_count": 1,
+      "admitted_at": "2026-09-06T22:50:39Z"
+    },
+    {
+      "stage_id": "prepare-input",
+      "shard_id": "main",
+      "attempt_number": 1,
+      "resolved_pool_id": null,
+      "admitted_resource_flavor": null,
+      "accelerator_resource_name": null,
+      "accelerator_count": 0,
+      "admitted_at": "2026-09-06T22:50:24Z"
+    }
+  ],
+  "prior_profile_qualified_at": "2026-09-05T06:47:01.367226Z",
+  "qualified_at": "2026-09-06T22:51:46.640834Z"
+}

@@ -144,7 +144,12 @@ class PrimaryActivationFragmentTests(unittest.TestCase):
                 self.assertIn(registry, recipe["paths"])
                 self.assertEqual(
                     identity["runtime_recipe_sha256"],
-                    activation.runtime_recipe_sha256(recipe["paths"]),
+                    activation.runtime_recipe_sha256(
+                        list(
+                            set(recipe["paths"])
+                            | activation.CURRENT_RUNTIME_RECIPE_ADDITIONS
+                        )
+                    ),
                 )
                 workload_digest = hashlib.sha256(
                     json.dumps(
@@ -196,9 +201,9 @@ class PrimaryActivationFragmentTests(unittest.TestCase):
             ]
         }
         current = json.loads(json.dumps(baseline))
-        current["profiles"][0]["workload"]["stages"][0]["placement"][
-            "class"
-        ] = "reference-data"
+        current["profiles"][0]["workload"]["stages"][0]["placement"]["class"] = (
+            "reference-data"
+        )
 
         activation._normalize_serialized_model_reference_data_repair(
             "catalog/runtime/contracts/scientific-workload-profiles.json",
@@ -208,9 +213,9 @@ class PrimaryActivationFragmentTests(unittest.TestCase):
         self.assertEqual(baseline, current)
 
         unreviewed = json.loads(json.dumps(current))
-        unreviewed["profiles"][0]["workload"]["stages"][0]["placement"][
-            "class"
-        ] = "general-cpu"
+        unreviewed["profiles"][0]["workload"]["stages"][0]["placement"]["class"] = (
+            "general-cpu"
+        )
         activation._normalize_serialized_model_reference_data_repair(
             "catalog/runtime/contracts/scientific-workload-profiles.json",
             current,
@@ -218,7 +223,9 @@ class PrimaryActivationFragmentTests(unittest.TestCase):
         )
         self.assertNotEqual(current, unreviewed)
 
-    def test_evidence_qualified_transition_is_the_only_normalized_state_change(self) -> None:
+    def test_evidence_qualified_transition_is_the_only_normalized_state_change(
+        self,
+    ) -> None:
         baseline = {
             "profiles": [
                 {

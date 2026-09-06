@@ -1,0 +1,83 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-scheduler-eligibility-receipt/v1",
+  "model_id": "bindcraft",
+  "variant_id": "v1-5-3-pyrosetta-academic",
+  "execution_identity_sha256": "94aaf35aa0dd0487c80919984eb3a140801def21cc69602923f36f6b8565a8db",
+  "execution_map_sha256": "cafe5eaa551f213a4919b79e3c782da58e381838dee50b984eba32c5004b2e09",
+  "acceptance_execution_map_sha256": "cafe5eaa551f213a4919b79e3c782da58e381838dee50b984eba32c5004b2e09",
+  "model_execution_map_entry_sha256": "820aad2ef2ae9646a5a924a1fb88241b9d1bda6d5884824020806bac454d1416",
+  "public_completion_receipt_sha256": "5e105c7c53f129a7a7719ae720811c14f167217db5d9c55b780e3f77737cf189",
+  "fleet_aggregate_sha256": "0fcb8b38233467f9ae06fa63c3aebb92be09efdd18ed7dbf3e9e43b04b89d635",
+  "acceptance_input": {
+    "kind": "primary-activation-fragment",
+    "path": "models/cancer-immunotherapy/images/bindcraft-native/activation/fragment.json",
+    "sha256": "6679c95266a71cc5244566c19529a8533591b8c3504bbbbcc71643eca0b08b5f"
+  },
+  "scheduling_snapshot": {
+    "digest": "sha256:d32d01e6001bed407a3f495e8ffab673b21fc242f6a8c808fb334979c5098e58",
+    "policy_revision": "8117761333018ce7cac0ccf29421960a4945244df396a27e75a67549fc380c9b",
+    "captured_at": "2026-09-06T22:42:49.277700Z",
+    "service_class": "customer-batch",
+    "tenant_queue": "academic-scientific-cpu",
+    "model_lane": "bindcraft",
+    "stage_decisions": [
+      {
+        "accelerator_count": 1,
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "checkpoint_mode": "restart",
+        "max_execution_seconds": null,
+        "max_queue_seconds": null,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "inference-accelerators",
+        "resolved_local_queue": "academic-scientific",
+        "resolved_pool_preference": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "resource_class": "gpu",
+        "stage_id": "design",
+        "workload_priority_class": "standard",
+        "workload_priority_value": 0
+      },
+      {
+        "accelerator_count": 0,
+        "accelerator_resource_name": null,
+        "checkpoint_mode": "none",
+        "max_execution_seconds": null,
+        "max_queue_seconds": null,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "reference-data-cpu",
+        "resolved_local_queue": "academic-scientific-cpu",
+        "resolved_pool_preference": [],
+        "resource_class": "cpu",
+        "stage_id": "aggregate",
+        "workload_priority_class": "standard",
+        "workload_priority_value": 0
+      }
+    ]
+  },
+  "successful_admissions": [
+    {
+      "stage_id": "aggregate",
+      "shard_id": "main",
+      "attempt_number": 1,
+      "resolved_pool_id": null,
+      "admitted_resource_flavor": null,
+      "accelerator_resource_name": null,
+      "accelerator_count": 0,
+      "admitted_at": "2026-09-06T22:52:47Z"
+    },
+    {
+      "stage_id": "design",
+      "shard_id": "design-000",
+      "attempt_number": 1,
+      "resolved_pool_id": "h100-reserved-8x",
+      "admitted_resource_flavor": "inference-h100-reserved-8x",
+      "accelerator_resource_name": "nvidia.com/gpu",
+      "accelerator_count": 1,
+      "admitted_at": "2026-09-06T22:42:49Z"
+    }
+  ],
+  "prior_profile_qualified_at": "2026-09-05T06:40:31.924548Z",
+  "qualified_at": "2026-09-06T22:53:07.977893Z"
+}

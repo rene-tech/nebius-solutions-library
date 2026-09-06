@@ -1,0 +1,220 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-scheduler-eligibility-receipt/v1",
+  "model_id": "boltzgen",
+  "variant_id": "upstream-v0-3-2",
+  "execution_identity_sha256": "fdecf35c7a250f4107b143dfa62662e556d906ffd5ff5f3fdfdadc0c48e09094",
+  "execution_map_sha256": "cafe5eaa551f213a4919b79e3c782da58e381838dee50b984eba32c5004b2e09",
+  "acceptance_execution_map_sha256": "cafe5eaa551f213a4919b79e3c782da58e381838dee50b984eba32c5004b2e09",
+  "model_execution_map_entry_sha256": "fa8dbfc1368a7f2a2da52858efe75b77acf3ae772d9ecdbcb27b0784c899a4e1",
+  "public_completion_receipt_sha256": "7c116e90853b0e0edfe0d6451f327813338716dde285af2239d506d0c3c9f5cd",
+  "fleet_aggregate_sha256": "0fcb8b38233467f9ae06fa63c3aebb92be09efdd18ed7dbf3e9e43b04b89d635",
+  "acceptance_input": {
+    "kind": "primary-activation-fragment",
+    "path": "models/cancer-immunotherapy/runtime-images/boltzgen/activation/fragment.json",
+    "sha256": "fe400eed34b519db2ee1802b05ce9f19f2eb9eab51c39da40668e0bec43bfee2"
+  },
+  "scheduling_snapshot": {
+    "digest": "sha256:c6ab8c5fa9107792fdc2ae64b7efe3f7949a70d76392aceb9442a31b335c060a",
+    "policy_revision": "8117761333018ce7cac0ccf29421960a4945244df396a27e75a67549fc380c9b",
+    "captured_at": "2026-09-06T22:42:49.870724Z",
+    "service_class": "customer-batch",
+    "tenant_queue": "model-reference-data",
+    "model_lane": "boltzgen",
+    "stage_decisions": [
+      {
+        "accelerator_count": 1,
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "checkpoint_mode": "restart",
+        "max_execution_seconds": null,
+        "max_queue_seconds": null,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "inference-accelerators",
+        "resolved_local_queue": "inference-models",
+        "resolved_pool_preference": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "resource_class": "gpu",
+        "stage_id": "configure",
+        "workload_priority_class": "standard",
+        "workload_priority_value": 0
+      },
+      {
+        "accelerator_count": 1,
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "checkpoint_mode": "restart",
+        "max_execution_seconds": null,
+        "max_queue_seconds": null,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "inference-accelerators",
+        "resolved_local_queue": "inference-models",
+        "resolved_pool_preference": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "resource_class": "gpu",
+        "stage_id": "design",
+        "workload_priority_class": "standard",
+        "workload_priority_value": 0
+      },
+      {
+        "accelerator_count": 1,
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "checkpoint_mode": "restart",
+        "max_execution_seconds": null,
+        "max_queue_seconds": null,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "inference-accelerators",
+        "resolved_local_queue": "inference-models",
+        "resolved_pool_preference": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "resource_class": "gpu",
+        "stage_id": "inverse-folding",
+        "workload_priority_class": "standard",
+        "workload_priority_value": 0
+      },
+      {
+        "accelerator_count": 1,
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "checkpoint_mode": "restart",
+        "max_execution_seconds": null,
+        "max_queue_seconds": null,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "inference-accelerators",
+        "resolved_local_queue": "inference-models",
+        "resolved_pool_preference": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "resource_class": "gpu",
+        "stage_id": "folding",
+        "workload_priority_class": "standard",
+        "workload_priority_value": 0
+      },
+      {
+        "accelerator_count": 1,
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "checkpoint_mode": "restart",
+        "max_execution_seconds": null,
+        "max_queue_seconds": null,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "inference-accelerators",
+        "resolved_local_queue": "inference-models",
+        "resolved_pool_preference": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "resource_class": "gpu",
+        "stage_id": "design-folding",
+        "workload_priority_class": "standard",
+        "workload_priority_value": 0
+      },
+      {
+        "accelerator_count": 0,
+        "accelerator_resource_name": null,
+        "checkpoint_mode": "none",
+        "max_execution_seconds": null,
+        "max_queue_seconds": null,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "reference-data-cpu",
+        "resolved_local_queue": "model-reference-data",
+        "resolved_pool_preference": [],
+        "resource_class": "cpu",
+        "stage_id": "analysis",
+        "workload_priority_class": "standard",
+        "workload_priority_value": 0
+      },
+      {
+        "accelerator_count": 0,
+        "accelerator_resource_name": null,
+        "checkpoint_mode": "none",
+        "max_execution_seconds": null,
+        "max_queue_seconds": null,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "reference-data-cpu",
+        "resolved_local_queue": "model-reference-data",
+        "resolved_pool_preference": [],
+        "resource_class": "cpu",
+        "stage_id": "filtering",
+        "workload_priority_class": "standard",
+        "workload_priority_value": 0
+      }
+    ]
+  },
+  "successful_admissions": [
+    {
+      "stage_id": "analysis",
+      "shard_id": "pdl1-face",
+      "attempt_number": 1,
+      "resolved_pool_id": null,
+      "admitted_resource_flavor": null,
+      "accelerator_resource_name": null,
+      "accelerator_count": 0,
+      "admitted_at": "2026-09-06T22:54:58Z"
+    },
+    {
+      "stage_id": "configure",
+      "shard_id": "pdl1-face",
+      "attempt_number": 1,
+      "resolved_pool_id": "h100-reserved-8x",
+      "admitted_resource_flavor": "inference-h100-reserved-8x",
+      "accelerator_resource_name": "nvidia.com/gpu",
+      "accelerator_count": 1,
+      "admitted_at": "2026-09-06T22:42:50Z"
+    },
+    {
+      "stage_id": "design",
+      "shard_id": "pdl1-face",
+      "attempt_number": 1,
+      "resolved_pool_id": "h100-reserved-8x",
+      "admitted_resource_flavor": "inference-h100-reserved-8x",
+      "accelerator_resource_name": "nvidia.com/gpu",
+      "accelerator_count": 1,
+      "admitted_at": "2026-09-06T22:43:08Z"
+    },
+    {
+      "stage_id": "design-folding",
+      "shard_id": "pdl1-face",
+      "attempt_number": 1,
+      "resolved_pool_id": "h100-reserved-8x",
+      "admitted_resource_flavor": "inference-h100-reserved-8x",
+      "accelerator_resource_name": "nvidia.com/gpu",
+      "accelerator_count": 1,
+      "admitted_at": "2026-09-06T22:52:18Z"
+    },
+    {
+      "stage_id": "filtering",
+      "shard_id": "pdl1-face",
+      "attempt_number": 1,
+      "resolved_pool_id": null,
+      "admitted_resource_flavor": null,
+      "accelerator_resource_name": null,
+      "accelerator_count": 0,
+      "admitted_at": "2026-09-06T22:55:39Z"
+    },
+    {
+      "stage_id": "folding",
+      "shard_id": "pdl1-face",
+      "attempt_number": 1,
+      "resolved_pool_id": "h100-reserved-8x",
+      "admitted_resource_flavor": "inference-h100-reserved-8x",
+      "accelerator_resource_name": "nvidia.com/gpu",
+      "accelerator_count": 1,
+      "admitted_at": "2026-09-06T22:48:41Z"
+    },
+    {
+      "stage_id": "inverse-folding",
+      "shard_id": "pdl1-face",
+      "attempt_number": 1,
+      "resolved_pool_id": "h100-reserved-8x",
+      "admitted_resource_flavor": "inference-h100-reserved-8x",
+      "accelerator_resource_name": "nvidia.com/gpu",
+      "accelerator_count": 1,
+      "admitted_at": "2026-09-06T22:48:04Z"
+    }
+  ],
+  "prior_profile_qualified_at": "2026-09-05T06:38:42.135439Z",
+  "qualified_at": "2026-09-06T22:56:12.051501Z"
+}

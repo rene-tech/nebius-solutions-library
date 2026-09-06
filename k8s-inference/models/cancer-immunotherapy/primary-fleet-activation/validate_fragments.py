@@ -29,8 +29,7 @@ sys.modules[ACCEPTANCE_SPEC.name] = ACCEPTANCE_RUNNER
 ACCEPTANCE_SPEC.loader.exec_module(ACCEPTANCE_RUNNER)
 PROFILE_SCHEMA = ROOT / "catalog/runtime/schema/scientific-workload-profile.schema.json"
 SCHEDULER_ELIGIBILITY_SCHEMA = (
-    ROOT
-    / "catalog/runtime/schema/scientific-scheduler-eligibility-receipt.schema.json"
+    ROOT / "catalog/runtime/schema/scientific-scheduler-eligibility-receipt.schema.json"
 )
 REQUEST_SCHEMA = ROOT / "catalog/runtime/schema/scientific-run-request.schema.json"
 RESULT_SCHEMA = ROOT / "catalog/runtime/schema/scientific-run-result.schema.json"
@@ -124,6 +123,19 @@ SHARED_RUNTIME_RECIPE_PATHS = frozenset(
         "catalog/runtime/schema/scientific-artifact-localization.schema.json",
         "catalog/runtime/contracts/scientific-artifact-localization.json",
     }
+)
+# The current control-plane identity also covers the two process entrypoints.
+# They were added after the immutable primary acceptance inputs above, so keep
+# their provenance path set exact while validating the refreshed live identity
+# against the complete current recipe.
+CURRENT_RUNTIME_RECIPE_ADDITIONS = frozenset(
+    {
+        "components/control-plane/src/fs2_serve/entrypoint.py",
+        "components/control-plane/src/fs2_serve/scientific_companion_cli.py",
+    }
+)
+SCIENTIFIC_TOOLS_IMAGE_ROLES = frozenset(
+    {("mosaic", "aggregate"), ("rfdiffusion", "collect")}
 )
 MODEL_RUNTIME_RECIPE_PATHS = {
     "boltzgen": frozenset(
@@ -281,7 +293,9 @@ def validate_fragment_document(fragment: dict[str, Any], path: Path) -> list[str
         errors.append(f"{model_id}: runtime recipe source path set differs")
     else:
         try:
-            expected_runtime_recipe = runtime_recipe_sha256(recipe["paths"])
+            expected_runtime_recipe = runtime_recipe_sha256(
+                list(expected_recipe_paths | CURRENT_RUNTIME_RECIPE_ADDITIONS)
+            )
         except FileNotFoundError as error:
             errors.append(
                 f"{model_id}: runtime recipe source is missing: {error.filename}"
@@ -344,18 +358,14 @@ def validate_fragment_document(fragment: dict[str, Any], path: Path) -> list[str
         ):
             errors.append(f"{model_id}: execution-map bridge digest is incomplete")
         if profile_state == "qualified":
-            scheduler_digest = qualification.get(
-                "scheduler_eligibility_receipt_sha256"
-            )
+            scheduler_digest = qualification.get("scheduler_eligibility_receipt_sha256")
             scheduler_path = (
                 path.parent
                 / "qualification"
                 / f"scheduler-eligibility-{scheduler_digest}.json"
             )
             if not scheduler_path.is_file():
-                errors.append(
-                    f"{model_id}: scheduler eligibility receipt is missing"
-                )
+                errors.append(f"{model_id}: scheduler eligibility receipt is missing")
             else:
                 scheduler_bytes = scheduler_path.read_bytes()
                 if hashlib.sha256(scheduler_bytes).hexdigest() != scheduler_digest:
@@ -381,9 +391,7 @@ def validate_fragment_document(fragment: dict[str, Any], path: Path) -> list[str
                         "execution_identity_sha256": identity[
                             "execution_identity_sha256"
                         ],
-                        "execution_map_sha256": qualification[
-                            "execution_map_sha256"
-                        ],
+                        "execution_map_sha256": qualification["execution_map_sha256"],
                         "public_completion_receipt_sha256": qualification[
                             "public_completion_receipt_sha256"
                         ],
@@ -801,9 +809,7 @@ def _normalize_serialized_model_reference_data_repair(
                     )
         baseline_bindcraft = baseline_models.get("bindcraft")
         current_bindcraft = current_models.get("bindcraft")
-        if isinstance(baseline_bindcraft, dict) and isinstance(
-            current_bindcraft, dict
-        ):
+        if isinstance(baseline_bindcraft, dict) and isinstance(current_bindcraft, dict):
             baseline_stages = {
                 item.get("id"): item
                 for item in baseline_bindcraft.get("workload", {}).get("stages", [])
@@ -877,8 +883,10 @@ def _qualification_receipt_matches(profile: dict[str, Any]) -> bool:
     model_id = profile.get("model_id")
     identity = profile.get("execution_identity")
     qualification = profile.get("qualification")
-    if not isinstance(model_id, str) or not isinstance(identity, dict) or not isinstance(
-        qualification, dict
+    if (
+        not isinstance(model_id, str)
+        or not isinstance(identity, dict)
+        or not isinstance(qualification, dict)
     ):
         return False
     digest = qualification.get("scheduler_eligibility_receipt_sha256")
@@ -916,6 +924,49 @@ def _qualification_receipt_matches(profile: dict[str, Any]) -> bool:
     return all(receipt.get(key) == value for key, value in expected.items())
 
 
+def _normalize_serialized_scientific_tools_roles(
+    relative: str, baseline: dict[str, Any], current: dict[str, Any]
+) -> None:
+    """Normalize only the two reviewed collector-tool image-role additions."""
+
+    if relative != "catalog/runtime/contracts/scientific-execution-map.json":
+        return
+    baseline_models = {
+        item.get("model_id"): item
+        for item in baseline.get("models", [])
+        if isinstance(item, dict)
+    }
+    current_models = {
+        item.get("model_id"): item
+        for item in current.get("models", [])
+        if isinstance(item, dict)
+    }
+    for model_id, stage_id in SCIENTIFIC_TOOLS_IMAGE_ROLES:
+        baseline_model = baseline_models.get(model_id)
+        current_model = current_models.get(model_id)
+        if not isinstance(baseline_model, dict) or not isinstance(current_model, dict):
+            continue
+        baseline_stages = {
+            item.get("stage_id"): item
+            for item in baseline_model.get("stages", [])
+            if isinstance(item, dict)
+        }
+        current_stages = {
+            item.get("stage_id"): item
+            for item in current_model.get("stages", [])
+            if isinstance(item, dict)
+        }
+        baseline_stage = baseline_stages.get(stage_id)
+        current_stage = current_stages.get(stage_id)
+        if (
+            isinstance(baseline_stage, dict)
+            and isinstance(current_stage, dict)
+            and "image_role" not in baseline_stage
+            and current_stage.get("image_role") == "scientific-tools"
+        ):
+            baseline_stage["image_role"] = "scientific-tools"
+
+
 def _normalize_evidence_qualified_profiles(
     relative: str, baseline: dict[str, Any], current: dict[str, Any]
 ) -> None:
@@ -950,18 +1001,13 @@ def _normalize_evidence_qualified_profiles(
             "scheduler_eligibility_receipt_sha256",
             "qualified_at",
         ):
-            normalized["qualification"][field] = current_profile["qualification"][
-                field
-            ]
+            normalized["qualification"][field] = current_profile["qualification"][field]
         normalized_leaves = dict(_json_leaves(normalized))
         current_leaves = dict(_json_leaves(current_profile))
-        if (
-            set(normalized_leaves) == set(current_leaves)
-            and all(
-                key[-1] in DERIVED_IDENTITY_FIELDS
-                for key in set(normalized_leaves) & set(current_leaves)
-                if normalized_leaves[key] != current_leaves[key]
-            )
+        if set(normalized_leaves) == set(current_leaves) and all(
+            key[-1] in DERIVED_IDENTITY_FIELDS
+            for key in set(normalized_leaves) & set(current_leaves)
+            if normalized_leaves[key] != current_leaves[key]
         ):
             baseline_profile.clear()
             baseline_profile.update(normalized)
@@ -994,6 +1040,9 @@ def _derived_identity_refresh_only(relative: str) -> list[str]:
         relative, baseline_document, current_document
     )
     _normalize_serialized_model_reference_data_repair(
+        relative, baseline_document, current_document
+    )
+    _normalize_serialized_scientific_tools_roles(
         relative, baseline_document, current_document
     )
     _normalize_evidence_qualified_profiles(

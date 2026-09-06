@@ -270,10 +270,10 @@
       },
       "qualification": {
         "h100_semantic_receipt_sha256": "f4a36ad7b8367e3383f584f96377313d39a26b5a08343d789311a41b04b79a46",
-        "public_completion_receipt_sha256": "555590429049d660121ff0b8d68d4b0ccb1635fcb168b02a0908a37760e80fe0",
-        "scheduler_eligibility_receipt_sha256": "53ded448f863ee64fd90c177cc6bfbab6cf10fab9811a222de28b1ee74eae170",
+        "public_completion_receipt_sha256": "7c116e90853b0e0edfe0d6451f327813338716dde285af2239d506d0c3c9f5cd",
+        "scheduler_eligibility_receipt_sha256": "3e2a06c9f1410764243c34899fc885365c7df03a683a60d5ac1114e6bcf91953",
         "execution_map_sha256": "cafe5eaa551f213a4919b79e3c782da58e381838dee50b984eba32c5004b2e09",
-        "qualified_at": "2026-09-05T06:38:42.135439Z"
+        "qualified_at": "2026-09-06T22:56:12.051501Z"
       },
       "runtime_artifacts": [
         {
