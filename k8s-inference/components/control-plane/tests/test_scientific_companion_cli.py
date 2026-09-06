@@ -8,12 +8,66 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from fs2_serve.entrypoint import SCIENTIFIC_COMPANION_COMMANDS
 
 CONTROL_ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize("fail_first", [False, True])
+def test_many_materializations_preserve_order_verification_and_stop_on_error(monkeypatch, fail_first: bool) -> None:
+    from fs2_serve import scientific_companion_cli as cli
+
+    calls = []
+    closed = []
+    client = SimpleNamespace(client=SimpleNamespace(close=lambda: closed.append(True)))
+    monkeypatch.setattr(cli, "WorkloadArtifactHttpClient", lambda **kwargs: client)
+    monkeypatch.setattr(cli.signal, "signal", lambda *args: None)
+    monkeypatch.setenv("FS2_SCIENTIFIC_INTERNAL_API_URL", "http://unit.test")
+    monkeypatch.setenv("FS2_SCIENTIFIC_WORKLOAD_CAPABILITY", "test-only")
+
+    def materialize(**kwargs):
+        calls.append(kwargs)
+        if fail_first:
+            raise ValueError("artifact content digest mismatch")
+
+    monkeypatch.setattr(cli, "materialize_artifact", materialize)
+    commands = [
+        [
+            "--logical-artifact-id",
+            f"input-{i}",
+            "--artifact-id",
+            f"00000000-0000-4000-8000-00000000000{i}",
+            "--destination",
+            f"/mnt/fs2-scientific/work/input-{i}.json",
+            "--mode",
+            "copy-file",
+            "--expected-digest",
+            "sha256:" + str(i) * 64,
+            "--expected-size-bytes",
+            str(i),
+            "--expected-media-type",
+            "application/json",
+        ]
+        for i in (1, 2)
+    ]
+    monkeypatch.setattr(
+        sys, "argv", ["fs2-serve", "scientific-materialize-many", "--commands-json", json.dumps(commands)]
+    )
+    if fail_first:
+        with pytest.raises(ValueError, match="content digest mismatch"):
+            cli.main()
+    else:
+        cli.main()
+    assert closed == [True]
+    assert [call["expected_size_bytes"] for call in calls] == ([1] if fail_first else [1, 2])
+    assert all(call["client"] is client for call in calls)
+    assert calls[0]["expected_digest"] == "sha256:" + "1" * 64
+    assert str(calls[0]["destination"]) == "/mnt/fs2-scientific/work/input-1.json"
+    assert cli.logging.getLogger("httpx").getEffectiveLevel() == cli.logging.WARNING
 
 
 def _environment() -> dict[str, str]:

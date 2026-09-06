@@ -35,3 +35,26 @@ upstream input serialization with simplified implementations.
 
 Post-deployment benchmark results are recorded separately from the baseline;
 the code change alone is not evidence of an improved live startup time.
+
+## Ordered input materialization
+
+The public H100 acceptance found a second startup cost after replacing large
+CPU-stage images: tiny (4–8KiB) inputs took 1–3s to materialize but incurred up
+to 62s between separate init containers on a newly provisioned CPU worker.
+Multiple inputs now run through `scientific-materialize-many` in a single
+init container. It parses the same ordered argument lists and calls the same
+artifact materializer, retaining digest, size, media-type, archive, and scoped
+capability checks. There is no parallel-write race between overlays. A failure
+stops subsequent entries; normal retry semantics remain unchanged.
+
+One input keeps its existing `scientific-materialize` command. Multiple inputs
+reuse one HTTP client, the same workspace and the same 100mCPU/256Mi requests
+and 1CPU/1Gi limits. Per-input completion logs retain logical artifact ID,
+expected bytes and elapsed time. HTTP library request logging is not used
+because presigned object-storage handles should not be copied into those logs.
+
+This eliminates extra init transitions, not CPU node acquisition or model
+loading. Operators who value presentation latency can keep one `batch-cpu`
+node warm through `deployment.cpu_pools["batch-cpu"].autoscaling.min_nodes`.
+Changing that floor does not require increasing its ceiling or any quota.
+Live post-release timing remains a separate acceptance check.

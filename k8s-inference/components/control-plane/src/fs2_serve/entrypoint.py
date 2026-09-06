@@ -6,6 +6,7 @@ import sys
 
 SCIENTIFIC_COMPANION_COMMANDS = (
     "scientific-materialize",
+    "scientific-materialize-many",
     "scientific-collect",
     "scientific-prepare-workspace",
     "scientific-verify-runtime-artifacts",

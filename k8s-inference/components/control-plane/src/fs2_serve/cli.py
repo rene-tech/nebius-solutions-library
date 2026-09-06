@@ -703,6 +703,7 @@ def main() -> None:
             "model-controller",
             "gpu-allocation-observer",
             "scientific-materialize",
+            "scientific-materialize-many",
             "scientific-collect",
             "scientific-prepare-workspace",
             "scientific-verify-runtime-artifacts",

@@ -500,8 +500,7 @@ class FileScientificManifestRenderer:
                 if image_role == "scientific-tools":
                     profile_stages = _object(profile.value["workload"], "profile workload")["stages"]
                     if not any(
-                        item.get("id") == stage_id and item.get("resource_class") == "cpu"
-                        for item in profile_stages
+                        item.get("id") == stage_id and item.get("resource_class") == "cpu" for item in profile_stages
                     ):
                         raise ScientificExecutionMapError("scientific tools image is only available to CPU stages")
                 collector_id = _bounded_string(stage["collector_id"], "scientific collector ID", maximum=128)
@@ -1601,6 +1600,8 @@ class FileScientificManifestRenderer:
                     "securityContext": companion_security,
                 }
             )
+        materializer_containers = []
+        materializer_commands = []
         for index, materialization in enumerate(resource.materializations):
             command = [
                 "fs2-serve",
@@ -1626,7 +1627,8 @@ class FileScientificManifestRenderer:
                 command.extend(("--yaml-name", materialization.yaml_name))
             if materialization.reuse_prefix is not None:
                 command.extend(("--reuse-prefix", materialization.reuse_prefix))
-            init_containers.append(
+            materializer_commands.append(command[2:])
+            materializer_containers.append(
                 {
                     "name": f"materialize-{index}",
                     "image": self.tools_image,
@@ -1641,6 +1643,18 @@ class FileScientificManifestRenderer:
                     "securityContext": companion_security,
                 }
             )
+        if len(materializer_containers) > 1:
+            materializer = materializer_containers[0]
+            materializer["name"] = "materialize-inputs"
+            materializer["command"] = [
+                "fs2-serve",
+                "scientific-materialize-many",
+                "--commands-json",
+                json.dumps(materializer_commands, separators=(",", ":")),
+            ]
+            init_containers.append(materializer)
+        else:
+            init_containers.extend(materializer_containers)
         collection_deadline_seconds = max(1, execution.active_deadline_seconds - COLLECTION_DEADLINE_MARGIN_SECONDS)
         collector = {
             "name": COLLECTOR_CONTAINER_NAME,

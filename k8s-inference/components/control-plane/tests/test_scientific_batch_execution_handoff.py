@@ -728,6 +728,59 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
     assert model["image"].endswith("@" + expected_stage_digest)
     assert model_environment["FS2_STAGE_IMAGE_DIGEST"] == expected_stage_digest
     assert collector_environment["FS2_STAGE_IMAGE_DIGEST"] == expected_stage_digest
+    materializations = tuple(
+        ResolvedArtifactMaterialization.resolve(
+            ArtifactMaterialization(
+                artifact_id=f"input-{i}",
+                destination=f"{invocation.working_directory}/input-{i}.json",
+                mode=MaterializationMode.COPY_FILE,
+            ),
+            artifact_id=uuid4(),
+            digest=sha(f"input-{i}"),
+            size_bytes=i,
+            media_type="application/json",
+            compression=None,
+        )
+        for i in (1, 2)
+    )
+    for count in (1, 2):
+        materialized = renderer.render(
+            replace(
+                resource,
+                materializations=materializations[:count],
+                invocation=replace(
+                    invocation,
+                    consumes=tuple(item.logical_artifact_id for item in materializations[:count]),
+                    materializations=tuple(
+                        ArtifactMaterialization(
+                            artifact_id=item.logical_artifact_id, destination=item.destination, mode=item.mode
+                        )
+                        for item in materializations[:count]
+                    ),
+                ),
+            )
+        )
+        materializer_pod = materialized["spec"]["template"]["spec"]
+        initializers = [item for item in materializer_pod["initContainers"] if item["name"].startswith("materialize-")]
+        assert len(initializers) == 1
+        initializer = initializers[0]
+        assert initializer["resources"] == {
+            "requests": {"cpu": "100m", "memory": "256Mi"},
+            "limits": {"cpu": "1", "memory": "1Gi"},
+        }
+        assert initializer["volumeMounts"] == [
+            {"name": "artifact-workspace", "mountPath": "/mnt/fs2-scientific", "readOnly": False}
+        ]
+        command = initializer["command"]
+        if count == 1:
+            assert command[1] == "scientific-materialize"
+            entries = [command[2:]]
+        else:
+            assert command[:3] == ["fs2-serve", "scientific-materialize-many", "--commands-json"]
+            entries = json.loads(command[3])
+        assert [entry[entry.index("--artifact-id") + 1] for entry in entries] == [
+            str(item.artifact_id) for item in materializations[:count]
+        ]
     if use_tools_image:
         binding = plan.execution_binding("prepare")
         assert binding.model_runtime_image_digest == "sha256:" + "a" * 64
