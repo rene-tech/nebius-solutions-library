@@ -106,3 +106,19 @@ eviction attempt may be resumed with explicit `--donor-already-deleted`.
 
 These isolated receipts do not claim the optional original-scientific-command
 bridge, another GPU UUID, ESMFold2-Fast, or other scientific models are qualified.
+
+### Disk-cold result
+
+One clean disk-cold repetition also passed exact tensor validation and both
+full-production variable requests. After the previous process was deleted,
+file-scoped eviction covered all checkpoint `.img` files (~20.15GB); the restored
+process's `/proc/PID/io` reported ~20.15GB of actual reads. Pod-to-ready was
+**324.646s**, including CRIU 321.422s and CUDA restore 2.320s. Inference afterward
+took 3.112s/2.879s and again returned 506/241-atom structures.
+
+This result is materially slower than ordinary ~15s model loading. Keep normal
+loading as the default; the warm-file-cache result does not justify enabling
+this Network-SSD L2 path. One cold repetition establishes this constraint,
+not a statistically qualified performance distribution. Receipt:
+`persistent-disk-cold-r2/receipt.json`, SHA-256
+`d1088a90e4eaaa745c0c827970866850e8ed169b8e03a3da5e488c562d21585c`.
