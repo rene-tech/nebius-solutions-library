@@ -119,6 +119,47 @@ acceptance/scientific-fleet/run_checks.sh
 
 ## Complete fleet acceptance and benchmark receipt
 
+### Varied customer inputs and concurrent batch jobs
+
+The fixed canaries below prove that a deployment can finish one bounded
+request per model. They do not establish general input support or batch
+scalability. Run the separate scenario campaign after a runtime release:
+
+```bash
+python3 acceptance/scientific-fleet/run_scenario_acceptance.py \
+  --endpoint https://inference.example \
+  --scenarios acceptance/scientific-fleet/scenarios/customer-readiness.json \
+  --receipt-root /secure/fs2-acceptance \
+  --run-id customer-readiness-20260906 --max-parallel 12
+```
+
+This uses the same `FS2_INFERENCE_TOKEN` and public artifact-upload/submit/result
+API. Five structure workflows receive a different 76-residue ubiquitin input,
+including updated artifact bytes and manifest digest chains. The design
+workflows change seeds, candidate counts, binder lengths or shard counts.
+RFdiffusion, mosaic and BindCraft explicitly require all requested independent
+shards to succeed. Two concurrent BoltzGen requests exercise both
+`customer-batch` and `bulk-backfill`; a separate operation tests cancellation.
+Every completion also checks that replaying the same submission returns its
+original operation ID without allocating additional work.
+
+Scenario `parameters` replace corresponding top-level parameter fields;
+`artifact_json` replaces named JSON artifacts from the model-owned fixture.
+The runner rehashes each artifact and its containing manifest before upload.
+Receipts retain exact parameters, input and execution identities, semantic
+result evidence, stage decisions, admissions, attempt intervals and wall time.
+The aggregate reports peak overlapping admitted GPU attempts. This is actual
+admission overlap, not a claim of continuously busy GPUs. Priority values in
+the receipts establish policy assignment; saturated-queue ordering and node
+scale-from-zero require separate live evidence.
+
+The current BoltzGen adapter accepts at most two shards, 20 candidates per
+shard, 24 candidates per request in total, and three selected winners per
+shard. Larger campaigns use concurrent requests. These are executable
+packaging bounds, not an upstream model limit. Unsupported combinations must
+return HTTP 422 before job admission; the `invalid-requests.json` scenario
+checks the cross-shard total bound without launching GPUs.
+
 `run_fleet_acceptance.py` discovers the five primary activation fragments and
 the five secondary public-acceptance records committed under `models/`, then
 runs the single-model client above in separate child processes. `--max-parallel`

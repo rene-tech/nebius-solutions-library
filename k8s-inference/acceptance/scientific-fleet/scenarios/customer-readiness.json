@@ -1,0 +1,98 @@
+[
+  {
+    "id": "proteina-three-samples",
+    "model_id": "proteina-complexa",
+    "parameters": {"num_samples": 3, "seed": 4, "run_name": "customer-readiness-pdl1"}
+  },
+  {
+    "id": "boltzgen-bulk",
+    "model_id": "boltzgen",
+    "service_class": "bulk-backfill",
+    "parameters": {
+      "batches": [
+        {"shard_id": "pdl1-face-b", "num_designs": 20, "budget": 1, "reuse_completed": false}
+      ]
+    }
+  },
+  {
+    "id": "boltzgen-customer",
+    "model_id": "boltzgen",
+    "service_class": "customer-batch",
+    "parameters": {"batches": [{"shard_id": "pdl1-face-a", "num_designs": 20, "budget": 1, "reuse_completed": false}]}
+  },
+  {
+    "id": "bindcraft-two-designs",
+    "model_id": "bindcraft",
+    "parameters": {"designs": 2},
+    "expected_shards": {"design": 2}
+  },
+  {
+    "id": "mosaic-two-shards",
+    "model_id": "mosaic",
+    "service_class": "bulk-backfill",
+    "parameters": {"shard_count": 2, "binder_length": 44, "optimizer_steps": 30, "base_seed": 7400},
+    "expected_shards": {"design": 2}
+  },
+  {
+    "id": "rfdiffusion-four-designs",
+    "model_id": "rfdiffusion",
+    "service_class": "bulk-backfill",
+    "parameters": {"num_designs": 4, "contigs": ["96-96"], "seed": 8200},
+    "expected_shards": {"inference": 4}
+  },
+  {
+    "id": "esmfold2-ubiquitin",
+    "model_id": "esmfold2",
+    "parameters": {"sequence": "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG", "seed": 102},
+    "artifact_json": {
+      "esmfold2-input": {
+        "sequences": [{"id": "A", "sequence": "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG", "type": "protein"}]
+      }
+    }
+  },
+  {
+    "id": "esmfold2-fast-ubiquitin",
+    "model_id": "esmfold2-fast",
+    "parameters": {"sequence": "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG", "seed": 102},
+    "artifact_json": {
+      "esmfold2-fast-input": {
+        "sequences": [{"id": "A", "sequence": "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG", "type": "protein"}]
+      }
+    }
+  },
+  {
+    "id": "protenix-two-seeds",
+    "model_id": "protenix-v2",
+    "parameters": {"model_seeds": [101, 102]},
+    "artifact_json": {
+      "protenix-input": [{"name": "ubiquitin", "sequences": [{"proteinChain": {"count": 1, "sequence": "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG"}}]}]
+    }
+  },
+  {
+    "id": "openfold-two-seeds",
+    "model_id": "openfold3-openbind",
+    "parameters": {"model_seeds": [101, 102]},
+    "artifact_json": {
+      "openfold3-input": {
+        "queries": {"ubiquitin": {"chains": [{"chain_ids": ["A"], "molecule_type": "protein", "sequence": "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG"}]}}
+      }
+    }
+  },
+  {
+    "id": "alphafold3-ubiquitin",
+    "model_id": "alphafold3",
+    "artifact_json": {
+      "fold-input": {
+        "dialect": "alphafold3", "version": 2, "name": "ubiquitin", "modelSeeds": [2],
+        "sequences": [{"protein": {"id": "A", "sequence": "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG", "unpairedMsa": ">query\nMQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG\n", "pairedMsa": "", "templates": []}}]
+      }
+    }
+  },
+  {
+    "id": "cancel-bulk-rfdiffusion",
+    "model_id": "rfdiffusion",
+    "service_class": "bulk-backfill",
+    "cancel": true,
+    "parameters": {"num_designs": 2, "seed": 8300}
+  }
+]

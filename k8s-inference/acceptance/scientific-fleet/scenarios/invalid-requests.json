@@ -1,0 +1,13 @@
+[
+  {
+    "id": "boltzgen-total-bound",
+    "model_id": "boltzgen",
+    "expected_error_code": "http_submit_422",
+    "parameters": {
+      "batches": [
+        {"shard_id": "one", "num_designs": 20, "budget": 1, "reuse_completed": false},
+        {"shard_id": "two", "num_designs": 20, "budget": 1, "reuse_completed": false}
+      ]
+    }
+  }
+]
