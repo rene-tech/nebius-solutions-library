@@ -83,7 +83,8 @@ COPY --chmod=0444 k8s-inference/models/cancer-immunotherapy/runtime-images/mosai
 # Scientific companions share the model pod's UID (often 1000), rather than
 # the gateway's UID 65532. Build contexts may have a restrictive umask; make
 # this public, immutable catalog readable independently of the build host.
-RUN chmod -R u=rwX,go=rX /opt/fs2/catalog
+RUN chmod -R u=rwX,go=rX /opt/fs2/catalog \
+    && chmod 0755 /opt/fs2/bin /opt/fs2/mosaic
 
 # Exercise the actual collector identity before publication, not just root's
 # ability to stat the schema. Every model stage needs this schema to commit.
