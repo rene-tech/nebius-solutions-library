@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -46,17 +47,34 @@ def stop_restored_worker(directory: Path) -> None:
         pass
 
 
+def prepare_restore_scratch(source: Path, directory: Path) -> None:
+    """Copy tiny mutable runtime files, never the shared checkpoint pages."""
+    shutil.copytree(source / "cache", directory / "cache")
+    shutil.copy2(source / "worker.log", directory / "worker.log")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("donor", "restore"))
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--fallback", choices=("normal-load", "fail"), default="normal-load")
     parser.add_argument("--allow-device-remap", action="store_true")
+    parser.add_argument("--source-directory", type=Path, help="read-only captured bundle; images mounted separately")
+    parser.add_argument("--request-uid", type=int)
+    parser.add_argument("--request-gid", type=int)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     args.directory.mkdir(parents=True, exist_ok=True)
     # JIT launchers are file-backed executable mappings in a checkpoint. They
     # must outlive the donor container just like the checkpoint pages do.
+    if (args.request_uid is None) != (args.request_gid is None):
+        parser.error("request UID and GID must be supplied together")
+    preparation_error = None
+    if args.mode == "restore" and args.source_directory:
+        try:
+            prepare_restore_scratch(args.source_directory, args.directory)
+        except (OSError, shutil.Error) as error:
+            preparation_error = str(error)
     configure_runtime_cache(args.directory)
     Path("/tmp/empty-criu-plugins").mkdir(exist_ok=True)
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
@@ -81,12 +99,16 @@ def main() -> None:
         ]
         if args.allow_device_remap:
             restore_command.append("--allow-device-remap")
-        result = subprocess.run(restore_command, check=False)
-        restored = result.returncode == 0
+        result_code = 1
+        if preparation_error:
+            print(json.dumps({"event": "snapshot_scratch_unavailable", "error": preparation_error}), flush=True)
+        else:
+            result_code = subprocess.run(restore_command, check=False).returncode
+        restored = result_code == 0
         if not restored:
             stop_restored_worker(args.directory)
         if not restored and (not command or args.fallback == "fail"):
-            raise SystemExit(result.returncode)
+            raise SystemExit(result_code)
         if command:
             # The original scientific invocation remains the one-shot request.
             # Only its model loading is redirected into this pod's worker.
@@ -99,7 +121,11 @@ def main() -> None:
                 "event": "scientific_snapshot_request",
                 "mechanism": "cuda-criu-restored" if restored else "normal-load-fallback",
             }), flush=True)
-            child = subprocess.Popen(command, env=environment, start_new_session=True)
+            child = subprocess.Popen(
+                command, env=environment, start_new_session=True,
+                user=args.request_uid, group=args.request_gid,
+                extra_groups=[] if args.request_uid is not None else None,
+            )
 
             def forward_signal(signum, _frame):
                 try:

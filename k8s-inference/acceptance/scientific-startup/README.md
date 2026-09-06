@@ -57,3 +57,52 @@ NVIDIA's [pinned CUDA checkpoint documentation](https://github.com/NVIDIA/cuda-c
 lists driver 580 GPU migration and container partial passthrough support. UVM
 and `cuMemExportToShareableHandle()` IPC have separate restrictions. A model
 must be tested; GPU family or driver version alone does not qualify it.
+
+## Fresh-pod persisted ESMFold2 proof
+
+The same immutable model image/artifacts above, with the versioned runtime
+scripts captured in `persistent-trimmed/runtime-source.json`, passed three
+independent CUDA/CRIU restores. Each repetition deleted the preceding GPU pod
+before creating a new pod and verified all tensor bytes before serving two
+different inputs at the full 20-loop/200-step settings. This does release and
+reacquire the Kubernetes GPU allocation; it is not only same-process offload.
+
+| Repetition | Pod creation to ready | CRIU restore | CUDA restore | 65aa inference | 34aa inference |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 12.687s | 8.590s | 2.319s | 3.107s | 2.789s |
+| 2 | 11.453s | 8.272s | 2.343s | 3.102s | 2.828s |
+| 3 | 11.453s | 8.298s | 2.332s | 3.132s | 2.810s |
+
+Cache identity: same H100 node/GPU and approximately 19Gi checkpoint on a
+128Gi Network SSD PVC, **OS file page cache retained**. No local NVMe or
+accounted/reserved RAM tier was used. The six outputs contained 506/241 atoms
+and bounded confidence; all 2,396 model tensors matched SHA-256
+`e2cf596cd20db6910e534ea62719a8c8fe2bd2cd8cead03ba43b48475c37dbf9`.
+The one capture included 320.184s of fsync in addition to CUDA 6.113s and CRIU
+9.494s. Capture was fully durable before deleting the donor.
+
+An earlier 31Gi capture failed fresh-pod restore because a Triton executable
+mapping lived in the deleted container. The fix persists Torch/Triton/CUDA
+generated-code caches beside the checkpoint. Unused allocator trimming reduced
+reserved CUDA memory from 26.77GB to 14.32GB while preserving all live tensors;
+that one-shot size reduction is not reported as a three-repetition speedup.
+
+Evidence under the same private evidence root:
+
+- `persistent-trimmed/receipt.json`, SHA-256
+  `13c21b290dc3fad7968fae3aa1ee5128492ac31cca5c5ade1da1e707a50bc407`.
+- `persistent-trimmed/runtime-source.json`, SHA-256
+  `28fe3fc8fd4005f1e9f02c51ab745d965684ceecfb94c8faab8376523a7b1ab3`.
+- `persist-trimmed-capture.json`, `persist-trim-receipt.json`, six CIF files
+  and each restored pod's per-step lifecycle log.
+
+For disk-cold qualification, `benchmark_persistent_restore.py` additionally
+accepts `--eviction-holder POD --checkpoint-directory /checkpoints/RUN/images`.
+It deletes the previous GPU process first, fsyncs and applies `POSIX_FADV_DONTNEED`
+only to this checkpoint's `.img` files, then creates the fresh restore pod.
+It never drops host-wide caches. Log files are excluded because they are not
+checkpoint memory and may be private to CRIU's root process. An interrupted
+eviction attempt may be resumed with explicit `--donor-already-deleted`.
+
+These isolated receipts do not claim the optional original-scientific-command
+bridge, another GPU UUID, ESMFold2-Fast, or other scientific models are qualified.

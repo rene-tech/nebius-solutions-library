@@ -63,6 +63,7 @@ def main() -> None:
     parser.add_argument("--pid", type=int)
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--tools", type=Path, default=Path("/tools"))
+    parser.add_argument("--restore-work-directory", type=Path, default=Path("/tmp/fs2-checkpoint-work"))
     parser.add_argument("--allow-device-remap", action="store_true", help="opt in only after cross-GPU qualification")
     args = parser.parse_args()
     environment = os.environ.copy()
@@ -142,8 +143,10 @@ def main() -> None:
             if remap and not args.allow_device_remap:
                 raise ValueError("snapshot requires another GPU UUID; device remapping is not qualified/enabled")
             validate_generated_cache(args.directory, compatibility["generated_cache"])
+            args.restore_work_directory.mkdir(parents=True, exist_ok=True)
             run([
                 *criu, "restore", "--images-dir", str(args.directory),
+                "--work-dir", str(args.restore_work_directory),
                 "--shell-job", "--restore-detached", "--log-file", "restore.log", "-v4",
                 "--file-locks", "--tcp-established", "--manage-cgroups=ignore",
                 "--libdir", "/tmp/empty-criu-plugins",

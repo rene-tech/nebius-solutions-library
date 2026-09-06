@@ -119,3 +119,23 @@ def test_new_request_kernels_do_not_invalidate_captured_code(tmp_path):
     captured.write_bytes(b"different executable")
     with pytest.raises(ValueError, match="missing or differs"):
         helper.validate_generated_cache(tmp_path / "images", manifest)
+
+
+def test_restore_scratch_copies_only_mutable_small_files(tmp_path):
+    spec = importlib.util.spec_from_file_location("supervisor", SOURCE.with_name("supervisor.py"))
+    supervisor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(supervisor)
+    bundle = tmp_path / "bundle"
+    (bundle / "cache").mkdir(parents=True)
+    (bundle / "cache" / "kernel.so").write_bytes(b"jit kernel")
+    (bundle / "worker.log").write_text("worker ready\n")
+    (bundle / "images").mkdir()
+    (bundle / "images" / "pages.img").write_bytes(b"shared checkpoint")
+    scratch = tmp_path / "attempt"
+    scratch.mkdir()
+    supervisor.prepare_restore_scratch(bundle, scratch)
+    assert (scratch / "cache" / "kernel.so").read_bytes() == b"jit kernel"
+    assert (scratch / "worker.log").read_text() == "worker ready\n"
+    assert not (scratch / "images").exists()
+    with pytest.raises(FileExistsError):
+        supervisor.prepare_restore_scratch(bundle, scratch)
