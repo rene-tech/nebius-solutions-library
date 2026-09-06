@@ -74,6 +74,17 @@ WORKDIR /workspace/k8s-inference/components/control-plane
 COPY --from=builder --chown=65532:65532 /workspace/k8s-inference/components/control-plane/.venv ./.venv
 COPY --from=builder --chown=65532:65532 /workspace/runtime-catalog /opt/fs2/catalog
 
+# Scientific companions share the model pod's UID (often 1000), rather than
+# the gateway's UID 65532. Build contexts may have a restrictive umask; make
+# this public, immutable catalog readable independently of the build host.
+RUN chmod -R u=rwX,go=rX /opt/fs2/catalog
+
+# Exercise the actual collector identity before publication, not just root's
+# ability to stat the schema. Every model stage needs this schema to commit.
+USER 1000:1000
+RUN python -I -c "import json; from pathlib import Path; schema=json.loads(Path('/opt/fs2/catalog/schema/scientific-artifact-manifest.schema.json').read_text()); assert schema['type'] == 'object'"
+USER 0:0
+
 ARG FS2_SOURCE_COMMIT
 ARG FS2_SOURCE_TREE
 ARG FS2_UV_LOCK_SHA256
