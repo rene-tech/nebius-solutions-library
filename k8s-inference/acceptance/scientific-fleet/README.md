@@ -173,6 +173,15 @@ Concurrent requests may reuse the same shard ID because each operation has
 its own workspace; an arbitrary rename without changing the archive is not
 a valid input-variation test.
 
+The live [H100 varied-input report](evidence/customer-readiness-h100-20260906.md)
+records ten working profiles, exact result delivery, known cold-start
+measurement boundaries, and the CPU-stage image-pull optimization finding.
+`scenarios/priority-scale.json` deliberately submits eighteen independent
+one-GPU RFdiffusion shards followed by a higher-priority customer request.
+Use it only when the operator has reserved enough test capacity; it can
+preempt lower-priority scientific work through the existing Kueue policy.
+It does not change node pool bounds, quotas or resource limits.
+
 `run_fleet_acceptance.py` discovers the five primary activation fragments and
 the five secondary public-acceptance records committed under `models/`, then
 runs the single-model client above in separate child processes. `--max-parallel`

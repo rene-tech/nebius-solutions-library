@@ -1,0 +1,17 @@
+[
+  {
+    "id": "bulk-rfdiffusion-eighteen-designs",
+    "model_id": "rfdiffusion",
+    "service_class": "bulk-backfill",
+    "parameters": {"num_designs": 18, "contigs": ["96-96"], "seed": 8400},
+    "expected_shards": {"inference": 18}
+  },
+  {
+    "id": "customer-rfdiffusion-priority",
+    "model_id": "rfdiffusion",
+    "service_class": "customer-batch",
+    "delay_seconds": 25,
+    "parameters": {"num_designs": 1, "contigs": ["96-96"], "seed": 8500},
+    "expected_shards": {"inference": 1}
+  }
+]
