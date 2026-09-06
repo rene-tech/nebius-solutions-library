@@ -356,7 +356,7 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
         entry_point_files = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
         assert len(entry_point_files) == 1
         entry_points = wheel_archive.read(entry_point_files[0]).decode()
-        assert "fs2-serve = fs2_serve.cli:main" in entry_points
+        assert "fs2-serve = fs2_serve.entrypoint:main" in entry_points
     environment = tmp_path / "environment"
     subprocess.run(  # noqa: S603 - executable and arguments are locally resolved, never user input.
         [uv, "venv", "--python", sys.executable, str(environment)],
