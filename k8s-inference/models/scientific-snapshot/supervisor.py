@@ -76,6 +76,12 @@ def main() -> None:
         except (OSError, shutil.Error) as error:
             preparation_error = str(error)
     configure_runtime_cache(args.directory)
+    if args.request_uid is not None:
+        # Normal-load fallback runs as the same non-root scientific identity;
+        # its JIT caches must be writable too, not only the output workspace.
+        cache = args.directory / "cache"
+        for path in (cache, *cache.rglob("*")):
+            os.chown(path, args.request_uid, args.request_gid)
     Path("/tmp/empty-criu-plugins").mkdir(exist_ok=True)
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if args.mode == "donor":
