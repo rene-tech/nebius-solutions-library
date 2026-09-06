@@ -176,6 +176,10 @@ a valid input-variation test.
 The live [H100 varied-input report](evidence/customer-readiness-h100-20260906.md)
 records ten working profiles, exact result delivery, known cold-start
 measurement boundaries, and the CPU-stage image-pull optimization finding.
+
+The [live admin access and dispatch-policy acceptance](evidence/customer-access-policy-h100-8bb53aab-20260906.md)
+also verifies scoped scientific keys, revocation, durable pause/resume and
+cap-one serialized H100 execution, with original settings restored afterward.
 The [optimized-stage H100 report](evidence/optimized-stages-h100-29b7e01a-20260906.md)
 adds three varied Mosaic/RF repetitions on the lightweight CPU image, exact
 init-transition timings, invalid-input rejection and real admin-UI cancellation.
