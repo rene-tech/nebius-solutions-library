@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import io
+import json
 import sys
+import tarfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -73,6 +75,16 @@ class ScenarioTests(unittest.TestCase):
                 request["input_manifest"]["sha256"]
                 != original[1]["input_manifest"]["sha256"]
             )
+            if scenario["model_id"] == "boltzgen":
+                campaign = next(
+                    item for item in declarations if item.name == "campaign-input"
+                )
+                with tarfile.open(
+                    fileobj=io.BytesIO(campaign.data), mode="r:gz"
+                ) as bundle:
+                    names = set(bundle.getnames())
+                for shard in request["parameters"]["batches"]:
+                    self.assertIn(f"design-specs/{shard['shard_id']}.yaml", names)
         self.assertEqual(changed_inputs, 5)
 
     def test_unknown_input_is_rejected_before_upload(self) -> None:

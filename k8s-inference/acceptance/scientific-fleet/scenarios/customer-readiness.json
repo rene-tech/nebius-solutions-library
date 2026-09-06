@@ -10,7 +10,7 @@
     "service_class": "bulk-backfill",
     "parameters": {
       "batches": [
-        {"shard_id": "pdl1-face-b", "num_designs": 20, "budget": 1, "reuse_completed": false}
+        {"shard_id": "pdl1-face", "num_designs": 20, "budget": 1, "reuse_completed": false}
       ]
     }
   },
@@ -18,7 +18,7 @@
     "id": "boltzgen-customer",
     "model_id": "boltzgen",
     "service_class": "customer-batch",
-    "parameters": {"batches": [{"shard_id": "pdl1-face-a", "num_designs": 20, "budget": 1, "reuse_completed": false}]}
+    "parameters": {"batches": [{"shard_id": "pdl1-face", "num_designs": 20, "budget": 1, "reuse_completed": false}]}
   },
   {
     "id": "bindcraft-two-designs",
