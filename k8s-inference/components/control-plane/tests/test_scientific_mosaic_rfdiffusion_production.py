@@ -129,6 +129,23 @@ def _rfdiffusion_motif_plan() -> AdapterExecutionPlan:
     )
 
 
+def test_rfdiffusion_shards_bound_host_threads_without_changing_design_work() -> None:
+    plan = _plan(rfdiffusion.MODEL_ID, count=3)
+    gpu_stages = [invocation for invocation in plan.invocations if invocation.stage_id == "inference"]
+    assert len(gpu_stages) == 3
+    for index, invocation in enumerate(gpu_stages):
+        environment = dict(invocation.environment)
+        assert {name: environment[name] for name in (
+            "OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"
+        )} == {
+            "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1",
+            "OPENBLAS_NUM_THREADS": "1", "NUMEXPR_NUM_THREADS": "1",
+        }
+        assert environment["FS2_RFDIFFUSION_SEED"] == str(8100 + index)
+        assert invocation.shard_id == f"design-{index:03d}"
+        assert invocation.runtime_artifacts == (rfdiffusion.CHECKPOINT_ARTIFACT,)
+
+
 def _completion(invocation: StageInvocation, **overrides: object) -> bytes:
     command = invocation.argv[3:]
     value: dict[str, object] = {

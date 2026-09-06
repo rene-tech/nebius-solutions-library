@@ -75,6 +75,17 @@ RFdiffusion collection is the simplest case: its model container executes
 `python --version`; all real finalization already lives in the collector.
 Mosaic's aggregate helper imports only Python's standard library.
 
+The saturated RFdiffusion burst additionally exposed CPU oversubscription:
+PyTorch selected 64 host threads per shard inside a Pod limited to 16 cores.
+Multiple shards spent minutes generating the same scratch-local IGSO3
+schedules. A three-repetition, exact-array microbenchmark supports bounding
+each shard's CPU thread pools to one, without changing weights, diffusion
+steps, seeds or resource limits. The separate
+[thread evidence](rfdiffusion-host-threads-20260906.json) retains every sample,
+the varying-load limitation and the pending full-workflow acceptance gate.
+This follows PyTorch's guidance to avoid oversubscribing concurrent inference
+thread pools. [PyTorch CPU threading documentation](https://docs.pytorch.org/docs/2.14/notes/cpu_threading_torchscript_inference.html)
+
 ## Retained environment and evidence
 
 The H100 cluster remains running for customer testing. No quota, cap, resource
