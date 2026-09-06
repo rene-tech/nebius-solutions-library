@@ -167,6 +167,12 @@ packaging bounds, not an upstream model limit. Unsupported combinations must
 return HTTP 422 before job admission; the `invalid-requests.json` scenario
 checks the cross-shard total bound without launching GPUs.
 
+Each BoltzGen shard names a corresponding `design-specs/<shard_id>.yaml` in
+the uploaded campaign archive. Keep that filename and `shard_id` consistent.
+Concurrent requests may reuse the same shard ID because each operation has
+its own workspace; an arbitrary rename without changing the archive is not
+a valid input-variation test.
+
 `run_fleet_acceptance.py` discovers the five primary activation fragments and
 the five secondary public-acceptance records committed under `models/`, then
 runs the single-model client above in separate child processes. `--max-parallel`
