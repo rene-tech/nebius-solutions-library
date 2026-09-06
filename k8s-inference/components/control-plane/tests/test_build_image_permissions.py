@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib.util
 import os
 import stat
-import subprocess
 from pathlib import Path
 
 
@@ -17,17 +16,17 @@ def test_git_archive_preserves_readable_assets_under_private_release_umask(tmp_p
     spec.loader.exec_module(module)
     repo = tmp_path / "repo"
     repo.mkdir()
-    subprocess.run(["git", "init", "--quiet", str(repo)], check=True)
+    module._run(["git", "init", "--quiet", str(repo)], cwd=tmp_path)
     catalog = repo / "catalog"
     catalog.mkdir()
     (catalog / "schema.json").write_text('{"type":"object"}\n')
     script = repo / "runtime.sh"
     script.write_text("#!/bin/sh\nexit 0\n")
     script.chmod(0o755)
-    subprocess.run(["git", "add", "."], cwd=repo, check=True)
-    subprocess.run(
+    module._run(["git", "add", "."], cwd=repo)
+    module._run(
         ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--quiet", "-m", "fixture"],
-        cwd=repo, check=True,
+        cwd=repo,
     )
     destination = tmp_path / "private-context"
     destination.mkdir(mode=0o700)

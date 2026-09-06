@@ -19,6 +19,7 @@ from types import MappingProxyType
 from typing import Any, cast
 from uuid import UUID
 
+from .adapters.primitives import ScientificParameterError
 from .capability import ScientificWorkloadCapabilityAuthority
 from .catalog_adapter import CatalogProfileAdapterError
 from .companion import RUNTIME_LOCALIZATION_SCHEMA
@@ -40,7 +41,7 @@ from .models import (
     WorkloadKind,
     WorkloadResource,
 )
-from .profile_catalog import ScientificProfileCatalog, ScientificWorkloadProfile
+from .profile_catalog import ScientificProfileCatalog, ScientificRequestError, ScientificWorkloadProfile
 
 EXECUTION_SCHEMA = "fs2-serve.nebius.ai/scientific-execution-map/v3"
 PACKAGED_TOOLS_CATALOG_DIR = "/opt/fs2/catalog"
@@ -846,6 +847,8 @@ class FileScientificManifestRenderer:
                 access_context=access_context,
                 input_artifacts=input_artifacts,
             )
+        except ScientificParameterError as error:
+            raise ScientificRequestError("model parameters violate the executable scientific contract") from error
         except (AttributeError, ImportError, KeyError, TypeError, ValueError) as error:
             raise ScientificExecutionMapError(
                 "scientific plan adapter is unavailable or rejected the request"
