@@ -68,13 +68,18 @@ GPU occupied/active/idle intervals reconciled, but not every backend exposes
 separate weight-loading and compilation phases.
 
 Qwen and Cosmos also passed [general-serving checks](../acceptance/general-serving/README.md)
-on `29b7e01a`. Qwen's six short hot requests took 0.410–0.600 s from acceptance
-to completion; this is not maximum token throughput, and the non-streaming
-public path did not measure TTFT. Cosmos 3 Nano uses the native vLLM-Omni/Hugging
-Face route, not NIM. Six small text-to-video requests passed: 25 frames at
-448×256, with MP4 validation. One replica-cold activation on existing capacity
-took 67.72 s to ready; four hot operations took 1.25–1.55 s. The initial
-rollout/retry activation took 467.01 s to ready and is not a clean cold baseline.
+on separate releases. Qwen's six short hot requests on `29b7e01a` took
+0.410–0.600 s from acceptance to durable completion; this is not maximum token
+throughput, and the non-streaming public path did not measure TTFT.
+
+Cosmos 3 Nano uses the native vLLM-Omni/Hugging Face route, not NIM. Its six
+recovered-acceptance requests on `5fcc8323` passed: 25 frames at 448×256, with
+MP4 validation. One replica-cold activation on existing capacity took 67.72 s
+from acceptance to ready and 69.13 s to durable completion. Four hot operations
+took 1.25–1.55 s from acceptance to durable completion, not client polling time.
+The initial rollout/retry activation took 467.01 s to ready and 468.16 s to
+durable completion; it is not a clean cold baseline. These ready clocks include
+any queue/capacity/retry time, unlike the capacity-available fast-start clock.
 Larger media outputs and perceptual quality were not qualified by those tests.
 
 ## Manage customers, priorities, and capacity
