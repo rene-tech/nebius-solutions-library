@@ -58,6 +58,9 @@ import type {
   ScientificAccessState,
   ScientificAdmissionState,
   ScientificCapabilities,
+  ScientificModelPolicy,
+  ScientificModelPolicyList,
+  ScientificModelPolicyUpdate,
   ScientificModelReadinessList,
   ScientificRunDetail,
   ScientificRunList,
@@ -184,7 +187,7 @@ function boundedLimit(value: number | undefined, maximum: number, fallback: numb
 }
 
 interface EnvelopeRequest {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   query?: URLSearchParams;
   body?: unknown;
   authorization?: string;
@@ -321,6 +324,21 @@ export const adminApi = {
     }),
   scientificModels: (context: URLSearchParams, signal?: AbortSignal) =>
     request<ScientificModelReadinessList>("/scientific-models", context, undefined, signal),
+  scientificModelPolicies: (context: URLSearchParams, tenantId?: string, signal?: AbortSignal) =>
+    request<ScientificModelPolicyList>("/scientific-model-policies", context, { tenant_id: tenantId }, signal),
+  setScientificModelPolicy: (
+    modelId: string,
+    payload: ScientificModelPolicyUpdate,
+    context: URLSearchParams,
+    tenantId?: string,
+    signal?: AbortSignal,
+  ) =>
+    envelopeRequest<ScientificModelPolicy>(`/scientific-model-policies/${encodeURIComponent(modelId)}`, {
+      method: "PUT",
+      query: boundedParams(context, { tenant_id: tenantId }),
+      body: payload,
+      signal,
+    }),
   academicAssets: (context: URLSearchParams, signal?: AbortSignal) =>
     request<AcademicAssetReadinessList>("/academic-assets", context, {}, signal),
   capacity: (context: URLSearchParams, signal?: AbortSignal) =>

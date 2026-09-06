@@ -468,8 +468,10 @@ async def test_scientific_bridge_replays_directly_into_postgres_lifecycle_reposi
     detail = await repository.get_workload(attempt.attempt_id, tenant_id=state.tenant_id)
     assert detail is not None and detail.rollup is not None
     assert detail.subject.attempt_id == attempt.attempt_id
-    assert detail.rollup.scheduler_occupied_gpu_seconds == 10
-    assert detail.rollup.device_allocated_gpu_seconds == 10
+    # The authoritative Pod finished at t=10, before controller cleanup t=12.
+    # Scheduler occupancy starts at t=2 and observed device allocation at t=3.
+    assert detail.rollup.scheduler_occupied_gpu_seconds == 8
+    assert detail.rollup.device_allocated_gpu_seconds == 7
     assert detail.rollup.active_gpu_seconds == 3
     assert len([value for value in detail.signals if value.phase is LifecyclePhase.RELEASE]) == 1
 
@@ -945,7 +947,7 @@ async def test_scientific_grant_migrations_repair_drift_and_runtime_wait_checks_
         try:
             assert (
                 await migrated.fetchval("SELECT version FROM fs2_schema_migrations ORDER BY applied_at DESC LIMIT 1")
-                == "0023_scientific_batch_scheduling_digest_privilege.sql"
+                == "0024_scientific_model_policies.sql"
             )
             for role in ("fs2_serve_runtime", runtime_login):
                 for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):

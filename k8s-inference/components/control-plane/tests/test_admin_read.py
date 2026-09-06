@@ -771,6 +771,7 @@ def test_openapi_matches_typed_versioned_admin_contract(registry: Any, cipher: A
         models=cast(Any, object()),
         runs=cast(Any, object()),
         controls=cast(Any, object()),
+        policies=cast(Any, object()),
     )
     schema = create_app(runtime).openapi()
     contract = json.loads(
@@ -784,7 +785,7 @@ def test_openapi_matches_typed_versioned_admin_contract(registry: Any, cipher: A
         for path, path_item in schema["paths"].items()
         if path.startswith(contract["api_prefix"])
         for method in path_item
-        if method in {"get", "post", "patch", "delete"}
+        if method in {"get", "post", "put", "patch", "delete"}
     }
     assert actual == expected
     encoded = json.dumps({path: schema["paths"][path] for path, _ in expected}, sort_keys=True)

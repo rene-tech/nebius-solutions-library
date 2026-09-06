@@ -16,6 +16,7 @@ import {
 } from "./modelDeploymentFixtures.ts";
 import {
   scientificCapabilitiesFixture,
+  scientificModelPolicyListFixture,
   scientificModelReadinessFixture,
   scientificRunDetailFixture,
   scientificRunListFixture,
@@ -202,6 +203,12 @@ export function browserFixture(path: string): unknown | undefined {
   if (path === "/admin/api/v1/scientific-runs") return envelope(scientificRunListFixture);
   if (path.startsWith("/admin/api/v1/scientific-runs/")) return envelope(scientificRunDetailFixture);
   if (path === "/admin/api/v1/scientific-models") return envelope(scientificModelReadinessFixture);
+  if (path === "/admin/api/v1/scientific-model-policies") return envelope(scientificModelPolicyListFixture);
+  if (path.startsWith("/admin/api/v1/scientific-model-policies/")) {
+    const modelId = decodeURIComponent(path.slice("/admin/api/v1/scientific-model-policies/".length));
+    const policy = scientificModelPolicyListFixture.items.find((item) => item.model_id === modelId);
+    return policy ? envelope(policy) : undefined;
+  }
   if (path === "/admin/api/v1/academic-assets") return envelope(academicAssetReadinessFixture);
   if (path === "/admin/api/v1/capacity") return envelope(capacityFixture);
   if (path === "/admin/api/v1/observability") return envelope(observabilityFixture);

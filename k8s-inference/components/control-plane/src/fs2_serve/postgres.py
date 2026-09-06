@@ -206,10 +206,7 @@ def _upgrade_legacy_model_deployment_status(value: dict[str, Any]) -> dict[str, 
         if not isinstance(paths, list):
             continue
         if any(
-            isinstance(path, dict)
-            and "identity_digest" not in path
-            and "identityDigest" not in path
-            for path in paths
+            isinstance(path, dict) and "identity_digest" not in path and "identityDigest" not in path for path in paths
         ):
             needs_upgrade = True
             break
@@ -238,11 +235,7 @@ def _upgrade_legacy_model_deployment_status(value: dict[str, Any]) -> dict[str, 
         active_paths: list[object] = []
         legacy_paths: list[dict[str, Any]] = []
         for path in paths:
-            if (
-                not isinstance(path, dict)
-                or "identity_digest" in path
-                or "identityDigest" in path
-            ):
+            if not isinstance(path, dict) or "identity_digest" in path or "identityDigest" in path:
                 active_paths.append(path)
                 continue
 
@@ -478,6 +471,7 @@ class PostgresStore:
                     f"fs2_scientific_run_results,fs2_scientific_artifact_events,"
                     f"fs2_scientific_retention_ledger,fs2_scientific_batches,"
                     f"fs2_scientific_batch_events,fs2_scientific_admission_outbox,"
+                    f"fs2_scientific_model_policies,"
                     f"fs2_reporting_model_usage,fs2_reporting_principal_usage,"
                     f"fs2_reporting_terminal_totals,fs2_activation_intents,fs2_activation_events,"
                     f"fs2_activation_target_state,fs2_activation_controller_status,"
@@ -507,6 +501,8 @@ class PostgresStore:
                     f"fs2_scientific_guard_retention_delete(),"
                     f"fs2_scientific_batch_state_immutable(),"
                     f"fs2_scientific_batch_append_only(),"
+                    f"fs2_scientific_model_policy_forward(),"
+                    f"fs2_scientific_dispatch_hold(text,text),"
                     f"fs2_reject_telemetry_mutation() FROM {role}"
                 )
             await connection.execute(
@@ -554,6 +550,13 @@ class PostgresStore:
             await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_batch_events TO {quoted_runtime}")
             await connection.execute(
                 f"GRANT SELECT,INSERT,UPDATE,DELETE ON fs2_scientific_admission_outbox TO {quoted_runtime}"
+            )
+            # Operator dispatch policy: the API writes rows under an advisory
+            # lock and the controller evaluates the shared SQL predicate; no
+            # DELETE exists because a cleared policy is an explicit revision.
+            await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_scientific_model_policies TO {quoted_runtime}")
+            await connection.execute(
+                f"GRANT EXECUTE ON FUNCTION fs2_scientific_dispatch_hold(text,text) TO {quoted_runtime}"
             )
             await connection.execute(
                 f"GRANT DELETE ON fs2_scientific_stage_attempts,fs2_scientific_artifacts,"
@@ -715,6 +718,22 @@ class PostgresStore:
                             "'public.fs2_scientific_batches','scheduling_digest','UPDATE')"
                             " AND has_column_privilege(current_user,"
                             "'public.fs2_scientific_batches','scheduling_digest','UPDATE')"
+                            " AND has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_model_policies','SELECT')"
+                            " AND has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_model_policies','INSERT')"
+                            " AND has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_model_policies','UPDATE')"
+                            " AND has_table_privilege(current_user,"
+                            "'public.fs2_scientific_model_policies','SELECT')"
+                            " AND has_table_privilege(current_user,"
+                            "'public.fs2_scientific_model_policies','INSERT')"
+                            " AND has_table_privilege(current_user,"
+                            "'public.fs2_scientific_model_policies','UPDATE')"
+                            " AND has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
+                            " AND has_function_privilege(current_user,"
+                            "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
                         )
                     if not runtime_privileges_ready:
                         raise RuntimeError("database schema runtime privileges are incomplete")
@@ -835,9 +854,7 @@ class PostgresStore:
             name=row["name"],
             tenant_id=row["tenant_id"],
             revision=row["revision"],
-            status=ModelDeploymentObservedStatus.model_validate(
-                _upgrade_legacy_model_deployment_status(raw_status)
-            ),
+            status=ModelDeploymentObservedStatus.model_validate(_upgrade_legacy_model_deployment_status(raw_status)),
             observed_at=row["observed_at"],
         )
 

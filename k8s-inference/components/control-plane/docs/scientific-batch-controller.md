@@ -385,6 +385,62 @@ identity over Operation, stage, shard, attempt, phase, kind, and bounded code.
 The repository assigns one increasing sequence per Operation and deduplicates
 by event identity, so reconcile replay cannot double count a phase.
 
+## Operator dispatch policy (pause and active-run cap)
+
+Migration `0024_scientific_model_policies.sql` adds the one operator lever over
+scientific admission that needs no Terraform apply: `fs2_scientific_model_policies`
+holds at most one row per `(model_id, scope)`, where the scope is either every
+tenant (`tenant_id IS NULL`) or one tenant. A row carries `paused`,
+`max_active_runs` (1..64 or NULL), an optional operator reason, the actor, and a
+`revision` that a SQL trigger forces to advance by exactly one; the scope itself
+is immutable. Writes go through `PostgresScientificModelPolicyRepository.set`,
+which takes the model's transaction-level advisory lock
+(`hashtextextended('fs2-scientific-model-policy' || chr(31) || model_id, 0)`),
+requires the caller's `expected_revision` to equal the durable revision
+(0 when the row is absent), and appends a `scientific_model_policy.set`
+row to the existing `fs2_audit_events` ledger. A stale revision is rejected,
+never merged.
+
+Enforcement is the SQL predicate `fs2_scientific_dispatch_hold(model_id,
+tenant_id)`: NULL when the controller may dispatch, `'paused'` when the tenant
+row or the all-tenants row is paused, `'concurrency'` when a row's cap is met.
+The all-tenants cap counts `status='running'` batches across tenants; a tenant
+cap counts that tenant's only. "Active" therefore means dispatched to
+Kubernetes/Kueue and not yet terminal, which includes Kueue-pending and
+cancelling work, because both still hold a controller-owned Job. The
+controller consults the predicate in two places and nowhere else:
+
+1. `claim_next` skips a queued, non-cancelling batch whose predicate is not
+   NULL. Held work stays durable in `fs2_scientific_batches` at its current
+   revision, while running, cancelling, and terminal-unpublished batches remain
+   claimable, so pausing stops new dispatch only: running work drains to its
+   own terminal state and result publication is unaffected. Dispatchable queued
+   batches are claimed before other rows, ordered by their frozen Kueue
+   `workload_priority_value` and then acceptance time, so a slot that opens
+   goes to the run Kueue would have preferred.
+2. `replace` re-evaluates the predicate under the same advisory lock inside the
+   fenced transaction that moves a batch from `queued` to `running`. Two
+   replicas can claim two different queued batches for one model before either
+   commits; the second transition then waits on the lock, sees the first
+   commit, and raises `ScientificDispatchHeldError`. The production reconciler
+   is `PolicyAwareScientificBatchController` (in
+   `scientific_batch/policy.py`, wired by the CLI), which treats that error as
+   a quiet no-op (no Kubernetes apply, no event, no failure count) so the batch
+   is re-evaluated on a later poll. The frozen `controller.py` and
+   `protocols.py` modules, and therefore every qualified runtime recipe
+   identity, are unchanged by this feature.
+
+A policy never edits an admitted batch, its frozen scheduling snapshot,
+per-run resource requests, or input limits; it never raises Kueue ClusterQueue
+quota or Terraform-owned node-pool ceilings, and it is not preemptive. The
+admin surface (`GET /admin/api/v1/scientific-model-policies`,
+`PUT /admin/api/v1/scientific-model-policies/{model_id}`, advertised as the
+`model_policy` capability) reports the desired scope row, the inherited
+all-tenants row for a tenant scope, the effective decision from the same
+predicate, and durable queued/running counts; held queued runs show the hold
+in their `admission_reason`. Nothing in this path is a resident or always-hot
+scientific runtime: only batch Jobs exist.
+
 ## Repository transaction contract
 
 `ScientificBatchRepository.replace` is the single durable write boundary. A
@@ -393,8 +449,12 @@ production adapter must, in one transaction:
 1. verify the current controller claim and unexpired fencing token;
 2. compare the expected batch revision;
 3. prove the immutable plan and scheduling snapshot did not change;
-4. replace orchestration state at exactly the next revision; and
-5. append new lifecycle/controller events, deduplicated by `event_id`, with
+4. for the one `queued -> running` transition of a non-cancelling batch, hold
+   the model's dispatch advisory lock and refuse the write with
+   `ScientificDispatchHeldError` when `fs2_scientific_dispatch_hold` reports a
+   pause or a met active-run cap;
+5. replace orchestration state at exactly the next revision; and
+6. append new lifecycle/controller events, deduplicated by `event_id`, with
    monotonically increasing sequences.
 
 Artifact publication is a separate atomic producer transaction. Readers see
@@ -733,7 +793,9 @@ PYTHONPATH="src:../../catalog/runtime" uv run pytest -q \
 
 # Requires a disposable PostgreSQL database.
 FS2_TEST_DATABASE_URL=postgresql://... uv run pytest -q \
-  tests/test_postgres_integration.py -k scientific_batch
+  tests/test_postgres_integration.py -k scientific_batch \
+  tests/test_scientific_batch_postgres_state.py \
+  tests/test_scientific_model_policy_postgres.py
 
 # Includes schema-valid test values, Helm lint/template, static checks, and the full suite.
 bash scripts/test.sh

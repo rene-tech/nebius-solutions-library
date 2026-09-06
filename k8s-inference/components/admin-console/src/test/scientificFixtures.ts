@@ -2,7 +2,11 @@ import type {
   ScientificAccessGate,
   ScientificBackendIdentity,
   ScientificCapabilities,
+  ScientificDispatchCounts,
   ScientificEvidenceMeasurement,
+  ScientificModelPolicy,
+  ScientificModelPolicyEnforcement,
+  ScientificModelPolicyList,
   ScientificModelReadiness,
   ScientificModelReadinessList,
   ScientificRunDetail,
@@ -602,4 +606,98 @@ export const scientificCapabilitiesFixture: ScientificCapabilities = {
   run_history: { available: true, reason: null },
   artifacts: { available: true, reason: null },
   run_control: { available: true, reason: null },
+  model_policy: { available: true, reason: null },
+};
+
+const policyEnforcement: ScientificModelPolicyEnforcement = {
+  boundary: "controller-dispatch",
+  running_work_drains: true,
+  result_delivery_unaffected: true,
+  preemptive: false,
+  capacity_authority: "kueue-quota-and-terraform-node-pools",
+  resident_runtime: "none-batch-jobs-only",
+};
+
+function openPolicy(modelId: string, counts: ScientificDispatchCounts = { queued: 0, running: 0 }): ScientificModelPolicy {
+  return {
+    model_id: modelId,
+    scope_tenant_id: null,
+    catalog_known: true,
+    desired: { tenant_id: null, revision: 0, paused: false, max_active_runs: null, reason: null, updated_by: null, updated_at: null },
+    inherited: null,
+    effective: {
+      state: "open",
+      paused: false,
+      max_active_runs: null,
+      reason: `Dispatch for all tenants is open with no operator cap; Kueue quota remains the ceiling. ${counts.running} running, ${counts.queued} queued.`,
+    },
+    counts,
+    all_tenants_counts: counts,
+    enforcement: policyEnforcement,
+  };
+}
+
+export const rfdiffusionCappedPolicy: ScientificModelPolicy = {
+  model_id: "rfdiffusion",
+  scope_tenant_id: null,
+  catalog_known: true,
+  desired: {
+    tenant_id: null,
+    revision: 3,
+    paused: false,
+    max_active_runs: 1,
+    reason: "Customer PoC: one H100 run at a time.",
+    updated_by: "operator-ada",
+    updated_at: "2026-08-30T08:05:00Z",
+  },
+  inherited: null,
+  effective: {
+    state: "at-limit",
+    paused: false,
+    max_active_runs: 1,
+    reason: "Dispatch for all tenants is held: 1 active run(s) meet the cap of 1; 2 queued run(s) wait durably in priority order.",
+  },
+  counts: { queued: 2, running: 1 },
+  all_tenants_counts: { queued: 2, running: 1 },
+  enforcement: policyEnforcement,
+};
+
+export const alphafoldPausedPolicy: ScientificModelPolicy = {
+  model_id: "alphafold3",
+  scope_tenant_id: null,
+  catalog_known: true,
+  desired: {
+    tenant_id: null,
+    revision: 1,
+    paused: true,
+    max_active_runs: null,
+    reason: "Reference-data refresh in progress.",
+    updated_by: "operator-grace",
+    updated_at: "2026-08-30T08:10:00Z",
+  },
+  inherited: null,
+  effective: {
+    state: "paused",
+    paused: true,
+    max_active_runs: null,
+    reason: "New dispatch for all tenants is paused by the all-tenants policy; running work drains and results still publish. Operator note: Reference-data refresh in progress.",
+  },
+  counts: { queued: 1, running: 0 },
+  all_tenants_counts: { queued: 1, running: 0 },
+  enforcement: policyEnforcement,
+};
+
+export const scientificModelPolicyListFixture: ScientificModelPolicyList = {
+  scope_tenant_id: null,
+  items: [
+    alphafoldPausedPolicy,
+    openPolicy("bindcraft"),
+    openPolicy("boltzgen"),
+    openPolicy("esmfold2-fast"),
+    openPolicy("mosaic"),
+    openPolicy("openfold3"),
+    openPolicy("proteina-complexa"),
+    openPolicy("protenix-v2"),
+    rfdiffusionCappedPolicy,
+  ],
 };

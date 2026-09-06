@@ -57,10 +57,44 @@ The authenticated BFF surface is capability-gated:
   `GET /admin/api/v1/scientific-runs/{run_id}` are present only with the
   durable run reader and retain tenant-scoped authorization.
 
-There is no cancellation mutation in this slice. The detail page displays the
-immutable cancellation request/acknowledgement state and whether cancellation
-would currently be permitted. An authorized command can be added only when
-the scientific operation API publishes one.
+Two commands exist, each gated by its own capability and the operator role:
+
+- `POST /admin/api/v1/scientific-runs/{run_id}:cancel` (`run_control`)
+  records the controller's durable cancel request from the run detail page.
+- `PUT /admin/api/v1/scientific-model-policies/{model_id}` (`model_policy`)
+  replaces one model's dispatch policy in the operator's authorized scope, read
+  back through `GET /admin/api/v1/scientific-model-policies`.
+
+## Model dispatch policy
+
+The "Scientific model dispatch policy" section on `/admin/scientific-runs`
+lists every catalog model (plus any model that still owns a policy row or a
+live batch) with three separate facts per row:
+
+- **Effective dispatch**: `open`, `paused`, or `at-limit`, with the reason the
+  controller's own SQL predicate reports and the effective cap (or "none,
+  Kueue quota only");
+- **Runs now**: durable `running` (dispatched to Kubernetes/Kueue, not
+  terminal, including Kueue-pending and cancelling work) and `queued`
+  (accepted, not yet dispatched) counts for the scope, plus all-tenants counts
+  inside a tenant scope;
+- **Desired policy**: the scope row itself (`paused`, `max_active_runs`,
+  reason, author, revision; revision 0 means no row) and, for a tenant scope,
+  the inherited all-tenants row it layers below.
+
+Operators change a policy inline. The form sends a full replacement with the
+displayed `expected_revision`; a `409 scientific_model_policy_stale` answer is
+shown as "Policy changed elsewhere" with the durable revision, and the local
+draft is never applied over it. Viewers see the same facts read-only. A global
+operator manages the all-tenants scope by default and a tenant override when
+the tenant filter is set; a tenant-bound operator is fixed to its tenant.
+
+What the control does and does not do is stated on the page and carried by
+each row's `enforcement` block: pausing stops new controller dispatch only,
+running work drains, result delivery is unaffected, the cap is non-preemptive,
+Kueue quota and Terraform node pools stay the capacity authority, and there is
+no always-hot resident scientific runtime or GPU snapshot behind it. Held
+queued runs show the hold in their admission reason on the run ledger.
 
 ## Truthfulness boundaries
 

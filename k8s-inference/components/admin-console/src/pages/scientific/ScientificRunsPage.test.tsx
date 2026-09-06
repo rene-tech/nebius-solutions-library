@@ -21,6 +21,7 @@ function prepareApi() {
   vi.spyOn(adminApi, "scientificCapabilities").mockResolvedValue(fixture("/admin/api/v1/scientific-capabilities"));
   vi.spyOn(adminApi, "scientificRuns").mockResolvedValue(fixture("/admin/api/v1/scientific-runs"));
   vi.spyOn(adminApi, "scientificModels").mockResolvedValue(fixture("/admin/api/v1/scientific-models"));
+  vi.spyOn(adminApi, "scientificModelPolicies").mockResolvedValue(fixture("/admin/api/v1/scientific-model-policies"));
 }
 
 function renderPage(entry = "/admin/scientific-runs", session = testSession) {
@@ -40,7 +41,8 @@ describe("scientific runs fixture contract", () => {
     renderPage();
 
     const completed = await screen.findByRole("row", { name: /CD8 binder backbone screen/ });
-    expect(screen.getByText("Read-only · cancel on run detail")).toBeInTheDocument();
+    expect(screen.getByText("Controls · model dispatch policy and cancel")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Scientific model dispatch policy" })).toBeInTheDocument();
     expect(within(completed).getByText("researcher-ada")).toBeInTheDocument();
     expect(within(completed).getByText("customer-batch")).toBeInTheDocument();
     expect(within(completed).getByText("model-artifact-local")).toBeInTheDocument();
@@ -117,6 +119,7 @@ describe("scientific runs fixture contract", () => {
       "scientific_controller_unavailable",
     ));
     vi.spyOn(adminApi, "scientificModels").mockResolvedValue(fixture("/admin/api/v1/scientific-models"));
+    vi.spyOn(adminApi, "scientificModelPolicies").mockResolvedValue(fixture("/admin/api/v1/scientific-model-policies"));
     renderPage();
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Scientific controller reporting is unavailable.");
@@ -138,6 +141,7 @@ describe("scientific runs fixture contract", () => {
     vi.spyOn(adminApi, "scientificRuns").mockResolvedValue(partial);
     vi.spyOn(adminApi, "scientificCapabilities").mockResolvedValue(fixture("/admin/api/v1/scientific-capabilities"));
     vi.spyOn(adminApi, "scientificModels").mockResolvedValue(fixture("/admin/api/v1/scientific-models"));
+    vi.spyOn(adminApi, "scientificModelPolicies").mockResolvedValue(fixture("/admin/api/v1/scientific-model-policies"));
     renderPage();
 
     expect(await screen.findByText("Partial data")).toBeInTheDocument();
@@ -152,6 +156,7 @@ describe("scientific runs fixture contract", () => {
     vi.spyOn(adminApi, "scientificCapabilities").mockResolvedValue(capabilities);
     const runs = vi.spyOn(adminApi, "scientificRuns");
     vi.spyOn(adminApi, "scientificModels").mockResolvedValue(fixture("/admin/api/v1/scientific-models"));
+    vi.spyOn(adminApi, "scientificModelPolicies").mockResolvedValue(fixture("/admin/api/v1/scientific-model-policies"));
 
     renderPage();
 
@@ -170,6 +175,7 @@ describe("scientific runs fixture contract", () => {
     vi.spyOn(adminApi, "scientificCapabilities").mockResolvedValue(capabilities);
     const runs = vi.spyOn(adminApi, "scientificRuns").mockResolvedValue(fixture("/admin/api/v1/scientific-runs"));
     const models = vi.spyOn(adminApi, "scientificModels");
+    const policies = vi.spyOn(adminApi, "scientificModelPolicies").mockResolvedValue(fixture("/admin/api/v1/scientific-model-policies"));
 
     renderPage(
       "/admin/scientific-runs",
@@ -180,5 +186,8 @@ describe("scientific runs fixture contract", () => {
     expect(await screen.findByText("Scientific model readiness is not enabled")).toBeInTheDocument();
     expect(runs.mock.calls[0][1]).toMatchObject({ tenantId: "tenant-oncology" });
     expect(models).not.toHaveBeenCalled();
+    // The tenant operator's policy scope is fixed to its own tenant.
+    await waitFor(() => expect(policies).toHaveBeenCalledOnce());
+    expect(policies.mock.calls[0][1]).toBe("tenant-oncology");
   });
 });

@@ -23,6 +23,9 @@ from .scientific_admin_models import (
     ScientificCapabilities,
     ScientificCapability,
     ScientificError,
+    ScientificModelPolicy,
+    ScientificModelPolicyList,
+    ScientificModelPolicyUpdate,
     ScientificModelReadinessList,
     ScientificRunDetail,
     ScientificRunList,
@@ -38,6 +41,7 @@ class ScientificAdminSourceUnavailableError(RuntimeError):
 SCIENTIFIC_RUNS_UNCONFIGURED = "no durable scientific batch controller reader is bound to this build"
 SCIENTIFIC_ARTIFACTS_UNCONFIGURED = "no scientific artifact result reader is bound to this build"
 SCIENTIFIC_RUN_CONTROL_UNCONFIGURED = "no scientific batch cancellation writer is bound to this build"
+SCIENTIFIC_MODEL_POLICY_UNCONFIGURED = "no durable scientific model policy repository is bound to this build"
 
 ScientificRunCancelOutcome = Literal["requested", "already-requested", "terminal"]
 
@@ -123,6 +127,20 @@ class ScientificModelSnapshot:
     observed_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class ScientificModelPolicySnapshot:
+    data: ScientificModelPolicyList
+    observed_at: datetime
+
+
+class ScientificModelPolicyStaleRevisionError(RuntimeError):
+    """The operator's expected policy revision is no longer the durable one."""
+
+    def __init__(self, current_revision: int) -> None:
+        super().__init__("scientific model policy revision is stale")
+        self.current_revision = current_revision
+
+
 class ScientificRunAdminAdapter(Protocol):
     async def list_runs(self, query: ScientificRunQuery) -> ScientificRunListSnapshot: ...
 
@@ -135,6 +153,33 @@ class ScientificArtifactAdminAdapter(Protocol):
 
 class ScientificModelAdminAdapter(Protocol):
     async def list_models(self, *, tenant_id: str | None = None) -> ScientificModelSnapshot: ...
+
+
+class ScientificModelPolicyAdminAdapter(Protocol):
+    """Durable per-model dispatch policy: pause new dispatch or cap active runs.
+
+    ``list_policies`` returns one item per requested model (plus any model that
+    still owns a row or live batch) in the given scope; ``set_policy`` replaces
+    one scope row at exactly ``expected_revision`` and raises
+    ``ScientificModelPolicyStaleRevisionError`` otherwise. Both read counts and
+    the effective decision from the controller's own durable tables.
+    """
+
+    async def list_policies(
+        self,
+        *,
+        tenant_id: str | None,
+        model_ids: tuple[str, ...],
+    ) -> ScientificModelPolicySnapshot: ...
+
+    async def set_policy(
+        self,
+        model_id: str,
+        *,
+        tenant_id: str | None,
+        update: ScientificModelPolicyUpdate,
+        actor: str,
+    ) -> ScientificModelPolicy: ...
 
 
 class ScientificRunControlAdapter(Protocol):
@@ -160,6 +205,8 @@ ScientificDataT = TypeVar(
     ScientificRunList,
     ScientificRunDetail,
     ScientificModelReadinessList,
+    ScientificModelPolicyList,
+    ScientificModelPolicy,
 )
 
 
@@ -201,6 +248,7 @@ class ScientificAdminReadService:
         runs: ScientificRunAdminAdapter | None = None,
         artifacts: ScientificArtifactAdminAdapter | None = None,
         controls: ScientificRunControlAdapter | None = None,
+        policies: ScientificModelPolicyAdminAdapter | None = None,
         source_max_age_seconds: float = 90,
         adapter_timeout_seconds: float = 2,
         clock: Callable[[], datetime] | None = None,
@@ -213,9 +261,12 @@ class ScientificAdminReadService:
             raise ValueError("scientific artifact reporting requires a run reader")
         if controls is not None and runs is None:
             raise ValueError("scientific run cancellation requires a run reader")
+        if policies is not None and models is None:
+            raise ValueError("scientific model policy requires the catalog reader")
         self.runs = runs
         self.artifacts = artifacts
         self.controls = controls
+        self.policies = policies
         self.models = models
         self.source_max_age_seconds = source_max_age_seconds
         self.adapter_timeout_seconds = adapter_timeout_seconds
@@ -260,6 +311,10 @@ class ScientificAdminReadService:
             run_control=ScientificCapability(
                 available=self.controls is not None,
                 reason=None if self.controls is not None else SCIENTIFIC_RUN_CONTROL_UNCONFIGURED,
+            ),
+            model_policy=ScientificCapability(
+                available=self.policies is not None,
+                reason=None if self.policies is not None else SCIENTIFIC_MODEL_POLICY_UNCONFIGURED,
             ),
         )
 
@@ -578,3 +633,104 @@ class ScientificAdminReadService:
             ) from None
         source = self._available_source("scientific-catalog", snapshot.observed_at, now)
         return self._envelope(context, snapshot.data, now=now, sources=[source])
+
+    def _require_policies(self) -> ScientificModelPolicyAdminAdapter:
+        if self.policies is None:
+            raise AdminProblemError(
+                503,
+                "scientific_model_policy_unavailable",
+                "scientific model policy is not configured",
+            )
+        return self.policies
+
+    async def _known_model_ids(self) -> tuple[str, ...]:
+        """Global catalog identities a policy may name; unknown ids answer 404."""
+
+        models = self.models
+        if models is None:
+            raise AdminProblemError(
+                503,
+                "scientific_catalog_unavailable",
+                "scientific model readiness is not configured",
+            )
+        try:
+            snapshot = await asyncio.wait_for(
+                models.list_models(tenant_id=None),
+                timeout=self.adapter_timeout_seconds,
+            )
+        except asyncio.CancelledError:
+            raise
+        except (OSError, RuntimeError, TimeoutError, ValueError):
+            raise AdminProblemError(
+                503,
+                "scientific_catalog_unavailable",
+                "scientific model readiness is unavailable",
+            ) from None
+        return tuple(sorted({item.model_id for item in snapshot.data.items}))
+
+    async def policy_list(
+        self,
+        context: AdminContext,
+        *,
+        tenant_id: str | None = None,
+    ) -> AdminEnvelope[ScientificModelPolicyList]:
+        now = self.clock().astimezone(UTC)
+        policies = self._require_policies()
+        model_ids = await self._known_model_ids()
+        try:
+            snapshot = await asyncio.wait_for(
+                policies.list_policies(tenant_id=tenant_id, model_ids=model_ids),
+                timeout=self.adapter_timeout_seconds,
+            )
+        except asyncio.CancelledError:
+            raise
+        except (OSError, RuntimeError, TimeoutError, ValueError):
+            raise AdminProblemError(
+                503,
+                "scientific_controller_unavailable",
+                "scientific model policy reporting is unavailable",
+            ) from None
+        source = self._available_source("scientific-controller", snapshot.observed_at, now)
+        return self._envelope(context, snapshot.data, now=now, sources=[source])
+
+    async def set_policy(
+        self,
+        context: AdminContext,
+        model_id: str,
+        *,
+        tenant_id: str | None,
+        update: ScientificModelPolicyUpdate,
+        actor: str,
+    ) -> AdminEnvelope[ScientificModelPolicy]:
+        """Replace one model's dispatch policy in the operator's authorized scope.
+
+        The model must be a catalog identity so a typo cannot create a dangling
+        row. A stale ``expected_revision`` answers 409 with the durable revision
+        so the console can reload rather than overwrite another operator.
+        """
+
+        now = self.clock().astimezone(UTC)
+        policies = self._require_policies()
+        if model_id not in await self._known_model_ids():
+            raise AdminProblemError(404, "scientific_model_not_found", "scientific model was not found")
+        try:
+            policy = await asyncio.wait_for(
+                policies.set_policy(model_id, tenant_id=tenant_id, update=update, actor=actor),
+                timeout=self.adapter_timeout_seconds,
+            )
+        except asyncio.CancelledError:
+            raise
+        except ScientificModelPolicyStaleRevisionError as error:
+            raise AdminProblemError(
+                409,
+                "scientific_model_policy_stale",
+                f"scientific model policy revision changed; current revision is {error.current_revision}",
+            ) from None
+        except (OSError, RuntimeError, TimeoutError, ValueError):
+            raise AdminProblemError(
+                503,
+                "scientific_controller_unavailable",
+                "scientific model policy update is unavailable",
+            ) from None
+        source = self._available_source("scientific-controller", now, now)
+        return self._envelope(context, policy, now=now, sources=[source])

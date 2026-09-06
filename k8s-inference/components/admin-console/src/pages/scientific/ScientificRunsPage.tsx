@@ -8,6 +8,7 @@ import type {
 } from "../../api/scientificTypes";
 import { useSession } from "../../auth/SessionContext";
 import { DataBoundary } from "../../components/DataBoundary";
+import { rolePermits } from "../../lib/access";
 import { formatTimestamp } from "../../lib/format";
 import { sharedContextParams } from "../../lib/search";
 import {
@@ -17,6 +18,7 @@ import {
   ScientificStatusChip,
   shortDigest,
 } from "./ScientificPresentation";
+import { ScientificModelPolicyPanel } from "./ScientificModelPolicyPanel";
 import { useScientificCapabilities } from "./useScientificCapabilities";
 
 const runStates = ["waiting-for-access", "queued", "admitted", "running", "succeeded", "failed", "cancelling", "cancelled"] as const satisfies readonly ScientificRunState[];
@@ -40,6 +42,7 @@ export function ScientificRunsPage() {
   const runsAvailable = capabilities?.run_history.available === true;
   const modelsAvailable = capabilities?.model_readiness.available === true;
   const fixedTenant = session.principal.tenant_id ?? undefined;
+  const canOperate = rolePermits(session.principal.role, "operator");
   const rawStatus = searchParams.get("run_status");
   const rawServiceClass = searchParams.get("service_class");
   const rawAccessState = searchParams.get("access_state");
@@ -106,7 +109,7 @@ export function ScientificRunsPage() {
           <h2 id="scientific-runs-intro-title">Batch execution and exact GPU evidence</h2>
           <p>Run identity, access admission, DAG progress, artifacts, and lifecycle accounting remain separate facts. Estimated and unavailable values are always labelled.</p>
         </div>
-        <span className="quiet-chip">{capabilities?.run_control.available ? "Read-only · cancel on run detail" : "Read-only"}</span>
+        <span className="quiet-chip">{capabilities?.model_policy.available ? "Controls · model dispatch policy and cancel" : capabilities?.run_control.available ? "Read-only · cancel on run detail" : "Read-only"}</span>
       </section>
 
       <section className="section-stack" aria-labelledby="scientific-run-list-title">
@@ -161,6 +164,15 @@ export function ScientificRunsPage() {
           </div>
         )}
       </section>
+
+      <ScientificModelPolicyPanel
+        canOperate={canOperate}
+        capabilities={capabilities}
+        capabilitiesPending={capabilitiesQuery.isPending}
+        context={context}
+        readiness={models}
+        scopeTenantId={tenantId}
+      />
 
       <section className="section-stack" aria-labelledby="scientific-model-readiness-title">
         <div className="section-heading">
