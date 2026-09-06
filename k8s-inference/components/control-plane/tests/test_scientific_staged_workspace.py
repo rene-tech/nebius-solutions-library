@@ -5,9 +5,11 @@ import hashlib
 import io
 import json
 import os
+import signal
 import subprocess
 import sys
 import tarfile
+import time
 from dataclasses import replace
 from pathlib import Path
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -627,6 +629,68 @@ def test_runner_completion_and_handoff_are_atomic_deterministic_and_materializab
     )
     assert (destination / "outputs/result.json").read_text(encoding="utf-8") == '{"status":"passed"}'
     assert not (destination / STAGE_COMPLETION_RELATIVE_PATH).exists()
+
+
+@pytest.mark.parametrize("signum", (signal.SIGTERM, signal.SIGINT))
+def test_runner_forwards_termination_to_model_process_group_without_success_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, signum: int
+) -> None:
+    root = tmp_path / "scientific"
+    root.mkdir()
+    monkeypatch.setattr(companion, "_ROOT", root)
+    child = tmp_path / "child.py"
+    child.write_text(
+        "import os, signal, subprocess, sys, time\n"
+        "from pathlib import Path\n"
+        "name = sys.argv[1]\n"
+        "def stop(signum, frame):\n"
+        "    Path(name + '.signal').write_text(str(signum))\n"
+        "    raise SystemExit(0)\n"
+        "signal.signal(signal.SIGTERM, stop)\n"
+        "signal.signal(signal.SIGINT, stop)\n"
+        "grandchild = subprocess.Popen([sys.executable, __file__, 'grandchild']) if name == 'child' else None\n"
+        "Path(name + '.ready').write_text(str(os.getpid()))\n"
+        "try:\n"
+        "    while True: time.sleep(0.02)\n"
+        "finally:\n"
+        "    if grandchild is not None: grandchild.wait(timeout=5)\n",
+        encoding="utf-8",
+    )
+    invocation = _invocation((sys.executable, str(child), "child"))
+    workspace = root / "work/test/main"
+    companion.prepare_workspace(
+        workspace,
+        runtime_localization_json=_runtime_marker(invocation),
+        stage_invocation_json=_invocation_json(invocation),
+    )
+    process = subprocess.Popen(  # noqa: S603 - fixed interpreter and test-owned fixtures
+        [sys.executable, workspace / companion.STAGE_RUNNER_RELATIVE_PATH, "--", *invocation.argv[3:]],
+        cwd=workspace,
+        env=_runner_environment(invocation),
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not all((workspace / f"{name}.ready").exists() for name in ("child", "grandchild")):
+            assert process.poll() is None
+            assert time.monotonic() < deadline
+            time.sleep(0.02)
+        process.send_signal(signum)
+        assert process.wait(timeout=5) == 128 + signum
+        for name in ("child", "grandchild"):
+            assert (workspace / f"{name}.signal").read_text() == str(signum)
+        # The child deliberately exits zero on cancellation; that must not be
+        # confused with completed scientific work by the trusted wrapper.
+        assert not (workspace / STAGE_COMPLETION_RELATIVE_PATH).exists()
+    finally:
+        ready = workspace / "child.ready"
+        if ready.exists():
+            try:
+                os.killpg(int(ready.read_text()), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=5)
 
 
 def test_runner_nonzero_has_no_completion_and_partial_or_stale_identity_is_rejected(

@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -19,6 +21,40 @@ def _environment() -> dict[str, str]:
         **os.environ,
         "PYTHONPATH": os.pathsep.join((str(CONTROL_ROOT / "src"), str(CONTROL_ROOT.parents[1] / "catalog/runtime"))),
     }
+
+
+@pytest.mark.parametrize("signum", (signal.SIGTERM, signal.SIGINT))
+def test_companion_installs_explicit_container_termination_handler(tmp_path: Path, signum: int) -> None:
+    source = """
+import os, sys, time
+from pathlib import Path
+from fs2_serve import scientific_companion_cli as cli
+ready = Path(sys.argv[1])
+def prepare(*args, **kwargs):
+    ready.write_text('ready')
+    time.sleep(30)
+cli.prepare_workspace = prepare
+os.environ['FS2_RUNTIME_ARTIFACTS_JSON'] = '{}'
+os.environ['FS2_STAGE_INVOCATION_JSON'] = '{}'
+sys.argv = ['fs2-serve', 'scientific-prepare-workspace', '--workspace', str(ready.parent)]
+cli.main()
+"""
+    ready = tmp_path / "ready"
+    process = subprocess.Popen(  # noqa: S603 - fixed interpreter and test-owned code
+        [sys.executable, "-c", source, str(ready)], env=_environment()
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not ready.exists():
+            assert process.poll() is None
+            assert time.monotonic() < deadline
+            time.sleep(0.02)
+        process.send_signal(signum)
+        assert process.wait(timeout=5) == 128 + signum
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=5)
 
 
 @pytest.mark.parametrize("command", SCIENTIFIC_COMPANION_COMMANDS)

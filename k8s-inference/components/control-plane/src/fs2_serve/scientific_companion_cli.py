@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import signal
 from pathlib import Path
 from uuid import UUID
 
@@ -20,6 +21,14 @@ from .scientific_batch.models import MaterializationMode
 
 
 def main() -> None:
+    def terminate(signum: int, _frame: object) -> None:
+        # These companion commands are PID 1 in their own containers too.
+        # Exit through finally blocks so a cancelled stage's collector cannot
+        # retain the GPU Pod until Kubernetes exhausts its termination grace.
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, terminate)
+    signal.signal(signal.SIGINT, terminate)
     parser = argparse.ArgumentParser(prog="fs2-serve")
     parser.add_argument("command", choices=SCIENTIFIC_COMPANION_COMMANDS)
     parser.add_argument("--logical-artifact-id")
