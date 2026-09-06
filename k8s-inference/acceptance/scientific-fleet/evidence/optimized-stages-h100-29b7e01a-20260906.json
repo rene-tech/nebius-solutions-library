@@ -1,0 +1,734 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-optimized-stage-acceptance/v1",
+  "runtime_source_commit": "29b7e01ae5b916895583b0d5f9872cf1b2f76cbb",
+  "control_plane_image_digest": "sha256:443ecb4344ff74957a49729d42717cc034d06bc4351200b5b4888bdad8d9ddb4",
+  "scenario_run_id": "scientific-optimized-stages-29b7e01a-20260906-r1",
+  "scenarios_sha256": "384eb6680fbac2417a929416867e6e53cfc873d29bcb72d38d4a3768b1893865",
+  "aggregate_sha256": "647524b9b47555484eba841ec48f2d66b8f6b63cebfacb01f1e1e151a8ca09f3",
+  "passed": 7,
+  "failed": 0,
+  "metrics_error": null,
+  "peak_admitted_gpu_attempts": 6,
+  "hardware": {
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "compute_capability": "9.0",
+    "driver": "580.159.04",
+    "verified_reserved_nodes": 2,
+    "runtime_torch": "2.3.0",
+    "runtime_cuda": "12.1",
+    "runtime_triton": "2.3.0",
+    "inventory_probe_sha256": [
+      "8ce9784c122f6a6546c4bc604618b61665e05f99c4048cce8549a9f83b0ff871",
+      "9dbf7a58f53ba837bc9490f98563cfc3627be9ef87c7e6085c8cbebd8e753159"
+    ]
+  },
+  "workload_contract": {
+    "max_concurrent_requests": 2,
+    "mosaic_gpu_shards_per_request": 2,
+    "rfdiffusion_gpu_shards_per_request": 4,
+    "repetitions_per_model": 3,
+    "persistent_runtime_artifacts": true,
+    "fresh_model_pods": true,
+    "gpu_snapshot_restore_used": false,
+    "unchanged_resource_limits": true,
+    "client_placement": "external operator client; API upload/download and polling included in client wall time"
+  },
+  "cold_cpu_finalizer": {
+    "node_pool_transition": "0->1",
+    "scale_up_triggered_at": "2026-09-06T22:02:09Z",
+    "pod_scheduled_at": "2026-09-06T22:03:51Z",
+    "capacity_wait_seconds": 102,
+    "image_pulled_bytes": 59326950,
+    "image_pull_seconds": 3.656,
+    "largest_observed_init_transition_gap_seconds": 85
+  },
+  "results": [
+    {
+      "scenario_id": "mosaic-r01",
+      "model_id": "mosaic",
+      "parameters": {
+        "base_seed": 7400,
+        "binder_length": 44,
+        "hotspots": [
+          3,
+          7
+        ],
+        "optimizer_steps": 30,
+        "schema": "fs2-serve.nebius.ai/mosaic-boltz2-proteinmpnn-parameters/v1",
+        "shard_count": 2
+      },
+      "cache_state": "cpu-pool-from-zero",
+      "client_wall_seconds": 412.959,
+      "first_semantic_result_seconds": 407.391232,
+      "receipt_sha256": "716303c47812d9dff45c9c9800b5ca22084d7cb98ba6e34fd7f47438982d2211",
+      "execution_identity": {
+        "execution_identity_sha256": "3add4530859a40c9c7669a6186d0621ed724b2d79ebd2ce046eb1fe74b016f54",
+        "model_artifact_manifest_digest": "777eebe088d6d0b26a43dce8d696cca1f9a9b81fe289eac79682cb441c1dc149",
+        "model_id": "mosaic",
+        "model_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+        "runtime_image_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
+        "runtime_recipe_sha256": "2dc1bd94176b193ac422bb92fb11e5b34161288c3fa06f1368b773c8be01d165",
+        "variant_id": "mosaic-boltz2-proteinmpnn-v1",
+        "workload_recipe_sha256": "4d2f21deaafd20c839ee3a81490bbaae2f3d1857294d8a3593916e77b4b06083"
+      },
+      "downloaded_artifacts": [
+        {
+          "sha256": "8cb293487abcb38e8ea4afee4315809c3d8da95841984bae1aca5b743e9ebcb3",
+          "size_bytes": 1574,
+          "media_type": "application/vnd.fs2.scientific-manifest+json"
+        },
+        {
+          "sha256": "f69e77f0025190b5af19a0c8aea8384398906540114888676141dfdbafc54fe1",
+          "size_bytes": 204,
+          "media_type": "application/json"
+        }
+      ],
+      "successful_gpu_shards": 2,
+      "gpu_accounting": {
+        "scheduler_occupied_gpu_seconds": 285,
+        "device_allocated_gpu_seconds": 284.080969,
+        "active_gpu_seconds": 159,
+        "occupied_idle_gpu_seconds": 126
+      },
+      "gpu_accounting_quality": "application_observed",
+      "phase_gpu_seconds": {
+        "active_compute": 159,
+        "artifact_load": 15,
+        "checkpoint_drain": 0,
+        "compile": 0,
+        "cooldown_grace": 0,
+        "image_pull": 108,
+        "resident_idle": 3,
+        "restore": 0,
+        "teardown": 0,
+        "unclassified": 0,
+        "warmup": 0,
+        "workflow_wait": 0
+      },
+      "finalizer": {
+        "stage_id": "aggregate",
+        "image_digest": "sha256:443ecb4344ff74957a49729d42717cc034d06bc4351200b5b4888bdad8d9ddb4",
+        "created_at": "2026-09-06T22:03:30Z",
+        "scheduled_at": "2026-09-06T22:03:51Z",
+        "init_containers": [
+          {
+            "name": "prepare-workspace",
+            "started_at": "2026-09-06T22:03:56Z",
+            "finished_at": "2026-09-06T22:03:59Z",
+            "runtime_seconds": 3,
+            "gap_after_previous_init_seconds": null
+          },
+          {
+            "name": "materialize-0",
+            "started_at": "2026-09-06T22:04:12Z",
+            "finished_at": "2026-09-06T22:04:13Z",
+            "runtime_seconds": 1,
+            "gap_after_previous_init_seconds": 13
+          },
+          {
+            "name": "materialize-1",
+            "started_at": "2026-09-06T22:04:14Z",
+            "finished_at": "2026-09-06T22:04:16Z",
+            "runtime_seconds": 2,
+            "gap_after_previous_init_seconds": 1
+          }
+        ],
+        "main_started_at": "2026-09-06T22:05:38Z",
+        "main_finished_at": "2026-09-06T22:05:39Z",
+        "collector_started_at": "2026-09-06T22:06:24Z",
+        "collector_finished_at": "2026-09-06T22:06:26Z",
+        "artifact_sizes_bytes": null
+      }
+    },
+    {
+      "scenario_id": "mosaic-r02",
+      "model_id": "mosaic",
+      "parameters": {
+        "base_seed": 7401,
+        "binder_length": 44,
+        "hotspots": [
+          3,
+          7
+        ],
+        "optimizer_steps": 30,
+        "schema": "fs2-serve.nebius.ai/mosaic-boltz2-proteinmpnn-parameters/v1",
+        "shard_count": 2
+      },
+      "cache_state": "warm-cpu-node",
+      "client_wall_seconds": 120.004,
+      "first_semantic_result_seconds": 112.911224,
+      "receipt_sha256": "a6769efb346fff03e1e003e2e2b909fc646a65e7a14845f8d82fe1737024963b",
+      "execution_identity": {
+        "execution_identity_sha256": "3add4530859a40c9c7669a6186d0621ed724b2d79ebd2ce046eb1fe74b016f54",
+        "model_artifact_manifest_digest": "777eebe088d6d0b26a43dce8d696cca1f9a9b81fe289eac79682cb441c1dc149",
+        "model_id": "mosaic",
+        "model_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+        "runtime_image_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
+        "runtime_recipe_sha256": "2dc1bd94176b193ac422bb92fb11e5b34161288c3fa06f1368b773c8be01d165",
+        "variant_id": "mosaic-boltz2-proteinmpnn-v1",
+        "workload_recipe_sha256": "4d2f21deaafd20c839ee3a81490bbaae2f3d1857294d8a3593916e77b4b06083"
+      },
+      "downloaded_artifacts": [
+        {
+          "sha256": "2ec62b494d5ed08c033922d5a3fdca67662023fcb71c4ebe925d7aa68ab9f529",
+          "size_bytes": 1574,
+          "media_type": "application/vnd.fs2.scientific-manifest+json"
+        },
+        {
+          "sha256": "a2cada2251344d9e800e9cfcdf04b9acac17cfd70932a1aaf9b057717e160da2",
+          "size_bytes": 203,
+          "media_type": "application/json"
+        }
+      ],
+      "successful_gpu_shards": 2,
+      "gpu_accounting": {
+        "scheduler_occupied_gpu_seconds": 187,
+        "device_allocated_gpu_seconds": 184.531987,
+        "active_gpu_seconds": 163,
+        "occupied_idle_gpu_seconds": 24
+      },
+      "gpu_accounting_quality": "application_observed",
+      "phase_gpu_seconds": {
+        "active_compute": 163,
+        "artifact_load": 12,
+        "checkpoint_drain": 0,
+        "compile": 0,
+        "cooldown_grace": 0,
+        "image_pull": 10,
+        "resident_idle": 2,
+        "restore": 0,
+        "teardown": 0,
+        "unclassified": 0,
+        "warmup": 0,
+        "workflow_wait": 0
+      },
+      "finalizer": {
+        "stage_id": "aggregate",
+        "image_digest": "sha256:443ecb4344ff74957a49729d42717cc034d06bc4351200b5b4888bdad8d9ddb4",
+        "created_at": "2026-09-06T22:08:40Z",
+        "scheduled_at": "2026-09-06T22:08:40Z",
+        "init_containers": [
+          {
+            "name": "prepare-workspace",
+            "started_at": "2026-09-06T22:08:41Z",
+            "finished_at": "2026-09-06T22:08:43Z",
+            "runtime_seconds": 2,
+            "gap_after_previous_init_seconds": null
+          },
+          {
+            "name": "materialize-0",
+            "started_at": "2026-09-06T22:08:44Z",
+            "finished_at": "2026-09-06T22:08:46Z",
+            "runtime_seconds": 2,
+            "gap_after_previous_init_seconds": 1
+          },
+          {
+            "name": "materialize-1",
+            "started_at": "2026-09-06T22:08:46Z",
+            "finished_at": "2026-09-06T22:08:48Z",
+            "runtime_seconds": 2,
+            "gap_after_previous_init_seconds": 0
+          }
+        ],
+        "main_started_at": "2026-09-06T22:08:49Z",
+        "main_finished_at": "2026-09-06T22:08:49Z",
+        "collector_started_at": "2026-09-06T22:08:49Z",
+        "collector_finished_at": "2026-09-06T22:08:51Z",
+        "artifact_sizes_bytes": [
+          4431,
+          4409
+        ]
+      }
+    },
+    {
+      "scenario_id": "mosaic-r03",
+      "model_id": "mosaic",
+      "parameters": {
+        "base_seed": 7402,
+        "binder_length": 44,
+        "hotspots": [
+          3,
+          7
+        ],
+        "optimizer_steps": 30,
+        "schema": "fs2-serve.nebius.ai/mosaic-boltz2-proteinmpnn-parameters/v1",
+        "shard_count": 2
+      },
+      "cache_state": "warm-cpu-node",
+      "client_wall_seconds": 124.448,
+      "first_semantic_result_seconds": 116.658279,
+      "receipt_sha256": "59555dc5eeb1c3e7332de1f22aa325278849a6278ba6c730329701cb6cc86646",
+      "execution_identity": {
+        "execution_identity_sha256": "3add4530859a40c9c7669a6186d0621ed724b2d79ebd2ce046eb1fe74b016f54",
+        "model_artifact_manifest_digest": "777eebe088d6d0b26a43dce8d696cca1f9a9b81fe289eac79682cb441c1dc149",
+        "model_id": "mosaic",
+        "model_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+        "runtime_image_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
+        "runtime_recipe_sha256": "2dc1bd94176b193ac422bb92fb11e5b34161288c3fa06f1368b773c8be01d165",
+        "variant_id": "mosaic-boltz2-proteinmpnn-v1",
+        "workload_recipe_sha256": "4d2f21deaafd20c839ee3a81490bbaae2f3d1857294d8a3593916e77b4b06083"
+      },
+      "downloaded_artifacts": [
+        {
+          "sha256": "69f758575a94fbae433d3ae3d99d363e174cf2d99c87548dad6e5eb46c51a0e9",
+          "size_bytes": 1574,
+          "media_type": "application/vnd.fs2.scientific-manifest+json"
+        },
+        {
+          "sha256": "850f1adc80a6def0acdc8b81aec5ba99110384c61d17779fc58740d34d2919ac",
+          "size_bytes": 204,
+          "media_type": "application/json"
+        }
+      ],
+      "successful_gpu_shards": 2,
+      "gpu_accounting": {
+        "scheduler_occupied_gpu_seconds": 194,
+        "device_allocated_gpu_seconds": 190.99008,
+        "active_gpu_seconds": 165,
+        "occupied_idle_gpu_seconds": 29
+      },
+      "gpu_accounting_quality": "application_observed",
+      "phase_gpu_seconds": {
+        "active_compute": 165,
+        "artifact_load": 17,
+        "checkpoint_drain": 0,
+        "compile": 0,
+        "cooldown_grace": 0,
+        "image_pull": 9,
+        "resident_idle": 3,
+        "restore": 0,
+        "teardown": 0,
+        "unclassified": 0,
+        "warmup": 0,
+        "workflow_wait": 0
+      },
+      "finalizer": {
+        "stage_id": "aggregate",
+        "image_digest": "sha256:443ecb4344ff74957a49729d42717cc034d06bc4351200b5b4888bdad8d9ddb4",
+        "created_at": "2026-09-06T22:10:41Z",
+        "scheduled_at": "2026-09-06T22:10:41Z",
+        "init_containers": [
+          {
+            "name": "prepare-workspace",
+            "started_at": "2026-09-06T22:10:42Z",
+            "finished_at": "2026-09-06T22:10:44Z",
+            "runtime_seconds": 2,
+            "gap_after_previous_init_seconds": null
+          },
+          {
+            "name": "materialize-0",
+            "started_at": "2026-09-06T22:10:45Z",
+            "finished_at": "2026-09-06T22:10:46Z",
+            "runtime_seconds": 1,
+            "gap_after_previous_init_seconds": 1
+          },
+          {
+            "name": "materialize-1",
+            "started_at": "2026-09-06T22:10:47Z",
+            "finished_at": "2026-09-06T22:10:48Z",
+            "runtime_seconds": 1,
+            "gap_after_previous_init_seconds": 1
+          }
+        ],
+        "main_started_at": "2026-09-06T22:10:49Z",
+        "main_finished_at": "2026-09-06T22:10:49Z",
+        "collector_started_at": "2026-09-06T22:10:49Z",
+        "collector_finished_at": "2026-09-06T22:10:51Z",
+        "artifact_sizes_bytes": [
+          4483,
+          4372
+        ]
+      }
+    },
+    {
+      "scenario_id": "rfdiffusion-r01",
+      "model_id": "rfdiffusion",
+      "parameters": {
+        "contigs": [
+          "96-96"
+        ],
+        "diffuser_T": 50,
+        "num_designs": 4,
+        "operation": "design-backbone",
+        "schema": "fs2-serve.nebius.ai/rfdiffusion-parameters/v1",
+        "seed": 8200
+      },
+      "cache_state": "cpu-pool-from-zero",
+      "client_wall_seconds": 417.833,
+      "first_semantic_result_seconds": 407.741384,
+      "receipt_sha256": "6e396fbcb7bb33eed579e3a45d58504a2cc066fa2f2e0dada5bba3a885409bcc",
+      "execution_identity": {
+        "execution_identity_sha256": "81dc023e0332e9ef1f0df0276b1b59f6004430ebfcf8defdc21a39e3f097f539",
+        "model_artifact_manifest_digest": "931ae8f26343abe60d3fd4efb71da9ca2822899bde61357044eea09ca85bfc2d",
+        "model_id": "rfdiffusion",
+        "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+        "runtime_image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+        "runtime_recipe_sha256": "74132696b001c804acfb6851451e787026cc5f24d1a12aa0ea731c66e163987a",
+        "variant_id": "rfdiffusion-v1-1-0",
+        "workload_recipe_sha256": "625ac765fe08415199b937a1ddb8b6289ed7924e0b88b9f5f342391076891bde"
+      },
+      "downloaded_artifacts": [
+        {
+          "sha256": "7b89926192cb0852ab45452ff181e75e75c3d96a4d93036d5643c9068ca8f46d",
+          "size_bytes": 2454,
+          "media_type": "application/vnd.fs2.scientific-manifest+json"
+        },
+        {
+          "sha256": "2bd344e11e889e29532364f8cb04ff1c4601fb8e1edaf7147ffbc2ed4fa80506",
+          "size_bytes": 1273,
+          "media_type": "application/json"
+        }
+      ],
+      "successful_gpu_shards": 4,
+      "gpu_accounting": {
+        "scheduler_occupied_gpu_seconds": 348,
+        "device_allocated_gpu_seconds": 343.411982,
+        "active_gpu_seconds": 301,
+        "occupied_idle_gpu_seconds": 47
+      },
+      "gpu_accounting_quality": "application_observed",
+      "phase_gpu_seconds": {
+        "active_compute": 301,
+        "artifact_load": 18,
+        "checkpoint_drain": 0,
+        "compile": 0,
+        "cooldown_grace": 0,
+        "image_pull": 27,
+        "resident_idle": 2,
+        "restore": 0,
+        "teardown": 0,
+        "unclassified": 0,
+        "warmup": 0,
+        "workflow_wait": 0
+      },
+      "finalizer": {
+        "stage_id": "collect",
+        "image_digest": "sha256:443ecb4344ff74957a49729d42717cc034d06bc4351200b5b4888bdad8d9ddb4",
+        "created_at": "2026-09-06T22:02:09Z",
+        "scheduled_at": "2026-09-06T22:03:51Z",
+        "init_containers": [
+          {
+            "name": "prepare-workspace",
+            "started_at": "2026-09-06T22:03:56Z",
+            "finished_at": "2026-09-06T22:03:59Z",
+            "runtime_seconds": 3,
+            "gap_after_previous_init_seconds": null
+          },
+          {
+            "name": "materialize-0",
+            "started_at": "2026-09-06T22:04:12Z",
+            "finished_at": "2026-09-06T22:04:13Z",
+            "runtime_seconds": 1,
+            "gap_after_previous_init_seconds": 13
+          },
+          {
+            "name": "materialize-1",
+            "started_at": "2026-09-06T22:04:14Z",
+            "finished_at": "2026-09-06T22:04:16Z",
+            "runtime_seconds": 2,
+            "gap_after_previous_init_seconds": 1
+          },
+          {
+            "name": "materialize-2",
+            "started_at": "2026-09-06T22:05:18Z",
+            "finished_at": "2026-09-06T22:05:20Z",
+            "runtime_seconds": 2,
+            "gap_after_previous_init_seconds": 62
+          },
+          {
+            "name": "materialize-3",
+            "started_at": "2026-09-06T22:06:45Z",
+            "finished_at": "2026-09-06T22:06:46Z",
+            "runtime_seconds": 1,
+            "gap_after_previous_init_seconds": 85
+          }
+        ],
+        "main_started_at": "2026-09-06T22:06:53Z",
+        "main_finished_at": "2026-09-06T22:06:53Z",
+        "collector_started_at": "2026-09-06T22:06:53Z",
+        "collector_finished_at": "2026-09-06T22:06:56Z",
+        "artifact_sizes_bytes": null
+      }
+    },
+    {
+      "scenario_id": "rfdiffusion-r02",
+      "model_id": "rfdiffusion",
+      "parameters": {
+        "contigs": [
+          "96-96"
+        ],
+        "diffuser_T": 50,
+        "num_designs": 4,
+        "operation": "design-backbone",
+        "schema": "fs2-serve.nebius.ai/rfdiffusion-parameters/v1",
+        "seed": 8201
+      },
+      "cache_state": "warm-cpu-node",
+      "client_wall_seconds": 108.16,
+      "first_semantic_result_seconds": 100.207719,
+      "receipt_sha256": "8c8b0850ef8574a1d4c601e432bd81cfb87bbdd219c4493b725b412e82ca2efe",
+      "execution_identity": {
+        "execution_identity_sha256": "81dc023e0332e9ef1f0df0276b1b59f6004430ebfcf8defdc21a39e3f097f539",
+        "model_artifact_manifest_digest": "931ae8f26343abe60d3fd4efb71da9ca2822899bde61357044eea09ca85bfc2d",
+        "model_id": "rfdiffusion",
+        "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+        "runtime_image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+        "runtime_recipe_sha256": "74132696b001c804acfb6851451e787026cc5f24d1a12aa0ea731c66e163987a",
+        "variant_id": "rfdiffusion-v1-1-0",
+        "workload_recipe_sha256": "625ac765fe08415199b937a1ddb8b6289ed7924e0b88b9f5f342391076891bde"
+      },
+      "downloaded_artifacts": [
+        {
+          "sha256": "098e723c7dfc4c7e3e19ba3fc3111a51bd1795807a277bb42e5d429fc546dc11",
+          "size_bytes": 2454,
+          "media_type": "application/vnd.fs2.scientific-manifest+json"
+        },
+        {
+          "sha256": "cbe31e8411711d27bb3ab905daf8248199f4f473039f7334605668a297ba73c1",
+          "size_bytes": 1274,
+          "media_type": "application/json"
+        }
+      ],
+      "successful_gpu_shards": 4,
+      "gpu_accounting": {
+        "scheduler_occupied_gpu_seconds": 279,
+        "device_allocated_gpu_seconds": 273.994634,
+        "active_gpu_seconds": 237,
+        "occupied_idle_gpu_seconds": 42
+      },
+      "gpu_accounting_quality": "application_observed",
+      "phase_gpu_seconds": {
+        "active_compute": 237,
+        "artifact_load": 16,
+        "checkpoint_drain": 0,
+        "compile": 0,
+        "cooldown_grace": 0,
+        "image_pull": 21,
+        "resident_idle": 5,
+        "restore": 0,
+        "teardown": 0,
+        "unclassified": 0,
+        "warmup": 0,
+        "workflow_wait": 0
+      },
+      "finalizer": {
+        "stage_id": "collect",
+        "image_digest": "sha256:443ecb4344ff74957a49729d42717cc034d06bc4351200b5b4888bdad8d9ddb4",
+        "created_at": "2026-09-06T22:08:32Z",
+        "scheduled_at": "2026-09-06T22:08:32Z",
+        "init_containers": [
+          {
+            "name": "prepare-workspace",
+            "started_at": "2026-09-06T22:08:32Z",
+            "finished_at": "2026-09-06T22:08:35Z",
+            "runtime_seconds": 3,
+            "gap_after_previous_init_seconds": null
+          },
+          {
+            "name": "materialize-0",
+            "started_at": "2026-09-06T22:08:35Z",
+            "finished_at": "2026-09-06T22:08:37Z",
+            "runtime_seconds": 2,
+            "gap_after_previous_init_seconds": 0
+          },
+          {
+            "name": "materialize-1",
+            "started_at": "2026-09-06T22:08:37Z",
+            "finished_at": "2026-09-06T22:08:39Z",
+            "runtime_seconds": 2,
+            "gap_after_previous_init_seconds": 0
+          },
+          {
+            "name": "materialize-2",
+            "started_at": "2026-09-06T22:08:39Z",
+            "finished_at": "2026-09-06T22:08:41Z",
+            "runtime_seconds": 2,
+            "gap_after_previous_init_seconds": 0
+          },
+          {
+            "name": "materialize-3",
+            "started_at": "2026-09-06T22:08:41Z",
+            "finished_at": "2026-09-06T22:08:43Z",
+            "runtime_seconds": 2,
+            "gap_after_previous_init_seconds": 0
+          }
+        ],
+        "main_started_at": "2026-09-06T22:08:43Z",
+        "main_finished_at": "2026-09-06T22:08:44Z",
+        "collector_started_at": "2026-09-06T22:08:44Z",
+        "collector_finished_at": "2026-09-06T22:08:46Z",
+        "artifact_sizes_bytes": [
+          7861,
+          7826,
+          7878,
+          7884
+        ]
+      }
+    },
+    {
+      "scenario_id": "rfdiffusion-r03",
+      "model_id": "rfdiffusion",
+      "parameters": {
+        "contigs": [
+          "96-96"
+        ],
+        "diffuser_T": 50,
+        "num_designs": 4,
+        "operation": "design-backbone",
+        "schema": "fs2-serve.nebius.ai/rfdiffusion-parameters/v1",
+        "seed": 8202
+      },
+      "cache_state": "warm-cpu-node",
+      "client_wall_seconds": 108.162,
+      "first_semantic_result_seconds": 99.964043,
+      "receipt_sha256": "784443d11f0c85c61d99ad540156cd9241028851e5c1ee5defbb4afd295eb8d8",
+      "execution_identity": {
+        "execution_identity_sha256": "81dc023e0332e9ef1f0df0276b1b59f6004430ebfcf8defdc21a39e3f097f539",
+        "model_artifact_manifest_digest": "931ae8f26343abe60d3fd4efb71da9ca2822899bde61357044eea09ca85bfc2d",
+        "model_id": "rfdiffusion",
+        "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+        "runtime_image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+        "runtime_recipe_sha256": "74132696b001c804acfb6851451e787026cc5f24d1a12aa0ea731c66e163987a",
+        "variant_id": "rfdiffusion-v1-1-0",
+        "workload_recipe_sha256": "625ac765fe08415199b937a1ddb8b6289ed7924e0b88b9f5f342391076891bde"
+      },
+      "downloaded_artifacts": [
+        {
+          "sha256": "cc6cdf6f5e5d2e03d88422d66ca24f920de971774c151028635ef18a1cd38817",
+          "size_bytes": 2454,
+          "media_type": "application/vnd.fs2.scientific-manifest+json"
+        },
+        {
+          "sha256": "723d15310b81647ac36b49df572a19cbf31c70d95ff9064b090d08d3f7e00476",
+          "size_bytes": 1273,
+          "media_type": "application/json"
+        }
+      ],
+      "successful_gpu_shards": 4,
+      "gpu_accounting": {
+        "scheduler_occupied_gpu_seconds": 286,
+        "device_allocated_gpu_seconds": 283.29133,
+        "active_gpu_seconds": 243,
+        "occupied_idle_gpu_seconds": 43
+      },
+      "gpu_accounting_quality": "application_observed",
+      "phase_gpu_seconds": {
+        "active_compute": 243,
+        "artifact_load": 22,
+        "checkpoint_drain": 0,
+        "compile": 0,
+        "cooldown_grace": 0,
+        "image_pull": 16,
+        "resident_idle": 5,
+        "restore": 0,
+        "teardown": 0,
+        "unclassified": 0,
+        "warmup": 0,
+        "workflow_wait": 0
+      },
+      "finalizer": {
+        "stage_id": "collect",
+        "image_digest": "sha256:443ecb4344ff74957a49729d42717cc034d06bc4351200b5b4888bdad8d9ddb4",
+        "created_at": "2026-09-06T22:10:22Z",
+        "scheduled_at": "2026-09-06T22:10:22Z",
+        "init_containers": [
+          {
+            "name": "prepare-workspace",
+            "started_at": "2026-09-06T22:10:23Z",
+            "finished_at": "2026-09-06T22:10:26Z",
+            "runtime_seconds": 3,
+            "gap_after_previous_init_seconds": null
+          },
+          {
+            "name": "materialize-0",
+            "started_at": "2026-09-06T22:10:27Z",
+            "finished_at": "2026-09-06T22:10:28Z",
+            "runtime_seconds": 1,
+            "gap_after_previous_init_seconds": 1
+          },
+          {
+            "name": "materialize-1",
+            "started_at": "2026-09-06T22:10:29Z",
+            "finished_at": "2026-09-06T22:10:30Z",
+            "runtime_seconds": 1,
+            "gap_after_previous_init_seconds": 1
+          },
+          {
+            "name": "materialize-2",
+            "started_at": "2026-09-06T22:10:31Z",
+            "finished_at": "2026-09-06T22:10:32Z",
+            "runtime_seconds": 1,
+            "gap_after_previous_init_seconds": 1
+          },
+          {
+            "name": "materialize-3",
+            "started_at": "2026-09-06T22:10:33Z",
+            "finished_at": "2026-09-06T22:10:34Z",
+            "runtime_seconds": 1,
+            "gap_after_previous_init_seconds": 1
+          }
+        ],
+        "main_started_at": "2026-09-06T22:10:35Z",
+        "main_finished_at": "2026-09-06T22:10:35Z",
+        "collector_started_at": "2026-09-06T22:10:35Z",
+        "collector_finished_at": "2026-09-06T22:10:37Z",
+        "artifact_sizes_bytes": [
+          7822,
+          7882,
+          7888,
+          7925
+        ]
+      }
+    }
+  ],
+  "invalid_request": {
+    "model_id": "boltzgen",
+    "requested_candidates": 40,
+    "maximum_total_candidates": 24,
+    "response_status": 422,
+    "operation_created": false,
+    "model_pods_observed": 0,
+    "receipt_sha256": "a0c197978e64577300c0adada1393fc9d7da7143bf3afaccdf99204412849871"
+  },
+  "browser_cancellation": {
+    "model_id": "rfdiffusion",
+    "num_designs": 4,
+    "contigs": [
+      "192-192"
+    ],
+    "browser_clicked_at": "2026-09-06T22:02:36.413Z",
+    "backend_requested_at": "2026-09-06T22:02:36.536337Z",
+    "backend_response_at": "2026-09-06T22:02:36.626Z",
+    "http_status": 200,
+    "shards_completed_before_request": 2,
+    "shards_cancelled": 2,
+    "stage_and_collector_finished_at": "2026-09-06T22:02:37Z",
+    "last_pod_deleted_observed_at": "2026-09-06T22:02:38Z",
+    "watch_timestamp_precision_seconds": 1,
+    "process_stop_upper_bound_seconds": 1.5,
+    "pod_removal_upper_bound_seconds": 2.5,
+    "configured_grace_seconds": 90,
+    "terminal_status": "cancelled",
+    "all_resources_released": true,
+    "downstream_collect_attempts": 0,
+    "receipt_sha256": "08170492b1aaf6d1d1752469e38a6e2c9401c1356019e67f9566d4b19f4db69f",
+    "runner_note": "The ordinary success-expecting runner reports operation_terminal_failure; its retained terminal receipt explicitly proves the intended external browser cancellation."
+  },
+  "raw_evidence_sha256": {
+    "optimized-stage-pods-29b7e01a.ndjson": "dae6a1c32faf22fc36540ac0b0a7e772a385ee6517238a0ae5b227e97bded738",
+    "optimized-stage-materializations-29b7e01a.ndjson": "8b22ec45d47120d81ca32ae1cc43e177e89cbd673ae5e0ade9685437640bad85",
+    "optimized-stage-events-29b7e01a-final.json": "e3d2c0c652cc3d4d12c941874651d6b3e0ca01f7d76c1f2367e40f88675b1e07"
+  },
+  "cleanup": {
+    "remaining_campaign_model_pods": 0,
+    "watch_processes_stopped": true
+  },
+  "limitations": [
+    "Application-observed GPU accounting is closed lifecycle intervals, not measured kernel utilization; concurrent shard phase sums can exceed request wall time.",
+    "Dedicated runtime weight-load, compile/warmup and snapshot restore timings remain unavailable in this campaign.",
+    "The first CPU node was cold; repetitions two and three reused it. Do not combine those cache states into one claimed cold-start percentile.",
+    "First-repetition complete materialization sizes were not captured before pod cleanup; later repetitions retain every frozen artifact size.",
+    "Read-only environment probes ran during repetition three; earlier probe attempts lost their target container to ordinary workload cleanup.",
+    "This bounded intermediate-release benchmark is not final fleet requalification or snapshot acceptance."
+  ]
+}
