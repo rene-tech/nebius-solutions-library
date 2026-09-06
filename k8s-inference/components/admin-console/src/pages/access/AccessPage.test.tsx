@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { adminApi, AdminApiError } from "../../api/client";
@@ -28,6 +28,36 @@ function renderPage(role: OperatorRole = "admin") {
 }
 
 describe("Access page", () => {
+  it("gives access form controls concise labels independent of options and help text", async () => {
+    vi.spyOn(adminApi, "principals").mockResolvedValue(testEnvelope({ items: [tenantPrincipal] }));
+    vi.spyOn(adminApi, "keys").mockResolvedValue(testEnvelope({ items: [testKey] }));
+    renderPage();
+    await screen.findByText("Agent A key");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add principal" }));
+    expect(screen.getByLabelText("Kind", { exact: true })).toHaveValue("human");
+    expect(screen.getByLabelText("Role", { exact: true })).toHaveValue("viewer");
+    const subjectPattern = new RegExp(`^(?:${screen.getByLabelText("Subject").getAttribute("pattern")})$`, "v");
+    const tenantPattern = new RegExp(`^(?:${within(screen.getByRole("dialog")).getByLabelText("Tenant").getAttribute("pattern")})$`, "v");
+    expect(subjectPattern.test("customer-a:rene@example.org/team")).toBe(true);
+    expect(subjectPattern.test("customer with spaces")).toBe(false);
+    expect(tenantPattern.test("tenant-academic")).toBe(true);
+    expect(tenantPattern.test("tenant/academic")).toBe(false);
+    fireEvent.change(screen.getByLabelText("Role", { exact: true }), { target: { value: "operator" } });
+    expect(screen.getByRole("combobox", { name: "Role" })).toHaveValue("operator");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage" }));
+    expect(screen.getByLabelText("Role", { exact: true })).toHaveValue(tenantPrincipal.role);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Create API key" }));
+    expect(screen.getByLabelText("Principal", { exact: true })).toHaveValue(tenantPrincipal.subject);
+    expect(screen.getByLabelText("Allowed models", { exact: true })).toHaveValue("*");
+    expect(screen.getByRole("textbox", { name: "Allowed models" }))
+      .toHaveAccessibleDescription("Comma-separated model IDs, or * for all models.");
+  });
+
   it("reveals a newly issued key once and drops it when navigation unmounts the page", async () => {
     const transient = "issued-test-" + "k".repeat(48);
     vi.spyOn(adminApi, "principals").mockResolvedValue(testEnvelope({ items: [tenantPrincipal] }));

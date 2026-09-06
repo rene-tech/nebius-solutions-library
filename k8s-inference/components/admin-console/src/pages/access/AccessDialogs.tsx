@@ -69,10 +69,10 @@ export function CreatePrincipalDialog({ fixedTenant, busy, error, onClose, onSav
     <Modal description="Create a human or service operator identity. API runtime principals remain separate and are selected when a key is issued." onClose={onClose} title="Add principal">
       <form className="form-grid" onSubmit={(event) => void submit(event)}>
         <label>Display name<input maxLength={200} onChange={(event) => setDisplayName(event.target.value)} required value={displayName} /></label>
-        <label>Subject<input autoComplete="off" maxLength={200} onChange={(event) => setSubject(event.target.value)} pattern="[A-Za-z0-9][A-Za-z0-9_.:@/-]*" required spellCheck={false} value={subject} /></label>
-        <label>Kind<select onChange={(event) => setKind(event.target.value as PrincipalKind)} value={kind}><option value="human">Human</option><option value="service">Service</option></select></label>
-        <label>Role<select onChange={(event) => setRole(event.target.value as OperatorRole)} value={role}><option value="viewer">Viewer</option><option value="operator">Operator</option><option value="admin">Admin</option></select></label>
-        <label className="form-grid__wide">Tenant<input disabled={fixedTenant !== null} maxLength={120} onChange={(event) => setTenant(event.target.value)} pattern="[A-Za-z0-9][A-Za-z0-9_.-]*" placeholder="Empty creates a global principal" value={tenant} /></label>
+        <label>Subject<input autoComplete="off" maxLength={200} onChange={(event) => setSubject(event.target.value)} pattern={"[A-Za-z0-9][A-Za-z0-9_.:@\\/\\-]*"} required spellCheck={false} value={subject} /></label>
+        <label>Kind<select aria-label="Kind" onChange={(event) => setKind(event.target.value as PrincipalKind)} value={kind}><option value="human">Human</option><option value="service">Service</option></select></label>
+        <label>Role<select aria-label="Role" onChange={(event) => setRole(event.target.value as OperatorRole)} value={role}><option value="viewer">Viewer</option><option value="operator">Operator</option><option value="admin">Admin</option></select></label>
+        <label className="form-grid__wide">Tenant<input disabled={fixedTenant !== null} maxLength={120} onChange={(event) => setTenant(event.target.value)} pattern={"[A-Za-z0-9][A-Za-z0-9_.\\-]*"} placeholder="Empty creates a global principal" value={tenant} /></label>
         <FormError local={null} remote={error} />
         <div className="modal-actions form-grid__wide"><button className="button" onClick={onClose} type="button">Cancel</button><button className="button button--primary" disabled={busy} type="submit">{busy ? "Creating…" : "Create principal"}</button></div>
       </form>
@@ -102,7 +102,7 @@ export function EditPrincipalDialog({ principal, busy, error, onClose, onSave }:
     <Modal description={`${principal.subject} · ${principal.tenant_id ?? "global"}`} onClose={onClose} title="Manage principal">
       <form className="form-grid" onSubmit={(event) => void submit(event)}>
         <label className="form-grid__wide">Display name<input maxLength={200} onChange={(event) => setDisplayName(event.target.value)} required value={displayName} /></label>
-        <label>Role<select onChange={(event) => setRole(event.target.value as OperatorRole)} value={role}><option value="viewer">Viewer</option><option value="operator">Operator</option><option value="admin">Admin</option></select></label>
+        <label>Role<select aria-label="Role" onChange={(event) => setRole(event.target.value as OperatorRole)} value={role}><option value="viewer">Viewer</option><option value="operator">Operator</option><option value="admin">Admin</option></select></label>
         <label className="checkbox-field"><input checked={enabled} onChange={(event) => setEnabled(event.target.checked)} type="checkbox" />Enabled</label>
         <FormError local={null} remote={error} />
         <div className="modal-actions form-grid__wide"><button className="button" onClick={onClose} type="button">Cancel</button><button className="button button--primary" disabled={busy} type="submit">{busy ? "Saving…" : "Save changes"}</button></div>
@@ -148,7 +148,7 @@ function KeyPolicyFields(props: KeyPolicyFieldsProps) {
           {SCOPE_OPTIONS.map((scope) => <label key={scope}><input checked={props.scopes.has(scope)} onChange={(event) => toggleScope(scope, event.target.checked)} type="checkbox" />{scope}</label>)}
         </div>
       </fieldset>
-      <label className="form-grid__wide">Allowed models<input aria-describedby="model-scope-help" maxLength={1024} onChange={(event) => props.setModels(event.target.value)} required spellCheck={false} value={props.models} /><small id="model-scope-help">Comma-separated model IDs, or <code>*</code> for all models.</small></label>
+      <label className="form-grid__wide">Allowed models<input aria-label="Allowed models" aria-describedby="model-scope-help" maxLength={1024} onChange={(event) => props.setModels(event.target.value)} required spellCheck={false} value={props.models} /><small id="model-scope-help">Comma-separated model IDs, or <code>*</code> for all models.</small></label>
       <label>Expires at<input min={datetimeLocal(new Date(Date.now() + 60_000).toISOString())} onChange={(event) => props.setExpiry(event.target.value)} type="datetime-local" value={props.expiry} /></label>
       <label>Max concurrency<input max="100" min="1" onChange={(event) => props.setMaxConcurrency(event.target.value)} required step="1" type="number" value={props.maxConcurrency} /></label>
       <label>Request budget<input min="1" onChange={(event) => props.setRequestBudget(event.target.value)} placeholder="Unlimited" step="1" type="number" value={props.requestBudget} /></label>
@@ -262,8 +262,8 @@ export function CreateKeyDialog({ principals, tenant: initialTenant, fixedTenant
   return (
     <Modal description="The credential is displayed once after the server creates it. Only non-secret metadata appears in future views." onClose={onClose} title="Create API key">
       <form className="form-grid" onSubmit={(event) => void submit(event)}>
-        <label>Principal<select disabled={enabledPrincipals.length === 0} onChange={(event) => changePrincipal(event.target.value)} required value={principalId}>{enabledPrincipals.length === 0 ? <option value="">No enabled principals available</option> : enabledPrincipals.map((principal) => <option key={principal.id} value={principal.subject}>{principal.display_name} · {principal.subject}</option>)}</select></label>
-        <label>Tenant<input disabled={fixedTenant} maxLength={120} onChange={(event) => setTenant(event.target.value)} pattern="[A-Za-z0-9][A-Za-z0-9_.-]*" required value={tenant} /></label>
+        <label>Principal<select aria-label="Principal" disabled={enabledPrincipals.length === 0} onChange={(event) => changePrincipal(event.target.value)} required value={principalId}>{enabledPrincipals.length === 0 ? <option value="">No enabled principals available</option> : enabledPrincipals.map((principal) => <option key={principal.id} value={principal.subject}>{principal.display_name} · {principal.subject}</option>)}</select></label>
+        <label>Tenant<input disabled={fixedTenant} maxLength={120} onChange={(event) => setTenant(event.target.value)} pattern={"[A-Za-z0-9][A-Za-z0-9_.\\-]*"} required value={tenant} /></label>
         <KeyPolicyFields {...{ name, setName, scopes, setScopes, models, setModels, expiry, setExpiry, requestBudget, setRequestBudget, gpuBudget, setGpuBudget, maxConcurrency, setMaxConcurrency, rateRequests, setRateRequests, rateWindow, setRateWindow }} />
         <FormError local={localError} remote={error} />
         <div className="modal-actions form-grid__wide"><button className="button" onClick={onClose} type="button">Cancel</button><button className="button button--primary" disabled={busy || enabledPrincipals.length === 0} type="submit">{busy ? "Creating…" : "Create key"}</button></div>
