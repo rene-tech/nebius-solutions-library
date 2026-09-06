@@ -303,6 +303,51 @@ def gpu_overlap(rows: list[dict[str, Any]]) -> int:
     return peak
 
 
+def collect_metrics(endpoint: str, rows: list[dict[str, Any]], run_root: Path) -> None:
+    """Reuse the benchmark's exact phase and GPU accounting projections."""
+    import run_coldstart_benchmark as benchmark
+
+    client = benchmark.PUBLIC.PublicApiClient(endpoint, os.environ["FS2_ADMIN_TOKEN"])
+    cookie = benchmark._open_admin_session(client)
+    try:
+        for row in rows:
+            if row["outcome"] != "passed" or not row.get("attempts"):
+                continue
+            evidence = benchmark._admin_evidence(
+                client, cookie, row["operation_id"], row["model_id"], 30
+            )
+            phases = benchmark._phase_map(evidence.detail)
+            receipt = json.loads((run_root / f"{row['id']}.json").read_bytes())
+            timestamps = receipt["timestamps"]
+            row["measurements"] = {
+                **{
+                    metric: benchmark._phase_measurement(phases, aliases)
+                    for metric, aliases in benchmark.PHASE_METRICS.items()
+                },
+                "time_to_first_semantic_result_seconds": benchmark._elapsed(
+                    timestamps["accepted_at"],
+                    timestamps["result_completed_at"],
+                    "public-operation-timestamps",
+                ),
+                "total_runtime_seconds": benchmark._elapsed(
+                    timestamps["started_at"],
+                    timestamps["completed_at"],
+                    "public-operation-timestamps",
+                ),
+            }
+            row["lifecycle_accounting"] = benchmark._lifecycle_accounting(
+                evidence.lifecycle, evidence.lifecycle_error
+            )
+            row["admin_sources"] = {
+                "run_detail_error": evidence.detail_error,
+                "lifecycle_error": evidence.lifecycle_error,
+            }
+    finally:
+        benchmark._admin_json(
+            client, cookie, "DELETE", "/admin/api/v1/session", expected_status=204
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--endpoint", required=True)
@@ -311,9 +356,16 @@ def main() -> int:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--max-parallel", type=int, default=10)
     parser.add_argument("--timeout-seconds", type=float, default=7200)
+    parser.add_argument(
+        "--admin-metrics",
+        action="store_true",
+        help="include exact GPU and phase metrics using FS2_ADMIN_TOKEN",
+    )
     args = parser.parse_args()
     if not fleet.SAFE_ID_RE.fullmatch(args.run_id) or not 1 <= args.max_parallel <= 32:
         parser.error("invalid run ID or parallelism")
+    if args.admin_metrics and not os.environ.get("FS2_ADMIN_TOKEN"):
+        parser.error("FS2_ADMIN_TOKEN is required for --admin-metrics")
     scenario_bytes = args.scenarios.read_bytes()
     scenarios = json.loads(scenario_bytes)
     ids = [scenario["id"] for scenario in scenarios]
@@ -353,6 +405,14 @@ def main() -> int:
                 ),
                 flush=True,
             )
+    metrics_error = None
+    if args.admin_metrics:
+        try:
+            collect_metrics(args.endpoint, rows, run_root)
+        except (KeyError, RuntimeError, ValueError, OSError) as error:
+            # Preserve all GPU outcomes even when an observability reader
+            # fails; class names are safe while transport messages may not be.
+            metrics_error = type(error).__name__
     summary = {
         "schema": SCHEMA,
         "run_id": args.run_id,
@@ -360,10 +420,11 @@ def main() -> int:
         "passed": sum(row["outcome"] == "passed" for row in rows),
         "failed": sum(row["outcome"] != "passed" for row in rows),
         "peak_admitted_gpu_attempts": gpu_overlap(rows),
+        "metrics_error": metrics_error,
         "rows": sorted(rows, key=lambda row: row["id"]),
     }
     public._write_receipt(run_root / "aggregate.json", summary, overwrite=False)
-    return int(summary["failed"] > 0)
+    return int(summary["failed"] > 0 or metrics_error is not None)
 
 
 if __name__ == "__main__":

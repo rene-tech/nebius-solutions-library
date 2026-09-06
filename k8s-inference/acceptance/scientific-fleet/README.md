@@ -153,6 +153,13 @@ admission overlap, not a claim of continuously busy GPUs. Priority values in
 the receipts establish policy assignment; saturated-queue ordering and node
 scale-from-zero require separate live evidence.
 
+Operators can add `--admin-metrics` with `FS2_ADMIN_TOKEN` set to include the
+existing benchmark's phase durations and occupied, active and idle GPU
+accounting from those same completed operations. Missing or estimated phases
+remain explicitly unavailable/estimated; the runner does not infer GPU load
+time from total request duration. It also downloads each output manifest and
+one scientific result through the public API and verifies their exact bytes.
+
 The current BoltzGen adapter accepts at most two shards, 20 candidates per
 shard, 24 candidates per request in total, and three selected winners per
 shard. Larger campaigns use concurrent requests. These are executable
