@@ -86,6 +86,32 @@ the varying-load limitation and the pending full-workflow acceptance gate.
 This follows PyTorch's guidance to avoid oversubscribing concurrent inference
 thread pools. [PyTorch CPU threading documentation](https://docs.pytorch.org/docs/2.14/notes/cpu_threading_torchscript_inference.html)
 
+## Saturated priority and preemptible acceptance
+
+The separate `priority-scale` campaign completed all eighteen RFdiffusion bulk
+designs in 581.140 s and a higher-priority customer design in 334.211 s. It
+reached 17 simultaneous GPU admissions, used reserved and preemptible flavors,
+and restarted the preempted bulk shard as attempt two before delivering the
+complete final result. Both operations passed public result download checks.
+No node-group, queue quota or Pod resource setting was changed for the test.
+
+Kueue preempted bulk priority -100 for customer priority 0 at 21:31:05 UTC.
+However, the customer Pod did not acquire that GPU until 21:32:35: exactly the
+configured 90-second termination grace. The trusted stage wrapper and
+companion CLI lacked explicit PID-1 termination handling. The fix forwards
+SIGTERM/SIGINT to the model process group and lets companions exit cleanly;
+it preserves grace configuration and never publishes successful completion
+for a cancelled process, even if a child handles termination by exiting zero.
+Forty-one focused companion/staging tests passed, including real child and
+grandchild signal delivery. Live cancellation/preemption latency must be
+rechecked after this fix is deployed.
+
+Customer accounting was exact/application-observed. The bulk ledger remained
+reconciled but correctly marked estimated because the preempted attempt had
+an inferred terminal boundary. Its 5,671.013 occupied GPU-seconds and 470 idle
+GPU-seconds must not be presented as fully measured. The no-preemption varied
+fleet accounting above remains exact; the receipts retain this distinction.
+
 ## Retained environment and evidence
 
 The H100 cluster remains running for customer testing. No quota, cap, resource

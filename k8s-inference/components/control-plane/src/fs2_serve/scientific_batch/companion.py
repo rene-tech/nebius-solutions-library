@@ -61,6 +61,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -75,9 +76,33 @@ def main() -> int:
     marker = Path.cwd() / ".fs2" / "stage-complete.json"
     if marker.exists() or marker.is_symlink():
         raise SystemExit("stage completion marker already exists")
-    completed = subprocess.run(command, check=False)
-    if completed.returncode != 0:
-        return completed.returncode
+    process = None
+    termination_signal = None
+
+    def terminate(signum, _frame):
+        nonlocal termination_signal
+        termination_signal = signum
+        if process is not None:
+            try:
+                os.killpg(process.pid, signum)
+            except ProcessLookupError:
+                pass
+
+    # Each container runs its command as PID 1. Explicit handlers are needed
+    # for Kubernetes termination, and forwarding must reach model grandchildren
+    # as well as the immediate wrapper. The Pod retains its configured grace.
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(signum, terminate)
+    if termination_signal is not None:
+        return 128 + termination_signal
+    process = subprocess.Popen(command, start_new_session=True)
+    if termination_signal is not None:
+        terminate(termination_signal, None)
+    returncode = process.wait()
+    if termination_signal is not None:
+        return 128 + termination_signal
+    if returncode != 0:
+        return returncode if returncode > 0 else 128 - returncode
     values = {{
         "stage_id": os.environ.get("FS2_STAGE_ID", ""),
         "shard_id": os.environ.get("FS2_SHARD_ID", ""),
@@ -106,6 +131,8 @@ def main() -> int:
             output.write(payload)
             output.flush()
             os.fsync(output.fileno())
+        if termination_signal is not None:
+            return 128 + termination_signal
         os.replace(temporary, marker)
         directory = os.open(marker.parent, os.O_RDONLY | os.O_DIRECTORY)
         try:
