@@ -1,0 +1,16 @@
+# Disposable isolated-probe storage. Do not point experiments at the shared
+# scientific model cache. Production storage is owned by Terraform/Helm.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fs2-scientific-snapshot-probe-20260906
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: fs2-scientific-snapshot-probe
+    fs2.nebius.ai/test-only: "true"
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: compute-csi-default-sc
+  resources:
+    requests:
+      storage: 128Gi
