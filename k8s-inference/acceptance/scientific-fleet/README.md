@@ -180,6 +180,9 @@ measurement boundaries, and the CPU-stage image-pull optimization finding.
 The [live admin access and dispatch-policy acceptance](evidence/customer-access-policy-h100-8bb53aab-20260906.md)
 also verifies scoped scientific keys, revocation, durable pause/resume and
 cap-one serialized H100 execution, with original settings restored afterward.
+The [final MCP and H100 Configuration proof](evidence/final-mcp-admin-h100-adf1d842-20260906.md)
+checks the deployed named scientific tool, cross-transport idempotent replay,
+result downloads and corrected H100 placement warnings without new GPU jobs.
 The [optimized-stage H100 report](evidence/optimized-stages-h100-29b7e01a-20260906.md)
 adds three varied Mosaic/RF repetitions on the lightweight CPU image, exact
 init-transition timings, invalid-input rejection and real admin-UI cancellation.

@@ -1,0 +1,85 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-mcp-admin-acceptance/v1",
+  "outcome": "passed",
+  "deployed_source": "adf1d8423e9b75afc5ba208baf53e479e7793922",
+  "control_plane_image_digest": "sha256:4134c130d4d265212886b0a17a03b0b8051d01bd592032b00509ed657378623a",
+  "admin_image_digest": "sha256:efb9750399e9b17175559fece20585b56fc06c839a428f6db615075c6d3f4857",
+  "mcp": {
+    "observed_at": "2026-09-06T23:15:10.172471+00:00",
+    "protocol_version": "2026-07-28",
+    "tls_verified": true,
+    "model_id": "esmfold2-fast",
+    "alias": "submit_esmfold2_fast",
+    "alias_advertised_and_registered": true,
+    "cache_scope": "private",
+    "ttl_ms": 0,
+    "original_transport": "http",
+    "replay_transport": "mcp",
+    "status_transport": "mcp",
+    "result_transport": "mcp",
+    "idempotent_reused_operation": true,
+    "request_sha256": "3a3a260d565ca823f049db328347cf228d0dda79a1f5875ff7775175ac793234",
+    "replay_seconds": 0.527423,
+    "terminal_state": "succeeded",
+    "attempt_count_before": 2,
+    "attempt_count_after": 2,
+    "attempt_ids_unchanged": true,
+    "new_gpu_jobs": 0,
+    "new_inference_benchmark": false,
+    "semantic_validation": {
+      "status": "passed",
+      "validator_id": "esmfold2-fast-biohub-v3-4-0",
+      "receipt_digest": "d72bf124edffccc326f4a95218239b4fade678bf913ac71b7df930f8ad52a55a"
+    },
+    "download_sha256_and_sizes_verified": true,
+    "downloaded_artifacts": [
+      {
+        "media_type": "application/vnd.fs2.scientific-manifest+json",
+        "sha256": "94ce1697474c1f29dd15c1a4dee6b974615e3c821c7b3f77a4a42b7751b13173",
+        "size_bytes": 695
+      },
+      {
+        "media_type": "application/json",
+        "sha256": "5af73205aa0ba116197ce656e24ead630cada86a33e99a330ea12efe7e315d5e",
+        "size_bytes": 602
+      }
+    ]
+  },
+  "configuration_browser": {
+    "observed_at": "2026-09-06T23:16:22.763Z",
+    "page": "/admin/configuration",
+    "browser": "existing authenticated Chromium session",
+    "gpu_class": "nvidia-h100-sxm5-80gb",
+    "models": [
+      {"model_id": "qwen3-8b", "minimum_replicas": 1, "maximum_replicas": 2},
+      {"model_id": "cosmos3-nano", "minimum_replicas": 0, "maximum_replicas": 2}
+    ],
+    "unsupported_warnings": 0,
+    "configuration_mutations": 0,
+    "local_draft": "unchanged",
+    "desired_effective": "aligned",
+    "revision": 38
+  },
+  "independent_release_checks": {
+    "scientific_mcp_profiles": 10,
+    "general_mcp_profiles": ["cosmos3-nano", "qwen3-8b"],
+    "all_advertised_scientific_aliases_registered": true,
+    "authenticated_http_statuses": {
+      "overview": 200,
+      "models": 200,
+      "capacity": 200,
+      "configuration": 200,
+      "scientific-policies": 200,
+      "scientific-discovery": 200
+    },
+    "overview_models_capacity_configuration_warnings": [],
+    "unsupported_accelerator_placement_warnings": 0
+  },
+  "private_evidence_sha256": {
+    "scientific_mcp_alias_receipt": "228381e085ec75bf1857887e3a1349467c3da4bb992c1e1f7720753cc5563f69",
+    "configuration_browser_receipt": "cf6bcc28395e02445aa3269e4546dbc95dbef3a71e518b164a6ce54e48343ee2",
+    "configuration_browser_screenshot": "73eb3a4191cfb5a5a7753b1106ec0585c57d0e4f84e4a5bbddb6f47fa3f95e66",
+    "independent_mcp_discovery": "52433b2e2d1b71bcff6a1cba7ef642605a66fb38ec31deeb4cc9b18072627ec8",
+    "independent_public_surfaces": "e07f6e28d2be216df583d7d3f6ddd03af474a0603b66c09a4894cf827a781244"
+  }
+}
