@@ -322,6 +322,8 @@ export interface ScientificCapabilities {
   model_readiness: ScientificCapability;
   run_history: ScientificCapability;
   artifacts: ScientificCapability;
+  /** Whether this build accepts the one scientific run command: a cancel request. */
+  run_control: ScientificCapability;
 }
 
 export type AcademicAssetState =

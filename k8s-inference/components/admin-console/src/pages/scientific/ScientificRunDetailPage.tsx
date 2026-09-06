@@ -1,8 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { adminApi } from "../../api/client";
-import type { ScientificObservabilityLink } from "../../api/scientificTypes";
+import { adminApi, AdminApiError } from "../../api/client";
+import type { ScientificCapabilities, ScientificObservabilityLink, ScientificRunDetail, ScientificRunSummary } from "../../api/scientificTypes";
+import type { AdminEnvelope } from "../../api/types";
+import { useSession } from "../../auth/SessionContext";
 import { DataBoundary } from "../../components/DataBoundary";
+import { rolePermits } from "../../lib/access";
 import { formatTimestamp } from "../../lib/format";
 import { sharedContextParams } from "../../lib/search";
 import {
@@ -26,22 +30,104 @@ function safeHref(link: ScientificObservabilityLink): string | null {
   }
 }
 
+/** Why the cancel command is unavailable, or null when the operator may request it. */
+export function cancellationBlocker(
+  run: ScientificRunSummary,
+  capabilities: ScientificCapabilities | undefined,
+  canOperate: boolean,
+): string | null {
+  if (!capabilities?.run_control.available) {
+    return capabilities?.run_control.reason ?? "This build does not publish a scientific cancellation command.";
+  }
+  if (!canOperate) return "Operator role required to request cancellation.";
+  if (run.cancellation.state !== "not-requested") return "Cancellation has already been requested for this run.";
+  if (!run.cancellation.can_cancel) return "This run is terminal and can no longer be cancelled.";
+  return null;
+}
+
+interface CancellationControlProps {
+  run: ScientificRunSummary;
+  blocker: string | null;
+  onCancel: () => Promise<void>;
+}
+
+function CancellationControl({ run, blocker, onCancel }: CancellationControlProps) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [requested, setRequested] = useState(false);
+
+  async function confirm() {
+    setBusy(true);
+    setError(null);
+    try {
+      await onCancel();
+      setRequested(true);
+      setConfirming(false);
+    } catch (caught) {
+      const detail = caught instanceof AdminApiError
+        ? `${caught.message}${caught.requestId ? ` · request ${caught.requestId}` : ""}`
+        : "The cancellation request failed.";
+      setError(detail);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // A request this operator just made outranks the "already requested" blocker
+  // the refreshed projection now reports, so the confirmation stays visible.
+  if (requested) {
+    return <div className="inline-notice" role="status"><strong>Cancellation requested.</strong> The controller terminates the active attempt on its next reconciliation; this page reflects the durable request.</div>;
+  }
+  if (blocker) return <p className="supporting-copy">{blocker}</p>;
+  return (
+    <div className="section-stack">
+      {error ? <div className="inline-notice inline-notice--error" role="alert"><strong>Cancellation was not recorded.</strong> {error}</div> : null}
+      {confirming ? (
+        <div className="inline-notice inline-notice--warning mutation-confirmation" aria-label="Confirm cancellation">
+          <div><strong>Confirm cancellation</strong><span>This records a {run.cancellation.mode} request for {run.display_name}; the running attempt stops and the run ends as cancelled. It cannot be undone.</span></div>
+          <div className="configuration-actions">
+            <button className="button button--danger" disabled={busy} onClick={() => void confirm()} type="button">{busy ? "Requesting…" : "Confirm cancellation"}</button>
+            <button className="button" disabled={busy} onClick={() => setConfirming(false)} type="button">Keep running</button>
+          </div>
+        </div>
+      ) : (
+        <div className="configuration-actions">
+          <button className="button button--danger" onClick={() => setConfirming(true)} type="button">Request cancellation</button>
+          <span>Available to operators while the run is not yet terminal.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ScientificRunDetailPage() {
   const { runId = "" } = useParams();
   const [searchParams] = useSearchParams();
+  const { session } = useSession();
+  const queryClient = useQueryClient();
   const context = sharedContextParams(searchParams);
   const capabilitiesQuery = useScientificCapabilities(context);
-  const runsAvailable = capabilitiesQuery.data?.data.run_history.available === true;
+  const capabilities = capabilitiesQuery.data?.data;
+  const runsAvailable = capabilities?.run_history.available === true;
+  const canOperate = rolePermits(session.principal.role, "operator");
   const backParams = new URLSearchParams(context);
   for (const key of ["tenant", "model", "run_status", "service_class", "access_state", "cursor"]) {
     const value = searchParams.get(key);
     if (value) backParams.set(key, value);
   }
+  const queryKey = ["admin-scientific-run", runId, context.toString()];
   const query = useQuery({
-    queryKey: ["admin-scientific-run", runId, context.toString()],
+    queryKey,
     queryFn: ({ signal }) => adminApi.scientificRun(runId, context, signal),
     enabled: Boolean(runId) && runsAvailable,
   });
+
+  async function requestCancellation() {
+    const refreshed = await adminApi.cancelScientificRun(runId, context);
+    queryClient.setQueryData<AdminEnvelope<ScientificRunDetail>>(queryKey, refreshed);
+    await queryClient.invalidateQueries({ queryKey: ["admin-scientific-runs"] });
+  }
 
   if (capabilitiesQuery.isPending) {
     return <div className="state-panel state-panel--loading" role="status">Checking scientific run capability…</div>;
@@ -217,7 +303,7 @@ export function ScientificRunDetailPage() {
                   <div><dt>Requested by</dt><dd>{run.cancellation.requested_by ?? "No request"}</dd></div>
                   <div><dt>Reason</dt><dd>{run.cancellation.reason ?? "No request"}</dd></div>
                 </dl>
-                <p className="supporting-copy">This admin projection is read-only; this build does not publish a scientific cancellation command.</p>
+                <CancellationControl blocker={cancellationBlocker(run, capabilities, canOperate)} onCancel={requestCancellation} run={run} />
               </section>
             </div>
 

@@ -601,4 +601,5 @@ export const scientificCapabilitiesFixture: ScientificCapabilities = {
   model_readiness: { available: true, reason: null },
   run_history: { available: true, reason: null },
   artifacts: { available: true, reason: null },
+  run_control: { available: true, reason: null },
 };

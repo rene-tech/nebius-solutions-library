@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -22,6 +23,7 @@ from fs2_serve.scientific_admin import (
     ScientificArtifactAttemptEvidence,
     ScientificArtifactSnapshot,
     ScientificModelSnapshot,
+    ScientificRunCancelOutcome,
     ScientificRunDetailSnapshot,
     ScientificRunListSnapshot,
     ScientificRunQuery,
@@ -304,6 +306,24 @@ class ModelAdapter:
         return ScientificModelSnapshot(data=ScientificModelReadinessList(items=[]), observed_at=FIXED_NOW)
 
 
+class ControlAdapter:
+    def __init__(self, outcome: ScientificRunCancelOutcome = "requested") -> None:
+        self.outcome = outcome
+        self.calls: list[tuple[UUID, str, str]] = []
+
+    async def request_cancel(self, operation_id: UUID, *, tenant_id: str, actor: str) -> ScientificRunCancelOutcome:
+        self.calls.append((operation_id, tenant_id, actor))
+        if operation_id != OPERATION_ID:
+            raise KeyError(operation_id)
+        return self.outcome
+
+
+class FailingControlAdapter(ControlAdapter):
+    async def request_cancel(self, operation_id: UUID, *, tenant_id: str, actor: str) -> ScientificRunCancelOutcome:
+        del operation_id, tenant_id, actor
+        raise RuntimeError("SENSITIVE_CANCEL_FAILURE")
+
+
 class FailingRunAdapter(RunAdapter):
     async def list_runs(self, query: ScientificRunQuery) -> ScientificRunListSnapshot:
         del query
@@ -316,10 +336,16 @@ class InvalidQueryRunAdapter(RunAdapter):
         raise ScientificAdminQueryError("SENSITIVE_INVALID_CURSOR")
 
 
-def _service(*, artifacts: ArtifactAdapter | None = None, runs: RunAdapter | None = None) -> ScientificAdminReadService:
+def _service(
+    *,
+    artifacts: ArtifactAdapter | None = None,
+    runs: RunAdapter | None = None,
+    controls: ControlAdapter | None = None,
+) -> ScientificAdminReadService:
     return ScientificAdminReadService(
         runs=runs or RunAdapter(),
         artifacts=artifacts or ArtifactAdapter(),
+        controls=controls or ControlAdapter(),
         models=ModelAdapter(),
         clock=lambda: FIXED_NOW,
     )
@@ -440,6 +466,52 @@ async def test_invalid_cursor_returns_stable_client_problem_without_decoder_deta
     assert "SENSITIVE_INVALID_CURSOR" not in caught.value.detail
 
 
+async def test_cancel_run_records_the_request_under_the_run_tenant_and_returns_the_refreshed_detail() -> None:
+    controls = ControlAdapter()
+    service = _service(controls=controls)
+
+    envelope = await service.cancel_run(_context(), OPERATION_ID, tenant_id=None, actor="operator-ada")
+
+    assert envelope.data.run.id == str(OPERATION_ID)
+    # The operator is global (tenant None); the durable request is still keyed by the run's tenant.
+    assert controls.calls == [(OPERATION_ID, "tenant-oncology", "operator-ada")]
+    assert {source.id for source in envelope.meta.sources} == {"scientific-controller", "scientific-artifacts"}
+    assert service.capabilities().run_control.available is True
+
+
+async def test_cancel_run_answers_stable_problems_for_terminal_missing_unconfigured_and_failing_control() -> None:
+    with pytest.raises(AdminProblemError) as terminal:
+        await _service(controls=ControlAdapter("terminal")).cancel_run(
+            _context(), OPERATION_ID, tenant_id="tenant-oncology", actor="operator-ada"
+        )
+    assert (terminal.value.status_code, terminal.value.code) == (409, "scientific_run_terminal")
+
+    with pytest.raises(AdminProblemError) as missing:
+        await _service().cancel_run(_context(), uuid4(), tenant_id=None, actor="operator-ada")
+    assert (missing.value.status_code, missing.value.code) == (404, "scientific_run_not_found")
+
+    with pytest.raises(AdminProblemError) as foreign_tenant:
+        await _service().cancel_run(_context(), OPERATION_ID, tenant_id="tenant-other", actor="operator-ada")
+    assert (foreign_tenant.value.status_code, foreign_tenant.value.code) == (404, "scientific_run_not_found")
+
+    read_only = ScientificAdminReadService(runs=RunAdapter(), models=ModelAdapter(), clock=lambda: FIXED_NOW)
+    assert read_only.capabilities().run_control.available is False
+    assert read_only.capabilities().run_control.reason is not None
+    with pytest.raises(AdminProblemError) as unconfigured:
+        await read_only.cancel_run(_context(), OPERATION_ID, tenant_id=None, actor="operator-ada")
+    assert (unconfigured.value.status_code, unconfigured.value.code) == (503, "scientific_run_control_unavailable")
+
+    with pytest.raises(AdminProblemError) as failing:
+        await _service(controls=FailingControlAdapter()).cancel_run(
+            _context(), OPERATION_ID, tenant_id=None, actor="operator-ada"
+        )
+    assert (failing.value.status_code, failing.value.code) == (503, "scientific_controller_unavailable")
+    assert "SENSITIVE" not in failing.value.detail
+
+    with pytest.raises(ValueError):
+        ScientificAdminReadService(controls=ControlAdapter(), models=ModelAdapter())
+
+
 def test_run_query_rejects_unbounded_windows_and_limits() -> None:
     with pytest.raises(ValueError, match="window"):
         ScientificRunQuery(
@@ -460,13 +532,66 @@ def test_authenticated_admin_routes_use_the_real_bff_service(registry, cipher, h
     )
     assert session.status_code == 200
 
-    assert client.get("/admin/api/v1/scientific-capabilities").status_code == 200
+    capabilities = client.get("/admin/api/v1/scientific-capabilities")
+    assert capabilities.status_code == 200
+    assert capabilities.json()["data"]["run_control"] == {"available": True, "reason": None}
     run_list = client.get("/admin/api/v1/scientific-runs?limit=25&tenant_id=tenant-oncology")
     assert run_list.status_code == 200
     assert run_list.json()["data"]["items"][0]["id"] == str(OPERATION_ID)
     assert client.get(f"/admin/api/v1/scientific-runs/{OPERATION_ID}").status_code == 200
     assert client.get("/admin/api/v1/scientific-models").status_code == 200
     assert client.get("/admin/api/v1/scientific-runs?access_state=invented").status_code == 422
+    cancelled = client.post(f"/admin/api/v1/scientific-runs/{OPERATION_ID}:cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["data"]["run"]["id"] == str(OPERATION_ID)
+    assert client.post(f"/admin/api/v1/scientific-runs/{uuid4()}:cancel").status_code == 404
+    assert client.post("/admin/api/v1/scientific-runs/not-a-uuid:cancel").status_code == 422
+
+
+def test_cancel_route_requires_the_operator_role_and_is_absent_without_a_writer(registry, cipher, hasher) -> None:
+    runtime = _runtime(registry, cipher, hasher)
+    assert isinstance(runtime.store, MemoryStore)
+    assert runtime.operator_sessions is not None
+    viewer_id = uuid4()
+    asyncio.run(
+        runtime.store.create_operator_principal(
+            principal_id=viewer_id,
+            request=OperatorPrincipalCreate(
+                subject="tenant-oncology-viewer",
+                display_name="Tenant oncology viewer",
+                kind=PrincipalKind.HUMAN,
+                role=OperatorRole.VIEWER,
+                tenant_id="tenant-oncology",
+            ),
+            actor="test-bootstrap",
+        )
+    )
+    cookie = asyncio.run(runtime.operator_sessions.issue(viewer_id, actor="test-bootstrap")).cookie_value
+    headers = {"cookie": f"{ADMIN_SESSION_COOKIE}={cookie}"}
+    client = TestClient(create_app(runtime), base_url="https://inference.test.invalid")
+
+    assert client.post(f"/admin/api/v1/scientific-runs/{OPERATION_ID}:cancel").status_code == 401
+    denied = client.post(f"/admin/api/v1/scientific-runs/{OPERATION_ID}:cancel", headers=headers)
+    assert denied.status_code == 403
+    assert client.get(f"/admin/api/v1/scientific-runs/{OPERATION_ID}", headers=headers).status_code == 200
+    controls = cast(ControlAdapter, cast(Any, runtime.scientific_admin).controls)
+    assert controls.calls == []
+    denials = [event for event in runtime.store.audit if event.action == "admin.authorization"]
+    assert any(event.target_id == "scientific_run.cancel" and event.outcome == "failed" for event in denials)
+
+    read_only = _runtime(registry, cipher, hasher)
+    read_only.scientific_admin = ScientificAdminReadService(
+        runs=RunAdapter(), models=ModelAdapter(), clock=lambda: FIXED_NOW
+    )
+    read_only_client = TestClient(create_app(read_only), base_url="https://inference.test.invalid")
+    session = read_only_client.post("/admin/api/v1/session", headers={"authorization": f"Bearer {'a' * 32}"})
+    assert session.status_code == 200
+    capabilities = read_only_client.get("/admin/api/v1/scientific-capabilities")
+    assert capabilities.json()["data"]["run_control"]["available"] is False
+    assert read_only_client.get(f"/admin/api/v1/scientific-runs/{OPERATION_ID}").status_code == 200
+    # Without a writer the command route is never registered; only the GET
+    # projection matches the identifier, so the method itself is refused.
+    assert read_only_client.post(f"/admin/api/v1/scientific-runs/{OPERATION_ID}:cancel").status_code == 405
 
 
 def test_absent_run_reader_removes_only_run_routes(registry, cipher, hasher) -> None:

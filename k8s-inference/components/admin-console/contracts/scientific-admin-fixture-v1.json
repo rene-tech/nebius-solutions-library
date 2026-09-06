@@ -1,7 +1,7 @@
 {
   "schema_version": "fs2.scientific-admin-fixture-contract/v1",
   "status": "capability-gated-live-model-readiness",
-  "production_behavior": "The authenticated same-origin BFF reports scientific capabilities first. Model readiness reads the delivered scientific catalog. Run routes are registered and called only when a durable scientific batch reader exists; artifact availability is reported independently. Production has no fixture fallback; fixture data is enabled only by Vite fixture mode and tests.",
+  "production_behavior": "The authenticated same-origin BFF reports scientific capabilities first. Model readiness reads the delivered scientific catalog. Run routes are registered and called only when a durable scientific batch reader exists; artifact availability is reported independently. The cancel command is registered only when a durable cancel writer exists and is advertised as run_control. Production has no fixture fallback; fixture data is enabled only by Vite fixture mode and tests.",
   "routes": [
     {
       "method": "GET",
@@ -27,6 +27,14 @@
       "method": "GET",
       "path": "/admin/api/v1/scientific-runs/{run_id}",
       "data_schema": "ScientificRunDetail"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/api/v1/scientific-runs/{run_id}:cancel",
+      "data_schema": "ScientificRunDetail",
+      "capability": "run_control",
+      "role": "operator",
+      "behavior": "Records the durable cancel request under the run's tenant with the operator subject as audited actor and returns the refreshed run detail; 409 once the run is terminal."
     },
     {
       "method": "GET",

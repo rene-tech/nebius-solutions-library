@@ -40,6 +40,7 @@ describe("scientific runs fixture contract", () => {
     renderPage();
 
     const completed = await screen.findByRole("row", { name: /CD8 binder backbone screen/ });
+    expect(screen.getByText("Read-only · cancel on run detail")).toBeInTheDocument();
     expect(within(completed).getByText("researcher-ada")).toBeInTheDocument();
     expect(within(completed).getByText("customer-batch")).toBeInTheDocument();
     expect(within(completed).getByText("model-artifact-local")).toBeInTheDocument();

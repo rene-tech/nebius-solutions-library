@@ -36,6 +36,7 @@ def test_production_startup_binds_the_durable_controller_and_tenant_discovery() 
     capabilities = service.capabilities()
     assert capabilities.model_readiness.available is True
     assert capabilities.run_history.available is True
+    assert capabilities.run_control.available is True
     assert capabilities.artifacts.available is False
 
 

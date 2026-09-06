@@ -22,7 +22,10 @@ const navigationAfterScientific = [
   ["Audit", "/admin/audit", "AU"],
 ] as const;
 
-function titleFor(pathname: string, scientificLabel: string) {
+function titleFor(rawPathname: string, scientificLabel: string) {
+  // The console is served at /admin/, so the overview arrives with a trailing
+  // slash; normalise it before matching so the breadcrumb names the page.
+  const pathname = rawPathname.length > 1 ? rawPathname.replace(/\/+$/, "") : rawPathname;
   if (pathname === "/admin/model-deployments/new") return "Draft model deployment";
   if (/^\/admin\/model-deployments\/[^/]+/.test(pathname)) return "Model deployment";
   if (/^\/admin\/models\/[^/]+/.test(pathname)) return "Model detail";

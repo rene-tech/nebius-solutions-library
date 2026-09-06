@@ -91,9 +91,12 @@ before any rollout.
 
 - No mechanism declaration is invented for a model. Models without an
   installed Terraform declaration offer only the conventional path.
-- The scientific admin projection remains read-only; run cancellation is
-  available through the authorized public operation and MCP surfaces, not an
-  admin mutation control.
+- The scientific admin projection is read-only except for one command: an
+  operator may request cancellation of a non-terminal run from the run detail
+  page (`POST /admin/api/v1/scientific-runs/{run_id}:cancel`, advertised as the
+  `run_control` capability). It records the same durable cancel request the
+  public operation and MCP surfaces use; no other scientific state is mutable
+  from the console.
 - A configured mechanism still reports fast-start level `Off` until exact
   measured evidence qualifies a level. The retained comparison does not grant
   a production tier.

@@ -313,6 +313,12 @@ export const adminApi = {
       undefined,
       signal,
     ),
+  cancelScientificRun: (runId: string, context: URLSearchParams, signal?: AbortSignal) =>
+    envelopeRequest<ScientificRunDetail>(`/scientific-runs/${encodeURIComponent(runId)}:cancel`, {
+      method: "POST",
+      query: boundedParams(context),
+      signal,
+    }),
   scientificModels: (context: URLSearchParams, signal?: AbortSignal) =>
     request<ScientificModelReadinessList>("/scientific-models", context, undefined, signal),
   academicAssets: (context: URLSearchParams, signal?: AbortSignal) =>

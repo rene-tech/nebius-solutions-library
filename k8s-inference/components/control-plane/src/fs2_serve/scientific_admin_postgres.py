@@ -25,6 +25,7 @@ from .scientific_admin import (
     ScientificArtifactAttemptEvidence,
     ScientificArtifactSnapshot,
     ScientificModelAdminAdapter,
+    ScientificRunCancelOutcome,
     ScientificRunDetailSnapshot,
     ScientificRunListSnapshot,
     ScientificRunQuery,
@@ -75,7 +76,7 @@ from .scientific_batch.models import (
     StageStatus,
     WorkloadKind,
 )
-from .scientific_batch.postgres_repository import PostgresScientificBatchRepository
+from .scientific_batch.postgres_repository import PostgresScientificBatchRepository, ScientificBatchNotFoundError
 from .scientific_batch.service import ScientificBatchService
 from .scientific_run_result import ArtifactRef
 
@@ -593,6 +594,38 @@ class PostgresScientificRunAdminAdapter:
         return ScientificRunDetailSnapshot(data=detail, observed_at=observed_at)
 
 
+class PostgresScientificRunControlAdapter:
+    """Record an operator cancel request through the controller's own repository.
+
+    The repository write is the same transaction the public ``:cancel`` route
+    uses, so the controller observes it identically and the append-only audit
+    ledger names the operator subject as the actor.
+    """
+
+    def __init__(self, *, batches: PostgresScientificBatchRepository) -> None:
+        self.batches = batches
+
+    async def request_cancel(
+        self,
+        operation_id: UUID,
+        *,
+        tenant_id: str,
+        actor: str,
+    ) -> ScientificRunCancelOutcome:
+        try:
+            before = await self.batches.get(operation_id, tenant_id=tenant_id)
+        except ScientificBatchNotFoundError as error:
+            raise KeyError(operation_id) from error
+        if before.status.terminal:
+            return "terminal"
+        if before.cancel_requested:
+            return "already-requested"
+        after = await self.batches.request_cancel(operation_id, tenant_id=tenant_id, actor=actor)
+        # The repository leaves the row untouched when the batch turned terminal
+        # between the read and the locked update; report that truthfully.
+        return "requested" if after.cancel_requested else "terminal"
+
+
 def _artifact_name(artifact: ArtifactRef, role: str) -> str:
     suffix = {
         "application/json": "json",
@@ -770,6 +803,7 @@ def postgres_scientific_admin_read_service(
             if artifact_service is not None
             else None
         ),
+        controls=PostgresScientificRunControlAdapter(batches=batches),
         models=models,
         source_max_age_seconds=source_max_age_seconds,
         adapter_timeout_seconds=adapter_timeout_seconds,

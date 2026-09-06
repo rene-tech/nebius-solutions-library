@@ -37,6 +37,9 @@ class ScientificAdminSourceUnavailableError(RuntimeError):
 
 SCIENTIFIC_RUNS_UNCONFIGURED = "no durable scientific batch controller reader is bound to this build"
 SCIENTIFIC_ARTIFACTS_UNCONFIGURED = "no scientific artifact result reader is bound to this build"
+SCIENTIFIC_RUN_CONTROL_UNCONFIGURED = "no scientific batch cancellation writer is bound to this build"
+
+ScientificRunCancelOutcome = Literal["requested", "already-requested", "terminal"]
 
 
 class ScientificAdminQueryError(ValueError):
@@ -134,6 +137,24 @@ class ScientificModelAdminAdapter(Protocol):
     async def list_models(self, *, tenant_id: str | None = None) -> ScientificModelSnapshot: ...
 
 
+class ScientificRunControlAdapter(Protocol):
+    """The only scientific run command the admin surface issues: a cancel request.
+
+    Implementations record the request durably under the run's own tenant and
+    report whether it was newly requested, already pending, or too late because
+    the batch had already reached a terminal status. A missing run raises
+    ``KeyError`` so the service can answer 404 without leaking backend detail.
+    """
+
+    async def request_cancel(
+        self,
+        operation_id: UUID,
+        *,
+        tenant_id: str,
+        actor: str,
+    ) -> ScientificRunCancelOutcome: ...
+
+
 ScientificDataT = TypeVar(
     "ScientificDataT",
     ScientificRunList,
@@ -179,6 +200,7 @@ class ScientificAdminReadService:
         models: ScientificModelAdminAdapter | None = None,
         runs: ScientificRunAdminAdapter | None = None,
         artifacts: ScientificArtifactAdminAdapter | None = None,
+        controls: ScientificRunControlAdapter | None = None,
         source_max_age_seconds: float = 90,
         adapter_timeout_seconds: float = 2,
         clock: Callable[[], datetime] | None = None,
@@ -189,8 +211,11 @@ class ScientificAdminReadService:
             raise ValueError("scientific admin adapter timeout is outside the bound")
         if artifacts is not None and runs is None:
             raise ValueError("scientific artifact reporting requires a run reader")
+        if controls is not None and runs is None:
+            raise ValueError("scientific run cancellation requires a run reader")
         self.runs = runs
         self.artifacts = artifacts
+        self.controls = controls
         self.models = models
         self.source_max_age_seconds = source_max_age_seconds
         self.adapter_timeout_seconds = adapter_timeout_seconds
@@ -231,6 +256,10 @@ class ScientificAdminReadService:
             artifacts=ScientificCapability(
                 available=self.artifacts is not None,
                 reason=None if self.artifacts is not None else SCIENTIFIC_ARTIFACTS_UNCONFIGURED,
+            ),
+            run_control=ScientificCapability(
+                available=self.controls is not None,
+                reason=None if self.controls is not None else SCIENTIFIC_RUN_CONTROL_UNCONFIGURED,
             ),
         )
 
@@ -452,6 +481,73 @@ class ScientificAdminReadService:
                 },
             )
         return self._envelope(context, detail, now=now, sources=sources)
+
+    async def cancel_run(
+        self,
+        context: AdminContext,
+        operation_id: UUID,
+        *,
+        tenant_id: str | None,
+        actor: str,
+    ) -> AdminEnvelope[ScientificRunDetail]:
+        """Request cancellation of one run and return its refreshed projection.
+
+        The run is first resolved under the operator's own tenant authority, so
+        a foreign identifier answers 404 exactly like the read route does. The
+        durable request is then recorded under the run's tenant with the
+        operator subject as the audited actor; the controller performs the
+        actual termination on its next reconciliation.
+        """
+
+        controls = self.controls
+        if controls is None:
+            raise AdminProblemError(
+                503,
+                "scientific_run_control_unavailable",
+                "scientific run cancellation is not configured",
+            )
+        runs = self._require_runs()
+        try:
+            snapshot = await asyncio.wait_for(
+                runs.get_run(operation_id, tenant_id=tenant_id),
+                timeout=self.adapter_timeout_seconds,
+            )
+        except asyncio.CancelledError:
+            raise
+        except KeyError:
+            raise AdminProblemError(404, "scientific_run_not_found", "scientific run was not found") from None
+        except (OSError, RuntimeError, TimeoutError, ValueError):
+            raise AdminProblemError(
+                503,
+                "scientific_controller_unavailable",
+                "scientific controller reporting is unavailable",
+            ) from None
+        try:
+            outcome = await asyncio.wait_for(
+                controls.request_cancel(
+                    operation_id,
+                    tenant_id=snapshot.data.run.attribution.tenant_id,
+                    actor=actor,
+                ),
+                timeout=self.adapter_timeout_seconds,
+            )
+        except asyncio.CancelledError:
+            raise
+        except KeyError:
+            raise AdminProblemError(404, "scientific_run_not_found", "scientific run was not found") from None
+        except (OSError, RuntimeError, TimeoutError, ValueError):
+            raise AdminProblemError(
+                503,
+                "scientific_controller_unavailable",
+                "scientific run cancellation is unavailable",
+            ) from None
+        if outcome == "terminal":
+            raise AdminProblemError(
+                409,
+                "scientific_run_terminal",
+                "scientific run already reached a terminal status",
+            )
+        return await self.run_detail(context, operation_id, tenant_id=tenant_id)
 
     async def model_list(
         self,
