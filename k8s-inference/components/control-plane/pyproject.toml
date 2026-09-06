@@ -35,7 +35,7 @@ dependencies = [
 ]
 
 [project.scripts]
-fs2-serve = "fs2_serve.cli:main"
+fs2-serve = "fs2_serve.entrypoint:main"
 fs2-serve-accept-all-models = "fs2_serve.live_acceptance:main"
 
 [dependency-groups]
