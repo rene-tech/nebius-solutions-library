@@ -39,6 +39,8 @@ _MEDIA_TYPE = re.compile(r"^[a-z0-9][a-z0-9.+-]*/[A-Za-z0-9][A-Za-z0-9.+_-]*$")
 _CONTROLLER_ROOT = PurePosixPath("/mnt/fs2-scientific")
 _RUNTIME_ARTIFACT_ROOT = PurePosixPath("/opt/fs2/artifacts")
 _RECIPE_SHARED_PATHS = (
+    "components/control-plane/src/fs2_serve/entrypoint.py",
+    "components/control-plane/src/fs2_serve/scientific_companion_cli.py",
     "components/control-plane/src/fs2_serve/scientific_batch/__init__.py",
     "components/control-plane/src/fs2_serve/scientific_batch/controller.py",
     "components/control-plane/src/fs2_serve/scientific_batch/companion.py",
