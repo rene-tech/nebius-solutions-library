@@ -227,6 +227,14 @@ The byte tools carry base64 and are bounded by the same inline ceiling as the
 HTTP routes. MCP submission additionally requires the profile to be
 MCP-invocable; every currently qualified profile is.
 
+Each discovery row's `mcp_tool_name` is also a callable convenience tool with
+arguments `request` and optional `idempotency_key`. For example,
+`submit_boltzgen` uses exactly the same submission path as
+`submit_scientific_run(model_id="boltzgen", request=...)`; the alias fixes only
+the model ID. Aliases are listed and resolved using the current caller's model,
+tenant, and academic access. Use the generic tool when building model-agnostic
+clients; neither form bypasses the canonical request or admission checks.
+
 ## What to expect on the retained H100 deployment
 
 The ten profiles run as Kubernetes Jobs on the two capacity-block

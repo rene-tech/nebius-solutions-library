@@ -38,6 +38,7 @@ from .models import (
 )
 from .registry import OperationalModel
 from .scientific_artifacts import ArtifactNotFoundError
+from .scientific_batch.service import ScientificProfileDiscovery
 from .scientific_input_uploads import ScientificInputUploadRequest
 from .store import NotFoundError
 
@@ -221,7 +222,20 @@ def _model_tool_names(runtime: AppRuntime, principal: Principal) -> set[str]:
     names: set[str] = set()
     for model in runtime.registry.allowed_for_principal(principal, surface="mcp"):
         names.update(_protocol_tool_names(model))
+    names.update(profile.mcp_tool_name for profile in _scientific_tool_profiles(runtime, principal))
     return names
+
+
+def _scientific_tool_profiles(runtime: AppRuntime, principal: Principal) -> tuple[ScientificProfileDiscovery, ...]:
+    """Reuse scientific discovery's exact tenant, license and runtime binding."""
+
+    if runtime.scientific_batches is None or Scope.INFERENCE_INVOKE.value not in principal.scopes:
+        return ()
+    return runtime.scientific_batches.discovery_profiles(
+        tenant_id=principal.tenant_id,
+        allowed_models=frozenset(principal.models),
+        surface="mcp",
+    )
 
 
 class MCPAuthorizationMiddleware:
@@ -667,6 +681,22 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
 
     registered_names = set(CORE_TOOLS)
 
+    def scientific_handler(tool_name: str) -> Callable[..., Awaitable[dict[str, Any]]]:
+        async def submit_named_scientific_run(
+            request: dict[str, Any], ctx: Context, idempotency_key: str | None = None
+        ) -> dict[str, Any]:
+            matches = [
+                profile for profile in _scientific_tool_profiles(runtime, _principal())
+                if profile.mcp_tool_name == tool_name
+            ]
+            if len(matches) != 1:
+                raise MCPError(code=INVALID_PARAMS, message="scientific model tool is unavailable or ambiguous")
+            return await submit_scientific_run(
+                model_id=matches[0].model_id, request=request, ctx=ctx, idempotency_key=idempotency_key
+            )
+
+        return submit_named_scientific_run
+
     def sync_model_tools() -> None:
         # Tool handlers resolve their model from the current registry on every
         # call.  Keeping old names registered is therefore safe: middleware
@@ -696,6 +726,28 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                         "fs2_model_revision": model.model_revision,
                         "fs2_active_runtime": model_view["active_runtime"],
                         "fs2_qualification": model_view["qualification"],
+                    },
+                )
+                registered_names.add(name)
+        if runtime.scientific_batches is not None:
+            for profile in runtime.scientific_batches.profiles.list():
+                if len(registered_names) >= 4096:
+                    return
+                if not profile.mcp_discoverable or not profile.mcp_invocable:
+                    continue
+                name = profile.mcp_tool_name
+                if name in registered_names:
+                    continue
+                server.add_tool(
+                    scientific_handler(name),
+                    name=name,
+                    title=profile.display_name,
+                    description=profile.mcp_description,
+                    meta={
+                        "fs2_model_id": profile.model_id,
+                        "fs2_protocol": "scientific-batch-v1",
+                        "fs2_model_revision": profile.model_revision,
+                        "fs2_runtime_image_digest": profile.runtime_image_digest,
                     },
                 )
                 registered_names.add(name)
