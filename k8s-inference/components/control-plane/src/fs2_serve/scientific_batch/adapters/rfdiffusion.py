@@ -385,6 +385,15 @@ def compile_run(
                     ("FS2_RFDIFFUSION_HOME", "/opt/rfdiffusion"),
                     ("HF_HUB_OFFLINE", "1"),
                     ("TRANSFORMERS_OFFLINE", "1"),
+                    # IGSO3 schedule generation is host-side. On a full GPU
+                    # node PyTorch otherwise detects the host's 64+ threads
+                    # per shard, despite the Pod's much smaller CPU budget.
+                    # Exact schedule comparisons show one thread avoids this
+                    # oversubscription without changing model arithmetic.
+                    ("OMP_NUM_THREADS", "1"),
+                    ("MKL_NUM_THREADS", "1"),
+                    ("OPENBLAS_NUM_THREADS", "1"),
+                    ("NUMEXPR_NUM_THREADS", "1"),
                 ),
                 working_directory=workspace,
                 consumes=(selected_input.logical_artifact_id,),

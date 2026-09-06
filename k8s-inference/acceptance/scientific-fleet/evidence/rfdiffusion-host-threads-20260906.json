@@ -1,0 +1,38 @@
+{
+  "schema": "fs2-serve.nebius.ai/rfdiffusion-host-thread-evidence/v1",
+  "date": "2026-09-06",
+  "image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+  "upstream_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+  "torch": "2.3.0",
+  "cluster_context": "k8s-inference-h100",
+  "node": "computeinstance-e00p3acr87k9k4mckj",
+  "default_torch_threads": 64,
+  "pod_cpu_request": 8,
+  "pod_cpu_limit": 16,
+  "observation": "Concurrent RFdiffusion shards spent minutes generating IGSO3 schedules, with scientific-stage CPU use near 16 cores and approximately 136 total container threads. Existing scratch-local schedule caches are regenerated per shard.",
+  "microbenchmark": {
+    "function": "rfdiffusion.igso3.calculate_igso3",
+    "parameters": {"num_sigma": 8, "num_omega": 1000, "min_sigma": 0.02, "max_sigma": 1.5, "L": 2000},
+    "repetitions": 3,
+    "seconds_by_thread_count": {
+      "1": [1.960799187014345, 0.9835024920175783, 1.217299759038724],
+      "4": [1.234583201003261, 1.2007782330038026, 1.3668673610081896],
+      "16": [4.421528401027899, 4.659608272020705, 4.791583772981539],
+      "64": [11.374062514049001, 3.090879838971887, 2.307464717014227]
+    },
+    "maximum_absolute_array_delta_all_runs": 0.0,
+    "limitations": [
+      "CPU-only reduced sigma-grid diagnosis; production computes 500 sigma samples.",
+      "The node concurrently served the acceptance burst and load changed as Jobs completed.",
+      "No fixed end-to-end speedup or exclusive-node performance claim follows from these samples.",
+      "No clocks, host settings, process-wide defaults of another process, quotas or Pod limits were changed."
+    ]
+  },
+  "fix": {
+    "scope": "RFdiffusion inference shard process environment only",
+    "environment": {"OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1", "NUMEXPR_NUM_THREADS": "1"},
+    "weights_precision_steps_seeds": "unchanged",
+    "live_acceptance": "pending combined control-plane release"
+  },
+  "documentation": "https://docs.pytorch.org/docs/2.14/notes/cpu_threading_torchscript_inference.html"
+}
