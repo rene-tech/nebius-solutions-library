@@ -1,12 +1,13 @@
 # Scientific cluster: readiness and operator guide
 
-Evidence consolidated on 6 September 2026 from source `33fb1c02`. All ten
-scientific profiles have passed real public requests; this is **not yet final
-release acceptance**. Durable scientific model-policy management and issuing
-customer keys restricted to scientific model IDs are undergoing implementation
-and release qualification. The release owner must append the final source and
-its actual policy, key, and user-flow receipts before declaring that release
-ready for an event. Existing measurements below retain their original releases.
+All ten scientific profiles passed the
+[final public fleet acceptance](../acceptance/scientific-fleet/evidence/final-fleet-acceptance-h100-20260906.md)
+on runtime source `8bb53aab`, on 6 September 2026. Real-browser
+[customer-key and scientific model controls](../acceptance/scientific-fleet/evidence/customer-access-policy-h100-8bb53aab-20260906.md)
+also passed, including revoked-key rejection, pause/resume, cap-one dispatch,
+artifact downloads and restoration of the original settings. Use the Terraform
+outputs for the final deployment identity and access bundle. Measurements below
+retain their original sources and clocks; snapshots remain experimental.
 
 ## Start using the cluster
 
@@ -33,9 +34,10 @@ per-model examples, for this workflow:
    semantic validation, not merely a container exiting successfully.
 4. Cancel an unwanted operation through the admin UI or operation cancel API.
 
-Until final scoped-key qualification is recorded, use the existing verified
-operator-issued scientific credential for testing. Never assume a general
-serving key grants academic model access. Native AlphaFold3 and BindCraft with
+Issue customer keys from Access, selecting their tenant and exact scientific
+model IDs. Scientific-scoped key creation, authorized discovery and revocation
+have passed live acceptance. Never assume a general serving key grants academic
+model access. Native AlphaFold3 and BindCraft with
 PyRosetta are restricted to the configured academic tenant; the deployment's
 entitlement record is not a commercial license grant for other customers.
 OpenFold3 is an independent alternative, not a renamed AlphaFold3 backend.
@@ -89,8 +91,10 @@ inspect backend identity, authorization, stages, attempts, artifacts, and
 timings. Serving-model hot floors and ceilings belong to the live
 [model configuration](../DYNAMIC_MODEL_CONFIGURATION.md). Scientific models
 instead execute staged, queued Jobs; their availability is not a permanently
-resident GPU worker. Scientific policy controls must pass the final-release
-gate above before being described as accepted live administration.
+resident GPU worker. In Scientific runs, use model policies to pause new
+dispatch or set maximum active runs globally or per tenant. Existing work drains,
+accepted queued work remains durable, and resuming releases held work. A run
+may contain multiple GPU shards: an active-run cap is not a GPU-count limit.
 
 For batch submissions, choose an authorized `service_class`, normally
 `customer-batch` or `bulk-backfill`. Presentation/interactive classes require
@@ -130,8 +134,11 @@ These full workflows include capacity, execution, and output publication;
 do not pool the first and warm repetitions into a cold-start percentile.
 Other CPU stages still need their upstream model runtime. See the
 [CPU-stage image contract](../components/control-plane/docs/scientific-cpu-stage-images.md).
-The newer consolidated input-materialization path still needs final-release
-measurement; these numbers do not claim its benefit.
+The consolidated input-materialization path passed the final ten-model campaign.
+These earlier paired numbers do not isolate its benefit. Some other CPU
+preparation stages still pull their full model image: the live ESM policy test
+measured 138–149 s cold pulls on two CPU nodes and 29–30 s GPU artifact checks.
+Keep those costs separate from inference and from CPU/GPU capacity queueing.
 
 Production scientific requests retain normal loading. The
 [startup and snapshot evidence](../acceptance/scientific-startup/README.md)
