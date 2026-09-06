@@ -391,7 +391,7 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
     )
     assert (
         "{serve,maintenance,migrate,wait-schema,bootstrap-access,validate,postgresql-release-contract,"
-        "model-controller,gpu-allocation-observer,scientific-materialize,scientific-collect,"
+        "model-controller,gpu-allocation-observer,scientific-materialize,scientific-materialize-many,scientific-collect,"
         "scientific-prepare-workspace,"
         "scientific-verify-runtime-artifacts}" in completed.stdout
     )
