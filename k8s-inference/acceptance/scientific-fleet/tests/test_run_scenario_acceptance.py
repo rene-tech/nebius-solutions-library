@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 HERE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(HERE))
@@ -11,6 +13,21 @@ import run_scenario_acceptance as scenario_runner  # noqa: E402 - standalone scr
 
 
 class ScenarioTests(unittest.TestCase):
+    def test_result_bytes_must_match_both_manifest_and_gateway_digest(self) -> None:
+        body = b"scientific output\n"
+        digest = hashlib.sha256(body).hexdigest()
+        pointer = {"artifact_id": "fixture", "size_bytes": len(body), "sha256": digest}
+        response = scenario_runner.public.HttpResponse(
+            200, {"x-fs2-artifact-sha256": digest}, body
+        )
+        client = SimpleNamespace(request=lambda *args: response)
+        self.assertEqual(scenario_runner.verify_download(client, pointer), body)
+        with self.assertRaisesRegex(
+            scenario_runner.public.AcceptanceError,
+            "downloaded_artifact_identity_mismatch",
+        ):
+            scenario_runner.verify_download(client, {**pointer, "sha256": "0" * 64})
+
     def test_all_customer_inputs_keep_valid_manifest_digest_chains(self) -> None:
         root = HERE.parents[1]
         fragments = {
