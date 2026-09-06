@@ -1,0 +1,55 @@
+[
+  {
+    "id": "boltzgen-total-bound",
+    "model_id": "boltzgen",
+    "expected_error_code": "http_submit_422",
+    "parameters": {
+      "batches": [
+        {"shard_id": "one", "num_designs": 20, "budget": 1, "reuse_completed": false},
+        {"shard_id": "two", "num_designs": 20, "budget": 1, "reuse_completed": false}
+      ]
+    }
+  },
+  {
+    "id": "mosaic-r01",
+    "model_id": "mosaic",
+    "service_class": "bulk-backfill",
+    "parameters": {"shard_count": 2, "binder_length": 44, "optimizer_steps": 30, "base_seed": 7400},
+    "expected_shards": {"design": 2}
+  },
+  {
+    "id": "rfdiffusion-r01",
+    "model_id": "rfdiffusion",
+    "service_class": "bulk-backfill",
+    "parameters": {"num_designs": 4, "contigs": ["96-96"], "seed": 8200},
+    "expected_shards": {"inference": 4}
+  },
+  {
+    "id": "mosaic-r02",
+    "model_id": "mosaic",
+    "service_class": "bulk-backfill",
+    "parameters": {"shard_count": 2, "binder_length": 44, "optimizer_steps": 30, "base_seed": 7401},
+    "expected_shards": {"design": 2}
+  },
+  {
+    "id": "rfdiffusion-r02",
+    "model_id": "rfdiffusion",
+    "service_class": "bulk-backfill",
+    "parameters": {"num_designs": 4, "contigs": ["96-96"], "seed": 8201},
+    "expected_shards": {"inference": 4}
+  },
+  {
+    "id": "mosaic-r03",
+    "model_id": "mosaic",
+    "service_class": "bulk-backfill",
+    "parameters": {"shard_count": 2, "binder_length": 44, "optimizer_steps": 30, "base_seed": 7402},
+    "expected_shards": {"design": 2}
+  },
+  {
+    "id": "rfdiffusion-r03",
+    "model_id": "rfdiffusion",
+    "service_class": "bulk-backfill",
+    "parameters": {"num_designs": 4, "contigs": ["96-96"], "seed": 8202},
+    "expected_shards": {"inference": 4}
+  }
+]
