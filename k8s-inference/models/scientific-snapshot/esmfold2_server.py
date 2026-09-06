@@ -105,13 +105,22 @@ def main() -> None:
                     ):
                         raise ValueError("scientific request environment differs from its supported contract")
                     previous = {name: os.environ.get(name) for name in run_esmfold2.REQUEST_ENVIRONMENT}
+                    original_uid, original_gid = os.geteuid(), os.getegid()
                     try:
                         for name in run_esmfold2.REQUEST_ENVIRONMENT:
                             os.environ.pop(name, None)
                         os.environ.update(environment)
+                        # Original scientific outputs include mode-0600 files.
+                        # Keep their existing non-root collector ownership;
+                        # the serial worker returns to its capture identity
+                        # after each request. This is not a tenant sandbox.
+                        os.setegid(int(os.environ.get("FS2_SNAPSHOT_REQUEST_GID", "10001")))
+                        os.seteuid(int(os.environ.get("FS2_SNAPSHOT_REQUEST_UID", "10001")))
                         with redirect_stdout(output), redirect_stderr(errors):
                             run_esmfold2.main(arguments, preloaded_model=model)
                     finally:
+                        os.seteuid(original_uid)
+                        os.setegid(original_gid)
                         for name, value in previous.items():
                             if value is None:
                                 os.environ.pop(name, None)
