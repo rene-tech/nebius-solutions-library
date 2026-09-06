@@ -41,6 +41,18 @@ k8s-inference/catalog/runtime/*
 !k8s-inference/catalog/runtime/validators/**
 !k8s-inference/catalog/runtime/packaged-repository/
 !k8s-inference/catalog/runtime/packaged-repository/**
+!k8s-inference/models/
+k8s-inference/models/*
+!k8s-inference/models/cancer-immunotherapy/
+k8s-inference/models/cancer-immunotherapy/*
+!k8s-inference/models/cancer-immunotherapy/runtime-images/
+k8s-inference/models/cancer-immunotherapy/runtime-images/*
+!k8s-inference/models/cancer-immunotherapy/runtime-images/mosaic/
+k8s-inference/models/cancer-immunotherapy/runtime-images/mosaic/*
+!k8s-inference/models/cancer-immunotherapy/runtime-images/mosaic/runtime_entrypoint.py
+!k8s-inference/models/cancer-immunotherapy/runtime-images/mosaic/cpu/
+k8s-inference/models/cancer-immunotherapy/runtime-images/mosaic/cpu/*
+!k8s-inference/models/cancer-immunotherapy/runtime-images/mosaic/cpu/mosaic-batch
 
 **/.git
 **/.git/**

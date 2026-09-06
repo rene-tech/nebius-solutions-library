@@ -211,6 +211,7 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                     {
                         "stage_id": binding.stage_id,
                         "image": binding.image,
+                        "model_runtime_image_digest": binding.model_runtime_image_digest,
                         "collector_id": binding.collector_id,
                         "validator_id": binding.validator_id,
                         "mounts": [
@@ -914,6 +915,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
                 if not isinstance(raw_binding, dict) or frozenset(raw_binding) not in {
                     frozenset(expected_binding_fields),
                     frozenset(legacy_identity_fields),
+                    frozenset(expected_binding_fields | {"model_runtime_image_digest"}),
                 }:
                     raise ValueError("stored stage execution binding fields differ")
                 binding = raw_binding
@@ -958,6 +960,9 @@ def state_from_value(raw: object) -> ScientificBatchState:
                     StageExecutionBinding(
                         stage_id=_string(binding["stage_id"], "stage execution binding ID"),
                         image=_string(binding["image"], "stage execution image"),
+                        model_runtime_image_digest=_optional_string(
+                            binding.get("model_runtime_image_digest"), "stage model runtime image digest"
+                        ),
                         collector_id=_string(binding["collector_id"], "stage execution collector"),
                         validator_id=_string(binding["validator_id"], "stage execution validator"),
                         mounts=mounts,

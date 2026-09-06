@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+"""Run the existing Mosaic finalizer in the lightweight scientific image."""
+
+import runpy
+import sys
+
+if len(sys.argv) < 2 or sys.argv[1] != "aggregate":
+    raise SystemExit("usage: mosaic-batch aggregate ...")
+runpy.run_path("/opt/fs2/mosaic/runtime_entrypoint.py", run_name="__main__")

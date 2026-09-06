@@ -941,11 +941,14 @@ class StageExecutionBinding:
     termination_grace_seconds: int
     environment: tuple[tuple[str, str], ...]
     required_node_labels: tuple[tuple[str, str], ...]
+    model_runtime_image_digest: str | None = None
 
     def __post_init__(self) -> None:
         _check_name(self.stage_id, "stage execution binding ID")
         if not self.image or len(self.image) > 1024 or "@sha256:" not in self.image:
             raise ValueError("stage execution image must use an immutable digest")
+        if self.model_runtime_image_digest is not None:
+            _check_digest(self.model_runtime_image_digest, "stage model runtime image digest")
         _check_name(self.service_account_name, "stage execution service account")
         if (self.workspace_uid is None) != (self.workspace_gid is None):
             raise ValueError("stage workspace UID and GID must be frozen together")

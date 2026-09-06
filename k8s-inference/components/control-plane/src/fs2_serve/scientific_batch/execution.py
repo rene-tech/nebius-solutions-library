@@ -189,6 +189,8 @@ class StageExecution:
     termination_grace_seconds: int
     environment: Mapping[str, str]
     required_node_labels: Mapping[str, str]
+    image_role: str = "model-runtime"
+    model_runtime_image_digest: str | None = None
 
 
 def _invocation_json(invocation: StageInvocation) -> str:
@@ -477,7 +479,7 @@ class FileScientificManifestRenderer:
                     "environment",
                     "required_node_labels",
                 }
-                if set(stage) != allowed:
+                if not allowed.issubset(stage) or set(stage) - allowed - {"image_role"}:
                     raise ScientificExecutionMapError("scientific execution stage fields differ")
                 stage_id = stage["stage_id"]
                 if not isinstance(stage_id, str) or (model_id, stage_id) in executions:
@@ -492,6 +494,16 @@ class FileScientificManifestRenderer:
                     or not image.endswith(f"@{image_digest}")
                 ):
                     raise ScientificExecutionMapError("execution image is not the profile's immutable digest")
+                image_role = stage.get("image_role", "model-runtime")
+                if image_role not in {"model-runtime", "scientific-tools"}:
+                    raise ScientificExecutionMapError("scientific stage image role is unsupported")
+                if image_role == "scientific-tools":
+                    profile_stages = _object(profile.value["workload"], "profile workload")["stages"]
+                    if not any(
+                        item.get("id") == stage_id and item.get("resource_class") == "cpu"
+                        for item in profile_stages
+                    ):
+                        raise ScientificExecutionMapError("scientific tools image is only available to CPU stages")
                 collector_id = _bounded_string(stage["collector_id"], "scientific collector ID", maximum=128)
                 if re.fullmatch(r"[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?", collector_id) is None:
                     raise ScientificExecutionMapError("scientific collector ID is invalid")
@@ -706,6 +718,7 @@ class FileScientificManifestRenderer:
                         raise ScientificExecutionMapError("BindCraft is missing an exact runtime artifact target")
                 executions[(model_id, stage_id)] = StageExecution(
                     image=image,
+                    image_role=image_role,
                     collector_id=collector_id,
                     validator_id=validator_id,
                     mounts=tuple(mounts),
@@ -943,11 +956,18 @@ class FileScientificManifestRenderer:
                     raise ScientificExecutionMapError("BindCraft PYTHONPATH bypasses the reviewed PyRosetta tree")
         return bound_plan
 
-    @staticmethod
-    def _freeze_stage_execution(stage_id: str, execution: StageExecution) -> StageExecutionBinding:
+    def _freeze_stage_execution(self, stage_id: str, execution: StageExecution) -> StageExecutionBinding:
+        image = execution.image
+        model_runtime_image_digest = execution.model_runtime_image_digest
+        if execution.image_role == "scientific-tools":
+            if self.tools_image is None or re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", self.tools_image) is None:
+                raise ScientificExecutionMapError("CPU stage requires an immutable scientific tools image")
+            image = self.tools_image
+            model_runtime_image_digest = execution.image.rsplit("@", 1)[1]
         return StageExecutionBinding(
             stage_id=stage_id,
-            image=execution.image,
+            image=image,
+            model_runtime_image_digest=model_runtime_image_digest,
             collector_id=execution.collector_id,
             validator_id=execution.validator_id,
             mounts=tuple(
@@ -985,6 +1005,7 @@ class FileScientificManifestRenderer:
             )
         return StageExecution(
             image=binding.image,
+            model_runtime_image_digest=binding.model_runtime_image_digest,
             collector_id=binding.collector_id,
             validator_id=binding.validator_id,
             mounts=tuple(
@@ -1394,13 +1415,12 @@ class FileScientificManifestRenderer:
         }
         runtime_marker_json = json.dumps(runtime_marker, sort_keys=True, separators=(",", ":"))
         runtime_marker_path = f"{invocation.working_directory}/.fs2/runtime-localization.json"
-        # Accelerator admission has no runtime digest for CPU stages.  The
-        # execution map does: every stage image was already verified against
-        # the profile's immutable image digest while loading the map.  Give
-        # both the model container and its collector that same identity so a
-        # CPU finalizer can validate model-produced provenance without
-        # inventing an accelerator admission.
-        runtime_image_digest = execution.image.rsplit("@", 1)[1]
+        # A lightweight CPU finalizer validates outputs produced by the GPU
+        # runtime. Keep that model identity separate from the CPU container's
+        # actual image. Both were frozen at admission, not looked up again
+        # from a potentially changed profile or tools-image setting.
+        stage_image_digest = execution.image.rsplit("@", 1)[1]
+        runtime_image_digest = execution.model_runtime_image_digest or stage_image_digest
         env = [
             {"name": key, "value": value}
             for key, value in sorted(
@@ -1425,6 +1445,7 @@ class FileScientificManifestRenderer:
                     "FS2_RUNTIME_ARTIFACTS_JSON": runtime_marker_json,
                     "FS2_RUNTIME_LOCALIZATION_MARKER": runtime_marker_path,
                     "FS2_RUNTIME_IMAGE_DIGEST": runtime_image_digest,
+                    "FS2_STAGE_IMAGE_DIGEST": stage_image_digest,
                 }.items()
             )
         ]
@@ -1526,6 +1547,7 @@ class FileScientificManifestRenderer:
             {"name": "FS2_SCIENTIFIC_WORKLOAD_CAPABILITY", "value": capability},
             {"name": "FS2_STAGE_INVOCATION_JSON", "value": _invocation_json(invocation)},
             {"name": "FS2_RUNTIME_IMAGE_DIGEST", "value": runtime_image_digest},
+            {"name": "FS2_STAGE_IMAGE_DIGEST", "value": stage_image_digest},
             # Helm binds tools_image to this same immutable control-plane
             # image. Its Dockerfile publishes the canonical catalog here;
             # workload Pods do not mount the gateway's optional catalog PVC.

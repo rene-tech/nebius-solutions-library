@@ -36,6 +36,8 @@ CONTEXT_INPUTS = (
     CATALOG_REL / "sql",
     CATALOG_REL / "validators",
     CATALOG_REL / "packaged-repository",
+    SOLUTION_REL / "models/cancer-immunotherapy/runtime-images/mosaic/runtime_entrypoint.py",
+    SOLUTION_REL / "models/cancer-immunotherapy/runtime-images/mosaic/cpu/mosaic-batch",
 )
 LABEL_KEYS = {
     "commit": "org.opencontainers.image.revision",

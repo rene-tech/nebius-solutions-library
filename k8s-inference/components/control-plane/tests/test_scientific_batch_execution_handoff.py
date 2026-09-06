@@ -260,9 +260,11 @@ def runtime_profile() -> ScientificWorkloadProfile:
                     "stages": [
                         {
                             "id": "prepare",
+                            "resource_class": "cpu",
                         },
                         {
                             "id": "inference",
+                            "resource_class": "gpu",
                         },
                     ]
                 },
@@ -279,6 +281,7 @@ def runtime_execution_map(
     runtime_cache_claim: str = "fs2-scientific-runtime-cache",
     include_unused_variant_source: bool = False,
     unused_variant_source: str | None = None,
+    prepare_image_role: str | None = None,
 ) -> FileScientificManifestRenderer:
     profile = runtime_profile()
     file_names = (
@@ -423,6 +426,8 @@ def runtime_execution_map(
             }
         ],
     }
+    if prepare_image_role is not None:
+        value["models"][0]["stages"][0]["image_role"] = prepare_image_role
     path = tmp_path / ("missing.json" if omit_file else "complete.json")
     path.write_text(json.dumps(value))
     catalog = ScientificProfileCatalog(
@@ -438,6 +443,26 @@ def runtime_execution_map(
             KeyedHasher(active_key_id="ledger-v1", keys={"ledger-v1": b"k" * 32})
         ),
     )
+
+
+def test_tools_role_rejects_gpu_stages_and_unpinned_tools_image(tmp_path: Path) -> None:
+    renderer = runtime_execution_map(tmp_path, prepare_image_role="scientific-tools")
+    execution = renderer.executions[("protenix-v2", "prepare")]
+    for image in (None, "registry.test/tools:latest"):
+        renderer.tools_image = image
+        with pytest.raises(ScientificExecutionMapError, match="immutable scientific tools"):
+            renderer._freeze_stage_execution("prepare", execution)
+    path = tmp_path / "complete.json"
+    document = json.loads(path.read_text())
+    document["models"][0]["stages"][1]["image_role"] = "scientific-tools"
+    path.write_text(json.dumps(document))
+    profile = runtime_profile()
+    catalog = ScientificProfileCatalog(
+        profiles={profile.model_id: profile},
+        validators=ScientificProfileCatalog.load(CATALOG_ROOT)._validators,
+    )
+    with pytest.raises(ScientificExecutionMapError, match="only available to CPU"):
+        FileScientificManifestRenderer(path=path, profiles=catalog)
 
 
 def runtime_plan() -> AdapterExecutionPlan:
@@ -614,9 +639,12 @@ def test_runtime_volume_sub_path_composes_relative_bindings_but_deduplicates_exa
     assert _runtime_volume_sub_path(source, binding) == expected
 
 
-def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chown(tmp_path: Path) -> None:
+@pytest.mark.parametrize("use_tools_image", [False, True])
+def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chown(
+    tmp_path: Path, use_tools_image: bool
+) -> None:
     plan = runtime_plan()
-    renderer = runtime_execution_map(tmp_path)
+    renderer = runtime_execution_map(tmp_path, prepare_image_role="scientific-tools" if use_tools_image else None)
     access = ArtifactAccessContext(profile="public", receipt_digest=None, tenant_id="tenant-a")
     localized = renderer.verify_runtime_artifacts(runtime_profile(), plan, access)
     plan = renderer.bind_runtime_artifacts(runtime_profile(), plan, access, localized)
@@ -696,6 +724,18 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
     assert resource.scheduling.accelerator_count == 0
     assert collector_environment["FS2_RUNTIME_IMAGE_DIGEST"] == "sha256:" + "a" * 64
     assert collector_environment["FS2_RUNTIME_IMAGE_DIGEST"] == model_environment["FS2_RUNTIME_IMAGE_DIGEST"]
+    expected_stage_digest = "sha256:" + ("9" if use_tools_image else "a") * 64
+    assert model["image"].endswith("@" + expected_stage_digest)
+    assert model_environment["FS2_STAGE_IMAGE_DIGEST"] == expected_stage_digest
+    assert collector_environment["FS2_STAGE_IMAGE_DIGEST"] == expected_stage_digest
+    if use_tools_image:
+        binding = plan.execution_binding("prepare")
+        assert binding.model_runtime_image_digest == "sha256:" + "a" * 64
+        # A controller upgrade must not change the already admitted CPU image.
+        renderer.tools_image = "registry.test/control@sha256:" + "8" * 64
+        rerendered = renderer.render(resource)["spec"]["template"]["spec"]
+        frozen_model = next(item for item in rerendered["containers"] if item["name"] == model["name"])
+        assert frozen_model["image"] == model["image"]
 
     tampered = replace(resource, runtime_artifacts=(replace(localized[0], mount_path="/models/changed"),))
     with pytest.raises(ScientificExecutionMapError, match="lost its verified localization"):
@@ -1832,6 +1872,24 @@ async def test_af3_gpu_stage_materializes_only_validated_cpu_handoff(tmp_path: P
     assert not cluster.apply_history
     assert repository.records[operation_id].runtime_artifacts == localized
     assert state_from_value(state_to_value(repository.records[operation_id])) == repository.records[operation_id]
+    record = repository.records[operation_id]
+    assert record.execution_plan is not None
+    cpu_binding, *gpu_bindings = record.execution_plan.stage_bindings
+    distinct_cpu = replace(
+        cpu_binding,
+        image="registry.test/tools@sha256:" + "9" * 64,
+        model_runtime_image_digest=cpu_binding.image.rsplit("@", 1)[1],
+    )
+    frozen_cpu_record = replace(
+        record,
+        execution_plan=replace(record.execution_plan, stage_bindings=(distinct_cpu, *gpu_bindings)),
+    )
+    assert state_from_value(state_to_value(frozen_cpu_record)) == frozen_cpu_record
+    # Pre-change records remain readable without an inferred replacement image.
+    legacy = state_to_value(record)
+    for binding in legacy["adapter_execution"]["stage_bindings"]:
+        binding.pop("model_runtime_image_digest")
+    assert state_from_value(legacy) == record
     await controller.reconcile_once()
     cpu_attempt = repository.records[operation_id].stage("data-pipeline").attempts[0]
     cluster.set_observation(
