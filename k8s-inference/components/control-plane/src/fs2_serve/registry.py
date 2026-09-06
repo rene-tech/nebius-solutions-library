@@ -72,6 +72,15 @@ class OperationalModel:
     def enabled(self) -> bool:
         return self.gateway.routable
 
+    def deployment_gpu_class(self, pool_accelerator_classes: Mapping[str, str] | None = None) -> str:
+        """Resolve live placement without changing the catalog qualification."""
+
+        if self.dynamic_policy is not None and pool_accelerator_classes:
+            admitted = pool_accelerator_classes.get(self.dynamic_policy.publication.admitted_pool_ref)
+            if admitted is not None:
+                return admitted
+        return self.gateway.gpu_class
+
     @property
     def binding(self) -> ServingBinding:
         if self.gateway.binding is None:

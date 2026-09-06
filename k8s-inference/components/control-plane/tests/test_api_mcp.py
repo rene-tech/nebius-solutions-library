@@ -498,6 +498,21 @@ def test_public_catalog_reports_the_admitted_pool_accelerator_class(registry, ci
         assert qwen["gpu_class"] == "nvidia-h100-sxm5-80gb"
         assert qwen["gpu_count"] == 1
 
+        # Monitoring must agree with the public catalog and admin placement,
+        # while keeping the original qualification identifiable separately.
+        from prometheus_client.parser import text_string_to_metric_families
+
+        scraped = client.get("/metrics")
+        assert scraped.status_code == 200
+        metadata = next(
+            sample.labels
+            for family in text_string_to_metric_families(scraped.text)
+            for sample in family.samples
+            if sample.name == "fs2_serve_model_info" and sample.labels["model"] == "qwen3-8b"
+        )
+        assert metadata["gpu_class"] == "nvidia-h100-sxm5-80gb"
+        assert metadata["qualification_gpu_class"] == canonical_class
+
     async def mcp_listing() -> dict[str, object]:
         server = build_mcp_server(runtime)
         access = await PATTokenVerifier(runtime).verify_token(token)

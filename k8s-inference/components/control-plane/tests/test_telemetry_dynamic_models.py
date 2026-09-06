@@ -26,3 +26,19 @@ def test_queue_projection_activates_and_clears_a_live_added_model() -> None:
     assert samples[("live-added-model", "queued")] == 0
     assert samples[("live-added-model", "activating")] == 0
     assert samples[("live-added-model", "running")] == 0
+
+
+def test_static_model_metadata_keeps_its_exact_class(registry) -> None:
+    model = registry.get("qwen3-8b")
+    metrics = Metrics([model])
+    metrics.sync_models([model], pool_accelerator_classes={"unrelated-pool": "nvidia-h100-sxm5-80gb"})
+
+    samples = [
+        sample
+        for family in text_string_to_metric_families(metrics.render().decode())
+        for sample in family.samples
+        if sample.name == "fs2_serve_model_info"
+    ]
+    assert len(samples) == 1
+    assert samples[0].labels["gpu_class"] == model.gateway.gpu_class
+    assert samples[0].labels["qualification_gpu_class"] == model.gateway.gpu_class

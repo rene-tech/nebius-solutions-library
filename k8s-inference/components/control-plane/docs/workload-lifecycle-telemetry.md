@@ -188,6 +188,20 @@ and device clocks; a Kubernetes-only attempt can lack DCGM mapping; DCGM cannot
 identify image-pull time before a container/device mapping exists; and a lost
 event edge leaves an incomplete interval. None is silently estimated.
 
+### Deployment metadata versus usage estimates
+
+`fs2_serve_model_info.gpu_class` resolves dynamic models from the admitted
+pool's configured accelerator class, using the same projection as `/v1/models`
+and MCP. Its separate `qualification_gpu_class` label records the original
+catalog qualification, which may have been performed on different hardware.
+Static routes and unavailable pool configuration retain the catalog class.
+
+`fs2_serve_estimated_gpu_seconds_total` remains a conservative admission
+estimate grouped by the original catalog qualification class, not observed
+hardware usage. Historical totals are not relabelled when deployment placement
+changes. Use the lifecycle clocks and immutable node/GPU correlations above
+for measured allocation and occupied-idle analysis.
+
 ## Verification
 
 ```bash

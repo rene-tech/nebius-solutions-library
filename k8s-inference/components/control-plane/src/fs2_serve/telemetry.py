@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from opentelemetry import trace
@@ -53,7 +53,7 @@ class Metrics:
         )
         self.gpu_seconds = Gauge(
             "fs2_serve_estimated_gpu_seconds_total",
-            "Conservative GPU-seconds estimate charged per claimed attempt; not measured utilization",
+            "Conservative GPU-seconds estimate by catalog qualification class; not measured hardware utilization",
             ("model", "gpu_class"),
             registry=self.registry,
         )
@@ -117,7 +117,7 @@ class Metrics:
         )
         self.model_info = Info(
             "fs2_serve_model",
-            "Bounded canonical model registry metadata, independent of route promotion",
+            "Model registry metadata with configured deployment and original qualification accelerator classes",
             ("model",),
             registry=self.registry,
         )
@@ -129,7 +129,12 @@ class Metrics:
         self._lifecycle_clock_labels: set[tuple[str, str, str, str, str]] = set()
         self.sync_models(models)
 
-    def sync_models(self, models: Iterable[OperationalModel]) -> None:
+    def sync_models(
+        self,
+        models: Iterable[OperationalModel],
+        *,
+        pool_accelerator_classes: Mapping[str, str] | None = None,
+    ) -> None:
         """Refresh bounded model metadata after an atomic registry update."""
 
         values = {model.id: model for model in models}
@@ -147,7 +152,8 @@ class Metrics:
                     "revision": model.gateway.model_revision or "not-pinned",
                     "runtime": model.gateway.runtime_kind,
                     "activation": model.activation_mechanism,
-                    "gpu_class": model.gateway.gpu_class,
+                    "gpu_class": model.deployment_gpu_class(pool_accelerator_classes),
+                    "qualification_gpu_class": model.gateway.gpu_class,
                 }
             )
 

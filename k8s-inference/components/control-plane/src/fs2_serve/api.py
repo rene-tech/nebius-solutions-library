@@ -344,12 +344,7 @@ def _public_gpu_class(model: OperationalModel, pool_accelerator_classes: Mapping
     Terraform placement class and are left unchanged.
     """
 
-    policy = model.dynamic_policy
-    if policy is not None and pool_accelerator_classes:
-        admitted = pool_accelerator_classes.get(policy.publication.admitted_pool_ref)
-        if admitted is not None:
-            return admitted
-    return model.gateway.gpu_class
+    return model.deployment_gpu_class(pool_accelerator_classes)
 
 
 async def _pool_accelerator_classes(runtime: AppRuntime) -> Mapping[str, str]:
@@ -875,7 +870,9 @@ def create_app(runtime: AppRuntime) -> FastAPI:
 
     @app.get("/metrics", include_in_schema=False)
     async def metrics() -> Response:
-        runtime.metrics.sync_models(runtime.registry.list())
+        runtime.metrics.sync_models(
+            runtime.registry.list(), pool_accelerator_classes=await _pool_accelerator_classes(runtime)
+        )
         runtime.metrics.set_terminal_accounting(await runtime.store.terminal_accounting())
         runtime.metrics.set_queue(await runtime.store.queue_counts())
         runtime.metrics.set_queue_age(await runtime.store.oldest_queue_age())
@@ -1759,7 +1756,9 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 ] = None,
                 run_status: Annotated[
                     str | None,
-                    Query(pattern=r"^(waiting-for-access|queued|admitted|running|succeeded|failed|cancelling|cancelled)$"),
+                    Query(
+                        pattern=r"^(waiting-for-access|queued|admitted|running|succeeded|failed|cancelling|cancelled)$"
+                    ),
                 ] = None,
             ) -> AdminEnvelope[ScientificRunList]:
                 authorized_tenant = await admin_access.authorize(
