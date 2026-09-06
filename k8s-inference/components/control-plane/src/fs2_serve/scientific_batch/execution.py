@@ -1646,12 +1646,17 @@ class FileScientificManifestRenderer:
         if len(materializer_containers) > 1:
             materializer = materializer_containers[0]
             materializer["name"] = "materialize-inputs"
-            materializer["command"] = [
-                "fs2-serve",
-                "scientific-materialize-many",
-                "--commands-json",
-                json.dumps(materializer_commands, separators=(",", ":")),
-            ]
+            # Keep each argument small. A batch must not turn previously valid
+            # per-input argv into one Linux MAX_ARG_STRLEN violation.
+            combined_command = ["fs2-serve", "scientific-materialize-many"]
+            for entry in materializer_commands:
+                combined_command.extend(
+                    [
+                        "--commands-json",
+                        json.dumps([entry], separators=(",", ":")),
+                    ]
+                )
+            materializer["command"] = combined_command
             init_containers.append(materializer)
         else:
             init_containers.extend(materializer_containers)

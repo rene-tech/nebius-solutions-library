@@ -18,7 +18,10 @@ CONTROL_ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.parametrize("fail_first", [False, True])
-def test_many_materializations_preserve_order_verification_and_stop_on_error(monkeypatch, fail_first: bool) -> None:
+@pytest.mark.parametrize("split_arguments", [False, True])
+def test_many_materializations_preserve_order_verification_and_stop_on_error(
+    monkeypatch, fail_first: bool, split_arguments: bool
+) -> None:
     from fs2_serve import scientific_companion_cli as cli
 
     calls = []
@@ -54,9 +57,11 @@ def test_many_materializations_preserve_order_verification_and_stop_on_error(mon
         ]
         for i in (1, 2)
     ]
-    monkeypatch.setattr(
-        sys, "argv", ["fs2-serve", "scientific-materialize-many", "--commands-json", json.dumps(commands)]
-    )
+    groups = [[command] for command in commands] if split_arguments else [commands]
+    argv = ["fs2-serve", "scientific-materialize-many"]
+    for group in groups:
+        argv.extend(["--commands-json", json.dumps(group)])
+    monkeypatch.setattr(sys, "argv", argv)
     if fail_first:
         with pytest.raises(ValueError, match="content digest mismatch"):
             cli.main()

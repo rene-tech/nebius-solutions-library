@@ -777,7 +777,8 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
             entries = [command[2:]]
         else:
             assert command[:3] == ["fs2-serve", "scientific-materialize-many", "--commands-json"]
-            entries = json.loads(command[3])
+            assert command[2::2] == ["--commands-json"] * count
+            entries = [entry for payload in command[3::2] for entry in json.loads(payload)]
         assert [entry[entry.index("--artifact-id") + 1] for entry in entries] == [
             str(item.artifact_id) for item in materializations[:count]
         ]

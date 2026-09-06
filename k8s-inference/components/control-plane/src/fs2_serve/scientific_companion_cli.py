@@ -67,7 +67,7 @@ def main() -> None:
     parser.add_argument("--expected-digest")
     parser.add_argument("--expected-size-bytes", type=int)
     parser.add_argument("--expected-media-type")
-    parser.add_argument("--commands-json")
+    parser.add_argument("--commands-json", action="append", default=[])
     parser.add_argument("--collector-id")
     parser.add_argument("--workspace")
     parser.add_argument("--logical-output-id")
@@ -114,16 +114,15 @@ def main() -> None:
             _materialize(client, args, parser)
         elif args.command == "scientific-materialize-many":
             try:
-                commands = json.loads(args.commands_json or "null")
+                groups = [json.loads(value) for value in args.commands_json]
             except ValueError:
                 parser.error("materialization commands must be JSON")
-            if (
-                not isinstance(commands, list)
-                or not commands
-                or not all(
-                    isinstance(command, list) and command and all(isinstance(arg, str) for arg in command)
-                    for command in commands
-                )
+            if not groups or not all(isinstance(group, list) and group for group in groups):
+                parser.error("materialization commands must be non-empty argument groups")
+            commands = [command for group in groups for command in group]
+            if not all(
+                isinstance(command, list) and command and all(isinstance(arg, str) for arg in command)
+                for command in commands
             ):
                 parser.error("materialization commands must be a non-empty list of argument lists")
             # Keep exactly the previous ordered materialization calls and
