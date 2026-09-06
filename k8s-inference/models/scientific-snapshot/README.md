@@ -69,9 +69,25 @@ test disk and its checkpoint, not the shared model artifacts.
 
 ## Qualification boundaries
 
-A same-process CUDA RAM checkpoint passed three cycles; persisted CRIU capture
-also succeeded on H100 driver 580.159.04. Fresh-pod restore is being qualified
-separately. Do not mark a model L2/L3/L4 eligible from capture alone.
+A same-process CUDA RAM checkpoint passed three cycles. Persisted CRIU restore
+then passed three fresh-pod lifecycles on H100 driver 580.159.04, after deletion
+of the donor/previous GPU pod. Every restored process reproduced the exact
+2,396 model tensors (13,629,851,916 bytes) and served fresh 65/34-residue inputs
+with full 20-loop/200-step settings. Pod creation to request readiness was
+12.687, 11.453 and 11.453 seconds; the same-node OS filesystem cache was retained.
+These are not cold-Network-SSD timings or a production L4 qualification.
+
+Releasing only unused allocator blocks reduced captured reserved CUDA memory
+from 26,772,242,432 to 14,317,256,704 bytes without changing model tensors.
+That capture took 6.113 seconds for CUDA, 9.494 seconds for CRIU, and a further
+320.184 seconds to fsync the approximately 19Gi checkpoint on this test's
+128Gi Network SSD. Persisted storage throughput matters; do not enable a
+snapshot strategy that is slower than ordinary model loading.
+
+Raw evidence is described in `../../acceptance/scientific-startup/README.md`.
+The optional one-shot bridge still requires its own frozen scientific-wrapper
+qualification before deployment; experimental worker `/fold` results alone do
+not qualify the batch controller integration.
 
 RWO same-node testing does not qualify multi-node fan-out, another GPU type,
 another driver, MSA inputs, or another model profile. OS page cache is not
@@ -80,3 +96,31 @@ and demonstrate that Kubernetes GPU allocation can still be released. Capture
 time includes file fsync; otherwise delayed CSI unmount writeback is incorrectly
 attributed to the next restore. Production shared snapshot storage and runtime
 configuration remain Terraform/Helm-owned.
+
+## Optional one-shot scientific bridge
+
+`Dockerfile.esmfold2` layers the bridge over an immutable, already-qualified
+ESMFold2 image. Normal image entrypoint behavior is unchanged. For an opt-in
+snapshot invocation, preserve the existing scientific command after:
+
+```text
+python /opt/fs2/snapshot/supervisor.py --directory /checkpoints/RUN \
+  --fallback normal-load restore -- ORIGINAL_SCIENTIFIC_COMMAND
+```
+
+The worker runs the original `run_esmfold2.py fold` with a preloaded model;
+frozen handoff, artifact-localization, model binding and per-request identity
+checks remain intact, and the normal CIF/confidence outputs are written.
+The supervisor exits with the request status and terminates the restored worker
+so the Job releases its GPU. On missing/incompatible/failed restoration, it
+records `normal-load-fallback` and executes the original normal-load command.
+Kueue admission, scientific workspace preparation, collection and accounting
+remain owned by the existing controller.
+
+Compatibility checks bind runtime/tools image digests, model revision, driver,
+kernel, GPU type and captured executable cache bytes. Additional kernels from
+later request shapes are allowed; modified or missing captured files are not.
+GPU UUID changes require explicit `--allow-device-remap` and a separately
+qualified cross-GPU restore. Matching GPU model names alone do not prove
+portability. This lane requires the isolated container privileges and tool
+mounts demonstrated by the probe renderer; it does not change host drivers.
