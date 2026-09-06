@@ -1,5 +1,25 @@
 # General serving acceptance
 
+`run_text_acceptance.py` repeats the existing Qwen exact-content fixtures over
+the public API, validates output and runtime token counts, and preserves the
+operation's timing and actual Pod/node/GPU identity:
+
+```bash
+uv run --project components/control-plane python acceptance/general-serving/run_text_acceptance.py \
+  --bundle /private/access-bundle.json \
+  --fixture catalog/runtime/validators/assets/qwen3-8b.json \
+  --receipt /private/qwen-acceptance.json
+```
+
+The six 2026-09-06 H100 requests on source `29b7e01a` passed both exact oracles
+in 0.410–0.600s accepted-to-completed. These are short, hot, nine-output-token
+requests on the existing reserved GPU, not a maximum-throughput workload.
+The receipt's output-tokens-per-second divides tokens by full operation time,
+including admission; it is not isolated GPU decoding speed. The public gateway
+does not stream, so TTFT is explicitly unavailable rather than equated with
+completion latency. Private evidence is `qwen-public-29b7e01a.json` alongside
+the retained Cosmos receipts below.
+
 `run_cosmos_acceptance.py` exercises the native Cosmos3 Nano route using the
 catalog's two pinned text-to-video fixtures, three repetitions each by default.
 It validates the model/revision and media envelope, base64 decoding, MP4 container
