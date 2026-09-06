@@ -88,7 +88,10 @@ def _sha256(path: Path) -> str:
 
 def _archive(repo: Path, commit: str, destination: Path) -> None:
     archive = _run(["git", "archive", "--format=tar", commit], cwd=repo, capture_output=True).stdout
-    _run(["tar", "-xf", "-", "-C", str(destination)], cwd=repo, input_bytes=archive)
+    # Restore Git's tracked public-source modes even when release receipts are
+    # protected with umask 077. Otherwise identical commits produce different
+    # images, and a model pod's UID cannot read the packaged catalog.
+    _run(["tar", "--same-permissions", "-xf", "-", "-C", str(destination)], cwd=repo, input_bytes=archive)
 
 
 def _expected_context(repo: Path, commit: str) -> set[str]:
