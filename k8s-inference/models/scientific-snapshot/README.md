@@ -105,12 +105,20 @@ snapshot invocation, preserve the existing scientific command after:
 
 ```text
 python /opt/fs2/snapshot/supervisor.py --directory /checkpoints/RUN \
-  --fallback normal-load restore -- ORIGINAL_SCIENTIFIC_COMMAND
+  --source-directory /snapshot-bundle --request-uid 10001 --request-gid 10001 \
+  --fallback normal-load restore -- \
+  python /WORKING_DIRECTORY/.fs2/stage-runner.py -- ORIGINAL_SCIENTIFIC_COMMAND
 ```
 
 The worker runs the original `run_esmfold2.py fold` with a preloaded model;
 frozen handoff, artifact-localization, model binding and per-request identity
 checks remain intact, and the normal CIF/confidence outputs are written.
+The root supervisor launches the existing stage-runner/client as UID/GID10001.
+The serial worker temporarily uses that effective UID/GID while executing the
+fold, preserving ownership of mode-0600 confidence outputs. The stage-runner
+keeps its mode-0400 completion marker and the original command's digest; these
+are readable by the unchanged UID10001 collector. This is an output-ownership
+contract inside one trusted request pod, not a new tenant isolation boundary.
 The supervisor exits with the request status and terminates the restored worker
 so the Job releases its GPU. On missing/incompatible/failed restoration, it
 records `normal-load-fallback` and executes the original normal-load command.
@@ -124,3 +132,25 @@ GPU UUID changes require explicit `--allow-device-remap` and a separately
 qualified cross-GPU restore. Matching GPU model names alone do not prove
 portability. This lane requires the isolated container privileges and tool
 mounts demonstrated by the probe renderer; it does not change host drivers.
+
+Use read-only shared images and per-attempt scratch, not one writable RWO
+checkpoint directory for a concurrent batch fleet:
+
+- Mount the captured bundle at `/snapshot-bundle` read-only.
+- Mount per-attempt emptyDir at the original captured `/checkpoints/RUN` path.
+- Overlay `/checkpoints/RUN/images` with the bundle's `images/` read-only.
+- The supervisor copies only `cache/` and `worker.log` to scratch (684KiB/4KiB
+  in this proof), never the ~19Gi checkpoint pages. Generated request kernels,
+  runtime logs, and ordinary scientific outputs are not shared across attempts.
+- CRIU uses its separate `/tmp/fs2-checkpoint-work` for restoration logs and
+  statistics, as specified by the [CRIU directory contract](https://criu.org/Directories).
+- Preserve original runtime model mounts, request workspace, image activation,
+  and identity environment. Tools init copies the pinned snapshot binaries and
+  their private libc/loader; the exact init spec is in the isolated renderer.
+
+`qualify_scientific_bridge.py` exercises this layout using an actual captured
+controller-issued frozen workspace and its unmodified stage-runner. It runs both
+strict restored execution and intentionally unavailable-checkpoint fallback,
+with a UID10001 reader validating command digest, confidence and CIF readability.
+This acceptance path must pass before promoting its image/profile; it does not
+publish snapshots into production reference data or add a customer UI toggle.
