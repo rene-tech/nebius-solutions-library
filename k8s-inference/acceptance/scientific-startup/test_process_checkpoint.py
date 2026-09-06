@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -20,10 +21,16 @@ def module():
 
 def execute(monkeypatch, capsys, tmp_path, *, action="capture", fail_criu=False):
     helper = module()
+    identity = {"runtime_image": "example@sha256:locked", "gpu_uuid": "GPU-test", "driver_version": "580"}
+    monkeypatch.setattr(helper, "runtime_identity", lambda: identity)
     directory = tmp_path / "images"
     if action == "restore":
         directory.mkdir()
         (directory / "worker-pid").write_text("173")
+        (directory / "compatibility.json").write_text(json.dumps({
+            "schema": "fs2-serve.nebius.ai/scientific-process-checkpoint/v1",
+            "runtime_identity": identity, "generated_cache": [],
+        }))
     calls = []
 
     def run(command, **kwargs):
@@ -74,9 +81,27 @@ def test_checkpoint_directory_is_not_overwritten(monkeypatch, capsys, tmp_path):
     directory.mkdir()
     (directory / "keep").write_text("existing checkpoint")
     helper = module()
+    monkeypatch.setattr(helper, "runtime_identity", lambda: {})
     monkeypatch.setattr(sys, "argv", [str(SOURCE), "capture", "--pid", "173", "--directory", str(directory)])
     with pytest.raises(SystemExit, match="1"):
         helper.main()
     receipt = json.loads(capsys.readouterr().out)
     assert receipt["records"] == []
     assert (directory / "keep").read_text() == "existing checkpoint"
+
+
+def test_generated_code_cache_survives_donor_container(monkeypatch, tmp_path):
+    spec = importlib.util.spec_from_file_location("supervisor", SOURCE.with_name("supervisor.py"))
+    supervisor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(supervisor)
+    for variable in (
+        "XDG_CACHE_HOME", "TORCHINDUCTOR_CACHE_DIR", "TRITON_CACHE_DIR",
+        "TORCH_EXTENSIONS_DIR", "CUDA_CACHE_PATH",
+    ):
+        monkeypatch.setenv(variable, "/tmp/ephemeral-cache")
+    supervisor.configure_runtime_cache(tmp_path)
+    assert os.environ["TRITON_CACHE_DIR"] == str(tmp_path / "cache" / "triton")
+    assert Path(os.environ["TRITON_CACHE_DIR"]).is_dir()
+    assert all(str(tmp_path) in os.environ[variable] for variable in (
+        "XDG_CACHE_HOME", "TORCHINDUCTOR_CACHE_DIR", "TORCH_EXTENSIONS_DIR", "CUDA_CACHE_PATH",
+    ))

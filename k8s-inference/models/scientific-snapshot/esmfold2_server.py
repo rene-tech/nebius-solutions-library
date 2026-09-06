@@ -15,6 +15,7 @@ import math
 import os
 import re
 import time
+import sys
 
 
 def main() -> None:
@@ -23,16 +24,27 @@ def main() -> None:
     import torch
     from esm.models.esmc import EsmcModel
     from esm.models.esmfold2 import ESMFold2InputBuilder, EsmFold2Model
+    import esm.models.esmfold2.layers as esmfold2_layers
     from esm.utils.structure.input_builder import deserialize_structure_prediction_input
 
-    model = EsmFold2Model.from_pretrained(
-        os.environ.get("FS2_SNAPSHOT_MODEL_DIR", "/models/esmfold2"), load_esmc=False, device="cuda"
-    ).eval()
-    model.esmc = EsmcModel.from_pretrained(
-        os.environ.get("FS2_ESMC_MODEL_DIR", "/models/esmc-6b"), device="cuda",
-        attn_implementation=os.environ.get("FS2_SNAPSHOT_ATTENTION", "flash_attention_2"),
+    model_dir = os.environ.get("FS2_SNAPSHOT_MODEL_DIR", "/models/esmfold2")
+    esmc_dir = os.environ.get("FS2_ESMC_MODEL_DIR", "/models/esmc-6b")
+    attention = os.environ.get(
+        "FS2_SNAPSHOT_ATTENTION", "flash_attention_2" if torch.cuda.get_device_capability(0) == (9, 0) else "sdpa"
     )
-    model.set_esmc_precision(os.environ.get("FS2_SNAPSHOT_ESMC_PRECISION", "bf16"))
+    precision = os.environ.get("FS2_SNAPSHOT_ESMC_PRECISION", "bf16")
+    if attention != "flash_attention_2":
+        esmfold2_layers.FLASH_ATTN_AVAILABLE = False
+    model = EsmFold2Model.from_pretrained(model_dir, load_esmc=False, device="cuda").eval()
+    model.esmc = EsmcModel.from_pretrained(
+        esmc_dir, device="cuda", attn_implementation=attention,
+    )
+    model.set_esmc_precision(precision)
+    model._fs2_snapshot_binding = {
+        "model_dir": model_dir, "esmc_dir": esmc_dir,
+        "ccd_path": os.environ["ESMCFOLD_CCD_PATH"], "esmc_precision": precision,
+        "attention": attention, "runtime_id": os.environ.get("FS2_RUNTIME_ID", ""),
+    }
     torch.cuda.synchronize()
     readiness = {
         "ready": True, "pid": os.getpid(), "load_seconds": time.monotonic() - started,
@@ -66,6 +78,37 @@ def main() -> None:
             self.respond(200 if self.path == "/health" else 404, readiness if self.path == "/health" else {})
 
         def do_POST(self) -> None:
+            if self.path == "/execute":
+                # Run the existing scientific wrapper in this already-loaded
+                # interpreter. It owns immutable input checks and collectors'
+                # ordinary output envelope; only model loading is bypassed.
+                from contextlib import redirect_stderr, redirect_stdout
+                from io import StringIO
+
+                output, errors = StringIO(), StringIO()
+                exit_code = 0
+                try:
+                    request = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+                    arguments = request["argv"]
+                    if not isinstance(arguments, list) or not arguments or arguments[0] != "fold":
+                        raise ValueError("snapshot worker executes the scientific fold stage only")
+                    if not all(isinstance(argument, str) for argument in arguments):
+                        raise ValueError("scientific stage arguments must be strings")
+                    if "/opt/fs2" not in sys.path:
+                        sys.path.insert(0, "/opt/fs2")
+                    import run_esmfold2
+
+                    with redirect_stdout(output), redirect_stderr(errors):
+                        run_esmfold2.main(arguments, preloaded_model=model)
+                except SystemExit as error:
+                    exit_code = error.code if isinstance(error.code, int) else 1
+                    if not isinstance(error.code, int):
+                        errors.write(str(error.code) + "\n")
+                except Exception as error:
+                    exit_code = 1
+                    errors.write(str(error) + "\n")
+                self.respond(200, {"exit_code": exit_code, "stdout": output.getvalue(), "stderr": errors.getvalue()})
+                return
             if self.path == "/prepare-snapshot":
                 # HTTPServer serializes requests. Release unused allocator
                 # blocks only after the preceding fold has returned; never

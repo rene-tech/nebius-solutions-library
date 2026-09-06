@@ -13,26 +13,30 @@ import json
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("donor", "restore"))
+    parser.add_argument("mode", choices=("donor", "restore", "storage-holder"))
     parser.add_argument("--name", required=True)
     parser.add_argument("--namespace", default="fs2-models")
     parser.add_argument("--node", required=True)
     parser.add_argument("--runtime-image", required=True)
     parser.add_argument("--tools-image", required=True)
-    parser.add_argument("--source-configmap", required=True)
+    parser.add_argument("--source-configmap")
+    parser.add_argument("--source-in-image", action="store_true")
     parser.add_argument("--checkpoint-pvc", required=True)
     parser.add_argument("--checkpoint-subdir", required=True)
     parser.add_argument("--reference-root", default="/mnt/fs2-reference-data/data")
     parser.add_argument("--python", default="/opt/esm/.pixi/envs/gpu/bin/python")
     parser.add_argument("--activation-script", default="/opt/fs2/activate.sh")
-    parser.add_argument("--runtime-script", default="/snapshot-source/esmfold2_server.py")
+    parser.add_argument("--runtime-script")
     args = parser.parse_args()
+    if not args.source_in_image and not args.source_configmap:
+        parser.error("set --source-in-image or provide --source-configmap")
+    source_root = "/opt/fs2/snapshot" if args.source_in_image else "/snapshot-source"
     checkpoint_directory = "/checkpoints/" + args.checkpoint_subdir
     command = [
-        args.python, "/snapshot-source/supervisor.py", "--directory", checkpoint_directory, args.mode,
+        args.python, source_root + "/supervisor.py", "--directory", checkpoint_directory, args.mode,
     ]
     if args.mode == "donor":
-        command += ["--", args.python, "-u", args.runtime_script]
+        command += ["--", args.python, "-u", args.runtime_script or source_root + "/esmfold2_server.py"]
     if args.activation_script:
         command = [
             "/bin/bash", "-c", 'source "$1"; shift; exec "$@"',
@@ -79,6 +83,8 @@ def main() -> None:
                     "limits": {"cpu": "16", "memory": "128Gi", "nvidia.com/gpu": "1"},
                 },
                 "env": [
+                    {"name": "FS2_SNAPSHOT_RUNTIME_IMAGE", "value": args.runtime_image},
+                    {"name": "FS2_SNAPSHOT_TOOLS_IMAGE", "value": args.tools_image},
                     {"name": "HF_HUB_OFFLINE", "value": "1"},
                     {"name": "TRANSFORMERS_OFFLINE", "value": "1"},
                     {"name": "ESMCFOLD_CCD_PATH", "value": "/databases/esmfold2/ccd.pkl"},
@@ -96,6 +102,24 @@ def main() -> None:
             }],
         },
     }
+    if args.source_in_image:
+        pod["spec"]["volumes"] = [volume for volume in pod["spec"]["volumes"] if volume["name"] != "source"]
+        pod["spec"]["containers"][0]["volumeMounts"] = [
+            mount for mount in pod["spec"]["containers"][0]["volumeMounts"] if mount["name"] != "source"
+        ]
+    if args.mode == "storage-holder":
+        # Keep the task-owned filesystem mounted across GPU pod deletion. This
+        # does not reserve its pages in RAM and must not be advertised as L4.
+        pod["spec"]["volumes"] = [
+            {"name": "checkpoints", "persistentVolumeClaim": {"claimName": args.checkpoint_pvc}},
+        ]
+        pod["spec"]["initContainers"] = []
+        pod["spec"]["containers"] = [{
+            "name": "storage-holder", "image": args.runtime_image,
+            "command": ["/bin/sleep", "14400"],
+            "resources": {"requests": {"cpu": "100m", "memory": "64Mi"}, "limits": {"memory": "128Mi"}},
+            "volumeMounts": [{"name": "checkpoints", "mountPath": "/checkpoints"}],
+        }]
     print(json.dumps(pod, indent=2))
 
 

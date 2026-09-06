@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import time
 
 from result_contract import atomic_write_text, finite_metric, write_confidence_envelope
 from runtime_localization import (
@@ -166,7 +167,7 @@ def _prepare(args: argparse.Namespace) -> None:
     atomic_write_text(output, json.dumps(envelope, sort_keys=True, separators=(",", ":")) + "\n")
 
 
-def _fold(args: argparse.Namespace) -> None:
+def _fold(args: argparse.Namespace, *, preloaded_model=None) -> None:
     import torch
 
     _validate_runtime_localization_args("fold", args)
@@ -211,13 +212,22 @@ def _fold(args: argparse.Namespace) -> None:
 
     if args.hardware_mode != "h100":
         esmfold2_layers.FLASH_ATTN_AVAILABLE = False
-    model = EsmFold2Model.from_pretrained(
-        model_dir, load_esmc=False, device="cuda"
-    ).eval()
-    model.esmc = EsmcModel.from_pretrained(
-        esmc_dir, device="cuda", attn_implementation=attention
-    )
-    model.set_esmc_precision(args.esmc_precision)
+    model_load_started = time.monotonic()
+    model = preloaded_model
+    if model is not None and getattr(model, "_fs2_snapshot_binding", None) != {
+        "model_dir": str(model_dir), "esmc_dir": str(esmc_dir), "ccd_path": str(ccd_path),
+        "esmc_precision": args.esmc_precision, "attention": attention, "runtime_id": runtime_id,
+    }:
+        raise SystemExit("restored model binding differs from the frozen scientific invocation")
+    if model is None:
+        model = EsmFold2Model.from_pretrained(
+            model_dir, load_esmc=False, device="cuda"
+        ).eval()
+        model.esmc = EsmcModel.from_pretrained(
+            esmc_dir, device="cuda", attn_implementation=attention
+        )
+        model.set_esmc_precision(args.esmc_precision)
+    model_load_seconds = time.monotonic() - model_load_started
     result = ESMFold2InputBuilder().fold(
         model,
         request,
@@ -244,7 +254,7 @@ def _fold(args: argparse.Namespace) -> None:
     if result.iptm is not None:
         metrics["iptm"] = finite_metric("iptm", float(result.iptm), 0.0, 1.0)
     confidence_path = output.parent / "confidence.json"
-    confidence = write_confidence_envelope(
+    write_confidence_envelope(
         output.parent,
         runtime_id=runtime_id,
         model_revision=os.environ.get("FS2_MODEL_REVISION", ""),
@@ -278,11 +288,35 @@ def _fold(args: argparse.Namespace) -> None:
         "ptm": metrics.get("ptm"),
         "iptm": metrics.get("iptm"),
         "status": "passed",
+        "startup_mechanism": "normal-model-load" if preloaded_model is None else "restored-model-worker",
+        "model_load_seconds": model_load_seconds,
     }
     print(json.dumps(evidence, sort_keys=True, separators=(",", ":")))
 
 
-def main() -> None:
+def _remote_fold(endpoint: str, argv: list[str]) -> None:
+    """Call the same wrapper in the restored localhost worker, not a new API.
+
+    The worker executes the original frozen-argument, localization and handoff
+    checks and writes the ordinary CIF/confidence outputs in this pod's mounted
+    workspace. The client does not import a second copy of Torch/the model.
+    """
+    from urllib.request import Request, urlopen
+
+    request = Request(
+        endpoint.rstrip("/") + "/execute",
+        data=json.dumps({"argv": argv}).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    with urlopen(request, timeout=3600) as response:
+        result = json.load(response)
+    sys.stdout.write(result.get("stdout", ""))
+    sys.stderr.write(result.get("stderr", ""))
+    if result.get("exit_code") != 0:
+        raise SystemExit(result.get("exit_code", 1))
+
+
+def main(argv: list[str] | None = None, *, preloaded_model=None) -> None:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -327,8 +361,15 @@ def main() -> None:
     fold.add_argument("--source-revision", required=True)
     fold.set_defaults(handler=_fold)
 
-    args = parser.parse_args()
-    args.handler(args)
+    arguments = sys.argv[1:] if argv is None else argv
+    args = parser.parse_args(arguments)
+    endpoint = os.environ.get("FS2_ESMFOLD2_WORKER_URL")
+    if args.command == "fold" and preloaded_model is not None:
+        _fold(args, preloaded_model=preloaded_model)
+    elif args.command == "fold" and endpoint:
+        _remote_fold(endpoint, list(arguments))
+    else:
+        args.handler(args)
 
 
 if __name__ == "__main__":

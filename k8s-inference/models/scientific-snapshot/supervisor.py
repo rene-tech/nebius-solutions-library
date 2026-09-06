@@ -18,19 +18,48 @@ import sys
 import time
 
 
+def configure_runtime_cache(directory: Path) -> None:
+    """Bind executable runtime caches to storage that survives the donor pod."""
+    cache_root = directory / "cache"
+    cache_root.mkdir(exist_ok=True)
+    for variable, cache_directory in {
+        "XDG_CACHE_HOME": cache_root,
+        "TORCHINDUCTOR_CACHE_DIR": cache_root / "torchinductor",
+        "TRITON_CACHE_DIR": cache_root / "triton",
+        "TORCH_EXTENSIONS_DIR": cache_root / "torch-extensions",
+        "CUDA_CACHE_PATH": cache_root / "cuda",
+    }.items():
+        cache_directory.mkdir(exist_ok=True)
+        os.environ[variable] = str(cache_directory)
+
+
+def stop_restored_worker(directory: Path) -> None:
+    marker = directory / "images" / "worker-pid"
+    if not marker.is_file():
+        return
+    pid = int(marker.read_text())
+    if pid <= 1:
+        raise ValueError("saved worker must be a child process")
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("donor", "restore"))
     parser.add_argument("--directory", type=Path, required=True)
+    parser.add_argument("--fallback", choices=("normal-load", "fail"), default="normal-load")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     args.directory.mkdir(parents=True, exist_ok=True)
-    (args.directory / "cache").mkdir(exist_ok=True)
-    os.environ.setdefault("XDG_CACHE_HOME", str(args.directory / "cache"))
-    os.environ.setdefault("TORCHINDUCTOR_CACHE_DIR", str(args.directory / "cache" / "torchinductor"))
+    # JIT launchers are file-backed executable mappings in a checkpoint. They
+    # must outlive the donor container just like the checkpoint pages do.
+    configure_runtime_cache(args.directory)
     Path("/tmp/empty-criu-plugins").mkdir(exist_ok=True)
+    command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if args.mode == "donor":
-        command = args.command[1:] if args.command[:1] == ["--"] else args.command
         if not command:
             parser.error("donor requires the runtime command after --")
         # Reserve a modest PID range so the fresh restore supervisor/tooling
@@ -49,9 +78,40 @@ def main() -> None:
         result = subprocess.run([
             sys.executable, str(helper), "restore", "--directory", str(args.directory / "images"),
         ], check=False)
-        if result.returncode:
+        restored = result.returncode == 0
+        if not restored:
+            stop_restored_worker(args.directory)
+        if not restored and (not command or args.fallback == "fail"):
             raise SystemExit(result.returncode)
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+        if command:
+            # The original scientific invocation remains the one-shot request.
+            # Only its model loading is redirected into this pod's worker.
+            environment = os.environ.copy()
+            if restored:
+                environment["FS2_ESMFOLD2_WORKER_URL"] = "http://127.0.0.1:8000"
+            else:
+                environment.pop("FS2_ESMFOLD2_WORKER_URL", None)
+            print(json.dumps({
+                "event": "scientific_snapshot_request",
+                "mechanism": "cuda-criu-restored" if restored else "normal-load-fallback",
+            }), flush=True)
+            child = subprocess.Popen(command, env=environment, start_new_session=True)
+
+            def forward_signal(signum, _frame):
+                try:
+                    os.killpg(child.pid, signum)
+                except ProcessLookupError:
+                    pass
+                raise SystemExit(128 + signum)
+
+            signal.signal(signal.SIGTERM, forward_signal)
+            signal.signal(signal.SIGINT, forward_signal)
+            try:
+                raise SystemExit(child.wait())
+            finally:
+                if restored:
+                    stop_restored_worker(args.directory)
+    signal.signal(signal.SIGTERM, lambda signum, _frame: sys.exit(128 + signum))
     while True:
         # Reap captured/terminated descendants; restored workers can be
         # reparented to this PID-1 supervisor after CRIU detaches.

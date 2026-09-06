@@ -1,0 +1,10 @@
+# syntax=docker/dockerfile:1.7
+# Build from k8s-inference/ with an already-qualified immutable model image.
+# The original default command and normal model loading remain unchanged.
+ARG RUNTIME_IMAGE
+FROM ${RUNTIME_IMAGE}
+USER 0:0
+COPY --chmod=0444 models/cancer-immunotherapy/images/structure-secondary/run_esmfold2.py /opt/fs2/run_esmfold2.py
+COPY --chmod=0444 models/scientific-snapshot/esmfold2_server.py models/scientific-snapshot/process_checkpoint.py models/scientific-snapshot/supervisor.py /opt/fs2/snapshot/
+LABEL ai.nebius.fs2.snapshot.integration="optional-original-scientific-cli-v1"
+USER 10001:10001
