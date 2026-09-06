@@ -98,8 +98,25 @@ def main() -> None:
                         sys.path.insert(0, "/opt/fs2")
                     import run_esmfold2
 
-                    with redirect_stdout(output), redirect_stderr(errors):
-                        run_esmfold2.main(arguments, preloaded_model=model)
+                    environment = request.get("environment", {})
+                    if not isinstance(environment, dict) or any(
+                        name not in run_esmfold2.REQUEST_ENVIRONMENT or not isinstance(value, str)
+                        for name, value in environment.items()
+                    ):
+                        raise ValueError("scientific request environment differs from its supported contract")
+                    previous = {name: os.environ.get(name) for name in run_esmfold2.REQUEST_ENVIRONMENT}
+                    try:
+                        for name in run_esmfold2.REQUEST_ENVIRONMENT:
+                            os.environ.pop(name, None)
+                        os.environ.update(environment)
+                        with redirect_stdout(output), redirect_stderr(errors):
+                            run_esmfold2.main(arguments, preloaded_model=model)
+                    finally:
+                        for name, value in previous.items():
+                            if value is None:
+                                os.environ.pop(name, None)
+                            else:
+                                os.environ[name] = value
                 except SystemExit as error:
                     exit_code = error.code if isinstance(error.code, int) else 1
                     if not isinstance(error.code, int):

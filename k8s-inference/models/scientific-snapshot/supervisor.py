@@ -51,6 +51,7 @@ def main() -> None:
     parser.add_argument("mode", choices=("donor", "restore"))
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--fallback", choices=("normal-load", "fail"), default="normal-load")
+    parser.add_argument("--allow-device-remap", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     args.directory.mkdir(parents=True, exist_ok=True)
@@ -75,9 +76,12 @@ def main() -> None:
         print(json.dumps({"event": "worker_started", "pid": child.pid}), flush=True)
     else:
         helper = Path(__file__).with_name("process_checkpoint.py")
-        result = subprocess.run([
+        restore_command = [
             sys.executable, str(helper), "restore", "--directory", str(args.directory / "images"),
-        ], check=False)
+        ]
+        if args.allow_device_remap:
+            restore_command.append("--allow-device-remap")
+        result = subprocess.run(restore_command, check=False)
         restored = result.returncode == 0
         if not restored:
             stop_restored_worker(args.directory)

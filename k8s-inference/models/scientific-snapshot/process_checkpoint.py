@@ -50,6 +50,13 @@ def generated_cache_manifest(directory: Path) -> list[dict]:
     return records
 
 
+def validate_generated_cache(directory: Path, expected: list[dict]) -> None:
+    """Require captured executable files unchanged; permit new request kernels."""
+    observed = {record["path"]: record for record in generated_cache_manifest(directory)}
+    if any(observed.get(record["path"]) != record for record in expected):
+        raise ValueError("snapshot executable cache is missing or differs")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("capture", "restore"))
@@ -111,11 +118,16 @@ def main() -> None:
                 if path.is_file():
                     with path.open("rb") as checkpoint:
                         os.fsync(checkpoint.fileno())
-            directory_fd = os.open(args.directory, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
+            directories = [path for path in paths if path.is_dir()]
+            directories.extend((args.directory, args.directory.parent / "cache", args.directory.parent))
+            for directory in directories:
+                if not directory.is_dir():
+                    continue
+                directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
             receipt["checkpoint_flush_seconds"] = time.monotonic() - started
         else:
             compatibility = json.loads((args.directory / "compatibility.json").read_text())
@@ -129,8 +141,7 @@ def main() -> None:
             remap = saved["gpu_uuid"] != identity["gpu_uuid"]
             if remap and not args.allow_device_remap:
                 raise ValueError("snapshot requires another GPU UUID; device remapping is not qualified/enabled")
-            if compatibility["generated_cache"] != generated_cache_manifest(args.directory):
-                raise ValueError("snapshot executable cache is missing or differs")
+            validate_generated_cache(args.directory, compatibility["generated_cache"])
             run([
                 *criu, "restore", "--images-dir", str(args.directory),
                 "--shell-job", "--restore-detached", "--log-file", "restore.log", "-v4",
