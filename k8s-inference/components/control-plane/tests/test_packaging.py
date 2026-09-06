@@ -111,7 +111,7 @@ def test_docker_engine_applies_the_dockerfile_specific_root_context_policy(tmp_p
     context = tmp_path / "repository"
     control = context / "k8s-inference" / "components" / "control-plane"
     catalog = context / "k8s-inference" / "catalog" / "runtime" / "fs2_serve_catalog"
-    (control / "src").mkdir(parents=True)
+    (control / "src/fs2_serve/runtime_qualifications").mkdir(parents=True)
     (control / "migrations").mkdir()
     (control / "contracts").mkdir()
     catalog.mkdir(parents=True)
@@ -122,6 +122,7 @@ def test_docker_engine_applies_the_dockerfile_specific_root_context_policy(tmp_p
         control / "uv.lock": "version = 1\n",
         control / "README.md": "fixture\n",
         control / "src" / "allowed.py": "ALLOWED = True\n",
+        control / "src/fs2_serve/runtime_qualifications/h100-qwen-cosmos-20260902.json": "{}\n",
         control / "migrations" / "0001.sql": "SELECT 1;\n",
         control / "contracts" / "contract.json": "{}\n",
         catalog / "__init__.py": "\n",
@@ -322,6 +323,11 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
     assert len(wheels) == 1
     with zipfile.ZipFile(wheels[0]) as wheel_archive:
         names = set(wheel_archive.namelist())
+        receipt_name = "fs2_serve/runtime_qualifications/h100-qwen-cosmos-20260902.json"
+        assert hashlib.sha256(wheel_archive.read(receipt_name)).hexdigest() == (
+            "0d66f4fab33908b15a9a89bc9977752e21c9f819307198ac72d3e770ee8b208f"
+        )
+        assert (wheel_archive.getinfo(receipt_name).external_attr >> 16) & 0o004
         assert "fs2_serve/__init__.py" in names
         assert "fs2_serve_catalog/__init__.py" in names
         assert "fs2_serve/activation_controller.py" not in names
@@ -412,6 +418,8 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
             (
                 "import pathlib,sys,fs2_serve,fs2_serve_catalog;"
                 "from fs2_serve.registry import Registry;"
+                "from fs2_serve.configuration import _reviewed_runtime_qualification;"
+                "assert len(_reviewed_runtime_qualification()['models']) == 2;"
                 "from fs2_serve.settings import Settings;"
                 "from fs2_serve_catalog.consumer import load_gateway_catalog;"
                 "root=pathlib.Path(sys.prefix).resolve();"

@@ -242,6 +242,7 @@ def catalog_configuration_contracts(catalog: Catalog) -> dict[str, CatalogModelC
     """Project exact model/acquisition/semantic identities from the canonical loader."""
 
     contracts: dict[str, CatalogModelContract] = {}
+    observed = _reviewed_runtime_qualification()
     for model_id, record in catalog.records.items():
         value = record.to_dict()
         acquisition = catalog.acquisition_plans.get(model_id)
@@ -253,6 +254,17 @@ def catalog_configuration_contracts(catalog: Catalog) -> dict[str, CatalogModelC
         classes = {str(gpu["class"])}
         classes.update(str(item["class"]) for item in alternatives if isinstance(item, dict) and item.get("class"))
         artifact = value["cache"]["artifact"]
+        for qualification in observed.get("models", []):
+            if (
+                qualification["model_id"] == model_id
+                and qualification["revision"] == value["model"]["source"]["revision"]
+                and qualification["runtime_image_digest"] == value["runtime"]["image"]["digest"]
+                and qualification["artifact_manifest_digest"] == f"sha256:{artifact.get('manifest_digest')}"
+                and all(qualification[name] for name in ("runtime_ready", "semantic_qualified", "http_mcp_qualified"))
+                and gpu["count"] == 1
+                and gpu["topology"] == "single-gpu"
+            ):
+                classes.add(observed["accelerator"]["class"])
         contracts[model_id] = CatalogModelContract(
             model_id=model_id,
             artifact_manifest_sha256=artifact.get("manifest_digest"),
@@ -264,6 +276,25 @@ def catalog_configuration_contracts(catalog: Catalog) -> dict[str, CatalogModelC
             supported_accelerator_classes=frozenset(classes),
         )
     return contracts
+
+
+def _reviewed_runtime_qualification() -> dict[str, Any]:
+    """Read the packaged copy of an existing, content-addressed live receipt.
+
+    The profile tree is intentionally absent from runtime images. This exact
+    receipt is mirrored into the Python package (and checked byte-for-byte in
+    tests), rather than depending on a developer checkout or treating a GPU
+    family/name as qualification. It does not qualify snapshot/latency tiers.
+    """
+
+    path = Path(__file__).parent / "runtime_qualifications/h100-qwen-cosmos-20260902.json"
+    try:
+        payload = path.read_bytes()
+    except OSError:
+        return {}
+    if hashlib.sha256(payload).hexdigest() != "0d66f4fab33908b15a9a89bc9977752e21c9f819307198ac72d3e770ee8b208f":
+        return {}
+    return dict(json.loads(payload))
 
 
 @dataclass(frozen=True)
