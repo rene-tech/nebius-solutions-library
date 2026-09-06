@@ -1,0 +1,178 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-priority-observations/v1",
+  "control_plane_source": "5fcc8323",
+  "cluster_context": "k8s-inference-h100",
+  "bulk_operation_id": "78018ac3-aa46-4b9c-b1ae-2b3ebd367209",
+  "customer_operation_id": "cab4c16e-0104-4a6d-b7be-3de9613fa71e",
+  "scenario": "18 independent single-GPU bulk shards, then a single customer shard 25 seconds later",
+  "before": {
+    "inference_reserved_gpu_quota": 16,
+    "inference_preemptible_gpu_quota": 2,
+    "preemption_within_cluster_queue": "LowerPriority",
+    "preemptible_pool_min": 0,
+    "preemptible_pool_max": 2,
+    "preemptible_nodes_ready": 2,
+    "existing_gpu_workloads": "One hot Qwen replica; one isolated snapshot proof temporarily held a preemptible GPU outside Kueue."
+  },
+  "mutations": "Public scientific requests only; no infrastructure, quota, Pod resource limit, queue policy or existing workload changes by this worker.",
+  "observed_events": [
+    {
+      "time": "2026-09-06T21:32:35Z",
+      "reason": "Scheduled",
+      "object": "fs2-inference-design-000-a1-0920f1a3014f-bhghc",
+      "uid": "9d40dad7-45ed-478b-8680-ade58d377f8f",
+      "message": "Successfully assigned fs2-models/fs2-inference-design-000-a1-0920f1a3014f-bhghc to computeinstance-e00m0hsph76ajt9sdb"
+    },
+    {
+      "time": "2026-09-06T21:31:04Z",
+      "reason": "Suspended",
+      "object": "fs2-inference-design-000-a1-0920f1a3014f",
+      "uid": "364b2794-e58f-4480-b5cf-aee24be126b4",
+      "message": "Job suspended"
+    },
+    {
+      "time": "2026-09-06T21:35:52Z",
+      "reason": "Completed",
+      "object": "fs2-inference-design-000-a1-0920f1a3014f",
+      "uid": "364b2794-e58f-4480-b5cf-aee24be126b4",
+      "message": "Job completed"
+    },
+    {
+      "time": "2026-09-06T21:30:42Z",
+      "reason": "Scheduled",
+      "object": "fs2-inference-design-006-a1-b4e171574e62-4pkmx",
+      "uid": "44fd0875-a7c9-4efa-808d-3696a52f3bd9",
+      "message": "Successfully assigned fs2-models/fs2-inference-design-006-a1-b4e171574e62-4pkmx to computeinstance-e00m0hsph76ajt9sdb"
+    },
+    {
+      "time": "2026-09-06T21:31:05Z",
+      "reason": "Suspended",
+      "object": "fs2-inference-design-006-a1-b4e171574e62",
+      "uid": "c39bb140-596f-4006-829c-d72e9bb06d2f",
+      "message": "Job suspended"
+    },
+    {
+      "time": "2026-09-06T21:31:05Z",
+      "reason": "Stopped",
+      "object": "fs2-inference-design-006-a1-b4e171574e62",
+      "uid": "c39bb140-596f-4006-829c-d72e9bb06d2f",
+      "message": "Preempted to accommodate a workload (UID: c1bcdf2d-a7be-42f2-85dc-2e1ec646ce87, JobUID: 364b2794-e58f-4480-b5cf-aee24be126b4) due to prioritization in the ClusterQueue; preemptor path: /inference-shared/inference-accelerators; preemptee path: /inference-shared/inference-accelerators"
+    },
+    {
+      "time": "2026-09-06T21:38:06Z",
+      "reason": "Scheduled",
+      "object": "fs2-inference-design-006-a2-c6bf58938cac-dw6mm",
+      "uid": "d1894869-5488-417e-bd60-bca21afd3ce4",
+      "message": "Successfully assigned fs2-models/fs2-inference-design-006-a2-c6bf58938cac-dw6mm to computeinstance-e00p3acr87k9k4mckj"
+    },
+    {
+      "time": "2026-09-06T21:38:06Z",
+      "reason": "Suspended",
+      "object": "fs2-inference-design-006-a2-c6bf58938cac",
+      "uid": "c826213b-ad3e-4815-9438-1101523083d7",
+      "message": "Job suspended"
+    },
+    {
+      "time": "2026-09-06T21:39:07Z",
+      "reason": "Completed",
+      "object": "fs2-inference-design-006-a2-c6bf58938cac",
+      "uid": "c826213b-ad3e-4815-9438-1101523083d7",
+      "message": "Job completed"
+    },
+    {
+      "time": "2026-09-06T21:30:43Z",
+      "reason": "Scheduled",
+      "object": "fs2-inference-design-015-a1-151a77e8b33d-gwfsj",
+      "uid": "5deb20ef-21ed-4b98-aa93-eeb975009208",
+      "message": "Successfully assigned fs2-models/fs2-inference-design-015-a1-151a77e8b33d-gwfsj to computeinstance-e00xzgs25xegdgsfx0"
+    },
+    {
+      "time": "2026-09-06T21:30:41Z",
+      "reason": "Suspended",
+      "object": "fs2-inference-design-015-a1-151a77e8b33d",
+      "uid": "d93c2d7f-b5ae-4a3b-9f0f-c6a2b051bbde",
+      "message": "Job suspended"
+    },
+    {
+      "time": "2026-09-06T21:33:26Z",
+      "reason": "Completed",
+      "object": "fs2-inference-design-015-a1-151a77e8b33d",
+      "uid": "d93c2d7f-b5ae-4a3b-9f0f-c6a2b051bbde",
+      "message": "Job completed"
+    },
+    {
+      "time": "2026-09-06T21:31:05Z",
+      "reason": "QuotaReserved",
+      "object": "job-fs2-inference-design-000-a1-0920f1a3014f-aa8c2",
+      "uid": "c1bcdf2d-a7be-42f2-85dc-2e1ec646ce87",
+      "message": "Quota reserved in ClusterQueue inference-accelerators, wait time since queued was 1s"
+    },
+    {
+      "time": "2026-09-06T21:31:05Z",
+      "reason": "Admitted",
+      "object": "job-fs2-inference-design-000-a1-0920f1a3014f-aa8c2",
+      "uid": "c1bcdf2d-a7be-42f2-85dc-2e1ec646ce87",
+      "message": "Admitted by ClusterQueue inference-accelerators, wait time since reservation was 0s"
+    },
+    {
+      "time": "2026-09-06T21:30:41Z",
+      "reason": "QuotaReserved",
+      "object": "job-fs2-inference-design-006-a1-b4e171574e62-5a984",
+      "uid": "068e028a-f669-4622-885e-618ce6fd1575",
+      "message": "Quota reserved in ClusterQueue inference-accelerators, wait time since queued was 0s"
+    },
+    {
+      "time": "2026-09-06T21:30:41Z",
+      "reason": "Admitted",
+      "object": "job-fs2-inference-design-006-a1-b4e171574e62-5a984",
+      "uid": "068e028a-f669-4622-885e-618ce6fd1575",
+      "message": "Admitted by ClusterQueue inference-accelerators, wait time since reservation was 0s"
+    },
+    {
+      "time": "2026-09-06T21:31:05Z",
+      "reason": "Preempted",
+      "object": "job-fs2-inference-design-006-a1-b4e171574e62-5a984",
+      "uid": "068e028a-f669-4622-885e-618ce6fd1575",
+      "message": "Preempted to accommodate a workload (UID: c1bcdf2d-a7be-42f2-85dc-2e1ec646ce87, JobUID: 364b2794-e58f-4480-b5cf-aee24be126b4) due to prioritization in the ClusterQueue; preemptor path: /inference-shared/inference-accelerators; preemptee path: /inference-shared/inference-accelerators; preemptor effective priority: 0 (base: 0, boost: 0); preemptee effective priority: -100 (base: -100, boost: 0)"
+    },
+    {
+      "time": "2026-09-06T21:38:06Z",
+      "reason": "QuotaReserved",
+      "object": "job-fs2-inference-design-006-a2-c6bf58938cac-289b1",
+      "uid": "03e1597f-3a4d-4408-b301-ee90b471d809",
+      "message": "Quota reserved in ClusterQueue inference-accelerators, wait time since queued was 1s"
+    },
+    {
+      "time": "2026-09-06T21:38:06Z",
+      "reason": "Admitted",
+      "object": "job-fs2-inference-design-006-a2-c6bf58938cac-289b1",
+      "uid": "03e1597f-3a4d-4408-b301-ee90b471d809",
+      "message": "Admitted by ClusterQueue inference-accelerators, wait time since reservation was 0s"
+    },
+    {
+      "time": "2026-09-06T21:30:41Z",
+      "reason": "QuotaReserved",
+      "object": "job-fs2-inference-design-015-a1-151a77e8b33d-dc274",
+      "uid": "9160946f-09bc-4427-8c1b-eb42988cc328",
+      "message": "Quota reserved in ClusterQueue inference-accelerators, wait time since queued was 1s; Flavors considered: main: inference-h100-reserved-8x(preemptionMode=NoCandidates;borrow=1;insufficient unused quota for nvidia.com/gpu in flavor inference-h100-reserved-8x, 1 more needed)"
+    },
+    {
+      "time": "2026-09-06T21:30:41Z",
+      "reason": "Admitted",
+      "object": "job-fs2-inference-design-015-a1-151a77e8b33d-dc274",
+      "uid": "9160946f-09bc-4427-8c1b-eb42988cc328",
+      "message": "Admitted by ClusterQueue inference-accelerators, wait time since reservation was 0s"
+    }
+  ],
+  "completion": "Both requests completed successfully. Bulk: 581.140 seconds, all 18 designs including preempted shard retry2. Customer: 334.211 seconds. See priority-results-h100-20260906.json for exact result and accounting evidence.",
+  "after": {
+    "inference_reserved_gpu_quota": 16,
+    "inference_preemptible_gpu_quota": 2,
+    "preemptible_pool_max": 2,
+    "preemptible_nodes_ready": 2,
+    "pending_kueue_workloads": 0,
+    "admitted_kueue_workloads": 1,
+    "remaining_owned_jobs": 0,
+    "retained_workloads": "Existing Qwen and independent snapshot worker were not cancelled or evicted by this worker."
+  }
+}
