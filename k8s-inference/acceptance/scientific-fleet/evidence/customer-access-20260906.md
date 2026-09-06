@@ -27,9 +27,14 @@ Focused regression results:
 - 5 Access page tests pass, including precise labels and HTML ID patterns.
 - Admin TypeScript checking and focused Python lint/type checking pass.
 
-The live lifecycle is **not yet accepted**: the correction must first be
+At the time this correction was prepared, the live lifecycle was not yet
+accepted: the correction first needed to be
 deployed, then the browser must issue a key, verify the three-model scientific
 catalog and out-of-scope rejection, revoke it and observe HTTP 401, and disable
 the temporary principal. The prefilled dialog and test identity were retained
 for that bounded follow-up. Private browser failure proof is retained by the
 acceptance task; no API credential belongs in this evidence.
+
+The deployed `8bb53aab` follow-up subsequently passed the complete customer key
+lifecycle and the real scientific model-policy workflow. See the
+[live acceptance report](customer-access-policy-h100-8bb53aab-20260906.md).

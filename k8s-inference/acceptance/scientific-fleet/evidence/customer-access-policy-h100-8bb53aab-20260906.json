@@ -1,0 +1,114 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-admin-live-acceptance/v1",
+  "outcome": "passed",
+  "source_commit": "8bb53aabc6231c5c29e29d265e7df776750b6c7c",
+  "control_plane_image_digest": "sha256:4a63de6bcc3f1cc9fc95a3794df19ea736e7e8f502c04457066a7235f3beaa0e",
+  "admin_image_digest": "sha256:42da4b3320147c6763d008208edba6e7ad01e3cdf5e50536c680d58d88ec6bac",
+  "customer_access": {
+    "surface": "real-admin-browser-and-public-https",
+    "principal_role": "viewer",
+    "tenant_profile": "academic",
+    "issued_at": "2026-09-06T22:37:45.741Z",
+    "issue_status": 201,
+    "scientific_discovery_status": 200,
+    "visible_models": [
+      {"model_id": "alphafold3", "access_profile": "academic", "access_state": "verified"},
+      {"model_id": "bindcraft", "access_profile": "academic", "access_state": "verified"},
+      {"model_id": "esmfold2-fast", "access_profile": "standard", "access_state": "not-required"}
+    ],
+    "interactive_models": [],
+    "out_of_scope_model": "rfdiffusion",
+    "out_of_scope_submission_status": 403,
+    "revoked_at": "2026-09-06T22:38:20.794Z",
+    "after_revocation_status": 401,
+    "principal_disabled": true,
+    "customer_gpu_work_submitted": false
+  },
+  "model_policy": {
+    "model_id": "esmfold2-fast",
+    "scope": "all-tenants",
+    "changed_via": "real-admin-browser",
+    "original": {"revision": 0, "paused": false, "max_active_runs": null, "reason": null},
+    "paused": {"revision": 1, "paused": true, "max_active_runs": null},
+    "resumed": {"revision": 2, "paused": false, "max_active_runs": 1, "updated_at": "2026-09-06T22:40:36.531437Z"},
+    "restored": {"revision": 3, "paused": false, "max_active_runs": null, "reason": null, "updated_at": "2026-09-06T22:50:07.379864Z", "readback_at": "2026-09-06T22:50:09.329Z"},
+    "timeline_samples": 274,
+    "samples_with_two_paused_queued_runs": 24,
+    "paused_run_attempts": 0,
+    "paused_matching_kubernetes_pods_and_jobs": 0,
+    "maximum_simultaneously_running_batches": 1,
+    "maximum_overlapping_admitted_gpu_attempts": 1,
+    "second_dispatch_after_first_completion_seconds": 0.081606,
+    "other_models_changed": false
+  },
+  "scientific_runs": [
+    {
+      "scenario": "policy-second",
+      "dispatch_order": 1,
+      "model_id": "esmfold2-fast",
+      "seed": 107,
+      "outcome": "passed",
+      "accepted_at": "2026-09-06T22:39:46.965688Z",
+      "started_at": "2026-09-06T22:40:36.570985Z",
+      "completed_at": "2026-09-06T22:45:01.744377Z",
+      "harness_wall_seconds_including_policy_hold": 320.244,
+      "server_execution_seconds": 265.173392,
+      "receipt_sha256": "e2fde3a47ac96e5a63d90812012004905945a1354dcb81b660e3c4e60317f130",
+      "scheduler_occupied_gpu_seconds": 64,
+      "active_gpu_seconds": 27,
+      "occupied_idle_gpu_seconds": 37,
+      "cpu_model_image_pull_seconds": 138.167,
+      "gpu_artifact_verification_seconds": 30,
+      "downloaded_artifacts": [
+        {"size_bytes": 695, "sha256": "94ce1697474c1f29dd15c1a4dee6b974615e3c821c7b3f77a4a42b7751b13173"},
+        {"size_bytes": 602, "sha256": "5af73205aa0ba116197ce656e24ead630cada86a33e99a330ea12efe7e315d5e"}
+      ]
+    },
+    {
+      "scenario": "policy-first",
+      "dispatch_order": 2,
+      "model_id": "esmfold2-fast",
+      "seed": 106,
+      "outcome": "passed",
+      "accepted_at": "2026-09-06T22:39:46.951666Z",
+      "started_at": "2026-09-06T22:45:01.825983Z",
+      "completed_at": "2026-09-06T22:49:30.756360Z",
+      "harness_wall_seconds_including_policy_hold": 592.587,
+      "server_execution_seconds": 268.930377,
+      "receipt_sha256": "85449351007a35761a735f6d6b54977c48d38896b91f44f11905f53e615a04a2",
+      "scheduler_occupied_gpu_seconds": 65,
+      "active_gpu_seconds": 28,
+      "occupied_idle_gpu_seconds": 37,
+      "cpu_model_image_pull_seconds": 148.679,
+      "gpu_artifact_verification_seconds": 29,
+      "downloaded_artifacts": [
+        {"size_bytes": 695, "sha256": "777462e5dae819fea96ff0ac78cfdff3530dae85b1836b564c7ee81f94618419"},
+        {"size_bytes": 600, "sha256": "fada242b602287615053e4dfe13dd4e6383011d47d5890d916ad80f7e726d2bf"}
+      ]
+    }
+  ],
+  "runtime": {
+    "gpu": "H100",
+    "gpu_count_per_fold": 1,
+    "placement": "existing-reserved-capacity",
+    "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+    "runtime_image_digest": "sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+    "runtime_recipe_sha256": "c8a9225792f56084baa757f8a63df2d982ffead57849e504f731fa9176632fc2",
+    "workload_recipe_sha256": "febe1c6511e2db35468cf46cf215bccb8c651df79d778c28a45afea9a56bf731",
+    "cpu_model_image_size_bytes": 3815829040,
+    "gpu_snapshot_used": false,
+    "gpu_accounting_quality": "application_observed",
+    "gpu_accounting_reconciled": true,
+    "metrics_error": null
+  },
+  "cleanup": {
+    "temporary_access_revoked": true,
+    "temporary_principal_disabled": true,
+    "original_effective_policy_restored": true,
+    "remaining_owned_pods_jobs_and_kueue_workloads": 0,
+    "observation_processes_stopped": true,
+    "shared_cluster_left_running": true
+  },
+  "aggregate_sha256": "0020cc9a7ee7cf1c48851ec48e2e33daa67fd106640192da630b63c4955c4628",
+  "policy_timeline_sha256": "d312a7bd8a86dd7ee2025700403d0731f4d6dc7e82b76fe433f2d010e55696db"
+}
