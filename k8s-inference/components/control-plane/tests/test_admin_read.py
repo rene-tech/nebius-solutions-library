@@ -290,6 +290,22 @@ def test_promql_is_fixed_bounded_and_rejects_selector_injection() -> None:
         PrometheusQueryTemplates.for_window(model_id=None, seconds=59)
 
 
+def test_grouped_metrics_are_scoped_to_current_models_and_escape_regex_literals() -> None:
+    queries = PrometheusQueryTemplates.by_model_for_window(
+        seconds=300, model_ids=("qwen3-8b", "model.v2/variant")
+    )
+    assert len(queries) == 6
+    assert all('model=~"qwen3-8b|model\\\\.v2/variant"' in query for query in queries.values())
+    # Other scientific/historical model series must not enter the bounded
+    # response expected by a general-model page.
+    assert all("fs2_serve_requests_total{" in query or "_bucket{" in query for query in queries.values())
+    for model_ids in (("duplicate", "duplicate"), ('bad"} or vector(1)',), tuple(f"m{i}" for i in range(257))):
+        with pytest.raises(ValueError, match="selector"):
+            PrometheusQueryTemplates.by_model_for_window(seconds=300, model_ids=model_ids)
+    empty = PrometheusQueryTemplates.by_model_for_window(seconds=300, model_ids=())
+    assert all('model=~""' in query for query in empty.values())
+
+
 def test_kubernetes_projection_cache_is_bounded_and_returns_copies() -> None:
     now = [FIXED_NOW]
     delegate = FakeKubernetesAdapter()

@@ -227,7 +227,7 @@ async def test_prometheus_model_metrics_uses_constant_batch_query_count() -> Non
     )
 
     assert len(reader.scalar_queries) == len(reader.vector_queries) == 6
-    assert all("hot-model" not in query and "cold-model" not in query for query in reader.vector_queries)
+    assert all('model=~"hot-model|cold-model"' in query for query in reader.vector_queries)
     assert snapshot.requests_per_second == 2.5
     assert snapshot.terminal_operations == 10
     assert snapshot.error_rate == 0.1

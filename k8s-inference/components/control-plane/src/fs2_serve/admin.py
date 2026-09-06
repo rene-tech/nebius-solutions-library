@@ -245,23 +245,38 @@ class PrometheusQueryTemplates:
         }
 
     @staticmethod
-    def by_model_for_window(*, seconds: int) -> Mapping[str, str]:
+    def by_model_for_window(*, seconds: int, model_ids: tuple[str, ...] | None = None) -> Mapping[str, str]:
         """Return six fixed vector queries, independent of catalog size."""
 
         if not 60 <= seconds <= int(MAX_ADMIN_WINDOW.total_seconds()):
             raise ValueError("Prometheus range is outside the bound")
+        selector = ""
+        if model_ids is not None:
+            if len(model_ids) > 256 or len(set(model_ids)) != len(model_ids):
+                raise ValueError("Prometheus model selectors are outside the bound")
+            if any(_MODEL_SELECTOR.fullmatch(model_id) is None for model_id in model_ids):
+                raise ValueError("Prometheus model selector is invalid")
+            # Dots are the only regex metacharacters admitted by the model-ID
+            # grammar. JSON quoting also escapes the PromQL string literal.
+            pattern = "|".join(model_id.replace(".", r"\.") for model_id in model_ids)
+            selector = f"model=~{json.dumps(pattern)}"
+        labels = f"{{{selector}}}" if selector else ""
+        error_labels = f'{{{selector + "," if selector else ""}outcome!="succeeded"}}'
         window = f"{seconds}s"
-        requests = f"sum by (model) (max by (model, protocol, outcome) (rate(fs2_serve_requests_total[{window}])))"
-        terminal = "sum by (model) (max by (model, protocol, outcome) (fs2_serve_requests_total))"
+        requests = (
+            "sum by (model) (max by (model, protocol, outcome) "
+            f"(rate(fs2_serve_requests_total{labels}[{window}])))"
+        )
+        terminal = f"sum by (model) (max by (model, protocol, outcome) (fs2_serve_requests_total{labels}))"
         error_requests = (
             "sum by (model) (max by (model, protocol, outcome) "
-            f'(rate(fs2_serve_requests_total{{outcome!="succeeded"}}[{window}])))'
+            f"(rate(fs2_serve_requests_total{error_labels}[{window}])))"
         )
         errors = f"clamp((({error_requests}) or on(model) (0 * ({requests}))) / clamp_min(({requests}), 1e-12), 0, 1)"
         latency = {
             quantile: (
                 f"histogram_quantile({quantile}, sum by (model, le) "
-                f"(rate(fs2_serve_request_duration_seconds_bucket[{window}])))"
+                f"(rate(fs2_serve_request_duration_seconds_bucket{labels}[{window}])))"
             )
             for quantile in ("0.50", "0.95", "0.99")
         }

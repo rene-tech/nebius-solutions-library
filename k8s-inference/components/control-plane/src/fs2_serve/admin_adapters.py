@@ -1537,7 +1537,10 @@ class PrometheusModelMetricsAdminAdapter:
             raise ValueError("admin Prometheus range is invalid")
         window = int((to_at - from_at).total_seconds())
         aggregate_queries = PrometheusQueryTemplates.for_window(model_id=None, seconds=window)
-        vector_queries = PrometheusQueryTemplates.by_model_for_window(seconds=window)
+        # The platform also records scientific models and historical/deleted
+        # models. Restrict queries to this projection's model set so those
+        # unrelated series cannot invalidate the bounded response parser.
+        vector_queries = PrometheusQueryTemplates.by_model_for_window(seconds=window, model_ids=model_ids)
         names = tuple(aggregate_queries)
         results = await asyncio.gather(
             *(self.reader.scalar(aggregate_queries[name], at=to_at) for name in names),
