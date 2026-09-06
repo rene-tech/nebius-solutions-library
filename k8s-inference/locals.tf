@@ -25,10 +25,14 @@ locals {
     for profile in local.scientific_workload_profile_contract.profiles :
     profile.model_id => profile
   }
-  scientific_execution_map = (
+  # Select encoded values so an invalid override with a different object or
+  # tuple shape reaches the explicit preflight diagnostics instead of failing
+  # Terraform's conditional type unification. Decoding retains every field,
+  # including optional per-stage image roles.
+  scientific_execution_map = jsondecode(
     var.deployment.scientific_batch.execution_map == null ?
-    local.committed_scientific_execution_map :
-    var.deployment.scientific_batch.execution_map
+    jsonencode(local.committed_scientific_execution_map) :
+    jsonencode(var.deployment.scientific_batch.execution_map)
   )
   scientific_execution_map_source = (
     var.deployment.scientific_batch.execution_map == null ?

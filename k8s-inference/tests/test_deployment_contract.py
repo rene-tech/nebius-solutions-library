@@ -979,6 +979,21 @@ class DeploymentContractTests(unittest.TestCase):
             {"nvidia.com/gpu"},
         )
 
+    def _assert_scientific_cpu_image_roles(self, execution_map: dict[str, Any]) -> None:
+        roles = {
+            (model["model_id"], stage["stage_id"]): stage["image_role"]
+            for model in execution_map["models"]
+            for stage in model["stages"]
+            if "image_role" in stage
+        }
+        self.assertEqual(
+            roles,
+            {
+                ("mosaic", "aggregate"): "scientific-tools",
+                ("rfdiffusion", "collect"): "scientific-tools",
+            },
+        )
+
     def test_the_scientific_batch_contract_is_declared_exactly_once(self) -> None:
         """A repeated object attribute silently wins and drops fields.
 
@@ -994,7 +1009,11 @@ class DeploymentContractTests(unittest.TestCase):
             # Enabling scientific batch narrows the cluster to the Kueue and
             # JobSet tested intersection.
             "cluster": {"kubernetes_version": "1.34"},
-            "scientific_batch": {"enabled": True, "namespace": "fs2-scientific"},
+            "scientific_batch": {
+                "enabled": True,
+                "namespace": "fs2-scientific",
+                "runtime_cache": {"enabled": True},
+            },
             "storage": {
                 "scientific_artifacts": {
                     "enabled": True,
@@ -1023,7 +1042,7 @@ class DeploymentContractTests(unittest.TestCase):
                 "namespace": "fs2-scientific",
                 "poll_seconds": "0.25",
                 "runtime_cache": {
-                    "enabled": False,
+                    "enabled": True,
                     "size_gib": 128,
                     "storage_class_name": "csi-mounted-fs-path-sc",
                 },
@@ -1032,6 +1051,7 @@ class DeploymentContractTests(unittest.TestCase):
             },
         )
         effective = outputs["effective_configuration"]["scientific_batch"]
+        self._assert_scientific_cpu_image_roles(stage["execution_map"])
         self.assertEqual(effective["namespace"], "fs2-scientific")
         self.assertTrue(effective["artifact_store_required"])
         self.assertEqual(
@@ -1068,6 +1088,7 @@ class DeploymentContractTests(unittest.TestCase):
             "cluster": {"kubernetes_version": "1.34"},
             "scientific_batch": {
                 "enabled": True,
+                "runtime_cache": {"enabled": True},
                 "execution_map": committed_map,
             },
             "storage": {
@@ -1083,6 +1104,7 @@ class DeploymentContractTests(unittest.TestCase):
         )
         stage = outputs["deployment_contract"]["stages"]["workloads"]
         self.assertEqual(stage["scientific_batch"]["execution_map"], committed_map)
+        self._assert_scientific_cpu_image_roles(stage["scientific_batch"]["execution_map"])
         self.assertEqual(
             outputs["effective_configuration"]["scientific_batch"]["execution_map_source"],
             "deployment.scientific_batch.execution_map",
@@ -1118,6 +1140,7 @@ class DeploymentContractTests(unittest.TestCase):
                     "cluster": {"kubernetes_version": "1.34"},
                     "scientific_batch": {
                         "enabled": True,
+                        "runtime_cache": {"enabled": True},
                         "execution_map": execution_map,
                     },
                     "storage": {
@@ -1399,7 +1422,7 @@ class DeploymentContractTests(unittest.TestCase):
                 ),
             },
             "models": {"selection": "profile"},
-            "scientific_batch": {"enabled": True},
+            "scientific_batch": {"enabled": True, "runtime_cache": {"enabled": True}},
             "scheduling": {
                 "cohort": {"enabled": True, "name": "inference-shared"},
                 "fair_share_precedence_acknowledged": True,
@@ -1531,7 +1554,7 @@ class DeploymentContractTests(unittest.TestCase):
             "target": self.catalog_target(),
             "profiles": {"capacity": "minimal", "accelerators": "minimal", "models": "none"},
             "cluster": {"kubernetes_version": "1.34"},
-            "scientific_batch": {"enabled": True},
+            "scientific_batch": {"enabled": True, "runtime_cache": {"enabled": True}},
             "scheduling": scheduling,
             "storage": {
                 # Batch execution commits results to the artifact store, which
@@ -1645,7 +1668,7 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("for asset in values(var.academic_assets.assets) : asset.model_id", queue_source)
         # Both reject an operator lane that collides with the derived one.
         self.assertIn("root_academic_lane_queue_collisions", root_locals)
-        self.assertIn("academic_lane_queue_collisions", queue_source)
+        self.assertIn("managed_lane_queue_collisions", queue_source)
         # Both mirror the same rank-separated route keys.
         for source in (root_locals, queue_source + root_locals):
             self.assertIn("jsonencode([service_class, tenant_id, model_id])", source)
@@ -1687,7 +1710,9 @@ class DeploymentContractTests(unittest.TestCase):
                 "cluster": {"kubernetes_version": version},
             }
             if scientific:
-                deployment["scientific_batch"] = {"enabled": True}
+                deployment["scientific_batch"] = {
+                    "enabled": True, "runtime_cache": {"enabled": True}
+                }
             variable_file = self._write_configuration(name, deployment)
             result, _ = self._plan_file(variable_file, name)
             self.assertNotEqual(result.returncode, 0)
@@ -1698,7 +1723,7 @@ class DeploymentContractTests(unittest.TestCase):
             "name": "fs2-jobset-qualified-minor",
             "target": self.catalog_target(),
             "cluster": {"kubernetes_version": "1.35.6"},
-            "scientific_batch": {"enabled": True},
+            "scientific_batch": {"enabled": True, "runtime_cache": {"enabled": True}},
             "storage": {
                 "scientific_artifacts": {
                     "enabled": True,
