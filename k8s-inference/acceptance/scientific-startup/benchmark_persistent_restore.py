@@ -27,6 +27,7 @@ def main() -> None:
     parser.add_argument("--kubeconfig", required=True)
     parser.add_argument("--context", required=True)
     parser.add_argument("--donor", required=True)
+    parser.add_argument("--donor-already-deleted", action="store_true", help="Resume after verified prior donor deletion")
     parser.add_argument("--restore-template", type=Path, required=True)
     parser.add_argument("--baseline-state", type=Path, required=True)
     parser.add_argument("--output-directory", type=Path, required=True)
@@ -70,10 +71,16 @@ def main() -> None:
         receipt["cache_state"] = "persisted Network SSD; checkpoint files fadvise DONTNEED after prior GPU pod deletion"
     active_pod = args.donor
     try:
-        receipt["donor"] = json.loads(run(["get", "pod", active_pod, "-o", "json"]).stdout)["metadata"]["uid"]
+        donor = run(["get", "pod", active_pod, "--ignore-not-found", "-o", "json"]).stdout
+        if donor:
+            receipt["donor"] = json.loads(donor)["metadata"]["uid"]
+        elif args.donor_already_deleted:
+            receipt["donor"] = {"name": active_pod, "already_deleted": True}
+        else:
+            raise RuntimeError("donor is absent; use --donor-already-deleted only when resuming a prior deletion")
         for repetition in range(1, args.repetitions + 1):
             previous_pod = active_pod
-            run(["delete", "pod", previous_pod, "--wait=true", "--timeout=90s"])
+            run(["delete", "pod", previous_pod, "--ignore-not-found=true", "--wait=true", "--timeout=90s"])
             deleted = run(["get", "pod", previous_pod, "--ignore-not-found", "-o", "name"]).stdout.strip() == ""
             if not deleted:
                 raise RuntimeError("previous GPU pod still exists")
@@ -88,7 +95,7 @@ def main() -> None:
                     "root=pathlib.Path(sys.argv[1]); "
                     "assert root.name=='images' and root.is_absolute(); "
                     "\nfor path in root.iterdir():\n"
-                    " if path.is_file():\n"
+                    " if path.is_file() and path.suffix=='.img':\n"
                     "  with path.open('rb') as stream:\n"
                     "   os.fsync(stream.fileno()); os.posix_fadvise(stream.fileno(),0,0,os.POSIX_FADV_DONTNEED)\n"
                     "  files.append({'name':path.name,'bytes':path.stat().st_size})\n"
@@ -134,6 +141,8 @@ def main() -> None:
     except Exception as error:
         receipt["status"] = "failed"
         receipt["error"] = str(error)
+        if isinstance(error, subprocess.CalledProcessError):
+            receipt["command_stderr"] = error.stderr
         failure_logs = run(["logs", active_pod, "-c", "runtime"], check=False)
         (args.output_directory / "failure.log").write_text(failure_logs.stdout + failure_logs.stderr)
     finally:

@@ -105,3 +105,17 @@ def test_generated_code_cache_survives_donor_container(monkeypatch, tmp_path):
     assert all(str(tmp_path) in os.environ[variable] for variable in (
         "XDG_CACHE_HOME", "TORCHINDUCTOR_CACHE_DIR", "TORCH_EXTENSIONS_DIR", "CUDA_CACHE_PATH",
     ))
+
+
+def test_new_request_kernels_do_not_invalidate_captured_code(tmp_path):
+    helper = module()
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    captured = cache / "captured.so"
+    captured.write_bytes(b"captured executable")
+    manifest = helper.generated_cache_manifest(tmp_path / "images")
+    (cache / "new-input-shape.so").write_bytes(b"later request executable")
+    helper.validate_generated_cache(tmp_path / "images", manifest)
+    captured.write_bytes(b"different executable")
+    with pytest.raises(ValueError, match="missing or differs"):
+        helper.validate_generated_cache(tmp_path / "images", manifest)

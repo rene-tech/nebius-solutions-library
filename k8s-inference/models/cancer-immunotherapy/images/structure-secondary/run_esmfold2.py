@@ -26,6 +26,10 @@ ESMC_CONTENT_SHA256 = "8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a
 CCD_CONTENT_SHA256 = "b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e"
 VARIANT_ID = "biohub-v3-4-0"
 HANDOFF_SCHEMA = "fs2.nebius.ai/esmfold2-prepared-handoff/v2"
+REQUEST_ENVIRONMENT = (
+    "FS2_OPERATION_ID", "FS2_ATTEMPT_ID", "FS2_TENANT_ID", "FS2_VARIANT_ID",
+    "FS2_STAGE_ID", "FS2_RUNTIME_LOCALIZATION_MARKER", "FS2_ARTIFACT_ACCESS_RECEIPT_DIGEST",
+)
 
 
 def _absolute_file(path: str, label: str) -> Path:
@@ -305,7 +309,10 @@ def _remote_fold(endpoint: str, argv: list[str]) -> None:
 
     request = Request(
         endpoint.rstrip("/") + "/execute",
-        data=json.dumps({"argv": argv}).encode(),
+        data=json.dumps({
+            "argv": argv,
+            "environment": {name: os.environ[name] for name in REQUEST_ENVIRONMENT if name in os.environ},
+        }).encode(),
         headers={"Content-Type": "application/json"},
     )
     with urlopen(request, timeout=3600) as response:
