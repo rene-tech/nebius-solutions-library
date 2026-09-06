@@ -770,6 +770,7 @@ def test_openapi_matches_typed_versioned_admin_contract(registry: Any, cipher: A
     runtime.scientific_admin = ScientificAdminReadService(
         models=cast(Any, object()),
         runs=cast(Any, object()),
+        controls=cast(Any, object()),
     )
     schema = create_app(runtime).openapi()
     contract = json.loads(

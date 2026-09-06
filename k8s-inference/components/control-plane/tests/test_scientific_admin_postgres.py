@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -20,6 +20,7 @@ from fs2_serve.scientific_admin_models import ScientificModelReadiness, Scientif
 from fs2_serve.scientific_admin_postgres import (
     PostgresScientificArtifactAdminAdapter,
     PostgresScientificRunAdminAdapter,
+    PostgresScientificRunControlAdapter,
     postgres_scientific_admin_read_service,
 )
 from fs2_serve.scientific_artifacts import (
@@ -48,7 +49,10 @@ from fs2_serve.scientific_batch.models import (
     WorkloadKind,
     WorkloadRef,
 )
-from fs2_serve.scientific_batch.postgres_repository import PostgresScientificBatchRepository
+from fs2_serve.scientific_batch.postgres_repository import (
+    PostgresScientificBatchRepository,
+    ScientificBatchNotFoundError,
+)
 from fs2_serve.scientific_run_result import ScientificRunResult
 
 NOW = datetime(2026, 9, 2, 22, 0, tzinfo=UTC)
@@ -349,9 +353,73 @@ def test_production_factory_binds_postgres_controller_and_artifact_adapters() ->
     )
 
     assert isinstance(service.runs, PostgresScientificRunAdminAdapter)
+    assert isinstance(service.controls, PostgresScientificRunControlAdapter)
     assert service.artifacts is None
     assert service.capabilities().run_history.available is True
+    assert service.capabilities().run_control.available is True
     assert service.capabilities().artifacts.available is False
+
+
+@dataclass(frozen=True, slots=True)
+class TerminalBatchRow:
+    """The three fields the control adapter reads from an already-finished batch.
+
+    A real terminal ``ScientificBatchState`` must have released every workload
+    resource, which the running fixture above deliberately still holds.
+    """
+
+    operation_id: UUID
+    tenant_id: str
+    status: BatchStatus
+    cancel_requested: bool = False
+
+
+class CancelBatchRepository:
+    """Only the two repository calls the control adapter is allowed to make."""
+
+    def __init__(self, state: ScientificBatchState | TerminalBatchRow) -> None:
+        self.state = state
+        self.cancel_calls: list[tuple[UUID, str, str]] = []
+
+    async def get(self, operation_id: UUID, *, tenant_id: str) -> ScientificBatchState | TerminalBatchRow:
+        if operation_id != self.state.operation_id or tenant_id != self.state.tenant_id:
+            raise ScientificBatchNotFoundError("scientific batch does not exist")
+        return self.state
+
+    async def request_cancel(
+        self, operation_id: UUID, *, tenant_id: str, actor: str
+    ) -> ScientificBatchState | TerminalBatchRow:
+        self.cancel_calls.append((operation_id, tenant_id, actor))
+        if self.state.status.terminal or self.state.cancel_requested:
+            return self.state
+        self.state = replace(self.state, cancel_requested=True)
+        return self.state
+
+
+async def test_run_control_adapter_reports_requested_pending_and_terminal_without_a_second_write() -> None:
+    repository = CancelBatchRepository(_state())
+    adapter = PostgresScientificRunControlAdapter(batches=cast(Any, repository))
+
+    first = await adapter.request_cancel(OPERATION_ID, tenant_id="tenant-oncology", actor="operator-ada")
+    second = await adapter.request_cancel(OPERATION_ID, tenant_id="tenant-oncology", actor="operator-ada")
+
+    assert (first, second) == ("requested", "already-requested")
+    assert repository.cancel_calls == [(OPERATION_ID, "tenant-oncology", "operator-ada")]
+
+    terminal = PostgresScientificRunControlAdapter(
+        batches=cast(
+            Any,
+            CancelBatchRepository(
+                TerminalBatchRow(operation_id=OPERATION_ID, tenant_id="tenant-oncology", status=BatchStatus.SUCCEEDED)
+            ),
+        )
+    )
+    assert await terminal.request_cancel(OPERATION_ID, tenant_id="tenant-oncology", actor="operator-ada") == "terminal"
+
+    with pytest.raises(KeyError):
+        await adapter.request_cancel(OPERATION_ID, tenant_id="tenant-other", actor="operator-ada")
+    with pytest.raises(KeyError):
+        await adapter.request_cancel(uuid4(), tenant_id="tenant-oncology", actor="operator-ada")
 
 
 async def test_artifact_adapter_projects_the_canonical_terminal_result_without_signed_handles() -> None:

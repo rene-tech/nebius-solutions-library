@@ -106,7 +106,7 @@ export function ScientificRunsPage() {
           <h2 id="scientific-runs-intro-title">Batch execution and exact GPU evidence</h2>
           <p>Run identity, access admission, DAG progress, artifacts, and lifecycle accounting remain separate facts. Estimated and unavailable values are always labelled.</p>
         </div>
-        <span className="quiet-chip">Read-only</span>
+        <span className="quiet-chip">{capabilities?.run_control.available ? "Read-only · cancel on run detail" : "Read-only"}</span>
       </section>
 
       <section className="section-stack" aria-labelledby="scientific-run-list-title">

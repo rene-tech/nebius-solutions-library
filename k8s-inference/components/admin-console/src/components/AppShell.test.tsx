@@ -10,12 +10,12 @@ import { browserFixture } from "../test/browserFixtures";
 
 afterEach(() => vi.restoreAllMocks());
 
-function renderShell() {
+function renderShell(entry = "/admin") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <SessionContext.Provider value={{ session: testSession, logout: async () => undefined, loggingOut: false, logoutError: null }}>
-        <MemoryRouter initialEntries={["/admin"]}>
+        <MemoryRouter initialEntries={[entry]}>
           <Routes><Route path="/admin" element={<AppShell />}><Route index element={<p>Overview content</p>} /></Route></Routes>
         </MemoryRouter>
       </SessionContext.Provider>
@@ -62,5 +62,19 @@ describe("application shell context state", () => {
     expect(await screen.findByText("Overview content")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Scientific/ })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Models/ })).toBeInTheDocument();
+  });
+
+  it("names the overview in the breadcrumb when the console is served with a trailing slash", async () => {
+    vi.spyOn(adminApi, "context").mockResolvedValue(
+      structuredClone(browserFixture("/admin/api/v1/context")) as never,
+    );
+    vi.spyOn(adminApi, "scientificCapabilities").mockResolvedValue(
+      structuredClone(browserFixture("/admin/api/v1/scientific-capabilities")) as never,
+    );
+    renderShell("/admin/");
+
+    expect(await screen.findByText("Overview content")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Overview");
+    expect(screen.getByText("FS2 Serve / Overview")).toBeInTheDocument();
   });
 });

@@ -440,6 +440,9 @@ class ScientificCapabilities(StrictModel):
     model_readiness: ScientificCapability
     run_history: ScientificCapability
     artifacts: ScientificCapability
+    # Cancellation is the one scientific run command an operator can issue from
+    # the console; it is advertised separately so a read-only build stays honest.
+    run_control: ScientificCapability
 
 
 class ScientificModelReadinessList(StrictModel):

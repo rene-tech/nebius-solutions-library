@@ -1806,6 +1806,34 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                     tenant_id=authorized_tenant,
                 )
 
+            # Cancellation is the only scientific run command the console can
+            # issue. It is registered only when a durable writer exists so the
+            # advertised surface never promises a command this build cannot run.
+            if scientific_admin.controls is not None:
+
+                @app.post(
+                    "/admin/api/v1/scientific-runs/{run_id}:cancel",
+                    response_model=AdminEnvelope[ScientificRunDetail],
+                    responses=admin_problem_responses,
+                )
+                async def admin_scientific_run_cancel(
+                    run_id: UUID,
+                    identity: Annotated[OperatorPrincipal, Depends(operator)],
+                    params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+                ) -> AdminEnvelope[ScientificRunDetail]:
+                    authorized_tenant = await admin_access.authorize(
+                        identity,
+                        OperatorRole.OPERATOR,
+                        action="scientific_run.cancel",
+                        tenant_id=identity.tenant_id,
+                    )
+                    return await scientific_admin.cancel_run(
+                        selected_context(params),
+                        run_id,
+                        tenant_id=authorized_tenant,
+                        actor=identity.subject,
+                    )
+
         if scientific_admin.models is not None:
 
             @app.get(

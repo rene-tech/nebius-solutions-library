@@ -177,6 +177,7 @@ class AdminConsolePlanTests(unittest.TestCase):
             ("GET", "/admin/api/v1/scientific-capabilities"),
             ("GET", "/admin/api/v1/scientific-runs"),
             ("GET", "/admin/api/v1/scientific-runs/{run_id}"),
+            ("POST", "/admin/api/v1/scientific-runs/{run_id}:cancel"),
             ("GET", "/admin/api/v1/scientific-models"),
         }
         self.assertTrue(scientific_routes.issubset(contract_routes))
@@ -307,16 +308,25 @@ class AdminConsolePlanTests(unittest.TestCase):
                 "/admin/api/v1/scientific-capabilities",
                 "/admin/api/v1/scientific-runs",
                 "/admin/api/v1/scientific-runs/{run_id}",
+                "/admin/api/v1/scientific-runs/{run_id}:cancel",
                 "/admin/api/v1/scientific-models",
             },
         )
         gated = {group["id"]: group for group in self.api_contract["feature_gated_route_groups"]}
         self.assertEqual(set(gated["scientific-operations"]["paths"]), scientific_paths)
+        # The one scientific command is a POST gated by its own capability; every
+        # other scientific route stays a GET projection.
+        commands = [route for route in contract["routes"] if route["method"] != "GET"]
+        self.assertEqual(
+            [(route["method"], route["path"], route["capability"]) for route in commands],
+            [("POST", "/admin/api/v1/scientific-runs/{run_id}:cancel", "run_control")],
+        )
 
         client_source = (ROOT / "src" / "api" / "client.ts").read_text()
         self.assertIn('request<ScientificCapabilities>("/scientific-capabilities"', client_source)
         self.assertIn('request<ScientificRunList>("/scientific-runs"', client_source)
         self.assertIn('request<ScientificModelReadinessList>("/scientific-models"', client_source)
+        self.assertIn("envelopeRequest<ScientificRunDetail>(`/scientific-runs/${encodeURIComponent(runId)}:cancel`", client_source)
 
         app_source = (ROOT / "src" / "app" / "App.tsx").read_text()
         self.assertIn('<Route path="scientific-runs" element={<ScientificRunsPage />} />', app_source)
