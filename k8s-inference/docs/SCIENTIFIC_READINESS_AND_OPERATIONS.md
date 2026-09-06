@@ -8,6 +8,9 @@ also passed, including revoked-key rejection, pause/resume, cap-one dispatch,
 artifact downloads and restoration of the original settings. Use the Terraform
 outputs for the final deployment identity and access bundle. Measurements below
 retain their original sources and clocks; snapshots remain experimental.
+The [final deployed release](../acceptance/scientific-fleet/evidence/final-h100-release-20260906.md)
+is `adf1d842`, including the qualified catalog and MCP/admin fixes; its
+three-stage Terraform post-apply plan has no remaining changes.
 
 ## Start using the cluster
 
@@ -70,7 +73,9 @@ GPU occupied/active/idle intervals reconciled, but not every backend exposes
 separate weight-loading and compilation phases.
 
 Qwen and Cosmos also passed [general-serving checks](../acceptance/general-serving/README.md)
-on separate releases. Qwen's six short hot requests on `29b7e01a` took
+on separate releases, including two requests each on runtime `8bb53aab` in the
+[final general-model canaries](../acceptance/general-serving/evidence/h100-8bb53aab-canary-20260906.md).
+Qwen's six short hot requests on `29b7e01a` took
 0.410–0.600 s from acceptance to durable completion; this is not maximum token
 throughput, and the non-streaming public path did not measure TTFT.
 

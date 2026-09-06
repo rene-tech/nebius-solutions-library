@@ -1,5 +1,22 @@
 # Solution acceptance gates — 2026-09-06
 
+## Final release resolution
+
+On exact source `adf1d842`, the final ten-model public campaign and genuine
+qualification promotion closed all ten identity checks described below.
+[Final fleet evidence](final-fleet-acceptance-h100-20260906.md) records the
+requests and immutable receipt hashes. Runtime identities and historical
+receipts were preserved. Recipe refresh, 36 scientific contract tests,
+38 fleet harness tests, 10 primary activation tests and adapter checks passed.
+The complete solution suite ran 307 tests in 78.632 s: 306 passed; only
+`test_export_contains_no_private_references` failed, with 47 findings across
+historical resource IDs/layouts and documentation checkout paths. That
+publication-cleanup issue remains separate from functional cluster readiness;
+the test has not been suppressed. Earlier counts and sequencing below are
+retained as the repair history, not the final release status.
+
+## Initial repair
+
 Scope: local Terraform, scheduling and source-contract validation based on
 revision `29b7e01a`. No cloud resources, limits, model recipes, live discovery
 semantics or historical qualification receipts were changed by this repair.
@@ -39,7 +56,7 @@ no errors, restricted to the two categories below. The baseline had 25 failing
 assertions and one error. These are failure counts, not counts of failed test
 methods: ten model subtests belong to one qualification test method.
 
-## Current-release qualification is still pending
+## Initial state: current-release qualification was pending
 
 All ten profiles retain genuine historical scheduler/completion receipt
 pointers, but refreshed runtime recipes changed their current execution

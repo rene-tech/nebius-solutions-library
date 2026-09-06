@@ -37,7 +37,7 @@ researcher or hackathon team through discovering, uploading, submitting,
 following, and downloading a scientific run over HTTPS or MCP.
 [Scientific readiness and operations](docs/SCIENTIFIC_READINESS_AND_OPERATIONS.md)
 summarizes all ten scientific profiles, Qwen/Cosmos, measured batch scaling,
-startup and snapshot limits, and the remaining final-release acceptance gates.
+tested operator controls, final fleet acceptance, and startup/snapshot limits.
 
 ## Accelerator and qualification boundary
 
