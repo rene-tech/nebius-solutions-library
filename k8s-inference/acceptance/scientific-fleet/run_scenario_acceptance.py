@@ -27,6 +27,39 @@ import run_fleet_acceptance as fleet
 SCHEMA = "fs2-serve.nebius.ai/scientific-scenario-acceptance/v1"
 
 
+def verify_download(client: public.PublicApiClient, pointer: dict[str, Any]) -> bytes:
+    """Prove that the customer can retrieve the bytes named by a result."""
+    response = client.request("GET", f"/v1/artifacts/{pointer['artifact_id']}/content")
+    if response.status != 200:
+        raise public.AcceptanceError(f"http_artifact_content_{response.status}")
+    if (
+        len(response.body) != pointer["size_bytes"]
+        or hashlib.sha256(response.body).hexdigest() != pointer["sha256"]
+        or response.headers.get("x-fs2-artifact-sha256") != pointer["sha256"]
+    ):
+        raise public.AcceptanceError("downloaded_artifact_identity_mismatch")
+    return response.body
+
+
+def verify_result_downloads(
+    client: public.PublicApiClient, result: dict[str, Any]
+) -> list[dict[str, Any]]:
+    manifest_pointer = result["output_manifest"]
+    manifest = json.loads(verify_download(client, manifest_pointer))
+    candidates = [
+        entry["artifact"]
+        for entry in manifest["entries"]
+        if 0 < entry["artifact"]["size_bytes"] <= public.MAX_JSON_BYTES
+    ]
+    if not candidates:
+        raise public.AcceptanceError("no_bounded_downloadable_result")
+    # One actual scientific output plus its manifest verifies delivery.
+    # Full model-specific semantic validation remains server-owned.
+    selected = min(candidates, key=lambda item: item["size_bytes"])
+    verify_download(client, selected)
+    return [manifest_pointer, selected]
+
+
 def prepare_scenario(
     config: public.RunConfig, scenario: dict[str, Any]
 ) -> tuple[str, dict[str, Any], list[public.DeclaredInput], dict[str, Any]]:
@@ -186,6 +219,7 @@ def run_scenario(
             result=result,
             uploads=uploads,
         )
+        downloaded = verify_result_downloads(client, result)
         public._write_receipt(config.receipt_path, receipt, overwrite=False)
         return {
             **description,
@@ -199,6 +233,7 @@ def run_scenario(
             "attempts": receipt["attempts"],
             "queue": receipt["queue"],
             "execution_identity": receipt["execution_identity"],
+            "downloaded_artifacts": downloaded,
         }
     except public.AcceptanceError as error:
         if operation_id is None and error.code == scenario.get("expected_error_code"):
