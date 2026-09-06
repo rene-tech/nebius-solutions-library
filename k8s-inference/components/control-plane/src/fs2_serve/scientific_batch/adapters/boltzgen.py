@@ -52,6 +52,7 @@ from .common import (
     strict_object,
     structure_atom_count,
 )
+from .primitives import ScientificParameterError
 
 if TYPE_CHECKING:
     from . import CollectedStageOutput
@@ -185,6 +186,13 @@ class BoltzGenParameters:
 
     @classmethod
     def parse(cls, value: object) -> BoltzGenParameters:
+        try:
+            return cls._parse(value)
+        except ScientificAdapterError as error:
+            raise ScientificParameterError(str(error)) from error
+
+    @classmethod
+    def _parse(cls, value: object) -> BoltzGenParameters:
         item = strict_object(
             value,
             required=frozenset({"protocol", "batches"}),

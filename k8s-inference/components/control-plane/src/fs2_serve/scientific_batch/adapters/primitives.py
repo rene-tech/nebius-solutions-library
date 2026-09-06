@@ -16,6 +16,10 @@ class ScientificAdapterError(ValueError):
     """A public request or resolved artifact violates the adapter contract."""
 
 
+class ScientificParameterError(ScientificAdapterError):
+    """Caller-supplied model parameters are invalid, not the runtime binding."""
+
+
 class ArtifactLocalizationError(ScientificAdapterError):
     """A runtime mount, archive, or localization contract failed closed."""
 
@@ -55,6 +59,7 @@ def strict_object(
 __all__ = [
     "ArtifactLocalizationError",
     "ScientificAdapterError",
+    "ScientificParameterError",
     "TreeBoundExceededError",
     "strict_object",
 ]
