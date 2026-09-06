@@ -33,7 +33,8 @@ def main() -> None:
     source_root = "/opt/fs2/snapshot" if args.source_in_image else "/snapshot-source"
     checkpoint_directory = "/checkpoints/" + args.checkpoint_subdir
     command = [
-        args.python, source_root + "/supervisor.py", "--directory", checkpoint_directory, args.mode,
+        args.python, source_root + "/supervisor.py", "--directory", checkpoint_directory,
+        "--request-uid", "10001", "--request-gid", "10001", args.mode,
     ]
     if args.mode == "donor":
         command += ["--", args.python, "-u", args.runtime_script or source_root + "/esmfold2_server.py"]
