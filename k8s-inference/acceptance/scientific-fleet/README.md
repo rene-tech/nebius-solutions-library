@@ -229,6 +229,10 @@ unless `--overwrite` is explicit.
 
 ## Promote successful public runs
 
+The [2026-09-06 solution-gate report](evidence/solution-acceptance-gates-20260906.md)
+separates historical qualification from current recipe acceptance and documents
+the offline staging sequence needed to re-qualify already-qualified models.
+
 `promote_qualifications.py` is the offline, reviewable bridge from fleet
 acceptance to catalog qualification. Prefer to run it in the same repository
 revision that supplied the acceptance inputs. The aggregate and every

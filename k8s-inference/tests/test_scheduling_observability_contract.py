@@ -96,8 +96,8 @@ class SchedulingObservabilityContractTests(unittest.TestCase):
         for source in (queue_source, root_locals):
             self.assertIn("cpu_millicores = 16000", source)
             self.assertIn("memory_mib     = 65536", source) if "memory_mib     = 65536" in source else self.assertIn("memory_mib = 65536", source)
-            self.assertIn("max(request.cpu_millicores", source)
-            self.assertIn("max(request.memory_mib", source)
+            for resource in ("cpu_millicores", "memory_mib"):
+                self.assertRegex(source, rf"max\(\s*request\.{resource}\s*,")
 
         # It must fit one node and the quota of the queue that admits it.
         self.assertIn("schedulable_capacity.cpu_millicores", module_source)
@@ -838,10 +838,17 @@ class CpuStageClassContractTests(unittest.TestCase):
                 self.assertNotIn("cpu_stage_class_facts", source)
                 self.assertNotIn("general_cpu_classes", source)
 
-        # The one class this repository produces is derived field by field
-        # from the reference plane's own storage contract.
+        # Both reference classes reuse one backing derived field by field
+        # from the reference plane's own storage contract. Only namespace and
+        # LocalQueue differ; duplicating capacity here would permit drift.
         queue = (ROOT / "stages/workloads/queue.tf").read_text(encoding="utf-8")
-        reference_class = queue.split("reference-data = {", 1)[1].split("\n    } : {}", 1)[0]
+        reference_class = queue.split("reference_cpu_class_backing = {", 1)[1].split(
+            "\n  scientific_cpu_classes = merge(", 1
+        )[0]
+        for class_name in ("reference-data", "model-reference-data"):
+            self.assertIn(
+                f"{class_name} = merge(local.reference_cpu_class_backing, {{", queue
+            )
         for derived in (
             "var.reference_data.storage_contract.cpu_pool.id",
             "var.reference_data.storage_contract.cpu_pool.node_labels",
@@ -1076,7 +1083,9 @@ class CpuStageClassCrossOwnerTests(unittest.TestCase):
 
     def test_one_producer_owns_the_reference_data_class(self) -> None:
         queue = (ROOT / "stages/workloads/queue.tf").read_text(encoding="utf-8")
-        self.assertIn(
-            'condition     = !contains(keys(local.contributed_cpu_classes), "reference-data")',
+        self.assertRegex(
             queue,
+            r'condition\s*=\s*alltrue\(\[\s*'
+            r'for class_name in \["reference-data", "model-reference-data"\]\s*:\s*'
+            r'!contains\(keys\(local\.contributed_cpu_classes\), class_name\)\s*\]\)',
         )

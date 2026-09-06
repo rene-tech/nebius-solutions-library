@@ -99,6 +99,8 @@ deployment = {
   # API for true-gang stages.
   scientific_batch = {
     enabled = true
+    # The committed scientific recipes mount the shared runtime cache.
+    runtime_cache = { enabled = true }
   }
 
   scheduling = {
