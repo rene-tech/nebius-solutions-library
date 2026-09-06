@@ -1,0 +1,1216 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-customer-readiness/v1",
+  "observed_date": "2026-09-06",
+  "cluster_context": "k8s-inference-h100",
+  "project_id": "project-e00rene",
+  "control_plane_source": "5fcc8323",
+  "control_plane_image_digest": "sha256:1ff9218ac8b61d1b6292f1b9d35fefc120440215a22b2bb2e3ba8c1b1f4b7383",
+  "boundary": "One varied successful request per profile, plus a second concurrent BoltzGen request and cancellation. This is not repeated cold-start distribution qualification.",
+  "qualifications": {
+    "distinct_successful_profiles": 10,
+    "successful_scientific_requests": 11,
+    "cancellation_checks": 1,
+    "result_delivery": "Public API manifest and one scientific result downloaded and checked against exact digest/size/media metadata.",
+    "cache_state": "Mixed: mounted regional weight cache and mostly cached GPU images; several CPU stages pulled model images. No cache flush or snapshot restore was requested.",
+    "gpu_accounting": "Application-observed allocated/active/idle lifecycle clocks, not sampled GPU kernel utilization.",
+    "failures_retained": "Two main-run BoltzGen cases used shard IDs absent from the uploaded design archive. Corrected dedicated concurrent run preserves the declared pdl1-face ID and both succeed."
+  },
+  "runs": [
+    {
+      "run_id": "scientific-customer-readiness-5fcc8323-20260906",
+      "passed": 10,
+      "failed": 2,
+      "peak_admitted_gpu_attempts": 13,
+      "metrics_error": null,
+      "rows": [
+        {
+          "id": "alphafold3-ubiquitin",
+          "model_id": "alphafold3",
+          "operation_id": "9f939f28-1cf2-43e5-a9c4-176bece1bbe3",
+          "outcome": "passed",
+          "error_code": null,
+          "wall_seconds": 84.788,
+          "service_class": "customer-batch",
+          "parameters": {
+            "input_mode": "raw"
+          },
+          "input_sha256": "09369b52c8477507c6c6cfc0fd524a7ef73036efd1662e5cd1e09c64331f10e9",
+          "execution_identity": {
+            "execution_identity_sha256": "bedac78fa91c08e79fd0965bd88e70fd58ab7db58961a19e9bd646983f4bd98e",
+            "model_artifact_manifest_digest": "f0a5202f7f035ca014feff1bb16c1b342483a09bd67781cb934564c0630a7cc2",
+            "model_id": "alphafold3",
+            "model_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+            "runtime_image_digest": "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
+            "runtime_recipe_sha256": "a0aa00fb82f4800f06c002d55f64e015b0d3ff39a46e65be7113f49406fb5f5f",
+            "variant_id": "upstream-v3-0-4",
+            "workload_recipe_sha256": "26bb46f3fb56503d798eeb939e64f97a24d1bb19a7ac249b25a8edf55423bb8d"
+          },
+          "idempotent_replay": true,
+          "downloaded_artifacts": [
+            {
+              "artifact_id": "c6d8eb3a-b82b-4a3a-bf13-b942ddd675dc",
+              "compression": "none",
+              "media_type": "application/vnd.fs2.scientific-manifest+json",
+              "sha256": "d1e7d1a16ad8a8abd2a76886e741074504c31d601bb28e19bae7c2f1b483b974",
+              "size_bytes": 705
+            },
+            {
+              "artifact_id": "23775b33-fdeb-45de-9c23-552cddf92d07",
+              "compression": "none",
+              "media_type": "application/json",
+              "sha256": "a0dbb074ce00cca312b280bdb84c67997aaaae867e3692e14ac306dc8a30b01b",
+              "size_bytes": 796
+            }
+          ],
+          "lifecycle_accounting": {
+            "active_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 38
+            },
+            "available": true,
+            "data_gaps": [],
+            "device_allocated_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 47.968762
+            },
+            "exact": true,
+            "occupied_idle_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 11
+            },
+            "phase_gpu_seconds": {
+              "active_compute": 38,
+              "artifact_load": 8,
+              "checkpoint_drain": 0,
+              "compile": 0,
+              "cooldown_grace": 0,
+              "image_pull": 2,
+              "resident_idle": 1,
+              "restore": 0,
+              "teardown": 0,
+              "unclassified": 0,
+              "warmup": 0,
+              "workflow_wait": 0
+            },
+            "quality": "application_observed",
+            "reconciled": true,
+            "rollup_count": 2,
+            "scheduler_occupied_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 49
+            }
+          }
+        },
+        {
+          "id": "bindcraft-two-designs",
+          "model_id": "bindcraft",
+          "operation_id": "e01379a9-4a05-4e2f-bf53-fb754e1702c8",
+          "outcome": "passed",
+          "error_code": null,
+          "wall_seconds": 499.329,
+          "service_class": "customer-batch",
+          "parameters": {
+            "binder_length": {
+              "maximum": 67,
+              "minimum": 67
+            },
+            "designs": 2,
+            "mpnn_lane": "soluble",
+            "seed": 912083,
+            "target": {
+              "chain": "A",
+              "hotspot_residues": [
+                37,
+                39,
+                98,
+                104,
+                106
+              ]
+            }
+          },
+          "input_sha256": "9b652d670a286044c42556183906be45ca2fb1ee5af36919f724d642b7e22e00",
+          "execution_identity": {
+            "execution_identity_sha256": "2b81a4bcb656ed1cff1e54b3c3076ecc67e0f457c5294665c8055b555f529591",
+            "model_artifact_manifest_digest": "a933ad20fd8c9e065c3ba77e96ff36c78303841b79a33d1b0308ec7d9873d641",
+            "model_id": "bindcraft",
+            "model_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+            "runtime_image_digest": "sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
+            "runtime_recipe_sha256": "3b376ee35b333a1aba29bd276b09f6c0b8764c2ea1c286695425ced5b334d816",
+            "variant_id": "v1-5-3-pyrosetta-academic",
+            "workload_recipe_sha256": "213b1bdef5386c61f32789c7f03e2194af2803a1c9ec0c2663bdd41cb2f2e79d"
+          },
+          "idempotent_replay": true,
+          "downloaded_artifacts": [
+            {
+              "artifact_id": "ee44fa10-ef5a-4cad-8543-1932507146c0",
+              "compression": "none",
+              "media_type": "application/vnd.fs2.scientific-manifest+json",
+              "sha256": "f4818f6377a7d89fb946d575f48743a2a44829ee2cf6cc29a28810ae08e2697d",
+              "size_bytes": 3122
+            },
+            {
+              "artifact_id": "06be23a5-a223-4da1-b707-0c3ad9d560a6",
+              "compression": "none",
+              "media_type": "application/json",
+              "sha256": "c8b756961007c19a13a58800a1b52fbde2fc0c77e2c0ab5feec8e98afb22594d",
+              "size_bytes": 159
+            }
+          ],
+          "lifecycle_accounting": {
+            "active_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 860
+            },
+            "available": true,
+            "data_gaps": [],
+            "device_allocated_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 880.803081
+            },
+            "exact": true,
+            "occupied_idle_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 24
+            },
+            "phase_gpu_seconds": {
+              "active_compute": 860,
+              "artifact_load": 11,
+              "checkpoint_drain": 0,
+              "compile": 0,
+              "cooldown_grace": 0,
+              "image_pull": 10,
+              "resident_idle": 3,
+              "restore": 0,
+              "teardown": 0,
+              "unclassified": 0,
+              "warmup": 0,
+              "workflow_wait": 0
+            },
+            "quality": "application_observed",
+            "reconciled": true,
+            "rollup_count": 3,
+            "scheduler_occupied_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 884
+            }
+          }
+        },
+        {
+          "id": "boltzgen-bulk",
+          "model_id": "boltzgen",
+          "operation_id": "67bfea6c-cd2b-40eb-9f6e-749d78962071",
+          "outcome": "failed",
+          "error_code": "operation_terminal_failure",
+          "wall_seconds": 25.515,
+          "service_class": "bulk-backfill",
+          "parameters": {
+            "batches": [
+              {
+                "budget": 1,
+                "num_designs": 20,
+                "reuse_completed": false,
+                "shard_id": "pdl1-face-b"
+              }
+            ],
+            "protocol": "protein-anything"
+          },
+          "input_sha256": "d3fc05a26579932874e3f4ffb9babe63468bc85d6c475d172e7fa2b68370253a",
+          "execution_identity": null,
+          "idempotent_replay": null,
+          "downloaded_artifacts": null,
+          "lifecycle_accounting": null
+        },
+        {
+          "id": "boltzgen-customer",
+          "model_id": "boltzgen",
+          "operation_id": "0986d042-17c4-4b72-b4f7-13d57ac31c40",
+          "outcome": "failed",
+          "error_code": "operation_terminal_failure",
+          "wall_seconds": 25.464,
+          "service_class": "customer-batch",
+          "parameters": {
+            "batches": [
+              {
+                "budget": 1,
+                "num_designs": 20,
+                "reuse_completed": false,
+                "shard_id": "pdl1-face-a"
+              }
+            ],
+            "protocol": "protein-anything"
+          },
+          "input_sha256": "d3fc05a26579932874e3f4ffb9babe63468bc85d6c475d172e7fa2b68370253a",
+          "execution_identity": null,
+          "idempotent_replay": null,
+          "downloaded_artifacts": null,
+          "lifecycle_accounting": null
+        },
+        {
+          "id": "cancel-bulk-rfdiffusion",
+          "model_id": "rfdiffusion",
+          "operation_id": "6a44dbb4-7d5d-4ca0-8ac1-4e5cfa52d7b0",
+          "outcome": "passed",
+          "error_code": null,
+          "wall_seconds": 14.555669852532446,
+          "service_class": "bulk-backfill",
+          "parameters": {
+            "contigs": [
+              "76-76"
+            ],
+            "diffuser_T": 50,
+            "num_designs": 2,
+            "operation": "design-backbone",
+            "schema": "fs2-serve.nebius.ai/rfdiffusion-parameters/v1",
+            "seed": 8300
+          },
+          "input_sha256": "3be62b4a3cf10dfa0567f96e8cbae36b0ef4dfb600d994f114238dfd9020c532",
+          "execution_identity": null,
+          "idempotent_replay": null,
+          "downloaded_artifacts": null,
+          "lifecycle_accounting": null
+        },
+        {
+          "id": "esmfold2-fast-ubiquitin",
+          "model_id": "esmfold2-fast",
+          "operation_id": "1c16ef0e-fb40-4e83-baab-95caf0db3ae4",
+          "outcome": "passed",
+          "error_code": null,
+          "wall_seconds": 104.244,
+          "service_class": "customer-batch",
+          "parameters": {
+            "mode": "single-sequence",
+            "seed": 102,
+            "sequence": "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG"
+          },
+          "input_sha256": "a3a4a712d3a8283cef31f42bc1ae924ef80ad9a55b202cdcfb9048d8b152e377",
+          "execution_identity": {
+            "execution_identity_sha256": "c5ee2e74b45e16e0d542e333852d17b480a15003c4eefde4317665e22a81a823",
+            "model_artifact_manifest_digest": "5cbdf1f33aeaa1be79a678fdd3aa851ee6cbdd86dfc03c66b97ea8647b5d52c0",
+            "model_id": "esmfold2-fast",
+            "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+            "runtime_image_digest": "sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+            "runtime_recipe_sha256": "201ef6b81c8d3b935c4a8407d15f9d18c70d416d2f8238382f2a0f009a7fc283",
+            "variant_id": "biohub-v3-4-0",
+            "workload_recipe_sha256": "febe1c6511e2db35468cf46cf215bccb8c651df79d778c28a45afea9a56bf731"
+          },
+          "idempotent_replay": true,
+          "downloaded_artifacts": [
+            {
+              "artifact_id": "b123ad1f-8cde-45b0-87cd-b176297b97cd",
+              "compression": "none",
+              "media_type": "application/vnd.fs2.scientific-manifest+json",
+              "sha256": "977cbe3ce6834adaa71d427127149e4def2040404bbb5ce853e4dcc94beb3f95",
+              "size_bytes": 695
+            },
+            {
+              "artifact_id": "abc76dbe-a753-4b12-b963-27c2fd810f00",
+              "compression": "none",
+              "media_type": "application/json",
+              "sha256": "06310f5cc7777cdbbf79ab0efcad2b44353f40139e6bd03f54d9ae399bbc23bb",
+              "size_bytes": 601
+            }
+          ],
+          "lifecycle_accounting": {
+            "active_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 28
+            },
+            "available": true,
+            "data_gaps": [],
+            "device_allocated_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 65.968762
+            },
+            "exact": true,
+            "occupied_idle_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 39
+            },
+            "phase_gpu_seconds": {
+              "active_compute": 28,
+              "artifact_load": 36,
+              "checkpoint_drain": 0,
+              "compile": 0,
+              "cooldown_grace": 0,
+              "image_pull": 3,
+              "resident_idle": 0,
+              "restore": 0,
+              "teardown": 0,
+              "unclassified": 0,
+              "warmup": 0,
+              "workflow_wait": 0
+            },
+            "quality": "application_observed",
+            "reconciled": true,
+            "rollup_count": 2,
+            "scheduler_occupied_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 67
+            }
+          }
+        },
+        {
+          "id": "esmfold2-ubiquitin",
+          "model_id": "esmfold2",
+          "operation_id": "ddcdb7ca-32ac-41a5-9ebb-f0979a5b68f0",
+          "outcome": "passed",
+          "error_code": null,
+          "wall_seconds": 284.166,
+          "service_class": "customer-batch",
+          "parameters": {
+            "mode": "single-sequence",
+            "seed": 102,
+            "sequence": "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG"
+          },
+          "input_sha256": "c29033aa20649ead923ad481dace9987273b84cdf959dbcaf98d370c836d2f82",
+          "execution_identity": {
+            "execution_identity_sha256": "0151bf32b33f7dec23db7407ecc73dd5e429d5c1ea36dd025eb529ac280d9d41",
+            "model_artifact_manifest_digest": "ea6c0f0211aecb53c4fa9a3c4033de650ef13995cb41ed8f7c3c90f150b78a3a",
+            "model_id": "esmfold2",
+            "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+            "runtime_image_digest": "sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
+            "runtime_recipe_sha256": "d3cc31332df6e0e3ae3ffb651455f86ebe43d25d3c8c827936832250d9fb07f0",
+            "variant_id": "biohub-v3-4-0",
+            "workload_recipe_sha256": "d9122390e171ccc173acff9b77b48fbc49f138c6f321ffcb8131d71157b3b2ee"
+          },
+          "idempotent_replay": true,
+          "downloaded_artifacts": [
+            {
+              "artifact_id": "017c4b4c-e925-4ec5-b392-cbe10e7de23d",
+              "compression": "none",
+              "media_type": "application/vnd.fs2.scientific-manifest+json",
+              "sha256": "1dd4e2fdfa3ef1ff1b4e51cf0d82f8354e59b79550b2bca11e348153419bd68d",
+              "size_bytes": 695
+            },
+            {
+              "artifact_id": "d2d21b68-c162-403e-ae90-ed741c84c051",
+              "compression": "none",
+              "media_type": "application/json",
+              "sha256": "63b4e18b98399baef9cf192a415a0f3a2784b6ccdc6f6a088de56c6b68ae3f2c",
+              "size_bytes": 596
+            }
+          ],
+          "lifecycle_accounting": {
+            "active_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 28
+            },
+            "available": true,
+            "data_gaps": [],
+            "device_allocated_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 63.98771
+            },
+            "exact": true,
+            "occupied_idle_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 38
+            },
+            "phase_gpu_seconds": {
+              "active_compute": 28,
+              "artifact_load": 32,
+              "checkpoint_drain": 0,
+              "compile": 0,
+              "cooldown_grace": 0,
+              "image_pull": 6,
+              "resident_idle": 0,
+              "restore": 0,
+              "teardown": 0,
+              "unclassified": 0,
+              "warmup": 0,
+              "workflow_wait": 0
+            },
+            "quality": "application_observed",
+            "reconciled": true,
+            "rollup_count": 2,
+            "scheduler_occupied_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 66
+            }
+          }
+        },
+        {
+          "id": "mosaic-two-shards",
+          "model_id": "mosaic",
+          "operation_id": "5143fa3d-eb77-4a41-b310-c914abf284a4",
+          "outcome": "passed",
+          "error_code": null,
+          "wall_seconds": 778.817,
+          "service_class": "bulk-backfill",
+          "parameters": {
+            "base_seed": 7400,
+            "binder_length": 44,
+            "hotspots": [
+              3,
+              7
+            ],
+            "optimizer_steps": 30,
+            "schema": "fs2-serve.nebius.ai/mosaic-boltz2-proteinmpnn-parameters/v1",
+            "shard_count": 2
+          },
+          "input_sha256": "23d109248070644bbe72f68a9d82ed7e8b4ff763913030ea6206366947795ca7",
+          "execution_identity": {
+            "execution_identity_sha256": "659f87668b40af94969bd88c2a341675cd6f74fa5ed334f744bb22e870c5a182",
+            "model_artifact_manifest_digest": "777eebe088d6d0b26a43dce8d696cca1f9a9b81fe289eac79682cb441c1dc149",
+            "model_id": "mosaic",
+            "model_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+            "runtime_image_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
+            "runtime_recipe_sha256": "698b81d08a708b20f8f4fab3bdb16a39e9678d0f3d79b83fd4df3c76a5d6587d",
+            "variant_id": "mosaic-boltz2-proteinmpnn-v1",
+            "workload_recipe_sha256": "4d2f21deaafd20c839ee3a81490bbaae2f3d1857294d8a3593916e77b4b06083"
+          },
+          "idempotent_replay": true,
+          "downloaded_artifacts": [
+            {
+              "artifact_id": "5ad7b540-4cc4-4830-bfe9-bac1aa9e0698",
+              "compression": "none",
+              "media_type": "application/vnd.fs2.scientific-manifest+json",
+              "sha256": "a7ae5f4625e84e82789f1aafba1033d4c58c04fa33033561d958cf5769022045",
+              "size_bytes": 1574
+            },
+            {
+              "artifact_id": "ac857132-a69b-437b-a7f9-e55b5e24c364",
+              "compression": "none",
+              "media_type": "application/json",
+              "sha256": "ca48f4da5d38565507b228d577c1733d6d2f2646b2386ba23e6a293701e8a244",
+              "size_bytes": 204
+            }
+          ],
+          "lifecycle_accounting": {
+            "active_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 519
+            },
+            "available": true,
+            "data_gaps": [],
+            "device_allocated_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 543.691616
+            },
+            "exact": true,
+            "occupied_idle_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 27
+            },
+            "phase_gpu_seconds": {
+              "active_compute": 519,
+              "artifact_load": 13,
+              "checkpoint_drain": 0,
+              "compile": 0,
+              "cooldown_grace": 0,
+              "image_pull": 11,
+              "resident_idle": 3,
+              "restore": 0,
+              "teardown": 0,
+              "unclassified": 0,
+              "warmup": 0,
+              "workflow_wait": 0
+            },
+            "quality": "application_observed",
+            "reconciled": true,
+            "rollup_count": 3,
+            "scheduler_occupied_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 546
+            }
+          }
+        },
+        {
+          "id": "openfold-two-seeds",
+          "model_id": "openfold3-openbind",
+          "operation_id": "5be603f4-6231-40f3-8f2a-53de1e0a2eec",
+          "outcome": "passed",
+          "error_code": null,
+          "wall_seconds": 109.332,
+          "service_class": "customer-batch",
+          "parameters": {
+            "model_seeds": [
+              101,
+              102
+            ],
+            "msa_mode": "none"
+          },
+          "input_sha256": "f97f4eff69a3e1bdca128954e1425a3868d5904e93ccaf5c7a7d93d7427791b3",
+          "execution_identity": {
+            "execution_identity_sha256": "20f5290bd5c03b758a0467b006c213cac0b84e34bf09b3c36add44106a0b5f83",
+            "model_artifact_manifest_digest": "c4cc2c59313470ee7498f37d377485328785e09080ccb2136edfeef754a573bb",
+            "model_id": "openfold3-openbind",
+            "model_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+            "runtime_image_digest": "sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
+            "runtime_recipe_sha256": "24723eda3e6d4903367b6e426af32c5899824dd29e92e71093afd1d335c7d7d2",
+            "variant_id": "upstream-openbind-v0-5-0",
+            "workload_recipe_sha256": "73a463f3d28d658780d6a52c10b7826301d9a510e6899e7d117ffaa1d800fcbe"
+          },
+          "idempotent_replay": true,
+          "downloaded_artifacts": [
+            {
+              "artifact_id": "aa37d9b6-539f-46e5-94dc-369a4c3519be",
+              "compression": "none",
+              "media_type": "application/vnd.fs2.scientific-manifest+json",
+              "sha256": "c4193add6a185c2f1c21af6e6ca6405d6c88d3f779f9fdfd90cfa67eef8a963e",
+              "size_bytes": 1586
+            },
+            {
+              "artifact_id": "3de5b781-1d5f-45f2-b0b5-75e664154d13",
+              "compression": "none",
+              "media_type": "application/json",
+              "sha256": "6f915c816ee5f647f284a9710cb49ee421a90ff7c6f6ac4b8e8e40fda3c456e1",
+              "size_bytes": 270
+            }
+          ],
+          "lifecycle_accounting": {
+            "active_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 64
+            },
+            "available": true,
+            "data_gaps": [],
+            "device_allocated_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 76.316268
+            },
+            "exact": true,
+            "occupied_idle_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 14
+            },
+            "phase_gpu_seconds": {
+              "active_compute": 64,
+              "artifact_load": 10,
+              "checkpoint_drain": 0,
+              "compile": 0,
+              "cooldown_grace": 0,
+              "image_pull": 4,
+              "resident_idle": 0,
+              "restore": 0,
+              "teardown": 0,
+              "unclassified": 0,
+              "warmup": 0,
+              "workflow_wait": 0
+            },
+            "quality": "application_observed",
+            "reconciled": true,
+            "rollup_count": 2,
+            "scheduler_occupied_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 78
+            }
+          }
+        },
+        {
+          "id": "proteina-three-samples",
+          "model_id": "proteina-complexa",
+          "operation_id": "02cd3648-e97c-48f5-a98e-25b1d4bde5d7",
+          "outcome": "passed",
+          "error_code": null,
+          "wall_seconds": 782.683,
+          "service_class": "customer-batch",
+          "parameters": {
+            "diffusion_steps": 25,
+            "num_samples": 3,
+            "run_name": "customer-readiness-pdl1",
+            "seed": 4,
+            "target_id": "02_PDL1",
+            "variant": "protein-target"
+          },
+          "input_sha256": "9e918d1d57d8e0d35ed078fdbd2e22b18ecd58e61b1c7a9ab773d671a5b8d218",
+          "execution_identity": {
+            "execution_identity_sha256": "cb8b9a9a0b97279c6b4b8de91fcd4570c4d02822ac0b0dd47516cd5510eb2786",
+            "model_artifact_manifest_digest": "2d84dbda753a108e2e10f1d0aab1d9bc6dd5017f8f86ed94173d933a9884d4eb",
+            "model_id": "proteina-complexa",
+            "model_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+            "runtime_image_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+            "runtime_recipe_sha256": "a4a7c9cea381d39a759cc64ba2d5dd90109960394895f546fc956fc1b51a3830",
+            "variant_id": "upstream-dev-20260827",
+            "workload_recipe_sha256": "f614aa8507bb31c70d9e9316e4a2a9eb297922cc06555af3a801f0240e9b5797"
+          },
+          "idempotent_replay": true,
+          "downloaded_artifacts": [
+            {
+              "artifact_id": "b28cea6b-b57b-4998-b9ae-aba7a7c65379",
+              "compression": "none",
+              "media_type": "application/vnd.fs2.scientific-manifest+json",
+              "sha256": "81c5028466883e67595bca81aa50f5646c65748b5915b3c7fc596945f486e5f5",
+              "size_bytes": 2106
+            },
+            {
+              "artifact_id": "d791087e-78f5-4fc0-a50d-3d877af71acc",
+              "compression": "none",
+              "media_type": "text/csv",
+              "sha256": "8e9a6d311888b96ca86d4c5eba457ad4c2f3fac9171113251ff18397c1fa0f7c",
+              "size_bytes": 10147
+            }
+          ],
+          "lifecycle_accounting": {
+            "active_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 195
+            },
+            "available": true,
+            "data_gaps": [],
+            "device_allocated_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 213.111868
+            },
+            "exact": true,
+            "occupied_idle_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 21
+            },
+            "phase_gpu_seconds": {
+              "active_compute": 195,
+              "artifact_load": 10,
+              "checkpoint_drain": 0,
+              "compile": 0,
+              "cooldown_grace": 0,
+              "image_pull": 10,
+              "resident_idle": 1,
+              "restore": 0,
+              "teardown": 0,
+              "unclassified": 0,
+              "warmup": 0,
+              "workflow_wait": 0
+            },
+            "quality": "application_observed",
+            "reconciled": true,
+            "rollup_count": 4,
+            "scheduler_occupied_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 216
+            }
+          }
+        },
+        {
+          "id": "protenix-two-seeds",
+          "model_id": "protenix-v2",
+          "operation_id": "8dae7041-e344-4e84-b8b7-cfcef66c9d15",
+          "outcome": "passed",
+          "error_code": null,
+          "wall_seconds": 163.831,
+          "service_class": "customer-batch",
+          "parameters": {
+            "checkpoint": "protenix-v2",
+            "model_seeds": [
+              101,
+              102
+            ],
+            "msa_mode": "none",
+            "sample_count": 1
+          },
+          "input_sha256": "7ed8f08d25727f0b36543ba9507dd2677f22a86e56ac32428bf24d561ea16c76",
+          "execution_identity": {
+            "execution_identity_sha256": "930ff92f866184aa7957abc3e158be90d783ed68e0788c424222d2b1bc78c420",
+            "model_artifact_manifest_digest": "e4396ce5ab67717f3bd608aa76f33c0c0f40afcd966d0426b05e18e19e490f2f",
+            "model_id": "protenix-v2",
+            "model_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+            "runtime_image_digest": "sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
+            "runtime_recipe_sha256": "64ffb710050cd6bc9870fa209fd3d77a9c05295195bce5112c090feeba022273",
+            "variant_id": "upstream-v2-0-0",
+            "workload_recipe_sha256": "eca378b53d276814dad68026e1e04af4d415bbb58630861ad69e1bc25ec8979f"
+          },
+          "idempotent_replay": true,
+          "downloaded_artifacts": [
+            {
+              "artifact_id": "b554a03d-d763-4eb5-963c-5758b85e3c3e",
+              "compression": "none",
+              "media_type": "application/vnd.fs2.scientific-manifest+json",
+              "sha256": "f642542912073e93df24419670dc57556ba51359b4b43ec0ee502b7af6c70355",
+              "size_bytes": 1593
+            },
+            {
+              "artifact_id": "db31e002-f750-4df6-9798-42d22c7042c1",
+              "compression": "none",
+              "media_type": "application/json",
+              "sha256": "acc9ad04debf20aa595b78add35af92c68b73f7867b7507231e222b43838b84f",
+              "size_bytes": 706
+            }
+          ],
+          "lifecycle_accounting": {
+            "active_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 107
+            },
+            "available": true,
+            "data_gaps": [],
+            "device_allocated_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 118.96053
+            },
+            "exact": true,
+            "occupied_idle_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 13
+            },
+            "phase_gpu_seconds": {
+              "active_compute": 107,
+              "artifact_load": 8,
+              "checkpoint_drain": 0,
+              "compile": 0,
+              "cooldown_grace": 0,
+              "image_pull": 5,
+              "resident_idle": 0,
+              "restore": 0,
+              "teardown": 0,
+              "unclassified": 0,
+              "warmup": 0,
+              "workflow_wait": 0
+            },
+            "quality": "application_observed",
+            "reconciled": true,
+            "rollup_count": 2,
+            "scheduler_occupied_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 120
+            }
+          }
+        },
+        {
+          "id": "rfdiffusion-four-designs",
+          "model_id": "rfdiffusion",
+          "operation_id": "1816bd4d-6ce5-4e04-98f9-e2b207d08103",
+          "outcome": "passed",
+          "error_code": null,
+          "wall_seconds": 418.187,
+          "service_class": "bulk-backfill",
+          "parameters": {
+            "contigs": [
+              "96-96"
+            ],
+            "diffuser_T": 50,
+            "num_designs": 4,
+            "operation": "design-backbone",
+            "schema": "fs2-serve.nebius.ai/rfdiffusion-parameters/v1",
+            "seed": 8200
+          },
+          "input_sha256": "3be62b4a3cf10dfa0567f96e8cbae36b0ef4dfb600d994f114238dfd9020c532",
+          "execution_identity": {
+            "execution_identity_sha256": "7c2cf24079ee6dfe2d895a1c9cafe825170165231827c408de4351cc6704cb90",
+            "model_artifact_manifest_digest": "931ae8f26343abe60d3fd4efb71da9ca2822899bde61357044eea09ca85bfc2d",
+            "model_id": "rfdiffusion",
+            "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+            "runtime_image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+            "runtime_recipe_sha256": "83bc3c52e8388c9e5706a32c5c14e61bb177150b83db6dbf64b339db6cc76e29",
+            "variant_id": "rfdiffusion-v1-1-0",
+            "workload_recipe_sha256": "625ac765fe08415199b937a1ddb8b6289ed7924e0b88b9f5f342391076891bde"
+          },
+          "idempotent_replay": true,
+          "downloaded_artifacts": [
+            {
+              "artifact_id": "5d5dfde5-b026-4444-b7d2-1ca1ff9b9889",
+              "compression": "none",
+              "media_type": "application/vnd.fs2.scientific-manifest+json",
+              "sha256": "6080cb6b76a78c9eb53f7eea2ce5e3f37b02309b3dc7c359088507957d403650",
+              "size_bytes": 2454
+            },
+            {
+              "artifact_id": "3d0b27d3-8888-4a37-ab5a-58b1bed61128",
+              "compression": "none",
+              "media_type": "application/json",
+              "sha256": "95efea94b637aa58f02278029c8d56ac3112386806d17e9e1b7e2cb7ac152605",
+              "size_bytes": 1274
+            }
+          ],
+          "lifecycle_accounting": {
+            "active_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 240
+            },
+            "available": true,
+            "data_gaps": [],
+            "device_allocated_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 282.50954
+            },
+            "exact": true,
+            "occupied_idle_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 47
+            },
+            "phase_gpu_seconds": {
+              "active_compute": 240,
+              "artifact_load": 22,
+              "checkpoint_drain": 0,
+              "compile": 0,
+              "cooldown_grace": 0,
+              "image_pull": 18,
+              "resident_idle": 7,
+              "restore": 0,
+              "teardown": 0,
+              "unclassified": 0,
+              "warmup": 0,
+              "workflow_wait": 0
+            },
+            "quality": "application_observed",
+            "reconciled": true,
+            "rollup_count": 5,
+            "scheduler_occupied_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 287
+            }
+          }
+        }
+      ],
+      "receipt_directory": "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/acceptance/scientific-customer-readiness-5fcc8323-20260906",
+      "aggregate_sha256": "ee9f9ea18f94db71d9136999638c1db3dcb2f27e7068c62fcb70d2a6b788ce33"
+    },
+    {
+      "run_id": "scientific-boltzgen-concurrent-5fcc8323-20260906",
+      "passed": 2,
+      "failed": 0,
+      "peak_admitted_gpu_attempts": 2,
+      "metrics_error": null,
+      "rows": [
+        {
+          "id": "boltzgen-bulk",
+          "model_id": "boltzgen",
+          "operation_id": "eb388b9f-d321-4960-a11d-e9aff8b6a913",
+          "outcome": "passed",
+          "error_code": null,
+          "wall_seconds": 810.991,
+          "service_class": "bulk-backfill",
+          "parameters": {
+            "batches": [
+              {
+                "budget": 1,
+                "num_designs": 20,
+                "reuse_completed": false,
+                "shard_id": "pdl1-face"
+              }
+            ],
+            "protocol": "protein-anything"
+          },
+          "input_sha256": "d3fc05a26579932874e3f4ffb9babe63468bc85d6c475d172e7fa2b68370253a",
+          "execution_identity": {
+            "execution_identity_sha256": "1c23aeb01bae51f10767f9b59af2ca18cc4c6e488af0d780d9e822488b1a66ba",
+            "model_artifact_manifest_digest": "8305400f8711388cbc5d9937a120d7ca4de390170082047511e859f636a2dd66",
+            "model_id": "boltzgen",
+            "model_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+            "runtime_image_digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+            "runtime_recipe_sha256": "6e08e40c99369af365f86bc7a406480cc37b89f42a52febb5b7005b53af12147",
+            "variant_id": "upstream-v0-3-2",
+            "workload_recipe_sha256": "9990f584f6779d4e261aa0a93c901a0a761ef2d5d3cd2557ad89363b3bbb4f0a"
+          },
+          "idempotent_replay": true,
+          "downloaded_artifacts": [
+            {
+              "artifact_id": "7c8142d4-1fae-4e0c-9d27-0bdc8ebd2152",
+              "compression": "none",
+              "media_type": "application/vnd.fs2.scientific-manifest+json",
+              "sha256": "f8b617fac789650e66da2d602854079c2e9bfe37a3b13070b51da4deab0ccb3e",
+              "size_bytes": 771
+            },
+            {
+              "artifact_id": "e162181f-e194-4778-a143-ba9575dcae0b",
+              "compression": "none",
+              "media_type": "text/csv",
+              "sha256": "8778d0193f89357814d3c54a469f73475ff11bf45fb533c5fc5090e9ac1ca436",
+              "size_bytes": 7251
+            }
+          ],
+          "lifecycle_accounting": {
+            "active_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 648
+            },
+            "available": true,
+            "data_gaps": [],
+            "device_allocated_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 693.163325
+            },
+            "exact": true,
+            "occupied_idle_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 50
+            },
+            "phase_gpu_seconds": {
+              "active_compute": 648,
+              "artifact_load": 24,
+              "checkpoint_drain": 0,
+              "compile": 0,
+              "cooldown_grace": 0,
+              "image_pull": 19,
+              "resident_idle": 7,
+              "restore": 0,
+              "teardown": 0,
+              "unclassified": 0,
+              "warmup": 0,
+              "workflow_wait": 0
+            },
+            "quality": "application_observed",
+            "reconciled": true,
+            "rollup_count": 7,
+            "scheduler_occupied_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 698
+            }
+          }
+        },
+        {
+          "id": "boltzgen-customer",
+          "model_id": "boltzgen",
+          "operation_id": "967a5ed2-72ca-4e85-8f34-d2e04c85ca20",
+          "outcome": "passed",
+          "error_code": null,
+          "wall_seconds": 812.502,
+          "service_class": "customer-batch",
+          "parameters": {
+            "batches": [
+              {
+                "budget": 1,
+                "num_designs": 20,
+                "reuse_completed": false,
+                "shard_id": "pdl1-face"
+              }
+            ],
+            "protocol": "protein-anything"
+          },
+          "input_sha256": "d3fc05a26579932874e3f4ffb9babe63468bc85d6c475d172e7fa2b68370253a",
+          "execution_identity": {
+            "execution_identity_sha256": "1c23aeb01bae51f10767f9b59af2ca18cc4c6e488af0d780d9e822488b1a66ba",
+            "model_artifact_manifest_digest": "8305400f8711388cbc5d9937a120d7ca4de390170082047511e859f636a2dd66",
+            "model_id": "boltzgen",
+            "model_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+            "runtime_image_digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+            "runtime_recipe_sha256": "6e08e40c99369af365f86bc7a406480cc37b89f42a52febb5b7005b53af12147",
+            "variant_id": "upstream-v0-3-2",
+            "workload_recipe_sha256": "9990f584f6779d4e261aa0a93c901a0a761ef2d5d3cd2557ad89363b3bbb4f0a"
+          },
+          "idempotent_replay": true,
+          "downloaded_artifacts": [
+            {
+              "artifact_id": "144cf1f5-ce93-4f9f-82ce-bbd68dafc785",
+              "compression": "none",
+              "media_type": "application/vnd.fs2.scientific-manifest+json",
+              "sha256": "515813a1fa6a6d640b5c8b9e6c4c4d25edfd708f2206f675d4438733877f277e",
+              "size_bytes": 771
+            },
+            {
+              "artifact_id": "b94df89d-ec90-4902-a869-6f5357062621",
+              "compression": "none",
+              "media_type": "text/csv",
+              "sha256": "8725d9727036bdaad8384adc8a91117edf5003e21d713acda7205aa341fb1489",
+              "size_bytes": 7384
+            }
+          ],
+          "lifecycle_accounting": {
+            "active_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 653
+            },
+            "available": true,
+            "data_gaps": [],
+            "device_allocated_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 698.250334
+            },
+            "exact": true,
+            "occupied_idle_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 50
+            },
+            "phase_gpu_seconds": {
+              "active_compute": 653,
+              "artifact_load": 24,
+              "checkpoint_drain": 0,
+              "compile": 0,
+              "cooldown_grace": 0,
+              "image_pull": 19,
+              "resident_idle": 7,
+              "restore": 0,
+              "teardown": 0,
+              "unclassified": 0,
+              "warmup": 0,
+              "workflow_wait": 0
+            },
+            "quality": "application_observed",
+            "reconciled": true,
+            "rollup_count": 7,
+            "scheduler_occupied_gpu_seconds": {
+              "evidence": "application_observed",
+              "exact": true,
+              "reason": null,
+              "source": "lifecycle-ledger",
+              "unit": "gpu-seconds",
+              "value": 703
+            }
+          }
+        }
+      ],
+      "receipt_directory": "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/acceptance/scientific-boltzgen-concurrent-5fcc8323-20260906",
+      "aggregate_sha256": "7db236f2316d995e9e89f0c158e25544af2d5b80e84199cbbc6584193a995a18"
+    }
+  ]
+}
