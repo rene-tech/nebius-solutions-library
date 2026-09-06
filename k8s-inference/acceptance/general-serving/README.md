@@ -77,3 +77,8 @@ observations 4.18–4.36s. These small samples are not p95/p99 claims.
 Private evidence: `/home/tux/.local/state/fs2-readiness-review-r20260906/cosmos-recovered-acceptance.json`.
 The original failed client receipt is `cosmos-acceptance.json` in that directory.
 Neither result claims that Cosmos GPU checkpointing is deployed.
+
+The later [8bb53aab public canaries](evidence/h100-8bb53aab-canary-20260906.md)
+passed two Qwen and two Cosmos requests on the current deployed path without
+changing floors or capacity. That report separates the observed replica-cold
+activation from the warm request and pins fixture, output, and receipt hashes.
