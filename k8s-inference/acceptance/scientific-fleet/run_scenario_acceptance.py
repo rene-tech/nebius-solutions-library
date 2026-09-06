@@ -351,6 +351,12 @@ def collect_metrics(endpoint: str, rows: list[dict[str, Any]], run_root: Path) -
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--endpoint", required=True)
+    parser.add_argument(
+        "--repository-root",
+        type=Path,
+        default=Path(__file__).resolve().parents[2],
+        help="immutable deployed k8s-inference checkout supplying model fixtures",
+    )
     parser.add_argument("--scenarios", type=Path, required=True)
     parser.add_argument("--receipt-root", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
@@ -376,7 +382,7 @@ def main() -> int:
     ):
         parser.error("scenario IDs must be unique bounded identifiers")
     token = os.environ["FS2_INFERENCE_TOKEN"]
-    root = Path(__file__).resolve().parents[2]
+    root = args.repository_root.resolve(strict=True)
     fragments = {item.model_id: item.path for item in fleet.discover_inputs(root)}
     run_root = args.receipt_root / args.run_id
     run_root.mkdir(mode=0o700, parents=True, exist_ok=False)
