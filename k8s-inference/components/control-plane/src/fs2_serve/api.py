@@ -1388,12 +1388,27 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         await runtime.operator_sessions.revoke_if_valid(cookie_value, actor="operator-session-logout")
         clear_operator_cookie(response)
 
+    def access_model_id(model_id: str) -> str:
+        """Resolve key policies across both configured model catalogs.
+
+        A stored allowlist is not an availability or license grant. Discovery
+        and admission still check the current route, profile and tenant access.
+        """
+        if model_id == "*":
+            return model_id
+        try:
+            return runtime.registry.get(model_id, require_enabled=False).id
+        except KeyError:
+            if runtime.scientific_batches is not None:
+                try:
+                    return runtime.scientific_batches.profiles.get(model_id, runnable=False).model_id
+                except ScientificProfileError:
+                    pass
+            raise KeyError(model_id) from None
+
     @app.post("/admin/v1/tokens", response_model=TokenIssued)
     async def issue_token(payload: TokenCreateRequest, actor: Annotated[str, Depends(admin)]) -> TokenIssued:
-        canonical_models = {
-            model_id if model_id == "*" else runtime.registry.get(model_id, require_enabled=False).id
-            for model_id in payload.models
-        }
+        canonical_models = {access_model_id(model_id) for model_id in payload.models}
         canonical = payload.model_copy(update={"models": canonical_models})
         return await runtime.tokens.issue(TokenCreate.model_validate(canonical.model_dump()), created_by=actor)
 
@@ -1475,10 +1490,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         payload: AdminApiKeyCreate,
         identity: Annotated[OperatorPrincipal, Depends(operator)],
     ) -> AdminEnvelope[AdminApiKeyDisclosure]:
-        canonical_models = {
-            model_id if model_id == "*" else runtime.registry.get(model_id, require_enabled=False).id
-            for model_id in payload.models
-        }
+        canonical_models = {access_model_id(model_id) for model_id in payload.models}
         return access_envelope(
             await admin_access.issue_key(identity, payload.model_copy(update={"models": canonical_models}))
         )
@@ -1494,10 +1506,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         identity: Annotated[OperatorPrincipal, Depends(operator)],
     ) -> AdminEnvelope[AdminApiKey]:
         if payload.models is not None:
-            canonical_models = {
-                model_id if model_id == "*" else runtime.registry.get(model_id, require_enabled=False).id
-                for model_id in payload.models
-            }
+            canonical_models = {access_model_id(model_id) for model_id in payload.models}
             payload = payload.model_copy(update={"models": canonical_models})
         return access_envelope(await admin_access.update_key_policy(identity, token_id, payload))
 
