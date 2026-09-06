@@ -122,3 +122,74 @@ this Network-SSD L2 path. One cold repetition establishes this constraint,
 not a statistically qualified performance distribution. Receipt:
 `persistent-disk-cold-r2/receipt.json`, SHA-256
 `d1088a90e4eaaa745c0c827970866850e8ed169b8e03a3da5e488c562d21585c`.
+
+## Original scientific-wrapper bridge
+
+The immutable bridge image
+`sha256:5a275d2d0c7707de24c8ad4c793b9c56d206bafe03ed54d3d0333bbfd075521f`
+was captured once with the same runtime/model identities. Its `r3` capture
+completed CUDA checkpoint in 6.068s, CRIU dump in 10.834s, and durable file/cache
+flush in 316.477s. The donor pod was deleted before fresh request pods started.
+
+A real new public ESMFold2 ubiquitin request supplied its unchanged frozen argv,
+prepared handoff, runtime-localization marker and generated stage-runner. This
+76-residue input and seed102 differ from the donor's two warmup requests. The
+public normal request passed independently. The isolated bridge then passed:
+
+- Read-only shared `images/`, per-attempt writable cache/log scratch, and a
+  separate original scientific workspace. Checkpoint pages were not copied.
+- Root supervisor -> unchanged stage-runner/client UID/GID10001 -> original
+  scientific fold, with full 20-loop/200-step settings and no smoke shortcut.
+- A separate UID10001 reader validated the exact original-command digest in
+  the mode-0400 completion marker, mode-0600 confidence file and mode-0644 CIF.
+  All three files were owned by UID10001. Pods completed and released their GPU.
+- Strict restored execution passed in 21.230s and 21.112s pod-to-completion.
+  The explicit missing-checkpoint normal-load fallback passed in 34.254s.
+  These bounded functional runs are not a three-repetition speedup claim.
+- The paired result produced a 49,279-byte CIF for each path; restored/ordinary
+  mean pLDDT was 0.802201/0.802381, consistent with ordinary numerical variation.
+
+The diagnostic paired receipt is
+`bridge-qualified/readonly-wrapper-final/receipt.json` (SHA-256
+`a53f024fb08af5c803d2ee06027067892a5d5a0f39d2c51e4ac7e2964b933985`).
+Its pod commands also logged GPU visibility and a lightweight `cuInit` result.
+Initial fallback probes failed because the *probe harness* blindly copied
+`NVIDIA_VISIBLE_DEVICES=void` into `CUDA_VISIBLE_DEVICES`; this is now conditional
+on an actual GPU UUID. It was not a scientific-model or UID permission failure.
+An additional fresh fallback pod without the diagnostic/`cuInit` preamble also
+passed in 34.270s, with UID10001-readable outputs and unchanged command digest;
+its receipt is `bridge-qualified/no-diagnostic-fallback/receipt.json`.
+
+This remains **experimental, not a production cache-level promotion**: only a
+single-GPU H100 node and same GPU UUID are qualified. No different-node/device
+remap, multi-GPU host allocation, accounted L4 RAM retention, other scientific
+profile, or public controller snapshot deployment is claimed. The shared
+reference-data publication and execution-map/Helm integration remain optional
+future work. Normal loading remains production default because true disk-cold
+restoration on this storage is slower.
+
+### Retained reproducibility artifact
+
+Parent explicitly retained the test checkpoint PVC, without a running worker:
+namespace `fs2-models`, PVC `fs2-scientific-snapshot-probe-20260906`, PV
+`pvc-026bc98a-b6b4-466a-a5eb-90e8ce925c44`, provider Network-SSD disk
+`computedisk-e00apdc2ennnb1qg0c` (128Gi). The useful bundle is volume-relative
+`startup-snapshot-20260906/r3`, containing `images/`, `cache/`, `worker.log` and
+the captured public `fixture/`. Older `r1`/`r2` diagnostic captures also remain;
+none is a production dependency. Mount paths must match the original
+`/checkpoints/startup-snapshot-20260906/r3` inside a compatible test runtime.
+
+Compatibility manifest SHA-256:
+`843b93cb90761dc5fe8f593438a08796f8ca0dc83b04890f79d8dce14d636132`.
+Captured source commit is `cd91d6cf` (the model image above); source hashes:
+
+| File | SHA-256 |
+| --- | --- |
+| `esmfold2_server.py` | `c0c6648e0824030e950b3caa53f2b8123219afc99592d57cd393ab9c22c24993` |
+| `process_checkpoint.py` | `836437db380259cd3384417cc6028d3e0dacdd0c08103ca57d0b4c28b9bd9c51` |
+| `supervisor.py` | `c752523b6a42ff2cbb6579b23dc2c5ad4aba8e8d3dd4f0080b2002379a6af5ab` |
+| `run_esmfold2.py` | `fea343d1e8d50bc453cd11610ae5d65dceb430c78c5374622b77030e86d787f8` |
+
+Deleting the explicitly named test PVC later deletes this retained test disk
+and its checkpoints. Do not delete the shared model-artifact or reference-data
+volumes. Probe GPU pods and CPU mount holders are removed at handoff.
