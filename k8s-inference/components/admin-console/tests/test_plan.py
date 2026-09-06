@@ -179,6 +179,8 @@ class AdminConsolePlanTests(unittest.TestCase):
             ("GET", "/admin/api/v1/scientific-runs/{run_id}"),
             ("POST", "/admin/api/v1/scientific-runs/{run_id}:cancel"),
             ("GET", "/admin/api/v1/scientific-models"),
+            ("GET", "/admin/api/v1/scientific-model-policies"),
+            ("PUT", "/admin/api/v1/scientific-model-policies/{model_id}"),
         }
         self.assertTrue(scientific_routes.issubset(contract_routes))
 
@@ -310,23 +312,35 @@ class AdminConsolePlanTests(unittest.TestCase):
                 "/admin/api/v1/scientific-runs/{run_id}",
                 "/admin/api/v1/scientific-runs/{run_id}:cancel",
                 "/admin/api/v1/scientific-models",
+                "/admin/api/v1/scientific-model-policies",
+                "/admin/api/v1/scientific-model-policies/{model_id}",
             },
         )
         gated = {group["id"]: group for group in self.api_contract["feature_gated_route_groups"]}
         self.assertEqual(set(gated["scientific-operations"]["paths"]), scientific_paths)
-        # The one scientific command is a POST gated by its own capability; every
-        # other scientific route stays a GET projection.
+        # The two scientific commands are each gated by their own capability and
+        # need the operator role; every other scientific route stays a GET projection.
         commands = [route for route in contract["routes"] if route["method"] != "GET"]
         self.assertEqual(
-            [(route["method"], route["path"], route["capability"]) for route in commands],
-            [("POST", "/admin/api/v1/scientific-runs/{run_id}:cancel", "run_control")],
+            [(route["method"], route["path"], route["capability"], route["role"]) for route in commands],
+            [
+                ("POST", "/admin/api/v1/scientific-runs/{run_id}:cancel", "run_control", "operator"),
+                ("PUT", "/admin/api/v1/scientific-model-policies/{model_id}", "model_policy", "operator"),
+            ],
         )
+        policy = contract["model_policy"]
+        self.assertEqual(policy["boundary"], "controller-dispatch")
+        self.assertEqual(policy["effective_states"], ["open", "paused", "at-limit"])
+        self.assertIn("never presents a paused or capped model as an always-hot", policy["invariant"])
 
         client_source = (ROOT / "src" / "api" / "client.ts").read_text()
         self.assertIn('request<ScientificCapabilities>("/scientific-capabilities"', client_source)
         self.assertIn('request<ScientificRunList>("/scientific-runs"', client_source)
         self.assertIn('request<ScientificModelReadinessList>("/scientific-models"', client_source)
         self.assertIn("envelopeRequest<ScientificRunDetail>(`/scientific-runs/${encodeURIComponent(runId)}:cancel`", client_source)
+        self.assertIn('request<ScientificModelPolicyList>("/scientific-model-policies"', client_source)
+        self.assertIn("envelopeRequest<ScientificModelPolicy>(`/scientific-model-policies/${encodeURIComponent(modelId)}`", client_source)
+        self.assertIn('method: "PUT"', client_source)
 
         app_source = (ROOT / "src" / "app" / "App.tsx").read_text()
         self.assertIn('<Route path="scientific-runs" element={<ScientificRunsPage />} />', app_source)

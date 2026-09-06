@@ -443,6 +443,115 @@ class ScientificCapabilities(StrictModel):
     # Cancellation is the one scientific run command an operator can issue from
     # the console; it is advertised separately so a read-only build stays honest.
     run_control: ScientificCapability
+    # Per-model dispatch policy (pause / active-run cap) is the one scientific
+    # model command; it exists only when the durable policy repository is bound.
+    model_policy: ScientificCapability
+
+
+MAX_SCIENTIFIC_ACTIVE_RUNS = 64
+
+
+class ScientificModelPolicySetting(StrictModel):
+    """One durable scope row of the dispatch policy.
+
+    ``revision`` 0 means no row exists for the scope yet; every other field is
+    then the open default. A stored row always names who last changed it.
+    """
+
+    tenant_id: str | None = Field(default=None, min_length=1, max_length=120)
+    revision: int = Field(ge=0)
+    paused: bool = False
+    max_active_runs: int | None = Field(default=None, ge=1, le=MAX_SCIENTIFIC_ACTIVE_RUNS)
+    reason: str | None = Field(default=None, min_length=1, max_length=300)
+    updated_by: str | None = Field(default=None, min_length=1, max_length=200)
+    updated_at: AwareDatetime | None = None
+
+    @model_validator(mode="after")
+    def absent_row_is_the_open_default(self) -> ScientificModelPolicySetting:
+        if self.revision == 0:
+            if self.paused or self.max_active_runs is not None or self.reason is not None:
+                raise ValueError("an absent scientific model policy cannot carry a constraint")
+            if self.updated_by is not None or self.updated_at is not None:
+                raise ValueError("an absent scientific model policy has no author")
+        elif self.updated_by is None or self.updated_at is None:
+            raise ValueError("a stored scientific model policy names its author and time")
+        return self
+
+
+class ScientificDispatchCounts(StrictModel):
+    """Durable batch counts for one scope, read from the controller's own table."""
+
+    # Accepted and durable, not yet dispatched by the controller, not cancelling.
+    queued: int = Field(ge=0)
+    # Dispatched to Kubernetes/Kueue and not yet terminal; includes work that
+    # Kueue has not admitted yet and work that is cancelling.
+    running: int = Field(ge=0)
+
+
+class ScientificDispatchState(StrictModel):
+    """What the controller currently does with new work in this scope."""
+
+    state: Literal["open", "paused", "at-limit"]
+    paused: bool
+    max_active_runs: int | None = Field(default=None, ge=1, le=MAX_SCIENTIFIC_ACTIVE_RUNS)
+    reason: str = Field(min_length=1, max_length=300)
+
+    @model_validator(mode="after")
+    def state_matches_fields(self) -> ScientificDispatchState:
+        if self.paused != (self.state == "paused"):
+            raise ValueError("a paused dispatch state must be reported as paused")
+        if self.state == "at-limit" and self.max_active_runs is None:
+            raise ValueError("an at-limit dispatch state requires an active-run cap")
+        return self
+
+
+class ScientificModelPolicyEnforcement(StrictModel):
+    """Fixed, truthful boundaries of what a dispatch policy can and cannot do."""
+
+    boundary: Literal["controller-dispatch"] = "controller-dispatch"
+    running_work_drains: Literal[True] = True
+    result_delivery_unaffected: Literal[True] = True
+    preemptive: Literal[False] = False
+    capacity_authority: Literal["kueue-quota-and-terraform-node-pools"] = "kueue-quota-and-terraform-node-pools"
+    resident_runtime: Literal["none-batch-jobs-only"] = "none-batch-jobs-only"
+
+
+class ScientificModelPolicy(StrictModel):
+    model_id: str = Field(min_length=1, max_length=128)
+    scope_tenant_id: str | None = Field(default=None, min_length=1, max_length=120)
+    catalog_known: bool
+    desired: ScientificModelPolicySetting
+    # The all-tenants row that also applies inside a tenant scope; absent for
+    # the all-tenants scope itself.
+    inherited: ScientificModelPolicySetting | None = None
+    effective: ScientificDispatchState
+    counts: ScientificDispatchCounts
+    all_tenants_counts: ScientificDispatchCounts
+    enforcement: ScientificModelPolicyEnforcement = ScientificModelPolicyEnforcement()
+
+    @model_validator(mode="after")
+    def scopes_are_consistent(self) -> ScientificModelPolicy:
+        if self.desired.tenant_id != self.scope_tenant_id:
+            raise ValueError("the desired policy row must belong to the reported scope")
+        if self.inherited is not None and (self.scope_tenant_id is None or self.inherited.tenant_id is not None):
+            raise ValueError("only a tenant scope inherits the all-tenants policy")
+        if self.scope_tenant_id is None and self.counts != self.all_tenants_counts:
+            raise ValueError("the all-tenants scope counts every tenant")
+        return self
+
+
+class ScientificModelPolicyList(StrictModel):
+    scope_tenant_id: str | None = Field(default=None, min_length=1, max_length=120)
+    items: list[ScientificModelPolicy] = Field(max_length=256)
+
+
+class ScientificModelPolicyUpdate(StrictModel):
+    """Full replacement of one scope row at exactly the expected revision."""
+
+    expected_revision: int = Field(ge=0)
+    paused: bool
+    max_active_runs: int | None = Field(default=None, ge=1, le=MAX_SCIENTIFIC_ACTIVE_RUNS)
+    reason: str | None = Field(default=None, min_length=1, max_length=300)
 
 
 class ScientificModelReadinessList(StrictModel):

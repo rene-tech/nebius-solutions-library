@@ -402,6 +402,18 @@
       "path": "/admin/api/v1/scientific-models",
       "success_status": 200,
       "data_schema": "ScientificModelReadinessList"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/scientific-model-policies",
+      "success_status": 200,
+      "data_schema": "ScientificModelPolicyList"
+    },
+    {
+      "method": "PUT",
+      "path": "/admin/api/v1/scientific-model-policies/{model_id}",
+      "success_status": 200,
+      "data_schema": "ScientificModelPolicy"
     }
   ],
   "feature_gated_route_groups": [
@@ -460,14 +472,16 @@
         "/admin/api/v1/scientific-runs",
         "/admin/api/v1/scientific-runs/{run_id}",
         "/admin/api/v1/scientific-runs/{run_id}:cancel",
-        "/admin/api/v1/scientific-models"
+        "/admin/api/v1/scientific-models",
+        "/admin/api/v1/scientific-model-policies",
+        "/admin/api/v1/scientific-model-policies/{model_id}"
       ],
       "source_states": {
         "scientific-catalog": "global candidate evidence and authorization-filtered tenant discovery",
-        "scientific-controller": "durable PostgreSQL scientific batch controller reader and cancel-request writer",
+        "scientific-controller": "durable PostgreSQL scientific batch controller reader, cancel-request writer, and per-model dispatch policy writer",
         "scientific-artifacts": "canonical artifact result service when configured"
       },
-      "pending_producer_behavior": "The capabilities response marks an unavailable producer and its data route is absent. The console does not call or advertise that route. The cancel command route exists only when run_control is available."
+      "pending_producer_behavior": "The capabilities response marks an unavailable producer and its data route is absent. The console does not call or advertise that route. The cancel command route exists only when run_control is available; the model policy routes exist only when model_policy is available."
     }
   ],
   "feature_disabled_problem_routes": [

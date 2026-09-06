@@ -1163,3 +1163,74 @@ def test_missing_frozen_identities_raise_a_typed_error_not_stop_iteration() -> N
     ):
         with pytest.raises(ScientificIdentityError):
             lookup()
+
+
+@pytest.mark.asyncio
+async def test_policy_hold_leaves_the_batch_queued_without_kubernetes_apply_or_failure() -> None:
+    """A dispatch hold is a quiet no-op for the reconcile loop, never a failure."""
+
+    from fs2_serve.scientific_batch.policy import PolicyAwareScientificBatchController, ScientificDispatchHeldError
+
+    class HoldingRepository(FakeScientificBatchRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.hold_dispatch = True
+            self.hold_attempts = 0
+
+        async def replace(self, claim, *, expected_revision, record, events, now):  # noqa: ANN001, ANN202
+            current = self.records[claim.operation_id]
+            if self.hold_dispatch and current.status is BatchStatus.QUEUED and record.status is BatchStatus.RUNNING:
+                self.hold_attempts += 1
+                raise ScientificDispatchHeldError("paused")
+            return await super().replace(
+                claim, expected_revision=expected_revision, record=record, events=events, now=now
+            )
+
+    repository = HoldingRepository()
+    cluster = FakeScientificBatchCluster()
+    reconciler = PolicyAwareScientificBatchController(
+        repository=repository,
+        cluster=cluster,
+        controller_id="controller-pod:uid-1",
+        namespace="fs2-scientific",
+        clock=lambda: NOW,
+    )
+    operation_id = uuid4()
+    batch_plan = plan()
+    await reconciler.admit(
+        operation_id=operation_id,
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        plan=batch_plan,
+        scheduling=snapshot(batch_plan),
+    )
+
+    for _ in range(3):
+        assert await reconciler.reconcile_once() == operation_id
+    held = repository.records[operation_id]
+    assert held.status is BatchStatus.QUEUED and held.revision == 0
+    assert all(not stage.attempts for stage in held.stages)
+    assert cluster.apply_history == []
+    assert repository.hold_attempts == 3
+    assert repository.events[operation_id] == []
+
+    repository.hold_dispatch = False
+    assert await reconciler.reconcile_once() == operation_id
+    dispatched = repository.records[operation_id]
+    assert dispatched.status is BatchStatus.RUNNING
+    assert len(cluster.apply_history) == 2
+
+    # The frozen base controller is unchanged: without the policy-aware
+    # adaptation the same hold surfaces as the typed repository error.
+    holding = HoldingRepository()
+    base_controller = controller(holding, FakeScientificBatchCluster())
+    await base_controller.admit(
+        operation_id=uuid4(),
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        plan=batch_plan,
+        scheduling=snapshot(batch_plan),
+    )
+    with pytest.raises(ScientificDispatchHeldError):
+        await base_controller.reconcile_once()
+    assert holding.hold_attempts == 1

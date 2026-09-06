@@ -76,10 +76,10 @@ from .scientific_artifacts import (
 from .scientific_batch.artifact_bridge import ArtifactServiceBridge, SignedArtifactContentReader
 from .scientific_batch.canary import run_internal_cpu_canary
 from .scientific_batch.capability import ScientificWorkloadCapabilityAuthority
-from .scientific_batch.controller import ScientificBatchController
 from .scientific_batch.execution import FileScientificManifestRenderer
 from .scientific_batch.kubernetes import HttpScientificBatchCluster
 from .scientific_batch.lifecycle_bridge import ScientificLifecycleBridge
+from .scientific_batch.policy import PolicyAwareScientificBatchController
 from .scientific_batch.postgres_repository import PostgresScientificBatchRepository
 from .scientific_batch.profile_catalog import ScientificProfileCatalog
 from .scientific_batch.scheduling import SchedulingContractResolver
@@ -406,7 +406,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             content_reader=artifact_content_reader,
             service=artifact_service,
         )
-        scientific_controller = ScientificBatchController(
+        scientific_controller = PolicyAwareScientificBatchController(
             repository=scientific_repository,
             cluster=scientific_batch_cluster,
             controller_id=settings.scientific_batch_controller_id or "scientific-batch-controller",

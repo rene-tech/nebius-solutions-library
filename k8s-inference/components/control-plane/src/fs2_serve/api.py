@@ -99,6 +99,9 @@ from .route_revalidation import RouteRevalidator
 from .scientific_admin import ScientificAdminReadService, ScientificRunQuery
 from .scientific_admin_models import (
     ScientificCapabilities,
+    ScientificModelPolicy,
+    ScientificModelPolicyList,
+    ScientificModelPolicyUpdate,
     ScientificModelReadinessList,
     ScientificRunDetail,
     ScientificRunList,
@@ -1864,6 +1867,60 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 return await scientific_admin.model_list(
                     selected_context(params),
                     tenant_id=authorized_tenant,
+                )
+
+        # Per-model dispatch policy is the one scientific model command. It is
+        # registered only when the durable policy repository is bound, so the
+        # advertised surface never promises a control this build cannot enforce.
+        if scientific_admin.policies is not None:
+
+            @app.get(
+                "/admin/api/v1/scientific-model-policies",
+                response_model=AdminEnvelope[ScientificModelPolicyList],
+                responses=admin_problem_responses,
+            )
+            async def admin_scientific_model_policies(
+                identity: Annotated[OperatorPrincipal, Depends(operator)],
+                params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+                tenant_id: Annotated[str | None, Query(min_length=1, max_length=120)] = None,
+            ) -> AdminEnvelope[ScientificModelPolicyList]:
+                authorized_tenant = await admin_access.authorize(
+                    identity,
+                    OperatorRole.VIEWER,
+                    action="scientific_model_policy.list",
+                    tenant_id=tenant_id,
+                )
+                return await scientific_admin.policy_list(
+                    selected_context(params),
+                    tenant_id=authorized_tenant,
+                )
+
+            @app.put(
+                "/admin/api/v1/scientific-model-policies/{model_id}",
+                response_model=AdminEnvelope[ScientificModelPolicy],
+                responses=admin_problem_responses,
+            )
+            async def admin_scientific_model_policy_set(
+                model_id: str,
+                payload: ScientificModelPolicyUpdate,
+                identity: Annotated[OperatorPrincipal, Depends(operator)],
+                params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+                tenant_id: Annotated[str | None, Query(min_length=1, max_length=120)] = None,
+            ) -> AdminEnvelope[ScientificModelPolicy]:
+                authorized_tenant = await admin_access.authorize(
+                    identity,
+                    OperatorRole.OPERATOR,
+                    action="scientific_model_policy.set",
+                    tenant_id=tenant_id,
+                )
+                if not 1 <= len(model_id) <= MAX_MODEL_ID_LENGTH:
+                    raise AdminProblemError(400, "invalid_model_id", "model identifier length is invalid")
+                return await scientific_admin.set_policy(
+                    selected_context(params),
+                    model_id,
+                    tenant_id=authorized_tenant,
+                    update=payload,
+                    actor=identity.subject,
                 )
 
     @app.get(

@@ -85,6 +85,10 @@ EXPECTED_MIGRATIONS: Final = (
         "0023_scientific_batch_scheduling_digest_privilege.sql",
         "2c733050726b0b5d304c822b6b42dbd2fa97c1ec3194cc41bd3545cead8d8d32",
     ),
+    (
+        "0024_scientific_model_policies.sql",
+        "1c1f3575bbdc10bc2c26688f7a221d26aa5efe0d07b35366e4328e3ad460e538",
+    ),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {

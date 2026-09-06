@@ -1,7 +1,7 @@
 {
   "schema_version": "fs2.scientific-admin-fixture-contract/v1",
   "status": "capability-gated-live-model-readiness",
-  "production_behavior": "The authenticated same-origin BFF reports scientific capabilities first. Model readiness reads the delivered scientific catalog. Run routes are registered and called only when a durable scientific batch reader exists; artifact availability is reported independently. The cancel command is registered only when a durable cancel writer exists and is advertised as run_control. Production has no fixture fallback; fixture data is enabled only by Vite fixture mode and tests.",
+  "production_behavior": "The authenticated same-origin BFF reports scientific capabilities first. Model readiness reads the delivered scientific catalog. Run routes are registered and called only when a durable scientific batch reader exists; artifact availability is reported independently. The cancel command is registered only when a durable cancel writer exists and is advertised as run_control. The per-model dispatch policy routes are registered only when the durable policy repository exists and are advertised as model_policy. Production has no fixture fallback; fixture data is enabled only by Vite fixture mode and tests.",
   "routes": [
     {
       "method": "GET",
@@ -40,6 +40,23 @@
       "method": "GET",
       "path": "/admin/api/v1/scientific-models",
       "data_schema": "ScientificModelReadinessList"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/scientific-model-policies",
+      "data_schema": "ScientificModelPolicyList",
+      "filters": [
+        "tenant_id"
+      ],
+      "behavior": "One row per catalog model (plus any model that still owns a policy row or live batch) in the operator's authorized scope: desired scope row, inherited all-tenants row, effective dispatch state, and durable queued/running counts."
+    },
+    {
+      "method": "PUT",
+      "path": "/admin/api/v1/scientific-model-policies/{model_id}",
+      "data_schema": "ScientificModelPolicy",
+      "capability": "model_policy",
+      "role": "operator",
+      "behavior": "Replaces one scope row at exactly expected_revision (0 when absent) under the model's dispatch lock and records an audit row; 409 scientific_model_policy_stale when the revision moved, 404 for a model outside the catalog. Pausing stops new controller dispatch only; running work drains, results publish, and Kueue quota, node pools, per-run resources and input caps are never raised."
     }
   ],
   "service_classes": [
@@ -138,5 +155,23 @@
   "pending_producers": {
     "scientific-controller": "durable scientific batch run state",
     "scientific-artifacts": "canonical artifact results and semantic validation"
+  },
+  "model_policy": {
+    "boundary": "controller-dispatch",
+    "scopes": [
+      "all-tenants",
+      "tenant"
+    ],
+    "effective_states": [
+      "open",
+      "paused",
+      "at-limit"
+    ],
+    "max_active_runs_bound": 64,
+    "counts": {
+      "queued": "accepted and durable, not yet dispatched, not cancelling",
+      "running": "dispatched to Kubernetes/Kueue and not terminal"
+    },
+    "invariant": "The console shows desired and effective policy separately with live counts. It never presents a paused or capped model as an always-hot resident runtime or GPU snapshot; only batch jobs exist."
   }
 }

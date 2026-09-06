@@ -27,9 +27,17 @@ from .models import (
     ScientificBatchState,
     VerifiedInputManifest,
 )
+from .policy import ScientificDispatchHeldError
 from .protocols import BatchFenceLostError, BatchRepositoryConflictError
 
 SCIENTIFIC_BATCH_MIGRATION = "0020_scientific_atomic_admission.sql"
+
+# Operator dispatch policy (migration 0024). The predicate lives in SQL so the
+# claim query, the fenced queued -> running transition, and the admin
+# projection cannot disagree; the advisory lock makes policy writes and
+# dispatch decisions for one model linearizable across replicas.
+DISPATCH_HOLD_SQL = "fs2_scientific_dispatch_hold(batch.model_id, batch.tenant_id)"
+DISPATCH_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended('fs2-scientific-model-policy' || chr(31) || $1, 0))"
 
 
 class ScientificBatchNotFoundError(RuntimeError):
@@ -212,7 +220,22 @@ class PostgresScientificBatchRepository:
                         )
                     )
                       AND (batch.lease_expires_at IS NULL OR batch.lease_expires_at<=clock_timestamp())
-                    ORDER BY operation.accepted_at,batch.operation_id
+                      -- A queued batch held by operator model policy is not
+                      -- claimable: it stays durable in place while running,
+                      -- cancelling, and terminal-unpublished work keeps moving.
+                      AND (
+                        batch.status<>'queued' OR batch.cancel_requested
+                        OR fs2_scientific_dispatch_hold(batch.model_id, batch.tenant_id) IS NULL
+                      )
+                    -- Dispatchable queued work is ordered like Kueue would
+                    -- admit it: frozen WorkloadPriorityClass value first, then
+                    -- acceptance order. Everything else keeps acceptance order.
+                    ORDER BY
+                        (batch.status='queued' AND NOT batch.cancel_requested) DESC,
+                        CASE WHEN batch.status='queued' AND NOT batch.cancel_requested
+                             THEN COALESCE((batch.state#>>'{scheduling,stages,0,workload_priority_value}')::integer,0)
+                        END DESC NULLS LAST,
+                        operation.accepted_at,batch.operation_id
                     FOR UPDATE OF batch SKIP LOCKED
                     LIMIT 1
                 )
@@ -311,6 +334,12 @@ class PostgresScientificBatchRepository:
                 if current.cancel_requested and not record.cancel_requested:
                     record = replace(record, cancel_requested=True)
                 if (
+                    current.status is BatchStatus.QUEUED
+                    and record.status is BatchStatus.RUNNING
+                    and not current.cancel_requested
+                ):
+                    await self._assert_dispatch_allowed(connection, current)
+                if (
                     record.operation_id != current.operation_id
                     or record.batch_id != current.batch_id
                     or record.workload_id != current.workload_id
@@ -373,6 +402,26 @@ class PostgresScientificBatchRepository:
             if translated is not None:
                 raise translated from None
             raise
+
+    @staticmethod
+    async def _assert_dispatch_allowed(connection: asyncpg.Connection[Any], current: ScientificBatchState) -> None:
+        """Gate the one queued -> running transition on the durable model policy.
+
+        The claim query already skips held batches, but two controllers can
+        claim two different queued batches for the same model before either
+        becomes running. Taking the model's advisory lock inside the fenced
+        transaction and re-reading the predicate here makes the active-run
+        count exact: the second writer waits, then observes the first commit.
+        """
+
+        await connection.execute(DISPATCH_LOCK_SQL, current.model_id)
+        hold = await connection.fetchval(
+            "SELECT fs2_scientific_dispatch_hold($1, $2)",
+            current.model_id,
+            current.tenant_id,
+        )
+        if hold is not None:
+            raise ScientificDispatchHeldError(str(hold))
 
     @staticmethod
     async def _project_operation(

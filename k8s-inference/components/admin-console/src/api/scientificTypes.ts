@@ -324,6 +324,68 @@ export interface ScientificCapabilities {
   artifacts: ScientificCapability;
   /** Whether this build accepts the one scientific run command: a cancel request. */
   run_control: ScientificCapability;
+  /** Whether this build enforces per-model dispatch policy (pause / active-run cap). */
+  model_policy: ScientificCapability;
+}
+
+export type ScientificDispatchStateKind = "open" | "paused" | "at-limit";
+
+/** One durable scope row; revision 0 means no row exists yet for the scope. */
+export interface ScientificModelPolicySetting {
+  tenant_id: string | null;
+  revision: number;
+  paused: boolean;
+  max_active_runs: number | null;
+  reason: string | null;
+  updated_by: string | null;
+  updated_at: string | null;
+}
+
+export interface ScientificDispatchCounts {
+  /** Accepted and durable, not yet dispatched by the controller, not cancelling. */
+  queued: number;
+  /** Dispatched to Kubernetes/Kueue and not yet terminal (includes Kueue-pending and cancelling work). */
+  running: number;
+}
+
+export interface ScientificDispatchState {
+  state: ScientificDispatchStateKind;
+  paused: boolean;
+  max_active_runs: number | null;
+  reason: string;
+}
+
+export interface ScientificModelPolicyEnforcement {
+  boundary: "controller-dispatch";
+  running_work_drains: true;
+  result_delivery_unaffected: true;
+  preemptive: false;
+  capacity_authority: "kueue-quota-and-terraform-node-pools";
+  resident_runtime: "none-batch-jobs-only";
+}
+
+export interface ScientificModelPolicy {
+  model_id: string;
+  scope_tenant_id: string | null;
+  catalog_known: boolean;
+  desired: ScientificModelPolicySetting;
+  inherited: ScientificModelPolicySetting | null;
+  effective: ScientificDispatchState;
+  counts: ScientificDispatchCounts;
+  all_tenants_counts: ScientificDispatchCounts;
+  enforcement: ScientificModelPolicyEnforcement;
+}
+
+export interface ScientificModelPolicyList {
+  scope_tenant_id: string | null;
+  items: ScientificModelPolicy[];
+}
+
+export interface ScientificModelPolicyUpdate {
+  expected_revision: number;
+  paused: boolean;
+  max_active_runs: number | null;
+  reason: string | null;
 }
 
 export type AcademicAssetState =

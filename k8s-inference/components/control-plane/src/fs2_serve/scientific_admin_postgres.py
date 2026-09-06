@@ -25,6 +25,8 @@ from .scientific_admin import (
     ScientificArtifactAttemptEvidence,
     ScientificArtifactSnapshot,
     ScientificModelAdminAdapter,
+    ScientificModelPolicySnapshot,
+    ScientificModelPolicyStaleRevisionError,
     ScientificRunCancelOutcome,
     ScientificRunDetailSnapshot,
     ScientificRunListSnapshot,
@@ -48,6 +50,10 @@ from .scientific_admin_models import (
     ScientificGpuAccounting,
     ScientificLifecyclePhase,
     ScientificMeasurement,
+    ScientificModelPolicy,
+    ScientificModelPolicyList,
+    ScientificModelPolicySetting,
+    ScientificModelPolicyUpdate,
     ScientificModelReadiness,
     ScientificObservabilityLink,
     ScientificQueueState,
@@ -62,6 +68,12 @@ from .scientific_admin_models import (
     ScientificStage,
     ScientificStageCounts,
 )
+from .scientific_admin_models import (
+    ScientificDispatchCounts as ScientificDispatchCountsModel,
+)
+from .scientific_admin_models import (
+    ScientificDispatchState as ScientificDispatchStateModel,
+)
 from .scientific_artifacts import ArtifactNotFoundError, ScientificArtifactControllerPort
 from .scientific_batch.codec import state_from_value
 from .scientific_batch.models import (
@@ -75,6 +87,12 @@ from .scientific_batch.models import (
     ScientificStageState,
     StageStatus,
     WorkloadKind,
+)
+from .scientific_batch.policy import (
+    PostgresScientificModelPolicyRepository,
+    ScientificModelPolicyRecord,
+    ScientificModelPolicyStaleError,
+    ScientificModelPolicyView,
 )
 from .scientific_batch.postgres_repository import PostgresScientificBatchRepository, ScientificBatchNotFoundError
 from .scientific_batch.service import ScientificBatchService
@@ -175,9 +193,19 @@ def _active_stage(state: ScientificBatchState) -> ScientificStageState:
     )
 
 
-def _admission_state(state: ScientificBatchState) -> tuple[str, str]:
+_DISPATCH_HOLD_REASONS = {
+    "paused": "Dispatch is held: new work for this model is paused by operator policy.",
+    "concurrency": "Dispatch is held: the model's active-run cap set by operator policy is reached.",
+}
+
+
+def _admission_state(state: ScientificBatchState, dispatch_hold: str | None = None) -> tuple[str, str]:
     if state.status in _TERMINAL_BATCH_STATUS:
         return "finished", "The durable scientific batch is terminal."
+    if state.status is BatchStatus.QUEUED and not state.cancel_requested and dispatch_hold is not None:
+        return "pending", _DISPATCH_HOLD_REASONS.get(
+            dispatch_hold, "Dispatch is held by the scientific model policy."
+        )
     stage = _active_stage(state)
     latest = stage.attempts[-1] if stage.attempts else None
     if latest is not None and latest.outcome is AttemptOutcome.PREEMPTED:
@@ -241,7 +269,10 @@ def _summary(
         )
     stage = _active_stage(state)
     scheduling = state.scheduling.stage(stage.stage_id)
-    admission_state, admission_reason = _admission_state(state)
+    dispatch_hold = record.get("dispatch_hold")
+    admission_state, admission_reason = _admission_state(
+        state, None if dispatch_hold is None else str(dispatch_hold)
+    )
     effective = state.scheduling.service_class.value
     terminal = state.status in _TERMINAL_BATCH_STATUS
     cancel_requested_at = record.get("cancel_requested_at")
@@ -457,7 +488,9 @@ class PostgresScientificRunAdminAdapter:
                    (SELECT audit.actor FROM fs2_audit_events audit
                     WHERE audit.target_type='operation' AND audit.target_id=operation.id::text
                       AND audit.action='scientific_batch.cancel'
-                    ORDER BY audit.occurred_at,audit.id LIMIT 1) AS cancel_actor
+                    ORDER BY audit.occurred_at,audit.id LIMIT 1) AS cancel_actor,
+                   CASE WHEN batch.status='queued' AND NOT batch.cancel_requested
+                        THEN fs2_scientific_dispatch_hold(batch.model_id,batch.tenant_id) END AS dispatch_hold
             FROM fs2_scientific_batches batch
             JOIN fs2_operations operation ON operation.id=batch.operation_id
             JOIN fs2_tokens token ON token.id=operation.token_id
@@ -624,6 +657,129 @@ class PostgresScientificRunControlAdapter:
         # The repository leaves the row untouched when the batch turned terminal
         # between the read and the locked update; report that truthfully.
         return "requested" if after.cancel_requested else "terminal"
+
+
+def _policy_setting(
+    record: ScientificModelPolicyRecord | None,
+    *,
+    tenant_id: str | None,
+) -> ScientificModelPolicySetting:
+    if record is None:
+        return ScientificModelPolicySetting(tenant_id=tenant_id, revision=0)
+    return ScientificModelPolicySetting(
+        tenant_id=record.tenant_id,
+        revision=record.revision,
+        paused=record.paused,
+        max_active_runs=record.max_active_runs,
+        reason=record.reason,
+        updated_by=_bounded(record.updated_by, 200, "unknown"),
+        updated_at=record.updated_at,
+    )
+
+
+def _dispatch_state(view: ScientificModelPolicyView) -> ScientificDispatchStateModel:
+    scope = "all tenants" if view.tenant_id is None else f"tenant {view.tenant_id}"
+    state = view.dispatch_state
+    limit = view.effective_max_active_runs
+    if state == "paused":
+        source = view.policy if view.policy is not None and view.policy.paused else view.inherited
+        by = (
+            "this tenant's policy"
+            if source is not None and source.tenant_id is not None
+            else "the all-tenants policy"
+        )
+        reason = f"New dispatch for {scope} is paused by {by}; running work drains and results still publish."
+        if source is not None and source.reason:
+            reason = f"{reason} Operator note: {source.reason}"
+    elif state == "at-limit":
+        running = view.counts.running if view.tenant_id is not None else view.all_tenants_counts.running
+        reason = (
+            f"Dispatch for {scope} is held: {running} active run(s) meet the cap of {limit}; "
+            f"{view.counts.queued} queued run(s) wait durably in priority order."
+        )
+    elif limit is not None:
+        reason = (
+            f"Dispatch for {scope} is open below a cap of {limit} active run(s); "
+            f"{view.counts.running} running, {view.counts.queued} queued."
+        )
+    else:
+        reason = (
+            f"Dispatch for {scope} is open with no operator cap; Kueue quota remains the ceiling. "
+            f"{view.counts.running} running, {view.counts.queued} queued."
+        )
+    return ScientificDispatchStateModel(
+        state=cast(Any, state),
+        paused=state == "paused",
+        max_active_runs=limit,
+        reason=_bounded(reason, 300, "Dispatch state is unavailable."),
+    )
+
+
+def _policy(view: ScientificModelPolicyView, *, catalog_known: bool) -> ScientificModelPolicy:
+    return ScientificModelPolicy(
+        model_id=view.model_id,
+        scope_tenant_id=view.tenant_id,
+        catalog_known=catalog_known,
+        desired=_policy_setting(view.policy, tenant_id=view.tenant_id),
+        inherited=None if view.tenant_id is None else _policy_setting(view.inherited, tenant_id=None),
+        effective=_dispatch_state(view),
+        counts=ScientificDispatchCountsModel(queued=view.counts.queued, running=view.counts.running),
+        all_tenants_counts=ScientificDispatchCountsModel(
+            queued=view.all_tenants_counts.queued,
+            running=view.all_tenants_counts.running,
+        ),
+    )
+
+
+class PostgresScientificModelPolicyAdminAdapter:
+    """Project and write the durable per-model dispatch policy.
+
+    Counts and the effective decision come from the controller's own tables
+    through the same SQL predicate the claim query and fenced transition use,
+    so what the console shows is what the next poll will do.
+    """
+
+    def __init__(self, *, repository: PostgresScientificModelPolicyRepository) -> None:
+        self.repository = repository
+
+    async def list_policies(
+        self,
+        *,
+        tenant_id: str | None,
+        model_ids: tuple[str, ...],
+    ) -> ScientificModelPolicySnapshot:
+        known = set(model_ids)
+        views = await self.repository.list(tenant_id=tenant_id, model_ids=model_ids)
+        observed_at = datetime.now(UTC)
+        return ScientificModelPolicySnapshot(
+            data=ScientificModelPolicyList(
+                scope_tenant_id=tenant_id,
+                items=[_policy(view, catalog_known=view.model_id in known) for view in views[:256]],
+            ),
+            observed_at=observed_at,
+        )
+
+    async def set_policy(
+        self,
+        model_id: str,
+        *,
+        tenant_id: str | None,
+        update: ScientificModelPolicyUpdate,
+        actor: str,
+    ) -> ScientificModelPolicy:
+        try:
+            view = await self.repository.set(
+                model_id,
+                tenant_id=tenant_id,
+                expected_revision=update.expected_revision,
+                paused=update.paused,
+                max_active_runs=update.max_active_runs,
+                reason=update.reason,
+                actor=actor,
+            )
+        except ScientificModelPolicyStaleError as error:
+            raise ScientificModelPolicyStaleRevisionError(error.current_revision) from None
+        return _policy(view, catalog_known=True)
 
 
 def _artifact_name(artifact: ArtifactRef, role: str) -> str:
@@ -804,6 +960,9 @@ def postgres_scientific_admin_read_service(
             else None
         ),
         controls=PostgresScientificRunControlAdapter(batches=batches),
+        policies=PostgresScientificModelPolicyAdminAdapter(
+            repository=PostgresScientificModelPolicyRepository(pool),
+        ),
         models=models,
         source_max_age_seconds=source_max_age_seconds,
         adapter_timeout_seconds=adapter_timeout_seconds,
