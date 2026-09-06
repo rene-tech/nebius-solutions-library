@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -124,6 +125,62 @@ def qualified_configuration() -> tuple[PlatformConfiguration, StaticCatalogConfi
         },
     )
     return configuration, StaticCatalogConfigurationAdapter(contracts)
+
+
+def test_packaged_h100_receipt_is_the_existing_immutable_profile_evidence() -> None:
+    from fs2_serve.configuration import _reviewed_runtime_qualification
+
+    name = "h100-qwen-cosmos-20260902.json"
+    packaged = CONTROL_ROOT / "src/fs2_serve/runtime_qualifications" / name
+    original = SOLUTION_ROOT / "catalog/profiles/evidence/h100-qwen-cosmos-runtime-qualification-20260902.json"
+    assert packaged.read_bytes() == original.read_bytes()
+    assert _reviewed_runtime_qualification()["accelerator"]["class"] == "nvidia-h100-sxm5-80gb"
+
+
+@pytest.mark.asyncio
+async def test_exact_h100_runtime_receipt_removes_false_placement_warning() -> None:
+    initial, adapter = qualified_configuration()
+    pool_id = next(iter(initial.pools))
+    h100 = initial.model_copy(
+        update={"pools": {pool_id: initial.pools[pool_id].model_copy(
+            update={"accelerator_class": "nvidia-h100-sxm5-80gb"}
+        )}}
+    )
+    validation = await ConfigurationService(
+        repository=InMemoryConfigurationRepository(h100), catalog=adapter
+    ).validate_bootstrap(h100)
+    assert validation.valid
+    assert "unsupported_accelerator_placement" not in {issue.code for issue in validation.issues}
+    assert {
+        model_id for model_id, contract in adapter.contracts.items()
+        if "nvidia-h100-sxm5-80gb" in contract.supported_accelerator_classes
+    } == {"qwen3-8b", "cosmos3-nano"}
+
+
+def test_changed_packaged_runtime_receipt_does_not_add_qualification(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fs2_serve.configuration import _reviewed_runtime_qualification
+
+    monkeypatch.setattr(Path, "read_bytes", lambda _: b"{}")
+    assert _reviewed_runtime_qualification() == {}
+
+
+@pytest.mark.parametrize("model_id", ["qwen3-8b", "cosmos3-nano"])
+@pytest.mark.parametrize("changed", ["revision", "image", "manifest", "gpu_count"])
+def test_h100_projection_never_qualifies_a_changed_runtime_identity(model_id: str, changed: str) -> None:
+    catalog = load_catalog(CATALOG_ROOT, repo_root=REPO_ROOT)
+    record = catalog.records[model_id]
+    value = record.to_dict()
+    if changed == "revision":
+        value["model"]["source"]["revision"] = "different-revision"
+    elif changed == "image":
+        value["runtime"]["image"]["digest"] = "sha256:" + "a" * 64
+    elif changed == "manifest":
+        value["cache"]["artifact"]["manifest_digest"] = "b" * 64
+    else:
+        value["resources"]["gpu"]["count"] = 2
+    changed_catalog = replace(catalog, records={**catalog.records, model_id: replace(record, _value=value)})
+    contract = catalog_configuration_contracts(changed_catalog)[model_id]
+    assert "nvidia-h100-sxm5-80gb" not in contract.supported_accelerator_classes
 
 
 def with_cooldown(configuration: PlatformConfiguration, seconds: int) -> PlatformConfiguration:
@@ -277,7 +334,7 @@ async def test_heterogeneous_capacity_is_representable_and_unsupported_placement
 async def test_unsupported_accelerator_is_bootstrap_warning_but_proposals_stay_fail_closed() -> None:
     initial, catalog = qualified_configuration()
     pool_id = next(iter(initial.pools))
-    unsupported_pool = initial.pools[pool_id].model_copy(update={"accelerator_class": "nvidia-h100-sxm5-80gb"})
+    unsupported_pool = initial.pools[pool_id].model_copy(update={"accelerator_class": "nvidia-h200-sxm-141gb"})
     observed_baseline = initial.model_copy(update={"pools": {pool_id: unsupported_pool}})
     service = ConfigurationService(repository=InMemoryConfigurationRepository(initial), catalog=catalog)
 
@@ -307,7 +364,7 @@ async def test_existing_unqualified_placement_can_change_scaling_without_changin
     initial, catalog = qualified_configuration()
     pool_id = next(iter(initial.pools))
     model_id = next(iter(initial.models))
-    unsupported_pool = initial.pools[pool_id].model_copy(update={"accelerator_class": "nvidia-h100-sxm5-80gb"})
+    unsupported_pool = initial.pools[pool_id].model_copy(update={"accelerator_class": "nvidia-h200-sxm-141gb"})
     observed_baseline = initial.model_copy(update={"pools": {pool_id: unsupported_pool}})
     repository = InMemoryConfigurationRepository(observed_baseline)
     service = ConfigurationService(repository=repository, catalog=catalog)
@@ -365,7 +422,7 @@ async def test_disabled_unqualified_model_cannot_be_activated_by_grandfathering(
     initial, catalog = qualified_configuration()
     pool_id = next(iter(initial.pools))
     model_id = next(iter(initial.models))
-    unsupported_pool = initial.pools[pool_id].model_copy(update={"accelerator_class": "nvidia-h100-sxm5-80gb"})
+    unsupported_pool = initial.pools[pool_id].model_copy(update={"accelerator_class": "nvidia-h200-sxm-141gb"})
     disabled_model = initial.models[model_id].model_copy(update={"enabled": False})
     observed_baseline = initial.model_copy(
         update={"pools": {pool_id: unsupported_pool}, "models": {model_id: disabled_model}}
@@ -393,7 +450,7 @@ async def test_bootstrap_warning_does_not_downgrade_immutable_identity_mismatch(
     initial, catalog = qualified_configuration()
     pool_id = next(iter(initial.pools))
     model_id = next(iter(initial.models))
-    unsupported_pool = initial.pools[pool_id].model_copy(update={"accelerator_class": "nvidia-h100-sxm5-80gb"})
+    unsupported_pool = initial.pools[pool_id].model_copy(update={"accelerator_class": "nvidia-h200-sxm-141gb"})
     mismatched_model = initial.models[model_id].model_copy(
         update={
             "artifact": initial.models[model_id].artifact.model_copy(
