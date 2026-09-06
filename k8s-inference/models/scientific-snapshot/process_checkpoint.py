@@ -10,11 +10,44 @@ a fresh GPU pod before restore. This helper does not bypass the scheduler.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
 import subprocess
 import time
+
+
+def runtime_identity() -> dict:
+    image = os.environ.get("FS2_SNAPSHOT_RUNTIME_IMAGE", "")
+    tools_image = os.environ.get("FS2_SNAPSHOT_TOOLS_IMAGE", "")
+    if "@sha256:" not in image or "@sha256:" not in tools_image:
+        raise ValueError("snapshot capture/restore requires immutable runtime and tools image identities")
+    command = ["nvidia-smi", "--query-gpu=uuid,name,driver_version,compute_cap", "--format=csv,noheader,nounits"]
+    visible = os.environ.get("NVIDIA_VISIBLE_DEVICES", "")
+    if visible.startswith("GPU-"):
+        command.extend(("--id", visible))
+    rows = subprocess.check_output(command, text=True).strip().splitlines()
+    if len(rows) != 1:
+        raise ValueError("this snapshot lane requires exactly one assigned GPU")
+    uuid, name, driver, capability = (value.strip() for value in rows[0].split(","))
+    return {
+        "runtime_image": image, "tools_image": tools_image, "kernel_release": os.uname().release,
+        "runtime_id": os.environ.get("FS2_RUNTIME_ID", ""),
+        "model_revision": os.environ.get("FS2_MODEL_REVISION", ""),
+        "gpu_uuid": uuid, "gpu_name": name, "driver_version": driver, "compute_capability": capability,
+    }
+
+
+def generated_cache_manifest(directory: Path) -> list[dict]:
+    root = directory.parent / "cache"
+    records = []
+    for path in sorted(root.rglob("*")):
+        if path.is_file():
+            with path.open("rb") as source:
+                digest = hashlib.file_digest(source, "sha256").hexdigest()
+            records.append({"path": str(path.relative_to(root)), "bytes": path.stat().st_size, "sha256": digest})
+    return records
 
 
 def main() -> None:
@@ -23,6 +56,7 @@ def main() -> None:
     parser.add_argument("--pid", type=int)
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--tools", type=Path, default=Path("/tools"))
+    parser.add_argument("--allow-device-remap", action="store_true", help="opt in only after cross-GPU qualification")
     args = parser.parse_args()
     environment = os.environ.copy()
     # The reused CRIU tools are Ubuntu 24.04; scientific images can be 22.04.
@@ -47,6 +81,8 @@ def main() -> None:
     receipt = {"action": args.action, "records": records, "status": "running"}
     cuda_state = "running"
     try:
+        identity = runtime_identity()
+        receipt["runtime_identity"] = identity
         if args.action == "capture":
             if args.pid is None or args.pid <= 1:
                 parser.error("capture requires a child worker PID")
@@ -55,6 +91,10 @@ def main() -> None:
                 run([str(args.tools / "cuda-checkpoint"), "--action", action, "--pid", str(args.pid)])
                 cuda_state = "locked" if action == "lock" else "checkpointed"
             (args.directory / "worker-pid").write_text(str(args.pid))
+            (args.directory / "compatibility.json").write_text(json.dumps({
+                "schema": "fs2-serve.nebius.ai/scientific-process-checkpoint/v1",
+                "runtime_identity": identity, "generated_cache": generated_cache_manifest(args.directory),
+            }, sort_keys=True))
             run([
                 *criu, "dump", "--tree", str(args.pid),
                 "--images-dir", str(args.directory), "--shell-job", "--log-file", "dump.log",
@@ -66,7 +106,8 @@ def main() -> None:
             # otherwise CSI unmount flush time is charged to the next restore,
             # and a preemption could occur before the checkpoint is durable.
             started = time.monotonic()
-            for path in args.directory.iterdir():
+            paths = [*args.directory.iterdir(), *(args.directory.parent / "cache").rglob("*")]
+            for path in paths:
                 if path.is_file():
                     with path.open("rb") as checkpoint:
                         os.fsync(checkpoint.fileno())
@@ -77,6 +118,19 @@ def main() -> None:
                 os.close(directory_fd)
             receipt["checkpoint_flush_seconds"] = time.monotonic() - started
         else:
+            compatibility = json.loads((args.directory / "compatibility.json").read_text())
+            if compatibility.get("schema") != "fs2-serve.nebius.ai/scientific-process-checkpoint/v1":
+                raise ValueError("snapshot compatibility manifest version is unsupported")
+            saved = compatibility["runtime_identity"]
+            if {key: value for key, value in saved.items() if key != "gpu_uuid"} != {
+                key: value for key, value in identity.items() if key != "gpu_uuid"
+            }:
+                raise ValueError("snapshot runtime, tools, model, driver, kernel or GPU type differs")
+            remap = saved["gpu_uuid"] != identity["gpu_uuid"]
+            if remap and not args.allow_device_remap:
+                raise ValueError("snapshot requires another GPU UUID; device remapping is not qualified/enabled")
+            if compatibility["generated_cache"] != generated_cache_manifest(args.directory):
+                raise ValueError("snapshot executable cache is missing or differs")
             run([
                 *criu, "restore", "--images-dir", str(args.directory),
                 "--shell-job", "--restore-detached", "--log-file", "restore.log", "-v4",
@@ -85,7 +139,10 @@ def main() -> None:
             ])
             pid = int((args.directory / "worker-pid").read_text())
             for action in ("restore", "unlock"):
-                run([str(args.tools / "cuda-checkpoint"), "--action", action, "--pid", str(pid)])
+                command = [str(args.tools / "cuda-checkpoint"), "--action", action, "--pid", str(pid)]
+                if action == "restore" and remap:
+                    command.extend(("--device-map", f"{saved['gpu_uuid']}={identity['gpu_uuid']}"))
+                run(command)
         receipt["status"] = "passed"
     except Exception as error:
         receipt["status"] = "failed"

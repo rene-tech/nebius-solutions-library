@@ -31,6 +31,8 @@ def main() -> None:
     parser.add_argument("--baseline-state", type=Path, required=True)
     parser.add_argument("--output-directory", type=Path, required=True)
     parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--eviction-holder", help="CPU-only pod holding the checkpoint volume")
+    parser.add_argument("--checkpoint-directory", help="Exact images directory for file-scoped cache eviction")
     args = parser.parse_args()
     template = json.loads(args.restore_template.read_text())
     baseline = json.loads(args.baseline_state.read_text())
@@ -62,6 +64,10 @@ def main() -> None:
         "cache_state": "same-node Network SSD checkpoint; operating-system page cache retained",
         "baseline": baseline, "runs": [], "status": "running",
     }
+    if args.eviction_holder:
+        if not args.checkpoint_directory:
+            parser.error("file-scoped eviction requires --checkpoint-directory")
+        receipt["cache_state"] = "persisted Network SSD; checkpoint files fadvise DONTNEED after prior GPU pod deletion"
     active_pod = args.donor
     try:
         receipt["donor"] = json.loads(run(["get", "pod", active_pod, "-o", "json"]).stdout)["metadata"]["uid"]
@@ -76,6 +82,22 @@ def main() -> None:
             pod["metadata"]["name"] = active_pod
             row = {"repetition": repetition, "previous_pod_deleted": deleted, "pod": active_pod}
             receipt["runs"].append(row)
+            if args.eviction_holder:
+                eviction = (
+                    "import json,os,pathlib,sys; files=[]; "
+                    "root=pathlib.Path(sys.argv[1]); "
+                    "assert root.name=='images' and root.is_absolute(); "
+                    "\nfor path in root.iterdir():\n"
+                    " if path.is_file():\n"
+                    "  with path.open('rb') as stream:\n"
+                    "   os.fsync(stream.fileno()); os.posix_fadvise(stream.fileno(),0,0,os.POSIX_FADV_DONTNEED)\n"
+                    "  files.append({'name':path.name,'bytes':path.stat().st_size})\n"
+                    "print(json.dumps({'operation':'file-scoped-fadvise-DONTNEED','files':files}))"
+                )
+                row["cache_eviction"] = json.loads(run([
+                    "exec", args.eviction_holder, "--", "/opt/esm/.pixi/envs/gpu/bin/python",
+                    "-c", eviction, args.checkpoint_directory,
+                ]).stdout)
             started = time.monotonic()
             run(["apply", "-f", "-"], payload=json.dumps(pod))
             while time.monotonic() - started < 480:
