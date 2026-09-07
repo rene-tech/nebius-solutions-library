@@ -842,6 +842,11 @@
           "required": ["schema", "models"],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/scientific-execution-map/v3"},
+            "snapshot_bundles": {
+              "description": "Optional qualified startup bundles; the scientific renderer validates each complete runtime-specific bundle.",
+              "type": "object",
+              "additionalProperties": {"type": "object"}
+            },
             "models": {
               "type": "array",
               "maxItems": 256,

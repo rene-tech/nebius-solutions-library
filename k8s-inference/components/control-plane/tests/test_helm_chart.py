@@ -643,9 +643,12 @@ def test_lean_routes_mount_is_explicit_and_read_only() -> None:
 
 def test_selected_deployment_runtimes_share_the_read_only_route_mount() -> None:
     documents = render(
-        "--set", "catalog.leanRoutes.enabled=true",
-        "--set", "catalog.leanRoutes.deploymentRuntimes=true",
-        "--set", "catalog.delivery=image",
+        "--set",
+        "catalog.leanRoutes.enabled=true",
+        "--set",
+        "catalog.leanRoutes.deploymentRuntimes=true",
+        "--set",
+        "catalog.delivery=image",
     )
     pod = gateway_deployment(documents)["spec"]["template"]["spec"]
     container = pod["containers"][0]
@@ -1318,6 +1321,43 @@ def test_scientific_batch_can_start_fail_closed_with_only_the_internal_cpu_canar
         "models": [],
         "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
     }
+
+
+def test_scientific_snapshot_registry_survives_chart_schema_and_rendering() -> None:
+    execution_map = json.loads((CATALOG_ROOT / "contracts/scientific-execution-map.json").read_text())
+    execution_map["models"] = [model for model in execution_map["models"] if model["model_id"] == "protenix-v2"]
+    bundle = json.loads((SOLUTION_ROOT / "acceptance/h100-fleet/snapshots/protenix-v2-bundle.json").read_text())
+    execution_map["snapshot_bundles"] = {bundle["bundle_id"]: bundle}
+    documents = render(
+        "--set",
+        "scientificBatch.enabled=true",
+        "--set",
+        "scientificBatch.writesEnabled=true",
+        "--set",
+        "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
+        "--set",
+        "scientificBatch.schedulingContractNamespace=fs2-system",
+        "--set",
+        "scientificBatch.schedulingContractSha256=" + "c" * 64,
+        "--set",
+        "scientificBatch.executionMapConfigMapName=scientific-execution-snapshot",
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set-string",
+        "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+        "--set-string",
+        "scientificArtifacts.egressCidrs[0]=192.0.2.20/32",
+        "--set-json",
+        "scientificBatch.executionMap=" + json.dumps(execution_map),
+    )
+    config = next(
+        document
+        for document in documents
+        if document["kind"] == "ConfigMap"
+        and document.get("metadata", {}).get("labels", {}).get("app.kubernetes.io/component")
+        == "scientific-execution-map"
+    )
+    assert json.loads(config["data"]["execution-map.json"]) == execution_map
 
 
 def test_scientific_execution_map_has_one_helm_owner_and_no_terraform_writer() -> None:
