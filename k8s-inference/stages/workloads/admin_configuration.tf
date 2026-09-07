@@ -122,8 +122,12 @@ variable "admin_configuration" {
         can(regex("^([a-z0-9]([-a-z0-9.]*[a-z0-9])?/)?[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$", pool.resource_name)) &&
         can(regex("^[a-z][a-z0-9._-]*$", pool.capacity_type)) &&
         floor(pool.accelerators_per_node) == pool.accelerators_per_node &&
-        pool.accelerators_per_node >= 1 &&
         pool.accelerators_per_node <= 64 &&
+        (
+          pool.accelerator_class == "CPU" ?
+          pool.resource_name == "cpu" && pool.accelerators_per_node == 0 :
+          pool.resource_name != "cpu" && pool.accelerators_per_node >= 1
+        ) &&
         floor(pool.min_nodes) == pool.min_nodes &&
         floor(pool.max_nodes) == pool.max_nodes &&
         pool.min_nodes >= 0 &&
@@ -135,6 +139,24 @@ variable "admin_configuration" {
         length(model.placement.pool_ids) >= 1 &&
         length(model.placement.pool_ids) == length(toset(model.placement.pool_ids)) &&
         alltrue([for pool_id in model.placement.pool_ids : contains(keys(var.admin_configuration.pools), pool_id)]) &&
+        floor(model.placement.accelerators) == model.placement.accelerators &&
+        model.placement.accelerators >= 0 &&
+        model.placement.accelerators <= 64 &&
+        (
+          model.placement.accelerators == 0 ?
+          alltrue([
+            for pool_id in model.placement.pool_ids :
+            var.admin_configuration.pools[pool_id].accelerator_class == "CPU"
+          ]) :
+          alltrue([
+            for pool_id in model.placement.pool_ids :
+            var.admin_configuration.pools[pool_id].accelerator_class != "CPU"
+          ])
+        ) &&
+        (
+          model.placement.accelerators != 0 ||
+          (model.autoscaling.min_replicas == 1 && model.autoscaling.max_replicas == 1)
+        ) &&
         model.autoscaling.min_replicas >= 0 &&
         model.autoscaling.max_replicas >= model.autoscaling.min_replicas &&
         (!model.enabled || model.autoscaling.max_replicas > 0) &&

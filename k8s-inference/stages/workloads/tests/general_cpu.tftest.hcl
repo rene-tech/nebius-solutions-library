@@ -467,6 +467,115 @@ run "an_exact_cpu_runtime_renders_one_static_service_without_a_gpu" {
   }
 }
 
+
+# This targets the already-covered CPU lane contract so the assertion remains
+# about variable-schema admission: the admin ConfigMap lifecycle and its
+# reviewed digest handoff are exercised by the admin-configuration suite.
+run "admin_configuration_accepts_the_explicit_zero_accelerator_cpu_tuple" {
+  command = plan
+
+  variables {
+    enabled_model_ids = ["msa-search-pdb70"]
+    model_image_overrides = {
+      msa-search-pdb70 = "cr.eu-north1.nebius.cloud/test/msa-search-pdb70@sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85"
+    }
+    model_pool_overrides = {}
+    model_controller = {
+      enabled             = true
+      writes_enabled      = true
+      workload_owner      = "controller"
+      bootstrap_model_ids = []
+      fresh_install       = true
+      handoff_receipt     = null
+      priority_classes    = { interactive = 100, standard = 0, batch = -100 }
+    }
+    model_express = {
+      enabled          = false
+      deployment_mode  = "managed"
+      endpoint         = null
+      metadata_backend = "kubernetes"
+      namespace        = "fs2-modelexpress"
+      server_image     = null
+      cache            = { enabled = true, size_gib = 100 }
+      models           = {}
+    }
+    admin_configuration = {
+      schema_version = "fs2.admin-configuration/v1"
+      pools = {
+        general-cpu-8x = {
+          resource_name         = "cpu"
+          accelerator_class     = "CPU"
+          capacity_type         = "preemptible"
+          accelerators_per_node = 0
+          min_nodes             = 0
+          max_nodes             = 4
+          node_selector = {
+            "workload.fs2.nebius/general-cpu" = "true"
+          }
+          tolerations = []
+        }
+      }
+      models = {
+        msa-search-pdb70 = {
+          model_id = "msa-search-pdb70"
+          enabled  = true
+          placement = {
+            pool_ids        = ["general-cpu-8x"]
+            accelerators    = 0
+            topology_policy = "any"
+          }
+          autoscaling = {
+            min_replicas             = 1
+            max_replicas             = 1
+            target_queue_depth       = 1
+            polling_interval_seconds = 5
+            cooldown_seconds         = 300
+          }
+          queue = {
+            local_queue       = "general-cpu"
+            priority_class    = "standard"
+            max_queue_seconds = 7200
+          }
+          snapshot = {
+            strategy                = "disabled"
+            cache_tier              = "node-local"
+            restore_timeout_seconds = 600
+            parallelism             = 1
+            require_semantic_check  = true
+          }
+          mcp = {
+            exposed   = false
+            tool_name = null
+          }
+          rate = {
+            requests_per_minute         = null
+            concurrent_requests         = 1
+            accelerator_seconds_per_day = null
+          }
+          artifact = {
+            image_repository                = "cr.eu-north1.nebius.cloud/test/msa-search-pdb70"
+            image_digest                    = "sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85"
+            model_revision                  = "2a3cb71cb615b8534b3134013e9cbecf003339bc"
+            artifact_manifest_sha256        = "2a3cb71cb615b8534b3134013e9cbecf003339bc6f034c4e6545dfdf91229c52"
+            acquisition_contract_sha256     = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            provenance_sha256               = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            semantic_health_contract_sha256 = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        }
+      }
+    }
+  }
+
+  plan_options {
+    target = [output.admin_configuration_contract, terraform_data.general_cpu_contract]
+  }
+
+  assert {
+    condition     = terraform_data.general_cpu_contract.input.enabled
+    error_message = "The Terraform admin schema must admit the same explicit CPU zero-device tuple as the control-plane schema."
+  }
+}
+
 run "academic_cpu_reuses_the_general_lane_through_its_own_local_queue" {
   command = plan
 
