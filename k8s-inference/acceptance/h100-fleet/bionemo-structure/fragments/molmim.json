@@ -1,0 +1,96 @@
+{
+  "schema": "fs2-h100-fleet-model-integration/v1",
+  "model_id": "molmim",
+  "status": "direct-h100-semantic-qualified-production-adoption-pending",
+  "source_base": "070ce46fe08ac47949d66c252a9924a02e212968",
+  "catalog_proposal": {
+    "variant_id": "molmim-exact-weights-portable",
+    "base_model_id": "molmim",
+    "exposed_model_id": "molmim",
+    "variant_kind": "independent-runtime",
+    "relationship": {
+      "kind": "exact-model",
+      "reference_model_id": "molmim",
+      "subject_model_id": "molmim",
+      "nim_artifact_parity": "unverified",
+      "notes": "Exact MolMIM 70M v24.03 artifact in a BioNeMo-derived portable runtime. This qualification does not claim numerical or package parity with a separately distributed NIM."
+    },
+    "source": {
+      "kind": "git-plus-ngc-artifact",
+      "repository": "github.com/NVIDIA/bionemo-framework",
+      "revision": "9ba9b2c337917fc815ffbd5d99f78d9db7904493",
+      "revision_url": "https://github.com/NVIDIA/bionemo-framework/tree/9ba9b2c337917fc815ffbd5d99f78d9db7904493",
+      "license": {
+        "code": {
+          "id": "Apache-2.0",
+          "state": "verified-artifact",
+          "artifact_sha256": "179b6b794ed53f462503a95026c081997c8d6116b7c852ed244292b7d9a24447"
+        },
+        "weights": {
+          "id": "NVIDIA-AI-Foundations-Model-Community-License",
+          "state": "model-card-reviewed-artifact-license-not-embedded",
+          "source_url": "https://catalog.ngc.nvidia.com/orgs/nvidia/clara/models/molmim",
+          "use_case": "research-and-development-only"
+        },
+        "commercial_use": "license-dependent",
+        "non_clinical": false,
+        "notes": "The Apache-2.0 BioNeMo source-code license is not asserted for the MolMIM weight artifact."
+      },
+      "artifact": {
+        "kind": "weights",
+        "uri": "https://api.ngc.nvidia.com/v2/models/nvidia/molmim/versions/24.03/files/molmim_70m_24_3.nemo",
+        "expected_bytes": 281589760,
+        "nemo_sha256": "10522c9db6018c355313f9f01a0edea2b021ddc0a5a22ae4540cbf5bdafbd1f5",
+        "loaded_weights_sha256": "bc246330d019b18a4f0acaa88b65d64eaf6e5e940f1ec82e1ba097aff1fdddee",
+        "disposition": "exact-retained-artifact-embedded-in-immutable-runtime-image"
+      }
+    }
+  },
+  "runtime": {
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/molmim@sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958",
+    "image_pull_policy": "IfNotPresent",
+    "gpu_count": 1,
+    "resources": {
+      "requests": {"cpu": "8", "memory": "24Gi", "nvidia.com/gpu": "1"},
+      "limits": {"cpu": "16", "memory": "64Gi", "nvidia.com/gpu": "1"}
+    },
+    "compile_cache_abi": "deployment-profile-abi-v1",
+    "placement": "controller-selected-compatible-accelerator-pool",
+    "cache": {
+      "weights": "image-layer",
+      "writable_runtime_cache": "none-required-by-qualified-runtime"
+    },
+    "readiness": {"method": "GET", "path": "/v1/health/ready", "expected_status": 200},
+    "inference": {"method": "POST", "path": "/generate"}
+  },
+  "qualification": {
+    "cluster": {
+      "project": "project-e00rene",
+      "region": "eu-north1",
+      "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+      "namespace": "fs2-models",
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "compute_capability": "9.0",
+      "driver": "580.159.04"
+    },
+    "fresh_process_repetitions": 3,
+    "semantic_requests_per_repetition": 2,
+    "semantic_status": "PASS-6-of-6",
+    "validator": "molmim-faststart-semantic-v1",
+    "distinct_inputs": ["caffeine", "aspirin"],
+    "distinct_response_sha256": [
+      "4b90abfabd4859a14b0777d749f952897588bd23bcad439091738ab42510eff5",
+      "61a204a165a3d2741102c5329907afba09ab8d8c72e0d398d86377d1209b3c64"
+    ],
+    "runtime_reported_startup_seconds": {
+      "samples": [1.91, 1.567, 1.454],
+      "median": 1.567,
+      "minimum": 1.454,
+      "maximum": 1.91,
+      "boundary": "runtime-process-start-to-exact-weights-loaded-and-CUDA-model-ready"
+    },
+    "job_names": ["fs2-h100-molmim-r01", "fs2-h100-molmim-r02", "fs2-h100-molmim-r03"],
+    "private_evidence_root": "/home/tux/.local/state/fs2-h100-fleet-r20260907/bionemo-structure/final"
+  },
+  "production_boundary": "Isolated digest-pinned test Jobs only. No production Deployment, Service, route, catalog record, or Terraform state was changed by this qualification worker."
+}

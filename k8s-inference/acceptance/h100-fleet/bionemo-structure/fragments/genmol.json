@@ -1,0 +1,92 @@
+{
+  "schema": "fs2-h100-fleet-model-integration/v1",
+  "model_id": "genmol",
+  "status": "direct-h100-semantic-qualified-production-adoption-pending",
+  "source_base": "070ce46fe08ac47949d66c252a9924a02e212968",
+  "catalog_proposal": {
+    "variant_id": "nv-genmol-89m-v2-portable",
+    "base_model_id": "genmol",
+    "exposed_model_id": "genmol",
+    "variant_kind": "independent-runtime",
+    "relationship": {
+      "kind": "exact-model",
+      "reference_model_id": "genmol",
+      "subject_model_id": "genmol",
+      "nim_artifact_parity": "unverified",
+      "notes": "Exact NV-GenMol-89M-v2 checkpoint in the pinned upstream runtime. This is not a claim of package or numerical parity with the separately packaged GenMol NIM."
+    },
+    "source": {
+      "kind": "git-plus-huggingface-artifact",
+      "repository": "nvidia/GenMol",
+      "revision": "add09fc83b7255bd09c797e527c0f4b51f5fb7c1",
+      "model_repository": "nvidia/NV-GenMol-89M-v2",
+      "model_revision": "2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80",
+      "model_revision_url": "https://huggingface.co/nvidia/NV-GenMol-89M-v2/tree/2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80",
+      "license": {
+        "id": "NVIDIA-Open-Model-License",
+        "state": "verified-revision-bound-model-card",
+        "model_card": "https://huggingface.co/nvidia/NV-GenMol-89M-v2/blob/2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80/README.md",
+        "model_card_sha256": "ed3806094032461a9306c65f10d5fcdb9f43027184fe00f0c93a2cc2f34993f6",
+        "model_card_bytes": 9506,
+        "commercial_use": "model-card-declares-ready-for-commercial-use-subject-to-license",
+        "non_clinical": false
+      },
+      "artifact": {
+        "kind": "weights",
+        "file": "model_v2.ckpt",
+        "expected_bytes": 1397023575,
+        "sha256": "7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a",
+        "disposition": "exact-pinned-Hugging-Face-artifact-retained-on-task-cache"
+      }
+    }
+  },
+  "runtime": {
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf",
+    "image_pull_policy": "IfNotPresent",
+    "gpu_count": 1,
+    "resources": {
+      "requests": {"cpu": "8", "memory": "48Gi", "nvidia.com/gpu": "1"},
+      "limits": {"cpu": "16", "memory": "96Gi", "nvidia.com/gpu": "1"}
+    },
+    "compile_cache_abi": "deployment-profile-abi-v1",
+    "placement": "controller-selected-compatible-accelerator-pool",
+    "cache": {
+      "claim": "fs2-h100-genmol-cache-r20260907",
+      "claim_uid": "cd6f92b6-ab6b-4e3f-a927-9b85783d4718",
+      "volume": "pvc-cd6f92b6-ab6b-4e3f-a927-9b85783d4718",
+      "storage_class": "compute-csi-default-sc",
+      "access": "ReadWriteOnce",
+      "size": "16Gi",
+      "mount": "/models",
+      "required_writable_paths": ["/models/home", "/models/huggingface/hub", "/models/huggingface/xet"]
+    },
+    "readiness": {"method": "GET", "path": "/v1/health/ready", "expected_status": 200},
+    "inference": {"method": "POST", "path": "/generate"}
+  },
+  "qualification": {
+    "cluster": {
+      "project": "project-e00rene",
+      "region": "eu-north1",
+      "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+      "namespace": "fs2-models",
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "compute_capability": "9.0",
+      "driver": "580.159.04"
+    },
+    "fresh_process_repetitions": 3,
+    "semantic_requests_per_repetition": 2,
+    "semantic_status": "PASS-6-of-6",
+    "validator": "genmol-faststart-semantic-v1",
+    "distinct_objectives": ["QED", "LogP"],
+    "runtime_reported_startup_seconds": {
+      "samples": [101.354, 95.582, 96.121],
+      "median": 96.121,
+      "minimum": 95.582,
+      "maximum": 101.354,
+      "boundary": "runtime-process-start-through-checkpoint-load-and-CUDA-model-ready; first sample includes initial artifact hydration"
+    },
+    "job_names": ["fs2-h100-genmol-r01-a02", "fs2-h100-genmol-r02", "fs2-h100-genmol-r03"],
+    "private_evidence_root": "/home/tux/.local/state/fs2-h100-fleet-r20260907/bionemo-structure/final"
+  },
+  "production_boundary": "Isolated digest-pinned test Jobs only. Public HTTP/MCP verification is deliberately false until root performs production adoption."
+}

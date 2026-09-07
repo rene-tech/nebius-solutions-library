@@ -157,14 +157,44 @@ locals {
       })
     }
   })
-  selected_profile = local.profile_contract.profiles[var.deployment_profile]
-  inventory        = jsondecode(file("${local.fs2_root}/components/control-plane/contracts/all-models-live-services.json"))
-  runtime_catalog  = jsondecode(file("${local.fs2_root}/catalog/runtime/catalog.json"))
-  catalog_models = {
+  selected_profile   = local.profile_contract.profiles[var.deployment_profile]
+  retained_inventory = jsondecode(file("${local.fs2_root}/components/control-plane/contracts/all-models-live-services.json"))
+  # Runtime upgrades are separate from historical NIM records. The immutable
+  # image selected in terraform.tfvars opts into a tested replacement. Match
+  # its digest so a regional mirror does not change the model identity.
+  deployment_runtime_candidates = [
+    for name in fileset("${local.fs2_root}/catalog/runtime/deployment-runtimes", "*.json") :
+    jsondecode(file("${local.fs2_root}/catalog/runtime/deployment-runtimes/${name}"))
+  ]
+  deployment_runtime_records = {
+    for candidate in local.deployment_runtime_candidates : candidate.model_id => candidate
+    if contains(local.selected_model_ids, candidate.model_id) && try(
+      split("@", var.model_image_overrides[candidate.model_id])[1] == candidate.record.runtime.image.digest,
+      false,
+    )
+  }
+  inventory = merge(local.retained_inventory, {
+    routes = merge(local.retained_inventory.routes, {
+      for model_id, candidate in local.deployment_runtime_records : model_id => merge(
+        local.retained_inventory.routes[model_id], {
+          variant_id           = candidate.variant_id
+          model_revision       = candidate.record.model.source.revision
+          runtime_image_digest = candidate.record.runtime.image.digest
+          protocols            = candidate.record.interface.endpoints
+          operations           = candidate.record.interface.policy.operations
+        }
+      )
+    })
+  })
+  runtime_catalog = jsondecode(file("${local.fs2_root}/catalog/runtime/catalog.json"))
+  retained_catalog_models = {
     for model_file in local.runtime_catalog.model_files :
     jsondecode(file("${local.fs2_root}/catalog/runtime/models/${model_file}")).model.id =>
     jsondecode(file("${local.fs2_root}/catalog/runtime/models/${model_file}"))
   }
+  catalog_models = merge(local.retained_catalog_models, {
+    for model_id, candidate in local.deployment_runtime_records : model_id => candidate.record
+  })
   catalog_model_runtime_images = {
     for model_id, model in local.catalog_models : model_id => model.runtime.image.reference
   }
@@ -713,7 +743,13 @@ locals {
       for model_id in sort(keys(local.selected_routes)) : format("%05d", local.selected_routes[model_id].service.port)
     ]))) : tonumber(port)
   ]
-  qualification_projection = jsondecode(file("${local.fs2_root}/components/control-plane/contracts/model-qualification-projection.json"))
+  retained_qualification_projection = jsondecode(file("${local.fs2_root}/components/control-plane/contracts/model-qualification-projection.json"))
+  qualification_projection = merge(local.retained_qualification_projection, {
+    rows = [
+      for row in local.retained_qualification_projection.rows :
+      try(local.deployment_runtime_records[row.model_id].qualification, row)
+    ]
+  })
   # Terraform routes carry the resolved deployment placement in v4. Reviewed
   # qualification evidence stays beside, but outside, the mounted route file.
   lean_routes = {
@@ -734,6 +770,10 @@ locals {
   lean_routes_config_map_data = {
     "lean-routes.json"              = jsonencode(local.lean_routes)
     "qualification-projection.json" = jsonencode(local.qualification_projection)
+    "deployment-runtimes.json" = jsonencode({
+      schema = "fs2-serve.nebius.ai/deployment-runtime-set/v1"
+      models = local.deployment_runtime_records
+    })
   }
   lean_routes_config_map_digest = sha256(jsonencode(local.lean_routes_config_map_data))
   lean_routes_config_map_name   = "fs2-serve-lean-routes-terraform-${substr(local.lean_routes_config_map_digest, 0, 12)}"

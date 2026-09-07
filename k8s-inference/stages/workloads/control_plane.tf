@@ -50,9 +50,10 @@ locals {
       evidencePersistentVolumeClaimName = "unused-with-lean-routes"
       persistentVolumeClaimName         = "unused-with-image-delivery"
       leanRoutes = {
-        enabled       = true
-        configMapName = kubernetes_config_map_v1.lean_routes.metadata[0].name
-        key           = "lean-routes.json"
+        enabled            = true
+        configMapName      = kubernetes_config_map_v1.lean_routes.metadata[0].name
+        key                = "lean-routes.json"
+        deploymentRuntimes = true
       }
     }
     config = merge({

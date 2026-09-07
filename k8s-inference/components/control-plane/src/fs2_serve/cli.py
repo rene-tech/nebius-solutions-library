@@ -281,6 +281,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         settings.bindings_file,
         variant_promotions_file=settings.variant_promotions_file,
         lean_routes_file=settings.lean_routes_file,
+        deployment_runtime_records_file=settings.deployment_runtime_records_file,
         repo_root=settings.repo_root,
         evidence_root=settings.evidence_root,
         trusted_attestors_loader=settings.trusted_route_attestors,
@@ -528,11 +529,16 @@ async def build_runtime(settings: Settings) -> AppRuntime:
     configure_tracing(settings.otlp_endpoint)
     configuration_service: ConfigurationService | None = None
     if initial_configuration is not None:
+        from .deployment_runtimes import load_deployment_runtime_entries
+
         canonical_catalog = load_catalog(settings.catalog_dir, repo_root=settings.repo_root)
         configuration_repository = StoreConfigurationRepository(store)
         configuration_service = ConfigurationService(
             repository=configuration_repository,
-            catalog=StaticCatalogConfigurationAdapter(catalog_configuration_contracts(canonical_catalog)),
+            catalog=StaticCatalogConfigurationAdapter(catalog_configuration_contracts(
+                canonical_catalog,
+                deployment_runtime_entries=load_deployment_runtime_entries(settings.deployment_runtime_records_file),
+            )),
             audit=StoreConfigurationAuditSink(store),
         )
         validation = await configuration_service.validate_bootstrap(initial_configuration)
@@ -660,6 +666,7 @@ def validate(settings: Settings) -> None:
         settings.bindings_file,
         variant_promotions_file=settings.variant_promotions_file,
         lean_routes_file=settings.lean_routes_file,
+        deployment_runtime_records_file=settings.deployment_runtime_records_file,
         repo_root=settings.repo_root,
         evidence_root=settings.evidence_root,
         trusted_attestors_loader=settings.trusted_route_attestors,

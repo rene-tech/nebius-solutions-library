@@ -230,10 +230,26 @@ locals {
     toset(local.selected_model_profile.canonical_routes) :
     var.deployment.models.enabled
   ))
-  selected_runtime_model_contracts = {
+  retained_runtime_model_contracts = {
     for model_id in local.selected_model_ids :
     model_id => jsondecode(file("${path.module}/catalog/runtime/models/${model_id}.json"))
   }
+  # An explicit immutable image selects its tested runtime contract. Registry
+  # mirrors retain the digest, so selection works in any deployment region.
+  deployment_runtime_candidates = [
+    for name in fileset("${path.module}/catalog/runtime/deployment-runtimes", "*.json") :
+    jsondecode(file("${path.module}/catalog/runtime/deployment-runtimes/${name}"))
+  ]
+  selected_deployment_runtimes = {
+    for candidate in local.deployment_runtime_candidates : candidate.model_id => candidate
+    if contains(local.selected_model_ids, candidate.model_id) && try(
+      split("@", var.deployment.models.image_overrides[candidate.model_id])[1] == candidate.record.runtime.image.digest,
+      false,
+    )
+  }
+  selected_runtime_model_contracts = merge(local.retained_runtime_model_contracts, {
+    for model_id, candidate in local.selected_deployment_runtimes : model_id => candidate.record
+  })
   effective_model_images = {
     for model_id, model in local.selected_runtime_model_contracts : model_id => try(
       var.deployment.models.image_overrides[model_id],

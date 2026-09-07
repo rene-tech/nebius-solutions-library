@@ -214,6 +214,13 @@ def bind_dynamic_publication(
     if publication.mcp and not base.mcp_discoverable:
         raise DynamicRouteError("dynamic MCP exposure exceeds canonical discovery policy")
     runtime_digest = _runtime_digest(publication.runtime_image)
+    deployment_runtime = (base.qualification or {}).get("deployment_runtime")
+    if deployment_runtime is not None:
+        if runtime_digest != base.runtime_image_digest or runtime_digest != deployment_runtime["runtime_image_digest"]:
+            raise DynamicRouteError("dynamic runtime image differs from selected deployment runtime")
+        if (publication.artifact_manifest_digest.removeprefix("sha256:")
+                != deployment_runtime["artifact_manifest_digest"]):
+            raise DynamicRouteError("dynamic artifact differs from selected deployment runtime")
     if base.binding is not None:
         if (
             base.binding.artifact_manifest_digest is not None

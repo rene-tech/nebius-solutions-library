@@ -203,6 +203,10 @@ app.kubernetes.io/component: model-controller
 {{- if .Values.catalog.leanRoutes.enabled }}
 - name: FS2_LEAN_ROUTES_FILE
   value: /etc/fs2-serve/lean-routes/lean-routes.json
+{{- if .Values.catalog.leanRoutes.deploymentRuntimes }}
+- name: FS2_DEPLOYMENT_RUNTIME_RECORDS_FILE
+  value: /etc/fs2-serve/lean-routes/deployment-runtimes.json
+{{- end }}
 {{- end }}
 - name: FS2_EVIDENCE_ROOT
   value: /etc/fs2-serve/evidence
@@ -551,6 +555,10 @@ app.kubernetes.io/component: model-controller
     items:
       - key: {{ .Values.catalog.leanRoutes.key }}
         path: lean-routes.json
+{{- if .Values.catalog.leanRoutes.deploymentRuntimes }}
+      - key: deployment-runtimes.json
+        path: deployment-runtimes.json
+{{- end }}
 {{- end }}
 - name: evidence
 {{- if .Values.catalog.leanRoutes.enabled }}

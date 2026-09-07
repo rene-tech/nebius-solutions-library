@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     bindings_file: Path = Path("/etc/fs2-serve/serving-bindings.json")
     variant_promotions_file: Path = Path("/etc/fs2-serve/bindings/model-variant-promotions.json")
     lean_routes_file: Path | None = None
+    deployment_runtime_records_file: Path | None = None
     evidence_root: Path = Path("/etc/fs2-serve/evidence")
     federation_routes_file: Path = Path("/var/run/secrets/fs2-serve/federation/routes.json")
     federation_secret_dir: Path = Path("/var/run/secrets/fs2-serve/federation")

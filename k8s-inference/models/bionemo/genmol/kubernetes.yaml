@@ -28,9 +28,9 @@ metadata:
     app.kubernetes.io/instance: genmol-b300
     fs2-serve.nebius.ai/model-id: genmol
   annotations:
-    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
     fs2.nebius/model-content-digest: sha256:7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a
-    fs2.nebius/runtime-image-digest: sha256:c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f
+    fs2.nebius/runtime-image-digest: sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf
     fs2-serve.nebius.ai/source-revision: add09fc83b7255bd09c797e527c0f4b51f5fb7c1
     fs2-serve.nebius.ai/model-revision: 2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80
     fs2-serve.nebius.ai/model-sha256: 7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a
@@ -50,9 +50,9 @@ spec:
         app.kubernetes.io/part-of: fs2-serve
         fs2-serve.nebius.ai/model-id: genmol
       annotations:
-        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
         fs2.nebius/model-content-digest: sha256:7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a
-        fs2.nebius/runtime-image-digest: sha256:c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f
+        fs2.nebius/runtime-image-digest: sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf
         prometheus.io/scrape: "true"
         prometheus.io/port: "8000"
         prometheus.io/path: /metrics
@@ -72,20 +72,9 @@ spec:
           operator: Equal
           value: fs2-inference
           effect: NoSchedule
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: accelerator.fs2.nebius/class
-                    operator: In
-                    values: [nvidia-b300-sxm6-288gb]
-                  - key: capacity.fs2.nebius/pool
-                    operator: In
-                    values: [burst, burst-single]
       initContainers:
         - name: prepare-runtime-cache
-          image: registry.example.invalid/k8s-inference/models/genmol-blackwell@sha256:c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f
+          image: registry.example.invalid/k8s-inference/models/genmol-portable@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh
@@ -97,7 +86,7 @@ spec:
               test -w "${FS2_RUNTIME_CACHE_ROOT}"
           env:
             - name: FS2_RUNTIME_CACHE_ROOT
-              value: /models/.fs2/runtime/c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.173.02-sm103
+              value: /models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/deployment-profile-abi-v1
           resources:
             limits:
               cpu: "1"
@@ -117,7 +106,7 @@ spec:
               name: model-cache
       containers:
         - name: genmol
-          image: registry.example.invalid/k8s-inference/models/genmol-blackwell@sha256:c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f
+          image: registry.example.invalid/k8s-inference/models/genmol-portable@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -125,25 +114,27 @@ spec:
               drop: ["ALL"]
           env:
             - name: CUDA_CACHE_PATH
-              value: /models/.fs2/runtime/c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.173.02-sm103/cuda
+              value: /models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/deployment-profile-abi-v1/cuda
             - name: MODEL_CACHE
               value: /models
             - name: HOME
-              value: /models/.fs2/runtime/c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.173.02-sm103/home
+              value: /models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/deployment-profile-abi-v1/home
             - name: HF_HOME
               value: /models/huggingface
             - name: HF_HUB_CACHE
               value: /models/huggingface/hub
+            - name: HF_XET_CACHE
+              value: /models/huggingface/xet
             - name: HF_HUB_DISABLE_XET
               value: "1"
             - name: TORCH_EXTENSIONS_DIR
-              value: /models/.fs2/runtime/c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.173.02-sm103/torch-extensions
+              value: /models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/deployment-profile-abi-v1/torch-extensions
             - name: TORCHINDUCTOR_CACHE_DIR
-              value: /models/.fs2/runtime/c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.173.02-sm103/torchinductor
+              value: /models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/deployment-profile-abi-v1/torchinductor
             - name: TRITON_CACHE_DIR
-              value: /models/.fs2/runtime/c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.173.02-sm103/triton
+              value: /models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/deployment-profile-abi-v1/triton
             - name: XDG_CACHE_HOME
-              value: /models/.fs2/runtime/c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.173.02-sm103/xdg
+              value: /models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/deployment-profile-abi-v1/xdg
           ports:
             - name: http
               containerPort: 8000

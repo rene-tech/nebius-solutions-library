@@ -271,6 +271,37 @@ run "deployment_runtime_settings_reach_gpu_requests_and_cache_paths" {
   }
 }
 
+run "regional_mirrors_select_exact_upstream_runtime_records" {
+  command = plan
+  variables {
+    enabled_model_ids = ["molmim", "genmol"]
+    model_express     = merge(var.model_express, { enabled = false, models = {} })
+    model_image_overrides = {
+      molmim = "registry.other-region.example/models/molmim@sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958"
+      genmol = "registry.other-region.example/models/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf"
+    }
+    model_pool_overrides = {
+      molmim = "nebius-b300-preemptible-1x"
+      genmol = "nebius-b300-preemptible-1x"
+    }
+    model_controller = merge(var.model_controller, { bootstrap_model_ids = [] })
+  }
+  # The exact runtime is selected, but an H100 result must not qualify this
+  # B300 fixture pool. The controller must refuse to deploy it there.
+  plan_options { target = [terraform_data.model_controller_contract] }
+  expect_failures = [terraform_data.model_controller_contract]
+  assert {
+    condition = (
+      toset(keys(local.deployment_runtime_records)) == toset(["molmim", "genmol"]) &&
+      local.catalog_models["genmol"].model.source.repository == "nvidia/NV-GenMol-89M-v2" &&
+      local.inventory.routes["molmim"].variant_id == "molmim-exact-weights-portable" &&
+      local.model_controller_qualification_checks["genmol"].retained_runtime &&
+      local.model_controller_qualification_checks["molmim"].artifact_manifest
+    )
+    error_message = "A mirror of the selected digest must carry the exact upstream source and weights through discovery and controller publication, without changing archival NIM records."
+  }
+}
+
 run "completed_handoff_does_not_repeat_for_new_templates" {
   command = plan
   variables {
@@ -306,7 +337,7 @@ run "public_acceptance_is_measured_after_runtime_deployment" {
   assert {
     condition = (
       local.model_controller_required_runtime_states == toset([
-        "registered", "route_active", "runtime_ready", "semantic_qualified",
+        "registered", "runtime_ready", "semantic_qualified",
       ]) &&
       local.model_controller_qualification_checks["qwen3-8b"].retained_runtime &&
       local.model_controller_qualification_checks["qwen3-8b"].artifact_manifest &&

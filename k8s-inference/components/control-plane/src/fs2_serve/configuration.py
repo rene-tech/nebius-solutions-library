@@ -238,7 +238,9 @@ class StaticCatalogConfigurationAdapter:
         return issues
 
 
-def catalog_configuration_contracts(catalog: Catalog) -> dict[str, CatalogModelContract]:
+def catalog_configuration_contracts(
+    catalog: Catalog, *, deployment_runtime_entries: Mapping[str, Mapping[str, Any]] | None = None,
+) -> dict[str, CatalogModelContract]:
     """Project exact model/acquisition/semantic identities from the canonical loader."""
 
     contracts: dict[str, CatalogModelContract] = {}
@@ -275,6 +277,15 @@ def catalog_configuration_contracts(catalog: Catalog) -> dict[str, CatalogModelC
             model_revision=str(value["model"]["source"]["revision"]),
             supported_accelerator_classes=frozenset(classes),
         )
+    if deployment_runtime_entries:
+        from .deployment_runtimes import deployment_runtime_configuration_identity
+
+        for model_id, entry in deployment_runtime_entries.items():
+            if model_id not in catalog.records or entry["model_id"] != model_id:
+                raise ValueError("selected deployment configuration identity is not in canonical catalog")
+            fields = deployment_runtime_configuration_identity(entry)
+            fields["supported_accelerator_classes"] = frozenset(fields["supported_accelerator_classes"])
+            contracts[model_id] = CatalogModelContract(**fields)
     return contracts
 
 

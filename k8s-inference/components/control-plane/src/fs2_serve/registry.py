@@ -21,6 +21,7 @@ from fs2_serve_catalog.consumer import (
 from fs2_serve_catalog.loader import CatalogError, load_catalog
 from fs2_serve_catalog.variant_promotions import VariantGatewayCatalog, load_variant_gateway_catalog
 
+from .deployment_runtimes import bind_deployment_runtimes
 from .dynamic_routes import (
     BoundDynamicRoutes,
     DynamicDispatchSnapshot,
@@ -171,6 +172,7 @@ class Registry:
         bindings_file: Path
         variant_promotions_file: Path | None
         lean_routes_file: Path | None
+        deployment_runtime_records_file: Path | None
         repo_root: Path | None
         evidence_root: Path | None
         max_attempts: int
@@ -317,6 +319,7 @@ class Registry:
         bindings_file: Path,
         variant_promotions_file: Path | None,
         lean_routes_file: Path | None,
+        deployment_runtime_records_file: Path | None,
         repo_root: Path | None,
         evidence_root: Path | None,
         trusted_attestors: Mapping[str, str] | None,
@@ -350,6 +353,8 @@ class Registry:
         lean_model_ids: frozenset[str] = frozenset()
         if lean_routes_file is not None:
             gateway, lean_model_ids = bind_lean_routes(gateway, lean_routes_file, catalog=catalog)
+        gateway = bind_deployment_runtimes(gateway, catalog, bindings,
+            deployment_runtime_records_file, catalog_dir=catalog_dir)
         models = cls._models_from_gateway(
             gateway,
             max_attempts=max_attempts,
@@ -377,6 +382,7 @@ class Registry:
         evidence_root: Path | None,
         variant_promotions_file: Path | None = None,
         lean_routes_file: Path | None = None,
+        deployment_runtime_records_file: Path | None = None,
         max_attempts: int,
         max_gpu_seconds_per_attempt: float,
         retry_base_seconds: float,
@@ -397,6 +403,8 @@ class Registry:
             bindings_file=Path(bindings_file),
             variant_promotions_file=None if variant_promotions_file is None else Path(variant_promotions_file),
             lean_routes_file=None if lean_routes_file is None else Path(lean_routes_file),
+            deployment_runtime_records_file=(None if deployment_runtime_records_file is None
+                else Path(deployment_runtime_records_file)),
             repo_root=repo_root,
             evidence_root=evidence_root,
             max_attempts=max_attempts,
@@ -411,6 +419,7 @@ class Registry:
                 bindings_file=Path(bindings_file),
                 variant_promotions_file=source.variant_promotions_file,
                 lean_routes_file=source.lean_routes_file,
+                deployment_runtime_records_file=source.deployment_runtime_records_file,
                 repo_root=repo_root,
                 evidence_root=evidence_root,
                 trusted_attestors=trusted_attestors_loader(),
@@ -610,6 +619,7 @@ class Registry:
                 bindings_file=source.bindings_file,
                 variant_promotions_file=source.variant_promotions_file,
                 lean_routes_file=source.lean_routes_file,
+                deployment_runtime_records_file=source.deployment_runtime_records_file,
                 repo_root=source.repo_root,
                 evidence_root=source.evidence_root,
                 trusted_attestors=source.trusted_attestors_loader(),

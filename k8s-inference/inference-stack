@@ -856,6 +856,35 @@ def _admin_catalog() -> Any:
             sys.path.remove(catalog_path)
 
 
+def selected_deployment_runtimes(model_images: Mapping[str, str]) -> dict[str, Any]:
+    """Select exact runtime digests, independently of a mirror's registry region."""
+    selected: dict[str, Any] = {}
+    for path in sorted((CATALOG_ROOT / "deployment-runtimes").glob("*.json")):
+        entry = json.loads(path.read_text(encoding="utf-8"))
+        model_id = entry["model_id"]
+        image = model_images.get(model_id)
+        if image is None or image.rsplit("@", 1)[-1] != entry["record"]["runtime"]["image"]["digest"]:
+            continue
+        if model_id in selected:
+            raise DeploymentError(f"model {model_id!r} has ambiguous deployment runtime records")
+        selected[model_id] = entry
+    return selected
+
+
+def deployment_runtime_configuration_identities(entries: Mapping[str, Any]) -> dict[str, Any]:
+    """Use the control plane's exact artifact identities for the admin baseline."""
+    paths = [str(CATALOG_ROOT), str(SOLUTION_ROOT / "components/control-plane/src")]
+    added = [path for path in paths if path not in sys.path]
+    sys.path[:0] = added
+    try:
+        from fs2_serve.deployment_runtimes import deployment_runtime_configuration_identity
+
+        return {model_id: deployment_runtime_configuration_identity(entry) for model_id, entry in entries.items()}
+    finally:
+        for path in added:
+            sys.path.remove(path)
+
+
 def _admin_pool_ids(
     contract: Mapping[str, Any],
     workloads: Mapping[str, Any],
@@ -995,6 +1024,10 @@ def derived_admin_configuration(
 
     model_images = workloads.get("model_image_overrides", {})
     selected_model_ids = contract.get("selected_model_ids", [])
+    deployment_runtimes = selected_deployment_runtimes({
+        model_id: model_images[model_id] for model_id in selected_model_ids if model_id in model_images
+    })
+    deployment_identities = deployment_runtime_configuration_identities(deployment_runtimes) if deployment_runtimes else {}
     scaling = {
         model_id: _admin_scaling(workloads, model_id) for model_id in selected_model_ids
     }
@@ -1008,7 +1041,11 @@ def derived_admin_configuration(
             raise DeploymentError(
                 f"model {model_id!r} lacks canonical admin configuration identities"
             )
-        value = catalog.records[model_id].to_dict()
+        value = (
+            deployment_runtimes[model_id]["record"]
+            if model_id in deployment_runtimes
+            else catalog.records[model_id].to_dict()
+        )
         route = routes.get(model_id)
         image_reference = model_images.get(model_id)
         if not isinstance(route, Mapping) or not isinstance(image_reference, str):
@@ -1093,6 +1130,14 @@ def derived_admin_configuration(
                 ].digest,
             },
         }
+        if model_id in deployment_identities:
+            identity = deployment_identities[model_id]
+            models[model_id]["artifact"].update({
+                key: identity[key] for key in (
+                    "model_revision", "artifact_manifest_sha256", "acquisition_contract_sha256",
+                    "provenance_sha256", "semantic_health_contract_sha256",
+                )
+            })
 
     configuration = {
         "schema_version": "fs2.admin-configuration/v1",

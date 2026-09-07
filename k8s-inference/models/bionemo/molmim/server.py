@@ -1,9 +1,9 @@
-"""Blackwell-native PyTorch port for the exact retained MolMIM 70M weights.
+"""GPU-portable PyTorch runtime for the exact retained MolMIM 70M weights.
 
-The original NIM profile is incompatible with SM103. This runtime reads the
-same `.nemo` state dictionary and implements its legacy Megatron attention
-graph with stock PyTorch CUDA 13 operations. Numerical parity with the NIM is
-not claimed; model identity and checkpoint bytes are retained.
+The retained NIM profile is tied to an obsolete software stack. This runtime
+reads the same `.nemo` state dictionary and implements its legacy Megatron
+attention graph with stock PyTorch CUDA operations. Numerical parity with the
+NIM is not claimed; model identity and checkpoint bytes are retained.
 """
 
 from __future__ import annotations
@@ -265,6 +265,7 @@ class Runtime:
     requests = 0
     failures = 0
     generated = 0
+    compute_capability = "unknown"
     lock = asyncio.Lock()
 
 
@@ -275,8 +276,10 @@ def _load_runtime() -> None:
     started = time.monotonic()
     if _sha256(NEMO_PATH) != NEMO_SHA256:
         raise RuntimeError("MolMIM .nemo digest mismatch")
-    if not torch.cuda.is_available() or torch.cuda.get_device_capability(0) != (10, 3):
-        raise RuntimeError("MolMIM Blackwell port requires a B300 SM103 GPU")
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is required")
+    capability = torch.cuda.get_device_capability(0)
+    RUNTIME.compute_capability = f"{capability[0]}.{capability[1]}"
     with tarfile.open(NEMO_PATH, mode="r") as archive:
         weights_member = archive.getmember("./model_weights.ckpt")
         weights_source = archive.extractfile(weights_member)
@@ -319,7 +322,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="FS2 MolMIM Blackwell port", version=SOURCE_REVISION[:12], lifespan=lifespan)
+app = FastAPI(title="FS2 MolMIM portable CUDA port", version=SOURCE_REVISION[:12], lifespan=lifespan)
 
 
 def _similarity(first: Chem.Mol, second: Chem.Mol) -> float:
@@ -394,7 +397,7 @@ def ready() -> dict[str, Any]:
         "weights_sha256": WEIGHTS_SHA256,
         "runtime_relationship": "exact-weights-independent-blackwell-port",
         "nim_numerical_parity": "unverified",
-        "compute_capability": "10.3",
+        "compute_capability": RUNTIME.compute_capability,
         "startup_seconds": round(RUNTIME.startup_seconds, 6),
     }
 

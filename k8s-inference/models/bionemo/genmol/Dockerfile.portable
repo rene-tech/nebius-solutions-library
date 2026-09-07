@@ -1,0 +1,7 @@
+# syntax=docker/dockerfile:1
+ARG BASE_IMAGE=cr.us-north1.nebius.cloud/u02h8n46vy0k5cqhyx/fs2-models/genmol-blackwell@sha256:c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f
+FROM ${BASE_IMAGE}
+
+LABEL ai.nebius.fs2.runtime-portability="dynamic-cuda-capability"
+
+COPY k8s-inference/models/bionemo/genmol/server.py /opt/fs2/server.py

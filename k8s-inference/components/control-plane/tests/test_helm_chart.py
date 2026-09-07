@@ -641,6 +641,22 @@ def test_lean_routes_mount_is_explicit_and_read_only() -> None:
     assert evidence == {"name": "evidence", "emptyDir": {}}
 
 
+def test_selected_deployment_runtimes_share_the_read_only_route_mount() -> None:
+    documents = render(
+        "--set", "catalog.leanRoutes.enabled=true",
+        "--set", "catalog.leanRoutes.deploymentRuntimes=true",
+        "--set", "catalog.delivery=image",
+    )
+    pod = gateway_deployment(documents)["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    env = {item["name"]: item.get("value") for item in container["env"]}
+    assert env["FS2_DEPLOYMENT_RUNTIME_RECORDS_FILE"] == "/etc/fs2-serve/lean-routes/deployment-runtimes.json"
+    volume = next(item for item in pod["volumes"] if item["name"] == "lean-routes")
+    assert {"key": "deployment-runtimes.json", "path": "deployment-runtimes.json"} in volume["configMap"]["items"]
+    mount = next(item for item in container["volumeMounts"] if item["name"] == "lean-routes")
+    assert mount["readOnly"] is True
+
+
 def test_offline_entrypoint_supplies_every_required_nonplaceholder_chart_value() -> None:
     source = (CONTROL_ROOT / "scripts" / "test.sh").read_text()
     for value in (

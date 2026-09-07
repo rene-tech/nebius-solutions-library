@@ -1,0 +1,7 @@
+# syntax=docker/dockerfile:1
+ARG BASE_IMAGE=cr.us-north1.nebius.cloud/u02h8n46vy0k5cqhyx/fs2-models/molmim-blackwell@sha256:b51c758f2785accb2121db2dd322f81ed6ebb6142bd7a9988714867c5fe51641
+FROM ${BASE_IMAGE}
+
+LABEL ai.nebius.fs2.runtime-portability="dynamic-cuda-capability"
+
+COPY k8s-inference/models/bionemo/molmim/server.py /opt/fs2/server.py

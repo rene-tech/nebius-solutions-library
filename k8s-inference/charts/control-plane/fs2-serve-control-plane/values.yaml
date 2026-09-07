@@ -267,6 +267,7 @@ catalog:
     enabled: false
     configMapName: fs2-serve-lean-routes
     key: lean-routes.json
+    deploymentRuntimes: false
 
 federation:
   secretName: fs2-serve-federation

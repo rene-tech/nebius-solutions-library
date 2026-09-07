@@ -1,4 +1,4 @@
-"""B300-capable HTTP adapter for the public GenMol v2 implementation."""
+"""GPU-portable HTTP adapter for the public GenMol v2 implementation."""
 
 from __future__ import annotations
 
@@ -60,6 +60,7 @@ class Runtime:
     requests = 0
     failures = 0
     generated = 0
+    compute_capability = "unknown"
     lock = asyncio.Lock()
 
 
@@ -103,8 +104,7 @@ def _load_runtime() -> None:
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required")
     capability = torch.cuda.get_device_capability(0)
-    if capability != (10, 3):
-        raise RuntimeError(f"expected B300 compute capability 10.3, got {capability}")
+    RUNTIME.compute_capability = f"{capability[0]}.{capability[1]}"
 
     from genmol.sampler import Sampler
 
@@ -146,7 +146,7 @@ def ready() -> dict[str, Any]:
         "source_revision": SOURCE_REVISION,
         "model_revision": MODEL_REVISION,
         "model_sha256": MODEL_SHA256,
-        "compute_capability": "10.3",
+        "compute_capability": RUNTIME.compute_capability,
         "startup_seconds": round(RUNTIME.startup_seconds, 6),
     }
 

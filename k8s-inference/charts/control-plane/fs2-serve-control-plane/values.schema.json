@@ -1062,6 +1062,9 @@
             },
             "key": {
               "const": "lean-routes.json"
+            },
+            "deploymentRuntimes": {
+              "type": "boolean"
             }
           },
           "additionalProperties": false

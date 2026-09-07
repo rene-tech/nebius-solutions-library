@@ -15,12 +15,12 @@ metadata:
     app.kubernetes.io/instance: molmim-b300
     fs2-serve.nebius.ai/model-id: molmim
   annotations:
-    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
     fs2.nebius/model-content-digest: sha256:10522c9db6018c355313f9f01a0edea2b021ddc0a5a22ae4540cbf5bdafbd1f5
-    fs2.nebius/runtime-image-digest: sha256:b51c758f2785accb2121db2dd322f81ed6ebb6142bd7a9988714867c5fe51641
+    fs2.nebius/runtime-image-digest: sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958
     fs2-serve.nebius.ai/source-revision: 9ba9b2c337917fc815ffbd5d99f78d9db7904493
     fs2-serve.nebius.ai/nemo-sha256: 10522c9db6018c355313f9f01a0edea2b021ddc0a5a22ae4540cbf5bdafbd1f5
-    fs2-serve.nebius.ai/runtime-relationship: exact-weights-independent-blackwell-port
+    fs2-serve.nebius.ai/runtime-relationship: exact-weights-independent-portable-runtime
 spec:
   replicas: 1
   strategy:
@@ -37,9 +37,9 @@ spec:
         app.kubernetes.io/part-of: fs2-serve
         fs2-serve.nebius.ai/model-id: molmim
       annotations:
-        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
         fs2.nebius/model-content-digest: sha256:10522c9db6018c355313f9f01a0edea2b021ddc0a5a22ae4540cbf5bdafbd1f5
-        fs2.nebius/runtime-image-digest: sha256:b51c758f2785accb2121db2dd322f81ed6ebb6142bd7a9988714867c5fe51641
+        fs2.nebius/runtime-image-digest: sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958
         prometheus.io/scrape: "true"
         prometheus.io/port: "8000"
         prometheus.io/path: /metrics
@@ -58,20 +58,9 @@ spec:
           operator: Equal
           value: fs2-inference
           effect: NoSchedule
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: accelerator.fs2.nebius/class
-                    operator: In
-                    values: [nvidia-b300-sxm6-288gb]
-                  - key: capacity.fs2.nebius/pool
-                    operator: In
-                    values: [burst, burst-single]
       containers:
         - name: molmim
-          image: registry.example.invalid/k8s-inference/models/molmim-blackwell@sha256:b51c758f2785accb2121db2dd322f81ed6ebb6142bd7a9988714867c5fe51641
+          image: registry.example.invalid/k8s-inference/models/molmim-portable@sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

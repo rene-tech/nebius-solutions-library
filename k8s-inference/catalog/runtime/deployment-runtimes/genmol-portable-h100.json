@@ -1,0 +1,219 @@
+{
+  "schema": "fs2-serve.nebius.ai/deployment-runtime/v1",
+  "model_id": "genmol",
+  "variant_id": "nv-genmol-89m-v2-portable",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "genmol",
+      "display_name": "GenMol",
+      "family": "bionemo-nim",
+      "tested_lane": true,
+      "source": {
+        "kind": "huggingface",
+        "repository": "nvidia/NV-GenMol-89M-v2",
+        "revision": "2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80",
+        "license": {
+          "id": "NVIDIA-Open-Model-License",
+          "state": "verified",
+          "notes": "License recorded in exact revision-bound model card; SHA256 ed3806094032461a9306c65f10d5fcdb9f43027184fe00f0c93a2cc2f34993f6."
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "Public exact-revision upstream weight artifact."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "portable-h100-20260907",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf",
+        "digest": "sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf",
+        "state": "resolved"
+      },
+      "command": [
+        "python",
+        "-m",
+        "uvicorn",
+        "server:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 8000,
+      "memory_bytes": 51539607552,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-H100-SXM5-80GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/generate"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 900
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "generate-molecule"
+        ],
+        "license_enforced": true,
+        "non_clinical": false,
+        "commercial_use": "license-dependent"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "gated",
+          "gate": "fresh-pod-restore-with-original-semantic-output",
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "This exact H100 portable runtime has not completed a fresh-pod GPU restore test. Earlier B300 timing results remain historical and do not qualify or disqualify this runtime."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "fs2-serve-localizer",
+      "shared_path": "/mnt/fs2-serve-cache/models/genmol",
+      "local_path": "/var/lib/fs2-serve/cache/models/genmol",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "0864019efd4ef7e36beb80bf1a8372aa9fe050679c5c3dc9fb6c9ef3921c98b3",
+        "expanded_bytes": 1397023575,
+        "minimum_bytes": 1397023575,
+        "capacity_bound_bytes": 34359738368,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "two-distinct-valid-molecule-responses/v1",
+      "source_path": "nim-fast-start/faststart-v2/genmol-native/validate_genmol.py",
+      "source_sha256": "f85da2029aaa459d687983e5ebeec6c69dffb19a66f34c084409fe2ccc2efad4",
+      "fixture_path": "nim-fast-start/faststart-v2/genmol-native/fixtures/requests-qed-logp.json",
+      "fixture_sha256": "3065261de604f495a2fbae1e7fd92488546ee51f2729e5d40e9be5ee2c22f444",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": false,
+      "limitations": [
+        "Exact weights in an independently implemented runtime; NVIDIA NIM package/numerical parity is not claimed.",
+        "H100 runtime and distinct semantic requests passed; public route verification and optional snapshot qualification are tracked separately."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-historical",
+        "hardware": "NVIDIA H100 80GB HBM3",
+        "outcome": "conventional-fallback",
+        "source_commit": "7e3c84f1f7e5f3df4b04e17f9846d49b321f504b",
+        "summary": "The exact conventional NIM and molecule oracle are reusable."
+      },
+      {
+        "classification": "negative",
+        "hardware": "NVIDIA H100 80GB HBM3",
+        "outcome": "snapshot-rejected",
+        "source_commit": "bc4e152900168eac7e3dac7b376aaa12e362701b",
+        "summary": "The separately published snapshot bundle remained unqualified and lost to the conventional product boundary."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "7e3c84f1f7e5f3df4b04e17f9846d49b321f504b",
+        "tree": "d34e55849c14507e13811f685ca45322d6fe09ae",
+        "path": "nim-fast-start/faststart-v2/conventional-baselines/catalog.json",
+        "classification": "measured-handoff"
+      },
+      {
+        "commit": "bc4e152900168eac7e3dac7b376aaa12e362701b",
+        "tree": "3e0b4ca2d51d9dfdcc5b01c83bc5373485b4317c",
+        "path": "nim-fast-start/faststart-v2/bio_nims_snapshots/artifact-inventory.json",
+        "classification": "negative-evidence"
+      }
+    ]
+  },
+  "qualification": {
+    "active_runtime": {
+      "model_revision": "2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80",
+      "runtime_image_digest": "sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf",
+      "service": {
+        "name": "genmol",
+        "namespace": "fs2-models",
+        "port": 8000
+      }
+    },
+    "evidence": {
+      "audited_catalog_sha256": "e00b3acda36808f529dc32ec0db59041d7a716a0122e0fb7573dd217ccf9b694",
+      "audited_live_routes_sha256": null,
+      "cold_start_acceptance_sha256": "86cd059cfcd81876b3ad68d73b859a615d9864f982afae6bd33dcc4f27087c3a",
+      "elasticity_acceptance_sha256": null,
+      "http_mcp_acceptance_sha256": null,
+      "mcp_discovery_sha256": null,
+      "model_discovery_sha256": null,
+      "retained_deployments_sha256": "86cd059cfcd81876b3ad68d73b859a615d9864f982afae6bd33dcc4f27087c3a"
+    },
+    "model_id": "genmol",
+    "policy": {
+      "license_id": "NVIDIA-Open-Model-License",
+      "non_clinical": false,
+      "commercial_use": "license-dependent"
+    },
+    "runtime_origin": {
+      "kind": "independent-runtime",
+      "variant_id": "nv-genmol-89m-v2-portable",
+      "source_kind": "huggingface",
+      "repository": "nvidia/NV-GenMol-89M-v2",
+      "relationship": "exact-model",
+      "nim_artifact_parity": "unverified"
+    },
+    "states": {
+      "registered": true,
+      "route_active": false,
+      "runtime_ready": true,
+      "semantic_qualified": true,
+      "http_mcp_qualified": false,
+      "cold_start_qualified": true,
+      "elasticity_qualified": false
+    },
+    "variant_id": "nv-genmol-89m-v2-portable"
+  }
+}

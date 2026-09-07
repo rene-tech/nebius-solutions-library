@@ -3085,9 +3085,9 @@ class DeploymentContractTests(unittest.TestCase):
             locals_source,
         )
         self.assertIn("data = local.lean_routes_config_map_data", catalog_source)
-        self.assertIn(
-            "configMapName = kubernetes_config_map_v1.lean_routes.metadata[0].name",
+        self.assertRegex(
             control_plane_source,
+            r"configMapName\s*=\s*kubernetes_config_map_v1\.lean_routes\.metadata\[0\]\.name",
         )
 
     def test_h100_cosmos_and_qwen_open_the_exact_distinct_runtime_ports(self) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.machinery
 import importlib.util
+import hashlib
 import io
 import json
 import os
@@ -548,6 +549,19 @@ class InferenceStackTests(unittest.TestCase):
             workloads["admin_configuration_sha256"],
             STACK.canonical_sha256(baseline),
         )
+
+    def test_deployment_runtime_identity_follows_the_digest_across_regional_mirrors(self) -> None:
+        candidate = json.loads((DEPLOY_ROOT / "catalog/runtime/deployment-runtimes/genmol-portable-h100.json").read_text())
+        digest = candidate["record"]["runtime"]["image"]["digest"]
+        selected = STACK.selected_deployment_runtimes({"genmol": f"registry.other-region.example/models/genmol@{digest}"})
+        self.assertEqual(selected, {"genmol": candidate})
+        identity = STACK.deployment_runtime_configuration_identities(selected)["genmol"]
+        self.assertEqual(identity["model_revision"], candidate["record"]["model"]["source"]["revision"])
+        self.assertEqual(identity["artifact_manifest_sha256"], candidate["record"]["cache"]["artifact"]["manifest_digest"])
+        canonical_record = json.dumps(candidate["record"], sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode() + b"\n"
+        self.assertEqual(identity["provenance_sha256"], hashlib.sha256(canonical_record).hexdigest())
+        self.assertNotEqual(identity["acquisition_contract_sha256"], STACK.canonical_sha256(STACK._admin_catalog().acquisition_plans["genmol"].to_dict()))
+        self.assertEqual(STACK.selected_deployment_runtimes({"genmol": f"registry.example/models/genmol@sha256:{'0' * 64}"}), {})
 
     def test_public_grafana_origin_and_allowlist_come_from_infrastructure(self) -> None:
         with tempfile.TemporaryDirectory(

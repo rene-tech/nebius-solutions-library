@@ -654,7 +654,6 @@ locals {
   ))
   model_controller_required_runtime_states = toset([
     "registered",
-    "route_active",
     "runtime_ready",
     "semantic_qualified",
   ])
