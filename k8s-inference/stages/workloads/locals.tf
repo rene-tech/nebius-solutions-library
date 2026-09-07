@@ -190,6 +190,25 @@ locals {
     )
   }
   cpu_runtime_model_ids = toset(keys(local.cpu_deployment_runtime_records))
+  # Kubernetes parses resource.Quantity values and returns their canonical
+  # representation to the provider. Render that representation up front so a
+  # successful apply cannot end in a false post-write diff (for example,
+  # 8000m -> 8 or 8589934592 -> 8Gi).
+  cpu_runtime_limit_quantities = {
+    for model_id, candidate in local.cpu_deployment_runtime_records : model_id => {
+      cpu = candidate.record.resources.cpu_millis % 1000 == 0 ? format(
+        "%.0f",
+        candidate.record.resources.cpu_millis / 1000,
+      ) : format("%.0fm", candidate.record.resources.cpu_millis)
+      memory = candidate.record.resources.memory_bytes % 1073741824 == 0 ? format(
+        "%.0fGi",
+        candidate.record.resources.memory_bytes / 1073741824,
+        ) : candidate.record.resources.memory_bytes % 1048576 == 0 ? format(
+        "%.0fMi",
+        candidate.record.resources.memory_bytes / 1048576,
+      ) : tostring(candidate.record.resources.memory_bytes)
+    }
+  }
   accelerator_model_ids = sort(tolist(setsubtract(
     toset(local.selected_model_ids),
     local.cpu_runtime_model_ids,
@@ -484,8 +503,8 @@ locals {
                           command = local.cpu_deployment_runtime_records[document.model_id].record.runtime.command
                           resources = merge(container.resources, {
                             limits = merge(container.resources.limits, {
-                              cpu    = "${local.cpu_deployment_runtime_records[document.model_id].record.resources.cpu_millis}m"
-                              memory = tostring(local.cpu_deployment_runtime_records[document.model_id].record.resources.memory_bytes)
+                              cpu    = local.cpu_runtime_limit_quantities[document.model_id].cpu
+                              memory = local.cpu_runtime_limit_quantities[document.model_id].memory
                             })
                           })
                         }) : jsonencode({})),
@@ -677,8 +696,8 @@ locals {
         container.command == candidate.record.runtime.command &&
         !contains(keys(container.resources.requests), "nvidia.com/gpu") &&
         !contains(keys(container.resources.limits), "nvidia.com/gpu") &&
-        container.resources.limits.cpu == "${candidate.record.resources.cpu_millis}m" &&
-        container.resources.limits.memory == tostring(candidate.record.resources.memory_bytes) &&
+        container.resources.limits.cpu == local.cpu_runtime_limit_quantities[model_id].cpu &&
+        container.resources.limits.memory == local.cpu_runtime_limit_quantities[model_id].memory &&
         container.readinessProbe.httpGet.path == candidate.record.interface.readiness.path &&
         container.readinessProbe.httpGet.port == "http"
         ]

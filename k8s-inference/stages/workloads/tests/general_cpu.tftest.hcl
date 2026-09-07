@@ -453,6 +453,8 @@ run "an_exact_cpu_runtime_renders_one_static_service_without_a_gpu" {
       terraform_data.cpu_model_runtime_contract["msa-search-pdb70"].input.deployment.spec.replicas == 1 &&
       terraform_data.cpu_model_runtime_contract["msa-search-pdb70"].input.deployment.spec.template.spec.nodeSelector["capacity.fs2.nebius/pool-id"] == "general-cpu-8x" &&
       terraform_data.cpu_model_runtime_contract["msa-search-pdb70"].input.deployment.spec.template.spec.containers[0].image == var.model_image_overrides["msa-search-pdb70"] &&
+      terraform_data.cpu_model_runtime_contract["msa-search-pdb70"].input.deployment.spec.template.spec.containers[0].resources.limits.cpu == "8" &&
+      terraform_data.cpu_model_runtime_contract["msa-search-pdb70"].input.deployment.spec.template.spec.containers[0].resources.limits.memory == "8Gi" &&
       !contains(keys(terraform_data.cpu_model_runtime_contract["msa-search-pdb70"].input.deployment.spec.template.spec.containers[0].resources.limits), "nvidia.com/gpu")
     )
     error_message = "The CPU runtime must stay static, digest pinned, GPU-free, and pinned to the exact general CPU pool."
