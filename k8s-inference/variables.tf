@@ -192,7 +192,9 @@ variable "deployment" {
       # Qualified serving checkpoints are optional; select one per model in
       # the admin console. A shared cache can also serve scientific batches.
       gpu_snapshots = optional(object({
-        bundles      = optional(map(any), {})
+        # Preserve model-specific JSON shapes; map(any) requires a common
+        # element type and rejects different captured argv/source structures.
+        bundles      = optional(any, {})
         bundle_files = optional(set(string), [])
         cache = optional(object({
           claim_name         = optional(string, "fs2-serving-gpu-snapshots")
@@ -584,7 +586,9 @@ variable "deployment" {
       # Optional qualified GPU checkpoint bundles. Normal loading remains the
       # default; operators select a bundle per stage in the admin console.
       gpu_snapshots = optional(object({
-        bundles      = optional(map(any), {})
+        # Bundle schemas are validated by the scientific runtime registry.
+        # Their model-specific JSON must not be coerced to one map element type.
+        bundles      = optional(any, {})
         bundle_files = optional(set(string), [])
         cache = optional(object({
           claim_name         = optional(string, "fs2-scientific-gpu-snapshots")
@@ -685,6 +689,14 @@ variable "deployment" {
   })
 
   nullable = false
+
+  validation {
+    condition = (
+      can(keys(var.deployment.dynamic_models.gpu_snapshots.bundles)) &&
+      can(keys(var.deployment.scientific_batch.gpu_snapshots.bundles))
+    )
+    error_message = "GPU snapshot bundles must be JSON objects keyed by bundle ID; model-specific bundle values retain their original schema."
+  }
 
   validation {
     condition     = var.deployment.schema_version == 1

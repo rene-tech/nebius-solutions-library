@@ -9,7 +9,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize("model", ["qwen3-8b", "cosmos3-nano"])
+@pytest.mark.parametrize("model", ["qwen3-8b", "cosmos3-nano", "genmol"])
 def test_serving_snapshot_sources_are_the_exact_qualified_bytes(model):
     bundle = json.loads((ROOT / f"acceptance/h100-fleet/snapshots/{model}-bundle.json").read_text())
     sources = ROOT / "models/scientific-snapshot"

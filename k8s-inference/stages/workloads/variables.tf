@@ -366,7 +366,8 @@ variable "scientific_batch" {
       models = []
     })
     gpu_snapshots = optional(object({
-      bundles = optional(map(any), {})
+      # Model-specific argv/source metadata have heterogeneous JSON shapes.
+      bundles = optional(any, {})
       cache = optional(object({
         claim_name         = optional(string, "fs2-scientific-gpu-snapshots")
         storage_class_name = optional(string, "csi-mounted-fs-path-sc")
@@ -389,6 +390,11 @@ variable "scientific_batch" {
       can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.scientific_batch.namespace))
     )
     error_message = "scientific_batch writes and runtime cache require scientific_batch.enabled and a DNS-label namespace."
+  }
+
+  validation {
+    condition     = can(keys(var.scientific_batch.gpu_snapshots.bundles))
+    error_message = "scientific_batch.gpu_snapshots.bundles must be a JSON object keyed by bundle ID."
   }
 
   validation {
@@ -925,7 +931,8 @@ variable "model_controller" {
     # Not a customer switch: initial legacy migration still uses its receipt.
     existing_controller_ownership = optional(bool, false)
     gpu_snapshots = optional(object({
-      bundles = optional(map(any), {})
+      # Preserve different captured argv/source structures without coercion.
+      bundles = optional(any, {})
       cache = optional(object({
         claim_name         = optional(string, "fs2-serving-gpu-snapshots")
         storage_class_name = optional(string, "csi-mounted-fs-path-sc")
@@ -1016,6 +1023,11 @@ variable "model_controller" {
       false,
     )
     error_message = "model_controller must preserve one owner; controller mode requires writes, KEDA, a valid bootstrap/handoff; fast-start evidence, qualification, measurement, and mechanism contracts must be readable JSON at absolute paths; and bounded economic inputs must be valid."
+  }
+
+  validation {
+    condition     = can(keys(var.model_controller.gpu_snapshots.bundles))
+    error_message = "model_controller.gpu_snapshots.bundles must be a JSON object keyed by bundle ID."
   }
 }
 
