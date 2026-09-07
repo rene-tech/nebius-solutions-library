@@ -451,6 +451,17 @@ class ScientificCapabilities(StrictModel):
 MAX_SCIENTIFIC_ACTIVE_RUNS = 64
 
 
+class ScientificStageStartupPolicy(StrictModel):
+    backend: Literal["normal-load", "cuda-criu"] = "normal-load"
+    bundle_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def bundle_matches_backend(self) -> ScientificStageStartupPolicy:
+        if (self.backend == "cuda-criu") != (self.bundle_id is not None):
+            raise ValueError("CUDA restore requires a registered bundle; normal loading does not use one")
+        return self
+
+
 class ScientificModelPolicySetting(StrictModel):
     """One durable scope row of the dispatch policy.
 
@@ -462,6 +473,7 @@ class ScientificModelPolicySetting(StrictModel):
     revision: int = Field(ge=0)
     paused: bool = False
     max_active_runs: int | None = Field(default=None, ge=1, le=MAX_SCIENTIFIC_ACTIVE_RUNS)
+    startup_policies: dict[str, ScientificStageStartupPolicy] = Field(default_factory=dict, max_length=32)
     reason: str | None = Field(default=None, min_length=1, max_length=300)
     updated_by: str | None = Field(default=None, min_length=1, max_length=200)
     updated_at: AwareDatetime | None = None
@@ -469,7 +481,7 @@ class ScientificModelPolicySetting(StrictModel):
     @model_validator(mode="after")
     def absent_row_is_the_open_default(self) -> ScientificModelPolicySetting:
         if self.revision == 0:
-            if self.paused or self.max_active_runs is not None or self.reason is not None:
+            if self.paused or self.max_active_runs is not None or self.reason is not None or self.startup_policies:
                 raise ValueError("an absent scientific model policy cannot carry a constraint")
             if self.updated_by is not None or self.updated_at is not None:
                 raise ValueError("an absent scientific model policy has no author")
@@ -520,6 +532,7 @@ class ScientificModelPolicy(StrictModel):
     model_id: str = Field(min_length=1, max_length=128)
     scope_tenant_id: str | None = Field(default=None, min_length=1, max_length=120)
     catalog_known: bool
+    startup_options: dict[str, list[str]] = Field(default_factory=dict, max_length=32)
     desired: ScientificModelPolicySetting
     # The all-tenants row that also applies inside a tenant scope; absent for
     # the all-tenants scope itself.
@@ -551,6 +564,9 @@ class ScientificModelPolicyUpdate(StrictModel):
     expected_revision: int = Field(ge=0)
     paused: bool
     max_active_runs: int | None = Field(default=None, ge=1, le=MAX_SCIENTIFIC_ACTIVE_RUNS)
+    # An older client omitting this field preserves startup selection. An
+    # explicit empty map resets this scope to the inherited/default policy.
+    startup_policies: dict[str, ScientificStageStartupPolicy] | None = Field(default=None, max_length=32)
     reason: str | None = Field(default=None, min_length=1, max_length=300)
 
 

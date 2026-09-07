@@ -17,6 +17,8 @@ from pathlib import PurePosixPath
 from typing import TypedDict, TypeVar
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from .startup import StageStartupPolicy
+
 _NAME_RE = re.compile(r"^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$")
 _POOL_RE = re.compile(r"^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$")
 _RESOURCE_NAME_RE = re.compile(
@@ -942,6 +944,7 @@ class StageExecutionBinding:
     environment: tuple[tuple[str, str], ...]
     required_node_labels: tuple[tuple[str, str], ...]
     model_runtime_image_digest: str | None = None
+    startup_policy: StageStartupPolicy = StageStartupPolicy()
 
     def __post_init__(self) -> None:
         _check_name(self.stage_id, "stage execution binding ID")

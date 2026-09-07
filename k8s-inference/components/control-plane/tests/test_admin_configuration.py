@@ -127,6 +127,97 @@ def qualified_configuration() -> tuple[PlatformConfiguration, StaticCatalogConfi
     return configuration, StaticCatalogConfigurationAdapter(contracts)
 
 
+def cpu_runtime_configuration() -> tuple[PlatformConfiguration, StaticCatalogConfigurationAdapter]:
+    catalog = load_catalog(CATALOG_ROOT, repo_root=REPO_ROOT)
+    entry = json.loads((CATALOG_ROOT / "deployment-runtimes/msa-search-pdb70-portable-cpu.json").read_text())
+    contracts = catalog_configuration_contracts(catalog, deployment_runtime_entries={"msa-search-pdb70": entry})
+    contract = contracts["msa-search-pdb70"]
+    record = entry["record"]
+    pool_id = "batch-cpu"
+    configuration = PlatformConfiguration(
+        pools={
+            pool_id: AcceleratorPoolConfiguration(
+                resource_name="cpu",
+                accelerator_class="CPU",
+                capacity_type="regular",
+                accelerators_per_node=0,
+                min_nodes=1,
+                max_nodes=2,
+                node_selector={"workload.fs2.nebius/general-cpu": "true"},
+            )
+        },
+        models={
+            "msa-search-pdb70": ModelConfiguration(
+                model_id="msa-search-pdb70",
+                placement=PlacementConfiguration(pool_ids=[pool_id], accelerators=0, topology_policy="any"),
+                autoscaling=AutoscalingConfiguration(min_replicas=1, max_replicas=1),
+                queue=QueueConfiguration(local_queue="general-cpu", priority_class="default"),
+                snapshot=SnapshotConfiguration(),
+                mcp=McpConfiguration(),
+                rate=RateConfiguration(),
+                artifact=ArtifactIdentity(
+                    image_repository=record["runtime"]["image"]["reference"].split("@", 1)[0],
+                    image_digest=contract.runtime_image_digest,
+                    model_revision=contract.model_revision,
+                    artifact_manifest_sha256=contract.artifact_manifest_sha256,
+                    acquisition_contract_sha256=contract.acquisition_contract_sha256,
+                    provenance_sha256=contract.provenance_sha256,
+                    semantic_health_contract_sha256=contract.semantic_health_contract_sha256,
+                ),
+            )
+        },
+    )
+    return configuration, StaticCatalogConfigurationAdapter(contracts)
+
+
+@pytest.mark.asyncio
+async def test_exact_cpu_runtime_is_static_and_uses_no_fake_accelerator() -> None:
+    configuration, adapter = cpu_runtime_configuration()
+    validation = await ConfigurationService(
+        repository=InMemoryConfigurationRepository(configuration), catalog=adapter
+    ).validate_bootstrap(configuration)
+
+    assert validation.valid
+    assert validation.issues == []
+    assert configuration.pools["batch-cpu"].resource_name == "cpu"
+    assert configuration.pools["batch-cpu"].accelerators_per_node == 0
+    assert configuration.models["msa-search-pdb70"].placement.accelerators == 0
+
+
+def test_cpu_pool_and_placement_tuples_fail_closed() -> None:
+    configuration, _ = cpu_runtime_configuration()
+    pool = configuration.pools["batch-cpu"]
+    model = configuration.models["msa-search-pdb70"]
+
+    with pytest.raises(ValueError, match="CPU pools require"):
+        AcceleratorPoolConfiguration(
+            resource_name="nvidia.com/gpu",
+            accelerator_class="CPU",
+            capacity_type="regular",
+            accelerators_per_node=0,
+            min_nodes=1,
+            max_nodes=1,
+        )
+    with pytest.raises(ValueError, match="only CPU pools"):
+        PlatformConfiguration(
+            pools={"batch-cpu": pool},
+            models={
+                "msa-search-pdb70": model.model_copy(
+                    update={"placement": model.placement.model_copy(update={"accelerators": 1})}
+                )
+            },
+        )
+    with pytest.raises(ValueError, match="one static replica"):
+        PlatformConfiguration(
+            pools={"batch-cpu": pool},
+            models={
+                "msa-search-pdb70": model.model_copy(
+                    update={"autoscaling": model.autoscaling.model_copy(update={"min_replicas": 0})}
+                )
+            },
+        )
+
+
 def test_packaged_h100_receipt_is_the_existing_immutable_profile_evidence() -> None:
     from fs2_serve.configuration import _reviewed_runtime_qualification
 
@@ -142,9 +233,9 @@ async def test_exact_h100_runtime_receipt_removes_false_placement_warning() -> N
     initial, adapter = qualified_configuration()
     pool_id = next(iter(initial.pools))
     h100 = initial.model_copy(
-        update={"pools": {pool_id: initial.pools[pool_id].model_copy(
-            update={"accelerator_class": "nvidia-h100-sxm5-80gb"}
-        )}}
+        update={
+            "pools": {pool_id: initial.pools[pool_id].model_copy(update={"accelerator_class": "nvidia-h100-sxm5-80gb"})}
+        }
     )
     validation = await ConfigurationService(
         repository=InMemoryConfigurationRepository(h100), catalog=adapter
@@ -152,7 +243,8 @@ async def test_exact_h100_runtime_receipt_removes_false_placement_warning() -> N
     assert validation.valid
     assert "unsupported_accelerator_placement" not in {issue.code for issue in validation.issues}
     assert {
-        model_id for model_id, contract in adapter.contracts.items()
+        model_id
+        for model_id, contract in adapter.contracts.items()
         if "nvidia-h100-sxm5-80gb" in contract.supported_accelerator_classes
     } == {"qwen3-8b", "cosmos3-nano"}
 

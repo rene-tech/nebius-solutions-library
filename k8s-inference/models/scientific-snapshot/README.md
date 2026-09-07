@@ -1,6 +1,8 @@
 # Request-ready scientific process snapshots
 
-This is an isolated integration lane, **not a production-enabled runtime**.
+This directory contains optional, model-specific integration paths. A successful
+isolated proof does **not** by itself enable a production runtime: the exact
+bundle must be registered, deployed and exercised through the normal API.
 It complements (and does not replace) the scientific batch controller, Kueue,
 artifact verification, output collectors, or fast-start qualification policy.
 
@@ -22,7 +24,7 @@ request-dependent qualification, not just this server's name changed.
 
 `supervisor.py` accepts a runtime command and durable directory. It keeps PID 1
 alive across capture and reaps descendants. `process_checkpoint.py` handles
-single-process CUDA/CRIU ordering, timing receipts, failed-dump recovery, and
+single-process or initialized-CUDA descendant-cohort ordering, timing receipts, failed-dump recovery, and
 checkpoint-file durability. The runtime image, artifact mounts and checkpoint
 paths must match between donor and restore. This lane does not use host PID,
 host network, or writable host driver mounts.
@@ -154,3 +156,68 @@ strict restored execution and intentionally unavailable-checkpoint fallback,
 with a UID10001 reader validating command digest, confidence and CIF readability.
 This acceptance path must pass before promoting its image/profile; it does not
 publish snapshots into production reference data or add a customer UI toggle.
+
+## H100 fleet extensions, 7 September 2026
+
+The [fleet capability matrix](../../acceptance/h100-fleet/snapshots/capabilities.json)
+keeps an explicit entry for all expected models. Untested, incompatible and
+not-applicable are different states. Normal loading is always the default;
+small native loaders can be faster than restoring a process snapshot.
+
+### Protenix v2
+
+`protenix_server.py` initializes the exact immutable BF16 Protenix model without
+request inputs. Each execution uses the original upstream CLI and a fresh
+request configuration, input, seeds and result dumper. `scientific_server.py`
+serializes requests inside the one allocated GPU Pod. The optional
+`protenix_cli_proxy.py` redirects only this Pod's original CLI invocation; with
+no worker URL it invokes the normal upstream CLI.
+
+The [matched three-pair qualification](../../acceptance/h100-fleet/snapshots/protenix-v2-h100-20260907.md)
+passed both original scientific wrappers on distinct 42/76-residue inputs.
+Container→observed model-ready was 66.253s normal versus 3.757s restored;
+Pod-create request→ready was 70.558s versus 8.151s. These are existing-image,
+shared-filesystem-cache measurements, not disk-cold or reserved-RAM claims.
+The donor was deleted and cross-node H100 UUID remapping was also tested.
+
+The qualified bundle binds **exact bytes** of `supervisor.py`,
+`process_checkpoint.py`, `protenix_server.py` and `scientific_server.py`.
+Do not replace these ConfigMap contents with a later revision while retaining
+the old bundle: runtime source equality is part of restore compatibility.
+The [registry entry](../../acceptance/h100-fleet/snapshots/protenix-v2-bundle.json)
+and [read-only stage renderer](../../acceptance/h100-fleet/snapshots/render_scientific_restore.py)
+describe production integration. Terraform owns deployment resources; the
+controller freezes the selected startup policy with each admitted stage.
+
+### Qwen / Cosmos serving variants
+
+`serving_launcher.py` and the narrowly enabled `sitecustomize.py` use Python's
+standard asyncio loop instead of uvloop's CRIU-incompatible io_uring paths.
+Cosmos additionally uses PyTorch's documented `USE_LIBUV=0` TCPStore backend.
+These change CPU event-loop/store implementation, not model weights, GPU
+precision, inference steps or resource limits. They require their own paired
+normal/restore semantic qualification.
+
+`serving_checkpoint.py` first completes the existing CUDA + CRIU process-tree
+dump, then persists actual named container-local `/dev/shm` backing files.
+`serving_supervisor.py` restores those files before restoring the processes.
+Their bytes, ownership and modes are verified; large zero extents stay sparse
+so the original container shared-memory limit is not increased. Empty files
+are never fabricated to make CRIU proceed. FlashInfer's generated-code/log
+workspace is explicitly durable because it does not follow `XDG_CACHE_HOME`.
+All restore error lines are retained in Pod logs before emptyDir cleanup.
+
+Cosmos TCPStore connections need the pinned tools image's nft-backed iptables
+helper during CRIU restore. `iptables` uses only the disposable Pod's network
+namespace and private tools libraries; it does not modify host networking.
+Fresh serving restore qualification is still in progress; capture success alone
+does not make either model snapshot-selectable.
+
+### Mosaic
+
+The input-free bridge loads original Boltz2 and ProteinMPNN state, synchronizing
+437 JAX arrays before capture. JAX's documented platform allocator permits
+capture, but fresh-Pod CUDA restore fails with an OS-operation-not-supported
+error on the exact tested H100 runtime, even with the same GPU UUID and a
+successful CPU restore. Native Mosaic remains available; this result does not
+claim that all JAX versions or GPU families are incompatible.

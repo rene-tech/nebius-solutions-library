@@ -242,12 +242,15 @@ locals {
       schedulingContractSha256        = local.scheduling_contract_ref.sha256
       executionMapConfigMapName       = "fs2-${var.run_id}-scientific-execution"
       executionMapKey                 = "execution-map.json"
-      executionMap                    = var.scientific_batch.execution_map
-      workers                         = var.scientific_batch.workers
-      pollSeconds                     = var.scientific_batch.poll_seconds
-      leaseSeconds                    = var.scientific_batch.lease_seconds
-      apiTimeoutSeconds               = var.scientific_batch.api_timeout_seconds
-      tokenExpirationSeconds          = var.scientific_batch.token_expiration_seconds
+      executionMap = merge(var.scientific_batch.execution_map,
+        length(var.scientific_batch.gpu_snapshots.bundles) == 0 ? {} : {
+          snapshot_bundles = var.scientific_batch.gpu_snapshots.bundles
+      })
+      workers                = var.scientific_batch.workers
+      pollSeconds            = var.scientific_batch.poll_seconds
+      leaseSeconds           = var.scientific_batch.lease_seconds
+      apiTimeoutSeconds      = var.scientific_batch.api_timeout_seconds
+      tokenExpirationSeconds = var.scientific_batch.token_expiration_seconds
     }
   }
 

@@ -43,7 +43,26 @@ export function ModelInventoryPage() {
                   <td><span className="mini-chip">{item.availability}</span><span className="secondary-line">{item.reason}</span></td>
                   <td>{item.desired_replicas === null ? "—" : `${item.ready_replicas ?? "—"} / ${item.desired_replicas}`}<span className="secondary-line">ready / desired</span></td>
                   <td>{item.batch_readiness ?? "Not configured"}</td>
-                  <td>{item.gpu_snapshot}<span className="secondary-line">{item.snapshot_reason}</span></td>
+                  <td>
+                    {item.snapshot_selectable ? "Available as an option" : item.gpu_snapshot}
+                    <span className="secondary-line">{item.snapshot_reason}</span>
+                    {item.snapshot_evidence_scope ? <span className="secondary-line">Evidence: {item.snapshot_evidence_scope}</span> : null}
+                    {item.snapshot_normal_startup || item.snapshot_restore_startup ? (
+                      <details>
+                        <summary>Measured startup times</summary>
+                        {([
+                          ["Normal loading", item.snapshot_normal_startup],
+                          ["GPU restore", item.snapshot_restore_startup],
+                        ] as const).map(([label, timing]) => timing ? (
+                          <p key={label}>
+                            {label}: {timing.median_seconds.toFixed(2)}s median · n={timing.n}
+                            <span className="secondary-line">{timing.clock}</span>
+                            <span className="secondary-line">Cache: {timing.cache}</span>
+                          </p>
+                        ) : null)}
+                      </details>
+                    ) : null}
+                  </td>
                   <td>{item.management_path ? <Link className="resource-link" to={{ pathname: item.management_path, search: context.toString() }}>Manage</Link> : <Link className="resource-link" to={{ pathname: "/admin/model-deployments/new", search: context.toString() }}>Configure</Link>}</td>
                 </tr>
               ))}</tbody>

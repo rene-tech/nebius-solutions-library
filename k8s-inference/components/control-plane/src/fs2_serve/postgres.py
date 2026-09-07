@@ -2653,6 +2653,13 @@ class PostgresStore:
             # An idempotent client replay must not recreate an already
             # consumed outbox from today's policy or execution bindings.
             return
+        if operation.reused and await connection.fetchval(
+            "SELECT true FROM fs2_scientific_admission_outbox WHERE operation_id=$1 FOR SHARE",
+            operation.id,
+        ):
+            # Exact request-HMAC replay keeps the original accepted payload,
+            # including when a process stopped before batch materialization.
+            return
         payload = factory(operation)
         payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
         if len(payload_json.encode("utf-8")) > 4 * 1024 * 1024:

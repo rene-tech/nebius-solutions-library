@@ -22,6 +22,7 @@ from fs2_serve.scientific_admin import (
     ScientificAdminReadService,
     ScientificArtifactAttemptEvidence,
     ScientificArtifactSnapshot,
+    ScientificModelPolicyInvalidError,
     ScientificModelPolicySnapshot,
     ScientificModelPolicyStaleRevisionError,
     ScientificModelSnapshot,
@@ -839,6 +840,16 @@ async def test_set_policy_answers_stable_problems_for_unknown_model_stale_revisi
         )
     assert (stale.value.status_code, stale.value.code) == (409, "scientific_model_policy_stale")
     assert "current revision is 4" in stale.value.detail
+
+    class InvalidStartupPolicy(PolicyAdapter):
+        async def set_policy(self, *args, **kwargs):
+            raise ScientificModelPolicyInvalidError("snapshot bundle is not available for this stage")
+
+    with pytest.raises(AdminProblemError) as invalid:
+        await _service(policies=InvalidStartupPolicy()).set_policy(
+            _context(), "rfdiffusion", tenant_id=None, update=update, actor="op"
+        )
+    assert (invalid.value.status_code, invalid.value.code) == (422, "scientific_model_policy_invalid")
 
     with pytest.raises(AdminProblemError) as failing:
         await _service(policies=FailingPolicyAdapter()).set_policy(

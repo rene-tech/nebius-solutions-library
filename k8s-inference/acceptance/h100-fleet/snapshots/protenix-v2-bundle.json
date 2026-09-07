@@ -1,0 +1,34 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-snapshot-bundle/v1",
+  "bundle_id": "protenix-v2-h100-cuda-criu-20260907-r2",
+  "model_id": "protenix-v2",
+  "stage_id": "sample-structure",
+  "model_revision": "code-2475421477ab414b571149ad4a875c390ff8a35d_checkpoint-653edab28103133512575365130916e3fd23ecc3_common-2026-01-29",
+  "profile_model_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
+  "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+  "source_configmap": "fs2-fleet-snapshot-protenix-v2",
+  "source_sha256": {
+    "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+    "protenix_server.py": "616497762eb69699097a82faca59f908f0faf6436c9f3f2fb244392e960c6847",
+    "scientific_server.py": "6444a528a273d3d47ea0560a0580d52366688c45cf59eaf474ed720c28fb8e52",
+    "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c"
+  },
+  "cli_configmap": "fs2-fleet-snapshot-protenix-cli-v1",
+  "cli_sha256": "426cd210ac2c02da59a2e1a0714849f08189ecba546ca047f2dd17062293fe27",
+  "pvc": "fs2-fleet-snapshots-rwx-r20260907",
+  "bundle_path": "protenix-r2",
+  "manifest_sha256": "a2953619c0d2639aa9582771b5ee7778544328fe59e1b709a6c8da6221f67a24",
+  "qualification_receipt_sha256": "4574f4979b395220d908f8851ed689a0e12ed8a479e44cd82d7d267558cfdabf",
+  "qualified": true,
+  "python": "/opt/protenix-venv/bin/python",
+  "cli_path": "/opt/protenix-venv/bin/protenix",
+  "cli_key": "protenix",
+  "worker_variable": "FS2_PROTENIX_WORKER_URL",
+  "compatibility": {
+    "gpu_name": "NVIDIA H100 80GB HBM3",
+    "compute_capability": "9.0",
+    "driver_version": "580.159.04",
+    "kernel_release": "6.11.0-1016-nvidia"
+  }
+}

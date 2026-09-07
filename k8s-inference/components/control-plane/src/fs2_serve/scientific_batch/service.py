@@ -98,6 +98,22 @@ class ScientificExecutionBinding(Protocol):
         localizations: tuple[RuntimeArtifactLocalization, ...],
     ) -> AdapterExecutionPlan: ...
 
+    def bind_startup_policies(
+        self,
+        profile: ScientificWorkloadProfile,
+        execution_plan: AdapterExecutionPlan,
+        overrides: Mapping[str, Mapping[str, Any]],
+    ) -> AdapterExecutionPlan: ...
+
+
+class ScientificStartupPolicyResolver(Protocol):
+    async def __call__(
+        self,
+        *,
+        model_id: str,
+        tenant_id: str,
+    ) -> Mapping[str, Mapping[str, Any]]: ...
+
 
 class CatalogScientificPlanFactory:
     """Default adapter for profiles whose catalog minimum expands to one unit."""
@@ -245,6 +261,7 @@ class ScientificBatchService:
         artifacts: ScientificArtifactAccess,
         execution_binding: ScientificExecutionBinding,
         plan_factory: ScientificPlanFactory | None = None,
+        startup_policy_resolver: ScientificStartupPolicyResolver | None = None,
     ) -> None:
         self.store = store
         self.repository = repository
@@ -254,6 +271,7 @@ class ScientificBatchService:
         self.artifacts = artifacts
         self.execution_binding = execution_binding
         self.plan_factory = plan_factory or CatalogScientificPlanFactory()
+        self.startup_policy_resolver = startup_policy_resolver
 
     @staticmethod
     def _authorize(principal: Principal, scope: Scope, *, model_id: str | None = None) -> None:
@@ -462,6 +480,23 @@ class ScientificBatchService:
         if require_mcp_invocable and not profile.mcp_invocable:
             raise ScientificProfileError("scientific workload profile is not MCP-invocable")
         validated = self.profiles.validate_request(profile, request)
+        # Capture the admin choice once, before either preflight or admission.
+        # Existing operations and retries only use their durable stage binding.
+        startup_overrides = {}
+        startup_error: Exception | None = None
+        try:
+            if self.startup_policy_resolver is not None:
+                startup_overrides = json.loads(
+                    json.dumps(
+                        await self.startup_policy_resolver(model_id=model_id, tenant_id=principal.tenant_id),
+                        sort_keys=True,
+                        allow_nan=False,
+                    )
+                )
+        except Exception as error:
+            # The store's idempotency check precedes the admission factory.
+            # Today's policy cannot invalidate an already-frozen accepted run.
+            startup_error = error
         input_admission = await self.artifacts.validate_input(
             validated["input_manifest"], tenant_id=principal.tenant_id
         )
@@ -495,7 +530,7 @@ class ScientificBatchService:
                 # Repeating this with the real operation identity below proves
                 # that the adapter topology remains stable without allowing an
                 # expected execution-map contract error to escape as HTTP 500.
-                self.execution_binding.bind_runtime_artifacts(
+                bound_preflight = self.execution_binding.bind_runtime_artifacts(
                     profile,
                     preflight,
                     access_context,
@@ -503,6 +538,12 @@ class ScientificBatchService:
                 )
         except CatalogProfileAdapterError as error:
             raise ScientificProfileError("scientific runtime binding cannot admit this profile") from error
+        if isinstance(preflight, AdapterExecutionPlan) and startup_overrides:
+            try:
+                self.execution_binding.bind_startup_policies(profile, bound_preflight, startup_overrides)
+            except CatalogProfileAdapterError as error:
+                startup_error = ScientificProfileError("scientific startup policy cannot admit this profile")
+                startup_error.__cause__ = error
         possible_attempts = sum(len(stage.workload_units) * stage.max_attempts for stage in plan.stages)
         if possible_attempts > self.profiles.max_result_attempts:
             raise ScientificProfileError("scientific plan exceeds the canonical public result attempt bound")
@@ -524,6 +565,8 @@ class ScientificBatchService:
         body = json.dumps(validated, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
 
         def freeze_admission(operation: OperationView) -> dict[str, object]:
+            if startup_error is not None:
+                raise startup_error
             try:
                 snapshot = self.scheduling.freeze(
                     service_class=validated["service_class"],
@@ -556,6 +599,10 @@ class ScientificBatchService:
                         access_context,
                         runtime_artifacts,
                     )
+                    if startup_overrides:
+                        execution_plan = self.execution_binding.bind_startup_policies(
+                            profile, execution_plan, startup_overrides
+                        )
                 except CatalogProfileAdapterError as error:
                     raise ScientificProfileError("scientific runtime binding changed during admission") from error
             else:

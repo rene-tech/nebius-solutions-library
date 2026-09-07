@@ -42,6 +42,7 @@ from .models import (
     WorkloadResource,
 )
 from .profile_catalog import ScientificProfileCatalog, ScientificRequestError, ScientificWorkloadProfile
+from .startup import StageStartupPolicy, apply_startup_policy, select_startup_policy, validate_bundle
 
 EXECUTION_SCHEMA = "fs2-serve.nebius.ai/scientific-execution-map/v3"
 PACKAGED_TOOLS_CATALOG_DIR = "/opt/fs2/catalog"
@@ -191,6 +192,7 @@ class StageExecution:
     required_node_labels: Mapping[str, str]
     image_role: str = "model-runtime"
     model_runtime_image_digest: str | None = None
+    startup_policy: StageStartupPolicy = StageStartupPolicy()
 
 
 def _invocation_json(invocation: StageInvocation) -> str:
@@ -283,9 +285,36 @@ class FileScientificManifestRenderer:
         except (OSError, RecursionError, ValueError) as error:
             raise ScientificExecutionMapError("scientific execution map is unavailable or invalid") from error
         root = _object(value, "scientific execution map")
-        if set(root) != {"schema", "models"} or root["schema"] != EXECUTION_SCHEMA:
+        if (
+            not {"schema", "models"}.issubset(root)
+            or set(root) - {"schema", "models", "snapshot_bundles"}
+            or root["schema"] != EXECUTION_SCHEMA
+        ):
             raise ScientificExecutionMapError("scientific execution map schema is unsupported")
-        self.execution_map_sha256 = f"sha256:{hashlib.sha256(raw).hexdigest()}"
+        try:
+            self.snapshot_bundles = MappingProxyType(
+                {
+                    bundle_id: validate_bundle(bundle, bundle_id)
+                    for bundle_id, bundle in _object(root.get("snapshot_bundles", {}), "snapshot bundles").items()
+                }
+            )
+        except ValueError as error:
+            raise ScientificExecutionMapError("scientific snapshot bundle registry is invalid") from error
+        self.execution_configuration_sha256 = f"sha256:{hashlib.sha256(raw).hexdigest()}"
+        # A registry alone does not change the measured normal-load recipe.
+        # Helm serializes the qualified map canonically. Keep that baseline
+        # identity while freezing the complete selected bundle separately.
+        qualified_raw = (
+            raw
+            if "snapshot_bundles" not in root
+            else json.dumps(
+                {key: value for key, value in root.items() if key != "snapshot_bundles"},
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode()
+        )
+        self.execution_map_sha256 = f"sha256:{hashlib.sha256(qualified_raw).hexdigest()}"
         models = root["models"]
         if not isinstance(models, list) or len(models) > 256:
             raise ScientificExecutionMapError("scientific execution models are not bounded")
@@ -479,7 +508,7 @@ class FileScientificManifestRenderer:
                     "environment",
                     "required_node_labels",
                 }
-                if not allowed.issubset(stage) or set(stage) - allowed - {"image_role"}:
+                if not allowed.issubset(stage) or set(stage) - allowed - {"image_role", "startup_policy"}:
                     raise ScientificExecutionMapError("scientific execution stage fields differ")
                 stage_id = stage["stage_id"]
                 if not isinstance(stage_id, str) or (model_id, stage_id) in executions:
@@ -740,6 +769,7 @@ class FileScientificManifestRenderer:
                     ),
                     environment=cast(Mapping[str, str], environment),
                     required_node_labels=cast(Mapping[str, str], required_node_labels),
+                    startup_policy=self._select_startup_policy(profile, stage_id, image, stage.get("startup_policy")),
                 )
         # Every serialized model, including a fail-closed candidate, must cover
         # its own profile DAG exactly.  Separately, every runnable profile must
@@ -776,6 +806,7 @@ class FileScientificManifestRenderer:
             if len(declared) != len(stages) or serialized != declared:
                 raise ScientificExecutionMapError("execution map must cover each serialized profile stage exactly")
         self.executions = executions
+        self._startup_profiles = profiles
         self.variants = MappingProxyType(variants)
         self.workload_namespaces = MappingProxyType(workload_namespaces)
         self.access_profiles = MappingProxyType(access_profiles)
@@ -967,6 +998,7 @@ class FileScientificManifestRenderer:
             stage_id=stage_id,
             image=image,
             model_runtime_image_digest=model_runtime_image_digest,
+            startup_policy=execution.startup_policy,
             collector_id=execution.collector_id,
             validator_id=execution.validator_id,
             mounts=tuple(
@@ -1005,6 +1037,7 @@ class FileScientificManifestRenderer:
         return StageExecution(
             image=binding.image,
             model_runtime_image_digest=binding.model_runtime_image_digest,
+            startup_policy=binding.startup_policy,
             collector_id=binding.collector_id,
             validator_id=binding.validator_id,
             mounts=tuple(
@@ -1032,6 +1065,86 @@ class FileScientificManifestRenderer:
             termination_grace_seconds=binding.termination_grace_seconds,
             environment=MappingProxyType(dict(binding.environment)),
             required_node_labels=MappingProxyType(dict(binding.required_node_labels)),
+        )
+
+    def _select_startup_policy(
+        self,
+        profile: ScientificWorkloadProfile,
+        stage_id: str,
+        image: str,
+        selection: Mapping[str, Any] | None,
+    ) -> StageStartupPolicy:
+        try:
+            return select_startup_policy(
+                selection,
+                self.snapshot_bundles,
+                model_id=profile.model_id,
+                stage_id=stage_id,
+                model_revision=profile.value["execution_identity"]["model_revision"],
+                runtime_image=image,
+            )
+        except ValueError as error:
+            raise ScientificExecutionMapError(str(error)) from error
+
+    def startup_policy_options(self, model_id: str) -> dict[str, list[str]]:
+        """Qualified per-stage bundle IDs; full metadata lives in snapshot_bundles."""
+        profile = self._startup_profiles.get(model_id, runnable=False)
+        options = {}
+        for (model, stage), execution in self.executions.items():
+            if model != model_id:
+                continue
+            options[stage] = []
+            for bundle in self.snapshot_bundles.values():
+                try:
+                    selected = self._select_startup_policy(
+                        profile, stage, execution.image,
+                        {"backend": "cuda-criu", "bundle_id": bundle["bundle_id"]},
+                    )
+                except ScientificExecutionMapError:
+                    continue
+                options[stage].append(selected.bundle_id)
+        return options
+
+    def validate_startup_policy_overrides(
+        self,
+        *,
+        model_id: str,
+        overrides: Mapping[str, Mapping[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        """Admin setter seam: resolve exact registered bundles without admitting work."""
+        profile = self._startup_profiles.get(model_id, runnable=False)
+        result = {}
+        for stage_id, selection in overrides.items():
+            execution = self.executions.get((model_id, stage_id))
+            if execution is None:
+                raise ScientificExecutionMapError("startup policy override names no model stage")
+            selected = self._select_startup_policy(profile, stage_id, execution.image, selection)
+            result[stage_id] = {"backend": selected.backend, "bundle_id": selected.bundle_id}
+        return result
+
+    def bind_startup_policies(
+        self,
+        profile: ScientificWorkloadProfile,
+        execution_plan: AdapterExecutionPlan,
+        overrides: Mapping[str, Mapping[str, Any]],
+    ) -> AdapterExecutionPlan:
+        """Freeze one captured admin-policy selection, never re-read on retry."""
+        known = {binding.stage_id for binding in execution_plan.stage_bindings}
+        if set(overrides) - known:
+            raise ScientificExecutionMapError("startup policy override names no frozen stage")
+        return replace(
+            execution_plan,
+            stage_bindings=tuple(
+                replace(
+                    binding,
+                    startup_policy=self._select_startup_policy(
+                        profile, binding.stage_id, binding.image, overrides[binding.stage_id]
+                    ),
+                )
+                if binding.stage_id in overrides
+                else binding
+                for binding in execution_plan.stage_bindings
+            ),
         )
 
     def verify_runtime_artifacts(
@@ -1791,10 +1904,11 @@ class FileScientificManifestRenderer:
             ]
         if affinity is not None:
             pod_spec["affinity"] = affinity
-        return {
-            "metadata": {},
-            "spec": pod_spec,
-        }
+        return apply_startup_policy(
+            {"metadata": {}, "spec": pod_spec},
+            execution.startup_policy,
+            request_uid=execution.workspace_uid,
+        )
 
     def render(self, resource: WorkloadResource) -> Mapping[str, Any]:
         expected_namespace = resource.scheduling.workload_namespace or self.workload_namespace(resource.model_id)

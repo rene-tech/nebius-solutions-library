@@ -1,0 +1,28 @@
+FROM ghcr.io/soedinglab/mmseqs2@sha256:41b12b0d5f41432fa1b9976123da6e2e06e7fab49a34964f3b54ec038e5845d9 AS mmseqs
+
+FROM python@sha256:0f5b26b9518d002b6173fd61daad821fa340635ebfec5bba471013f9ca114579 AS database
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends libatomic1 libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=mmseqs /usr/local/bin/entrypoint /usr/local/bin/mmseqs
+COPY --from=mmseqs /usr/local/bin/mmseqs_avx2 /usr/local/bin/mmseqs_avx2
+COPY --from=mmseqs /usr/local/bin/mmseqs_sse41 /usr/local/bin/mmseqs_sse41
+COPY --from=mmseqs /usr/local/bin/mmseqs_sse2 /usr/local/bin/mmseqs_sse2
+COPY k8s-inference/models/bionemo/msa-search-pdb70/materialize_pdb70.py /tmp/materialize_pdb70.py
+RUN python /tmp/materialize_pdb70.py /opt/pdb70
+
+RUN python -m pip install --no-cache-dir \
+      fastapi==0.141.1 \
+      pydantic==2.13.4 \
+      uvicorn==0.52.4
+COPY k8s-inference/models/bionemo/msa-search-pdb70/local_server.py /opt/fs2/local_server.py
+
+ENV MMSEQS_THREADS=8 \
+    MSA_CACHE=/cache \
+    PDB70_DATABASE_ROOT=/opt/pdb70 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+WORKDIR /opt/fs2
+USER 65532:65532
+EXPOSE 8000
+ENTRYPOINT ["python", "-m", "uvicorn", "local_server:app", "--host", "0.0.0.0", "--port", "8000"]

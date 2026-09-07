@@ -1545,6 +1545,10 @@ class MemoryStore:
             raise ConflictError("scientific admission outbox requires a scientific batch Operation")
         if operation.id in self.scientific_admissions_completed:
             return
+        if operation.reused and operation.id in self.scientific_admission_outbox:
+            # The request identity has already matched. Preserve the accepted
+            # payload across policy changes and pre-materialization restarts.
+            return
         payload = factory(operation)
         pending = PendingScientificAdmission(
             operation_id=operation.id,

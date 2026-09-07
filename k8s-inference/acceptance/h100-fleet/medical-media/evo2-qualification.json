@@ -1,0 +1,129 @@
+{
+  "schema": "fs2-h100-fleet-evo2-qualification/v1",
+  "model_id": "evo2-40b",
+  "status": "direct-h100-qualified-public-and-shared-filesystem-pending",
+  "date": "2026-09-07",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+  "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+  "artifact_manifest_sha256": "4eaa1aebdb64a170fdb0b7f20432fc8624ab2ca84ffa37ec81033bf8d362a8b4",
+  "hardware": {
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "gpu_count": 2,
+    "compute_capability": "9.0",
+    "driver": "580.159.04",
+    "node": "computeinstance-e00p3acr87k9k4mckj"
+  },
+  "cohort": "fresh-process-retained-image-compile-and-OS-page-cache-on-RWO-block-volume",
+  "startup_boundary": "Kubernetes container startedAt to runtime READY source-clock log; not public request activation",
+  "trials": [
+    {
+      "repetition": "r06",
+      "pod": "fs2-mm-evo2-40b-r06-20260907",
+      "pod_uid": "81ade142-d948-4c4a-9615-ae7787c36d54",
+      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+      "container_started_at": "2026-09-07T09:25:25Z",
+      "application_ready_at": "2026-09-07T09:25:48.547983540Z",
+      "source_clock_receipt": "2026-09-07T09:25:48.547983540Z evo2-lean-server: READY runtime_identity_sha256=2c24fd57416e1ec8064f507943ec10145df408a8560d548f57a6b0b63a53f42d",
+      "container_start_to_application_ready_seconds": 23.547983,
+      "pod_creation_to_application_ready_seconds": 28.547983,
+      "startup_phase_seconds": {
+        "weight-load": 19.491817,
+        "engine-build-or-compile": 3.687203
+      },
+      "process_io_at_ready": "rchar: 508331463\nwchar: 1154197\nsyscr: 9399\nsyscw: 267\nread_bytes: 0\nwrite_bytes: 45056\ncancelled_write_bytes: 4096\n",
+      "semantic_status": "PASS",
+      "first_request": {
+        "elapsed_seconds": 1.16836,
+        "request_at": "2026-09-07T09:26:01.705989Z",
+        "response_bytes": 317,
+        "response_sha256": "6a8a4d423861549ccae4865f825e323b5e07d74e2db3b0cc6a8cbbd05ba5db66"
+      },
+      "first_response_completed_at": "2026-09-07T09:26:02.874349+00:00"
+    },
+    {
+      "repetition": "r07",
+      "pod": "fs2-mm-evo2-40b-r07-20260907",
+      "pod_uid": "174915f5-cb8c-4e38-bf46-60d844925b7b",
+      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+      "container_started_at": "2026-09-07T09:26:29Z",
+      "application_ready_at": "2026-09-07T09:26:52.217336585Z",
+      "source_clock_receipt": "2026-09-07T09:26:52.217336585Z evo2-lean-server: READY runtime_identity_sha256=6e86069b674da4669c467d1957baf392cf78ae0e6a1a5772c7c6bda536068628",
+      "container_start_to_application_ready_seconds": 23.217336,
+      "pod_creation_to_application_ready_seconds": 28.217336,
+      "startup_phase_seconds": {
+        "weight-load": 18.915945,
+        "engine-build-or-compile": 3.628471
+      },
+      "process_io_at_ready": "rchar: 508331170\nwchar: 1154199\nsyscr: 9401\nsyscw: 267\nread_bytes: 0\nwrite_bytes: 45056\ncancelled_write_bytes: 4096\n",
+      "semantic_status": "PASS",
+      "first_request": {
+        "elapsed_seconds": 1.155965,
+        "request_at": "2026-09-07T09:27:05.223757Z",
+        "response_bytes": 315,
+        "response_sha256": "6ced379ac433271f2d91845585690a96c474295da20d4f528f3327deb1ff64ea"
+      },
+      "first_response_completed_at": "2026-09-07T09:27:06.379722+00:00"
+    },
+    {
+      "repetition": "r08",
+      "pod": "fs2-mm-evo2-40b-r08-20260907",
+      "pod_uid": "8da4b5db-a97f-4fe2-93cd-ba8c433f4a3f",
+      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+      "container_started_at": "2026-09-07T09:27:32Z",
+      "application_ready_at": "2026-09-07T09:27:58.169275843Z",
+      "source_clock_receipt": "2026-09-07T09:27:58.169275843Z evo2-lean-server: READY runtime_identity_sha256=5cc30fae7f1f1d1a24c1f37578759bce3999c86cb1fd6a90bfd5b357bc8f2cef",
+      "container_start_to_application_ready_seconds": 26.169275,
+      "pod_creation_to_application_ready_seconds": 31.169275,
+      "startup_phase_seconds": {
+        "weight-load": 21.724107,
+        "engine-build-or-compile": 3.565831
+      },
+      "process_io_at_ready": "rchar: 508331309\nwchar: 1154325\nsyscr: 9395\nsyscw: 269\nread_bytes: 0\nwrite_bytes: 45056\ncancelled_write_bytes: 4096\n",
+      "semantic_status": "PASS",
+      "first_request": {
+        "elapsed_seconds": 1.202771,
+        "request_at": "2026-09-07T09:28:27.047578Z",
+        "response_bytes": 320,
+        "response_sha256": "2ed16c33a19f5e7e728bf3cc7ef21f56ddc1aed201b6d29b84a9894a4bae5dd5"
+      },
+      "first_response_completed_at": "2026-09-07T09:28:28.250349+00:00"
+    }
+  ],
+  "statistics": {
+    "repetitions": 3,
+    "container_start_to_application_ready_seconds": {
+      "median": 23.547983,
+      "minimum": 23.217336,
+      "maximum": 26.169275
+    },
+    "pod_creation_to_application_ready_seconds": {
+      "median": 28.547983,
+      "minimum": 28.217336,
+      "maximum": 31.169275
+    }
+  },
+  "semantics": {
+    "original_requests_per_repetition": 2,
+    "qualified_repetition_outputs": 6,
+    "total_v5_outputs_including_first_compile_and_stress": 12,
+    "profile": "historical-h200-nim-exact-dna20",
+    "oracle_sha256": "a68351e5cabd721d61da15a31fe32e7250c069123c238bda6d62a586863cd146",
+    "validator": "acceptance/h100-fleet/medical-media/evo2_hopper_validate.py",
+    "validator_sha256": "ef47b5995f874edc63543cb08fc353d6e310adf972cd2c0fedc2b10aba66a37f",
+    "general_nim_numerical_parity_claimed": false
+  },
+  "runtime_fix": "SM90 FlashAttention build plus per-block torch.cuda.device context; unchanged checkpoint, precision, Vortex layer placement and kernels.",
+  "negative_evidence": {
+    "wrapper_only_image": "sha256:0dd47e109dbe6cf7f406c68364fe4d6577d65ef1bc345254aee9433d281f50ca",
+    "wrapper_only_failure": "Inherited one-GPU visibility and SM103-only FlashAttention cubins.",
+    "v4_image": "sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce",
+    "v4_status": "rejected-after-r04-malformed-DNA-on-repeated-inference",
+    "archived_b300_oracle": "Mismatches retained; original validator unchanged. Historical Hopper oracle selected explicitly from independent earlier H200 records."
+  },
+  "cache_caveat": "All qualified v5 cached trials have process read_bytes=0. Disk-cold startup for v5 has not been measured. Earlier v4 disk reads took approximately 15 minutes and do not qualify the v5 image.",
+  "private_root": "/home/tux/.local/state/fs2-h100-fleet-r20260907/medical-media/evo2",
+  "startup_evidence_sha256": "ac88a274f860dd0b2f74106d061650539abe0a372aa0f50a0149520dc06fbdf0"
+}

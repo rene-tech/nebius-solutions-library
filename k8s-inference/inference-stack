@@ -988,6 +988,7 @@ def derived_admin_configuration(
     local_queue = str(queue.get("local_queue_name", "fs2-models-async"))
 
     pools: dict[str, Any] = {}
+    pool_features: dict[str, Mapping[str, Any]] = {}
     for pool_id, raw_pool in sorted(raw_pools.items()):
         if not isinstance(raw_pool, Mapping):
             raise DeploymentError(f"accelerator pool {pool_id!r} is malformed")
@@ -1021,15 +1022,94 @@ def derived_admin_configuration(
                 if isinstance(item, Mapping)
             ],
         }
+        pool_features[str(pool_id)] = (
+            raw_pool.get("features", {})
+            if isinstance(raw_pool.get("features", {}), Mapping)
+            else {}
+        )
 
     model_images = workloads.get("model_image_overrides", {})
     selected_model_ids = contract.get("selected_model_ids", [])
     deployment_runtimes = selected_deployment_runtimes({
         model_id: model_images[model_id] for model_id in selected_model_ids if model_id in model_images
     })
+    cpu_runtime_model_ids = {
+        model_id
+        for model_id, entry in deployment_runtimes.items()
+        if entry["record"]["resources"]["gpu"]
+        == {
+            "class": "CPU",
+            "count": 0,
+            "topology": "cpu-only",
+            "placement": None,
+            "b300_state": "not-applicable",
+            "alternatives": [],
+        }
+    }
+    if cpu_runtime_model_ids:
+        general_cpu_contract = dynamic.get("general_cpu_pool_contract")
+        if not isinstance(general_cpu_contract, Mapping):
+            raise DeploymentError(
+                "a selected CPU deployment runtime requires the general CPU pool output"
+            )
+        general_pools = general_cpu_contract.get("pools")
+        node_selector = general_cpu_contract.get("node_selector")
+        taint = general_cpu_contract.get("taint")
+        if (
+            general_cpu_contract.get("schema")
+            != "fs2-serve.nebius.ai/general-cpu-pools/v1"
+            or not isinstance(general_pools, Mapping)
+            or len(general_pools) != 1
+            or not isinstance(node_selector, Mapping)
+            or not node_selector
+            or not isinstance(taint, Mapping)
+        ):
+            raise DeploymentError(
+                "a selected CPU deployment runtime requires one exact general CPU pool"
+            )
+        for pool_id, raw_pool in sorted(general_pools.items()):
+            if pool_id in pools or not isinstance(raw_pool, Mapping):
+                raise DeploymentError("the general CPU pool identity is malformed or duplicated")
+            pools[str(pool_id)] = {
+                "resource_name": "cpu",
+                "accelerator_class": "CPU",
+                "capacity_type": str(raw_pool.get("capacity_type", "")),
+                "accelerators_per_node": 0,
+                "min_nodes": int(raw_pool.get("min_nodes", 0)),
+                "max_nodes": int(raw_pool.get("max_nodes", 0)),
+                "node_selector": {
+                    **{
+                        str(key): str(value)
+                        for key, value in sorted(node_selector.items())
+                        if isinstance(key, str) and isinstance(value, str)
+                    },
+                    "capacity.fs2.nebius/pool-id": str(pool_id),
+                },
+                "tolerations": [
+                    {
+                        "key": str(taint.get("key", "")),
+                        "operator": "Equal",
+                        "value": str(taint.get("value", "")),
+                        "effect": str(taint.get("effect", "")),
+                        "toleration_seconds": None,
+                    }
+                ],
+            }
+            pool_features[str(pool_id)] = {}
     deployment_identities = deployment_runtime_configuration_identities(deployment_runtimes) if deployment_runtimes else {}
     scaling = {
-        model_id: _admin_scaling(workloads, model_id) for model_id in selected_model_ids
+        model_id: (
+            {
+                "min_replicas": 1,
+                "max_replicas": 1,
+                "target_queue_depth": 1,
+                "polling_interval_seconds": int(workloads["keda_polling_interval_seconds"]),
+                "cooldown_seconds": int(workloads["keda_cooldown_period_seconds"]),
+            }
+            if model_id in cpu_runtime_model_ids
+            else _admin_scaling(workloads, model_id)
+        )
+        for model_id in selected_model_ids
     }
     models: dict[str, Any] = {}
     for model_id in selected_model_ids:
@@ -1058,16 +1138,16 @@ def derived_admin_configuration(
         pool_ids = _admin_pool_ids(
             contract,
             workloads,
-            raw_pools,
+            pools,
             model_id=model_id,
             accelerator_class=str(gpu["class"]),
         )
         selected_pool_features = [
-            raw_pools[pool_id].get("features", {}) for pool_id in pool_ids
+            pool_features[pool_id] for pool_id in pool_ids
         ]
         cache_tier = (
             "node-local"
-            if any(
+            if model_id in cpu_runtime_model_ids or any(
                 item.get("local_cache") == "node-local"
                 for item in selected_pool_features
             )
@@ -1088,15 +1168,16 @@ def derived_admin_configuration(
             "enabled": True,
             "placement": {
                 "pool_ids": pool_ids,
-                "accelerators": int(
-                    workloads.get("model_runtime_overrides", {}).get(model_id, {}).get("gpu_count")
-                    or gpu["count"]
-                ),
-                "topology_policy": "single-node",
+                "accelerators": int(gpu["count"]),
+                "topology_policy": "any" if model_id in cpu_runtime_model_ids else "single-node",
             },
             "autoscaling": scaling[model_id],
             "queue": {
-                "local_queue": local_queue,
+                "local_queue": (
+                    str(workloads.get("general_cpu_lane", {}).get("local_queue", ""))
+                    if model_id in cpu_runtime_model_ids
+                    else local_queue
+                ),
                 "priority_class": "default",
                 "max_queue_seconds": 7200,
             },

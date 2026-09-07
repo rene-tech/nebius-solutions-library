@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import base64
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -25,6 +25,7 @@ from .scientific_admin import (
     ScientificArtifactAttemptEvidence,
     ScientificArtifactSnapshot,
     ScientificModelAdminAdapter,
+    ScientificModelPolicyInvalidError,
     ScientificModelPolicySnapshot,
     ScientificModelPolicyStaleRevisionError,
     ScientificRunCancelOutcome,
@@ -67,6 +68,7 @@ from .scientific_admin_models import (
     ScientificServiceClassDecision,
     ScientificStage,
     ScientificStageCounts,
+    ScientificStageStartupPolicy,
 )
 from .scientific_admin_models import (
     ScientificDispatchCounts as ScientificDispatchCountsModel,
@@ -203,9 +205,7 @@ def _admission_state(state: ScientificBatchState, dispatch_hold: str | None = No
     if state.status in _TERMINAL_BATCH_STATUS:
         return "finished", "The durable scientific batch is terminal."
     if state.status is BatchStatus.QUEUED and not state.cancel_requested and dispatch_hold is not None:
-        return "pending", _DISPATCH_HOLD_REASONS.get(
-            dispatch_hold, "Dispatch is held by the scientific model policy."
-        )
+        return "pending", _DISPATCH_HOLD_REASONS.get(dispatch_hold, "Dispatch is held by the scientific model policy.")
     stage = _active_stage(state)
     latest = stage.attempts[-1] if stage.attempts else None
     if latest is not None and latest.outcome is AttemptOutcome.PREEMPTED:
@@ -270,9 +270,7 @@ def _summary(
     stage = _active_stage(state)
     scheduling = state.scheduling.stage(stage.stage_id)
     dispatch_hold = record.get("dispatch_hold")
-    admission_state, admission_reason = _admission_state(
-        state, None if dispatch_hold is None else str(dispatch_hold)
-    )
+    admission_state, admission_reason = _admission_state(state, None if dispatch_hold is None else str(dispatch_hold))
     effective = state.scheduling.service_class.value
     terminal = state.status in _TERMINAL_BATCH_STATUS
     cancel_requested_at = record.get("cancel_requested_at")
@@ -671,6 +669,10 @@ def _policy_setting(
         revision=record.revision,
         paused=record.paused,
         max_active_runs=record.max_active_runs,
+        startup_policies={
+            stage: ScientificStageStartupPolicy.model_validate(choice)
+            for stage, choice in record.startup_policies.items()
+        },
         reason=record.reason,
         updated_by=_bounded(record.updated_by, 200, "unknown"),
         updated_at=record.updated_at,
@@ -683,11 +685,7 @@ def _dispatch_state(view: ScientificModelPolicyView) -> ScientificDispatchStateM
     limit = view.effective_max_active_runs
     if state == "paused":
         source = view.policy if view.policy is not None and view.policy.paused else view.inherited
-        by = (
-            "this tenant's policy"
-            if source is not None and source.tenant_id is not None
-            else "the all-tenants policy"
-        )
+        by = "this tenant's policy" if source is not None and source.tenant_id is not None else "the all-tenants policy"
         reason = f"New dispatch for {scope} is paused by {by}; running work drains and results still publish."
         if source is not None and source.reason:
             reason = f"{reason} Operator note: {source.reason}"
@@ -715,11 +713,17 @@ def _dispatch_state(view: ScientificModelPolicyView) -> ScientificDispatchStateM
     )
 
 
-def _policy(view: ScientificModelPolicyView, *, catalog_known: bool) -> ScientificModelPolicy:
+def _policy(
+    view: ScientificModelPolicyView,
+    *,
+    catalog_known: bool,
+    startup_options: dict[str, list[str]] | None = None,
+) -> ScientificModelPolicy:
     return ScientificModelPolicy(
         model_id=view.model_id,
         scope_tenant_id=view.tenant_id,
         catalog_known=catalog_known,
+        startup_options=startup_options or {},
         desired=_policy_setting(view.policy, tenant_id=view.tenant_id),
         inherited=None if view.tenant_id is None else _policy_setting(view.inherited, tenant_id=None),
         effective=_dispatch_state(view),
@@ -739,8 +743,20 @@ class PostgresScientificModelPolicyAdminAdapter:
     so what the console shows is what the next poll will do.
     """
 
-    def __init__(self, *, repository: PostgresScientificModelPolicyRepository) -> None:
+    def __init__(
+        self,
+        *,
+        repository: PostgresScientificModelPolicyRepository,
+        startup_validator: Callable[..., Any] | None = None,
+        startup_options: Callable[..., dict[str, list[str]]] | None = None,
+    ) -> None:
         self.repository = repository
+        self.startup_validator = startup_validator
+        self.startup_options = startup_options
+
+    def _project(self, view: ScientificModelPolicyView, *, catalog_known: bool) -> ScientificModelPolicy:
+        options = self.startup_options(model_id=view.model_id) if self.startup_options else {}
+        return _policy(view, catalog_known=catalog_known, startup_options=options)
 
     async def list_policies(
         self,
@@ -754,7 +770,7 @@ class PostgresScientificModelPolicyAdminAdapter:
         return ScientificModelPolicySnapshot(
             data=ScientificModelPolicyList(
                 scope_tenant_id=tenant_id,
-                items=[_policy(view, catalog_known=view.model_id in known) for view in views[:256]],
+                items=[self._project(view, catalog_known=view.model_id in known) for view in views[:256]],
             ),
             observed_at=observed_at,
         )
@@ -767,6 +783,18 @@ class PostgresScientificModelPolicyAdminAdapter:
         update: ScientificModelPolicyUpdate,
         actor: str,
     ) -> ScientificModelPolicy:
+        startup = (
+            None
+            if update.startup_policies is None
+            else {stage: policy.model_dump() for stage, policy in update.startup_policies.items()}
+        )
+        if startup:
+            if self.startup_validator is None:
+                raise ScientificModelPolicyInvalidError("scientific startup selection is not configured")
+            try:
+                startup = self.startup_validator(model_id=model_id, overrides=startup)
+            except ValueError as error:
+                raise ScientificModelPolicyInvalidError(str(error)) from None
         try:
             view = await self.repository.set(
                 model_id,
@@ -776,10 +804,11 @@ class PostgresScientificModelPolicyAdminAdapter:
                 max_active_runs=update.max_active_runs,
                 reason=update.reason,
                 actor=actor,
+                startup_policies=startup,
             )
         except ScientificModelPolicyStaleError as error:
             raise ScientificModelPolicyStaleRevisionError(error.current_revision) from None
-        return _policy(view, catalog_known=True)
+        return self._project(view, catalog_known=True)
 
 
 def _artifact_name(artifact: ArtifactRef, role: str) -> str:
@@ -952,16 +981,15 @@ def postgres_scientific_admin_read_service(
         global_catalog=run_models,
     )
     batches = PostgresScientificBatchRepository(pool)
+    renderer = getattr(scientific_batches, "execution_binding", None)
     return ScientificAdminReadService(
         runs=PostgresScientificRunAdminAdapter(pool=pool, batches=batches, models=run_models),
-        artifacts=(
-            PostgresScientificArtifactAdminAdapter(artifact_service)
-            if artifact_service is not None
-            else None
-        ),
+        artifacts=(PostgresScientificArtifactAdminAdapter(artifact_service) if artifact_service is not None else None),
         controls=PostgresScientificRunControlAdapter(batches=batches),
         policies=PostgresScientificModelPolicyAdminAdapter(
             repository=PostgresScientificModelPolicyRepository(pool),
+            startup_validator=getattr(renderer, "validate_startup_policy_overrides", None),
+            startup_options=getattr(renderer, "startup_policy_options", None),
         ),
         models=models,
         source_max_age_seconds=source_max_age_seconds,

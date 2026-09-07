@@ -563,6 +563,71 @@ class InferenceStackTests(unittest.TestCase):
         self.assertNotEqual(identity["acquisition_contract_sha256"], STACK.canonical_sha256(STACK._admin_catalog().acquisition_plans["genmol"].to_dict()))
         self.assertEqual(STACK.selected_deployment_runtimes({"genmol": f"registry.example/models/genmol@sha256:{'0' * 64}"}), {})
 
+    def test_cpu_deployment_runtime_uses_the_general_pool_without_a_fake_gpu(self) -> None:
+        candidate = json.loads((
+            DEPLOY_ROOT / "catalog/runtime/deployment-runtimes/msa-search-pdb70-portable-cpu.json"
+        ).read_text())
+        digest = candidate["record"]["runtime"]["image"]["digest"]
+        configuration = contract()
+        configuration.update({
+            "selected_model_ids": ["msa-search-pdb70"],
+            "selected_model_placements": {},
+        })
+        workloads = {
+            "model_image_overrides": {
+                "msa-search-pdb70": f"registry.example/models/msa-search-pdb70@{digest}"
+            },
+            "model_pool_overrides": {},
+            "model_runtime_overrides": {},
+            "model_scaling_mode": "keda",
+            "model_scaling_overrides": {},
+            "hot_model_ids": [],
+            "keda_polling_interval_seconds": 5,
+            "keda_cooldown_period_seconds": 300,
+            "general_cpu_lane": {"local_queue": "general-cpu"},
+        }
+        dynamic = {
+            "accelerator_pool_contract": {"pools": {
+                "h100-1x": {
+                    "accelerator_class": "nvidia-h100-sxm5-80gb",
+                    "capacity": {"type": "preemptible", "min_nodes": 0, "max_nodes": 2},
+                    "node": {"gpus_per_node": 1},
+                    "resource_api": {"resource_name": "nvidia.com/gpu"},
+                    "features": {"shared_filesystem": True},
+                    "scheduling": {"stable_node_labels": {}, "tolerations": []},
+                }
+            }},
+            "general_cpu_pool_contract": {
+                "schema": "fs2-serve.nebius.ai/general-cpu-pools/v1",
+                "node_selector": {"workload.fs2.nebius/general-cpu": "true"},
+                "taint": {
+                    "key": "workload.fs2.nebius/general-cpu",
+                    "value": "true",
+                    "effect": "NoSchedule",
+                },
+                "pools": {"batch-cpu": {
+                    "capacity_type": "regular", "min_nodes": 1, "max_nodes": 2,
+                }},
+            },
+        }
+
+        baseline, baseline_sha, scaling = STACK.derived_admin_configuration(
+            configuration, dynamic, workloads
+        )
+
+        self.assertEqual(baseline_sha, STACK.canonical_sha256(baseline))
+        self.assertEqual(baseline["pools"]["batch-cpu"]["resource_name"], "cpu")
+        self.assertEqual(baseline["pools"]["batch-cpu"]["accelerator_class"], "CPU")
+        self.assertEqual(baseline["pools"]["batch-cpu"]["accelerators_per_node"], 0)
+        model = baseline["models"]["msa-search-pdb70"]
+        self.assertEqual(
+            model["placement"],
+            {"pool_ids": ["batch-cpu"], "accelerators": 0, "topology_policy": "any"},
+        )
+        self.assertEqual(model["queue"]["local_queue"], "general-cpu")
+        self.assertEqual(scaling["msa-search-pdb70"]["min_replicas"], 1)
+        self.assertEqual(scaling["msa-search-pdb70"]["max_replicas"], 1)
+
     def test_public_grafana_origin_and_allowlist_come_from_infrastructure(self) -> None:
         with tempfile.TemporaryDirectory(
             prefix="inference-stack-grafana-"

@@ -1,0 +1,22 @@
+ARG BASE_IMAGE=registry.example.invalid/k8s-inference/models/evo2-runtime@sha256:5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c
+FROM ${BASE_IMAGE} AS attention_builder
+USER 0
+
+# The B300 parent has only SM103 FlashAttention cubins. Rebuild the exact
+# hash-bound 2.8.3.post1 source for native SM90; other library versions stay put.
+RUN python3 -c "from pathlib import Path; from evo2_deep.source_dependencies import fetch; fetch('flash-attn', Path('/tmp/fs2-flash-attn.tar.gz'))" \
+    && tar -xzf /tmp/fs2-flash-attn.tar.gz -C /tmp \
+    && FLASH_ATTENTION_FORCE_BUILD=TRUE FLASH_ATTN_CUDA_ARCHS=90 TORCH_CUDA_ARCH_LIST=9.0 MAX_JOBS=24 NVCC_THREADS=2 \
+       python3 -m pip install --no-build-isolation --no-deps --no-cache-dir --force-reinstall /tmp/flash_attn-2.8.3.post1
+RUN python3 -c "import torch, flash_attn_2_cuda, subprocess; result=subprocess.check_output(['/usr/local/cuda/bin/cuobjdump', '--list-elf', flash_attn_2_cuda.__file__], text=True); assert '.sm_90.' in result and '.sm_103.' not in result, result"
+
+FROM ${BASE_IMAGE}
+ENV CUDA_VISIBLE_DEVICES=0,1 FS2_EVO2_PROFILE=h100-2x
+COPY --from=attention_builder /opt/conda/lib/python3.11/site-packages/flash_attn/ /opt/conda/lib/python3.11/site-packages/flash_attn/
+COPY --from=attention_builder /opt/conda/lib/python3.11/site-packages/flash_attn_2_cuda.cpython-311-x86_64-linux-gnu.so /opt/conda/lib/python3.11/site-packages/
+COPY --from=attention_builder /opt/conda/lib/python3.11/site-packages/flash_attn-2.8.3.post1.dist-info/ /opt/conda/lib/python3.11/site-packages/flash_attn-2.8.3.post1.dist-info/
+COPY evo2_h100.py evo2_h100_serve.py evo2_serve.py /opt/fs2-evo2/
+LABEL org.opencontainers.image.title="FS2 Evo2-40B explicit two-H100 service" \
+      ai.nebius.fs2.model.revision="d529aa57c30771814217ad89baaeaf6e2315c7d7" \
+      ai.nebius.fs2.parent.digest="sha256:5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c" \
+      ai.nebius.fs2.topology="h100-2x-layer-model-parallel"

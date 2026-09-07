@@ -24,10 +24,19 @@ resource "kubernetes_manifest" "model" {
       condition     = local.model_placement_validations[each.key]
       error_message = "GPU Deployment ${each.value.manifest.metadata.name} must resolve through an explicit fixture binding whose GPU count, host architecture, selection mode, pod constraints, and tolerations match every compatible pool."
     }
+
+    precondition {
+      condition = (
+        !contains(local.cpu_runtime_model_ids, each.value.model_id) ||
+        local.cpu_runtime_manifest_validations[each.value.model_id]
+      )
+      error_message = "CPU runtime ${each.value.model_id} must be one static digest-pinned Deployment/Service on the exact general-cpu selector and tolerations, with zero GPU resources and its reviewed runtime command, limits, readiness and embedded-database cache layout."
+    }
   }
 
   depends_on = [
     terraform_data.cluster_contract,
+    terraform_data.cpu_model_runtime_contract,
     kubernetes_secret_v1.ngc_api_key,
     kubernetes_secret_v1.nvcrio_cred,
     helm_release.dcgm_exporter,

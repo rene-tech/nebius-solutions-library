@@ -418,6 +418,55 @@ run "a_general_pool_yields_a_real_cpu_admission_tuple" {
   }
 }
 
+
+run "an_exact_cpu_runtime_renders_one_static_service_without_a_gpu" {
+  command = plan
+
+  variables {
+    enabled_model_ids = ["msa-search-pdb70"]
+    model_image_overrides = {
+      msa-search-pdb70 = "cr.eu-north1.nebius.cloud/test/msa-search-pdb70@sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85"
+    }
+    model_pool_overrides = {}
+    model_controller = {
+      enabled             = true
+      writes_enabled      = true
+      workload_owner      = "controller"
+      bootstrap_model_ids = []
+      fresh_install       = true
+      handoff_receipt     = null
+      priority_classes    = { interactive = 100, standard = 0, batch = -100 }
+    }
+  }
+
+  plan_options {
+    target = [terraform_data.cpu_model_runtime_contract]
+  }
+
+  assert {
+    condition     = length(terraform_data.cpu_model_runtime_contract) == 1
+    error_message = "The exact CPU runtime must select one Deployment rather than rendering its archival GPU NIM beside it."
+  }
+
+  assert {
+    condition = (
+      terraform_data.cpu_model_runtime_contract["msa-search-pdb70"].input.deployment.spec.replicas == 1 &&
+      terraform_data.cpu_model_runtime_contract["msa-search-pdb70"].input.deployment.spec.template.spec.nodeSelector["capacity.fs2.nebius/pool-id"] == "general-cpu-8x" &&
+      terraform_data.cpu_model_runtime_contract["msa-search-pdb70"].input.deployment.spec.template.spec.containers[0].image == var.model_image_overrides["msa-search-pdb70"] &&
+      !contains(keys(terraform_data.cpu_model_runtime_contract["msa-search-pdb70"].input.deployment.spec.template.spec.containers[0].resources.limits), "nvidia.com/gpu")
+    )
+    error_message = "The CPU runtime must stay static, digest pinned, GPU-free, and pinned to the exact general CPU pool."
+  }
+
+  assert {
+    condition = (
+      terraform_data.cpu_model_runtime_contract["msa-search-pdb70"].input.service_manifest.metadata.name == "msa-search-pdb70" &&
+      terraform_data.cpu_model_runtime_contract["msa-search-pdb70"].input.service_manifest.spec.ports[0].port == 8000
+    )
+    error_message = "The selected CPU runtime must expose its exact qualified Service identity."
+  }
+}
+
 run "academic_cpu_reuses_the_general_lane_through_its_own_local_queue" {
   command = plan
 

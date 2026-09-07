@@ -36,7 +36,7 @@ metadata:
     app.kubernetes.io/part-of: fs2-serve
     app.kubernetes.io/version: d529aa57c30771814217ad89baaeaf6e2315c7d7
   annotations:
-    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
     fs2.nebius/model-content-digest: sha256:b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa
     fs2.nebius/model-repository: arcinstitute/evo2_40b
     fs2.nebius/model-revision: d529aa57c30771814217ad89baaeaf6e2315c7d7
@@ -60,7 +60,7 @@ spec:
         app.kubernetes.io/part-of: fs2-serve
         app.kubernetes.io/version: d529aa57c30771814217ad89baaeaf6e2315c7d7
       annotations:
-        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
         fs2.nebius/model-content-digest: sha256:b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa
         fs2.nebius/model-repository: arcinstitute/evo2_40b
         fs2.nebius/model-revision: d529aa57c30771814217ad89baaeaf6e2315c7d7
@@ -68,10 +68,6 @@ spec:
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
-      nodeSelector:
-        capacity.fs2.nebius/pool: burst
-        capacity.fs2.nebius/type: preemptible
-        accelerator.fs2.nebius/class: nvidia-b300-sxm6-288gb
       securityContext:
         fsGroup: 65532
         fsGroupChangePolicy: OnRootMismatch
@@ -101,7 +97,7 @@ spec:
               test -w "${FS2_RUNTIME_CACHE_ROOT}"
           env:
             - name: FS2_RUNTIME_CACHE_ROOT
-              value: /model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.173.02-sm103
+              value: /model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/deployment-profile-abi-v1
           resources:
             limits:
               cpu: "1"
@@ -170,19 +166,17 @@ spec:
             - "8001"
           env:
             - name: CUDA_CACHE_PATH
-              value: /model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.173.02-sm103/cuda
-            - name: CUDA_VISIBLE_DEVICES
-              value: "0"
+              value: /model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/deployment-profile-abi-v1/cuda
             - name: EVO2_MODEL_PATH
               value: /model-cache/evo2_40b.pt
             - name: PYTORCH_CUDA_ALLOC_CONF
               value: expandable_segments:True
             - name: TORCH_EXTENSIONS_DIR
-              value: /model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.173.02-sm103/torch-extensions
+              value: /model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/deployment-profile-abi-v1/torch-extensions
             - name: TORCHINDUCTOR_CACHE_DIR
-              value: /model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.173.02-sm103/torchinductor
+              value: /model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/deployment-profile-abi-v1/torchinductor
             - name: TRITON_CACHE_DIR
-              value: /model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.173.02-sm103/triton
+              value: /model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/deployment-profile-abi-v1/triton
             - name: TRITON_PTXAS_PATH
               value: /usr/local/cuda/bin/ptxas
           resources:

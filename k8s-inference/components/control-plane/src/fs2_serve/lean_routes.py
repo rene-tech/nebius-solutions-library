@@ -250,6 +250,18 @@ def bind_lean_routes(
             ):
                 raise LeanRouteError("lean route differs from its exact qualified variant")
 
+        deployment_runtime = (
+            base.qualification.get("deployment_runtime") if isinstance(base.qualification, Mapping) else None
+        )
+        if deployment_runtime is not None:
+            if (
+                not isinstance(deployment_runtime, Mapping)
+                or route["variant_id"] != base.qualification.get("variant_id")
+                or deployment_runtime.get("model_revision") != revision
+                or deployment_runtime.get("runtime_image_digest") != runtime_digest
+            ):
+                raise LeanRouteError("lean route differs from its selected deployment runtime")
+
         service = _exact(route["service"], {"namespace", "name", "port"}, "lean route service")
         namespace = service["namespace"]
         name = service["name"]
@@ -299,8 +311,12 @@ def bind_lean_routes(
             pool_id = placement["pool_id"]
             if not isinstance(backend_region, str) or _REGION.fullmatch(backend_region) is None:
                 raise LeanRouteError("lean route placement region is invalid")
-            if not isinstance(backend_gpu_class, str) or _GPU_CLASS.fullmatch(backend_gpu_class) is None:
+            if not isinstance(backend_gpu_class, str) or (
+                backend_gpu_class != "CPU" and _GPU_CLASS.fullmatch(backend_gpu_class) is None
+            ):
                 raise LeanRouteError("lean route placement accelerator class is invalid")
+            if deployment_runtime is not None and backend_gpu_class != base.gpu_class:
+                raise LeanRouteError("lean route placement differs from its selected deployment runtime")
             if pool_id is not None and (not isinstance(pool_id, str) or _POOL_ID.fullmatch(pool_id) is None):
                 raise LeanRouteError("lean route placement pool ID is invalid")
         else:
@@ -363,7 +379,9 @@ def bind_lean_routes(
             mcp_tool_name=mcp["tool_name"],
             mcp_description=description,
             mcp_enabled=mcp["enabled"],
-            artifact_manifest_digest=None,
+            artifact_manifest_digest=(
+                None if deployment_runtime is None else deployment_runtime["artifact_manifest_digest"]
+            ),
             artifact_uri=None,
             storage_mode=storage_mode,
             acquisition_receipt_digest=None,

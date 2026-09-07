@@ -437,7 +437,11 @@ def _validate_experiment(value: Any, gpu_count: int, index: int) -> tuple[str, s
     return mechanism, state
 
 
-def _validate_artifact(value: Any) -> tuple[str, bool, str | None]:
+def _validate_artifact(
+    value: Any,
+    *,
+    additional_kinds: frozenset[str] = frozenset(),
+) -> tuple[str, bool, str | None]:
     required = {
         "state",
         "kind",
@@ -465,7 +469,11 @@ def _validate_artifact(value: Any) -> tuple[str, bool, str | None]:
     kind = (
         None
         if artifact["kind"] is None
-        else _enum(artifact["kind"], {"weights", "nim-cache"}, "cache.artifact.kind")
+        else _enum(
+            artifact["kind"],
+            {"weights", "nim-cache", *additional_kinds},
+            "cache.artifact.kind",
+        )
     )
     manifest = _optional_digest(artifact["manifest_digest"], "cache.artifact.manifest_digest")
     expanded = _positive_int(artifact["expanded_bytes"], "cache.artifact.expanded_bytes", nullable=True)

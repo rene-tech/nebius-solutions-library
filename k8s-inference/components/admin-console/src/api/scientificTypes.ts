@@ -330,8 +330,14 @@ export interface ScientificCapabilities {
 
 export type ScientificDispatchStateKind = "open" | "paused" | "at-limit";
 
+export interface ScientificStageStartupPolicy {
+  backend: "normal-load" | "cuda-criu";
+  bundle_id: string | null;
+}
+
 /** One durable scope row; revision 0 means no row exists yet for the scope. */
 export interface ScientificModelPolicySetting {
+  startup_policies?: Record<string, ScientificStageStartupPolicy>;
   tenant_id: string | null;
   revision: number;
   paused: boolean;
@@ -365,6 +371,7 @@ export interface ScientificModelPolicyEnforcement {
 }
 
 export interface ScientificModelPolicy {
+  startup_options?: Record<string, string[]>;
   model_id: string;
   scope_tenant_id: string | null;
   catalog_known: boolean;
@@ -382,6 +389,7 @@ export interface ScientificModelPolicyList {
 }
 
 export interface ScientificModelPolicyUpdate {
+  startup_policies?: Record<string, ScientificStageStartupPolicy>;
   expected_revision: number;
   paused: boolean;
   max_active_runs: number | null;

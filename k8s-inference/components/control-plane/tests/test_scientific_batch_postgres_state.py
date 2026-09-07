@@ -78,7 +78,7 @@ async def store() -> PostgresStore:
         await connected.close()
 
 
-async def principal_of(store: PostgresStore) -> Principal:
+async def principal_of(store: PostgresStore, *, max_concurrency: int = 1) -> Principal:
     token_id = uuid4()
     prefix = f"fs2_pat_{token_id.hex[:12]}"
     await store.issue_token(
@@ -91,7 +91,7 @@ async def principal_of(store: PostgresStore) -> Principal:
             tenant_id=TENANT,
             scopes={Scope.INFERENCE_INVOKE},
             models={"rfdiffusion"},
-            max_concurrency=1,
+            max_concurrency=max_concurrency,
         ),
         created_by="researcher-ada",
     )
@@ -102,7 +102,7 @@ async def principal_of(store: PostgresStore) -> Principal:
         tenant_id=TENANT,
         scopes=frozenset({Scope.INFERENCE_INVOKE.value}),
         models=frozenset({"rfdiffusion"}),
-        max_concurrency=1,
+        max_concurrency=max_concurrency,
     )
 
 
@@ -559,3 +559,41 @@ async def test_real_postgres_keeps_a_completed_legacy_row_readable_and_untouched
     row = await stored_row(store, legacy.operation_id)
     assert row["status"] == "succeeded" and row["revision"] == legacy.revision
     assert json.loads(row["state"])["schema_version"] == PREVIOUS_STATE_SCHEMA
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_real_postgres_pending_admission_replay_keeps_frozen_startup_policy(store: PostgresStore) -> None:
+    from fs2_serve.store import ConflictError
+
+    # Two slots only in this isolated fixture let the new-request negative
+    # case reach the atomic factory while the accepted outbox stays pending.
+    principal = await principal_of(store, max_concurrency=2)
+    admission = AdmissionRequest(
+        model_id="rfdiffusion", operation="generate-backbone", protocol="scientific-batch-v1",
+        idempotency_key="scientific-startup-replay-0001", request_body=b'{"input":"original"}',
+    )
+    accepted_payload = {"startup_policy": {"backend": "cuda-criu", "bundle_id": "accepted-bundle"}}
+    arguments = dict(principal=principal, admission=admission, model_revision="2" * 40,
+                     reserved_gpu_seconds=0, max_attempts=1)
+    operation = await store.append_operation(**arguments, scientific_admission_factory=lambda _: accepted_payload)
+    original = await store.get_scientific_admission(operation.id)
+    assert original is not None and original.payload == accepted_payload
+
+    def removed_policy(_):
+        raise ValueError("accepted bundle is no longer offered for new operations")
+
+    replay = await store.append_operation(**arguments, scientific_admission_factory=removed_policy)
+    assert replay.id == operation.id and replay.reused
+    assert await store.get_scientific_admission(operation.id) == original
+    with pytest.raises(ConflictError, match="different request"):
+        await store.append_operation(**{
+            **arguments, "admission": admission.model_copy(update={"request_body": b'{"input":"different"}'})
+        }, scientific_admission_factory=removed_policy)
+    with pytest.raises(ValueError, match="no longer offered"):
+        await store.append_operation(**{
+            **arguments, "admission": admission.model_copy(update={"idempotency_key": "scientific-startup-new-0002"})
+        }, scientific_admission_factory=removed_policy)
+    async with store.pool.acquire() as connection:
+        assert await connection.fetchval("SELECT count(*) FROM fs2_operations") == 1
+        assert await connection.fetchval("SELECT count(*) FROM fs2_scientific_admission_outbox") == 1

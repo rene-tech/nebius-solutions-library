@@ -1,0 +1,298 @@
+"""Optional, admission-frozen GPU restore over the normal scientific stage.
+
+The bundle registry is operator configuration, not public request input. The
+selected full record is frozen with each stage, so policy edits cannot change
+an accepted run. The ordinary argv and artifact collector remain unchanged.
+"""
+
+from __future__ import annotations
+
+import copy
+import json
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import PurePosixPath
+from typing import Any
+
+BUNDLE_SCHEMA = "fs2-serve.nebius.ai/scientific-snapshot-bundle/v1"
+CAPTURED_TMP_PATH = "/tmp"  # noqa: S108 - per-Pod emptyDir at the captured runtime path
+
+
+@dataclass(frozen=True, slots=True)
+class StageStartupPolicy:
+    backend: str = "normal-load"
+    bundle_id: str | None = None
+    bundle_json: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.backend == "normal-load":
+            if self.bundle_id is not None or self.bundle_json is not None:
+                raise ValueError("normal-load startup cannot select a snapshot bundle")
+        elif self.backend == "cuda-criu":
+            if not self.bundle_id or self.bundle_json is None:
+                raise ValueError("cuda-criu startup requires a frozen snapshot bundle")
+            bundle = validate_bundle(json.loads(self.bundle_json), self.bundle_id)
+            if not bundle["qualified"]:
+                raise ValueError("snapshot startup requires a qualified bundle")
+        else:
+            raise ValueError("scientific startup backend is unsupported")
+
+    def to_value(self) -> dict[str, Any]:
+        return {
+            "backend": self.backend,
+            "bundle_id": self.bundle_id,
+            "bundle": None if self.bundle_json is None else json.loads(self.bundle_json),
+        }
+
+    @classmethod
+    def from_value(cls, value: Any) -> StageStartupPolicy:
+        if not isinstance(value, dict) or set(value) != {"backend", "bundle_id", "bundle"}:
+            raise ValueError("stored scientific startup policy fields differ")
+        return cls(
+            value["backend"], value["bundle_id"], None if value["bundle"] is None else canonical_bundle(value["bundle"])
+        )
+
+
+def canonical_bundle(bundle: Mapping[str, Any]) -> str:
+    return json.dumps(bundle, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def validate_bundle(value: Any, bundle_id: str) -> dict[str, Any]:
+    fields = {
+        "schema",
+        "bundle_id",
+        "model_id",
+        "stage_id",
+        "model_revision",
+        "profile_model_revision",
+        "runtime_image",
+        "tools_image",
+        "source_configmap",
+        "source_sha256",
+        "cli_configmap",
+        "cli_sha256",
+        "pvc",
+        "bundle_path",
+        "manifest_sha256",
+        "qualification_receipt_sha256",
+        "qualified",
+        "python",
+        "cli_path",
+        "cli_key",
+        "worker_variable",
+        "compatibility",
+    }
+    if not isinstance(value, Mapping) or set(value) != fields:
+        raise ValueError("scientific snapshot bundle fields differ")
+    bundle = copy.deepcopy(dict(value))
+    compatibility = bundle["compatibility"]
+    if (
+        not isinstance(compatibility, dict)
+        or set(compatibility) != {"gpu_name", "compute_capability", "driver_version", "kernel_release"}
+        or any(not isinstance(item, str) or not item for item in compatibility.values())
+    ):
+        raise ValueError("snapshot bundle must name its captured driver/GPU/kernel compatibility")
+    if bundle["schema"] != BUNDLE_SCHEMA or bundle["bundle_id"] != bundle_id:
+        raise ValueError("scientific snapshot bundle identity differs")
+    if (bundle["model_id"], bundle["stage_id"]) != ("protenix-v2", "sample-structure"):
+        raise ValueError("snapshot bundle has no qualified scientific stage adapter")
+    for field in ("runtime_image", "tools_image"):
+        if not isinstance(bundle[field], str) or re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", bundle[field]) is None:
+            raise ValueError("snapshot bundle images must be immutable")
+    if not isinstance(bundle["qualified"], bool):
+        raise ValueError("snapshot bundle qualification must be explicit")
+    for field in ("manifest_sha256", "cli_sha256", "qualification_receipt_sha256"):
+        if field == "qualification_receipt_sha256" and not bundle["qualified"] and bundle[field] is None:
+            continue
+        if not isinstance(bundle[field], str) or re.fullmatch(r"[a-f0-9]{64}", bundle[field]) is None:
+            raise ValueError("snapshot bundle requires exact manifest/source/qualification digests")
+    sources = bundle["source_sha256"]
+    if (
+        not isinstance(sources, dict)
+        or set(sources) != {"supervisor.py", "process_checkpoint.py", "protenix_server.py", "scientific_server.py"}
+        or any(
+            not isinstance(digest, str) or re.fullmatch(r"[a-f0-9]{64}", digest) is None for digest in sources.values()
+        )
+    ):
+        raise ValueError("snapshot bundle requires the captured source identities")
+    for field in ("source_configmap", "cli_configmap", "pvc", "cli_key"):
+        if not isinstance(bundle[field], str) or re.fullmatch(r"[a-z0-9][a-z0-9.-]{0,252}", bundle[field]) is None:
+            raise ValueError("snapshot bundle Kubernetes source identity is invalid")
+    path = PurePosixPath(bundle["bundle_path"])
+    if path.is_absolute() or path.as_posix() != bundle["bundle_path"] or any(p in {".", ".."} for p in path.parts):
+        raise ValueError("snapshot bundle path must be a contained relative path")
+    if (bundle["python"], bundle["cli_path"], bundle["cli_key"], bundle["worker_variable"]) != (
+        "/opt/protenix-venv/bin/python",
+        "/opt/protenix-venv/bin/protenix",
+        "protenix",
+        "FS2_PROTENIX_WORKER_URL",
+    ):
+        raise ValueError("snapshot bundle must preserve the qualified Protenix CLI bridge")
+    return bundle
+
+
+def select_startup_policy(
+    selection: Mapping[str, Any] | None,
+    bundles: Mapping[str, Mapping[str, Any]],
+    *,
+    model_id: str,
+    stage_id: str,
+    model_revision: str,
+    runtime_image: str,
+) -> StageStartupPolicy:
+    if selection is None:
+        return StageStartupPolicy()
+    if not isinstance(selection, Mapping) or set(selection) != {"backend", "bundle_id"}:
+        raise ValueError("scientific startup selection fields differ")
+    if selection["backend"] == "normal-load":
+        return StageStartupPolicy("normal-load", selection["bundle_id"])
+    bundle_id = selection["bundle_id"]
+    if selection["backend"] != "cuda-criu" or not isinstance(bundle_id, str) or bundle_id not in bundles:
+        raise ValueError("scientific startup selection names no registered snapshot bundle")
+    bundle = validate_bundle(bundles[bundle_id], bundle_id)
+    if (bundle["model_id"], bundle["stage_id"], bundle["profile_model_revision"], bundle["runtime_image"]) != (
+        model_id,
+        stage_id,
+        model_revision,
+        runtime_image,
+    ):
+        raise ValueError("snapshot bundle differs from the selected model/stage/runtime identity")
+    return StageStartupPolicy("cuda-criu", bundle_id, canonical_bundle(bundle))
+
+
+def apply_startup_policy(pod: dict[str, Any], policy: StageStartupPolicy, *, request_uid: int) -> dict[str, Any]:
+    """Production form of the measured Protenix restore transform.
+
+    No probe labels, node pinning, scheduler bypass or resource changes are added.
+    The supervisor retains its tested ordinary-load fallback and drops identity
+    for the unchanged original scientific command.
+    """
+    if policy.backend == "normal-load":
+        return pod
+    assert policy.bundle_json is not None
+    config = json.loads(policy.bundle_json)
+    if request_uid != 10001:
+        raise ValueError("snapshot bundle requires the captured scientific workspace identity")
+    result = copy.deepcopy(pod)
+    spec = result["spec"]
+    runtime = next(item for item in spec["containers"] if item["name"] == "scientific-stage")
+    if runtime["image"] != config["runtime_image"]:
+        raise ValueError("frozen snapshot runtime image differs from the rendered stage")
+    original_command = runtime["command"] + runtime.pop("args", [])
+    directory = "/checkpoints/" + config["bundle_path"]
+    runtime["command"] = [
+        config["python"],
+        "/snapshot-source/supervisor.py",
+        "--directory",
+        directory,
+        "--source-directory",
+        "/snapshot-bundle",
+        "--fallback",
+        "normal-load",
+        "--allow-device-remap",
+        "--request-uid",
+        "10001",
+        "--request-gid",
+        "10001",
+        "--worker-url-variable",
+        config["worker_variable"],
+        "restore",
+        "--",
+        *original_command,
+    ]
+    runtime["securityContext"] = {
+        "runAsUser": 0,
+        "runAsGroup": 0,
+        "runAsNonRoot": False,
+        "capabilities": {"add": ["SYS_ADMIN", "SYS_PTRACE", "CHECKPOINT_RESTORE", "NET_ADMIN", "SYS_TIME"]},
+        "seccompProfile": {"type": "Unconfined"},
+        "appArmorProfile": {"type": "Unconfined"},
+    }
+    runtime["env"].extend(
+        [
+            {"name": "FS2_SNAPSHOT_RUNTIME_IMAGE", "value": runtime["image"]},
+            {"name": "FS2_SNAPSHOT_TOOLS_IMAGE", "value": config["tools_image"]},
+            {"name": "FS2_MODEL_REVISION", "value": config["model_revision"]},
+            {"name": "FS2_RUNTIME_ID", "value": config["model_id"]},
+        ]
+    )
+    runtime["volumeMounts"].extend(
+        [
+            {"name": "snapshot-tools", "mountPath": "/tools"},
+            {"name": "snapshot-source", "mountPath": "/snapshot-source", "readOnly": True},
+            {"name": "snapshot-checkpoints", "mountPath": "/checkpoints"},
+        ]
+    )
+    if not any(mount["mountPath"] == CAPTURED_TMP_PATH for mount in runtime["volumeMounts"]):
+        runtime["volumeMounts"].append({"name": "snapshot-checkpoints", "mountPath": CAPTURED_TMP_PATH})
+    for mount in runtime["volumeMounts"]:
+        if mount["mountPath"] in ("/runtime-cache", "/cache", CAPTURED_TMP_PATH):
+            mount["name"] = "snapshot-checkpoints"
+            mount["subPath"] = (
+                config["bundle_path"] + "/" + ("tmp" if mount["mountPath"] == CAPTURED_TMP_PATH else "runtime-cache")
+            )
+    bundle_mount = {
+        "name": "snapshot-bundle",
+        "mountPath": "/snapshot-bundle",
+        "subPath": config["bundle_path"],
+        "readOnly": True,
+    }
+    runtime["volumeMounts"].extend(
+        [
+            bundle_mount,
+            {
+                "name": "snapshot-bundle",
+                "mountPath": directory + "/images",
+                "subPath": config["bundle_path"] + "/images",
+                "readOnly": True,
+            },
+            {"name": "snapshot-cli", "mountPath": config["cli_path"], "subPath": config["cli_key"], "readOnly": True},
+        ]
+    )
+    spec["volumes"].extend(
+        [
+            {"name": "snapshot-tools", "emptyDir": {}},
+            {"name": "snapshot-source", "configMap": {"name": config["source_configmap"], "defaultMode": 292}},
+            {"name": "snapshot-checkpoints", "emptyDir": {}},
+            {"name": "snapshot-bundle", "persistentVolumeClaim": {"claimName": config["pvc"], "readOnly": True}},
+            {"name": "snapshot-cli", "configMap": {"name": config["cli_configmap"], "defaultMode": 365}},
+        ]
+    )
+    spec["initContainers"].insert(
+        0,
+        {
+            "name": "snapshot-tools",
+            "image": config["tools_image"],
+            "command": [
+                "/bin/sh",
+                "-c",
+                (
+                    "cp -a /snapshot-binaries/. /tools/ && "
+                    "cp -L /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libm.so.6 "
+                    "/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /tools/lib/ && "
+                    'mkdir -p "$1/runtime-cache" "$1/tmp" && '
+                    'if [ -n "$2" ]; then chown "$2:$2" "$1/runtime-cache" "$1/tmp"; fi'
+                    ' && for part in runtime-cache tmp; do if [ -d "/snapshot-bundle/$part" ]; then '
+                    'cp -a "/snapshot-bundle/$part/." "$1/$part/"; fi; done'
+                ),
+                "snapshot-tools",
+                directory,
+                "10001",
+            ],
+            "securityContext": {"runAsUser": 0, "runAsGroup": 0, "runAsNonRoot": False},
+            "volumeMounts": [
+                {"name": "snapshot-tools", "mountPath": "/tools"},
+                {"name": "snapshot-checkpoints", "mountPath": "/checkpoints"},
+                bundle_mount,
+            ],
+        },
+    )
+    result.setdefault("metadata", {}).setdefault("annotations", {}).update(
+        {
+            "fs2.nebius.ai/startup-backend": policy.backend,
+            "fs2.nebius.ai/snapshot-bundle-id": policy.bundle_id,
+            "fs2.nebius.ai/snapshot-manifest-sha256": config["manifest_sha256"],
+        }
+    )
+    return result

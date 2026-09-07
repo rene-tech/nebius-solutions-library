@@ -133,6 +133,10 @@ class ScientificModelPolicySnapshot:
     observed_at: datetime
 
 
+class ScientificModelPolicyInvalidError(ValueError):
+    """A requested model startup option is not available in this deployment."""
+
+
 class ScientificModelPolicyStaleRevisionError(RuntimeError):
     """The operator's expected policy revision is no longer the durable one."""
 
@@ -726,6 +730,8 @@ class ScientificAdminReadService:
                 "scientific_model_policy_stale",
                 f"scientific model policy revision changed; current revision is {error.current_revision}",
             ) from None
+        except ScientificModelPolicyInvalidError as error:
+            raise AdminProblemError(422, "scientific_model_policy_invalid", str(error)) from None
         except (OSError, RuntimeError, TimeoutError, ValueError):
             raise AdminProblemError(
                 503,

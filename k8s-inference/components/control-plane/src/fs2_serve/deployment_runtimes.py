@@ -123,17 +123,41 @@ def _record(value: Any, model_id: str, variant_id: str, catalog: Catalog, schema
     image_state, _, image_digest = _validate_image(record["runtime"]["image"])
     license_state = _validate_status_binding(source["license"], "deployment runtime license")
     entitlement_state = _validate_entitlement(source["entitlement"])
-    artifact_state, _, artifact_kind = _validate_artifact(record["cache"]["artifact"])
+    artifact_state, _, artifact_kind = _validate_artifact(
+        record["cache"]["artifact"], additional_kinds=frozenset({"reference-database"})
+    )
+    gpu = record["resources"]["gpu"]
+    cpu_runtime = gpu["class"] == "CPU"
+    resource_artifact_valid = (
+        artifact_kind == "reference-database"
+        and record["cache"]["owner"] == "runtime-image"
+        and gpu
+        == {
+            "class": "CPU",
+            "count": 0,
+            "topology": "cpu-only",
+            "placement": None,
+            "b300_state": "not-applicable",
+            "alternatives": [],
+        }
+        if cpu_runtime
+        else artifact_kind == "weights"
+        and record["cache"]["owner"] == "fs2-serve-localizer"
+        and gpu["count"] >= 1
+        and gpu["topology"] in {"single-gpu", "single-node-multi-gpu"}
+        and gpu["b300_state"] != "not-applicable"
+    )
     if (
         image_state != "resolved"
         or image_digest is None
         or license_state != "verified"
         or entitlement_state not in {"verified", "not-required"}
         or artifact_state != "platform-verified"
-        or artifact_kind != "weights"
-        or record["cache"]["owner"] != "fs2-serve-localizer"
+        or not resource_artifact_valid
     ):
-        raise DeploymentRuntimeError("deployment runtime requires exact image, verified policy and weight artifact")
+        raise DeploymentRuntimeError(
+            "deployment runtime requires exact image, verified policy and a resource-matched artifact"
+        )
     strong_sha256(record["cache"]["artifact"]["manifest_digest"], "deployment artifact manifest")
     for field, prefix in (
         ("shared_path", "/mnt/fs2-serve-cache/models/"),
@@ -142,7 +166,6 @@ def _record(value: Any, model_id: str, variant_id: str, catalog: Catalog, schema
         if record["cache"][field] != prefix + model_id:
             raise DeploymentRuntimeError("deployment runtime cache path aliases another model")
     interface = record["interface"]
-    gpu = record["resources"]["gpu"]
     if (
         interface["execution_mode"] != "http"
         or not interface["protocols"]
@@ -154,7 +177,7 @@ def _record(value: Any, model_id: str, variant_id: str, catalog: Catalog, schema
         or record["support"]["route_exposed"]
         or interface["mcp"]["invocable"]
         or record["support"]["non_clinical"] != interface["policy"]["non_clinical"]
-        or (gpu["count"] == 1) != (gpu["topology"] == "single-gpu")
+        or (not cpu_runtime and (gpu["count"] == 1) != (gpu["topology"] == "single-gpu"))
     ):
         raise DeploymentRuntimeError("deployment candidate has an incomplete contract or claims static routing")
     for endpoint in interface["endpoints"].values():
@@ -185,6 +208,12 @@ def bind_deployment_runtimes(
             "type": "string",
             "minLength": 1,
         }
+        gpu_schema = schema["properties"]["resources"]["properties"]["gpu"]["properties"]
+        gpu_schema["count"]["minimum"] = 0
+        gpu_schema["topology"]["enum"].append("cpu-only")
+        gpu_schema["b300_state"]["enum"].append("not-applicable")
+        schema["properties"]["cache"]["properties"]["owner"]["enum"].append("runtime-image")
+        schema["$defs"]["artifact"]["properties"]["kind"]["enum"].append("reference-database")
         records = dict(catalog.records)
         selected: dict[str, dict[str, Any]] = {}
         for model_id, raw in entries.items():

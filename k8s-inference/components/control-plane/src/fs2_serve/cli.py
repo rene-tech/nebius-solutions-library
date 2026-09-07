@@ -61,6 +61,7 @@ from .model_deployment_bridge import ModelDeploymentRuntimeBridge
 from .model_deployment_controller import ControllerFiles, run_model_controller
 from .model_deployment_mutation import HttpKubernetesDesiredWriter, ModelDeploymentMutationService
 from .model_deployment_preview import ModelDeploymentPreviewService, RepositoryModelDeploymentPreviewState
+from .model_inventory import load_snapshot_capabilities
 from .models import TokenCreate
 from .postgres import PostgresMaintenanceStore, PostgresStore
 from .postgresql_release import render_postgresql_release_contract
@@ -79,7 +80,7 @@ from .scientific_batch.capability import ScientificWorkloadCapabilityAuthority
 from .scientific_batch.execution import FileScientificManifestRenderer
 from .scientific_batch.kubernetes import HttpScientificBatchCluster
 from .scientific_batch.lifecycle_bridge import ScientificLifecycleBridge
-from .scientific_batch.policy import PolicyAwareScientificBatchController
+from .scientific_batch.policy import PolicyAwareScientificBatchController, PostgresScientificModelPolicyRepository
 from .scientific_batch.postgres_repository import PostgresScientificBatchRepository
 from .scientific_batch.profile_catalog import ScientificProfileCatalog
 from .scientific_batch.scheduling import SchedulingContractResolver
@@ -435,6 +436,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             artifacts=scientific_artifact_bridge,
             execution_binding=scientific_renderer,
             plan_factory=scientific_renderer,
+            startup_policy_resolver=PostgresScientificModelPolicyRepository(store.pool).startup_policies,
         )
         scientific_batch_worker = ScientificBatchWorker(
             scientific_controller,
@@ -535,10 +537,14 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         configuration_repository = StoreConfigurationRepository(store)
         configuration_service = ConfigurationService(
             repository=configuration_repository,
-            catalog=StaticCatalogConfigurationAdapter(catalog_configuration_contracts(
-                canonical_catalog,
-                deployment_runtime_entries=load_deployment_runtime_entries(settings.deployment_runtime_records_file),
-            )),
+            catalog=StaticCatalogConfigurationAdapter(
+                catalog_configuration_contracts(
+                    canonical_catalog,
+                    deployment_runtime_entries=load_deployment_runtime_entries(
+                        settings.deployment_runtime_records_file
+                    ),
+                )
+            ),
             audit=StoreConfigurationAuditSink(store),
         )
         validation = await configuration_service.validate_bootstrap(initial_configuration)
@@ -580,6 +586,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         scientific_workload_batches=scientific_repository,
         scientific_artifact_content_reader=artifact_content_reader,
         scientific_input_uploads=scientific_input_uploads,
+        snapshot_capabilities=load_snapshot_capabilities(settings.snapshot_capabilities_file),
     )
 
 

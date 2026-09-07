@@ -1,0 +1,22 @@
+{
+  "model_id": "evo2-40b",
+  "runtime_variant": "evo2-40b-upstream-portable",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+  "requirements": {
+    "gpu_count": 2,
+    "topology": "single-node-multi-gpu",
+    "host_architectures": [
+      "amd64"
+    ]
+  },
+  "binding": {
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "pool_template": "unbound-h100",
+    "state": "hardware-validated",
+    "enabled": true,
+    "gpu_count": 2,
+    "catalog_b300_state": null,
+    "evidence": "acceptance/h100-fleet/medical-media/evo2-qualification.json@sha256:2e625a1a683a8461c9e1de7b394d994db0c1fb099f76773b693c13c7e37968a9"
+  },
+  "scope": "exact-v5-image-two-H100-runtime-only; preserve all archival B300 runtime bindings"
+}

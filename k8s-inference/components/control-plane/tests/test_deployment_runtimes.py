@@ -10,6 +10,7 @@ from types import MappingProxyType
 
 import pytest
 from conftest import CATALOG_ROOT, REPO_ROOT
+from fs2_serve_catalog.artifacts import load_artifact_manifest
 from fs2_serve_catalog.consumer import SERVING_BINDINGS_SCHEMA, ServingBindings, bind_gateway_catalog
 from fs2_serve_catalog.loader import load_catalog
 from test_model_deployment_publication import revision, status_view
@@ -68,6 +69,55 @@ def test_all_shipped_runtime_candidates_validate_without_granting_public_routes(
         assert model.runtime_image_digest == entry["record"]["runtime"]["image"]["digest"]
         assert not model.routable
         assert not model.mcp_invocable
+
+
+def test_cpu_reference_database_runtime_is_exact_and_reserves_no_gpu(inputs):
+    entry = json.loads((CATALOG_ROOT / "deployment-runtimes/msa-search-pdb70-portable-cpu.json").read_text())
+    projected = project(inputs, {entry["model_id"]: entry})
+    model = projected.model("msa-search-pdb70")
+    manifest = load_artifact_manifest(
+        CATALOG_ROOT
+        / "deployment-runtimes/artifacts"
+        / ("msa-search-pdb70-2a3cb71cb615b8534b3134013e9cbecf003339bc6f034c4e6545dfdf91229c52.json")
+    )
+
+    assert model.gpu_class == "CPU"
+    assert model.gpu_allocation_count == 0
+    assert not model.routable and not model.mcp_invocable
+    assert manifest.kind == "reference-database"
+    assert manifest.digest == entry["record"]["cache"]["artifact"]["manifest_digest"]
+    assert manifest.expanded_bytes == entry["record"]["cache"]["artifact"]["expanded_bytes"]
+    assert len(manifest.files) == 9
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("resources", "gpu", "class"), "cpu"),
+        (("resources", "gpu", "count"), 1),
+        (("resources", "gpu", "topology"), "single-gpu"),
+        (("resources", "gpu", "b300_state"), "unverified"),
+        (("cache", "owner"), "fs2-serve-localizer"),
+        (("cache", "artifact", "kind"), "weights"),
+    ],
+)
+def test_cpu_runtime_resource_and_database_identity_fail_closed(inputs, path, value):
+    entry = json.loads((CATALOG_ROOT / "deployment-runtimes/msa-search-pdb70-portable-cpu.json").read_text())
+    target = entry["record"]
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+    with pytest.raises(DeploymentRuntimeError, match="resource-matched artifact"):
+        project(inputs, {entry["model_id"]: entry})
+
+
+def test_gpu_runtime_cannot_claim_embedded_reference_database_contract(inputs):
+    entries = copy.deepcopy(inputs[3])
+    entry = entries["molmim"]
+    entry["record"]["cache"]["owner"] = "runtime-image"
+    entry["record"]["cache"]["artifact"]["kind"] = "reference-database"
+    with pytest.raises(DeploymentRuntimeError, match="resource-matched artifact"):
+        project(inputs, entries)
 
 
 def test_retained_service_suffix_is_not_hardware_or_model_alias(inputs):
@@ -213,3 +263,69 @@ def test_settings_and_registry_explicit_selection_refresh(inputs, monkeypatch):
     path.write_text(json.dumps({"schema": SET_SCHEMA, "models": {}}))
     assert registry.revalidate()
     assert registry.get("molmim", require_enabled=False).gateway.runtime_kind == "nim"
+
+
+def test_registry_binds_terraform_cpu_route_after_the_selected_runtime(tmp_path: Path):
+    catalog = load_catalog(CATALOG_ROOT, repo_root=REPO_ROOT)
+    entry = json.loads((CATALOG_ROOT / "deployment-runtimes/msa-search-pdb70-portable-cpu.json").read_text())
+    runtime_set = tmp_path / "deployment-runtimes.json"
+    runtime_set.write_text(json.dumps({"schema": SET_SCHEMA, "models": {entry["model_id"]: entry}}))
+    bindings = tmp_path / "bindings.json"
+    bindings.write_text(
+        json.dumps({"schema": SERVING_BINDINGS_SCHEMA, "catalog_digest": catalog.digest, "bindings": {}})
+    )
+    value = entry["record"]
+    routes = tmp_path / "lean-routes.json"
+    routes.write_text(
+        json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/lean-routes/v4",
+                "routes": [
+                    {
+                        "model_id": entry["model_id"],
+                        "variant_id": entry["variant_id"],
+                        "model_revision": value["model"]["source"]["revision"],
+                        "runtime_image_digest": value["runtime"]["image"]["digest"],
+                        "service": entry["qualification"]["active_runtime"]["service"],
+                        "storage_mode": "ephemeral-emptydir",
+                        "protocols": value["interface"]["endpoints"],
+                        "operations": value["interface"]["policy"]["operations"],
+                        "mcp": {
+                            "enabled": True,
+                            "tool_name": "msa_search",
+                            "description": "Run an authorized PDB70 multiple-sequence-alignment search.",
+                        },
+                        "placement": {
+                            "region": "eu-north1",
+                            "accelerator_class": "CPU",
+                            "pool_id": "general-cpu-8x",
+                        },
+                    }
+                ],
+            }
+        )
+    )
+
+    registry = Registry.load(
+        CATALOG_ROOT,
+        bindings,
+        repo_root=REPO_ROOT,
+        evidence_root=None,
+        lean_routes_file=routes,
+        deployment_runtime_records_file=runtime_set,
+        max_attempts=2,
+        max_gpu_seconds_per_attempt=10,
+        retry_base_seconds=1,
+    )
+    model = registry.get("msa-search-pdb70")
+
+    assert model.lean_static
+    assert model.gateway.runtime_kind == "custom"
+    assert model.gateway.model_revision == value["model"]["source"]["revision"]
+    assert model.gateway.runtime_image_digest == value["runtime"]["image"]["digest"]
+    assert model.gateway.gpu_class == "CPU"
+    assert model.gateway.gpu_allocation_count == 0
+    assert dict(model.gateway.endpoints) == value["interface"]["endpoints"]
+    assert model.binding.backend_gpu_class == "CPU"
+    assert model.binding.artifact_manifest_digest == value["cache"]["artifact"]["manifest_digest"]
+    assert model.binding.service_origin == "http://msa-search-pdb70.fs2-models.svc.cluster.local:8000"

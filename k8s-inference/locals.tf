@@ -247,6 +247,30 @@ locals {
       false,
     )
   }
+  # A CPU-only deployment runtime is an explicit immutable alternative, not a
+  # zero-sized accelerator placement. Keep it out of GPU placement and KEDA;
+  # the workloads stage binds it to the existing general CPU pool.
+  selected_cpu_deployment_runtimes = {
+    for model_id, candidate in local.selected_deployment_runtimes : model_id => candidate
+    if try(
+      candidate.record.resources.gpu == {
+        class        = "CPU"
+        count        = 0
+        topology     = "cpu-only"
+        placement    = null
+        b300_state   = "not-applicable"
+        alternatives = []
+      } &&
+      candidate.record.cache.owner == "runtime-image" &&
+      candidate.record.cache.artifact.kind == "reference-database",
+      false,
+    )
+  }
+  selected_cpu_runtime_model_ids = toset(keys(local.selected_cpu_deployment_runtimes))
+  selected_accelerator_model_ids = sort(tolist(setsubtract(
+    toset(local.selected_model_ids),
+    local.selected_cpu_runtime_model_ids,
+  )))
   selected_runtime_model_contracts = merge(local.retained_runtime_model_contracts, {
     for model_id, candidate in local.selected_deployment_runtimes : model_id => candidate.record
   })
@@ -257,13 +281,15 @@ locals {
     )
   }
   effective_model_gpu_counts = {
-    for model_id in local.selected_model_ids : model_id => coalesce(
-      try(var.deployment.models.runtime_overrides[model_id].gpu_count, null),
-      local.model_profile_contract.model_autoscaling_targets[model_id].gpu_count,
+    for model_id in local.selected_model_ids : model_id => (
+      contains(local.selected_cpu_runtime_model_ids, model_id) ? 0 : coalesce(
+        try(var.deployment.models.runtime_overrides[model_id].gpu_count, null),
+        local.model_profile_contract.model_autoscaling_targets[model_id].gpu_count,
+      )
     )
   }
   selected_model_required_secrets = toset(distinct(flatten([
-    for model_id in local.selected_model_ids : try(
+    for model_id in local.selected_accelerator_model_ids : try(
       local.model_profile_contract.model_artifacts[model_id].required_secrets,
       [],
     )
@@ -861,7 +887,7 @@ locals {
     )
   }
   catalog_model_placements = {
-    for model_id in local.selected_model_ids : model_id => try(
+    for model_id in local.selected_accelerator_model_ids : model_id => try(
       merge(local.model_profile_contract.workload_placements[
         local.model_profile_contract.model_autoscaling_targets[model_id].deployment
       ], { gpu_request = local.effective_model_gpu_counts[model_id] }),
@@ -897,7 +923,7 @@ locals {
       ) : false
     ]
   ])
-  selected_model_replica_ceilings = {
+  selected_accelerator_model_replica_ceilings = {
     for model_id, placement in local.selected_model_placements : model_id => try(floor(
       sum([
         for pool_id in placement.compatible_pool_ids :
@@ -907,6 +933,10 @@ locals {
       ]) / local.effective_model_gpu_counts[model_id]
     ), 0)
   }
+  selected_model_replica_ceilings = merge(
+    local.selected_accelerator_model_replica_ceilings,
+    { for model_id in local.selected_cpu_runtime_model_ids : model_id => 1 },
+  )
 
   grafana_external_enabled = var.deployment.observability.grafana.publish_external
   modelexpress_managed_nvcr_server_required = (
@@ -1124,6 +1154,7 @@ locals {
       namespace                = var.deployment.scientific_batch.namespace
       runtime_cache            = var.deployment.scientific_batch.runtime_cache
       execution_map            = local.scientific_execution_map
+      gpu_snapshots            = var.deployment.scientific_batch.gpu_snapshots
       workers                  = var.deployment.scientific_batch.workers
       poll_seconds             = var.deployment.scientific_batch.poll_seconds
       lease_seconds            = var.deployment.scientific_batch.lease_seconds
@@ -1180,10 +1211,13 @@ locals {
       tempo        = { url = "", verified_external_route = false }
     }
     model_controller = {
-      enabled                                    = var.deployment.dynamic_models.enabled
-      writes_enabled                             = var.deployment.dynamic_models.writes_enabled
-      workload_owner                             = var.deployment.dynamic_models.workload_owner
-      bootstrap_model_ids                        = sort(tolist(var.deployment.dynamic_models.bootstrap_model_ids))
+      enabled        = var.deployment.dynamic_models.enabled
+      writes_enabled = var.deployment.dynamic_models.writes_enabled
+      workload_owner = var.deployment.dynamic_models.workload_owner
+      bootstrap_model_ids = sort(tolist(setsubtract(
+        var.deployment.dynamic_models.bootstrap_model_ids,
+        local.selected_cpu_runtime_model_ids,
+      )))
       fresh_install                              = var.deployment.dynamic_models.fresh_install
       handoff_receipt                            = var.deployment.dynamic_models.handoff_receipt
       fast_start_evidence_file                   = var.deployment.dynamic_models.fast_start_evidence_file

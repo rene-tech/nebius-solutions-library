@@ -8,7 +8,7 @@
   "properties": {
     "schema": {"const": "fs2-serve.nebius.ai/artifact-manifest/v1"},
     "model_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
-    "kind": {"enum": ["weights", "nim-cache", "snapshot"]},
+    "kind": {"enum": ["weights", "nim-cache", "snapshot", "reference-database"]},
     "source": {
       "type": "object",
       "additionalProperties": false,

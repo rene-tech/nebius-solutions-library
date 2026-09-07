@@ -1,0 +1,2623 @@
+{
+  "schema": "fs2-h100-fleet-direct-startup/v1",
+  "boundary": "direct isolated Pod; not public activation; source-container timestamps (Kubernetes start timestamps have one-second granularity)",
+  "models": {
+    "sdxl": {
+      "trials": [
+        {
+          "repetition": "r01",
+          "cohort": "initial-empty-weight-cache",
+          "pod": "fs2-mm-sdxl-r01-20260907",
+          "pod_uid": "ca21c77a-d95d-454d-89e2-a5ff16a3bc49",
+          "node": "computeinstance-e00m0hsph76ajt9sdb",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+          "model_revision": "462165984030d82259a11f4367a4eed129e94a7b",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-602bc86c-20bf-6908-d2ef-cc0f35d9803b, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T07:49:22.225424+00:00",
+          "pod_created_at": "2026-09-07T07:49:23Z",
+          "container_started_at": "2026-09-07T07:49:30Z",
+          "application_ready_at": "2026-09-07T07:50:03.307049644Z",
+          "kubernetes_ready_at": "2026-09-07T07:50:05Z",
+          "pod_creation_to_application_ready_seconds": 40.307049,
+          "container_start_to_application_ready_seconds": 33.307049,
+          "pod_creation_to_kubernetes_ready_seconds": 42.0,
+          "source_clock_receipt": "2026-09-07T07:50:03.307049644Z {\"backend_id\": \"fs2-mm-sdxl-r01-20260907\", \"compute_capability\": [9, 0], \"cuda\": \"13.0\", \"event\": \"model-ready\", \"gpu_name\": \"NVIDIA H100 80GB HBM3\", \"model_id\": \"sdxl\", \"repository\": \"stabilityai/stable-diffusion-xl-base-1.0\", \"revision\": \"462165984030d82259a11f4367a4eed129e94a7b\", \"startup_seconds\": 24.463319307018537, \"torch\": \"2.13.0+cu130\"}",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T07:49:24Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-sdxl-r01-20260907 to computeinstance-e00m0hsph76ajt9sdb"
+            },
+            {
+              "at": "2026-09-07T07:49:25Z",
+              "reason": "Pulling",
+              "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07\""
+            },
+            {
+              "at": "2026-09-07T07:49:27Z",
+              "reason": "Pulled",
+              "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07\" in 1.658s (1.658s including waiting). Image size: 8697169321 bytes."
+            },
+            {
+              "at": "2026-09-07T07:49:27Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:49:28Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:49:29Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:49:29Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:49:30Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:49:35Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: Get \"http://10.6.82.110:8000/healthz\": dial tcp 10.6.82.110:8000: connect: connection refused"
+            }
+          ],
+          "runtime_reported_startup_seconds": 24.463319307018537,
+          "first_request": {
+            "elapsed_seconds": 2.9724561320617795,
+            "request_at": "2026-09-07T07:50:15.990855+00:00",
+            "response_bytes": 450575,
+            "response_sha256": "3c64ef106b879f166315d8d9ed82187bf3d4925888b7ac5453096914cc4bad04"
+          },
+          "first_response_completed_at": "2026-09-07T07:50:18.963311+00:00"
+        },
+        {
+          "repetition": "r02",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "pod": "fs2-mm-sdxl-r02-20260907",
+          "pod_uid": "27df1919-18c4-467a-8797-8ead10b1b260",
+          "node": "computeinstance-e00m0hsph76ajt9sdb",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+          "model_revision": "462165984030d82259a11f4367a4eed129e94a7b",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-237a8e9f-8ab5-6eff-d4d6-1c02fdcbbc02, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T07:53:19.130982+00:00",
+          "pod_created_at": "2026-09-07T07:53:20Z",
+          "container_started_at": "2026-09-07T07:53:24Z",
+          "application_ready_at": "2026-09-07T07:53:35.628751433Z",
+          "kubernetes_ready_at": "2026-09-07T07:53:41Z",
+          "pod_creation_to_application_ready_seconds": 15.628751,
+          "container_start_to_application_ready_seconds": 11.628751,
+          "pod_creation_to_kubernetes_ready_seconds": 21.0,
+          "source_clock_receipt": "2026-09-07T07:53:35.628751433Z {\"backend_id\": \"fs2-mm-sdxl-r02-20260907\", \"compute_capability\": [9, 0], \"cuda\": \"13.0\", \"event\": \"model-ready\", \"gpu_name\": \"NVIDIA H100 80GB HBM3\", \"model_id\": \"sdxl\", \"repository\": \"stabilityai/stable-diffusion-xl-base-1.0\", \"revision\": \"462165984030d82259a11f4367a4eed129e94a7b\", \"startup_seconds\": 2.571636393025983, \"torch\": \"2.13.0+cu130\"}",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T07:53:20Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-sdxl-r02-20260907 to computeinstance-e00m0hsph76ajt9sdb"
+            },
+            {
+              "at": "2026-09-07T07:53:21Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:53:21Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:53:22Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:53:23Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:53:23Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:53:24Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:53:31Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: Get \"http://10.6.82.208:8000/healthz\": dial tcp 10.6.82.208:8000: connect: connection refused"
+            }
+          ],
+          "runtime_reported_startup_seconds": 2.571636393025983,
+          "first_request": {
+            "elapsed_seconds": 1.9253174811601639,
+            "request_at": "2026-09-07T07:53:47.211138+00:00",
+            "response_bytes": 450575,
+            "response_sha256": "3c64ef106b879f166315d8d9ed82187bf3d4925888b7ac5453096914cc4bad04"
+          },
+          "first_response_completed_at": "2026-09-07T07:53:49.136455+00:00"
+        },
+        {
+          "repetition": "r03",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "pod": "fs2-mm-sdxl-r03-20260907",
+          "pod_uid": "7384107f-c8a2-4328-876d-dfebebcbf205",
+          "node": "computeinstance-e00m0hsph76ajt9sdb",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+          "model_revision": "462165984030d82259a11f4367a4eed129e94a7b",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-9f9398a1-b515-06a3-efcf-0b40de81d77b, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T07:54:04.250896+00:00",
+          "pod_created_at": "2026-09-07T07:54:06Z",
+          "container_started_at": "2026-09-07T07:54:09Z",
+          "application_ready_at": "2026-09-07T07:54:20.701627340Z",
+          "kubernetes_ready_at": "2026-09-07T07:54:26Z",
+          "pod_creation_to_application_ready_seconds": 14.701627,
+          "container_start_to_application_ready_seconds": 11.701627,
+          "pod_creation_to_kubernetes_ready_seconds": 20.0,
+          "source_clock_receipt": "2026-09-07T07:54:20.701627340Z {\"backend_id\": \"fs2-mm-sdxl-r03-20260907\", \"compute_capability\": [9, 0], \"cuda\": \"13.0\", \"event\": \"model-ready\", \"gpu_name\": \"NVIDIA H100 80GB HBM3\", \"model_id\": \"sdxl\", \"repository\": \"stabilityai/stable-diffusion-xl-base-1.0\", \"revision\": \"462165984030d82259a11f4367a4eed129e94a7b\", \"startup_seconds\": 2.7237954169977456, \"torch\": \"2.13.0+cu130\"}",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T07:54:06Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-sdxl-r03-20260907 to computeinstance-e00m0hsph76ajt9sdb"
+            },
+            {
+              "at": "2026-09-07T07:54:06Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:54:06Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:54:07Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:54:08Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:54:08Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:54:09Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:54:16Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: Get \"http://10.6.82.137:8000/healthz\": dial tcp 10.6.82.137:8000: connect: connection refused"
+            }
+          ],
+          "runtime_reported_startup_seconds": 2.7237954169977456,
+          "first_request": {
+            "elapsed_seconds": 1.8126195147633553,
+            "request_at": "2026-09-07T07:54:32.304718+00:00",
+            "response_bytes": 450575,
+            "response_sha256": "3c64ef106b879f166315d8d9ed82187bf3d4925888b7ac5453096914cc4bad04"
+          },
+          "first_response_completed_at": "2026-09-07T07:54:34.117338+00:00"
+        },
+        {
+          "repetition": "r04",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "pod": "fs2-mm-sdxl-r04-20260907",
+          "pod_uid": "8061d3cf-953d-44ee-b020-2d03de119963",
+          "node": "computeinstance-e00m0hsph76ajt9sdb",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+          "model_revision": "462165984030d82259a11f4367a4eed129e94a7b",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-06730f20-c74e-387f-0a67-a889daceb9df, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T07:54:49.346477+00:00",
+          "pod_created_at": "2026-09-07T07:54:51Z",
+          "container_started_at": "2026-09-07T07:54:54Z",
+          "application_ready_at": "2026-09-07T07:55:05.703587043Z",
+          "kubernetes_ready_at": "2026-09-07T07:55:11Z",
+          "pod_creation_to_application_ready_seconds": 14.703587,
+          "container_start_to_application_ready_seconds": 11.703587,
+          "pod_creation_to_kubernetes_ready_seconds": 20.0,
+          "source_clock_receipt": "2026-09-07T07:55:05.703587043Z {\"backend_id\": \"fs2-mm-sdxl-r04-20260907\", \"compute_capability\": [9, 0], \"cuda\": \"13.0\", \"event\": \"model-ready\", \"gpu_name\": \"NVIDIA H100 80GB HBM3\", \"model_id\": \"sdxl\", \"repository\": \"stabilityai/stable-diffusion-xl-base-1.0\", \"revision\": \"462165984030d82259a11f4367a4eed129e94a7b\", \"startup_seconds\": 2.712376036972273, \"torch\": \"2.13.0+cu130\"}",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T07:54:51Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-sdxl-r04-20260907 to computeinstance-e00m0hsph76ajt9sdb"
+            },
+            {
+              "at": "2026-09-07T07:54:51Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:54:51Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:54:52Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:54:53Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:54:53Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:54:54Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:55:01Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: Get \"http://10.6.82.216:8000/healthz\": dial tcp 10.6.82.216:8000: connect: connection refused"
+            }
+          ],
+          "runtime_reported_startup_seconds": 2.712376036972273,
+          "first_request": {
+            "elapsed_seconds": 1.8420455679297447,
+            "request_at": "2026-09-07T07:55:17.458174+00:00",
+            "response_bytes": 450575,
+            "response_sha256": "3c64ef106b879f166315d8d9ed82187bf3d4925888b7ac5453096914cc4bad04"
+          },
+          "first_response_completed_at": "2026-09-07T07:55:19.300220+00:00"
+        }
+      ],
+      "cached_fresh_process_statistics": {
+        "container_start_to_application_ready_seconds": {
+          "n": 3,
+          "median": 11.701627,
+          "min": 11.628751,
+          "max": 11.703587
+        },
+        "pod_creation_to_application_ready_seconds": {
+          "n": 3,
+          "median": 14.703587,
+          "min": 14.701627,
+          "max": 15.628751
+        },
+        "pod_creation_to_kubernetes_ready_seconds": {
+          "n": 3,
+          "median": 20.0,
+          "min": 20.0,
+          "max": 21.0
+        },
+        "runtime_reported_startup_seconds": {
+          "n": 3,
+          "median": 2.712376036972273,
+          "min": 2.571636393025983,
+          "max": 2.7237954169977456
+        }
+      }
+    },
+    "nv-segment-ct": {
+      "trials": [
+        {
+          "repetition": "r01",
+          "cohort": "initial-empty-weight-cache",
+          "pod": "fs2-mm-nv-segment-ct-r01-20260907",
+          "pod_uid": "c6245a4a-0b9d-4449-beb4-cca09c066d3a",
+          "node": "computeinstance-e00p3acr87k9k4mckj",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd",
+          "model_revision": "afb51518689f71e6abb367ee6301b2cd0225c66a",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-facf5f91-1954-6615-4fbf-418efd69bd0c, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T07:49:22.456051+00:00",
+          "pod_created_at": "2026-09-07T07:49:24Z",
+          "container_started_at": "2026-09-07T07:49:32Z",
+          "application_ready_at": "2026-09-07T07:50:12.953119129Z",
+          "kubernetes_ready_at": "2026-09-07T07:50:15Z",
+          "pod_creation_to_application_ready_seconds": 48.953119,
+          "container_start_to_application_ready_seconds": 40.953119,
+          "pod_creation_to_kubernetes_ready_seconds": 51.0,
+          "source_clock_receipt": "2026-09-07T07:50:12.953119129Z {\"backend_id\": \"fs2-mm-nv-segment-ct-r01-20260907\", \"compute_capability\": [9, 0], \"cuda\": \"13.0\", \"event\": \"model-ready\", \"gpu_name\": \"NVIDIA H100 80GB HBM3\", \"model_id\": \"nv-segment-ct\", \"repository\": \"nvidia/NV-Segment-CT\", \"revision\": \"afb51518689f71e6abb367ee6301b2cd0225c66a\", \"startup_seconds\": 38.08083787304349, \"torch\": \"2.13.0+cu130\"}",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T07:49:25Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-nv-segment-ct-r01-20260907 to computeinstance-e00p3acr87k9k4mckj"
+            },
+            {
+              "at": "2026-09-07T07:49:26Z",
+              "reason": "Pulling",
+              "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd\""
+            },
+            {
+              "at": "2026-09-07T07:49:27Z",
+              "reason": "Pulled",
+              "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd\" in 1.488s (1.488s including waiting). Image size: 8697168878 bytes."
+            },
+            {
+              "at": "2026-09-07T07:49:27Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:49:29Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:49:31Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:49:31Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:49:32Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:49:35Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: Get \"http://10.6.122.110:8000/healthz\": dial tcp 10.6.122.110:8000: connect: connection refused"
+            }
+          ],
+          "runtime_reported_startup_seconds": 38.08083787304349,
+          "first_server_http_200_at": "2026-09-07T07:50:23.401479142Z",
+          "first_client_response_duration_seconds": null
+        },
+        {
+          "repetition": "r02",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "pod": "fs2-mm-nv-segment-ct-r02-20260907",
+          "pod_uid": "85004cec-d21c-4886-bcbb-6d29d767198d",
+          "node": "computeinstance-e00p3acr87k9k4mckj",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd",
+          "model_revision": "afb51518689f71e6abb367ee6301b2cd0225c66a",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-52f5e5da-cfdc-5e42-f8eb-84dec2969f54, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T07:53:19.728177+00:00",
+          "pod_created_at": "2026-09-07T07:53:21Z",
+          "container_started_at": "2026-09-07T07:53:24Z",
+          "application_ready_at": "2026-09-07T07:53:35.359864090Z",
+          "kubernetes_ready_at": "2026-09-07T07:53:41Z",
+          "pod_creation_to_application_ready_seconds": 14.359864,
+          "container_start_to_application_ready_seconds": 11.359864,
+          "pod_creation_to_kubernetes_ready_seconds": 20.0,
+          "source_clock_receipt": "2026-09-07T07:53:35.359864090Z {\"backend_id\": \"fs2-mm-nv-segment-ct-r02-20260907\", \"compute_capability\": [9, 0], \"cuda\": \"13.0\", \"event\": \"model-ready\", \"gpu_name\": \"NVIDIA H100 80GB HBM3\", \"model_id\": \"nv-segment-ct\", \"repository\": \"nvidia/NV-Segment-CT\", \"revision\": \"afb51518689f71e6abb367ee6301b2cd0225c66a\", \"startup_seconds\": 7.721393633983098, \"torch\": \"2.13.0+cu130\"}",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T07:53:21Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-nv-segment-ct-r02-20260907 to computeinstance-e00p3acr87k9k4mckj"
+            },
+            {
+              "at": "2026-09-07T07:53:22Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:53:22Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:53:23Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:53:23Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:53:23Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:53:24Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:53:31Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: Get \"http://10.6.122.45:8000/healthz\": dial tcp 10.6.122.45:8000: connect: connection refused"
+            }
+          ],
+          "runtime_reported_startup_seconds": 7.721393633983098,
+          "first_server_http_200_at": "2026-09-07T07:53:48.909210711Z",
+          "first_client_response_duration_seconds": null
+        },
+        {
+          "repetition": "r03",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "pod": "fs2-mm-nv-segment-ct-r03-20260907",
+          "pod_uid": "56f83335-7eaf-4880-8b65-c08e8360a008",
+          "node": "computeinstance-e00p3acr87k9k4mckj",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd",
+          "model_revision": "afb51518689f71e6abb367ee6301b2cd0225c66a",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-56941528-f485-5237-c98a-08e1f253a9c3, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T07:54:02.921061+00:00",
+          "pod_created_at": "2026-09-07T07:54:04Z",
+          "container_started_at": "2026-09-07T07:54:07Z",
+          "application_ready_at": "2026-09-07T07:54:17.957690419Z",
+          "kubernetes_ready_at": "2026-09-07T07:54:24Z",
+          "pod_creation_to_application_ready_seconds": 13.95769,
+          "container_start_to_application_ready_seconds": 10.95769,
+          "pod_creation_to_kubernetes_ready_seconds": 20.0,
+          "source_clock_receipt": "2026-09-07T07:54:17.957690419Z {\"backend_id\": \"fs2-mm-nv-segment-ct-r03-20260907\", \"compute_capability\": [9, 0], \"cuda\": \"13.0\", \"event\": \"model-ready\", \"gpu_name\": \"NVIDIA H100 80GB HBM3\", \"model_id\": \"nv-segment-ct\", \"repository\": \"nvidia/NV-Segment-CT\", \"revision\": \"afb51518689f71e6abb367ee6301b2cd0225c66a\", \"startup_seconds\": 7.41801334999036, \"torch\": \"2.13.0+cu130\"}",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T07:54:04Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-nv-segment-ct-r03-20260907 to computeinstance-e00p3acr87k9k4mckj"
+            },
+            {
+              "at": "2026-09-07T07:54:05Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:54:05Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:54:06Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:54:06Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:54:06Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:54:07Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:54:14Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: Get \"http://10.6.122.169:8000/healthz\": dial tcp 10.6.122.169:8000: connect: connection refused"
+            }
+          ],
+          "runtime_reported_startup_seconds": 7.41801334999036,
+          "first_server_http_200_at": "2026-09-07T07:54:31.957871311Z",
+          "first_client_response_duration_seconds": null
+        },
+        {
+          "repetition": "r04",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "pod": "fs2-mm-nv-segment-ct-r04-20260907",
+          "pod_uid": "8b396d89-05a1-4233-beeb-46d3f5704fb4",
+          "node": "computeinstance-e00p3acr87k9k4mckj",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd",
+          "model_revision": "afb51518689f71e6abb367ee6301b2cd0225c66a",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-56941528-f485-5237-c98a-08e1f253a9c3, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T07:54:45.970132+00:00",
+          "pod_created_at": "2026-09-07T07:54:47Z",
+          "container_started_at": "2026-09-07T07:54:50Z",
+          "application_ready_at": "2026-09-07T07:55:01.100150445Z",
+          "kubernetes_ready_at": "2026-09-07T07:55:08Z",
+          "pod_creation_to_application_ready_seconds": 14.10015,
+          "container_start_to_application_ready_seconds": 11.10015,
+          "pod_creation_to_kubernetes_ready_seconds": 21.0,
+          "source_clock_receipt": "2026-09-07T07:55:01.100150445Z {\"backend_id\": \"fs2-mm-nv-segment-ct-r04-20260907\", \"compute_capability\": [9, 0], \"cuda\": \"13.0\", \"event\": \"model-ready\", \"gpu_name\": \"NVIDIA H100 80GB HBM3\", \"model_id\": \"nv-segment-ct\", \"repository\": \"nvidia/NV-Segment-CT\", \"revision\": \"afb51518689f71e6abb367ee6301b2cd0225c66a\", \"startup_seconds\": 7.4890554990270175, \"torch\": \"2.13.0+cu130\"}",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T07:54:47Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-nv-segment-ct-r04-20260907 to computeinstance-e00p3acr87k9k4mckj"
+            },
+            {
+              "at": "2026-09-07T07:54:48Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:54:48Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:54:49Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:54:49Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:54:49Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:54:50Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:54:58Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: Get \"http://10.6.122.251:8000/healthz\": dial tcp 10.6.122.251:8000: connect: connection refused"
+            }
+          ],
+          "runtime_reported_startup_seconds": 7.4890554990270175,
+          "first_server_http_200_at": "2026-09-07T07:55:15.152116771Z",
+          "first_client_response_duration_seconds": null
+        }
+      ],
+      "cached_fresh_process_statistics": {
+        "container_start_to_application_ready_seconds": {
+          "n": 3,
+          "median": 11.10015,
+          "min": 10.95769,
+          "max": 11.359864
+        },
+        "pod_creation_to_application_ready_seconds": {
+          "n": 3,
+          "median": 14.10015,
+          "min": 13.95769,
+          "max": 14.359864
+        },
+        "pod_creation_to_kubernetes_ready_seconds": {
+          "n": 3,
+          "median": 20.0,
+          "min": 20.0,
+          "max": 21.0
+        },
+        "runtime_reported_startup_seconds": {
+          "n": 3,
+          "median": 7.4890554990270175,
+          "min": 7.41801334999036,
+          "max": 7.721393633983098
+        }
+      }
+    },
+    "nv-reason-cxr-3b": {
+      "trials": [
+        {
+          "repetition": "r01",
+          "cohort": "initial-empty-weight-cache",
+          "pod": "fs2-mm-nv-reason-cxr-3b-r01-20260907",
+          "pod_uid": "9aa4857d-c69d-43f5-acdc-4a6752bfe188",
+          "node": "computeinstance-e00p3acr87k9k4mckj",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+          "model_revision": "056bd0383b35226554da9dc5866e095df174ae19",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-b1a62569-6a84-851e-8340-1a31f1a20de1, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T07:49:01.885781+00:00",
+          "pod_created_at": "2026-09-07T07:49:03Z",
+          "container_started_at": "2026-09-07T07:49:08Z",
+          "application_ready_at": "2026-09-07T07:51:35.222890074Z",
+          "kubernetes_ready_at": "2026-09-07T07:51:45Z",
+          "pod_creation_to_application_ready_seconds": 152.22289,
+          "container_start_to_application_ready_seconds": 147.22289,
+          "pod_creation_to_kubernetes_ready_seconds": 162.0,
+          "source_clock_receipt": "2026-09-07T07:51:35.222890074Z (APIServer pid=1) INFO:     Application startup complete.",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T07:49:04Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-nv-reason-cxr-3b-r01-20260907 to computeinstance-e00p3acr87k9k4mckj"
+            },
+            {
+              "at": "2026-09-07T07:49:05Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:49:05Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:49:06Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:49:07Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:49:07Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:49:08Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:49:15Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: Get \"http://10.6.122.198:8000/health\": dial tcp 10.6.122.198:8000: connect: connection refused"
+            }
+          ],
+          "first_request": {
+            "elapsed_seconds": 3.8459814516827464,
+            "request_at": "2026-09-07T07:51:53.603745+00:00",
+            "response_bytes": 3631,
+            "response_sha256": "e540aa59dc0e830546d453fab820c9b5d978389cb02a2161b39ffd0515f66150"
+          },
+          "first_response_completed_at": "2026-09-07T07:51:57.449726+00:00"
+        },
+        {
+          "repetition": "r02",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "pod": "fs2-mm-nv-reason-cxr-3b-r02-20260907",
+          "pod_uid": "2055eeb9-2283-4932-990c-f8962fbeb1ad",
+          "node": "computeinstance-e00p3acr87k9k4mckj",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+          "model_revision": "056bd0383b35226554da9dc5866e095df174ae19",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-2fcd2646-4580-e5db-69a5-b2219ad0e345, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T07:53:11.721093+00:00",
+          "pod_created_at": "2026-09-07T07:53:13Z",
+          "container_started_at": "2026-09-07T07:53:16Z",
+          "application_ready_at": "2026-09-07T07:54:35.395090170Z",
+          "kubernetes_ready_at": "2026-09-07T07:54:43Z",
+          "pod_creation_to_application_ready_seconds": 82.39509,
+          "container_start_to_application_ready_seconds": 79.39509,
+          "pod_creation_to_kubernetes_ready_seconds": 90.0,
+          "source_clock_receipt": "2026-09-07T07:54:35.395090170Z (APIServer pid=1) INFO:     Application startup complete.",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T07:53:13Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-nv-reason-cxr-3b-r02-20260907 to computeinstance-e00p3acr87k9k4mckj"
+            },
+            {
+              "at": "2026-09-07T07:53:14Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:53:14Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:53:15Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:53:15Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:53:15Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:53:16Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:53:23Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: Get \"http://10.6.122.171:8000/health\": dial tcp 10.6.122.171:8000: connect: connection refused"
+            }
+          ],
+          "first_request": {
+            "elapsed_seconds": 3.534725146368146,
+            "request_at": "2026-09-07T07:54:53.243355+00:00",
+            "response_bytes": 3631,
+            "response_sha256": "6ae9c83d7911ef61e0723fe24324a7f04ce3fe37fdc3c9b0afa592ca2adb4526"
+          },
+          "first_response_completed_at": "2026-09-07T07:54:56.778080+00:00"
+        },
+        {
+          "repetition": "r03",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "pod": "fs2-mm-nv-reason-cxr-3b-r03-20260907",
+          "pod_uid": "4291e83a-297a-45ea-ac17-2b63e5e64ae8",
+          "node": "computeinstance-e00p3acr87k9k4mckj",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+          "model_revision": "056bd0383b35226554da9dc5866e095df174ae19",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-644f23ac-4f00-aea9-7b7d-a57717848200, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T07:55:07.937975+00:00",
+          "pod_created_at": "2026-09-07T07:55:09Z",
+          "container_started_at": "2026-09-07T07:55:12Z",
+          "application_ready_at": "2026-09-07T07:56:29.114968933Z",
+          "kubernetes_ready_at": "2026-09-07T07:56:29Z",
+          "pod_creation_to_application_ready_seconds": 80.114968,
+          "container_start_to_application_ready_seconds": 77.114968,
+          "pod_creation_to_kubernetes_ready_seconds": 80.0,
+          "source_clock_receipt": "2026-09-07T07:56:29.114968933Z (APIServer pid=1) INFO:     Application startup complete.",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T07:55:09Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-nv-reason-cxr-3b-r03-20260907 to computeinstance-e00p3acr87k9k4mckj"
+            },
+            {
+              "at": "2026-09-07T07:55:10Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:55:10Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:55:11Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:55:11Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:55:11Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:55:12Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:55:19Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: Get \"http://10.6.122.158:8000/health\": dial tcp 10.6.122.158:8000: connect: connection refused"
+            }
+          ],
+          "first_request": {
+            "elapsed_seconds": 3.4595537493005395,
+            "request_at": "2026-09-07T07:56:37.221590+00:00",
+            "response_bytes": 3631,
+            "response_sha256": "cc768ad598d62b6e41985200f1d8e4cc319f5201973cfe13c166209e57c46fb1"
+          },
+          "first_response_completed_at": "2026-09-07T07:56:40.681144+00:00"
+        },
+        {
+          "repetition": "r04",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "pod": "fs2-mm-nv-reason-cxr-3b-r04-20260907",
+          "pod_uid": "4c10b90e-20e2-4df0-8e12-2f3c60ccfb10",
+          "node": "computeinstance-e00p3acr87k9k4mckj",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+          "model_revision": "056bd0383b35226554da9dc5866e095df174ae19",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-644f23ac-4f00-aea9-7b7d-a57717848200, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T07:56:52.220228+00:00",
+          "pod_created_at": "2026-09-07T07:56:53Z",
+          "container_started_at": "2026-09-07T07:56:57Z",
+          "application_ready_at": "2026-09-07T07:58:19.521467116Z",
+          "kubernetes_ready_at": "2026-09-07T07:58:24Z",
+          "pod_creation_to_application_ready_seconds": 86.521467,
+          "container_start_to_application_ready_seconds": 82.521467,
+          "pod_creation_to_kubernetes_ready_seconds": 91.0,
+          "source_clock_receipt": "2026-09-07T07:58:19.521467116Z (APIServer pid=1) INFO:     Application startup complete.",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T07:56:53Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-nv-reason-cxr-3b-r04-20260907 to computeinstance-e00p3acr87k9k4mckj"
+            },
+            {
+              "at": "2026-09-07T07:56:54Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:56:54Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:56:55Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:56:56Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T07:56:56Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T07:56:57Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T07:57:04Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: Get \"http://10.6.122.17:8000/health\": dial tcp 10.6.122.17:8000: connect: connection refused"
+            }
+          ],
+          "first_request": {
+            "elapsed_seconds": 3.4334770534187555,
+            "request_at": "2026-09-07T07:58:34.006514+00:00",
+            "response_bytes": 3631,
+            "response_sha256": "41626538fe4fe322939411b44fb3f2669fe10c408872c7f1204c1e78404dd6a1"
+          },
+          "first_response_completed_at": "2026-09-07T07:58:37.439991+00:00"
+        }
+      ],
+      "cached_fresh_process_statistics": {
+        "container_start_to_application_ready_seconds": {
+          "n": 3,
+          "median": 79.39509,
+          "min": 77.114968,
+          "max": 82.521467
+        },
+        "pod_creation_to_application_ready_seconds": {
+          "n": 3,
+          "median": 82.39509,
+          "min": 80.114968,
+          "max": 86.521467
+        },
+        "pod_creation_to_kubernetes_ready_seconds": {
+          "n": 3,
+          "median": 90.0,
+          "min": 80.0,
+          "max": 91.0
+        }
+      }
+    },
+    "evo2-40b": {
+      "trials": [
+        {
+          "repetition": "r01",
+          "cohort": "prelocalized-checkpoint-first-process-first-H100-runtime-cache",
+          "pod": "fs2-mm-evo2-40b-r01-20260907",
+          "pod_uid": "b935f4d2-7753-4797-8da3-42b36a3a3b60",
+          "node": "computeinstance-e00p3acr87k9k4mckj",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce",
+          "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-b1a62569-6a84-851e-8340-1a31f1a20de1, 580.159.04, 81559 MiB, 9.0",
+            "NVIDIA H100 80GB HBM3, GPU-56941528-f485-5237-c98a-08e1f253a9c3, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T08:30:51.240685+00:00",
+          "pod_created_at": "2026-09-07T08:30:52Z",
+          "container_started_at": "2026-09-07T08:31:27Z",
+          "application_ready_at": "2026-09-07T08:47:07.882863205Z",
+          "kubernetes_ready_at": "2026-09-07T08:47:22Z",
+          "pod_creation_to_application_ready_seconds": 975.882863,
+          "container_start_to_application_ready_seconds": 940.882863,
+          "pod_creation_to_kubernetes_ready_seconds": 990.0,
+          "source_clock_receipt": "2026-09-07T08:47:07.882863205Z evo2-lean-server: READY runtime_identity_sha256=aecf209a0350cc3c6388a78f636a3b0959e0b54aa6aa0b2a12d1127721342145",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T08:30:52Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-evo2-40b-r01-20260907 to computeinstance-e00p3acr87k9k4mckj"
+            },
+            {
+              "at": "2026-09-07T08:31:21Z",
+              "reason": "SuccessfulAttachVolume",
+              "message": "AttachVolume.Attach succeeded for volume \"pvc-e5e41f44-b65f-4915-ad9f-77bf15bc45c8\" "
+            },
+            {
+              "at": "2026-09-07T08:31:22Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T08:31:22Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T08:31:23Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T08:31:24Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T08:31:24Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T08:31:25Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T08:31:26Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T08:31:26Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T08:31:27Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T08:31:27Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T08:31:27Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T08:31:28Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T08:31:37Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: HTTP probe failed with statuscode: 503"
+            }
+          ],
+          "startup_phases": {
+            "weight-load-start": {
+              "at": "2026-09-07T08:31:27.632634976Z",
+              "source_clock_receipt": "2026-09-07T08:31:27.632634976Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-start\"}fs2-evo2-server: LISTENING status=loading"
+            },
+            "weight-load-end": {
+              "at": "2026-09-07T08:46:42.563968385Z",
+              "source_clock_receipt": "2026-09-07T08:46:42.563968385Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-end\"}"
+            },
+            "engine-build-or-compile-start": {
+              "at": "2026-09-07T08:46:42.564005570Z",
+              "source_clock_receipt": "2026-09-07T08:46:42.564005570Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-start\"}"
+            },
+            "engine-build-or-compile-end": {
+              "at": "2026-09-07T08:47:07.882837350Z",
+              "source_clock_receipt": "2026-09-07T08:47:07.882837350Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-end\"}"
+            }
+          },
+          "startup_phase_seconds": {
+            "weight-load": 914.931334,
+            "engine-build-or-compile": 25.318832
+          },
+          "validation_delay_note": "Application readiness preceded historical-oracle reconciliation; first explicitly validated request was delayed by investigation, not inference.",
+          "retained_failure_receipts": [
+            "failure.json"
+          ],
+          "oracle_profile": "historical-h200-nim-exact-dna20",
+          "oracle_sha256": "a68351e5cabd721d61da15a31fe32e7250c069123c238bda6d62a586863cd146",
+          "runtime_identity": {
+            "identity": {
+              "compute_capability": "9.0",
+              "cuda": "12.9",
+              "cuda_driver": "580.159.04",
+              "cuda_toolchain": {
+                "nvcc": {
+                  "binary_sha256": "df9974db233a0b7a6c6d59c0e5d74e011566104098bcb3553495ff1b95bdeaf6",
+                  "name": "nvcc",
+                  "version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:21:03_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+                  "version_sha256": "29dff358a0ed1d94cef7265a8d0434fe4a073b5aaf74a518cab72fc1164aad8b"
+                },
+                "ptxas": {
+                  "binary_sha256": "983b0e9283855979f42cebfd80d43f9b6e786eb84f03f7570bf941c4d3a3c461",
+                  "name": "ptxas",
+                  "version": "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:18:05_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+                  "version_sha256": "c76704880131ad6acdf1f6155ab5412a3f311e9e0b60e256972d684ace0455d0"
+                }
+              },
+              "cudnn": "91002",
+              "devices": [
+                {
+                  "capability": [
+                    9,
+                    0
+                  ],
+                  "index": 0,
+                  "name": "NVIDIA H100 80GB HBM3"
+                },
+                {
+                  "capability": [
+                    9,
+                    0
+                  ],
+                  "index": 1,
+                  "name": "NVIDIA H100 80GB HBM3"
+                }
+              ],
+              "flash_attention": "2.8.3.post1",
+              "gpu_name": "NVIDIA H100 80GB HBM3",
+              "kernel_mode": "hcs-hcm-hcl",
+              "model": "evo2-40b",
+              "model_load_ms": 911738.519574,
+              "model_path_bytes": 82253491694,
+              "native_precision": "bf16-with-transformer-engine-fp8-input-projections",
+              "parallelism": "upstream-vortex-layer-model-parallel",
+              "parameter_bytes_by_device": {
+                "cuda:0": 41125446656,
+                "cuda:1": 41117041664
+              },
+              "torch": "2.8.0+cu129",
+              "torch_arch_list": [
+                "sm_70",
+                "sm_75",
+                "sm_80",
+                "sm_86",
+                "sm_90",
+                "sm_100",
+                "sm_120",
+                "compute_120"
+              ],
+              "transformer_engine": "2.8.0",
+              "triton": "3.4.0",
+              "triton_target": {
+                "arch": "90",
+                "backend": "cuda"
+              },
+              "visible_gpu_count": 2
+            },
+            "status": "ready"
+          },
+          "first_request": {
+            "elapsed_seconds": 1.181601,
+            "request_at": "2026-09-07T08:57:16.417604Z",
+            "response_bytes": 314,
+            "response_sha256": "427d34cc44ef0ac23524c476cd2b496bd1a224ff0e5c17cf4f08475dcbd2221c"
+          },
+          "first_response_completed_at": "2026-09-07T08:57:17.599205+00:00"
+        },
+        {
+          "repetition": "r02",
+          "cohort": "fresh-process-retained-weight-image-runtime-cache-RWO-remount-disk-read",
+          "pod": "fs2-mm-evo2-40b-r02-20260907",
+          "pod_uid": "6bc24ee6-816b-4ab0-961d-bccf3d6d0656",
+          "node": "computeinstance-e00p3acr87k9k4mckj",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce",
+          "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-b1a62569-6a84-851e-8340-1a31f1a20de1, 580.159.04, 81559 MiB, 9.0",
+            "NVIDIA H100 80GB HBM3, GPU-56941528-f485-5237-c98a-08e1f253a9c3, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T08:57:41.336137+00:00",
+          "pod_created_at": "2026-09-07T08:57:43Z",
+          "container_started_at": "2026-09-07T08:57:51Z",
+          "application_ready_at": "2026-09-07T09:13:09.563831119Z",
+          "kubernetes_ready_at": "2026-09-07T09:13:16Z",
+          "pod_creation_to_application_ready_seconds": 926.563831,
+          "container_start_to_application_ready_seconds": 918.563831,
+          "pod_creation_to_kubernetes_ready_seconds": 933.0,
+          "source_clock_receipt": "2026-09-07T09:13:09.563831119Z evo2-lean-server: READY runtime_identity_sha256=12a0bd402bebbe08f6bfff1bd049787f813c415ced63389bdf7e3a9ed487ce68",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T08:57:43Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-evo2-40b-r02-20260907 to computeinstance-e00p3acr87k9k4mckj"
+            },
+            {
+              "at": "2026-09-07T08:57:46Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T08:57:46Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T08:57:47Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T08:57:48Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T08:57:48Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T08:57:49Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T08:57:50Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T08:57:50Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T08:57:51Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T08:57:51Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T08:57:51Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T08:57:52Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T08:58:01Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: HTTP probe failed with statuscode: 503"
+            }
+          ],
+          "startup_phases": {
+            "weight-load-start": {
+              "at": "2026-09-07T08:57:51.295229665Z",
+              "source_clock_receipt": "2026-09-07T08:57:51.295229665Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-start\"}"
+            },
+            "weight-load-end": {
+              "at": "2026-09-07T09:13:05.795782693Z",
+              "source_clock_receipt": "2026-09-07T09:13:05.795782693Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-end\"}"
+            },
+            "engine-build-or-compile-start": {
+              "at": "2026-09-07T09:13:05.795826975Z",
+              "source_clock_receipt": "2026-09-07T09:13:05.795826975Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-start\"}"
+            },
+            "engine-build-or-compile-end": {
+              "at": "2026-09-07T09:13:09.563748497Z",
+              "source_clock_receipt": "2026-09-07T09:13:09.563748497Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-end\"}"
+            }
+          },
+          "startup_phase_seconds": {
+            "weight-load": 914.500553,
+            "engine-build-or-compile": 3.767922
+          },
+          "oracle_profile": "historical-h200-nim-exact-dna20",
+          "oracle_sha256": "a68351e5cabd721d61da15a31fe32e7250c069123c238bda6d62a586863cd146",
+          "runtime_identity": {
+            "identity": {
+              "compute_capability": "9.0",
+              "cuda": "12.9",
+              "cuda_driver": "580.159.04",
+              "cuda_toolchain": {
+                "nvcc": {
+                  "binary_sha256": "df9974db233a0b7a6c6d59c0e5d74e011566104098bcb3553495ff1b95bdeaf6",
+                  "name": "nvcc",
+                  "version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:21:03_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+                  "version_sha256": "29dff358a0ed1d94cef7265a8d0434fe4a073b5aaf74a518cab72fc1164aad8b"
+                },
+                "ptxas": {
+                  "binary_sha256": "983b0e9283855979f42cebfd80d43f9b6e786eb84f03f7570bf941c4d3a3c461",
+                  "name": "ptxas",
+                  "version": "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:18:05_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+                  "version_sha256": "c76704880131ad6acdf1f6155ab5412a3f311e9e0b60e256972d684ace0455d0"
+                }
+              },
+              "cudnn": "91002",
+              "devices": [
+                {
+                  "capability": [
+                    9,
+                    0
+                  ],
+                  "index": 0,
+                  "name": "NVIDIA H100 80GB HBM3"
+                },
+                {
+                  "capability": [
+                    9,
+                    0
+                  ],
+                  "index": 1,
+                  "name": "NVIDIA H100 80GB HBM3"
+                }
+              ],
+              "flash_attention": "2.8.3.post1",
+              "gpu_name": "NVIDIA H100 80GB HBM3",
+              "kernel_mode": "hcs-hcm-hcl",
+              "model": "evo2-40b",
+              "model_load_ms": 911485.740763,
+              "model_path_bytes": 82253491694,
+              "native_precision": "bf16-with-transformer-engine-fp8-input-projections",
+              "parallelism": "upstream-vortex-layer-model-parallel",
+              "parameter_bytes_by_device": {
+                "cuda:0": 41125446656,
+                "cuda:1": 41117041664
+              },
+              "torch": "2.8.0+cu129",
+              "torch_arch_list": [
+                "sm_70",
+                "sm_75",
+                "sm_80",
+                "sm_86",
+                "sm_90",
+                "sm_100",
+                "sm_120",
+                "compute_120"
+              ],
+              "transformer_engine": "2.8.0",
+              "triton": "3.4.0",
+              "triton_target": {
+                "arch": "90",
+                "backend": "cuda"
+              },
+              "visible_gpu_count": 2
+            },
+            "status": "ready"
+          },
+          "first_request": {
+            "elapsed_seconds": 1.123467,
+            "request_at": "2026-09-07T09:13:23.169882Z",
+            "response_bytes": 318,
+            "response_sha256": "ce725cef6c9542b4753b2211744de615a70e4e8865c020a80f4cc1e891ee194f"
+          },
+          "first_response_completed_at": "2026-09-07T09:13:24.293349+00:00"
+        },
+        {
+          "repetition": "r03",
+          "cohort": "fresh-process-retained-weight-image-runtime-cache-readonly-mount-holder-no-prewarm",
+          "pod": "fs2-mm-evo2-40b-r03-20260907",
+          "pod_uid": "0b81ad84-14ed-49d0-9d8b-8b96f895577d",
+          "node": "computeinstance-e00p3acr87k9k4mckj",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce",
+          "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-b1a62569-6a84-851e-8340-1a31f1a20de1, 580.159.04, 81559 MiB, 9.0",
+            "NVIDIA H100 80GB HBM3, GPU-56941528-f485-5237-c98a-08e1f253a9c3, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T09:13:44.001308+00:00",
+          "pod_created_at": "2026-09-07T09:13:45Z",
+          "container_started_at": "2026-09-07T09:13:50Z",
+          "application_ready_at": "2026-09-07T09:14:16.506665778Z",
+          "kubernetes_ready_at": "2026-09-07T09:14:31Z",
+          "pod_creation_to_application_ready_seconds": 31.506665,
+          "container_start_to_application_ready_seconds": 26.506665,
+          "pod_creation_to_kubernetes_ready_seconds": 46.0,
+          "source_clock_receipt": "2026-09-07T09:14:16.506665778Z evo2-lean-server: READY runtime_identity_sha256=c57bcc2e971923ee5b6773039d45c5d3b557ae7038b5fddf9f976f152d6fa7be",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T09:13:45Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-evo2-40b-r03-20260907 to computeinstance-e00p3acr87k9k4mckj"
+            },
+            {
+              "at": "2026-09-07T09:13:46Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:13:46Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:13:47Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:13:47Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:13:47Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:13:48Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:13:49Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:13:49Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:13:50Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:13:50Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:13:50Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:13:51Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:14:01Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: HTTP probe failed with statuscode: 503"
+            }
+          ],
+          "startup_phases": {
+            "weight-load-start": {
+              "at": "2026-09-07T09:13:50.906940393Z",
+              "source_clock_receipt": "2026-09-07T09:13:50.906940393Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-start\"}"
+            },
+            "weight-load-end": {
+              "at": "2026-09-07T09:14:12.908457755Z",
+              "source_clock_receipt": "2026-09-07T09:14:12.908457755Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-end\"}"
+            },
+            "engine-build-or-compile-start": {
+              "at": "2026-09-07T09:14:12.908494832Z",
+              "source_clock_receipt": "2026-09-07T09:14:12.908494832Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-start\"}"
+            },
+            "engine-build-or-compile-end": {
+              "at": "2026-09-07T09:14:16.506642936Z",
+              "source_clock_receipt": "2026-09-07T09:14:16.506642936Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-end\"}"
+            }
+          },
+          "startup_phase_seconds": {
+            "weight-load": 22.001517,
+            "engine-build-or-compile": 3.598148
+          },
+          "process_io_at_ready": "rchar: 506387439\nwchar: 1154259\nsyscr: 9338\nsyscw: 268\nread_bytes: 0\nwrite_bytes: 45056\ncancelled_write_bytes: 4096\n",
+          "oracle_profile": "historical-h200-nim-exact-dna20",
+          "oracle_sha256": "a68351e5cabd721d61da15a31fe32e7250c069123c238bda6d62a586863cd146",
+          "runtime_identity": {
+            "identity": {
+              "compute_capability": "9.0",
+              "cuda": "12.9",
+              "cuda_driver": "580.159.04",
+              "cuda_toolchain": {
+                "nvcc": {
+                  "binary_sha256": "df9974db233a0b7a6c6d59c0e5d74e011566104098bcb3553495ff1b95bdeaf6",
+                  "name": "nvcc",
+                  "version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:21:03_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+                  "version_sha256": "29dff358a0ed1d94cef7265a8d0434fe4a073b5aaf74a518cab72fc1164aad8b"
+                },
+                "ptxas": {
+                  "binary_sha256": "983b0e9283855979f42cebfd80d43f9b6e786eb84f03f7570bf941c4d3a3c461",
+                  "name": "ptxas",
+                  "version": "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:18:05_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+                  "version_sha256": "c76704880131ad6acdf1f6155ab5412a3f311e9e0b60e256972d684ace0455d0"
+                }
+              },
+              "cudnn": "91002",
+              "devices": [
+                {
+                  "capability": [
+                    9,
+                    0
+                  ],
+                  "index": 0,
+                  "name": "NVIDIA H100 80GB HBM3"
+                },
+                {
+                  "capability": [
+                    9,
+                    0
+                  ],
+                  "index": 1,
+                  "name": "NVIDIA H100 80GB HBM3"
+                }
+              ],
+              "flash_attention": "2.8.3.post1",
+              "gpu_name": "NVIDIA H100 80GB HBM3",
+              "kernel_mode": "hcs-hcm-hcl",
+              "model": "evo2-40b",
+              "model_load_ms": 19104.473462,
+              "model_path_bytes": 82253491694,
+              "native_precision": "bf16-with-transformer-engine-fp8-input-projections",
+              "parallelism": "upstream-vortex-layer-model-parallel",
+              "parameter_bytes_by_device": {
+                "cuda:0": 41125446656,
+                "cuda:1": 41117041664
+              },
+              "torch": "2.8.0+cu129",
+              "torch_arch_list": [
+                "sm_70",
+                "sm_75",
+                "sm_80",
+                "sm_86",
+                "sm_90",
+                "sm_100",
+                "sm_120",
+                "compute_120"
+              ],
+              "transformer_engine": "2.8.0",
+              "triton": "3.4.0",
+              "triton_target": {
+                "arch": "90",
+                "backend": "cuda"
+              },
+              "visible_gpu_count": 2
+            },
+            "status": "ready"
+          },
+          "first_request": {
+            "elapsed_seconds": 1.246065,
+            "request_at": "2026-09-07T09:14:45.306582Z",
+            "response_bytes": 319,
+            "response_sha256": "649cfcc3abc0400b5e9cb62c07bc306c1a6f74d64f8c8e5360e8b69d3b737a51"
+          },
+          "first_response_completed_at": "2026-09-07T09:14:46.552647+00:00"
+        },
+        {
+          "repetition": "r04",
+          "cohort": "fresh-process-retained-weight-image-runtime-cache-readonly-mount-holder-no-prewarm",
+          "pod": "fs2-mm-evo2-40b-r04-20260907",
+          "pod_uid": "0f3bb7b9-d6d8-47cf-985b-6abeb5b00609",
+          "node": "computeinstance-e00p3acr87k9k4mckj",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce",
+          "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-b1a62569-6a84-851e-8340-1a31f1a20de1, 580.159.04, 81559 MiB, 9.0",
+            "NVIDIA H100 80GB HBM3, GPU-56941528-f485-5237-c98a-08e1f253a9c3, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T09:15:07.490627+00:00",
+          "pod_created_at": "2026-09-07T09:15:09Z",
+          "container_started_at": "2026-09-07T09:15:14Z",
+          "application_ready_at": "2026-09-07T09:15:38.712816598Z",
+          "kubernetes_ready_at": "2026-09-07T09:15:39Z",
+          "pod_creation_to_application_ready_seconds": 29.712816,
+          "container_start_to_application_ready_seconds": 24.712816,
+          "pod_creation_to_kubernetes_ready_seconds": 30.0,
+          "source_clock_receipt": "2026-09-07T09:15:38.712816598Z evo2-lean-server: READY runtime_identity_sha256=490587e06dbfb708628c8e2d910c80c08a00ad130180c704f79bc8b88c65a8ed",
+          "semantic_status": "FAIL",
+          "events": [
+            {
+              "at": "2026-09-07T09:15:09Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-evo2-40b-r04-20260907 to computeinstance-e00p3acr87k9k4mckj"
+            },
+            {
+              "at": "2026-09-07T09:15:10Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:15:10Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:15:11Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:15:11Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:15:11Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:15:12Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:15:13Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:15:13Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:15:14Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:15:14Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:15:14Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:15:15Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:15:24Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: HTTP probe failed with statuscode: 503"
+            }
+          ],
+          "startup_phases": {
+            "weight-load-start": {
+              "at": "2026-09-07T09:15:14.299590123Z",
+              "source_clock_receipt": "2026-09-07T09:15:14.299590123Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-start\"}fs2-evo2-server: LISTENING status=loading"
+            },
+            "weight-load-end": {
+              "at": "2026-09-07T09:15:35.129052431Z",
+              "source_clock_receipt": "2026-09-07T09:15:35.129052431Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-end\"}"
+            },
+            "engine-build-or-compile-start": {
+              "at": "2026-09-07T09:15:35.129091388Z",
+              "source_clock_receipt": "2026-09-07T09:15:35.129091388Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-start\"}"
+            },
+            "engine-build-or-compile-end": {
+              "at": "2026-09-07T09:15:38.712772287Z",
+              "source_clock_receipt": "2026-09-07T09:15:38.712772287Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-end\"}"
+            }
+          },
+          "startup_phase_seconds": {
+            "weight-load": 20.829462,
+            "engine-build-or-compile": 3.583681
+          },
+          "retained_failure_receipts": [
+            "failure-1788772551726075492.json"
+          ],
+          "qualification_note": "Readiness timestamp is measured but semantic validation failed; excluded from qualified startup aggregates.",
+          "process_io_at_ready": "rchar: 506380437\nwchar: 1154246\nsyscr: 9333\nsyscw: 268\nread_bytes: 0\nwrite_bytes: 45056\ncancelled_write_bytes: 4096\n",
+          "runtime_identity": {
+            "identity": {
+              "compute_capability": "9.0",
+              "cuda": "12.9",
+              "cuda_driver": "580.159.04",
+              "cuda_toolchain": {
+                "nvcc": {
+                  "binary_sha256": "df9974db233a0b7a6c6d59c0e5d74e011566104098bcb3553495ff1b95bdeaf6",
+                  "name": "nvcc",
+                  "version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:21:03_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+                  "version_sha256": "29dff358a0ed1d94cef7265a8d0434fe4a073b5aaf74a518cab72fc1164aad8b"
+                },
+                "ptxas": {
+                  "binary_sha256": "983b0e9283855979f42cebfd80d43f9b6e786eb84f03f7570bf941c4d3a3c461",
+                  "name": "ptxas",
+                  "version": "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:18:05_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+                  "version_sha256": "c76704880131ad6acdf1f6155ab5412a3f311e9e0b60e256972d684ace0455d0"
+                }
+              },
+              "cudnn": "91002",
+              "devices": [
+                {
+                  "capability": [
+                    9,
+                    0
+                  ],
+                  "index": 0,
+                  "name": "NVIDIA H100 80GB HBM3"
+                },
+                {
+                  "capability": [
+                    9,
+                    0
+                  ],
+                  "index": 1,
+                  "name": "NVIDIA H100 80GB HBM3"
+                }
+              ],
+              "flash_attention": "2.8.3.post1",
+              "gpu_name": "NVIDIA H100 80GB HBM3",
+              "kernel_mode": "hcs-hcm-hcl",
+              "model": "evo2-40b",
+              "model_load_ms": 17724.751801,
+              "model_path_bytes": 82253491694,
+              "native_precision": "bf16-with-transformer-engine-fp8-input-projections",
+              "parallelism": "upstream-vortex-layer-model-parallel",
+              "parameter_bytes_by_device": {
+                "cuda:0": 41125446656,
+                "cuda:1": 41117041664
+              },
+              "torch": "2.8.0+cu129",
+              "torch_arch_list": [
+                "sm_70",
+                "sm_75",
+                "sm_80",
+                "sm_86",
+                "sm_90",
+                "sm_100",
+                "sm_120",
+                "compute_120"
+              ],
+              "transformer_engine": "2.8.0",
+              "triton": "3.4.0",
+              "triton_target": {
+                "arch": "90",
+                "backend": "cuda"
+              },
+              "visible_gpu_count": 2
+            },
+            "status": "ready"
+          },
+          "first_server_http_200_at": null,
+          "first_client_response_duration_seconds": null
+        },
+        {
+          "repetition": "r05",
+          "cohort": "device-context-successor-first-compile-retained-OS-page-cache",
+          "pod": "fs2-mm-evo2-40b-r05-20260907",
+          "pod_uid": "9052df15-8002-4f4d-b7ed-e0f3c657111b",
+          "node": "computeinstance-e00p3acr87k9k4mckj",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+          "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-b1a62569-6a84-851e-8340-1a31f1a20de1, 580.159.04, 81559 MiB, 9.0",
+            "NVIDIA H100 80GB HBM3, GPU-56941528-f485-5237-c98a-08e1f253a9c3, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T09:21:06.475251+00:00",
+          "pod_created_at": "2026-09-07T09:21:08Z",
+          "container_started_at": "2026-09-07T09:21:13Z",
+          "application_ready_at": "2026-09-07T09:21:57.884472356Z",
+          "kubernetes_ready_at": "2026-09-07T09:22:08Z",
+          "pod_creation_to_application_ready_seconds": 49.884472,
+          "container_start_to_application_ready_seconds": 44.884472,
+          "pod_creation_to_kubernetes_ready_seconds": 60.0,
+          "source_clock_receipt": "2026-09-07T09:21:57.884472356Z evo2-lean-server: READY runtime_identity_sha256=ff9bfe3867da477fc906c59a6c296deac711009d752e318446c6fc006c5fa61c",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T09:21:08Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-evo2-40b-r05-20260907 to computeinstance-e00p3acr87k9k4mckj"
+            },
+            {
+              "at": "2026-09-07T09:21:09Z",
+              "reason": "Pulling",
+              "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\""
+            },
+            {
+              "at": "2026-09-07T09:21:09Z",
+              "reason": "Pulled",
+              "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" in 197ms (197ms including waiting). Image size: 11114802666 bytes."
+            },
+            {
+              "at": "2026-09-07T09:21:09Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:21:10Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:21:10Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:21:10Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:21:11Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:21:12Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:21:12Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:21:13Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:21:13Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:21:13Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:21:14Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:21:23Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: HTTP probe failed with statuscode: 503"
+            }
+          ],
+          "startup_phases": {
+            "weight-load-start": {
+              "at": "2026-09-07T09:21:13.468697867Z",
+              "source_clock_receipt": "2026-09-07T09:21:13.468697867Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-start\"}fs2-evo2-server: LISTENING status=loading"
+            },
+            "weight-load-end": {
+              "at": "2026-09-07T09:21:32.758046752Z",
+              "source_clock_receipt": "2026-09-07T09:21:32.758046752Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-end\"}"
+            },
+            "engine-build-or-compile-start": {
+              "at": "2026-09-07T09:21:32.758078414Z",
+              "source_clock_receipt": "2026-09-07T09:21:32.758078414Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-start\"}"
+            },
+            "engine-build-or-compile-end": {
+              "at": "2026-09-07T09:21:57.884438171Z",
+              "source_clock_receipt": "2026-09-07T09:21:57.884438171Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-end\"}"
+            }
+          },
+          "startup_phase_seconds": {
+            "weight-load": 19.289349,
+            "engine-build-or-compile": 25.12636
+          },
+          "retained_failure_receipts": [
+            "failure-1788772939696959329.json"
+          ],
+          "process_io_at_ready": "rchar: 541995919\nwchar: 28381068\nsyscr: 14837\nsyscw: 1531\nread_bytes: 0\nwrite_bytes: 27918336\ncancelled_write_bytes: 8753152\n",
+          "oracle_profile": "historical-h200-nim-exact-dna20",
+          "oracle_sha256": "a68351e5cabd721d61da15a31fe32e7250c069123c238bda6d62a586863cd146",
+          "runtime_identity": {
+            "identity": {
+              "compute_capability": "9.0",
+              "cuda": "12.9",
+              "cuda_driver": "580.159.04",
+              "cuda_toolchain": {
+                "nvcc": {
+                  "binary_sha256": "df9974db233a0b7a6c6d59c0e5d74e011566104098bcb3553495ff1b95bdeaf6",
+                  "name": "nvcc",
+                  "version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:21:03_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+                  "version_sha256": "29dff358a0ed1d94cef7265a8d0434fe4a073b5aaf74a518cab72fc1164aad8b"
+                },
+                "ptxas": {
+                  "binary_sha256": "983b0e9283855979f42cebfd80d43f9b6e786eb84f03f7570bf941c4d3a3c461",
+                  "name": "ptxas",
+                  "version": "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:18:05_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+                  "version_sha256": "c76704880131ad6acdf1f6155ab5412a3f311e9e0b60e256972d684ace0455d0"
+                }
+              },
+              "cudnn": "91002",
+              "devices": [
+                {
+                  "capability": [
+                    9,
+                    0
+                  ],
+                  "index": 0,
+                  "name": "NVIDIA H100 80GB HBM3"
+                },
+                {
+                  "capability": [
+                    9,
+                    0
+                  ],
+                  "index": 1,
+                  "name": "NVIDIA H100 80GB HBM3"
+                }
+              ],
+              "flash_attention": "2.8.3.post1",
+              "gpu_name": "NVIDIA H100 80GB HBM3",
+              "kernel_mode": "hcs-hcm-hcl",
+              "model": "evo2-40b",
+              "model_load_ms": 16125.676751,
+              "model_path_bytes": 82253491694,
+              "native_precision": "bf16-with-transformer-engine-fp8-input-projections",
+              "parallelism": "upstream-vortex-layer-model-parallel",
+              "parameter_bytes_by_device": {
+                "cuda:0": 41125446656,
+                "cuda:1": 41117041664
+              },
+              "per_block_cuda_device_guard": true,
+              "torch": "2.8.0+cu129",
+              "torch_arch_list": [
+                "sm_70",
+                "sm_75",
+                "sm_80",
+                "sm_86",
+                "sm_90",
+                "sm_100",
+                "sm_120",
+                "compute_120"
+              ],
+              "transformer_engine": "2.8.0",
+              "triton": "3.4.0",
+              "triton_target": {
+                "arch": "90",
+                "backend": "cuda"
+              },
+              "visible_gpu_count": 2
+            },
+            "status": "ready"
+          },
+          "first_request": {
+            "elapsed_seconds": 1.232211,
+            "request_at": "2026-09-07T09:22:42.285096Z",
+            "response_bytes": 318,
+            "response_sha256": "dbfaaa0521de140a43e1d593478115709dc086298b8022336c17dd0ab287d1a7"
+          },
+          "first_response_completed_at": "2026-09-07T09:22:43.517307+00:00"
+        },
+        {
+          "repetition": "r06",
+          "cohort": "device-context-successor-fresh-process-retained-runtime-and-OS-page-cache",
+          "pod": "fs2-mm-evo2-40b-r06-20260907",
+          "pod_uid": "81ade142-d948-4c4a-9615-ae7787c36d54",
+          "node": "computeinstance-e00p3acr87k9k4mckj",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+          "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-52f5e5da-cfdc-5e42-f8eb-84dec2969f54, 580.159.04, 81559 MiB, 9.0",
+            "NVIDIA H100 80GB HBM3, GPU-56941528-f485-5237-c98a-08e1f253a9c3, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T09:25:18.597731+00:00",
+          "pod_created_at": "2026-09-07T09:25:20Z",
+          "container_started_at": "2026-09-07T09:25:25Z",
+          "application_ready_at": "2026-09-07T09:25:48.547983540Z",
+          "kubernetes_ready_at": "2026-09-07T09:25:50Z",
+          "pod_creation_to_application_ready_seconds": 28.547983,
+          "container_start_to_application_ready_seconds": 23.547983,
+          "pod_creation_to_kubernetes_ready_seconds": 30.0,
+          "source_clock_receipt": "2026-09-07T09:25:48.547983540Z evo2-lean-server: READY runtime_identity_sha256=2c24fd57416e1ec8064f507943ec10145df408a8560d548f57a6b0b63a53f42d",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T09:25:20Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-evo2-40b-r06-20260907 to computeinstance-e00p3acr87k9k4mckj"
+            },
+            {
+              "at": "2026-09-07T09:25:21Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:25:21Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:25:22Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:25:22Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:25:22Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:25:23Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:25:24Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:25:24Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:25:25Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:25:25Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:25:25Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:25:26Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:25:35Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: HTTP probe failed with statuscode: 503"
+            }
+          ],
+          "startup_phases": {
+            "weight-load-start": {
+              "at": "2026-09-07T09:25:25.368901651Z",
+              "source_clock_receipt": "2026-09-07T09:25:25.368901651Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-start\"}fs2-evo2-server: LISTENING status=loading"
+            },
+            "weight-load-end": {
+              "at": "2026-09-07T09:25:44.860718697Z",
+              "source_clock_receipt": "2026-09-07T09:25:44.860718697Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-end\"}"
+            },
+            "engine-build-or-compile-start": {
+              "at": "2026-09-07T09:25:44.860747735Z",
+              "source_clock_receipt": "2026-09-07T09:25:44.860747735Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-start\"}"
+            },
+            "engine-build-or-compile-end": {
+              "at": "2026-09-07T09:25:48.547950514Z",
+              "source_clock_receipt": "2026-09-07T09:25:48.547950514Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-end\"}"
+            }
+          },
+          "startup_phase_seconds": {
+            "weight-load": 19.491817,
+            "engine-build-or-compile": 3.687203
+          },
+          "process_io_at_ready": "rchar: 508331463\nwchar: 1154197\nsyscr: 9399\nsyscw: 267\nread_bytes: 0\nwrite_bytes: 45056\ncancelled_write_bytes: 4096\n",
+          "oracle_profile": "historical-h200-nim-exact-dna20",
+          "oracle_sha256": "a68351e5cabd721d61da15a31fe32e7250c069123c238bda6d62a586863cd146",
+          "runtime_identity": {
+            "identity": {
+              "compute_capability": "9.0",
+              "cuda": "12.9",
+              "cuda_driver": "580.159.04",
+              "cuda_toolchain": {
+                "nvcc": {
+                  "binary_sha256": "df9974db233a0b7a6c6d59c0e5d74e011566104098bcb3553495ff1b95bdeaf6",
+                  "name": "nvcc",
+                  "version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:21:03_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+                  "version_sha256": "29dff358a0ed1d94cef7265a8d0434fe4a073b5aaf74a518cab72fc1164aad8b"
+                },
+                "ptxas": {
+                  "binary_sha256": "983b0e9283855979f42cebfd80d43f9b6e786eb84f03f7570bf941c4d3a3c461",
+                  "name": "ptxas",
+                  "version": "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:18:05_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+                  "version_sha256": "c76704880131ad6acdf1f6155ab5412a3f311e9e0b60e256972d684ace0455d0"
+                }
+              },
+              "cudnn": "91002",
+              "devices": [
+                {
+                  "capability": [
+                    9,
+                    0
+                  ],
+                  "index": 0,
+                  "name": "NVIDIA H100 80GB HBM3"
+                },
+                {
+                  "capability": [
+                    9,
+                    0
+                  ],
+                  "index": 1,
+                  "name": "NVIDIA H100 80GB HBM3"
+                }
+              ],
+              "flash_attention": "2.8.3.post1",
+              "gpu_name": "NVIDIA H100 80GB HBM3",
+              "kernel_mode": "hcs-hcm-hcl",
+              "model": "evo2-40b",
+              "model_load_ms": 16511.202756,
+              "model_path_bytes": 82253491694,
+              "native_precision": "bf16-with-transformer-engine-fp8-input-projections",
+              "parallelism": "upstream-vortex-layer-model-parallel",
+              "parameter_bytes_by_device": {
+                "cuda:0": 41125446656,
+                "cuda:1": 41117041664
+              },
+              "per_block_cuda_device_guard": true,
+              "torch": "2.8.0+cu129",
+              "torch_arch_list": [
+                "sm_70",
+                "sm_75",
+                "sm_80",
+                "sm_86",
+                "sm_90",
+                "sm_100",
+                "sm_120",
+                "compute_120"
+              ],
+              "transformer_engine": "2.8.0",
+              "triton": "3.4.0",
+              "triton_target": {
+                "arch": "90",
+                "backend": "cuda"
+              },
+              "visible_gpu_count": 2
+            },
+            "status": "ready"
+          },
+          "first_request": {
+            "elapsed_seconds": 1.16836,
+            "request_at": "2026-09-07T09:26:01.705989Z",
+            "response_bytes": 317,
+            "response_sha256": "6a8a4d423861549ccae4865f825e323b5e07d74e2db3b0cc6a8cbbd05ba5db66"
+          },
+          "first_response_completed_at": "2026-09-07T09:26:02.874349+00:00"
+        },
+        {
+          "repetition": "r07",
+          "cohort": "device-context-successor-fresh-process-retained-runtime-and-OS-page-cache",
+          "pod": "fs2-mm-evo2-40b-r07-20260907",
+          "pod_uid": "174915f5-cb8c-4e38-bf46-60d844925b7b",
+          "node": "computeinstance-e00p3acr87k9k4mckj",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+          "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-2fcd2646-4580-e5db-69a5-b2219ad0e345, 580.159.04, 81559 MiB, 9.0",
+            "NVIDIA H100 80GB HBM3, GPU-56941528-f485-5237-c98a-08e1f253a9c3, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T09:26:22.551721+00:00",
+          "pod_created_at": "2026-09-07T09:26:24Z",
+          "container_started_at": "2026-09-07T09:26:29Z",
+          "application_ready_at": "2026-09-07T09:26:52.217336585Z",
+          "kubernetes_ready_at": "2026-09-07T09:26:54Z",
+          "pod_creation_to_application_ready_seconds": 28.217336,
+          "container_start_to_application_ready_seconds": 23.217336,
+          "pod_creation_to_kubernetes_ready_seconds": 30.0,
+          "source_clock_receipt": "2026-09-07T09:26:52.217336585Z evo2-lean-server: READY runtime_identity_sha256=6e86069b674da4669c467d1957baf392cf78ae0e6a1a5772c7c6bda536068628",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T09:26:24Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-evo2-40b-r07-20260907 to computeinstance-e00p3acr87k9k4mckj"
+            },
+            {
+              "at": "2026-09-07T09:26:25Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:26:25Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:26:26Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:26:26Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:26:26Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:26:27Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:26:28Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:26:28Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:26:29Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:26:29Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:26:29Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:26:30Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:26:39Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: HTTP probe failed with statuscode: 503"
+            }
+          ],
+          "startup_phases": {
+            "weight-load-start": {
+              "at": "2026-09-07T09:26:29.672858652Z",
+              "source_clock_receipt": "2026-09-07T09:26:29.672858652Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-start\"}"
+            },
+            "weight-load-end": {
+              "at": "2026-09-07T09:26:48.588803724Z",
+              "source_clock_receipt": "2026-09-07T09:26:48.588803724Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-end\"}"
+            },
+            "engine-build-or-compile-start": {
+              "at": "2026-09-07T09:26:48.588833720Z",
+              "source_clock_receipt": "2026-09-07T09:26:48.588833720Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-start\"}"
+            },
+            "engine-build-or-compile-end": {
+              "at": "2026-09-07T09:26:52.217304085Z",
+              "source_clock_receipt": "2026-09-07T09:26:52.217304085Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-end\"}"
+            }
+          },
+          "startup_phase_seconds": {
+            "weight-load": 18.915945,
+            "engine-build-or-compile": 3.628471
+          },
+          "process_io_at_ready": "rchar: 508331170\nwchar: 1154199\nsyscr: 9401\nsyscw: 267\nread_bytes: 0\nwrite_bytes: 45056\ncancelled_write_bytes: 4096\n",
+          "oracle_profile": "historical-h200-nim-exact-dna20",
+          "oracle_sha256": "a68351e5cabd721d61da15a31fe32e7250c069123c238bda6d62a586863cd146",
+          "runtime_identity": {
+            "identity": {
+              "compute_capability": "9.0",
+              "cuda": "12.9",
+              "cuda_driver": "580.159.04",
+              "cuda_toolchain": {
+                "nvcc": {
+                  "binary_sha256": "df9974db233a0b7a6c6d59c0e5d74e011566104098bcb3553495ff1b95bdeaf6",
+                  "name": "nvcc",
+                  "version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:21:03_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+                  "version_sha256": "29dff358a0ed1d94cef7265a8d0434fe4a073b5aaf74a518cab72fc1164aad8b"
+                },
+                "ptxas": {
+                  "binary_sha256": "983b0e9283855979f42cebfd80d43f9b6e786eb84f03f7570bf941c4d3a3c461",
+                  "name": "ptxas",
+                  "version": "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:18:05_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+                  "version_sha256": "c76704880131ad6acdf1f6155ab5412a3f311e9e0b60e256972d684ace0455d0"
+                }
+              },
+              "cudnn": "91002",
+              "devices": [
+                {
+                  "capability": [
+                    9,
+                    0
+                  ],
+                  "index": 0,
+                  "name": "NVIDIA H100 80GB HBM3"
+                },
+                {
+                  "capability": [
+                    9,
+                    0
+                  ],
+                  "index": 1,
+                  "name": "NVIDIA H100 80GB HBM3"
+                }
+              ],
+              "flash_attention": "2.8.3.post1",
+              "gpu_name": "NVIDIA H100 80GB HBM3",
+              "kernel_mode": "hcs-hcm-hcl",
+              "model": "evo2-40b",
+              "model_load_ms": 15896.842066,
+              "model_path_bytes": 82253491694,
+              "native_precision": "bf16-with-transformer-engine-fp8-input-projections",
+              "parallelism": "upstream-vortex-layer-model-parallel",
+              "parameter_bytes_by_device": {
+                "cuda:0": 41125446656,
+                "cuda:1": 41117041664
+              },
+              "per_block_cuda_device_guard": true,
+              "torch": "2.8.0+cu129",
+              "torch_arch_list": [
+                "sm_70",
+                "sm_75",
+                "sm_80",
+                "sm_86",
+                "sm_90",
+                "sm_100",
+                "sm_120",
+                "compute_120"
+              ],
+              "transformer_engine": "2.8.0",
+              "triton": "3.4.0",
+              "triton_target": {
+                "arch": "90",
+                "backend": "cuda"
+              },
+              "visible_gpu_count": 2
+            },
+            "status": "ready"
+          },
+          "first_request": {
+            "elapsed_seconds": 1.155965,
+            "request_at": "2026-09-07T09:27:05.223757Z",
+            "response_bytes": 315,
+            "response_sha256": "6ced379ac433271f2d91845585690a96c474295da20d4f528f3327deb1ff64ea"
+          },
+          "first_response_completed_at": "2026-09-07T09:27:06.379722+00:00"
+        },
+        {
+          "repetition": "r08",
+          "cohort": "device-context-successor-fresh-process-retained-runtime-and-OS-page-cache",
+          "pod": "fs2-mm-evo2-40b-r08-20260907",
+          "pod_uid": "8da4b5db-a97f-4fe2-93cd-ba8c433f4a3f",
+          "node": "computeinstance-e00p3acr87k9k4mckj",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+          "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+          "compile_cache_abi": "driver-580.159.04-sm90",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-52f5e5da-cfdc-5e42-f8eb-84dec2969f54, 580.159.04, 81559 MiB, 9.0",
+            "NVIDIA H100 80GB HBM3, GPU-56941528-f485-5237-c98a-08e1f253a9c3, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "probe_requested_at": "2026-09-07T09:27:25.886210+00:00",
+          "pod_created_at": "2026-09-07T09:27:27Z",
+          "container_started_at": "2026-09-07T09:27:32Z",
+          "application_ready_at": "2026-09-07T09:27:58.169275843Z",
+          "kubernetes_ready_at": "2026-09-07T09:28:13Z",
+          "pod_creation_to_application_ready_seconds": 31.169275,
+          "container_start_to_application_ready_seconds": 26.169275,
+          "pod_creation_to_kubernetes_ready_seconds": 46.0,
+          "source_clock_receipt": "2026-09-07T09:27:58.169275843Z evo2-lean-server: READY runtime_identity_sha256=5cc30fae7f1f1d1a24c1f37578759bce3999c86cb1fd6a90bfd5b357bc8f2cef",
+          "semantic_status": "PASS",
+          "events": [
+            {
+              "at": "2026-09-07T09:27:27Z",
+              "reason": "Scheduled",
+              "message": "Successfully assigned fs2-models/fs2-mm-evo2-40b-r08-20260907 to computeinstance-e00p3acr87k9k4mckj"
+            },
+            {
+              "at": "2026-09-07T09:27:28Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:27:28Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:27:29Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:27:29Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:27:29Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:27:30Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:27:31Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:27:31Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:27:32Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:27:32Z",
+              "reason": "Pulled",
+              "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod"
+            },
+            {
+              "at": "2026-09-07T09:27:32Z",
+              "reason": "Created",
+              "message": "Container created"
+            },
+            {
+              "at": "2026-09-07T09:27:33Z",
+              "reason": "Started",
+              "message": "Container started"
+            },
+            {
+              "at": "2026-09-07T09:27:43Z",
+              "reason": "Unhealthy",
+              "message": "Startup probe failed: HTTP probe failed with statuscode: 503"
+            }
+          ],
+          "startup_phases": {
+            "weight-load-start": {
+              "at": "2026-09-07T09:27:32.879277367Z",
+              "source_clock_receipt": "2026-09-07T09:27:32.879277367Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-start\"}"
+            },
+            "weight-load-end": {
+              "at": "2026-09-07T09:27:54.603384452Z",
+              "source_clock_receipt": "2026-09-07T09:27:54.603384452Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-end\"}"
+            },
+            "engine-build-or-compile-start": {
+              "at": "2026-09-07T09:27:54.603423717Z",
+              "source_clock_receipt": "2026-09-07T09:27:54.603423717Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-start\"}"
+            },
+            "engine-build-or-compile-end": {
+              "at": "2026-09-07T09:27:58.169254130Z",
+              "source_clock_receipt": "2026-09-07T09:27:58.169254130Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-end\"}"
+            }
+          },
+          "startup_phase_seconds": {
+            "weight-load": 21.724107,
+            "engine-build-or-compile": 3.565831
+          },
+          "process_io_at_ready": "rchar: 508331309\nwchar: 1154325\nsyscr: 9395\nsyscw: 269\nread_bytes: 0\nwrite_bytes: 45056\ncancelled_write_bytes: 4096\n",
+          "oracle_profile": "historical-h200-nim-exact-dna20",
+          "oracle_sha256": "a68351e5cabd721d61da15a31fe32e7250c069123c238bda6d62a586863cd146",
+          "runtime_identity": {
+            "identity": {
+              "compute_capability": "9.0",
+              "cuda": "12.9",
+              "cuda_driver": "580.159.04",
+              "cuda_toolchain": {
+                "nvcc": {
+                  "binary_sha256": "df9974db233a0b7a6c6d59c0e5d74e011566104098bcb3553495ff1b95bdeaf6",
+                  "name": "nvcc",
+                  "version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:21:03_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+                  "version_sha256": "29dff358a0ed1d94cef7265a8d0434fe4a073b5aaf74a518cab72fc1164aad8b"
+                },
+                "ptxas": {
+                  "binary_sha256": "983b0e9283855979f42cebfd80d43f9b6e786eb84f03f7570bf941c4d3a3c461",
+                  "name": "ptxas",
+                  "version": "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:18:05_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+                  "version_sha256": "c76704880131ad6acdf1f6155ab5412a3f311e9e0b60e256972d684ace0455d0"
+                }
+              },
+              "cudnn": "91002",
+              "devices": [
+                {
+                  "capability": [
+                    9,
+                    0
+                  ],
+                  "index": 0,
+                  "name": "NVIDIA H100 80GB HBM3"
+                },
+                {
+                  "capability": [
+                    9,
+                    0
+                  ],
+                  "index": 1,
+                  "name": "NVIDIA H100 80GB HBM3"
+                }
+              ],
+              "flash_attention": "2.8.3.post1",
+              "gpu_name": "NVIDIA H100 80GB HBM3",
+              "kernel_mode": "hcs-hcm-hcl",
+              "model": "evo2-40b",
+              "model_load_ms": 18749.497992,
+              "model_path_bytes": 82253491694,
+              "native_precision": "bf16-with-transformer-engine-fp8-input-projections",
+              "parallelism": "upstream-vortex-layer-model-parallel",
+              "parameter_bytes_by_device": {
+                "cuda:0": 41125446656,
+                "cuda:1": 41117041664
+              },
+              "per_block_cuda_device_guard": true,
+              "torch": "2.8.0+cu129",
+              "torch_arch_list": [
+                "sm_70",
+                "sm_75",
+                "sm_80",
+                "sm_86",
+                "sm_90",
+                "sm_100",
+                "sm_120",
+                "compute_120"
+              ],
+              "transformer_engine": "2.8.0",
+              "triton": "3.4.0",
+              "triton_target": {
+                "arch": "90",
+                "backend": "cuda"
+              },
+              "visible_gpu_count": 2
+            },
+            "status": "ready"
+          },
+          "first_request": {
+            "elapsed_seconds": 1.202771,
+            "request_at": "2026-09-07T09:28:27.047578Z",
+            "response_bytes": 320,
+            "response_sha256": "2ed16c33a19f5e7e728bf3cc7ef21f56ddc1aed201b6d29b84a9894a4bae5dd5"
+          },
+          "first_response_completed_at": "2026-09-07T09:28:28.250349+00:00"
+        }
+      ],
+      "cached_fresh_process_statistics": {},
+      "cache_cohort_statistics": {
+        "fresh-process-retained-weight-image-runtime-cache-RWO-remount-disk-read": {
+          "container_start_to_application_ready_seconds": {
+            "n": 1,
+            "median": 918.563831,
+            "min": 918.563831,
+            "max": 918.563831
+          },
+          "pod_creation_to_application_ready_seconds": {
+            "n": 1,
+            "median": 926.563831,
+            "min": 926.563831,
+            "max": 926.563831
+          }
+        },
+        "fresh-process-retained-weight-image-runtime-cache-readonly-mount-holder-no-prewarm": {
+          "container_start_to_application_ready_seconds": {
+            "n": 1,
+            "median": 26.506665,
+            "min": 26.506665,
+            "max": 26.506665
+          },
+          "pod_creation_to_application_ready_seconds": {
+            "n": 1,
+            "median": 31.506665,
+            "min": 31.506665,
+            "max": 31.506665
+          }
+        },
+        "device-context-successor-first-compile-retained-OS-page-cache": {
+          "container_start_to_application_ready_seconds": {
+            "n": 1,
+            "median": 44.884472,
+            "min": 44.884472,
+            "max": 44.884472
+          },
+          "pod_creation_to_application_ready_seconds": {
+            "n": 1,
+            "median": 49.884472,
+            "min": 49.884472,
+            "max": 49.884472
+          }
+        },
+        "device-context-successor-fresh-process-retained-runtime-and-OS-page-cache": {
+          "container_start_to_application_ready_seconds": {
+            "n": 3,
+            "median": 23.547983,
+            "min": 23.217336,
+            "max": 26.169275
+          },
+          "pod_creation_to_application_ready_seconds": {
+            "n": 3,
+            "median": 28.547983,
+            "min": 28.217336,
+            "max": 31.169275
+          }
+        }
+      }
+    }
+  }
+}

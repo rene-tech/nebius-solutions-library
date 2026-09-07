@@ -89,6 +89,10 @@ EXPECTED_MIGRATIONS: Final = (
         "0024_scientific_model_policies.sql",
         "1c1f3575bbdc10bc2c26688f7a221d26aa5efe0d07b35366e4328e3ad460e538",
     ),
+    (
+        "0025_scientific_startup_policies.sql",
+        "22208c57df2211132dd42baf442f6de498e01fa86b2498b88d3ed92610b0264a",
+    ),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {

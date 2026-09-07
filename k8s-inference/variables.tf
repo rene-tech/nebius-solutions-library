@@ -568,6 +568,20 @@ variable "deployment" {
 
       execution_map = optional(any)
 
+      # Optional qualified GPU checkpoint bundles. Normal loading remains the
+      # default; operators select a bundle per stage in the admin console.
+      gpu_snapshots = optional(object({
+        bundles = optional(map(any), {})
+        cache = optional(object({
+          claim_name         = optional(string, "fs2-scientific-gpu-snapshots")
+          storage_class_name = optional(string, "csi-mounted-fs-path-sc")
+          size_gib           = optional(number, 128)
+        }), {})
+        # Use once when adopting a bundle cache and source ConfigMaps created
+        # by a qualification run. Subsequent deployments manage them normally.
+        adopt_existing = optional(bool, false)
+      }), {})
+
       workers                  = optional(number, 2)
       poll_seconds             = optional(string, "0.25")
       lease_seconds            = optional(string, "30")

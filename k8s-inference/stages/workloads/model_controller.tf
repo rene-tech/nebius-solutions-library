@@ -612,7 +612,7 @@ locals {
     ])
   }
   model_controller_primary_deployments = {
-    for model_id in local.selected_model_ids : model_id => one([
+    for model_id in local.accelerator_model_ids : model_id => one([
       for document in local.model_documents : document.manifest
       if document.model_id == model_id &&
       document.manifest.kind == "Deployment" &&

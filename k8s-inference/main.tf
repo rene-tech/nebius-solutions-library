@@ -96,7 +96,10 @@ resource "terraform_data" "deployment_contract" {
           length(pool_ids) > 0
         ],
         [
-          for model_id in local.root_routed_model_ids :
+          for model_id in setsubtract(
+            toset(local.root_routed_model_ids),
+            local.selected_cpu_runtime_model_ids,
+          ) :
           length(try(local.root_model_eligible_pool_ids[model_id], [])) > 0
         ],
         [length(local.root_declared_placement_collisions) == 0],
@@ -529,9 +532,21 @@ resource "terraform_data" "deployment_contract" {
         for model_id in var.deployment.models.scaling.hot : anytrue([
           for pool_id in local.selected_model_placements[model_id].compatible_pool_ids :
           try(local.effective_pool_capacities[pool_id].max_nodes > 0, false)
-        ])
+        ]) if !contains(local.selected_cpu_runtime_model_ids, model_id)
       ])
       error_message = "Every hot model requires positive maximum capacity in at least one compatible selected pool."
+    }
+
+    precondition {
+      condition = length(local.selected_cpu_runtime_model_ids) == 0 || (
+        local.general_cpu_enabled &&
+        alltrue([
+          for model_id in local.selected_cpu_runtime_model_ids :
+          !contains(keys(var.deployment.models.pool_overrides), model_id) &&
+          !contains(keys(var.deployment.models.runtime_overrides), model_id)
+        ])
+      )
+      error_message = "A selected CPU deployment runtime requires the existing general CPU pool and cannot carry GPU pool/runtime overrides; its immutable runtime record and general-cpu contract own those values."
     }
 
     precondition {

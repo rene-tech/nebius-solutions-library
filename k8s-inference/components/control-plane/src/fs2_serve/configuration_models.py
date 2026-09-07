@@ -83,7 +83,7 @@ class AcceleratorPoolConfiguration(StrictModel):
     resource_name: str = Field(min_length=1, max_length=253, pattern=RESOURCE_NAME_PATTERN)
     accelerator_class: str = Field(min_length=1, max_length=128)
     capacity_type: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9._-]*$")
-    accelerators_per_node: int = Field(ge=1, le=64)
+    accelerators_per_node: int = Field(ge=0, le=64)
     min_nodes: int = Field(ge=0, le=10000)
     max_nodes: int = Field(ge=0, le=10000)
     node_selector: dict[str, str] = Field(default_factory=dict, max_length=32)
@@ -95,12 +95,20 @@ class AcceleratorPoolConfiguration(StrictModel):
             raise ValueError("accelerator pool max_nodes must be greater than or equal to min_nodes")
         if len(set(self.node_selector)) != len(self.node_selector):
             raise ValueError("accelerator pool node selectors must be unique")
+        cpu_pool = self.accelerator_class == "CPU"
+        if (cpu_pool and (self.resource_name != "cpu" or self.accelerators_per_node != 0)) or (
+            not cpu_pool and (self.resource_name == "cpu" or self.accelerators_per_node == 0)
+        ):
+            raise ValueError(
+                "CPU pools require resource_name=cpu and zero accelerators; "
+                "accelerator pools require a positive device count"
+            )
         return self
 
 
 class PlacementConfiguration(StrictModel):
     pool_ids: list[str] = Field(min_length=1, max_length=32)
-    accelerators: int = Field(ge=1, le=64)
+    accelerators: int = Field(ge=0, le=64)
     topology_policy: Literal["any", "single-node", "nvlink-domain"] = "any"
 
     @model_validator(mode="after")
@@ -202,6 +210,20 @@ class PlatformConfiguration(StrictModel):
             missing = set(model.placement.pool_ids) - pool_ids
             if missing:
                 raise ValueError(f"model {model_id} references unknown accelerator pools")
+            selected_cpu_pools = {
+                pool_id for pool_id in model.placement.pool_ids if self.pools[pool_id].accelerator_class == "CPU"
+            }
+            cpu_placement = model.placement.accelerators == 0
+            if cpu_placement != (selected_cpu_pools == set(model.placement.pool_ids)):
+                raise ValueError(
+                    f"model {model_id} must use only CPU pools with zero accelerators "
+                    "or only accelerator pools with a positive count"
+                )
+            if cpu_placement and (
+                model.autoscaling.min_replicas != 1
+                or model.autoscaling.max_replicas != 1
+            ):
+                raise ValueError(f"CPU model {model_id} must use one static replica")
             if model.enabled and model.autoscaling.max_replicas == 0:
                 raise ValueError(f"enabled model {model_id} must permit at least one replica")
         return self

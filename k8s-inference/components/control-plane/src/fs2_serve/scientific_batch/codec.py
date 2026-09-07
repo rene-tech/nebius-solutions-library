@@ -59,6 +59,7 @@ from .models import (
     WorkloadKind,
     WorkloadRef,
 )
+from .startup import StageStartupPolicy
 
 MAX_STATE_BYTES = 4 * 1024 * 1024
 
@@ -239,6 +240,11 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                         "termination_grace_seconds": binding.termination_grace_seconds,
                         "environment": [list(item) for item in binding.environment],
                         "required_node_labels": [list(item) for item in binding.required_node_labels],
+                        **(
+                            {}
+                            if binding.startup_policy.backend == "normal-load"
+                            else {"startup_policy": binding.startup_policy.to_value()}
+                        ),
                     }
                     for binding in state.execution_plan.stage_bindings
                 ],
@@ -916,6 +922,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
                     frozenset(expected_binding_fields),
                     frozenset(legacy_identity_fields),
                     frozenset(expected_binding_fields | {"model_runtime_image_digest"}),
+                    frozenset(expected_binding_fields | {"model_runtime_image_digest", "startup_policy"}),
                 }:
                     raise ValueError("stored stage execution binding fields differ")
                 binding = raw_binding
@@ -995,6 +1002,11 @@ def state_from_value(raw: object) -> ScientificBatchState:
                         ),
                         environment=pairs(binding["environment"], "stage execution environment"),
                         required_node_labels=pairs(binding["required_node_labels"], "stage execution node label"),
+                        startup_policy=(
+                            StageStartupPolicy()
+                            if "startup_policy" not in binding
+                            else StageStartupPolicy.from_value(binding["startup_policy"])
+                        ),
                     )
                 )
         adapter_execution = AdapterExecutionPlan(

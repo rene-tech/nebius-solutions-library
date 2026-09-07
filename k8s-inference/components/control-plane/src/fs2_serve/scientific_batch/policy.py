@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
@@ -85,6 +85,7 @@ class ScientificModelPolicyRecord:
     updated_by: str
     created_at: datetime
     updated_at: datetime
+    startup_policies: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.revision < 1:
@@ -148,6 +149,9 @@ class ScientificModelPolicyView:
 
 
 def _record(row: Mapping[str, Any]) -> ScientificModelPolicyRecord:
+    startup = row.get("startup_policies", {})
+    if isinstance(startup, str):
+        startup = json.loads(startup)
     return ScientificModelPolicyRecord(
         model_id=str(row["model_id"]),
         tenant_id=None if row["tenant_id"] is None else str(row["tenant_id"]),
@@ -158,6 +162,7 @@ def _record(row: Mapping[str, Any]) -> ScientificModelPolicyRecord:
         updated_by=str(row["updated_by"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        startup_policies=dict(startup),
     )
 
 
@@ -274,6 +279,24 @@ class PostgresScientificModelPolicyRepository:
             views = await self._views(connection, tenant_id=tenant_id, model_ids=(model_id,))
         return views[0]
 
+    async def startup_policies(self, *, model_id: str, tenant_id: str) -> dict[str, dict[str, Any]]:
+        """Resolve operator defaults once, before the run freezes its binding."""
+        async with self.pool.acquire() as connection:
+            rows = await connection.fetch(
+                """
+                SELECT startup_policies FROM fs2_scientific_model_policies
+                WHERE model_id=$1 AND (tenant_id IS NULL OR tenant_id=$2)
+                ORDER BY tenant_id NULLS FIRST
+                """,
+                model_id,
+                tenant_id,
+            )
+        result: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            value = row["startup_policies"]
+            result.update(json.loads(value) if isinstance(value, str) else value)
+        return result
+
     async def set(
         self,
         model_id: str,
@@ -284,6 +307,7 @@ class PostgresScientificModelPolicyRepository:
         max_active_runs: int | None,
         reason: str | None,
         actor: str,
+        startup_policies: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> ScientificModelPolicyView:
         """Replace one scope row at exactly ``expected_revision`` (0 when absent).
 
@@ -318,8 +342,8 @@ class PostgresScientificModelPolicyRepository:
                     written = await connection.fetchrow(
                         """
                         INSERT INTO fs2_scientific_model_policies(
-                            model_id,tenant_id,revision,paused,max_active_runs,reason,updated_by
-                        ) VALUES($1,$2,1,$3,$4,$5,$6)
+                            model_id,tenant_id,revision,paused,max_active_runs,reason,updated_by,startup_policies
+                        ) VALUES($1,$2,1,$3,$4,$5,$6,$7::jsonb)
                         RETURNING revision
                         """,
                         model_id,
@@ -328,13 +352,14 @@ class PostgresScientificModelPolicyRepository:
                         max_active_runs,
                         reason,
                         actor,
+                        json.dumps(startup_policies or {}),
                     )
                 else:
                     written = await connection.fetchrow(
                         """
                         UPDATE fs2_scientific_model_policies
                         SET revision=revision+1,paused=$3,max_active_runs=$4,reason=$5,updated_by=$6,
-                            updated_at=clock_timestamp()
+                            updated_at=clock_timestamp(),startup_policies=COALESCE($8::jsonb,startup_policies)
                         WHERE model_id=$1 AND COALESCE(tenant_id,'')=COALESCE($2,'') AND revision=$7
                         RETURNING revision
                         """,
@@ -345,6 +370,7 @@ class PostgresScientificModelPolicyRepository:
                         reason,
                         actor,
                         expected_revision,
+                        None if startup_policies is None else json.dumps(startup_policies),
                     )
             except asyncpg.UniqueViolationError:
                 raise ScientificModelPolicyStaleError(current_revision + 1) from None

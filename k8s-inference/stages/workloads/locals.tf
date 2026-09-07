@@ -173,6 +173,31 @@ locals {
       false,
     )
   }
+  cpu_deployment_runtime_records = {
+    for model_id, candidate in local.deployment_runtime_records : model_id => candidate
+    if try(
+      candidate.record.resources.gpu == {
+        class        = "CPU"
+        count        = 0
+        topology     = "cpu-only"
+        placement    = null
+        b300_state   = "not-applicable"
+        alternatives = []
+      } &&
+      candidate.record.cache.owner == "runtime-image" &&
+      candidate.record.cache.artifact.kind == "reference-database",
+      false,
+    )
+  }
+  cpu_runtime_model_ids = toset(keys(local.cpu_deployment_runtime_records))
+  accelerator_model_ids = sort(tolist(setsubtract(
+    toset(local.selected_model_ids),
+    local.cpu_runtime_model_ids,
+  )))
+  general_cpu_runtime_class = try(
+    local.general_cpu_contract.cpu_classes["general-cpu"],
+    null,
+  )
   inventory = merge(local.retained_inventory, {
     routes = merge(local.retained_inventory.routes, {
       for model_id, candidate in local.deployment_runtime_records : model_id => merge(
@@ -180,8 +205,13 @@ locals {
           variant_id           = candidate.variant_id
           model_revision       = candidate.record.model.source.revision
           runtime_image_digest = candidate.record.runtime.image.digest
-          protocols            = candidate.record.interface.endpoints
-          operations           = candidate.record.interface.policy.operations
+          service              = candidate.qualification.active_runtime.service
+          storage_mode = (
+            contains(local.cpu_runtime_model_ids, model_id) ?
+            "ephemeral-emptydir" : local.retained_inventory.routes[model_id].storage_mode
+          )
+          protocols  = candidate.record.interface.endpoints
+          operations = candidate.record.interface.policy.operations
         }
       )
     })
@@ -205,7 +235,7 @@ locals {
     var.enabled_model_ids
   ))
   selected_model_required_secrets = toset(distinct(flatten([
-    for model_id in local.selected_model_ids : try(
+    for model_id in local.accelerator_model_ids : try(
       local.profile_contract.model_artifacts[model_id].required_secrets,
       [],
     )
@@ -219,9 +249,29 @@ locals {
     "nvcr_dockerconfigjson",
   )
   dcgm_nvcr_credentials_required = var.deployment_profile == "full_catalog"
-  selected_manifest_paths = sort(distinct(flatten([
-    for model_id in local.selected_model_ids : local.profile_contract.model_artifacts[model_id].manifest_paths
-  ])))
+  cpu_runtime_manifest_paths = {
+    for model_id, candidate in local.cpu_deployment_runtime_records : model_id => one([
+      for relative_path in local.profile_contract.model_artifacts[model_id].manifest_paths : relative_path
+      if length([
+        for raw in split("\n---\n", trimspace(file("${local.fs2_root}/${relative_path}"))) : raw
+        if trimspace(raw) != "" && try(
+          yamldecode(raw).kind == "Deployment" &&
+          yamldecode(raw).metadata.name == candidate.qualification.active_runtime.service.name &&
+          anytrue([
+            for container in yamldecode(raw).spec.template.spec.containers :
+            split("@", container.image)[1] == candidate.record.runtime.image.digest
+          ]),
+          false,
+        )
+      ]) == 1
+    ])
+  }
+  selected_manifest_paths = sort(distinct(concat(
+    flatten([
+      for model_id in local.accelerator_model_ids : local.profile_contract.model_artifacts[model_id].manifest_paths
+    ]),
+    values(local.cpu_runtime_manifest_paths),
+  )))
   selected_model_keeper_paths = sort(distinct(flatten([
     for model_id in local.selected_model_ids : local.profile_contract.model_artifacts[model_id].keeper_paths
   ])))
@@ -245,7 +295,7 @@ locals {
   dcgm_campaign_metrics       = local.dcgm_cadence_contract.campaignMetrics
   dcgm_minimum_nominal_window = local.dcgm_cadence_profile.minimumNominalWindowSeconds
   selected_model_autoscaling_targets = var.model_scaling_mode == "keda" ? {
-    for model_id in local.selected_model_ids : model_id => merge(
+    for model_id in local.accelerator_model_ids : model_id => merge(
       local.profile_contract.model_autoscaling_targets[model_id],
       {
         model_id = model_id
@@ -299,7 +349,7 @@ locals {
     for model_id, target in local.model_scalers : target.deployment => merge(target, { model_id = model_id })
   }
   catalog_model_placements = {
-    for model_id in local.selected_model_ids : model_id => local.profile_contract.workload_placements[
+    for model_id in local.accelerator_model_ids : model_id => local.profile_contract.workload_placements[
       local.profile_contract.model_autoscaling_targets[model_id].deployment
     ]
   }
@@ -342,7 +392,7 @@ locals {
     })
   ]
   model_compile_cache_abis = {
-    for model_id in local.selected_model_ids : model_id => coalesce(
+    for model_id in local.accelerator_model_ids : model_id => coalesce(
       try(var.model_runtime_overrides[model_id].compile_cache_abi, null),
       # The compiler/framework adds its own version keys. This outer namespace
       # prevents the shared filesystem from mixing accelerator/driver profiles.
@@ -419,15 +469,29 @@ locals {
                 {
                   containers = [
                     for container in try(document.manifest.spec.template.spec.containers, []) :
-                    (
-                      try(container.image, "") == local.catalog_model_runtime_images[document.model_id] ||
-                      startswith(
-                        try(container.image, ""),
-                        "registry.example.invalid/k8s-inference/models/",
-                      )
-                    ) ?
-                    merge(container, { image = var.model_image_overrides[document.model_id] }) :
-                    container
+                    jsondecode(
+                      (
+                        try(container.image, "") == local.catalog_model_runtime_images[document.model_id] ||
+                        startswith(
+                          try(container.image, ""),
+                          "registry.example.invalid/k8s-inference/models/",
+                        )
+                      ) ?
+                      jsonencode(merge(
+                        container,
+                        { image = var.model_image_overrides[document.model_id] },
+                        jsondecode(contains(local.cpu_runtime_model_ids, document.model_id) ? jsonencode({
+                          command = local.cpu_deployment_runtime_records[document.model_id].record.runtime.command
+                          resources = merge(container.resources, {
+                            limits = merge(container.resources.limits, {
+                              cpu    = "${local.cpu_deployment_runtime_records[document.model_id].record.resources.cpu_millis}m"
+                              memory = tostring(local.cpu_deployment_runtime_records[document.model_id].record.resources.memory_bytes)
+                            })
+                          })
+                        }) : jsonencode({})),
+                      )) :
+                      jsonencode(container)
+                    )
                   ]
                 },
                 length(try(document.manifest.spec.template.spec.initContainers, [])) > 0 ? {
@@ -457,6 +521,7 @@ locals {
     for document in local.image_overridden_model_documents : merge(document, {
       manifest = jsondecode(
         document.manifest.kind == "Deployment" && (
+          contains(local.cpu_runtime_model_ids, document.model_id) ||
           contains(keys(var.model_pool_overrides), document.model_id) ||
           (
             document.gpu_count > 0 &&
@@ -471,24 +536,30 @@ locals {
           spec = merge(document.manifest.spec, {
             template = merge(document.manifest.spec.template, {
               spec = merge(document.manifest.spec.template.spec, {
-                nodeSelector = contains(keys(var.model_pool_overrides), document.model_id) ? {
-                  for key, value in {
-                    "accelerator.fs2.nebius/class"   = local.selected_queue_pools[var.model_pool_overrides[document.model_id]].accelerator_class
-                    "accelerator.fs2.nebius/pool-id" = var.model_pool_overrides[document.model_id]
-                    "kubernetes.io/arch"             = local.selected_queue_pools[var.model_pool_overrides[document.model_id]].node.host_architectures[0]
-                  } : key => value
-                  if !(
-                    local.selected_queue_pools[var.model_pool_overrides[document.model_id]].capacity.scale_from_zero &&
-                    contains(
-                      local.selected_queue_pools[var.model_pool_overrides[document.model_id]].scheduling.forbidden_scale_zero_selectors,
-                      key,
+                nodeSelector = (
+                  contains(local.cpu_runtime_model_ids, document.model_id) ?
+                  try(local.general_cpu_runtime_class.node_selector, {}) :
+                  contains(keys(var.model_pool_overrides), document.model_id) ? {
+                    for key, value in {
+                      "accelerator.fs2.nebius/class"   = local.selected_queue_pools[var.model_pool_overrides[document.model_id]].accelerator_class
+                      "accelerator.fs2.nebius/pool-id" = var.model_pool_overrides[document.model_id]
+                      "kubernetes.io/arch"             = local.selected_queue_pools[var.model_pool_overrides[document.model_id]].node.host_architectures[0]
+                    } : key => value
+                    if !(
+                      local.selected_queue_pools[var.model_pool_overrides[document.model_id]].capacity.scale_from_zero &&
+                      contains(
+                        local.selected_queue_pools[var.model_pool_overrides[document.model_id]].scheduling.forbidden_scale_zero_selectors,
+                        key,
+                      )
                     )
+                    } : merge(
+                    try(document.manifest.spec.template.spec.nodeSelector, {}),
+                    document.placement.required_node_labels,
                   )
-                  } : merge(
-                  try(document.manifest.spec.template.spec.nodeSelector, {}),
-                  document.placement.required_node_labels,
                 )
                 tolerations = (
+                  contains(local.cpu_runtime_model_ids, document.model_id) ?
+                  try(local.general_cpu_runtime_class.tolerations, []) :
                   contains(keys(var.model_pool_overrides), document.model_id) ?
                   local.selected_queue_pools[var.model_pool_overrides[document.model_id]].scheduling.tolerations :
                   local.selected_queue_pools[document.placement.compatible_pool_ids[0]].scheduling.tolerations
@@ -567,6 +638,58 @@ locals {
     })
   ]
   model_manifests = { for document in local.model_documents : document.key => document }
+  cpu_runtime_documents = {
+    for model_id, candidate in local.cpu_deployment_runtime_records : model_id => {
+      deployment = try(one([
+        for document in local.model_documents : document.manifest
+        if document.model_id == model_id &&
+        document.manifest.kind == "Deployment" &&
+        document.manifest.metadata.name == candidate.qualification.active_runtime.service.name
+      ]), null)
+      service = try(one([
+        for document in local.model_documents : document.manifest
+        if document.model_id == model_id &&
+        document.manifest.kind == "Service" &&
+        document.manifest.metadata.name == candidate.qualification.active_runtime.service.name
+      ]), null)
+      service_account = try(one([
+        for document in local.model_documents : document.manifest
+        if document.model_id == model_id && document.manifest.kind == "ServiceAccount"
+      ]), null)
+    }
+  }
+  cpu_runtime_manifest_validations = {
+    for model_id, candidate in local.cpu_deployment_runtime_records : model_id => try(
+      local.general_cpu_enabled &&
+      local.general_cpu_runtime_class != null &&
+      candidate.qualification.active_runtime.service.namespace == local.general_cpu_runtime_class.namespace &&
+      local.cpu_runtime_documents[model_id].deployment.metadata.namespace == local.general_cpu_runtime_class.namespace &&
+      local.cpu_runtime_documents[model_id].deployment.spec.replicas == 1 &&
+      local.cpu_runtime_documents[model_id].deployment.spec.strategy.type == "Recreate" &&
+      local.cpu_runtime_documents[model_id].service.metadata.namespace == local.general_cpu_runtime_class.namespace &&
+      local.cpu_runtime_documents[model_id].service.spec.ports[0].port == candidate.qualification.active_runtime.service.port &&
+      local.cpu_runtime_documents[model_id].service_account.automountServiceAccountToken == false &&
+      jsonencode(local.cpu_runtime_documents[model_id].deployment.spec.template.spec.nodeSelector) == jsonencode(local.general_cpu_runtime_class.node_selector) &&
+      jsonencode(local.cpu_runtime_documents[model_id].deployment.spec.template.spec.tolerations) == jsonencode(local.general_cpu_runtime_class.tolerations) &&
+      length([
+        for container in local.cpu_runtime_documents[model_id].deployment.spec.template.spec.containers : container
+        if container.image == var.model_image_overrides[model_id] &&
+        container.command == candidate.record.runtime.command &&
+        !contains(keys(container.resources.requests), "nvidia.com/gpu") &&
+        !contains(keys(container.resources.limits), "nvidia.com/gpu") &&
+        container.resources.limits.cpu == "${candidate.record.resources.cpu_millis}m" &&
+        container.resources.limits.memory == tostring(candidate.record.resources.memory_bytes) &&
+        container.readinessProbe.httpGet.path == candidate.record.interface.readiness.path &&
+        container.readinessProbe.httpGet.port == "http"
+        ]
+      ) == 1 &&
+      anytrue([
+        for volume in local.cpu_runtime_documents[model_id].deployment.spec.template.spec.volumes :
+        volume.name == "cache" && try(volume.emptyDir.sizeLimit == "4Gi", false)
+      ]),
+      false,
+    )
+  }
 
   # Keep the cross-contract placement decision evaluable in `terraform
   # console`, then reuse the same result as the resource precondition. A GPU
@@ -757,7 +880,11 @@ locals {
     routes = [for model_id in sort(keys(local.selected_routes)) : merge(local.selected_routes[model_id], {
       model_id = model_id
       service  = merge(local.selected_routes[model_id].service, { namespace = local.inventory.namespace })
-      placement = {
+      placement = contains(local.cpu_runtime_model_ids, model_id) ? {
+        region            = local.selected_target.region
+        accelerator_class = "CPU"
+        pool_id           = try(local.general_cpu_runtime_class.pool_resolution.pool_id, null)
+        } : {
         region            = local.selected_target.region
         accelerator_class = local.effective_model_placements[model_id].required_node_labels["accelerator.fs2.nebius/class"]
         pool_id           = try(local.effective_model_placements[model_id].required_node_labels["accelerator.fs2.nebius/pool-id"], null)

@@ -227,6 +227,7 @@ class Settings(BaseSettings):
         pattern=r"^[a-f0-9]{64}$",
     )
     scientific_batch_execution_map_file: Path = Path("/etc/fs2-scientific-batch/execution-map.json")
+    snapshot_capabilities_file: Path = Path("/opt/fs2/snapshot-capabilities.json")
     scientific_batch_academic_tenant_id: str | None = Field(default=None, min_length=1, max_length=120)
     scientific_batch_academic_authorization_receipt_sha256: str | None = Field(
         default=None,

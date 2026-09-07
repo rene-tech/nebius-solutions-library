@@ -141,6 +141,27 @@ describe("scientific model dispatch policy panel", () => {
     expect(within(row).getByText(/Paused · no cap · r1/)).toBeInTheDocument();
   });
 
+  it("offers only published snapshot bundles and sends the chosen startup policy", async () => {
+    const listed: AdminEnvelope<ScientificModelPolicyList> = fixture("/admin/api/v1/scientific-model-policies");
+    const policy = listed.data.items.find((item) => item.model_id === "rfdiffusion")!;
+    policy.startup_options = { "sample-structure": ["qualified-test-bundle"] };
+    policy.desired.startup_policies = {};
+    vi.spyOn(adminApi, "scientificModelPolicies").mockResolvedValue(listed);
+    const refreshed: AdminEnvelope<ScientificModelPolicy> = fixture("/admin/api/v1/scientific-model-policies/rfdiffusion");
+    const set = vi.spyOn(adminApi, "setScientificModelPolicy").mockResolvedValue(refreshed);
+    renderPanel();
+    const row = await screen.findByRole("row", { name: /RFdiffusion/ });
+    fireEvent.click(within(row).getByRole("button", { name: "Edit policy" }));
+    const select = within(row).getByRole("combobox", { name: "Startup for sample-structure" });
+    expect(within(select).getAllByRole("option")).toHaveLength(3);
+    fireEvent.change(select, { target: { value: "qualified-test-bundle" } });
+    fireEvent.click(within(row).getByRole("button", { name: "Apply policy" }));
+    await waitFor(() => expect(set).toHaveBeenCalledOnce());
+    expect(set.mock.calls[0][1].startup_policies).toEqual({
+      "sample-structure": { backend: "cuda-criu", bundle_id: "qualified-test-bundle" },
+    });
+  });
+
   it("keeps a viewer read-only and scopes a tenant operator to its own tenant", async () => {
     const list = vi.spyOn(adminApi, "scientificModelPolicies").mockResolvedValue(fixture("/admin/api/v1/scientific-model-policies"));
     renderPanel({ session: { ...testSession, principal: { ...testPrincipal, role: "viewer" } } });
@@ -167,6 +188,10 @@ describe("scientific model dispatch policy panel", () => {
     expect(policyBlocker(undefined, true)).toBe("This build does not publish a scientific model policy command.");
     expect(policyBlocker(capabilities(), false)).toBe("Operator role required to change dispatch policy.");
     expect(policyBlocker(capabilities(), true)).toBeNull();
+    expect(draftUpdate(rfdiffusionCappedPolicy, {
+      paused: false, maxActiveRuns: "", reason: "",
+      startupPolicies: { "sample-structure": { backend: "cuda-criu", bundle_id: "protenix-r2" } },
+    }).startup_policies).toEqual({ "sample-structure": { backend: "cuda-criu", bundle_id: "protenix-r2" } });
     expect(draftUpdate(rfdiffusionCappedPolicy, { paused: false, maxActiveRuns: " 3 ", reason: "  " })).toEqual({
       expected_revision: 3,
       paused: false,

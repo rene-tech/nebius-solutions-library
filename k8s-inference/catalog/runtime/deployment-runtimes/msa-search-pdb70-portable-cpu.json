@@ -1,0 +1,218 @@
+{
+  "schema": "fs2-serve.nebius.ai/deployment-runtime/v1",
+  "model_id": "msa-search-pdb70",
+  "variant_id": "msa-search-pdb70-mmseqs2-portable",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "msa-search-pdb70",
+      "display_name": "MSA Search PDB70",
+      "family": "bionemo-nim",
+      "tested_lane": true,
+      "source": {
+        "kind": "git",
+        "repository": "github.com/soedinglab/MMseqs2",
+        "revision": "8cc5ce367b5638c4306c2d7cfc652dd099a4643f",
+        "license": {
+          "id": "MIT-code-CC-BY-4.0-data",
+          "state": "verified",
+          "notes": "MMseqs2 code is MIT at the pinned revision; the exact public PDB70_220313 data is CC-BY-4.0. Revision-bound license hashes are recorded in acceptance/h100-fleet/bionemo-structure/fragments/msa-search-pdb70.json."
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "The exact PDB70 source and pinned open runtime require no NVIDIA registry entitlement."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "portable-cpu-20260907",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/msa-search-pdb70@sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85",
+        "digest": "sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85",
+        "state": "resolved"
+      },
+      "command": [
+        "python",
+        "-m",
+        "uvicorn",
+        "local_server:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 8000,
+      "memory_bytes": 8589934592,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "CPU",
+        "count": 0,
+        "topology": "cpu-only",
+        "placement": null,
+        "b300_state": "not-applicable",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/biology/colabfold/msa-search/predict"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 120
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "search-msa"
+        ],
+        "license_enforced": true,
+        "non_clinical": false,
+        "commercial_use": "license-dependent"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "disabled-negative-evidence",
+          "gate": null,
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "This CPU-only database service has no GPU state to snapshot; its immutable database is embedded in the runtime image."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "runtime-image",
+      "shared_path": "/mnt/fs2-serve-cache/models/msa-search-pdb70",
+      "local_path": "/var/lib/fs2-serve/cache/models/msa-search-pdb70",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "reference-database",
+        "manifest_digest": "2a3cb71cb615b8534b3134013e9cbecf003339bc6f034c4e6545dfdf91229c52",
+        "expanded_bytes": 42909193,
+        "minimum_bytes": 42909193,
+        "capacity_bound_bytes": 91693339,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "two-distinct-msa-search-responses/v1",
+      "source_path": "nim-fast-start/faststart-v2/msa-search-native/validate_msa_search.py",
+      "source_sha256": "20e8951ceaaa1b81e8129d86b787c6bb009cf2e207d55829cf13f4fa9489188b",
+      "fixture_path": "nim-fast-start/faststart-v2/msa-search-native/fixtures/request-pdb70.json",
+      "fixture_sha256": "874b0e5e3be9776ea289fb46444032e04b63875d9d4110f1560e5435de72686a",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": false,
+      "limitations": [
+        "This independent runtime serves the exact public PDB70_220313 database with pinned MMseqs2; NVIDIA NIM package or numerical parity is not claimed.",
+        "Three fresh CPU processes and six distinct semantic requests passed; public HTTP/MCP and elasticity verification remain separate promotion gates."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "Nebius general CPU node in project-e00rene/eu-north1",
+        "outcome": "live-qualified",
+        "source_commit": "070ce46fe08ac47949d66c252a9924a02e212968",
+        "summary": "Three fresh processes passed six strict semantic requests against the immutable embedded PDB70 database; the retained fragment binds exact image, database files, output hashes, startup clocks, and private raw receipts."
+      },
+      {
+        "classification": "blocked",
+        "hardware": "NVIDIA H100 80GB HBM3",
+        "outcome": "no-live-lane",
+        "source_commit": "070ce46fe08ac47949d66c252a9924a02e212968",
+        "summary": "The canonical NVIDIA NIM image returned HTTP 403 with the retained platform credential, so this record makes the independent package boundary explicit."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "b42c475e48a7b448e2395de0b871b48fd3276d73",
+        "tree": "4bda8f44c58e7d9632f453d2be6e2f3f45cd8673",
+        "path": "k8s-inference/catalog/runtime/contracts/model-variants.json",
+        "classification": "measured-handoff"
+      },
+      {
+        "url": "https://github.com/soedinglab/MMseqs2/tree/8cc5ce367b5638c4306c2d7cfc652dd099a4643f",
+        "revision": "8cc5ce367b5638c4306c2d7cfc652dd099a4643f",
+        "classification": "reviewed-input"
+      }
+    ]
+  },
+  "qualification": {
+    "active_runtime": {
+      "model_revision": "8cc5ce367b5638c4306c2d7cfc652dd099a4643f",
+      "runtime_image_digest": "sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85",
+      "service": {
+        "name": "msa-search-pdb70",
+        "namespace": "fs2-models",
+        "port": 8000
+      }
+    },
+    "evidence": {
+      "audited_catalog_sha256": "c77df36d784dd1cddbb8cb046f4aa403dd4d98bbbf1736538964abbe9a03a6ae",
+      "audited_live_routes_sha256": null,
+      "cold_start_acceptance_sha256": "ac53a87807d9bb7f717f06907072a47391b85a5b877c58ea571b7ffcb1e6d2d0",
+      "elasticity_acceptance_sha256": null,
+      "http_mcp_acceptance_sha256": null,
+      "mcp_discovery_sha256": null,
+      "model_discovery_sha256": null,
+      "retained_deployments_sha256": "ac53a87807d9bb7f717f06907072a47391b85a5b877c58ea571b7ffcb1e6d2d0"
+    },
+    "model_id": "msa-search-pdb70",
+    "policy": {
+      "license_id": "MIT-code-CC-BY-4.0-data",
+      "non_clinical": false,
+      "commercial_use": "license-dependent"
+    },
+    "runtime_origin": {
+      "kind": "independent-runtime",
+      "variant_id": "msa-search-pdb70-mmseqs2-portable",
+      "source_kind": "git",
+      "repository": "github.com/soedinglab/MMseqs2",
+      "relationship": "exact-model",
+      "nim_artifact_parity": "unverified"
+    },
+    "states": {
+      "registered": true,
+      "route_active": false,
+      "runtime_ready": true,
+      "semantic_qualified": true,
+      "http_mcp_qualified": false,
+      "cold_start_qualified": true,
+      "elasticity_qualified": false
+    },
+    "variant_id": "msa-search-pdb70-mmseqs2-portable"
+  }
+}

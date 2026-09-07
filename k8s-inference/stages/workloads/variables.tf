@@ -365,6 +365,15 @@ variable "scientific_batch" {
       schema = "fs2-serve.nebius.ai/scientific-execution-map/v3"
       models = []
     })
+    gpu_snapshots = optional(object({
+      bundles = optional(map(any), {})
+      cache = optional(object({
+        claim_name         = optional(string, "fs2-scientific-gpu-snapshots")
+        storage_class_name = optional(string, "csi-mounted-fs-path-sc")
+        size_gib           = optional(number, 128)
+      }), {})
+      adopt_existing = optional(bool, false)
+    }), {})
     workers                  = optional(number, 2)
     poll_seconds             = optional(string, "0.25")
     lease_seconds            = optional(string, "30")

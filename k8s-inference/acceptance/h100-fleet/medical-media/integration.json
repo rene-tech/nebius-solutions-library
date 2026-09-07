@@ -1,0 +1,178 @@
+{
+  "schema": "fs2-h100-fleet-medical-media-integration/v1",
+  "status": "four-models-direct-qualified-three-models-public-http-mcp-qualified",
+  "source_base": "070ce46fe08ac47949d66c252a9924a02e212968",
+  "region": "eu-north1",
+  "namespace": "fs2-models",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "compute_capability": "9.0",
+  "driver": "580.159.04",
+  "placement": {
+    "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+    "accelerator.fs2.nebius/pool-id": "h100-reserved-8x"
+  },
+  "compile_cache_abi": "driver-580.159.04-sm90",
+  "storage": {
+    "class": "csi-mounted-fs-path-sc",
+    "access": "ReadWriteMany",
+    "cache_mount": "/model-cache",
+    "disposition": "retain-task-PVC-until-release-owner-adopts-or-copies-it"
+  },
+  "production_boundary": "This lane performed isolated qualification and public HTTP/MCP verification after root deployed the three models with Terraform. Public requests used already-hot routes, not cold activation. Public receipt: public-results.json.",
+  "models": {
+    "sdxl": {
+      "source_manifest": "models/general-media/k8s/sdxl.yaml",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+      "model_revision": "462165984030d82259a11f4367a4eed129e94a7b",
+      "cache_pvc": "fs2-mm-sdxl-cache-20260907",
+      "cache_pvc_uid": "0c61a7a4-b5f8-4228-8327-3588ad8e2a67",
+      "cache_pv": "pvc-0c61a7a4-b5f8-4228-8327-3588ad8e2a67",
+      "cache_size": "32Gi",
+      "command": [
+        "/opt/fs2-media-venv/bin/python",
+        "/opt/fs2-media/sdxl_server.py"
+      ],
+      "gpu_count": 1,
+      "resource_requests": {
+        "cpu": "8",
+        "memory": "48Gi",
+        "ephemeral-storage": "4Gi"
+      },
+      "resource_limits": {
+        "cpu": "24",
+        "memory": "96Gi",
+        "ephemeral-storage": "16Gi"
+      },
+      "ready": "GET :8000/readyz",
+      "inference": "POST :8000/generate",
+      "fixture": "catalog/runtime/validators/assets/sdxl.json",
+      "semantic_result": "PASS-two-distinct-nonconstant-512x512-PNGs-direct-and-JSON",
+      "cross_gpu_oracle": "Identical payloads, model, fp16, dimensions and steps. Structural/nonconstant/envelope validation retained; B300-specific exact PNG hash/length not required across GPU families.",
+      "first_acquisition_model_ready_at": "2026-09-07T07:50:03.307049644Z",
+      "runtime_reported_startup_seconds_including_acquisition": 24.463319307018537,
+      "private_evidence": "/home/tux/.local/state/fs2-h100-fleet-r20260907/medical-media/sdxl/r01"
+    },
+    "nv-segment-ct": {
+      "source_manifest": "models/general-media/k8s/nv-segment-ct.yaml",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd",
+      "model_revision": "afb51518689f71e6abb367ee6301b2cd0225c66a",
+      "cache_pvc": "fs2-mm-nv-segment-ct-cache-20260907",
+      "cache_pvc_uid": "eccd512c-8c1b-4e4d-9015-d634da404d5d",
+      "cache_pv": "pvc-eccd512c-8c1b-4e4d-9015-d634da404d5d",
+      "cache_size": "16Gi",
+      "command": [
+        "/opt/fs2-media-venv/bin/python",
+        "/opt/fs2-media/nv_segment_ct_server.py"
+      ],
+      "gpu_count": 1,
+      "resource_requests": {
+        "cpu": "8",
+        "memory": "64Gi",
+        "ephemeral-storage": "4Gi"
+      },
+      "resource_limits": {
+        "cpu": "24",
+        "memory": "128Gi",
+        "ephemeral-storage": "16Gi"
+      },
+      "ready": "GET :8000/readyz",
+      "inference": "POST :8000/segment",
+      "fixture": "catalog/runtime/validators/assets/nv-segment-ct.json",
+      "semantic_result": "PASS-two-distinct-synthetic-NIfTI-masks-foreground-35-and-204-voxels",
+      "non_clinical": true,
+      "first_acquisition_model_ready_at": "2026-09-07T07:50:12.953119129Z",
+      "runtime_reported_startup_seconds_including_acquisition": 38.08083787304349,
+      "private_evidence": "/home/tux/.local/state/fs2-h100-fleet-r20260907/medical-media/nv-segment-ct/r01"
+    },
+    "evo2-40b": {
+      "qualification_status": "v5-direct-qualified-r06-r08-six-of-six-original-outputs-plus-six-extra; v4-rejected",
+      "source_manifest": "models/general-media/k8s/evo2-40b.yaml",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+      "model_repository": "arcinstitute/evo2_40b",
+      "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+      "cache_pvc": "fs2-mm-evo2-40b-cache-20260907",
+      "cache_pvc_uid": "e5e41f44-b65f-4915-ad9f-77bf15bc45c8",
+      "cache_pv": "pvc-e5e41f44-b65f-4915-ad9f-77bf15bc45c8",
+      "block_disk_id": "computedisk-e00fjnwc9qk5nfzj2t",
+      "storage_class": "compute-csi-default-sc",
+      "cache_access": "ReadWriteOnce",
+      "cache_size": "192Gi",
+      "checkpoint_path": "/model-cache/evo2_40b.pt",
+      "checkpoint_bytes": 82253491694,
+      "checkpoint_sha256": "dd299612b1c1cdded0dfdcaf4d16f98fc97458261d80f4d662429f0ccb316bc3",
+      "command": [
+        "python3",
+        "/opt/fs2-evo2/evo2_serve.py",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8001"
+      ],
+      "relay": "Unchanged source-manifest evo2_proxy.py listens on :8000 and forwards to model :8001",
+      "image_baked_environment": {
+        "CUDA_VISIBLE_DEVICES": "0,1",
+        "FS2_EVO2_PROFILE": "h100-2x"
+      },
+      "gpu_count": 2,
+      "resource_requests": {
+        "cpu": "16",
+        "memory": "128Gi"
+      },
+      "resource_limits": {
+        "cpu": "64",
+        "memory": "256Gi"
+      },
+      "parallelism": "upstream-vortex-layer-model-parallel-with-per-block-CUDA-device-context",
+      "precision": "bf16-with-transformer-engine-fp8-input-projections",
+      "ready": "GET :8000/v1/health/ready",
+      "inference": "POST :8000/biology/arc/evo2/generate",
+      "operation": "generate-sequence",
+      "fixture": "acceptance/h100-fleet/medical-media/evo2-hopper-oracle.json",
+      "validator": "acceptance/h100-fleet/medical-media/evo2_hopper_validate.py",
+      "semantic_result": "PASS-exact-two-historical-H200-NIM-DNA20-fixtures; no-general-NIM-numerical-parity-claim",
+      "prior_image_note": "v4 source READY at 08:47:07.882863205, 940.882863s, but repeated r04 generation failures later disqualified it; retained separately",
+      "private_evidence": "/home/tux/.local/state/fs2-h100-fleet-r20260907/medical-media/evo2",
+      "qualification_receipt": "acceptance/h100-fleet/medical-media/evo2-qualification.json",
+      "deployment_runtime": "catalog/runtime/deployment-runtimes/evo2-40b-portable-h100.json",
+      "artifact_manifest_sha256": "4eaa1aebdb64a170fdb0b7f20432fc8624ab2ca84ffa37ec81033bf8d362a8b4",
+      "intended_shared_cache": {
+        "claim": "evo2-40b-cache-rwx-ecc3e914",
+        "terraform_address": "kubernetes_manifest.model[\"9cf1fc06-01-persistentvolumeclaim-evo2-40b-cache\"]",
+        "status": "release-owner-creation-then-one-readonly-source-copy-and-full-destination-hash-pending",
+        "source_retention": "Do not delete retained RWO source or hot probe until shared destination hash and semantic checks pass."
+      }
+    },
+    "nv-reason-cxr-3b": {
+      "source_manifest": "models/general-media/k8s/nv-reason-cxr-3b.yaml",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+      "model_revision": "056bd0383b35226554da9dc5866e095df174ae19",
+      "cache_pvc": "fs2-mm-nv-reason-cxr-3b-cache-20260907",
+      "cache_pvc_uid": "6e9419cf-17df-4caf-9c5c-f1e1f1b3778a",
+      "cache_pv": "pvc-6e9419cf-17df-4caf-9c5c-f1e1f1b3778a",
+      "cache_size": "24Gi",
+      "command": "Unchanged vLLM image entrypoint and exact source-manifest args: BF16, TP1, max_model_len8192, max_num_seqs1, gpu_memory_utilization0.85, one image per prompt.",
+      "gpu_count": 1,
+      "resource_requests": {
+        "cpu": "8",
+        "memory": "48Gi",
+        "ephemeral-storage": "8Gi"
+      },
+      "resource_limits": {
+        "cpu": "24",
+        "memory": "96Gi",
+        "ephemeral-storage": "32Gi"
+      },
+      "ready": "GET :8000/health",
+      "inference": "POST :8000/v1/chat/completions",
+      "fixture": "catalog/runtime/validators/assets/nv-reason-cxr-3b.json",
+      "semantic_result": "PASS-both-pinned-CXR-fixtures-full-medical-reasoning-and-answer-oracle",
+      "non_clinical": true,
+      "commercial_use": "prohibited",
+      "first_acquisition_application_ready_at": "2026-09-07T07:51:35.222890074Z",
+      "private_evidence": "/home/tux/.local/state/fs2-h100-fleet-r20260907/medical-media/cxr/r01"
+    }
+  },
+  "pending": {
+    "evo2-40b": "One new shared-filesystem cache cohort after release-owned destination creation/copy, then public HTTP/MCP verification after route deployment. No v5 disk-cold figure claimed."
+  }
+}

@@ -46,7 +46,7 @@ RUN uv sync --frozen --no-dev --no-install-project \
     && uv build --wheel --out-dir /tmp/dist --build-constraints /tmp/build-constraints.txt --require-hashes \
     && uv pip install --python .venv/bin/python --no-deps --no-index /tmp/dist/fs2_serve_control_plane-*.whl \
     && uv pip check --python .venv/bin/python \
-    && .venv/bin/python -I -c "from pathlib import Path; import fs2_serve, fs2_serve_catalog; from fs2_serve.settings import Settings; from fs2_serve_catalog.loader import load_catalog; migration_dir=Settings.model_fields['migrations_dir'].default; assert isinstance(migration_dir, Path); assert migration_dir.parent == Path(fs2_serve.__file__).resolve().parent; assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 24; assert load_catalog(Path('/workspace/runtime-catalog'), repo_root=Path('/workspace/runtime-catalog/packaged-repository')).records['qwen3-8b'].model_id == 'qwen3-8b'" \
+    && .venv/bin/python -I -c "from pathlib import Path; import fs2_serve, fs2_serve_catalog; from fs2_serve.settings import Settings; from fs2_serve_catalog.loader import load_catalog; migration_dir=Settings.model_fields['migrations_dir'].default; assert isinstance(migration_dir, Path); assert migration_dir.parent == Path(fs2_serve.__file__).resolve().parent; assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 25; assert load_catalog(Path('/workspace/runtime-catalog'), repo_root=Path('/workspace/runtime-catalog/packaged-repository')).records['qwen3-8b'].model_id == 'qwen3-8b'" \
     && .venv/bin/fs2-serve --help >/dev/null
 
 FROM python:3.13.15-alpine3.23@sha256:7ea3f82de8ea6d4fb7e5d2bbe3fe3c9d931700b7a529f1fe5769e42abe514ca1
@@ -73,6 +73,7 @@ RUN apk add --no-cache \
 WORKDIR /workspace/k8s-inference/components/control-plane
 COPY --from=builder --chown=65532:65532 /workspace/k8s-inference/components/control-plane/.venv ./.venv
 COPY --from=builder --chown=65532:65532 /workspace/runtime-catalog /opt/fs2/catalog
+COPY --chown=65532:65532 k8s-inference/acceptance/h100-fleet/snapshots/capabilities.json /opt/fs2/snapshot-capabilities.json
 
 # CPU aggregation reuses the model's existing implementation without bringing
 # its CUDA/JAX environment onto CPU nodes. RFdiffusion's collector needs only

@@ -7,6 +7,7 @@ import type {
   ScientificModelPolicyList,
   ScientificModelPolicyUpdate,
   ScientificModelReadiness,
+  ScientificStageStartupPolicy,
 } from "../../api/scientificTypes";
 import type { AdminEnvelope } from "../../api/types";
 import { DataBoundary } from "../../components/DataBoundary";
@@ -27,7 +28,7 @@ export function policyBlocker(capabilities: ScientificCapabilities | undefined, 
 /** Validate the operator's draft before it becomes a durable request. */
 export function draftUpdate(
   policy: ScientificModelPolicy,
-  draft: { paused: boolean; maxActiveRuns: string; reason: string },
+  draft: { paused: boolean; maxActiveRuns: string; reason: string; startupPolicies?: Record<string, ScientificStageStartupPolicy> },
 ): ScientificModelPolicyUpdate {
   const trimmedCap = draft.maxActiveRuns.trim();
   let maxActiveRuns: number | null = null;
@@ -45,6 +46,7 @@ export function draftUpdate(
     paused: draft.paused,
     max_active_runs: maxActiveRuns,
     reason: reason || null,
+    ...(draft.startupPolicies === undefined ? {} : { startup_policies: draft.startupPolicies }),
   };
 }
 
@@ -64,6 +66,7 @@ function PolicyRow({ policy, readiness, blocker, onSave }: PolicyRowProps) {
   const [paused, setPaused] = useState(policy.desired.paused);
   const [maxActiveRuns, setMaxActiveRuns] = useState(policy.desired.max_active_runs === null ? "" : String(policy.desired.max_active_runs));
   const [reason, setReason] = useState(policy.desired.reason ?? "");
+  const [startupPolicies, setStartupPolicies] = useState(policy.desired.startup_policies ?? {});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
@@ -73,6 +76,7 @@ function PolicyRow({ policy, readiness, blocker, onSave }: PolicyRowProps) {
     setPaused(policy.desired.paused);
     setMaxActiveRuns(policy.desired.max_active_runs === null ? "" : String(policy.desired.max_active_runs));
     setReason(policy.desired.reason ?? "");
+    setStartupPolicies(policy.desired.startup_policies ?? {});
     setError(null);
     setStale(false);
     setSaved(false);
@@ -85,7 +89,10 @@ function PolicyRow({ policy, readiness, blocker, onSave }: PolicyRowProps) {
     setError(null);
     setStale(false);
     try {
-      const update = draftUpdate(policy, { paused, maxActiveRuns, reason });
+      const update = draftUpdate(policy, {
+        paused, maxActiveRuns, reason,
+        startupPolicies: policy.startup_options === undefined ? undefined : startupPolicies,
+      });
       await onSave(policy.model_id, update);
       setEditing(false);
       setSaved(true);
@@ -107,6 +114,10 @@ function PolicyRow({ policy, readiness, blocker, onSave }: PolicyRowProps) {
 
   const scope = policy.scope_tenant_id ? `tenant ${policy.scope_tenant_id}` : "all tenants";
   const desired = policy.desired;
+  const effectiveStartup = { ...policy.inherited?.startup_policies, ...desired.startup_policies };
+  const startupStages = [...new Set([
+    ...Object.keys(policy.startup_options ?? {}), ...Object.keys(startupPolicies),
+  ])].sort();
   const desiredSummary = desired.revision === 0
     ? "No policy row · open by default"
     : `${desired.paused ? "Paused" : "Dispatching"} · ${desired.max_active_runs === null ? "no cap" : `cap ${desired.max_active_runs}`} · r${desired.revision}`;
@@ -131,6 +142,11 @@ function PolicyRow({ policy, readiness, blocker, onSave }: PolicyRowProps) {
       <td>
         {desiredSummary}
         {desired.reason ? <span className="secondary-line scientific-secondary">{desired.reason}</span> : null}
+        {Object.entries(effectiveStartup).map(([stage, startup]) => (
+          <span className="secondary-line" key={stage}>
+            {stage}: {startup.backend === "cuda-criu" ? `GPU snapshot · ${startup.bundle_id}` : "Normal model loading"}
+          </span>
+        ))}
         {desired.updated_by ? <span className="secondary-line">{desired.updated_by} · {formatTimestamp(desired.updated_at)}</span> : null}
         {policy.inherited ? (
           <span className="secondary-line scientific-secondary">
@@ -145,6 +161,29 @@ function PolicyRow({ policy, readiness, blocker, onSave }: PolicyRowProps) {
             <label className="checkbox-field"><input checked={paused} disabled={busy} onChange={(event) => setPaused(event.target.checked)} type="checkbox" />Pause new dispatch</label>
             <label>Max active runs<input disabled={busy} inputMode="numeric" max={MAX_ACTIVE_RUNS} min={1} onChange={(event) => setMaxActiveRuns(event.target.value)} placeholder="No cap" step={1} type="number" value={maxActiveRuns} /></label>
             <label>Reason<input disabled={busy} maxLength={300} onChange={(event) => setReason(event.target.value)} placeholder="Optional operator note" value={reason} /></label>
+            {startupStages.map((stage) => {
+              const choice = startupPolicies[stage];
+              const bundles = policy.startup_options?.[stage] ?? [];
+              return (
+                <label key={stage}>Startup for {stage}
+                  <select disabled={busy} value={choice?.backend === "cuda-criu" ? choice.bundle_id ?? "" : choice?.backend ?? ""} onChange={(event) => {
+                    const value = event.target.value;
+                    setStartupPolicies((current) => {
+                      const next = { ...current };
+                      if (!value) delete next[stage];
+                      else next[stage] = { backend: value === "normal-load" ? "normal-load" : "cuda-criu", bundle_id: value === "normal-load" ? null : value };
+                      return next;
+                    });
+                  }}>
+                    <option value="">Inherit deployment / all-tenants default</option>
+                    <option value="normal-load">Normal model loading</option>
+                    {choice?.bundle_id && !bundles.includes(choice.bundle_id) ? <option disabled value={choice.bundle_id}>Unavailable snapshot: {choice.bundle_id}</option> : null}
+                    {bundles.map((bundle) => <option key={bundle} value={bundle}>GPU snapshot: {bundle}</option>)}
+                  </select>
+                </label>
+              );
+            })}
+            {startupStages.length ? <span className="secondary-line">Startup changes apply to newly submitted runs. Existing runs retain their selected bundle; incompatible restores fall back to normal loading.</span> : null}
             {error ? <div className="inline-notice inline-notice--error" role="alert"><strong>{stale ? "Policy changed elsewhere." : "Policy was not applied."}</strong> {error}{stale ? " Reload the list and re-apply your change." : ""}</div> : null}
             <div className="configuration-actions">
               <button className="button button--primary" disabled={busy} type="submit">{busy ? "Applying…" : "Apply policy"}</button>

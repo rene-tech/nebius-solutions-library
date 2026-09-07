@@ -233,6 +233,7 @@ class AppRuntime:
     scientific_workload_batches: WorkloadBatchRepository | None = None
     scientific_artifact_content_reader: SignedArtifactContentReader | None = None
     scientific_input_uploads: ScientificInputUploadService | None = None
+    snapshot_capabilities: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
 
     async def revalidate_routes(self) -> bool:
         if self.route_revalidator is not None and not await self.route_revalidator.refresh():
@@ -1623,6 +1624,10 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 serving.data.items,
                 scientific_items,
                 scientific_projection_available=scientific_available,
+                snapshot_capabilities=runtime.snapshot_capabilities,
+                snapshot_bundles=getattr(
+                    getattr(runtime.scientific_batches, "execution_binding", None), "snapshot_bundles", {}
+                ),
             ),
         )
 

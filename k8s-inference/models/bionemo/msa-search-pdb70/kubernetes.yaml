@@ -5,19 +5,6 @@ metadata:
   namespace: fs2-models
 automountServiceAccountToken: false
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: msa-search-pdb70-cache
-  namespace: fs2-models
-  labels:
-    fs2-serve.nebius.ai/model-id: msa-search-pdb70
-spec:
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: 8Gi
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,9 +15,13 @@ metadata:
     app.kubernetes.io/instance: msa-search-pdb70
     fs2-serve.nebius.ai/model-id: msa-search-pdb70
   annotations:
-    fs2-serve.nebius.ai/source-revision: 0c788a0e8dca909f2c669784f9dd38e8c9682ff0
-    fs2-serve.nebius.ai/identity-relationship: capability-equivalent-non-alias
-    fs2-serve.nebius.ai/exact-pdb70-parity: "false"
+    fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
+    fs2.nebius/model-content-digest: sha256:ee828baf233c8737406f15447acb4fd45fa23b96b9750e460cb137149319f2bd
+    fs2.nebius/runtime-image-digest: sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85
+    fs2-serve.nebius.ai/source-revision: 8cc5ce367b5638c4306c2d7cfc652dd099a4643f
+    fs2-serve.nebius.ai/identity-relationship: exact-public-database-independent-runtime
+    fs2-serve.nebius.ai/exact-pdb70-database: "true"
+    fs2-serve.nebius.ai/nim-package-parity: unverified
 spec:
   replicas: 1
   strategy:
@@ -47,6 +38,9 @@ spec:
         app.kubernetes.io/part-of: fs2-serve
         fs2-serve.nebius.ai/model-id: msa-search-pdb70
       annotations:
+        fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
+        fs2.nebius/model-content-digest: sha256:ee828baf233c8737406f15447acb4fd45fa23b96b9750e460cb137149319f2bd
+        fs2.nebius/runtime-image-digest: sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85
         prometheus.io/scrape: "true"
         prometheus.io/port: "8000"
         prometheus.io/path: /metrics
@@ -63,7 +57,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: msa-search-pdb70
-          image: registry.example.invalid/k8s-inference/models/msa-search-colabfold@sha256:64bd29bc83915a145ac5d55ec9c6de1178bc2be2f2d9fdc1b789b9b6a5c78136
+          image: registry.example.invalid/k8s-inference/models/msa-search-pdb70-mmseqs2@sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -88,7 +82,7 @@ spec:
             failureThreshold: 20
           livenessProbe:
             httpGet:
-              path: /v1/health/ready
+              path: /v1/health/live
               port: http
             initialDelaySeconds: 20
             periodSeconds: 30
@@ -99,8 +93,8 @@ spec:
               mountPath: /cache
       volumes:
         - name: cache
-          persistentVolumeClaim:
-            claimName: msa-search-pdb70-cache
+          emptyDir:
+            sizeLimit: 4Gi
 ---
 apiVersion: v1
 kind: Service

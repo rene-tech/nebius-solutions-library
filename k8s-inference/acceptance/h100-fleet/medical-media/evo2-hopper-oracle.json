@@ -1,0 +1,31 @@
+{
+  "schema": "fs2-evo2-hopper-historical-oracle/v1",
+  "profile": "historical-h200-nim-exact-dna20",
+  "authority": "Preexisting committed validator and six retained H200 NIM responses, not today's H100 output",
+  "validator_commit": "120295691593480127e600a0f900495dcc90e25e",
+  "validator_commit_date": "2026-08-18",
+  "validator_path": "nim-fast-start/faststart-v2/evo2-native/validate_evo2.py",
+  "validator_sha256": "113747668c537e83c61648e193419248696e144d5b0598b1f6ca7d38efabe496",
+  "historical_runtime_image": "nvcr.io/nim/arc/evo2-40b@sha256:561886bab1d2d0da836ebf5bec403f9de2baf6e92deb7eedf1b316aa994b5dd2",
+  "historical_hardware": "one NVIDIA H200 SXM, SM90",
+  "historical_receipt_root": "/home/tux/.local/state/archvteams-2407/evo2-h200-faststart-20260817T234216Z/direct-aio-n3",
+  "historical_response_sha256": {
+    "response-1-a.json": "c96b5134c7eebe034b5c0013471d8451d66c7ca1d4d806d6283fc2f5352d31d0",
+    "response-1-b.json": "746f09f7a1b14081c3970e99044f41ef93829d76ead82705bcd460e1924b06d6",
+    "response-2-a.json": "37893ef6a264215d53903064d14083ee31f162f624d869fe52054688fc0712ca",
+    "response-2-b.json": "e78ef64b9d5c8cb0ecb2a272515f7bee0cb5ae3062240a1359c2e0d0306e2823",
+    "response-3-a.json": "aa1cc23bded0553b5500b1b6f89fbea27179589fed779f52ee4b5cda75f887dc",
+    "response-3-b.json": "bf8a499ebf9459c2754f1639a06c2325890a1b724e29e9718dd265f592aa8151"
+  },
+  "boundary": "Exact sequence parity on these two fixtures only; no general NIM numerical parity claim. Archived B300-specific oracle and today's failures remain unchanged.",
+  "cases": [
+    {
+      "payload": {"sequence": "ATCGATCGATCG", "num_tokens": 20, "temperature": 0.7, "top_k": 1, "top_p": 0.0, "random_seed": 2407001, "enable_logits": false, "enable_sampled_probs": false, "enable_elapsed_ms_per_token": true},
+      "expected_sequence": "ATCGATCGATCGATCGATCG"
+    },
+    {
+      "payload": {"sequence": "GATTACAGATTACA", "num_tokens": 20, "temperature": 0.7, "top_k": 1, "top_p": 0.0, "random_seed": 2407002, "enable_logits": false, "enable_sampled_probs": false, "enable_elapsed_ms_per_token": true},
+      "expected_sequence": "GATTACAGATTACAGATTAC"
+    }
+  ]
+}

@@ -41,6 +41,13 @@ k8s-inference/catalog/runtime/*
 !k8s-inference/catalog/runtime/validators/**
 !k8s-inference/catalog/runtime/packaged-repository/
 !k8s-inference/catalog/runtime/packaged-repository/**
+!k8s-inference/acceptance/
+k8s-inference/acceptance/*
+!k8s-inference/acceptance/h100-fleet/
+k8s-inference/acceptance/h100-fleet/*
+!k8s-inference/acceptance/h100-fleet/snapshots/
+k8s-inference/acceptance/h100-fleet/snapshots/*
+!k8s-inference/acceptance/h100-fleet/snapshots/capabilities.json
 !k8s-inference/models/
 k8s-inference/models/*
 !k8s-inference/models/cancer-immunotherapy/

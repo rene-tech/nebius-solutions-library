@@ -1,0 +1,6 @@
+# Qualified native SM90 libraries are unchanged; this layer changes only the
+# explicit model-parallel CUDA device-context adapter.
+ARG BASE_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:d4253700c8242da9b6546edd0c51853e441362a4a48056bd5cc284d4075416ce
+FROM ${BASE_IMAGE}
+COPY evo2_h100.py /opt/fs2-evo2/evo2_h100.py
+LABEL ai.nebius.fs2.cuda-device-context="per-upstream-layer"

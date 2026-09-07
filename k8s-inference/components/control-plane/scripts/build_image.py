@@ -36,6 +36,7 @@ CONTEXT_INPUTS = (
     CATALOG_REL / "sql",
     CATALOG_REL / "validators",
     CATALOG_REL / "packaged-repository",
+    SOLUTION_REL / "acceptance/h100-fleet/snapshots/capabilities.json",
     SOLUTION_REL / "models/cancer-immunotherapy/runtime-images/mosaic/runtime_entrypoint.py",
     SOLUTION_REL / "models/cancer-immunotherapy/runtime-images/mosaic/cpu/mosaic-batch",
 )

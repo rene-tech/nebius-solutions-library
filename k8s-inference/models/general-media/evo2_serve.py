@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import threading
 from typing import Sequence
@@ -32,13 +33,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        # Keep the SM103-optimized HCS/HCM/HCL kernels. The upstream server's
+        backend_type = Evo2Backend
+        profile = os.environ.get("FS2_EVO2_PROFILE", "b300-1x")
+        if profile == "h100-2x":
+            from evo2_h100 import H100Backend
+            backend_type = H100Backend
+        elif profile != "b300-1x":
+            raise RuntimeFailure("unsupported explicit Evo2 runtime profile")
+        # Keep the image profile's native HCS/HCM/HCL kernels. The upstream server's
         # assert_snapshot_safe() check is deliberately absent: this retained
         # HTTP process is never a CRIU snapshot donor, and libcufile is valid
         # for ordinary model loading and inference.
         def load_and_warm_backend() -> Evo2Backend:
             emit_startup_phase("weight-load-start")
-            loaded = Evo2Backend(model_path_from_environment(), use_kernels=True)
+            loaded = backend_type(model_path_from_environment(), use_kernels=True)
             emit_startup_phase("weight-load-end")
             # Readiness must cover first-use Triton/PTXAS compilation as well as
             # weight residency. Two generated tokens exercise prefill and the

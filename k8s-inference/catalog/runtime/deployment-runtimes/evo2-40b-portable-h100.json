@@ -1,0 +1,209 @@
+{
+  "schema": "fs2-serve.nebius.ai/deployment-runtime/v1",
+  "model_id": "evo2-40b",
+  "variant_id": "evo2-40b-upstream-portable",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "evo2-40b",
+      "display_name": "Evo2-40B",
+      "family": "bionemo-nim",
+      "tested_lane": true,
+      "source": {
+        "kind": "huggingface",
+        "repository": "arcinstitute/evo2_40b",
+        "revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+        "license": {
+          "id": "Apache-2.0",
+          "state": "verified",
+          "notes": "Exact pinned upstream README license artifact already retained in canonical Evo2 source inventory; independent H100 runtime, not NVIDIA NIM packaging.",
+          "artifact": {
+            "url": "https://huggingface.co/arcinstitute/evo2_40b/raw/d529aa57c30771814217ad89baaeaf6e2315c7d7/README.md",
+            "sha256": "b39cc7f28cca98b868aa2e9a8bcb93b11c13937e45f330f616070d8a2545e180"
+          }
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "Public upstream checkpoint, exact two shards merged and SHA256 verified."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "h100-2x-20260907-v5",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+        "digest": "sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+        "state": "resolved"
+      },
+      "command": [
+        "python3",
+        "/opt/fs2-evo2/evo2_serve.py",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8001"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 16000,
+      "memory_bytes": 137438953472,
+      "host_ram_min_bytes": 137438953472,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-H100-SXM5-80GB",
+        "count": 2,
+        "topology": "single-node-multi-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/biology/arc/evo2/generate"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 1800
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "generate-sequence"
+        ],
+        "license_enforced": true,
+        "non_clinical": false,
+        "commercial_use": "allowed"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "gated",
+          "gate": "fresh-pod-restore-with-original-semantic-output",
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "This exact two-H100 runtime has no qualified GPU process restore. Conventional fresh-process qualification does not imply snapshot support."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "fs2-serve-localizer",
+      "shared_path": "/mnt/fs2-serve-cache/models/evo2-40b",
+      "local_path": "/var/lib/fs2-serve/cache/models/evo2-40b",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "4eaa1aebdb64a170fdb0b7f20432fc8624ab2ca84ffa37ec81033bf8d362a8b4",
+        "expanded_bytes": 82253491694,
+        "minimum_bytes": 82253491694,
+        "capacity_bound_bytes": 206158430208,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "two-distinct-evo2-sequence-responses/historical-hopper-v1",
+      "source_path": "k8s-inference/acceptance/h100-fleet/medical-media/evo2_hopper_validate.py",
+      "source_sha256": "ef47b5995f874edc63543cb08fc353d6e310adf972cd2c0fedc2b10aba66a37f",
+      "fixture_path": "k8s-inference/acceptance/h100-fleet/medical-media/evo2-hopper-oracle.json",
+      "fixture_sha256": "a68351e5cabd721d61da15a31fe32e7250c069123c238bda6d62a586863cd146",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": false,
+      "limitations": [
+        "Exact upstream checkpoint in independent two-H100 runtime; NVIDIA NIM artifact and general numerical parity are not claimed.",
+        "Three cached fresh processes passed both original Hopper fixtures; all have retained OS page cache. Shared-filesystem startup and public HTTP/MCP remain separate pending checks.",
+        "Earlier SM103-only wrapper and unguarded v4 generation failures remain rejected evidence; only this exact v5 image is qualified."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "2 x NVIDIA H100 SXM5 80GB; SM90; driver 580.159.04",
+        "outcome": "live-qualified",
+        "source_commit": "b42c475e48a7b448e2395de0b871b48fd3276d73",
+        "summary": "Working-tree successor image v5 is digest-bound. Three cached fresh processes (r06-r08) pass six original semantic outputs, with six additional first-compile/stress outputs. Container-to-ready median 23.547983 seconds. See acceptance/h100-fleet/medical-media/evo2-qualification.json."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "b42c475e48a7b448e2395de0b871b48fd3276d73",
+        "tree": "4bda8f44c58e7d9632f453d2be6e2f3f45cd8673",
+        "path": "k8s-inference/acceptance/h100-fleet/medical-media/evo2-qualification.json",
+        "classification": "measured-handoff"
+      }
+    ]
+  },
+  "qualification": {
+    "active_runtime": {
+      "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+      "runtime_image_digest": "sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+      "service": {
+        "namespace": "fs2-models",
+        "name": "evo2-40b",
+        "port": 8000
+      }
+    },
+    "evidence": {
+      "audited_catalog_sha256": "c77df36d784dd1cddbb8cb046f4aa403dd4d98bbbf1736538964abbe9a03a6ae",
+      "audited_live_routes_sha256": null,
+      "cold_start_acceptance_sha256": "2e625a1a683a8461c9e1de7b394d994db0c1fb099f76773b693c13c7e37968a9",
+      "elasticity_acceptance_sha256": null,
+      "http_mcp_acceptance_sha256": null,
+      "mcp_discovery_sha256": null,
+      "model_discovery_sha256": null,
+      "retained_deployments_sha256": "2e625a1a683a8461c9e1de7b394d994db0c1fb099f76773b693c13c7e37968a9"
+    },
+    "model_id": "evo2-40b",
+    "policy": {
+      "license_id": "Apache-2.0",
+      "non_clinical": false,
+      "commercial_use": "allowed"
+    },
+    "runtime_origin": {
+      "kind": "independent-runtime",
+      "variant_id": "evo2-40b-upstream-portable",
+      "source_kind": "huggingface",
+      "repository": "arcinstitute/evo2_40b",
+      "relationship": "exact-model",
+      "nim_artifact_parity": "unverified"
+    },
+    "states": {
+      "registered": true,
+      "route_active": false,
+      "runtime_ready": true,
+      "semantic_qualified": true,
+      "http_mcp_qualified": false,
+      "cold_start_qualified": true,
+      "elasticity_qualified": false
+    },
+    "variant_id": "evo2-40b-upstream-portable"
+  }
+}

@@ -23,6 +23,7 @@ from fs2_serve.crypto import KeyedHasher, PayloadCipher
 from fs2_serve.models import AdmissionRequest, OperationStatus, Principal, Scope, TokenCreate
 from fs2_serve.postgres import PostgresStore
 from fs2_serve.scientific_admin import (
+    ScientificModelPolicyInvalidError,
     ScientificModelPolicyStaleRevisionError,
     ScientificModelSnapshot,
     ScientificRunQuery,
@@ -801,3 +802,66 @@ async def test_admin_projection_reports_effective_policy_counts_and_held_run_rea
     )
     paused_detail = await runs.get_run(queued, tenant_id=TENANT)
     assert "paused by operator policy" in paused_detail.data.run.queue.admission_reason
+
+
+async def test_startup_choice_inherits_preserves_and_resets_per_scope(store: PostgresStore) -> None:
+    policies = PostgresScientificModelPolicyRepository(store.pool)
+    snapshot = {"sample-structure": {"backend": "cuda-criu", "bundle_id": "protenix-qualified"}}
+    normal = {"sample-structure": {"backend": "normal-load", "bundle_id": None}}
+
+    async def put(tenant: str | None, revision: int, **kwargs):
+        return await policies.set(
+            MODEL,
+            tenant_id=tenant,
+            expected_revision=revision,
+            paused=False,
+            max_active_runs=None,
+            reason=None,
+            actor="test-operator",
+            **kwargs,
+        )
+
+    await put(None, 0, startup_policies=snapshot)
+    assert await policies.startup_policies(model_id=MODEL, tenant_id=TENANT) == snapshot
+    await put(TENANT, 0, startup_policies=normal)
+    assert await policies.startup_policies(model_id=MODEL, tenant_id=TENANT) == normal
+    assert await policies.startup_policies(model_id=MODEL, tenant_id=OTHER_TENANT) == snapshot
+    await put(TENANT, 1)  # Older dispatch-only clients preserve startup choice.
+    assert await policies.startup_policies(model_id=MODEL, tenant_id=TENANT) == normal
+    await put(TENANT, 2, startup_policies={})
+    assert await policies.startup_policies(model_id=MODEL, tenant_id=TENANT) == snapshot
+    await put(None, 1, startup_policies={})
+    assert await policies.startup_policies(model_id=MODEL, tenant_id=TENANT) == {}
+
+
+async def test_admin_startup_choice_validates_and_publishes_available_bundles(store: PostgresStore) -> None:
+    policies = PostgresScientificModelPolicyRepository(store.pool)
+    options = {"sample-structure": ["protenix-qualified"]}
+
+    def validate(*, model_id, overrides):
+        assert model_id == MODEL
+        for stage, choice in overrides.items():
+            if stage not in options or choice["bundle_id"] not in options[stage]:
+                raise ValueError("snapshot bundle is not qualified for this stage")
+        return overrides
+
+    adapter = PostgresScientificModelPolicyAdminAdapter(
+        repository=policies,
+        startup_validator=validate,
+        startup_options=lambda **_: options,
+    )
+    update = ScientificModelPolicyUpdate(
+        expected_revision=0,
+        paused=False,
+        startup_policies={"sample-structure": {"backend": "cuda-criu", "bundle_id": "protenix-qualified"}},
+    )
+    view = await adapter.set_policy(MODEL, tenant_id=None, update=update, actor="test-operator")
+    assert view.startup_options == options
+    assert view.desired.startup_policies["sample-structure"].bundle_id == "protenix-qualified"
+    invalid = update.model_copy(update={"expected_revision": 1})
+    invalid.startup_policies["sample-structure"].bundle_id = "wrong-model-bundle"
+    with pytest.raises(ScientificModelPolicyInvalidError, match="not qualified"):
+        await adapter.set_policy(MODEL, tenant_id=None, update=invalid, actor="test-operator")
+    assert (await policies.startup_policies(model_id=MODEL, tenant_id=TENANT))["sample-structure"][
+        "bundle_id"
+    ] == "protenix-qualified"

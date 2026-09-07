@@ -350,11 +350,20 @@ class Registry:
             variant_snapshot = cls._bind_variant_routes(gateway, variants)
             gateway = variant_snapshot.catalog
             variant_models = variant_snapshot.models
+        # Deployment selections replace archival runtime metadata but grant no
+        # route authority. Bind them before Terraform's static-route overlay so
+        # the route is checked against the selected image, source, interface,
+        # resource count and artifact rather than the archived NIM record.
+        gateway = bind_deployment_runtimes(
+            gateway,
+            catalog,
+            bindings,
+            deployment_runtime_records_file,
+            catalog_dir=catalog_dir,
+        )
         lean_model_ids: frozenset[str] = frozenset()
         if lean_routes_file is not None:
             gateway, lean_model_ids = bind_lean_routes(gateway, lean_routes_file, catalog=catalog)
-        gateway = bind_deployment_runtimes(gateway, catalog, bindings,
-            deployment_runtime_records_file, catalog_dir=catalog_dir)
         models = cls._models_from_gateway(
             gateway,
             max_attempts=max_attempts,
@@ -403,8 +412,9 @@ class Registry:
             bindings_file=Path(bindings_file),
             variant_promotions_file=None if variant_promotions_file is None else Path(variant_promotions_file),
             lean_routes_file=None if lean_routes_file is None else Path(lean_routes_file),
-            deployment_runtime_records_file=(None if deployment_runtime_records_file is None
-                else Path(deployment_runtime_records_file)),
+            deployment_runtime_records_file=(
+                None if deployment_runtime_records_file is None else Path(deployment_runtime_records_file)
+            ),
             repo_root=repo_root,
             evidence_root=evidence_root,
             max_attempts=max_attempts,
