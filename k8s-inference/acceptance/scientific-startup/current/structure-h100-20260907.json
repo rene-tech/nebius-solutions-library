@@ -1,0 +1,1138 @@
+{
+  "alphafold3_note": "Native initialization returns host parameters; JAX device placement and compilation happen on the first inference. Do not label its initialized clock GPU-ready",
+  "baseline_solution_source": "71547004",
+  "clock_resolution": "Model markers carry UTC and monotonic seconds; Kubernetes container/Pod timestamps have one-second resolution",
+  "deployed_platform_source": "adf1d8423e9b75afc5ba208baf53e479e7793922",
+  "generated_at": "2026-09-07T06:13:30.965460+00:00",
+  "hardware": "NVIDIA H100 80GB HBM3; same reserved GPU pool and original resource requests/limits",
+  "lazy_compilation": "Initialized is not fully shape-warmed. First compute includes lazy compilation and inference, without pretending they were separately profiled",
+  "measured_on": "2026-09-07",
+  "models": [
+    {
+      "model_id": "esmfold2",
+      "repetitions": [
+        {
+          "cache": "fresh process; unchanged existing model/reference cache; no eviction",
+          "compilation_state": "not-warmed",
+          "container_started_at": "2026-09-07T05:57:45Z",
+          "initialization_boundary": "ESMFold2InputBuilder.fold entry after both checkpoints and precision setup",
+          "initialized_at": "2026-09-07T05:58:05.626234+00:00",
+          "initialized_monotonic_seconds": 375106.400425027,
+          "inputs": [
+            {
+              "bytes": 591,
+              "sha256": "9400dc2af8e061799e3fb966b0fe723c9c52b64fcc2ae12914e4015900de92d6"
+            }
+          ],
+          "model_id": "esmfold2",
+          "normal_runtime_exit_code": 0,
+          "outcome": "passed",
+          "output_structures": [
+            {
+              "atoms": 320,
+              "bytes": 26292,
+              "sha256": "26e9040f9448513b19e1498635a86089c9a76d8963de9ae5021bd41ef318aad6"
+            }
+          ],
+          "parameter_placement_at_initialized": "cuda",
+          "pod_created_at": "2026-09-07T05:57:08Z",
+          "private_log_sha256": "1919a959fb12baa253358ad3884689a7a33f39780a6cef4cea4d11b54b6ff770",
+          "private_receipt_sha256": "0396a531814ee542d6d6a7d60bdc0efc30bfe121e9a5670bf1e811205162710b",
+          "receipt_recovery": null,
+          "runtime_image_digest": "sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
+          "runtime_stack": {
+            "compute_capability": [
+              9,
+              0
+            ],
+            "cuda_version": "13.0",
+            "device": "NVIDIA H100 80GB HBM3",
+            "torch_version": "2.11.0+cu130"
+          },
+          "snapshot": "disabled",
+          "timings": {
+            "container_to_initialized_seconds": 20.626234,
+            "container_to_valid_output_seconds": 29.825922,
+            "first_compute_including_lazy_compilation_seconds": 5.037692,
+            "initialized_to_valid_output_seconds": 9.199698,
+            "original_command_to_initialized_seconds": 19.698072,
+            "pod_to_initialized_seconds": 57.626234,
+            "pod_to_valid_output_seconds": 66.825922,
+            "python_to_initialized_seconds": 19.676116
+          },
+          "unchanged_original_argv_sha256": "0e80285e373612c7e9b86eef7b20829e0b3220fdc9032d1f0f7725762c3ad45a",
+          "valid_output_at": "2026-09-07T05:58:14.825922+00:00",
+          "valid_output_monotonic_seconds": 375115.600123095
+        },
+        {
+          "cache": "fresh process; unchanged existing model/reference cache; no eviction",
+          "compilation_state": "not-warmed",
+          "container_started_at": "2026-09-07T05:59:03Z",
+          "initialization_boundary": "ESMFold2InputBuilder.fold entry after both checkpoints and precision setup",
+          "initialized_at": "2026-09-07T05:59:23.258144+00:00",
+          "initialized_monotonic_seconds": 375184.032336393,
+          "inputs": [
+            {
+              "bytes": 591,
+              "sha256": "9400dc2af8e061799e3fb966b0fe723c9c52b64fcc2ae12914e4015900de92d6"
+            }
+          ],
+          "model_id": "esmfold2",
+          "normal_runtime_exit_code": 0,
+          "outcome": "passed",
+          "output_structures": [
+            {
+              "atoms": 320,
+              "bytes": 26292,
+              "sha256": "60d5de79d226d4a20c733d048d5610e32bfe952aa1940d30881559f9a816b545"
+            }
+          ],
+          "parameter_placement_at_initialized": "cuda",
+          "pod_created_at": "2026-09-07T05:58:26Z",
+          "private_log_sha256": "e2208376d168131394f9182d580fe4ac0806610c62146102b29f80c4b181c150",
+          "private_receipt_sha256": "041c2943d3ea342f2e330423972626cb63da71ad0ab6e65f70b3ddcc454d995a",
+          "receipt_recovery": null,
+          "runtime_image_digest": "sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
+          "runtime_stack": {
+            "compute_capability": [
+              9,
+              0
+            ],
+            "cuda_version": "13.0",
+            "device": "NVIDIA H100 80GB HBM3",
+            "torch_version": "2.11.0+cu130"
+          },
+          "snapshot": "disabled",
+          "timings": {
+            "container_to_initialized_seconds": 20.258144,
+            "container_to_valid_output_seconds": 29.693197,
+            "first_compute_including_lazy_compilation_seconds": 5.299144,
+            "initialized_to_valid_output_seconds": 9.435061,
+            "original_command_to_initialized_seconds": 20.187541,
+            "pod_to_initialized_seconds": 57.258144,
+            "pod_to_valid_output_seconds": 66.693197,
+            "python_to_initialized_seconds": 20.164911
+          },
+          "unchanged_original_argv_sha256": "0e80285e373612c7e9b86eef7b20829e0b3220fdc9032d1f0f7725762c3ad45a",
+          "valid_output_at": "2026-09-07T05:59:32.693197+00:00",
+          "valid_output_monotonic_seconds": 375193.467397655
+        },
+        {
+          "cache": "fresh process; unchanged existing model/reference cache; no eviction",
+          "compilation_state": "not-warmed",
+          "container_started_at": "2026-09-07T06:00:23Z",
+          "initialization_boundary": "ESMFold2InputBuilder.fold entry after both checkpoints and precision setup",
+          "initialized_at": "2026-09-07T06:00:43.052781+00:00",
+          "initialized_monotonic_seconds": 375263.82697194,
+          "inputs": [
+            {
+              "bytes": 591,
+              "sha256": "9400dc2af8e061799e3fb966b0fe723c9c52b64fcc2ae12914e4015900de92d6"
+            }
+          ],
+          "model_id": "esmfold2",
+          "normal_runtime_exit_code": 0,
+          "outcome": "passed",
+          "output_structures": [
+            {
+              "atoms": 320,
+              "bytes": 26292,
+              "sha256": "fd217a29b5cd4e8c95e292d690800069a5fdd2d6b555957587fb0dcadebf9df2"
+            }
+          ],
+          "parameter_placement_at_initialized": "cuda",
+          "pod_created_at": "2026-09-07T05:59:45Z",
+          "private_log_sha256": "e913c4bf92c4731ca86ba353fa4d867ece8c2e31218b4e059aa970686cd692f9",
+          "private_receipt_sha256": "e2811e264c277a4bb72e1618696c823fdfd4bf7f14b9ffd0744dcf3fe7ceaf4d",
+          "receipt_recovery": null,
+          "runtime_image_digest": "sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
+          "runtime_stack": {
+            "compute_capability": [
+              9,
+              0
+            ],
+            "cuda_version": "13.0",
+            "device": "NVIDIA H100 80GB HBM3",
+            "torch_version": "2.11.0+cu130"
+          },
+          "snapshot": "disabled",
+          "timings": {
+            "container_to_initialized_seconds": 20.052781,
+            "container_to_valid_output_seconds": 29.428303,
+            "first_compute_including_lazy_compilation_seconds": 5.068516,
+            "initialized_to_valid_output_seconds": 9.375532,
+            "original_command_to_initialized_seconds": 19.584117,
+            "pod_to_initialized_seconds": 58.052781,
+            "pod_to_valid_output_seconds": 67.428303,
+            "python_to_initialized_seconds": 19.561582
+          },
+          "unchanged_original_argv_sha256": "0e80285e373612c7e9b86eef7b20829e0b3220fdc9032d1f0f7725762c3ad45a",
+          "valid_output_at": "2026-09-07T06:00:52.428303+00:00",
+          "valid_output_monotonic_seconds": 375273.202504032
+        }
+      ],
+      "summary_seconds": {
+        "container_to_initialized_seconds": {
+          "max": 20.626234,
+          "median": 20.258144,
+          "min": 20.052781,
+          "n": 3
+        },
+        "container_to_valid_output_seconds": {
+          "max": 29.825922,
+          "median": 29.693197,
+          "min": 29.428303,
+          "n": 3
+        },
+        "first_compute_including_lazy_compilation_seconds": {
+          "max": 5.299144,
+          "median": 5.068516,
+          "min": 5.037692,
+          "n": 3
+        },
+        "initialized_to_valid_output_seconds": {
+          "max": 9.435061,
+          "median": 9.375532,
+          "min": 9.199698,
+          "n": 3
+        },
+        "original_command_to_initialized_seconds": {
+          "max": 20.187541,
+          "median": 19.698072,
+          "min": 19.584117,
+          "n": 3
+        },
+        "pod_to_initialized_seconds": {
+          "max": 58.052781,
+          "median": 57.626234,
+          "min": 57.258144,
+          "n": 3
+        },
+        "pod_to_valid_output_seconds": {
+          "max": 67.428303,
+          "median": 66.825922,
+          "min": 66.693197,
+          "n": 3
+        },
+        "python_to_initialized_seconds": {
+          "max": 20.164911,
+          "median": 19.676116,
+          "min": 19.561582,
+          "n": 3
+        }
+      }
+    },
+    {
+      "model_id": "esmfold2-fast",
+      "repetitions": [
+        {
+          "cache": "fresh process; unchanged existing model/reference cache; no eviction",
+          "compilation_state": "not-warmed",
+          "container_started_at": "2026-09-07T06:03:02Z",
+          "initialization_boundary": "ESMFold2InputBuilder.fold entry after both checkpoints and precision setup",
+          "initialized_at": "2026-09-07T06:03:22.900560+00:00",
+          "initialized_monotonic_seconds": 375423.674745896,
+          "inputs": [
+            {
+              "bytes": 596,
+              "sha256": "b4b7ad9d5689bbdf5ff960db7698dba2ff42f2ed6af35bb34753fdc5fadf4f3d"
+            }
+          ],
+          "model_id": "esmfold2-fast",
+          "normal_runtime_exit_code": 0,
+          "outcome": "passed",
+          "output_structures": [
+            {
+              "atoms": 320,
+              "bytes": 26292,
+              "sha256": "26c5f1850fa485eafed2a7d40eff473b24057fbaafe22130523cc0ba6e842d69"
+            }
+          ],
+          "parameter_placement_at_initialized": "cuda",
+          "pod_created_at": "2026-09-07T06:02:25Z",
+          "private_log_sha256": "4999f6385118a309d1db9595f7a67aab158dfd6c473fdc51a81e69c78ee81bd9",
+          "private_receipt_sha256": "f675acc08b4f2a28e61fc1107890f66f7f8d9ce28e60504be50d9eb5e42d1a27",
+          "receipt_recovery": "Parsed retained successful Pod/log after excluding nested marker text inside environment collector JSON; no model rerun or changed measured values.",
+          "runtime_image_digest": "sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+          "runtime_stack": {
+            "compute_capability": [
+              9,
+              0
+            ],
+            "cuda_version": "13.0",
+            "device": "NVIDIA H100 80GB HBM3",
+            "torch_version": "2.11.0+cu130"
+          },
+          "snapshot": "disabled",
+          "timings": {
+            "container_to_initialized_seconds": 20.90056,
+            "container_to_valid_output_seconds": 29.805508,
+            "first_compute_including_lazy_compilation_seconds": 4.91331,
+            "initialized_to_valid_output_seconds": 8.904964,
+            "original_command_to_initialized_seconds": 19.916708,
+            "pod_to_initialized_seconds": 57.90056,
+            "pod_to_valid_output_seconds": 66.805508,
+            "python_to_initialized_seconds": 19.896065
+          },
+          "unchanged_original_argv_sha256": "6889a218ed6e78409ed8036670049a11f8ae4e13ebd7b43f0f2dc08aa94f707b",
+          "valid_output_at": "2026-09-07T06:03:31.805508+00:00",
+          "valid_output_monotonic_seconds": 375432.579710022
+        },
+        {
+          "cache": "fresh process; unchanged existing model/reference cache; no eviction",
+          "compilation_state": "not-warmed",
+          "container_started_at": "2026-09-07T06:06:48Z",
+          "initialization_boundary": "ESMFold2InputBuilder.fold entry after both checkpoints and precision setup",
+          "initialized_at": "2026-09-07T06:07:08.601364+00:00",
+          "initialized_monotonic_seconds": 375649.375557754,
+          "inputs": [
+            {
+              "bytes": 596,
+              "sha256": "b4b7ad9d5689bbdf5ff960db7698dba2ff42f2ed6af35bb34753fdc5fadf4f3d"
+            }
+          ],
+          "model_id": "esmfold2-fast",
+          "normal_runtime_exit_code": 0,
+          "outcome": "passed",
+          "output_structures": [
+            {
+              "atoms": 320,
+              "bytes": 26292,
+              "sha256": "7cd6108591e8165813186ef1b92cb492fdc168fdd7516e5bf4b95b8d3160a770"
+            }
+          ],
+          "parameter_placement_at_initialized": "cuda",
+          "pod_created_at": "2026-09-07T06:06:12Z",
+          "private_log_sha256": "9ba7219f32d48dddd8013f7efc10446b05040c61ca7cda7c121399f02d649254",
+          "private_receipt_sha256": "eb77910d9c78a552381541d3388bea26aa4404196820f1754a07104e351cb940",
+          "receipt_recovery": null,
+          "runtime_image_digest": "sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+          "runtime_stack": {
+            "compute_capability": [
+              9,
+              0
+            ],
+            "cuda_version": "13.0",
+            "device": "NVIDIA H100 80GB HBM3",
+            "torch_version": "2.11.0+cu130"
+          },
+          "snapshot": "disabled",
+          "timings": {
+            "container_to_initialized_seconds": 20.601364,
+            "container_to_valid_output_seconds": 28.906539,
+            "first_compute_including_lazy_compilation_seconds": 4.422183,
+            "initialized_to_valid_output_seconds": 8.305182,
+            "original_command_to_initialized_seconds": 19.75182,
+            "pod_to_initialized_seconds": 56.601364,
+            "pod_to_valid_output_seconds": 64.906539,
+            "python_to_initialized_seconds": 19.731497
+          },
+          "unchanged_original_argv_sha256": "6889a218ed6e78409ed8036670049a11f8ae4e13ebd7b43f0f2dc08aa94f707b",
+          "valid_output_at": "2026-09-07T06:07:16.906539+00:00",
+          "valid_output_monotonic_seconds": 375657.680740043
+        },
+        {
+          "cache": "fresh process; unchanged existing model/reference cache; no eviction",
+          "compilation_state": "not-warmed",
+          "container_started_at": "2026-09-07T06:08:06Z",
+          "initialization_boundary": "ESMFold2InputBuilder.fold entry after both checkpoints and precision setup",
+          "initialized_at": "2026-09-07T06:08:26.121091+00:00",
+          "initialized_monotonic_seconds": 375726.895283987,
+          "inputs": [
+            {
+              "bytes": 596,
+              "sha256": "b4b7ad9d5689bbdf5ff960db7698dba2ff42f2ed6af35bb34753fdc5fadf4f3d"
+            }
+          ],
+          "model_id": "esmfold2-fast",
+          "normal_runtime_exit_code": 0,
+          "outcome": "passed",
+          "output_structures": [
+            {
+              "atoms": 320,
+              "bytes": 26292,
+              "sha256": "db23774e9c6ed25ef3bbab0e7c9d16fa50eb9f0e6b21a43fda54855a6354cb70"
+            }
+          ],
+          "parameter_placement_at_initialized": "cuda",
+          "pod_created_at": "2026-09-07T06:07:30Z",
+          "private_log_sha256": "05f1162c4938ee101a37867f37c66833f28e902b1475eda6086d9c663032997a",
+          "private_receipt_sha256": "4a049487a1ea9518a69aa8dce562d2792e15d1199751c0eb7849951b2935a3ce",
+          "receipt_recovery": null,
+          "runtime_image_digest": "sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+          "runtime_stack": {
+            "compute_capability": [
+              9,
+              0
+            ],
+            "cuda_version": "13.0",
+            "device": "NVIDIA H100 80GB HBM3",
+            "torch_version": "2.11.0+cu130"
+          },
+          "snapshot": "disabled",
+          "timings": {
+            "container_to_initialized_seconds": 20.121091,
+            "container_to_valid_output_seconds": 29.056526,
+            "first_compute_including_lazy_compilation_seconds": 4.502218,
+            "initialized_to_valid_output_seconds": 8.935444,
+            "original_command_to_initialized_seconds": 19.226875,
+            "pod_to_initialized_seconds": 56.121091,
+            "pod_to_valid_output_seconds": 65.056526,
+            "python_to_initialized_seconds": 19.204964
+          },
+          "unchanged_original_argv_sha256": "6889a218ed6e78409ed8036670049a11f8ae4e13ebd7b43f0f2dc08aa94f707b",
+          "valid_output_at": "2026-09-07T06:08:35.056526+00:00",
+          "valid_output_monotonic_seconds": 375735.830727794
+        }
+      ],
+      "summary_seconds": {
+        "container_to_initialized_seconds": {
+          "max": 20.90056,
+          "median": 20.601364,
+          "min": 20.121091,
+          "n": 3
+        },
+        "container_to_valid_output_seconds": {
+          "max": 29.805508,
+          "median": 29.056526,
+          "min": 28.906539,
+          "n": 3
+        },
+        "first_compute_including_lazy_compilation_seconds": {
+          "max": 4.91331,
+          "median": 4.502218,
+          "min": 4.422183,
+          "n": 3
+        },
+        "initialized_to_valid_output_seconds": {
+          "max": 8.935444,
+          "median": 8.904964,
+          "min": 8.305182,
+          "n": 3
+        },
+        "original_command_to_initialized_seconds": {
+          "max": 19.916708,
+          "median": 19.75182,
+          "min": 19.226875,
+          "n": 3
+        },
+        "pod_to_initialized_seconds": {
+          "max": 57.90056,
+          "median": 56.601364,
+          "min": 56.121091,
+          "n": 3
+        },
+        "pod_to_valid_output_seconds": {
+          "max": 66.805508,
+          "median": 65.056526,
+          "min": 64.906539,
+          "n": 3
+        },
+        "python_to_initialized_seconds": {
+          "max": 19.896065,
+          "median": 19.731497,
+          "min": 19.204964,
+          "n": 3
+        }
+      }
+    },
+    {
+      "model_id": "protenix-v2",
+      "repetitions": [
+        {
+          "cache": "fresh process; unchanged existing model/reference cache; no eviction",
+          "compilation_state": "not-warmed",
+          "container_started_at": "2026-09-07T05:58:48Z",
+          "initialization_boundary": "InferenceRunner.__init__ return after load_checkpoint and init_dumper",
+          "initialized_at": "2026-09-07T05:59:53.451283+00:00",
+          "initialized_monotonic_seconds": 374778.280453445,
+          "inputs": [
+            {
+              "bytes": 689,
+              "sha256": "f481c232ed4c205f691eda5a076c8e09d4404e52c75a166e1dc6708db4f2f5b8"
+            }
+          ],
+          "model_id": "protenix-v2",
+          "normal_runtime_exit_code": 0,
+          "outcome": "passed",
+          "output_structures": [
+            {
+              "atoms": 321,
+              "bytes": 32154,
+              "sha256": "009b06b40f32eb5b0e5140ea8c69a0f6f88c110510145065a7d64b33fc0833e2"
+            }
+          ],
+          "parameter_placement_at_initialized": "cuda",
+          "pod_created_at": "2026-09-07T05:58:36Z",
+          "private_log_sha256": "5c51e6abeb48d965fd72d2e4f6791780e179c49e6693b223846f8794213434a7",
+          "private_receipt_sha256": "a6a61f89882c7257a5020e1cef651e010028d093a7c9b1ea9380aad1dd6f135a",
+          "receipt_recovery": null,
+          "runtime_image_digest": "sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
+          "runtime_stack": {
+            "compute_capability": [
+              9,
+              0
+            ],
+            "cuda_version": "12.6",
+            "device": "NVIDIA H100 80GB HBM3",
+            "torch_version": "2.7.1+cu126"
+          },
+          "snapshot": "disabled",
+          "timings": {
+            "container_to_initialized_seconds": 65.451283,
+            "container_to_valid_output_seconds": 82.619011,
+            "first_compute_including_lazy_compilation_seconds": 9.162782,
+            "initialized_to_valid_output_seconds": 17.167737,
+            "original_command_to_initialized_seconds": 64.905148,
+            "pod_to_initialized_seconds": 77.451283,
+            "pod_to_valid_output_seconds": 94.619011,
+            "python_to_initialized_seconds": 63.492812
+          },
+          "unchanged_original_argv_sha256": "81f926832deecdc5016ca3d77b914b6ff9d7fc02fc015b1c95dadf637e8eba35",
+          "valid_output_at": "2026-09-07T06:00:10.619011+00:00",
+          "valid_output_monotonic_seconds": 374795.448190552
+        },
+        {
+          "cache": "fresh process; unchanged existing model/reference cache; no eviction",
+          "compilation_state": "not-warmed",
+          "container_started_at": "2026-09-07T06:00:34Z",
+          "initialization_boundary": "InferenceRunner.__init__ return after load_checkpoint and init_dumper",
+          "initialized_at": "2026-09-07T06:01:41.772473+00:00",
+          "initialized_monotonic_seconds": 374886.601649116,
+          "inputs": [
+            {
+              "bytes": 689,
+              "sha256": "f481c232ed4c205f691eda5a076c8e09d4404e52c75a166e1dc6708db4f2f5b8"
+            }
+          ],
+          "model_id": "protenix-v2",
+          "normal_runtime_exit_code": 0,
+          "outcome": "passed",
+          "output_structures": [
+            {
+              "atoms": 321,
+              "bytes": 32475,
+              "sha256": "601bd7668096f5887b6d7bc657fd0838d02cb2ead09a2a3710284f667f25b8a7"
+            }
+          ],
+          "parameter_placement_at_initialized": "cuda",
+          "pod_created_at": "2026-09-07T06:00:21Z",
+          "private_log_sha256": "719cb8e6377a95e770e94bae8fc11e7c0f972e4e56a654645c17aff8f2df1e9a",
+          "private_receipt_sha256": "ae338b14d607473498d4e82538bcf1f2a677ce9dfbe104ff15a91493e00c8f7c",
+          "receipt_recovery": null,
+          "runtime_image_digest": "sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
+          "runtime_stack": {
+            "compute_capability": [
+              9,
+              0
+            ],
+            "cuda_version": "12.6",
+            "device": "NVIDIA H100 80GB HBM3",
+            "torch_version": "2.7.1+cu126"
+          },
+          "snapshot": "disabled",
+          "timings": {
+            "container_to_initialized_seconds": 67.772473,
+            "container_to_valid_output_seconds": 85.438218,
+            "first_compute_including_lazy_compilation_seconds": 9.503521,
+            "initialized_to_valid_output_seconds": 17.665748,
+            "original_command_to_initialized_seconds": 67.453935,
+            "pod_to_initialized_seconds": 80.772473,
+            "pod_to_valid_output_seconds": 98.438218,
+            "python_to_initialized_seconds": 65.920401
+          },
+          "unchanged_original_argv_sha256": "81f926832deecdc5016ca3d77b914b6ff9d7fc02fc015b1c95dadf637e8eba35",
+          "valid_output_at": "2026-09-07T06:01:59.438218+00:00",
+          "valid_output_monotonic_seconds": 374904.267397437
+        },
+        {
+          "cache": "fresh process; unchanged existing model/reference cache; no eviction",
+          "compilation_state": "not-warmed",
+          "container_started_at": "2026-09-07T06:02:24Z",
+          "initialization_boundary": "InferenceRunner.__init__ return after load_checkpoint and init_dumper",
+          "initialized_at": "2026-09-07T06:03:30.915020+00:00",
+          "initialized_monotonic_seconds": 374995.744190108,
+          "inputs": [
+            {
+              "bytes": 689,
+              "sha256": "f481c232ed4c205f691eda5a076c8e09d4404e52c75a166e1dc6708db4f2f5b8"
+            }
+          ],
+          "model_id": "protenix-v2",
+          "normal_runtime_exit_code": 0,
+          "outcome": "passed",
+          "output_structures": [
+            {
+              "atoms": 321,
+              "bytes": 32796,
+              "sha256": "c36e9e9367977f9a39f737a1c90febb30b90118e1fa90e4be6f7b67958d80490"
+            }
+          ],
+          "parameter_placement_at_initialized": "cuda",
+          "pod_created_at": "2026-09-07T06:02:12Z",
+          "private_log_sha256": "16ddb469b94ed3ad5cafa9f521ab0b7b438b201a4593e0ae018810c498ee5613",
+          "private_receipt_sha256": "8b5e07e9e7fde0a001b8bfc0c7d807d705fd9bcda784095cd0d23550ba394cbb",
+          "receipt_recovery": null,
+          "runtime_image_digest": "sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
+          "runtime_stack": {
+            "compute_capability": [
+              9,
+              0
+            ],
+            "cuda_version": "12.6",
+            "device": "NVIDIA H100 80GB HBM3",
+            "torch_version": "2.7.1+cu126"
+          },
+          "snapshot": "disabled",
+          "timings": {
+            "container_to_initialized_seconds": 66.91502,
+            "container_to_valid_output_seconds": 84.481748,
+            "first_compute_including_lazy_compilation_seconds": 9.574627,
+            "initialized_to_valid_output_seconds": 17.566738,
+            "original_command_to_initialized_seconds": 66.095213,
+            "pod_to_initialized_seconds": 78.91502,
+            "pod_to_valid_output_seconds": 96.481748,
+            "python_to_initialized_seconds": 64.605066
+          },
+          "unchanged_original_argv_sha256": "81f926832deecdc5016ca3d77b914b6ff9d7fc02fc015b1c95dadf637e8eba35",
+          "valid_output_at": "2026-09-07T06:03:48.481748+00:00",
+          "valid_output_monotonic_seconds": 375013.31092779
+        }
+      ],
+      "summary_seconds": {
+        "container_to_initialized_seconds": {
+          "max": 67.772473,
+          "median": 66.91502,
+          "min": 65.451283,
+          "n": 3
+        },
+        "container_to_valid_output_seconds": {
+          "max": 85.438218,
+          "median": 84.481748,
+          "min": 82.619011,
+          "n": 3
+        },
+        "first_compute_including_lazy_compilation_seconds": {
+          "max": 9.574627,
+          "median": 9.503521,
+          "min": 9.162782,
+          "n": 3
+        },
+        "initialized_to_valid_output_seconds": {
+          "max": 17.665748,
+          "median": 17.566738,
+          "min": 17.167737,
+          "n": 3
+        },
+        "original_command_to_initialized_seconds": {
+          "max": 67.453935,
+          "median": 66.095213,
+          "min": 64.905148,
+          "n": 3
+        },
+        "pod_to_initialized_seconds": {
+          "max": 80.772473,
+          "median": 78.91502,
+          "min": 77.451283,
+          "n": 3
+        },
+        "pod_to_valid_output_seconds": {
+          "max": 98.438218,
+          "median": 96.481748,
+          "min": 94.619011,
+          "n": 3
+        },
+        "python_to_initialized_seconds": {
+          "max": 65.920401,
+          "median": 64.605066,
+          "min": 63.492812,
+          "n": 3
+        }
+      }
+    },
+    {
+      "model_id": "alphafold3",
+      "repetitions": [
+        {
+          "cache": "fresh process; unchanged existing model/reference cache; no eviction",
+          "compilation_state": "JAX compilation and device placement remain first-request work",
+          "container_started_at": "2026-09-07T06:01:08Z",
+          "initialization_boundary": "get_model_haiku_params return; native host parameter initialization",
+          "initialized_at": "2026-09-07T06:01:16.038298+00:00",
+          "initialized_monotonic_seconds": 375296.812499892,
+          "inputs": [
+            {
+              "bytes": 10240,
+              "sha256": "8fdc99e67f04c8100ebfff97498c0223cb1c7eca16e86a615a971be7dee98452"
+            }
+          ],
+          "model_id": "alphafold3",
+          "normal_runtime_exit_code": 0,
+          "outcome": "passed",
+          "output_structures": [
+            {
+              "atoms": 128,
+              "bytes": 16832,
+              "sha256": "3c0cec8e3f22c4967b245b24171c34e2f24a1c1150a338b883d403c8b7e14f0a"
+            },
+            {
+              "atoms": 128,
+              "bytes": 16960,
+              "sha256": "5e1d525da681305b959ddabf3ad65319615d53ecda7530b942e4df404116dfc8"
+            },
+            {
+              "atoms": 128,
+              "bytes": 16832,
+              "sha256": "3c0cec8e3f22c4967b245b24171c34e2f24a1c1150a338b883d403c8b7e14f0a"
+            },
+            {
+              "atoms": 128,
+              "bytes": 16832,
+              "sha256": "54de7aba584472eb5c5792fe3ceada49f38e2ee0c322e022cab9aa895680ef02"
+            },
+            {
+              "atoms": 128,
+              "bytes": 16960,
+              "sha256": "deb997d6ba7c95941fe16c4c454610b6bba9d97149c470d4b4780ddb486c62e4"
+            },
+            {
+              "atoms": 128,
+              "bytes": 16832,
+              "sha256": "eae7e32101a8ee4ecbeef7a2ea5b46e7493aa46c4d98495b504f5f92e48e191b"
+            }
+          ],
+          "parameter_placement_at_initialized": "host-parameters",
+          "pod_created_at": "2026-09-07T06:00:59Z",
+          "private_log_sha256": "23b27cedfe53967a8f083864f62f93ba760ab1fec3f4658e2452fdc9030e0f19",
+          "private_receipt_sha256": "2ea5681c5b267db49e63604233e269bb354dbd087dd172052c4faee0646e0a53",
+          "receipt_recovery": null,
+          "runtime_image_digest": "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
+          "runtime_stack": {},
+          "snapshot": "disabled",
+          "timings": {
+            "container_to_initialized_seconds": 8.038298,
+            "container_to_valid_output_seconds": 33.433459,
+            "first_compute_including_lazy_compilation_seconds": 14.357418,
+            "initialized_to_valid_output_seconds": 25.39516,
+            "original_command_to_initialized_seconds": 7.413139,
+            "pod_to_initialized_seconds": 17.038298,
+            "pod_to_valid_output_seconds": 42.433459,
+            "python_to_initialized_seconds": 6.521014
+          },
+          "unchanged_original_argv_sha256": "4c21a7c454fda82b43aafbbd06f97dfa917cf3328e894d980b60203e8f657c5a",
+          "valid_output_at": "2026-09-07T06:01:41.433459+00:00",
+          "valid_output_monotonic_seconds": 375322.207659706
+        },
+        {
+          "cache": "fresh process; unchanged existing model/reference cache; no eviction",
+          "compilation_state": "JAX compilation and device placement remain first-request work",
+          "container_started_at": "2026-09-07T06:01:58Z",
+          "initialization_boundary": "get_model_haiku_params return; native host parameter initialization",
+          "initialized_at": "2026-09-07T06:02:06.093201+00:00",
+          "initialized_monotonic_seconds": 375346.867402406,
+          "inputs": [
+            {
+              "bytes": 10240,
+              "sha256": "8fdc99e67f04c8100ebfff97498c0223cb1c7eca16e86a615a971be7dee98452"
+            }
+          ],
+          "model_id": "alphafold3",
+          "normal_runtime_exit_code": 0,
+          "outcome": "passed",
+          "output_structures": [
+            {
+              "atoms": 128,
+              "bytes": 16832,
+              "sha256": "bd8caaa220ca7f1ca19ca7b26ae314510574409c90569873eca681a6ce4a421c"
+            },
+            {
+              "atoms": 128,
+              "bytes": 16960,
+              "sha256": "80b92bc046f40429f73763d676a78a44f4b2cafc8b44cf66b5e7457a7469dbee"
+            },
+            {
+              "atoms": 128,
+              "bytes": 16832,
+              "sha256": "bd8caaa220ca7f1ca19ca7b26ae314510574409c90569873eca681a6ce4a421c"
+            },
+            {
+              "atoms": 128,
+              "bytes": 16832,
+              "sha256": "9105985f022b00c6e2f9a2598ddbbdc2906fb81c7baa7a557e7a5aa01244921a"
+            },
+            {
+              "atoms": 128,
+              "bytes": 16960,
+              "sha256": "71fdb04ca63d0c5feaea144a7eacd5e42caa9a19d5b8babd914af3d89f0fe68a"
+            },
+            {
+              "atoms": 128,
+              "bytes": 16832,
+              "sha256": "d9633e8e3ae5b411cab37a10b4e69476c180edb5a162f265918885f5aa37e195"
+            }
+          ],
+          "parameter_placement_at_initialized": "host-parameters",
+          "pod_created_at": "2026-09-07T06:01:48Z",
+          "private_log_sha256": "aec44538cd6d7e00bd2533e23b0c85916f022b2818d9cdec9300acd1084ee773",
+          "private_receipt_sha256": "5b3c3040fa91fccd1fae7360deec302e5e63ee7d20cbe8d60ea3be3230ce1fdd",
+          "receipt_recovery": null,
+          "runtime_image_digest": "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
+          "runtime_stack": {},
+          "snapshot": "disabled",
+          "timings": {
+            "container_to_initialized_seconds": 8.093201,
+            "container_to_valid_output_seconds": 33.353794,
+            "first_compute_including_lazy_compilation_seconds": 14.235548,
+            "initialized_to_valid_output_seconds": 25.260592,
+            "original_command_to_initialized_seconds": 7.23973,
+            "pod_to_initialized_seconds": 18.093201,
+            "pod_to_valid_output_seconds": 43.353794,
+            "python_to_initialized_seconds": 6.394913
+          },
+          "unchanged_original_argv_sha256": "4c21a7c454fda82b43aafbbd06f97dfa917cf3328e894d980b60203e8f657c5a",
+          "valid_output_at": "2026-09-07T06:02:31.353794+00:00",
+          "valid_output_monotonic_seconds": 375372.12799451
+        },
+        {
+          "cache": "fresh process; unchanged existing model/reference cache; no eviction",
+          "compilation_state": "JAX compilation and device placement remain first-request work",
+          "container_started_at": "2026-09-07T06:02:52Z",
+          "initialization_boundary": "get_model_haiku_params return; native host parameter initialization",
+          "initialized_at": "2026-09-07T06:03:00.260713+00:00",
+          "initialized_monotonic_seconds": 375401.034910495,
+          "inputs": [
+            {
+              "bytes": 10240,
+              "sha256": "8fdc99e67f04c8100ebfff97498c0223cb1c7eca16e86a615a971be7dee98452"
+            }
+          ],
+          "model_id": "alphafold3",
+          "normal_runtime_exit_code": 0,
+          "outcome": "passed",
+          "output_structures": [
+            {
+              "atoms": 128,
+              "bytes": 16832,
+              "sha256": "62df8f0a7946c782af6665b0494e87f3f35891697b9853e81a8abc267a042124"
+            },
+            {
+              "atoms": 128,
+              "bytes": 16960,
+              "sha256": "2e5d81b4c6893003b99ec5be9f58b42be79b7f48a96d47400d149e2c1a36b538"
+            },
+            {
+              "atoms": 128,
+              "bytes": 16832,
+              "sha256": "62df8f0a7946c782af6665b0494e87f3f35891697b9853e81a8abc267a042124"
+            },
+            {
+              "atoms": 128,
+              "bytes": 16832,
+              "sha256": "9d5d99bdc73db49e6d02313e552ed1773f1228db98732739559c8f7a9bc58b5d"
+            },
+            {
+              "atoms": 128,
+              "bytes": 16960,
+              "sha256": "22f0bc3b083acce0bbcc52df2e1d47d159171ad0d7da90c15b4e2a656ad7c0cc"
+            },
+            {
+              "atoms": 128,
+              "bytes": 16832,
+              "sha256": "3337e254cf5e05b083713e6163095d2b0db814be5b24869bdee2f3616aed5076"
+            }
+          ],
+          "parameter_placement_at_initialized": "host-parameters",
+          "pod_created_at": "2026-09-07T06:02:43Z",
+          "private_log_sha256": "a647a2ff5ea281c508f9a1afea0f81afb6bf7e18cdf2afd52d23b11b5fd13664",
+          "private_receipt_sha256": "6e4d3a21af8554e0abb723a8d11a405f43652b1e2606dbf9b3000388dc5aaf19",
+          "receipt_recovery": null,
+          "runtime_image_digest": "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
+          "runtime_stack": {},
+          "snapshot": "disabled",
+          "timings": {
+            "container_to_initialized_seconds": 8.260713,
+            "container_to_valid_output_seconds": 33.822172,
+            "first_compute_including_lazy_compilation_seconds": 14.255681,
+            "initialized_to_valid_output_seconds": 25.561464,
+            "original_command_to_initialized_seconds": 7.385384,
+            "pod_to_initialized_seconds": 17.260713,
+            "pod_to_valid_output_seconds": 42.822172,
+            "python_to_initialized_seconds": 6.530651
+          },
+          "unchanged_original_argv_sha256": "4c21a7c454fda82b43aafbbd06f97dfa917cf3328e894d980b60203e8f657c5a",
+          "valid_output_at": "2026-09-07T06:03:25.822172+00:00",
+          "valid_output_monotonic_seconds": 375426.596374338
+        }
+      ],
+      "summary_seconds": {
+        "container_to_initialized_seconds": {
+          "max": 8.260713,
+          "median": 8.093201,
+          "min": 8.038298,
+          "n": 3
+        },
+        "container_to_valid_output_seconds": {
+          "max": 33.822172,
+          "median": 33.433459,
+          "min": 33.353794,
+          "n": 3
+        },
+        "first_compute_including_lazy_compilation_seconds": {
+          "max": 14.357418,
+          "median": 14.255681,
+          "min": 14.235548,
+          "n": 3
+        },
+        "initialized_to_valid_output_seconds": {
+          "max": 25.561464,
+          "median": 25.39516,
+          "min": 25.260592,
+          "n": 3
+        },
+        "original_command_to_initialized_seconds": {
+          "max": 7.413139,
+          "median": 7.385384,
+          "min": 7.23973,
+          "n": 3
+        },
+        "pod_to_initialized_seconds": {
+          "max": 18.093201,
+          "median": 17.260713,
+          "min": 17.038298,
+          "n": 3
+        },
+        "pod_to_valid_output_seconds": {
+          "max": 43.353794,
+          "median": 42.822172,
+          "min": 42.433459,
+          "n": 3
+        },
+        "python_to_initialized_seconds": {
+          "max": 6.530651,
+          "median": 6.521014,
+          "min": 6.394913,
+          "n": 3
+        }
+      }
+    },
+    {
+      "model_id": "openfold3-openbind",
+      "repetitions": [
+        {
+          "cache": "fresh process; unchanged existing model/reference cache; no eviction",
+          "compilation_state": "not-warmed",
+          "container_started_at": "2026-09-07T06:06:19Z",
+          "initialization_boundary": "Lightning prediction step entry after setup and checkpoint restoration",
+          "initialized_at": "2026-09-07T06:06:54.796750+00:00",
+          "initialized_monotonic_seconds": 375635.570949968,
+          "inputs": [
+            {
+              "bytes": 615,
+              "sha256": "712ccbd698b3d9cc0477880232bf4e5a3069c580db76d2aa6cf2ddfa6be85e34"
+            }
+          ],
+          "model_id": "openfold3-openbind",
+          "normal_runtime_exit_code": 0,
+          "outcome": "passed",
+          "output_structures": [
+            {
+              "atoms": 197,
+              "bytes": 22232,
+              "sha256": "ad6d0b0e417bc5c30717feae4dabba761f9dc09d01a33c62c248617cfd2b86e7"
+            }
+          ],
+          "parameter_placement_at_initialized": "cuda",
+          "pod_created_at": "2026-09-07T06:06:08Z",
+          "private_log_sha256": "bc07c5c4b5b6dd8058083f98b8e1723f8aedd020f9eb8616d637ed2a046141f1",
+          "private_receipt_sha256": "ac086b13fa0ef4fc6baa863ef6035510b55236a74c6e620170446d7b30470175",
+          "receipt_recovery": "Native Lightning progress bar prefixes an actual standalone marker JSON. Reparsed retained original successful log; no new inference or changed timestamps.",
+          "runtime_image_digest": "sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
+          "runtime_stack": {
+            "compute_capability": [
+              9,
+              0
+            ],
+            "cuda_version": "12.9",
+            "device": "NVIDIA H100 80GB HBM3",
+            "torch_version": "2.10.0"
+          },
+          "snapshot": "disabled",
+          "timings": {
+            "container_to_initialized_seconds": 35.79675,
+            "container_to_valid_output_seconds": 47.73622,
+            "first_compute_including_lazy_compilation_seconds": 8.558027,
+            "initialized_to_valid_output_seconds": 11.939469,
+            "original_command_to_initialized_seconds": 35.241732,
+            "pod_to_initialized_seconds": 46.79675,
+            "pod_to_valid_output_seconds": 58.73622,
+            "python_to_initialized_seconds": 35.215154
+          },
+          "unchanged_original_argv_sha256": "9f678467fbcdc730d7cf28319921a23423c1a878c5a3bf634afc280f5bf2bdf2",
+          "valid_output_at": "2026-09-07T06:07:06.736220+00:00",
+          "valid_output_monotonic_seconds": 375647.510419036
+        },
+        {
+          "cache": "fresh process; unchanged existing model/reference cache; no eviction",
+          "compilation_state": "not-warmed",
+          "container_started_at": "2026-09-07T06:11:05Z",
+          "initialization_boundary": "Lightning prediction step entry after setup and checkpoint restoration",
+          "initialized_at": "2026-09-07T06:11:41.346159+00:00",
+          "initialized_monotonic_seconds": 375922.12035852,
+          "inputs": [
+            {
+              "bytes": 615,
+              "sha256": "712ccbd698b3d9cc0477880232bf4e5a3069c580db76d2aa6cf2ddfa6be85e34"
+            }
+          ],
+          "model_id": "openfold3-openbind",
+          "normal_runtime_exit_code": 0,
+          "outcome": "passed",
+          "output_structures": [
+            {
+              "atoms": 197,
+              "bytes": 22232,
+              "sha256": "7600353e40eb00fc0f440436f781564fc7e89b5d4d6adf4a31323cf3d62ef532"
+            }
+          ],
+          "parameter_placement_at_initialized": "cuda",
+          "pod_created_at": "2026-09-07T06:10:54Z",
+          "private_log_sha256": "5de53d531c4480d8630094e324058aa133efe98780db9957b418257eed879ee6",
+          "private_receipt_sha256": "49a3018cb1f68fb08fa484fceb2bf2acc206902773215286e6f75fea7c4edc78",
+          "receipt_recovery": null,
+          "runtime_image_digest": "sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
+          "runtime_stack": {
+            "compute_capability": [
+              9,
+              0
+            ],
+            "cuda_version": "12.9",
+            "device": "NVIDIA H100 80GB HBM3",
+            "torch_version": "2.10.0"
+          },
+          "snapshot": "disabled",
+          "timings": {
+            "container_to_initialized_seconds": 36.346159,
+            "container_to_valid_output_seconds": 50.054051,
+            "first_compute_including_lazy_compilation_seconds": 10.060184,
+            "initialized_to_valid_output_seconds": 13.707893,
+            "original_command_to_initialized_seconds": 35.630683,
+            "pod_to_initialized_seconds": 47.346159,
+            "pod_to_valid_output_seconds": 61.054051,
+            "python_to_initialized_seconds": 35.606329
+          },
+          "unchanged_original_argv_sha256": "9f678467fbcdc730d7cf28319921a23423c1a878c5a3bf634afc280f5bf2bdf2",
+          "valid_output_at": "2026-09-07T06:11:55.054051+00:00",
+          "valid_output_monotonic_seconds": 375935.828251503
+        },
+        {
+          "cache": "fresh process; unchanged existing model/reference cache; no eviction",
+          "compilation_state": "not-warmed",
+          "container_started_at": "2026-09-07T06:12:19Z",
+          "initialization_boundary": "Lightning prediction step entry after setup and checkpoint restoration",
+          "initialized_at": "2026-09-07T06:12:53.001410+00:00",
+          "initialized_monotonic_seconds": 375993.775608733,
+          "inputs": [
+            {
+              "bytes": 615,
+              "sha256": "712ccbd698b3d9cc0477880232bf4e5a3069c580db76d2aa6cf2ddfa6be85e34"
+            }
+          ],
+          "model_id": "openfold3-openbind",
+          "normal_runtime_exit_code": 0,
+          "outcome": "passed",
+          "output_structures": [
+            {
+              "atoms": 197,
+              "bytes": 22429,
+              "sha256": "4a78522df2f3f05b3b48cb4dd04c36cc1b80fc93ecae9c68ef9acfdb62bfb98a"
+            }
+          ],
+          "parameter_placement_at_initialized": "cuda",
+          "pod_created_at": "2026-09-07T06:12:07Z",
+          "private_log_sha256": "9e36c1010a443443952e38f335648ae41b8e463828b81124c04569b71a3a1b56",
+          "private_receipt_sha256": "9ade5f15ae0041c8b76286e1e4c00d9b2c1d8bb44d35d4f59ba2b14278748f91",
+          "receipt_recovery": null,
+          "runtime_image_digest": "sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
+          "runtime_stack": {
+            "compute_capability": [
+              9,
+              0
+            ],
+            "cuda_version": "12.9",
+            "device": "NVIDIA H100 80GB HBM3",
+            "torch_version": "2.10.0"
+          },
+          "snapshot": "disabled",
+          "timings": {
+            "container_to_initialized_seconds": 34.00141,
+            "container_to_valid_output_seconds": 46.552763,
+            "first_compute_including_lazy_compilation_seconds": 8.606324,
+            "initialized_to_valid_output_seconds": 12.551354,
+            "original_command_to_initialized_seconds": 33.963204,
+            "pod_to_initialized_seconds": 46.00141,
+            "pod_to_valid_output_seconds": 58.552763,
+            "python_to_initialized_seconds": 33.938327
+          },
+          "unchanged_original_argv_sha256": "9f678467fbcdc730d7cf28319921a23423c1a878c5a3bf634afc280f5bf2bdf2",
+          "valid_output_at": "2026-09-07T06:13:05.552763+00:00",
+          "valid_output_monotonic_seconds": 376006.326962892
+        }
+      ],
+      "summary_seconds": {
+        "container_to_initialized_seconds": {
+          "max": 36.346159,
+          "median": 35.79675,
+          "min": 34.00141,
+          "n": 3
+        },
+        "container_to_valid_output_seconds": {
+          "max": 50.054051,
+          "median": 47.73622,
+          "min": 46.552763,
+          "n": 3
+        },
+        "first_compute_including_lazy_compilation_seconds": {
+          "max": 10.060184,
+          "median": 8.606324,
+          "min": 8.558027,
+          "n": 3
+        },
+        "initialized_to_valid_output_seconds": {
+          "max": 13.707893,
+          "median": 12.551354,
+          "min": 11.939469,
+          "n": 3
+        },
+        "original_command_to_initialized_seconds": {
+          "max": 35.630683,
+          "median": 35.241732,
+          "min": 33.963204,
+          "n": 3
+        },
+        "pod_to_initialized_seconds": {
+          "max": 47.346159,
+          "median": 46.79675,
+          "min": 46.00141,
+          "n": 3
+        },
+        "pod_to_valid_output_seconds": {
+          "max": 61.054051,
+          "median": 58.73622,
+          "min": 58.552763,
+          "n": 3
+        },
+        "python_to_initialized_seconds": {
+          "max": 35.606329,
+          "median": 35.215154,
+          "min": 33.938327,
+          "n": 3
+        }
+      }
+    }
+  ],
+  "observed_driver_version": "580.159.04",
+  "public_request_clock": "Not measured by the isolated overlay; preceding normal public runs remain separate full-path correctness controls",
+  "scenario": "Fresh isolated per-attempt process/workspace with existing localized model/reference cache; no page-cache eviction or snapshot restore",
+  "schema": "fs2-serve.nebius.ai/current-structure-startup/v1",
+  "valid_output_definition": "Unchanged full original command exited zero, then its complete structure files passed finite-coordinate/atom validation. This is the benchmark's earliest verified full output, not the timestamp of the first file write or public artifact delivery"
+}
