@@ -1226,9 +1226,7 @@ locals {
           warmWindows            = []
         }
         cache = {
-          tier = anytrue([
-            for pool_id in local.model_controller_pool_ids[model_id] : local.selected_queue_pools[pool_id].features.shared_filesystem
-          ]) ? "SharedFilesystem" : "NodeLocal"
+          tier               = local.model_controller_bundle_requires_shared_cache[model_id] ? "SharedFilesystem" : "NodeLocal"
           snapshotPreference = "Never"
         }
         queue = {
