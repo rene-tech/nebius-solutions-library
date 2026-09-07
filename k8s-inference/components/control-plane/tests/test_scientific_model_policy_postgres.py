@@ -792,7 +792,12 @@ async def test_admin_projection_reports_effective_policy_counts_and_held_run_rea
     held_run = by_id[str(queued)]
     assert held_run.status == "queued" and held_run.queue.admission_state == "pending"
     assert "active-run cap" in held_run.queue.admission_reason
-    assert by_id[str(running)].status == "running"
+    # Dispatch occupies the policy slot as soon as the Job is created, but the
+    # fake cluster has not observed admission or compute. The customer-facing
+    # progress projection must not turn that durable dispatch state into GPU use.
+    assert (await batches.get(running, tenant_id=TENANT)).status is BatchStatus.RUNNING
+    assert by_id[str(running)].status == "queued"
+    assert by_id[str(running)].queue.admission_state == "pending"
     assert "held" not in by_id[str(running)].queue.admission_reason
 
     detail = await runs.get_run(queued, tenant_id=TENANT)
