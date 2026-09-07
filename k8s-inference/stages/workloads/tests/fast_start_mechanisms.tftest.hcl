@@ -300,6 +300,22 @@ run "initial_handoff_still_requires_the_matching_receipt" {
   expect_failures = [terraform_data.model_controller_contract]
 }
 
+run "public_acceptance_is_measured_after_runtime_deployment" {
+  command = plan
+  plan_options { target = [terraform_data.model_controller_contract] }
+  assert {
+    condition = (
+      local.model_controller_required_runtime_states == toset([
+        "registered", "route_active", "runtime_ready", "semantic_qualified",
+      ]) &&
+      local.model_controller_qualification_checks["qwen3-8b"].retained_runtime &&
+      local.model_controller_qualification_checks["qwen3-8b"].artifact_manifest &&
+      local.model_controller_qualification_checks["qwen3-8b"].accelerator_tuple
+    )
+    error_message = "An exact semantically tested runtime can be deployed before its new public route is tested, without weakening artifact or hardware identity checks."
+  }
+}
+
 run "declared_mechanisms_reach_the_model_qualification" {
   command = plan
 

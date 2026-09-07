@@ -657,8 +657,12 @@ locals {
     "route_active",
     "runtime_ready",
     "semantic_qualified",
-    "http_mcp_qualified",
   ])
+  # Public HTTP/MCP acceptance is measured after this deployment creates the
+  # route. Requiring it here prevents onboarding a newly validated runtime
+  # unless somebody incorrectly reuses an older image's public receipt. Keep
+  # that separate flag visible in the qualification API; it is not a deployment
+  # prerequisite. Artifact, semantic and exact hardware checks still apply.
   model_controller_hardware_qualified_accelerator_classes = {
     for model_id in local.selected_model_ids : model_id => sort(distinct([
       for binding in try(
