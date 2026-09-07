@@ -195,10 +195,10 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib API
-        if self.path == "/healthz":
+        if self.path in {"/healthz", "/v1/health/live"}:
             self._send_json(HTTPStatus.OK, {"status": "alive"})
             return
-        if self.path == "/readyz":
+        if self.path in {"/readyz", "/v1/health/ready"}:
             status = (
                 HTTPStatus.OK
                 if STATE.load_state == "ready"
@@ -301,18 +301,25 @@ class Handler(BaseHTTPRequestHandler):
                 model_seconds = time.monotonic() - model_started
                 total_seconds = time.monotonic() - started
                 _finite_tree(output)
-                response = {
-                    "schema": "fs2-serve.nebius.ai/open-runtime-response/v1",
-                    "request_id": request_id,
-                    "model": adapter.identity["model_id"],
-                    "revision": adapter.identity["revision"],
-                    "backend_id": STATE.backend_id,
-                    "timings": {
-                        "model_seconds": model_seconds,
-                        "total_seconds": total_seconds,
-                    },
-                    "output": output,
-                }
+                native_paths = getattr(adapter, "native_response_paths", frozenset())
+                if self.path in native_paths:
+                    response = adapter.render_native_response(
+                        self.path, request, output
+                    )
+                else:
+                    response = {
+                        "schema": "fs2-serve.nebius.ai/open-runtime-response/v1",
+                        "request_id": request_id,
+                        "model": adapter.identity["model_id"],
+                        "revision": adapter.identity["revision"],
+                        "backend_id": STATE.backend_id,
+                        "timings": {
+                            "model_seconds": model_seconds,
+                            "total_seconds": total_seconds,
+                        },
+                        "output": output,
+                    }
+                _finite_tree(response)
                 with STATE.lock:
                     STATE.metrics["completed"] += 1
                     STATE.metrics["request_seconds_sum"] += total_seconds

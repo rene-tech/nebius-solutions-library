@@ -45,6 +45,31 @@ def test_absent_selection_keeps_canonical_catalog_identical(inputs):
     assert bind_deployment_runtimes(gateway, catalog, bindings, None, catalog_dir=Path("/absent")) is gateway
 
 
+def test_selected_runtime_set_supports_kubernetes_projected_configmap(inputs):
+    catalog, bindings, gateway, entries, path = inputs
+    projection = path.parent / "..2026_09_07_09_00_00"
+    projection.mkdir()
+    (projection / path.name).write_text(json.dumps({"schema": SET_SCHEMA, "models": entries}))
+    (path.parent / "..data").symlink_to(projection.name, target_is_directory=True)
+    path.symlink_to(Path("..data") / path.name)
+
+    projected = bind_deployment_runtimes(gateway, catalog, bindings, path, catalog_dir=CATALOG_ROOT)
+    assert projected.model("molmim").runtime_image_digest == entries["molmim"]["record"]["runtime"]["image"]["digest"]
+
+
+def test_all_shipped_runtime_candidates_validate_without_granting_public_routes(inputs):
+    entries = {}
+    for path in (CATALOG_ROOT / "deployment-runtimes").glob("*.json"):
+        entry = json.loads(path.read_text())
+        entries[entry["model_id"]] = entry
+    projected = project(inputs, entries)
+    for model_id, entry in entries.items():
+        model = projected.model(model_id)
+        assert model.runtime_image_digest == entry["record"]["runtime"]["image"]["digest"]
+        assert not model.routable
+        assert not model.mcp_invocable
+
+
 def test_retained_service_suffix_is_not_hardware_or_model_alias(inputs):
     entries = copy.deepcopy(inputs[3])
     entries["molmim"]["qualification"]["active_runtime"]["service"]["name"] = "molmim-b300"

@@ -26,6 +26,7 @@ ESM_REGRESSION = MODEL_ROOT / "esm2_t33_650M_UR50D-contact-regression.pt"
 
 class Adapter:
     paths = {"/v1/infer", "/molecular-docking/diffdock/generate"}
+    native_response_paths = frozenset({"/molecular-docking/diffdock/generate"})
     identity = {
         "candidate_id": "diffdock-upstream-v1-1",
         "model_id": "gcorso/DiffDock",
@@ -301,4 +302,22 @@ class Adapter:
             "ligand": ligand,
             "protein_bytes": len(protein.encode()),
             "poses": pose_outputs,
+        }
+
+    def render_native_response(
+        self, path: str, request: dict[str, Any], output: dict[str, Any]
+    ) -> dict[str, Any]:
+        if path not in self.native_response_paths:
+            raise RuntimeError("unsupported native response path")
+        poses = output["poses"]
+        return {
+            "details": f"success: generated {len(poses)} pose(s)",
+            "ligand": request["ligand"],
+            "ligand_positions": [pose["sdf"] for pose in poses],
+            "position_confidence": [pose["confidence"] for pose in poses],
+            "protein": request["protein"],
+            "status": "success",
+            # The bounded API disables trajectory generation. Preserve the
+            # NIM response field with one explicit empty value per pose.
+            "trajectory": ["" for _ in poses],
         }

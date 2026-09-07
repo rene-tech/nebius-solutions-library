@@ -44,6 +44,7 @@ REQUIRED_FALLBACK_CANDIDATE_IDS = frozenset(
         "genmol-hf-v2",
         "molmim-ngc-70m-v24-3",
         "msa-search-pdb70-colabfold",
+        "msa-search-pdb70-mmseqs2-local",
         "nv-segment-ct-hf",
         "openfold2-hf-mirror",
         "openfold3-preview2-hf",
@@ -2598,7 +2599,7 @@ def _load_model_variants(
     if not isinstance(raw_candidates, dict) or list(raw_candidates) != sorted(raw_candidates):
         raise CatalogError("fallback candidates must be a non-empty canonically sorted object")
     if set(raw_candidates) != REQUIRED_FALLBACK_CANDIDATE_IDS:
-        raise CatalogError("the fallback handoff must reconcile all eleven researched candidates")
+        raise CatalogError("the fallback handoff must reconcile all researched candidates")
     candidates: dict[str, FallbackCandidate] = {}
     mapped_variants: dict[str, tuple[str, str]] = {}
     for candidate_id, raw_candidate in raw_candidates.items():

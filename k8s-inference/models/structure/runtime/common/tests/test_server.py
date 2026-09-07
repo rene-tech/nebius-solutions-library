@@ -53,6 +53,16 @@ class BlockingAdapter:
                 self.active -= 1
 
 
+class NativeResponseAdapter(BlockingAdapter):
+    paths = {"/infer", "/native"}
+    native_response_paths = frozenset({"/native"})
+
+    def render_native_response(
+        self, path: str, request: dict[str, Any], output: dict[str, Any]
+    ) -> dict[str, Any]:
+        return {"path": path, "value": output["value"], "input": request["value"]}
+
+
 class QuietHandler(server.Handler):
     def log_message(self, format_string: str, *args: object) -> None:
         del format_string, args
@@ -162,6 +172,45 @@ class ThreadedRuntimeTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(request_id, "long-request")
         self.assertEqual(response["request_id"], "long-request")
+
+    def test_nim_health_aliases_preserve_liveness_and_readiness_semantics(self) -> None:
+        for path in ("/healthz", "/v1/health/live"):
+            self.assertEqual(self.live.get(path), (200, {"status": "alive"}))
+        for path in ("/readyz", "/v1/health/ready"):
+            self.assertEqual(self.live.get(path), (200, {"status": "ready"}))
+
+        server.STATE.load_state = "loading"
+        for path in ("/healthz", "/v1/health/live"):
+            self.assertEqual(self.live.get(path), (200, {"status": "alive"}))
+        for path in ("/readyz", "/v1/health/ready"):
+            self.assertEqual(self.live.get(path), (503, {"status": "loading"}))
+
+    def test_native_model_path_can_return_its_exact_top_level_contract(self) -> None:
+        self.live.adapter = NativeResponseAdapter()
+        server.STATE.adapter = self.live.adapter
+        self.live.adapter.release.set()
+
+        connection = http.client.HTTPConnection(*self.live.address, timeout=2)
+        body = json.dumps({"value": "native-value"}).encode()
+        try:
+            connection.request(
+                "POST",
+                "/native",
+                body=body,
+                headers={"Content-Type": "application/json"},
+            )
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertEqual(
+                json.loads(response.read()),
+                {
+                    "path": "/native",
+                    "value": "native-value",
+                    "input": "native-value",
+                },
+            )
+        finally:
+            connection.close()
 
     def test_duplicate_request_ids_are_preserved_but_inference_is_single_flight(
         self,

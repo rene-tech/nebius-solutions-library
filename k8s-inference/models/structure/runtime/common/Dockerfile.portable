@@ -1,0 +1,18 @@
+# syntax=docker/dockerfile:1
+# Layer the compatible NIM-style health aliases over an already qualified,
+# immutable open runtime. Model code and checkpoint bytes remain unchanged.
+ARG BASE_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/proteinmpnn@sha256:13d195ac5e24ca9d75de058f08141ece37e60962dcdffb50b6d24ea474313d47
+FROM ${BASE_IMAGE}
+
+LABEL ai.nebius.fs2.runtime-portability="nim-health-aliases"
+
+COPY --chown=10001:10001 \
+  k8s-inference/models/structure/runtime/common/server.py \
+  /opt/fs2/runtime/common/server.py
+
+# Only the adapter selected by FS2_MODEL is imported. Copying both keeps one
+# small, reproducible overlay recipe for the two retained open runtimes.
+COPY --chown=10001:10001 \
+  k8s-inference/models/structure/runtime/adapters/diffdock.py \
+  k8s-inference/models/structure/runtime/adapters/proteinmpnn.py \
+  /opt/fs2/runtime/adapters/

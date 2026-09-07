@@ -46,7 +46,9 @@ def load_deployment_runtime_entries(path: Path | None) -> dict[str, Any]:
     """Read explicit selections; Registry validates their complete subject graph."""
     if path is None:
         return {}
-    document = _exact(_load_json(path), {"schema", "models"}, "deployment runtime set")
+    # Kubernetes projects ConfigMap keys through a ..data symlink. Resolve the
+    # mounted selection before the catalog loader's regular-file check.
+    document = _exact(_load_json(path.resolve(strict=True)), {"schema", "models"}, "deployment runtime set")
     if document["schema"] != SET_SCHEMA or not isinstance(document["models"], dict):
         raise DeploymentRuntimeError("deployment runtime set schema is invalid")
     return copy.deepcopy(document["models"])

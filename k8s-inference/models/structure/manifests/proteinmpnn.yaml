@@ -28,9 +28,9 @@ metadata:
     app.kubernetes.io/part-of: fs2-serve
     fs2.nebius.ai/model-id: proteinmpnn
   annotations:
-    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
     fs2.nebius/model-content-digest: sha256:c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd
-    fs2.nebius/runtime-image-digest: sha256:13d195ac5e24ca9d75de058f08141ece37e60962dcdffb50b6d24ea474313d47
+    fs2.nebius/runtime-image-digest: sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38
 spec:
   replicas: 1
   strategy:
@@ -47,18 +47,14 @@ spec:
         app.kubernetes.io/part-of: fs2-serve
         fs2.nebius.ai/model-id: proteinmpnn
       annotations:
-        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
         fs2.nebius/model-content-digest: sha256:c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd
-        fs2.nebius/runtime-image-digest: sha256:13d195ac5e24ca9d75de058f08141ece37e60962dcdffb50b6d24ea474313d47
+        fs2.nebius/runtime-image-digest: sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38
         fs2.nebius.ai/source-revision: 8907e6671bfbfc92303b5f79c4b5e6ce47cdef57
         fs2.nebius.ai/checkpoint-sha256: c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
-      nodeSelector:
-        capacity.fs2.nebius/pool: burst
-        capacity.fs2.nebius/type: preemptible
-        accelerator.fs2.nebius/class: nvidia-b300-sxm6-288gb
       tolerations:
         - key: dedicated
           operator: Equal
@@ -74,7 +70,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: runtime
-          image: registry.example.invalid/k8s-inference/models/proteinmpnn@sha256:13d195ac5e24ca9d75de058f08141ece37e60962dcdffb50b6d24ea474313d47
+          image: registry.example.invalid/k8s-inference/models/proteinmpnn-portable@sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38
           imagePullPolicy: IfNotPresent
           env:
             - name: FS2_PORT

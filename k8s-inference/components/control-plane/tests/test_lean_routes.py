@@ -381,7 +381,7 @@ def test_lean_route_binds_exact_qualified_sm103_variant(tmp_path: Path) -> None:
     assert model.binding.service_origin == "http://diffdock-b300.fs2-models.svc.cluster.local:8000"
 
 
-def test_structure_manifests_bind_published_route_images() -> None:
+def test_structure_manifests_bind_selected_runtime_images_and_preserve_archival_inventory() -> None:
     inventory = json.loads((CONTROL_ROOT / "contracts/all-models-live-services.json").read_text())
 
     manifest_paths = {
@@ -400,7 +400,11 @@ def test_structure_manifests_bind_published_route_images() -> None:
             for value in deployments[model]["spec"]["template"]["spec"]["containers"]
             if value["name"] == "runtime"
         )
-        assert runtime["image"].endswith("@" + expected)
+        selected = json.loads((CATALOG_ROOT / "deployment-runtimes" / f"{model}-portable-h100.json").read_text())
+        assert selected["model_id"] == model
+        assert runtime["image"].endswith("@" + selected["record"]["runtime"]["image"]["digest"])
+        # The archived live-service receipt still describes its qualified B300
+        # deployment, not the current explicitly selected H100 runtime.
         assert inventory["routes"][model]["runtime_image_digest"] == expected
 
     diffdock_runtime = deployments["diffdock"]["spec"]["template"]["spec"]["containers"][0]

@@ -54,7 +54,7 @@ class CatalogLoaderTests(unittest.TestCase):
 
     def test_model_variants_are_typed_paired_and_never_static_route_authority(self) -> None:
         catalog = self.load()
-        self.assertEqual(16, len(catalog.model_variants))
+        self.assertEqual(18, len(catalog.model_variants))
         self.assertEqual(tuple(sorted(catalog.model_variants)), catalog.candidate_variant_ids())
         self.assertEqual((), catalog.routable_variant_ids())
         for model_id in (
@@ -62,6 +62,7 @@ class CatalogLoaderTests(unittest.TestCase):
             "diffdock",
             "evo2-40b",
             "molmim",
+            "msa-search-pdb70",
             "nv-segment-ct",
             "proteinmpnn",
             "rfdiffusion",
@@ -137,7 +138,7 @@ class CatalogLoaderTests(unittest.TestCase):
 
     def test_all_fallback_candidates_have_one_explicit_fail_closed_identity_join(self) -> None:
         catalog = self.load()
-        self.assertEqual(11, len(catalog.fallback_candidates))
+        self.assertEqual(12, len(catalog.fallback_candidates))
         self.assertEqual(
             {
                 "boltz2-hf",
@@ -146,6 +147,7 @@ class CatalogLoaderTests(unittest.TestCase):
                 "genmol-hf-v2",
                 "molmim-ngc-70m-v24-3",
                 "msa-search-pdb70-colabfold",
+                "msa-search-pdb70-mmseqs2-local",
                 "nv-segment-ct-hf",
                 "openfold2-hf-mirror",
                 "openfold3-preview2-hf",
@@ -171,6 +173,24 @@ class CatalogLoaderTests(unittest.TestCase):
         self.assertEqual(
             "blocked-license",
             catalog.fallback_candidate("msa-search-pdb70-colabfold").state,
+        )
+        exact_pdb70 = catalog.fallback_candidate("msa-search-pdb70-mmseqs2-local")
+        self.assertEqual("mapped-source-only", exact_pdb70.state)
+        self.assertEqual(
+            "msa-search-pdb70-mmseqs2-portable",
+            exact_pdb70.profile_variants["portable"],
+        )
+        pdb70_variant = catalog.model_variant(
+            "msa-search-pdb70-mmseqs2-portable"
+        ).to_dict()
+        self.assertEqual("exact-model", pdb70_variant["relationship"]["kind"])
+        self.assertEqual(
+            "sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85",
+            pdb70_variant["runtime"]["image_digest"],
+        )
+        self.assertEqual(
+            ["3e075127dd90ee4e44635eb1596cc74f17c46bfdca470d4e9ffcc79df5567ca9"],
+            pdb70_variant["source"]["artifact"]["expected_content_sha256"],
         )
 
     def test_model_variant_exact_source_identities_are_regression_locked(self) -> None:

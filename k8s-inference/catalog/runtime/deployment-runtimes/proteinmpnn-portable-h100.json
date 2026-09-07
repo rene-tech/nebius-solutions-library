@@ -1,0 +1,204 @@
+{
+  "schema": "fs2-serve.nebius.ai/deployment-runtime/v1",
+  "model_id": "proteinmpnn",
+  "variant_id": "proteinmpnn-upstream-portable",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "proteinmpnn",
+      "display_name": "ProteinMPNN",
+      "family": "bionemo-nim",
+      "tested_lane": true,
+      "source": {
+        "kind": "git",
+        "repository": "github.com/dauparas/ProteinMPNN",
+        "revision": "8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+        "license": {
+          "id": "MIT",
+          "state": "verified",
+          "notes": "Pinned source/model license evidence in acceptance/h100-fleet/bionemo-structure/fragments/proteinmpnn.json; NIM package parity is not claimed.",
+          "artifact": {
+            "url": "https://raw.githubusercontent.com/dauparas/ProteinMPNN/8907e6671bfbfc92303b5f79c4b5e6ce47cdef57/LICENSE",
+            "sha256": "82009d25ce585631f452b2b24589bdb29c559ccfefa2f200ef312ed5b501a586"
+          }
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "Public upstream weights in the tested independent runtime."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "portable-h100-20260907",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/proteinmpnn@sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38",
+        "digest": "sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38",
+        "state": "resolved"
+      },
+      "command": [
+        "python3",
+        "/opt/fs2/runtime/common/server.py"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 4000,
+      "memory_bytes": 17179869184,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-H100-SXM5-80GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/biology/ipd/proteinmpnn/predict"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 900
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "design-protein"
+        ],
+        "license_enforced": true,
+        "non_clinical": false,
+        "commercial_use": "license-dependent"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "gated",
+          "gate": "fresh-pod-restore-with-original-semantic-output",
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "This exact H100 portable runtime has not completed a fresh-pod GPU restore test. Earlier B300 timing results remain historical and do not qualify or disqualify this runtime."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "fs2-serve-localizer",
+      "shared_path": "/mnt/fs2-serve-cache/models/proteinmpnn",
+      "local_path": "/var/lib/fs2-serve/cache/models/proteinmpnn",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "0b4230fdc15937b8733f208872dd328dd5715016866543ee76cc475a32f37bbf",
+        "expanded_bytes": 6681301,
+        "minimum_bytes": 6681301,
+        "capacity_bound_bytes": 8589934592,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "two-distinct-protein-design-responses/v1",
+      "source_path": "k8s-inference/catalog/runtime/validators/validate_structure_open_runtime.py",
+      "source_sha256": "24a3551d4895643c29c3a57b1b2c85be1d3674d658d5b645609fb3d594c7c724",
+      "fixture_path": null,
+      "fixture_sha256": null,
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": false,
+      "limitations": [
+        "Exact upstream model in an independent runtime; NVIDIA NIM package/numerical parity is not claimed.",
+        "H100 direct inference passed; public routes, scalability and optional GPU snapshots are qualified separately."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA H100 SXM5 80GB; SM90; driver580.159.04",
+        "outcome": "live-qualified",
+        "source_commit": "645b80dc5c0e5d51ba4d13c0b3e42b001572b5f2",
+        "summary": "Three isolated fresh processes and two distinct semantic requests per process PASS; production route acceptance remains pending. See acceptance/h100-fleet/bionemo-structure/fragments/proteinmpnn.json."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "645b80dc5c0e5d51ba4d13c0b3e42b001572b5f2",
+        "tree": "4e04aa6d939748fbe298b6dd20f81a4d8ee25c1f",
+        "path": "k8s-inference/acceptance/h100-fleet/bionemo-structure/fragments/proteinmpnn.json",
+        "classification": "measured-handoff"
+      }
+    ]
+  },
+  "qualification": {
+    "active_runtime": {
+      "model_revision": "8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+      "runtime_image_digest": "sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38",
+      "service": {
+        "namespace": "fs2-models",
+        "name": "proteinmpnn-b300",
+        "port": 8000
+      }
+    },
+    "evidence": {
+      "audited_catalog_sha256": "e00b3acda36808f529dc32ec0db59041d7a716a0122e0fb7573dd217ccf9b694",
+      "audited_live_routes_sha256": null,
+      "cold_start_acceptance_sha256": "52afb0db49933cf11fba90d401a82e1af5044b48805f49a3f7fd7b15283bc66d",
+      "elasticity_acceptance_sha256": null,
+      "http_mcp_acceptance_sha256": null,
+      "mcp_discovery_sha256": null,
+      "model_discovery_sha256": null,
+      "retained_deployments_sha256": "52afb0db49933cf11fba90d401a82e1af5044b48805f49a3f7fd7b15283bc66d"
+    },
+    "model_id": "proteinmpnn",
+    "policy": {
+      "license_id": "MIT",
+      "non_clinical": false,
+      "commercial_use": "license-dependent"
+    },
+    "runtime_origin": {
+      "kind": "independent-runtime",
+      "variant_id": "proteinmpnn-upstream-portable",
+      "source_kind": "git",
+      "repository": "github.com/dauparas/ProteinMPNN",
+      "relationship": "exact-model",
+      "nim_artifact_parity": "unverified"
+    },
+    "states": {
+      "registered": true,
+      "route_active": false,
+      "runtime_ready": true,
+      "semantic_qualified": true,
+      "http_mcp_qualified": false,
+      "cold_start_qualified": true,
+      "elasticity_qualified": false
+    },
+    "variant_id": "proteinmpnn-upstream-portable"
+  }
+}

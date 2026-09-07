@@ -61,6 +61,15 @@
       "secondary_non_alias_alternative": null,
       "notes": ["ColabFold/MMseqs PDB70 is a distinct capability alternative; license and database provenance remain blocked."]
     },
+    "msa-search-pdb70-mmseqs2-local": {
+      "candidate_id": "msa-search-pdb70-mmseqs2-local",
+      "lane_id": "msa-search-pdb70",
+      "state": "mapped-source-only",
+      "relationship": "exact-model",
+      "profile_variants": {"portable": "msa-search-pdb70-mmseqs2-portable", "blackwell-sm103": "msa-search-pdb70-mmseqs2-blackwell-sm103"},
+      "secondary_non_alias_alternative": null,
+      "notes": ["Exact public PDB70_220313 database semantics through a revision-pinned independent MMseqs2 runtime; NVIDIA NIM package parity remains unverified. The federated UniRef alternative remains a separate non-alias candidate."]
+    },
     "nv-segment-ct-hf": {
       "candidate_id": "nv-segment-ct-hf",
       "lane_id": "nv-segment-ct",
@@ -746,6 +755,130 @@
       },
       "promotion": {"state": "candidate-unqualified", "route_exposed": false, "supply_receipt_digest": null, "qualification_receipt_digest": null, "independent_review_receipt_digest": null},
       "notes": ["Portable means architecture-neutral build intent, not proven B300 support."]
+    },
+    "msa-search-pdb70-mmseqs2-blackwell-sm103": {
+      "variant_id": "msa-search-pdb70-mmseqs2-blackwell-sm103",
+      "base_model_id": "msa-search-pdb70",
+      "exposed_model_id": "msa-search-pdb70",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "msa-search-pdb70",
+        "subject_model_id": "msa-search-pdb70",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Exact public PDB70_220313 database served by pinned MMseqs2; NVIDIA NIM package parity remains unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "msa-search-pdb70",
+          "execution_identity_sha256": "91dd451836348f491198b577c6eb8864edfddfa4d2728b8e1a374ae4b853276b",
+          "b300_state": "historical-supported",
+          "record_sha256": "6fbe5fff2b131a72be5d173bf6d4294be82c78fcf8463ecc98eb746064e3d7ee"
+        }
+      },
+      "source": {
+        "kind": "git",
+        "repository": "github.com/soedinglab/MMseqs2",
+        "revision": "8cc5ce367b5638c4306c2d7cfc652dd099a4643f",
+        "revision_url": "https://github.com/soedinglab/MMseqs2/tree/8cc5ce367b5638c4306c2d7cfc652dd099a4643f",
+        "artifact": {
+          "kind": "release-archive",
+          "uri": "https://wwwuser.gwdg.de/~compbiol/colabfold/pdb70_220313.fasta.gz",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 1,
+          "expected_bytes": 21231545,
+          "expected_content_sha256": ["3e075127dd90ee4e44635eb1596cc74f17c46bfdca470d4e9ffcc79df5567ca9"],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "MIT-code-CC-BY-4.0-data",
+          "state": "verified-artifact",
+          "source_url": "https://github.com/soedinglab/MMseqs2/blob/8cc5ce367b5638c4306c2d7cfc652dd099a4643f/LICENSE.md",
+          "artifact_sha256": "adc3ea1f2f5096d2464460495e12a65a94f466edb9ccca50d1f25844ca83792a",
+          "commercial_use": "license-dependent",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "blackwell-sm103",
+        "build_state": "source-only-candidate",
+        "image_digest": null,
+        "device_capability": "sm103-unverified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": ["artifact-manifest", "build-materials", "builder", "immutable-image", "license-artifact", "provenance", "sbom", "scan", "signature", "source-repository-revision"],
+        "qualification_claims": ["cold-and-warm-cohorts-separate", "compute-capability-10.3", "determinism-and-kernel-dispatch-repeated", "exact-worker-gpu-runtime-tuple", "failures-in-denominator", "network-denied-mounted-artifact-startup", "preemption-recovery", "quality-comparator-identity", "scale-zero-ready-zero", "two-semantic-gateway-responses", "vendor-nim-baseline-evidence", "warm-attempts-at-least-10"]
+      },
+      "promotion": {"state": "candidate-unqualified", "route_exposed": false, "supply_receipt_digest": null, "qualification_receipt_digest": null, "independent_review_receipt_digest": null},
+      "notes": ["Blackwell remains an explicit unqualified source candidate; the qualified CPU runtime does not consume or reserve a GPU."]
+    },
+    "msa-search-pdb70-mmseqs2-portable": {
+      "variant_id": "msa-search-pdb70-mmseqs2-portable",
+      "base_model_id": "msa-search-pdb70",
+      "exposed_model_id": "msa-search-pdb70",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "msa-search-pdb70",
+        "subject_model_id": "msa-search-pdb70",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Exact public PDB70_220313 database served by pinned MMseqs2; NVIDIA NIM package parity remains unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "msa-search-pdb70",
+          "execution_identity_sha256": "91dd451836348f491198b577c6eb8864edfddfa4d2728b8e1a374ae4b853276b",
+          "b300_state": "historical-supported",
+          "record_sha256": "6fbe5fff2b131a72be5d173bf6d4294be82c78fcf8463ecc98eb746064e3d7ee"
+        }
+      },
+      "source": {
+        "kind": "git",
+        "repository": "github.com/soedinglab/MMseqs2",
+        "revision": "8cc5ce367b5638c4306c2d7cfc652dd099a4643f",
+        "revision_url": "https://github.com/soedinglab/MMseqs2/tree/8cc5ce367b5638c4306c2d7cfc652dd099a4643f",
+        "artifact": {
+          "kind": "release-archive",
+          "uri": "https://wwwuser.gwdg.de/~compbiol/colabfold/pdb70_220313.fasta.gz",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 1,
+          "expected_bytes": 21231545,
+          "expected_content_sha256": ["3e075127dd90ee4e44635eb1596cc74f17c46bfdca470d4e9ffcc79df5567ca9"],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "MIT-code-CC-BY-4.0-data",
+          "state": "verified-artifact",
+          "source_url": "https://github.com/soedinglab/MMseqs2/blob/8cc5ce367b5638c4306c2d7cfc652dd099a4643f/LICENSE.md",
+          "artifact_sha256": "adc3ea1f2f5096d2464460495e12a65a94f466edb9ccca50d1f25844ca83792a",
+          "commercial_use": "license-dependent",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "portable",
+        "build_state": "built-attested",
+        "image_digest": "sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85",
+        "device_capability": "portable-qualified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": ["artifact-manifest", "build-materials", "builder", "immutable-image", "license-artifact", "provenance", "sbom", "scan", "signature", "source-repository-revision"],
+        "qualification_claims": ["cold-and-warm-cohorts-separate", "compute-capability-10.3", "determinism-and-kernel-dispatch-repeated", "exact-worker-gpu-runtime-tuple", "failures-in-denominator", "network-denied-mounted-artifact-startup", "preemption-recovery", "quality-comparator-identity", "scale-zero-ready-zero", "two-semantic-gateway-responses", "vendor-nim-baseline-evidence", "warm-attempts-at-least-10"]
+      },
+      "promotion": {"state": "candidate-unqualified", "route_exposed": false, "supply_receipt_digest": null, "qualification_receipt_digest": null, "independent_review_receipt_digest": null},
+      "notes": ["Portable CPU runtime embeds the verified PDB70 database and performs no network access at startup or inference; public route promotion remains receipt-controlled."]
     },
     "nv-genmol-89m-v2-blackwell-sm103": {
       "variant_id": "nv-genmol-89m-v2-blackwell-sm103",

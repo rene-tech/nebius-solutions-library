@@ -33,7 +33,7 @@
               "state": "hardware-validated",
               "enabled": true,
               "catalog_b300_state": null,
-              "evidence": "acceptance/h100-fleet/bionemo-structure/fragments/boltz2.json@sha256:0ec2a3b99b4927a8601ee43e3130069ace24e208a03715e439aa00abb2064302"
+              "evidence": "acceptance/h100-fleet/bionemo-structure/fragments/boltz2.json@sha256:dcf6e5f01a1d6555063383eb3c9b3061e3f1777d07d604bf4cf7a7fdcc692652"
             }
           ],
           "qualification_candidates": []

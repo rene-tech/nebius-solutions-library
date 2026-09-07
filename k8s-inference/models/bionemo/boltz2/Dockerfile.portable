@@ -1,0 +1,11 @@
+# syntax=docker/dockerfile:1
+# The qualified B300 image carries the immutable upstream source and model
+# contract. This successor changes only the HTTP adapter's GPU capability
+# discovery so the same runtime can execute on supported Hopper and Blackwell
+# devices without lying about, or hard-coding, a particular SM version.
+ARG BASE_IMAGE=cr.us-north1.nebius.cloud/u02h8n46vy0k5cqhyx/fs2-models/boltz2-blackwell@sha256:ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46
+FROM ${BASE_IMAGE}
+
+LABEL ai.nebius.fs2.runtime-portability="dynamic-cuda-capability"
+
+COPY k8s-inference/models/bionemo/boltz2/server.py /opt/fs2/server.py
