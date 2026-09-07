@@ -97,10 +97,16 @@ describe("scientific run detail", () => {
 
   it("automatically refreshes an active run to its durable terminal result", async () => {
     let calls = 0;
-    renderPage(() => Promise.resolve(++calls === 1 ? cancellableDetail() : detailFixture()));
+    const initial = cancellableDetail();
+    const completed = detailFixture();
+    initial.meta.generated_at = "2026-09-07T16:10:24Z";
+    completed.meta.generated_at = "2026-09-07T16:10:29Z";
+    renderPage(() => Promise.resolve(++calls === 1 ? initial : completed));
     expect(await screen.findByRole("button", { name: "Request cancellation" })).toBeInTheDocument();
+    const firstObservation = screen.getByText(/^Run data observed /).textContent;
     await waitFor(() => expect(adminApi.scientificRun).toHaveBeenCalledTimes(2), { timeout: 6500 });
     expect(await screen.findByText("This run is terminal and can no longer be cancelled.")).toBeInTheDocument();
+    expect(screen.getByText(/^Run data observed /).textContent).not.toBe(firstObservation);
     expect(screen.queryByRole("button", { name: "Request cancellation" })).not.toBeInTheDocument();
   }, 8000);
 
@@ -109,6 +115,7 @@ describe("scientific run detail", () => {
 
     expect(await screen.findByRole("heading", { name: "CD8 binder backbone screen" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Phase durations" })).toBeInTheDocument();
+    expect(screen.getByText(/Observed wall-time union per phase/)).toHaveTextContent("Parallel intervals count once");
     expect(screen.getByRole("heading", { name: "GPU idle by cause" })).toBeInTheDocument();
     expect(screen.getByText("Reconciliation", { exact: false })).toHaveTextContent("0 GPU-s measured");
 

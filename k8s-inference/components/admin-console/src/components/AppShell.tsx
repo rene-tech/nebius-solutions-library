@@ -156,7 +156,7 @@ export function AppShell() {
         </label>
         <span className="timezone">{selected?.timezone ?? "UTC"}</span>
         <span className="context-spacer" />
-        <span className="generated-at">Updated {formatTimestamp(contextQuery.data?.meta.generated_at ?? null)}</span>
+        <span className="generated-at">Cluster context checked {formatTimestamp(contextQuery.data?.meta.generated_at ?? null)}</span>
       </header>
 
       <main id="main-content" className="main-content" tabIndex={-1}>

@@ -17,6 +17,7 @@ from uuid import UUID
 
 import asyncpg
 
+from .lifecycle import _signal_from_row
 from .registry import Registry
 from .scientific_admin import (
     ScientificAdminQueryError,
@@ -77,6 +78,7 @@ from .scientific_admin_models import (
 from .scientific_admin_models import (
     ScientificDispatchState as ScientificDispatchStateModel,
 )
+from .scientific_admin_phase_times import project_phase_times
 from .scientific_artifacts import ArtifactNotFoundError, ScientificArtifactControllerPort
 from .scientific_batch.codec import state_from_value
 from .scientific_batch.models import (
@@ -101,21 +103,6 @@ from .scientific_batch.postgres_repository import PostgresScientificBatchReposit
 from .scientific_batch.service import ScientificBatchService
 from .scientific_run_result import ArtifactRef
 
-_PHASES = {
-    LifecyclePhase.QUEUED: "queue",
-    LifecyclePhase.SCHEDULING: "admission",
-    LifecyclePhase.ADMITTED: "admission",
-    LifecyclePhase.NODE_PENDING: "admission",
-    LifecyclePhase.IMAGE_LOADING: "image-pull",
-    LifecyclePhase.ARTIFACT_LOADING: "artifact-load",
-    LifecyclePhase.RESTORING: "restore",
-    LifecyclePhase.SEMANTIC_WARMUP: "semantic-warmup",
-    LifecyclePhase.ACTIVE_COMPUTE: "active-compute",
-    LifecyclePhase.ALLOCATED_IDLE: "allocated-idle",
-    LifecyclePhase.GRACE_DRAIN: "grace-drain",
-    LifecyclePhase.TEARDOWN: "teardown",
-}
-_PHASE_ORDER = tuple(dict.fromkeys(_PHASES.values()))
 _TERMINAL_BATCH_STATUS = {BatchStatus.SUCCEEDED, BatchStatus.FAILED, BatchStatus.CANCELLED}
 
 
@@ -473,42 +460,6 @@ def _stages(state: ScientificBatchState, events: tuple[BatchEvent, ...]) -> list
     return result
 
 
-def _lifecycle(events: tuple[BatchEvent, ...]) -> list[ScientificLifecyclePhase]:
-    by_attempt: dict[UUID, list[BatchEvent]] = defaultdict(list)
-    for event in events:
-        if event.draft.attempt_id is not None and event.draft.phase is not None:
-            by_attempt[event.draft.attempt_id].append(event)
-    totals: dict[str, float] = defaultdict(float)
-    for attempt_events in by_attempt.values():
-        ordered = sorted(attempt_events, key=lambda item: item.sequence)
-        for current, following in zip(ordered, ordered[1:], strict=False):
-            phase = _PHASES.get(current.draft.phase) if current.draft.phase is not None else None
-            if phase is not None:
-                totals[phase] += max(0.0, (following.occurred_at - current.occurred_at).total_seconds())
-    return [
-        ScientificLifecyclePhase(
-            phase=cast(Any, phase),
-            duration=(
-                ScientificMeasurement(
-                    value=totals[phase],
-                    unit="seconds",
-                    evidence=ScientificEvidenceState.MEASURED,
-                    source="scientific-controller-events",
-                )
-                if phase in totals
-                else ScientificMeasurement(
-                    value=None,
-                    unit="seconds",
-                    evidence=ScientificEvidenceState.UNAVAILABLE,
-                    source="scientific-controller-events",
-                    reason="No closed controller interval is available for this phase.",
-                )
-            ),
-        )
-        for phase in _PHASE_ORDER
-    ]
-
-
 class PostgresScientificRunAdminAdapter:
     """Bounded read-only projection over durable scientific controller state."""
 
@@ -543,6 +494,30 @@ class PostgresScientificRunAdminAdapter:
             state.operation_id: accounting for state in states
             if (accounting := project_gpu_accounting(state, grouped[state.operation_id])) is not None
         }
+
+    async def _phase_times(self, state: ScientificBatchState) -> list[ScientificLifecyclePhase]:
+        if not self.lifecycle_accounting:
+            return project_phase_times(())
+        expected = {attempt.attempt_id for stage in state.stages for attempt in stage.attempts}
+        async with self.pool.acquire() as connection:
+            rows = await connection.fetch(
+                """SELECT subject.attempt_id,signal.*
+                   FROM fs2_telemetry_subjects subject
+                   JOIN fs2_lifecycle_signals signal USING(subject_id)
+                   WHERE subject.operation_id=$1 AND subject.tenant_id=$2
+                     AND subject.workload_kind='scientific_batch'
+                     AND signal.clock IN ('phase','lifecycle')
+                   ORDER BY signal.id LIMIT 100001""",
+                state.operation_id, state.tenant_id,
+            )
+        # Match the existing lifecycle detail's bounded signal projection.
+        if len(rows) > 100000:
+            return project_phase_times(())
+        selected = [row for row in rows if row["attempt_id"] in expected]
+        return project_phase_times(
+            tuple(_signal_from_row(row) for row in selected),
+            incomplete_attempts={row["attempt_id"] for row in selected} != expected,
+        )
 
     async def _model_map(self, *, tenant_id: str | None) -> dict[str, ScientificModelReadiness]:
         snapshot = await self.models.list_models(tenant_id=tenant_id)
@@ -688,7 +663,7 @@ class PostgresScientificRunAdminAdapter:
         max_attempts = max(stage.max_attempts for stage in state.plan.stages)
         detail = ScientificRunDetail(
             run=_summary(cast(Mapping[str, Any], record), state, model),
-            lifecycle_phases=_lifecycle(events),
+            lifecycle_phases=await self._phase_times(state),
             stages=_stages(state, events),
             artifacts=[],
             retry=ScientificRetry(max_attempts_per_stage=max_attempts, retryable_exit_codes=[]),

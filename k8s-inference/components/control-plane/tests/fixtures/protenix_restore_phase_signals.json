@@ -1,0 +1,41 @@
+{
+  "description": "Actual paired Protenix r01 restore signal clocks, stripped to non-sensitive timing/identity fields. Not synthetic ingestion times and not a GPU-seconds conversion.",
+  "source_operation_id": "18efdb3c-fa99-42a7-9a39-876d22a2021b",
+  "source_read_at": "2026-09-07T19:51:28.546Z",
+  "source_body_sha256": "fd5e04812ed8df45dace276572457b113097864d9f1f6b3fd1a7e3600f457fa0",
+  "expected_wall_seconds": 3.946846,
+  "signals": [
+    {
+      "event_key": "scientific:79dd47f4-7384-5f0f-943f-ff4d0a1686b8:pod:6b91b9e0-4665-4663-8197-c35476a90558:phase:restore:1788797424.000000:start",
+      "subject_id": "79dd47f4-7384-5f0f-943f-ff4d0a1686b8",
+      "occurred_at": "2026-09-07T16:10:24Z",
+      "observed_at": "2026-09-07T16:10:24Z",
+      "source": "kubernetes",
+      "source_resolution_seconds": 0.25,
+      "quality": "application_observed",
+      "phase": "restore",
+      "edge": "start",
+      "clock": "phase",
+      "interval_key": "scientific:79dd47f4-7384-5f0f-943f-ff4d0a1686b8:pod:6b91b9e0-4665-4663-8197-c35476a90558:phase:restore:1788797424.000000",
+      "attempt": 1,
+      "gpu_count": 0,
+      "pod_uid": "6b91b9e0-4665-4663-8197-c35476a90558"
+    },
+    {
+      "event_key": "scientific:79dd47f4-7384-5f0f-943f-ff4d0a1686b8:pod:6b91b9e0-4665-4663-8197-c35476a90558:phase:restore:1788797424.000000:end",
+      "subject_id": "79dd47f4-7384-5f0f-943f-ff4d0a1686b8",
+      "occurred_at": "2026-09-07T16:10:27.946846Z",
+      "observed_at": "2026-09-07T16:10:27.946846Z",
+      "source": "kubernetes",
+      "source_resolution_seconds": 0.25,
+      "quality": "application_observed",
+      "phase": "restore",
+      "edge": "end",
+      "clock": "phase",
+      "interval_key": "scientific:79dd47f4-7384-5f0f-943f-ff4d0a1686b8:pod:6b91b9e0-4665-4663-8197-c35476a90558:phase:restore:1788797424.000000",
+      "attempt": 1,
+      "gpu_count": 0,
+      "pod_uid": "6b91b9e0-4665-4663-8197-c35476a90558"
+    }
+  ]
+}

@@ -158,7 +158,7 @@ export function ScientificRunDetailPage() {
             <div className="configuration-actions">
               <Link className="back-link" to={{ pathname: "/admin/scientific-runs", search: backParams.toString() }}>← All scientific runs</Link>
               <button className="button" disabled={query.isFetching} onClick={() => void query.refetch()} type="button">Refresh run</button>
-              <span className="supporting-copy">Active runs update every 5 seconds.</span>
+              <span className="supporting-copy">Run data observed {formatTimestamp(query.data?.meta.generated_at ?? null)}. Active runs update every 5 seconds.</span>
             </div>
             <section className="identity-panel scientific-run-identity">
               <div><span className="eyebrow">{run.model.display_name} · {run.operation}</span><h2>{run.display_name}</h2><code>{run.id}</code></div>
@@ -232,6 +232,7 @@ export function ScientificRunDetailPage() {
 
             <section className="panel" aria-labelledby="scientific-lifecycle-title">
               <div className="section-heading"><div><span className="eyebrow">Lifecycle</span><h2 id="scientific-lifecycle-title">Phase durations</h2></div></div>
+              <p className="supporting-copy">Observed wall-time union per phase, across all attempts and retries. Parallel intervals count once; different phases can overlap. These values are not additive request latency or GPU-seconds. Missing boundaries remain unavailable.</p>
               <div className="scientific-phase-grid">
                 {data.lifecycle_phases.map((phase) => <article key={phase.phase}><span>{phase.phase}</span><strong><ScientificMeasurement value={phase.duration} /></strong><small>{phase.duration.source}</small></article>)}
               </div>

@@ -16,11 +16,13 @@ from mcp.server.mcpserver import Context
 from mcp.shared.exceptions import MCPError
 from test_api_mcp import build_runtime
 from test_model_deployment import model_spec, renderer, reserved_and_preemptible_envelope
-from test_model_deployment_controller import FakeApi, ZeroActiveOperations, fence, model_object
+from test_model_deployment_controller import FakeApi, ZeroActiveOperations, fence, idle_zero_hpa_snapshot, model_object
 from test_model_deployment_publication import revision, status_view
 
+from fs2_serve import model_deployment_controller as controller_module
 from fs2_serve.api import create_app
 from fs2_serve.mcp_server import PATTokenVerifier, build_mcp_server, mount_mcp
+from fs2_serve.model_deployment import FIELD_MANAGER
 from fs2_serve.model_deployment_controller import ModelDeploymentController, ModelKey
 from fs2_serve.model_deployment_publication import PublicationReason, assess_model_publication
 from fs2_serve.model_deployment_records import ModelDeploymentConditionType, ModelDeploymentRuntimePhase
@@ -82,6 +84,93 @@ async def test_ready_hot_route_survives_independent_burst_scaleup(burst_phase: s
     hot.updated_replicas = 0
     await subject.reconcile(key, fence())
     assert api.status_writes[-1]["phase"] != "Ready"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "control",
+    [
+        "healthy-hot", "terminating-burst", "stale-hot", "no-hot", "foreign-hpa",
+        "wrong-hpa-target", "stale-hpa-generation", "unhealthy-hpa", "metrics-error",
+        "unhealthy-scaler", "replicas-not-relinquished", "target-not-zero", "hpa-not-zero",
+    ],
+)
+async def test_hot_route_survives_verified_idle_hpa_acknowledgement_lag(control: str, monkeypatch) -> None:
+    spec = model_spec().model_copy(
+        update={
+            "placement": model_spec().placement.model_copy(update={"pool_refs": ["reserved-h100", "preemptible-h100"]}),
+            "availability": model_spec().availability.model_copy(update={"min_replicas": 1, "max_replicas": 4}),
+        }
+    )
+    raw = model_object()
+    raw["spec"] = spec.model_dump(mode="json", by_alias=True)
+    api = FakeApi(raw)
+    subject = ModelDeploymentController(
+        api=api, envelope=reserved_and_preemptible_envelope(), renderer=renderer(),
+        namespace="fs2-models", holder_identity="fs2-system/controller:pod-uid",
+        prometheus_server_address="http://prometheus:9090", writes_enabled=True,
+        active_operations=ZeroActiveOperations(),
+    )
+    key = ModelKey(namespace="fs2-models", name="qwen-live")
+    for _ in range(3):
+        await subject.reconcile(key, fence())
+    hot = next(
+        item for item in api.resources.values()
+        if item.observed.kind == "Deployment"
+        and item.raw["metadata"]["annotations"]["fs2-serve.nebius.ai/workload-role"] == "hot"
+    )
+    scaler = next(item for item in api.resources.values() if item.observed.kind == "ScaledObject")
+    target_name = scaler.raw["spec"]["scaleTargetRef"]["name"]
+    burst = next(item for item in api.resources.values() if item.observed.name == target_name)
+    burst.desired_replicas = burst.replicas = burst.updated_replicas = 0
+    burst.ready_replicas = burst.available_replicas = burst.unavailable_replicas = 0
+    # HPA already sees zero; ScaledObject has not copied HPAActive/ScalingDisabled.
+    hpa = idle_zero_hpa_snapshot(scaler)
+    api.resources[hpa.observed.identity] = hpa
+    if control == "terminating-burst":
+        burst.replicas = burst.unavailable_replicas = 1
+    elif control == "stale-hot":
+        hot.observed_generation = 0
+    elif control == "no-hot":
+        hot.desired_replicas = hot.replicas = hot.updated_replicas = 0
+        hot.ready_replicas = hot.available_replicas = hot.unavailable_replicas = 0
+    elif control == "foreign-hpa":
+        hpa.observed.controller_owner_uid = "another-scaler"
+    elif control == "wrong-hpa-target":
+        hpa.raw["spec"]["scaleTargetRef"]["name"] = "another-deployment"
+    elif control == "stale-hpa-generation":
+        hpa.generation = 2
+        hpa.raw["status"]["observedGeneration"] = 1
+    elif control == "unhealthy-hpa":
+        hpa.raw["status"]["conditions"][0]["status"] = "False"
+    elif control == "metrics-error":
+        hpa.raw["status"]["conditions"][1]["reason"] = "FailedGetExternalMetric"
+    elif control == "unhealthy-scaler":
+        scaler.raw["status"]["conditions"][0]["status"] = "False"
+    elif control == "replicas-not-relinquished":
+        burst.replica_field_managers = [FIELD_MANAGER]
+    elif control == "target-not-zero":
+        burst.desired_replicas = 1
+    elif control == "hpa-not-zero":
+        hpa.raw["status"]["desiredReplicas"] = 1
+    if control == "healthy-hot":
+        original = controller_module._autoscaler_handoff_complete
+
+        def strict_handoff(*args, **kwargs):
+            kwargs["allow_idle_acknowledgement_lag"] = False
+            return original(*args, **kwargs)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(controller_module, "_autoscaler_handoff_complete", strict_handoff)
+            await subject.reconcile(key, fence())
+            assert api.status_writes[-1]["phase"] == "Desired"
+    await subject.reconcile(key, fence())
+    status = api.status_writes[-1]
+    if control in {"healthy-hot", "terminating-burst"}:
+        assert status["phase"] == "Ready"
+        assert status["publication"]["mcp"] is True
+    else:
+        assert status["phase"] != "Ready"
 
 
 def test_localizing_publication_matches_the_controllers_loading_condition() -> None:

@@ -1140,6 +1140,8 @@ def _autoscaler_installed(
     target: RenderedResource,
     discovery: Discovery,
     owner_uid: str,
+    *,
+    allow_idle_acknowledgement_lag: bool = False,
 ) -> bool:
     live_target = _resource_snapshot(
         discovery,
@@ -1193,9 +1195,8 @@ def _autoscaler_installed(
         and condition.get("status") == "True"
         for condition in hpa_conditions
     )
-    keda_zero_idle = (
+    hpa_zero_idle = (
         live_target.desired_replicas == 0
-        and live_target.replicas == 0
         and hpa_status.get("desiredReplicas") == 0
         and any(
             isinstance(condition, Mapping)
@@ -1204,6 +1205,10 @@ def _autoscaler_installed(
             and condition.get("reason") == "ScalingDisabled"
             for condition in hpa_conditions
         )
+    )
+    keda_zero_idle = (
+        hpa_zero_idle
+        and live_target.replicas == 0
         and any(
             isinstance(condition, Mapping)
             and condition.get("type") == "HPAActive"
@@ -1219,7 +1224,7 @@ def _autoscaler_installed(
     )
     return (
         able_to_scale
-        and (scaling_active or keda_zero_idle)
+        and (scaling_active or keda_zero_idle or (allow_idle_acknowledgement_lag and hpa_zero_idle))
         and generation_converged
         and target_ref.get("apiVersion") == target.api_version
         and target_ref.get("kind") == target.kind
@@ -1227,7 +1232,13 @@ def _autoscaler_installed(
     )
 
 
-def _autoscaler_handoff_complete(render: RenderPlan | None, discovery: Discovery, owner_uid: str) -> bool:
+def _autoscaler_handoff_complete(
+    render: RenderPlan | None,
+    discovery: Discovery,
+    owner_uid: str,
+    *,
+    allow_idle_acknowledgement_lag: bool = False,
+) -> bool:
     return all(
         (
             (
@@ -1240,7 +1251,13 @@ def _autoscaler_handoff_complete(render: RenderPlan | None, discovery: Discovery
                 )
             )
             is not None
-            and _autoscaler_installed(scaler, target, discovery, owner_uid)
+            and _autoscaler_installed(
+                scaler,
+                target,
+                discovery,
+                owner_uid,
+                allow_idle_acknowledgement_lag=allow_idle_acknowledgement_lag,
+            )
             and FIELD_MANAGER not in live_target.replica_field_managers
         )
         for scaler, target in _autoscaler_pairs(render)
@@ -1800,7 +1817,24 @@ def build_status(
         _deployment_rollout_complete(item) and item.ready_replicas is not None and item.ready_replicas > 0
         for item in deployments
     )
-    autoscaler_handoff_complete = _autoscaler_handoff_complete(plan.render, discovery, owner_uid)
+    autoscaled_identities = {_rendered_identity(target) for _, target in _autoscaler_pairs(plan.render)}
+    fixed_serving_rollout_ready = any(
+        item.observed.identity not in autoscaled_identities
+        and _deployment_rollout_complete(item)
+        and item.ready_replicas is not None
+        and item.ready_replicas > 0
+        for item in deployments
+    )
+    # HPA can acknowledge scale-to-zero before ScaledObject copies its condition.
+    # That asynchronous acknowledgement must not withdraw a separate fixed hot
+    # runtime. Require the exact scaler/HPA ownership, target, generation and
+    # released replica field below; bootstrap and all-cold status stay strict.
+    autoscaler_handoff_complete = _autoscaler_handoff_complete(
+        plan.render,
+        discovery,
+        owner_uid,
+        allow_idle_acknowledgement_lag=fixed_serving_rollout_ready,
+    )
     desired_resources = {
         f"{item.api_version}/{item.kind}/{item.namespace}/{item.name}": item
         for item in (plan.render.resources if plan.render is not None else [])

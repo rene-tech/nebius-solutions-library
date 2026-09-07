@@ -76,5 +76,7 @@ describe("application shell context state", () => {
     expect(await screen.findByText("Overview content")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Overview");
     expect(screen.getByText("FS2 Serve / Overview")).toBeInTheDocument();
+    expect(await screen.findByText(/^Cluster context checked /)).toBeInTheDocument();
+    expect(screen.queryByText(/^Updated /)).not.toBeInTheDocument();
   });
 });

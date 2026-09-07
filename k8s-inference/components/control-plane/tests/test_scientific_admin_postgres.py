@@ -14,6 +14,7 @@ import pytest
 import pytest_asyncio
 
 from fs2_serve.crypto import KeyedHasher, PayloadCipher
+from fs2_serve.lifecycle import LifecycleSignal, LifecycleSubject, PostgresLifecycleRepository
 from fs2_serve.models import AdmissionRequest, Principal, Scope, TokenCreate
 from fs2_serve.postgres import PostgresStore
 from fs2_serve.scientific_admin import ScientificModelSnapshot, ScientificRunQuery
@@ -317,7 +318,7 @@ async def test_postgres_run_list_projects_real_controller_rows_without_guessing_
     assert "request_ciphertext" not in sql
 
 
-async def test_postgres_run_detail_uses_controller_events_for_closed_phase_durations() -> None:
+async def test_postgres_run_detail_does_not_misrepresent_controller_ingestion_as_phase_duration() -> None:
     state = _state()
     events = (
         _event(state, 1, LifecyclePhase.QUEUED, -15),
@@ -336,8 +337,8 @@ async def test_postgres_run_detail_uses_controller_events_for_closed_phase_durat
     assert result.data.run.queue.admission_state == "admitted"
     assert result.data.stages[0].attempts[0].job_uid == "job-uid-1"
     active = next(item for item in result.data.lifecycle_phases if item.phase == "active-compute")
-    assert active.duration.value == 7
-    assert active.duration.evidence == "measured"
+    assert active.duration.value is None
+    assert active.duration.evidence == "unavailable"
     assert result.data.run.cancellation.grace_seconds is None
 
 
@@ -347,6 +348,10 @@ async def test_postgres_list_and_detail_join_durable_gpu_rollups_once_per_page()
 
     class AccountingConnection(FakeConnection):
         async def fetch(self, query: str, *args: object) -> list[dict[str, Any]]:
+            if "fs2_lifecycle_signals" in query:
+                self.queries.append(query)
+                assert args == (OPERATION_ID, state.tenant_id)
+                return []
             if "fs2_reporting_lifecycle_latest" not in query:
                 return await super().fetch(query, *args)
             self.queries.append(query)
@@ -559,6 +564,60 @@ async def postgres_admin_store() -> PostgresStore:
         async with store.pool.acquire() as connection:
             await connection.execute("TRUNCATE fs2_operations,fs2_tokens RESTART IDENTITY CASCADE")
         await store.close()
+
+
+@pytest.mark.postgres
+async def test_real_postgres_phase_projection_uses_actual_restore_clocks_and_tenant_scope(
+    postgres_admin_store: PostgresStore,
+) -> None:
+    state = _state()
+    attempt = state.stages[0].attempts[0]
+    fixture = json.loads((Path(__file__).parent / "fixtures/protenix_restore_phase_signals.json").read_text())
+    repository = PostgresLifecycleRepository(postgres_admin_store.pool)
+    subject = LifecycleSubject.model_validate(
+        {
+            "subject_id": attempt.attempt_id,
+            "workload_kind": "scientific_batch",
+            "operation_id": state.operation_id,
+            "request_id": state.operation_id,
+            "batch_id": state.batch_id,
+            "workload_id": state.workload_id,
+            "attempt_id": attempt.attempt_id,
+            "tenant_id": state.tenant_id,
+            "principal_id": "test-scientific-controller",
+            "model_id": state.model_id,
+            "model_revision": "test-phase-clock-revision",
+            "protocol": "scientific-batch",
+            "trace_id": "1" * 32,
+            "parent_span_id": "2" * 16,
+            "accepted_at": NOW,
+        }
+    )
+    await repository.register_subject(subject)
+    signals = [
+        LifecycleSignal.model_validate(
+            {
+                **row,
+                "subject_id": attempt.attempt_id,
+                "event_key": f"test:{attempt.attempt_id}:{row['edge']}",
+                "interval_key": f"test:{attempt.attempt_id}",
+            }
+        )
+        for row in fixture["signals"]
+    ]
+    await repository.append_signals(signals)
+    adapter = PostgresScientificRunAdminAdapter(
+        pool=postgres_admin_store.pool,
+        batches=PostgresScientificBatchRepository(postgres_admin_store.pool),
+        models=ModelAdapter(),
+        lifecycle_accounting=True,
+    )
+    phases = await adapter._phase_times(state)
+    restore = next(item.duration for item in phases if item.phase == "restore")
+    assert restore.value == pytest.approx(3.946846)
+    assert restore.evidence.value == "estimated"
+    foreign = await adapter._phase_times(replace(state, tenant_id="other-tenant"))
+    assert all(item.duration.value is None for item in foreign)
 
 
 @pytest.mark.postgres
