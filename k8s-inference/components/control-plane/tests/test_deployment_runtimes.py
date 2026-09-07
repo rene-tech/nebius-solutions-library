@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 import hashlib
 import json
@@ -13,12 +14,14 @@ from conftest import CATALOG_ROOT, REPO_ROOT
 from fs2_serve_catalog.artifacts import load_artifact_manifest
 from fs2_serve_catalog.consumer import SERVING_BINDINGS_SCHEMA, ServingBindings, bind_gateway_catalog
 from fs2_serve_catalog.loader import load_catalog
+from test_api_mcp import build_runtime
 from test_model_deployment_publication import revision, status_view
 
 from fs2_serve.deployment_runtimes import SET_SCHEMA, DeploymentRuntimeError, bind_deployment_runtimes
 from fs2_serve.dynamic_routes import DynamicRouteError, bind_dynamic_publication
+from fs2_serve.mcp_server import build_mcp_server
 from fs2_serve.model_deployment_publication import assess_model_publication
-from fs2_serve.registry import Registry
+from fs2_serve.registry import OperationalModel, Registry
 from fs2_serve.settings import Settings
 
 
@@ -214,8 +217,9 @@ def test_selected_overlay_refuses_routable_static_binding(inputs):
         project((catalog, bindings, replace(gateway, models=MappingProxyType(models)), entries, path))
 
 
-def test_dynamic_route_pins_image_and_artifact_even_without_archival_binding(inputs):
-    effective = project(inputs).model("molmim")
+def test_dynamic_route_pins_image_and_artifact_even_without_archival_binding(inputs, cipher, hasher):
+    projected_catalog = project(inputs)
+    effective = projected_catalog.model("molmim")
     entry = inputs[3]["molmim"]
     item = revision()
     publication = assess_model_publication(item, status_view(item)).publication
@@ -227,10 +231,34 @@ def test_dynamic_route_pins_image_and_artifact_even_without_archival_binding(inp
             "artifact_revision": effective.model_revision,
             "runtime_image": entry["record"]["runtime"]["image"]["reference"],
             "artifact_manifest_digest": "sha256:" + entry["record"]["cache"]["artifact"]["manifest_digest"],
+            "mcp_tool_name": "molmim",
         }
     )
     until = datetime.now(UTC) + timedelta(minutes=5)
-    assert bind_dynamic_publication(effective, publication, valid_until=until).routable
+    routed = bind_dynamic_publication(effective, publication, valid_until=until)
+    assert routed.routable
+    catalog_models = dict(projected_catalog.models)
+    catalog_models["molmim"] = routed
+    runtime_registry = Registry(
+        replace(projected_catalog, models=MappingProxyType(catalog_models)),
+        {
+            "molmim": OperationalModel(
+                gateway=routed,
+                max_attempts=2,
+                max_gpu_seconds_per_attempt=10,
+                retry_base_seconds=1,
+            )
+        },
+    )
+    tools = asyncio.run(build_mcp_server(build_runtime(runtime_registry, cipher, hasher)).list_tools())
+    tool = next(item for item in tools if item.name == "molmim_native")
+    assert tool.meta is not None
+    assert tool.meta["fs2_qualification"] == {
+        "kind": "selected-deployment-runtime",
+        "authority": "explicit-deployment-runtime-record",
+        "observed_at": None,
+        "states": entry["qualification"]["states"],
+    }
     for field, value in (
         ("runtime_image", "registry/runtime@sha256:" + hashlib.sha256(b"wrong-image").hexdigest()),
         ("artifact_manifest_digest", "sha256:" + hashlib.sha256(b"wrong-artifact").hexdigest()),

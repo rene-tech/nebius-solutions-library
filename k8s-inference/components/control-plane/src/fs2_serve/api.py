@@ -380,16 +380,26 @@ def _model_view(
 ) -> dict[str, Any]:
     projection = model.gateway.qualification
     runtime_origin = None if projection is None else projection["runtime_origin"]
-    qualification = (
-        None
-        if projection is None
-        else {
-            "kind": "reviewed-evidence-snapshot",
-            "authority": projection["qualification_authority"],
-            "observed_at": projection["observed_at"],
-            "states": dict(projection["states"]),
-        }
-    )
+    qualification = None
+    if projection is not None:
+        if "deployment_runtime" in projection:
+            # Deployment-selected candidates carry their exact retained row,
+            # not the timestamped qualification-projection envelope used by
+            # legacy lean routes. Do not invent a historical observation time
+            # or mislabel the row as that reviewed snapshot.
+            qualification = {
+                "kind": "selected-deployment-runtime",
+                "authority": "explicit-deployment-runtime-record",
+                "observed_at": None,
+                "states": dict(projection["states"]),
+            }
+        else:
+            qualification = {
+                "kind": "reviewed-evidence-snapshot",
+                "authority": projection["qualification_authority"],
+                "observed_at": projection["observed_at"],
+                "states": dict(projection["states"]),
+            }
     return {
         "id": model.id,
         "object": "model",

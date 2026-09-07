@@ -112,6 +112,26 @@
     },
     "evo2-40b": {
       "runtimes": {
+        "evo2-40b-upstream-portable": {
+          "runtime_variant": "evo2-40b-upstream-portable",
+          "runtime_ref": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+          "runtime_ref_kind": "container-image-digest",
+          "requirements": {
+            "gpu_count": 2,
+            "topology": "single-node-multi-gpu",
+            "host_architectures": ["amd64"]
+          },
+          "bindings": [{
+            "accelerator_class": "nvidia-h100-sxm5-80gb",
+            "pool_template": "unbound-h100",
+            "state": "hardware-validated",
+            "enabled": true,
+            "gpu_count": 2,
+            "catalog_b300_state": null,
+            "evidence": "acceptance/h100-fleet/medical-media/evo2-qualification.json@sha256:2e625a1a683a8461c9e1de7b394d994db0c1fb099f76773b693c13c7e37968a9"
+          }],
+          "qualification_candidates": []
+        },
         "catalog-canonical": {
           "runtime_variant": "catalog-canonical",
           "runtime_ref": "catalog/models/evo2-40b.json",

@@ -230,16 +230,21 @@ async def verify(args, *, case_factory=cases_for, runtime_resolver=actual_runtim
             print(json.dumps({"surface": surface, "model": model, "status": record["status"]}), flush=True)
 
     try:
+        response = await runner.authorized.get("/v1/models")
+        response.raise_for_status()
+        discovered.update({item["id"]: item["revision"] for item in response.json()["data"]})
+        if any(model not in discovered for model in args.models):
+            raise AcceptanceError("requested_public_model_not_discovered")
+        report["discovered_route_revisions"] = {model: discovered[model] for model in args.models}
+        await cohort("http")
         async with Client(streamable_http_client(args.origin + "/mcp", http_client=runner.mcp_http), mode=MCP_PROTOCOL_VERSION) as client:
             tools = await client.list_tools()
             if tools.ttl_ms != 0 or tools.cache_scope != "private" or "invoke_model" not in {tool.name for tool in tools.tools}:
                 raise AcceptanceError("generic_mcp_discovery_invalid")
             models = _mcp_result(await client.call_tool("list_models", {}))
-            discovered.update({item["id"]: item["revision"] for item in models["data"]})
-            if any(model not in discovered for model in args.models):
+            mcp_discovered = {item["id"]: item["revision"] for item in models["data"]}
+            if any(mcp_discovered.get(model) != discovered[model] for model in args.models):
                 raise AcceptanceError("requested_public_model_not_discovered")
-            report["discovered_route_revisions"] = {model: discovered[model] for model in args.models}
-            await cohort("http")
             await cohort("mcp", client)
         report["status"] = "PASS" if len(report["attempts"]) == 2 * len(args.models) and all(record["status"] == "PASS" for record in report["attempts"]) else "FAIL"
     except Exception as error:

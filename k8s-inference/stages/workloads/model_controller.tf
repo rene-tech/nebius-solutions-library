@@ -652,6 +652,14 @@ locals {
   model_controller_accelerator_compatibility = jsondecode(file(
     "${local.fs2_root}/catalog/profiles/model-accelerator-compatibility.json"
   ))
+  # A portable runtime may consume a different GPU count than the archival
+  # NIM. Prefer its exact variant observation without rewriting the old lane.
+  model_controller_hardware_runtimes = {
+    for model_id in local.selected_model_ids : model_id => try(
+      local.model_controller_accelerator_compatibility.models[model_id].runtimes[local.deployment_runtime_records[model_id].variant_id],
+      local.model_controller_accelerator_compatibility.models[model_id].runtimes["catalog-canonical"],
+    )
+  }
   model_controller_required_runtime_states = toset([
     "registered",
     "runtime_ready",
@@ -665,12 +673,14 @@ locals {
   model_controller_hardware_qualified_accelerator_classes = {
     for model_id in local.selected_model_ids : model_id => sort(distinct([
       for binding in try(
-        local.model_controller_accelerator_compatibility.models[model_id].runtimes["catalog-canonical"].bindings,
+        local.model_controller_hardware_runtimes[model_id].bindings,
         [],
       ) : binding.accelerator_class
       if try(
         binding.enabled && binding.state == "hardware-validated" &&
-        coalesce(try(binding.gpu_count, null), local.model_controller_accelerator_compatibility.models[model_id].runtimes["catalog-canonical"].requirements.gpu_count) == local.profile_contract.model_autoscaling_targets[model_id].gpu_count,
+        coalesce(try(binding.gpu_count, null), local.model_controller_hardware_runtimes[model_id].requirements.gpu_count) == local.profile_contract.model_autoscaling_targets[model_id].gpu_count &&
+        (local.model_controller_hardware_runtimes[model_id].runtime_ref_kind != "container-image-digest" ||
+        endswith(local.model_controller_hardware_runtimes[model_id].runtime_ref, local.catalog_models[model_id].runtime.image.digest)),
         false,
       )
     ]))
@@ -684,7 +694,7 @@ locals {
         ) && local.selected_queue_pools[pool_id].node.gpus_per_node >= local.profile_contract.model_autoscaling_targets[model_id].gpu_count && length(setintersection(
           toset(local.selected_queue_pools[pool_id].node.host_architectures),
           toset(try(
-            local.model_controller_accelerator_compatibility.models[model_id].runtimes["catalog-canonical"].requirements.host_architectures,
+            local.model_controller_hardware_runtimes[model_id].requirements.host_architectures,
             [],
           )),
       )) > 0

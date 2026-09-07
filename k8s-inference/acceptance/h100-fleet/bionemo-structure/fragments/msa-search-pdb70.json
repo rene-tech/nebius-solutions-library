@@ -1,0 +1,125 @@
+{
+  "schema": "fs2-h100-fleet-model-integration/v1",
+  "model_id": "msa-search-pdb70",
+  "status": "direct-cpu-semantic-qualified-production-adoption-pending",
+  "source_base": "070ce46fe08ac47949d66c252a9924a02e212968",
+  "catalog_proposal": {
+    "variant_id": "msa-search-pdb70-mmseqs2-portable",
+    "base_model_id": "msa-search-pdb70",
+    "exposed_model_id": "msa-search-pdb70",
+    "variant_kind": "independent-open-runtime",
+    "relationship": {
+      "kind": "exact-public-database-independent-runtime",
+      "reference_model_id": "msa-search-pdb70",
+      "subject_model_id": "msa-search-pdb70",
+      "alias_allowed": true,
+      "exact_pdb70_database": true,
+      "nim_package_parity": "unverified",
+      "notes": "Uses the exact public PDB70_220313 FASTA with revision-pinned MMseqs2. It implements the canonical operation locally without the unavailable NVIDIA NIM package; it does not claim NIM binary parity."
+    },
+    "source": {
+      "kind": "pinned-public-dataset-plus-open-runtime",
+      "runtime_repository": "github.com/soedinglab/MMseqs2",
+      "runtime_revision": "8cc5ce367b5638c4306c2d7cfc652dd099a4643f",
+      "runtime_image": "ghcr.io/soedinglab/mmseqs2@sha256:41b12b0d5f41432fa1b9976123da6e2e06e7fab49a34964f3b54ec038e5845d9",
+      "runtime_license": {
+        "id": "MIT",
+        "state": "verified-revision-bound-code-artifact",
+        "url": "https://raw.githubusercontent.com/soedinglab/MMseqs2/8cc5ce367b5638c4306c2d7cfc652dd099a4643f/LICENSE.md",
+        "sha256": "adc3ea1f2f5096d2464460495e12a65a94f466edb9ccca50d1f25844ca83792a",
+        "bytes": 1125
+      },
+      "dataset": {
+        "name": "pdb70_220313",
+        "source_url": "https://wwwuser.gwdg.de/~compbiol/colabfold/pdb70_220313.fasta.gz",
+        "compressed_bytes": 21231545,
+        "compressed_sha256": "3e075127dd90ee4e44635eb1596cc74f17c46bfdca470d4e9ffcc79df5567ca9",
+        "expanded_fasta_bytes": 38115370,
+        "expanded_fasta_sha256": "ee828baf233c8737406f15447acb4fd45fa23b96b9750e460cb137149319f2bd",
+        "sequence_count": 92110,
+        "license": {
+          "id": "CC-BY-4.0",
+          "state": "verified-upstream-dataset-artifact",
+          "url": "https://colabfold.mmseqs.com/LICENSE",
+          "sha256": "b0795076b6787cb92063ffd73df82a6930705dca321b249e10a9ad5175428fff",
+          "bytes": 18658
+        }
+      }
+    }
+  },
+  "runtime": {
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/msa-search-pdb70@sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85",
+    "image_pull_bytes": 91693339,
+    "gpu_count": 0,
+    "resources": {
+      "requests": {"cpu": "2", "memory": "2Gi"},
+      "limits": {"cpu": "8", "memory": "8Gi"}
+    },
+    "compile_cache_abi": "deployment-profile-abi-v1",
+    "placement": "controller-selected-general-cpu-pool",
+    "cache": {
+      "claim": "fs2-h100-msa-block-cache-r20260907",
+      "claim_uid": "daede7b8-c7de-4c61-b1b0-1b081825b00a",
+      "volume": "pvc-daede7b8-c7de-4c61-b1b0-1b081825b00a",
+      "storage_class": "compute-csi-default-sc",
+      "access": "ReadWriteOnce",
+      "size": "4Gi",
+      "mount": "/cache",
+      "contents": "query-result A3M cache only; the immutable PDB70 database is embedded in the image"
+    },
+    "network_required_at_runtime": false,
+    "readiness": {"method": "GET", "path": "/v1/health/ready", "expected_status": 200},
+    "liveness": {"method": "GET", "path": "/v1/health/live", "expected_status": 200},
+    "inference": {"method": "POST", "path": "/biology/colabfold/msa-search/predict"}
+  },
+  "qualification": {
+    "hardware": "general-cpu-node-in-project-e00rene-eu-north1",
+    "fresh_process_repetitions": 3,
+    "semantic_requests_per_repetition": 2,
+    "semantic_status": "PASS-6-of-6",
+    "validator": "msa-search-pdb70-faststart-semantic-v1-unchanged",
+    "semantic_invariants": [
+      "two distinct 76-residue queries echoed",
+      "exact PDB70_220313 database",
+      "A3M output",
+      "128 records",
+      "127 non-query homologs",
+      "finite distinct alignment hashes"
+    ],
+    "container_start_to_ready_seconds": {
+      "samples": [1.873, 2.063, 2.063],
+      "median": 2.063,
+      "minimum": 1.873,
+      "maximum": 2.063,
+      "precision": "runtime container startedAt is second-resolution; ready receipt is microsecond-resolution"
+    },
+    "pod_create_to_ready_seconds": {
+      "samples": [31.873, 58.063, 56.063],
+      "median": 56.063,
+      "minimum": 31.873,
+      "maximum": 58.063,
+      "notes": "Includes RWO block-volume attach; r02/r03 were scheduled concurrently onto the same CPU node."
+    },
+    "search_elapsed_seconds": {
+      "r01_uncached": [2.046658, 2.029778],
+      "r02_warm_cache": [0.004174, 0.001338],
+      "r03_warm_cache": [0.003893, 0.001728]
+    },
+    "response_sha256": {
+      "query_1": "ec709e1faf2616817841962f676c5e76d56887f2c061eec9f16ec753123ebf56",
+      "query_2": "d29be202fd2a967e7374c78dc0e40f8af78bce55164a69d7f104e73eebb26511"
+    },
+    "job_names": [
+      "fs2-h100-msa-search-pdb70-local-r01",
+      "fs2-h100-msa-search-pdb70-local-r02",
+      "fs2-h100-msa-search-pdb70-local-r03"
+    ],
+    "private_evidence_root": "/home/tux/.local/state/fs2-h100-fleet-r20260907/bionemo-structure/local-pdb70-cluster-r123"
+  },
+  "unavailable_reference_package": {
+    "image": "nvcr.io/nim/colabfold/msa-search@sha256:944f3cf845761be8e42b33147ae08b68c61eca7cad67bf5251e1708d03c0165c",
+    "registry_result": "HTTP-403-with-retained-NGC-credential",
+    "impact": "NVIDIA NIM package parity could not be checked; canonical database semantics were restored independently from public pinned artifacts."
+  },
+  "production_boundary": "Digest-pinned isolated test Jobs only. Public HTTP/MCP verification remains pending root deployment."
+}
