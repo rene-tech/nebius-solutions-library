@@ -68,6 +68,7 @@ import type {
   ScientificServiceClass,
 } from "./scientificTypes";
 import { sharedContextParams } from "../lib/search";
+import type { ModelInventory } from "./inventoryTypes";
 
 const API_PREFIX = "/admin/api/v1";
 const queryValueMaximum: Readonly<Record<string, number>> = {
@@ -270,6 +271,8 @@ export const adminApi = {
     request<AdminContextData>("/context", context, undefined, signal),
   overview: (context: URLSearchParams, signal?: AbortSignal) =>
     request<AdminOverview>("/overview", context, undefined, signal),
+  modelInventory: (context: URLSearchParams, signal?: AbortSignal) =>
+    request<ModelInventory>("/model-inventory", context, undefined, signal),
   models: (context: URLSearchParams, filters: ModelQuery = {}, signal?: AbortSignal) =>
     request<AdminModelList>("/models", context, {
       limit: boundedLimit(filters.limit, 256, 200),

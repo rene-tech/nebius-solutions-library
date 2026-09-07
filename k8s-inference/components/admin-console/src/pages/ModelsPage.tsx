@@ -47,6 +47,7 @@ export function ModelsPage() {
 
   return (
     <div className="page-stack">
+      <p>This view shows configured serving deployments. <Link className="resource-link" to={{ pathname: "/admin/model-inventory", search: context.toString() }}>View the full inventory, including scientific profiles and undeployed models.</Link></p>
       <div className="toolbar">
         <label>Search <input aria-label="Search models" maxLength={128} onChange={(event) => updateSearch(event.target.value)} placeholder="Model ID or name" type="search" value={search} /></label>
         <label>Runtime state <select value={selectedState} onChange={(event) => updateState(event.target.value)}>{states.map((state) => <option key={state} value={state}>{state}</option>)}</select></label>

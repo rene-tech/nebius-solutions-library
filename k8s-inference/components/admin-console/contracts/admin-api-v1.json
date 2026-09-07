@@ -119,6 +119,12 @@
   },
   "routes": [
     {
+      "method": "GET",
+      "path": "/admin/api/v1/model-inventory",
+      "success_status": 200,
+      "data_schema": "ModelInventory"
+    },
+    {
       "method": "POST",
       "path": "/admin/api/v1/session",
       "success_status": 200,

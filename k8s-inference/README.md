@@ -598,6 +598,11 @@ that optional path supplies `admin_configuration_*` receipt fields.
 
 The `full_catalog` model profile currently contains these 16 canonical routes:
 
+For the combined serving and scientific inventory, including models not yet
+deployed, use the [model inventory API and admin view](docs/MODEL_INVENTORY.md).
+The [complete H100 fleet campaign](acceptance/h100-fleet/README.md) tracks the
+full expected set separately from the earlier twelve-model acceptance.
+
 - `boltz2`
 - `cosmos3-nano`
 - `diffdock`

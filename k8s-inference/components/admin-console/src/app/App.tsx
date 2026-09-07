@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "../components/AppShell";
 import { ModelDetailPage } from "../pages/ModelDetailPage";
 import { ModelsPage } from "../pages/ModelsPage";
+import { ModelInventoryPage } from "../pages/ModelInventoryPage";
 import { OperationDetailPage } from "../pages/OperationDetailPage";
 import { OperationsPage } from "../pages/OperationsPage";
 import { OverviewPage } from "../pages/OverviewPage";
@@ -24,6 +25,7 @@ export function App() {
         <Route path="/admin" element={<AppShell />}>
           <Route index element={<OverviewPage />} />
           <Route path="models" element={<ModelsPage />} />
+          <Route path="model-inventory" element={<ModelInventoryPage />} />
           <Route path="models/:modelId" element={<ModelDetailPage />} />
           <Route path="model-deployments" element={<ModelDeploymentsPage />} />
           <Route path="model-deployments/new" element={<ModelDeploymentWorkspacePage create />} />

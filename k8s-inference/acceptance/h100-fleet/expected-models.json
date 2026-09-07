@@ -1,0 +1,27 @@
+{
+  "schema": "fs2-serve.nebius.ai/fleet-expectations/v1",
+  "description": "Complete retained model fleet plus scientific batch profiles. GLM alone is excluded from this H100 deployment. Models must not disappear from acceptance when disabled or scaled to zero.",
+  "serving_model_ids": [
+    "boltz2", "cosmos3-nano", "diffdock", "evo2-40b", "genmol", "molmim",
+    "msa-search-pdb70", "nv-reason-cxr-3b", "nv-segment-ct", "openfold2",
+    "openfold3", "proteinmpnn", "qwen3-8b", "sdxl"
+  ],
+  "scientific_model_ids": [
+    "alphafold3", "bindcraft", "boltzgen", "esmfold2", "esmfold2-fast", "mosaic",
+    "openfold3-openbind", "proteina-complexa", "protenix-v2", "rfdiffusion"
+  ],
+  "excluded_models": {
+    "glm-5-2-fp8": "User explicitly excluded GLM from H100. Its B300 work is outside this campaign."
+  },
+  "variant_notes": {
+    "openfold3": "The earlier OpenFold3 service and openfold3-openbind batch backend are distinct runtime identities, not silently interchangeable implementations.",
+    "esmfold2-fast": "Selectable ESMFold2 fast execution profile, counted separately as a public model ID, not a distinct model family.",
+    "rfdiffusion": "The existing qualified scientific batch route fulfills this canonical model ID; a second permanent serving deployment is not required."
+  },
+  "acceptance": {
+    "distinct_semantic_inputs_per_model": 2,
+    "startup_repetitions": 3,
+    "snapshot": "Qualify an optional fresh-process GPU restore wherever useful. Record unsupported or slower paths explicitly; image/weight/JIT caches do not count as GPU snapshots.",
+    "scale_to_zero": "Only after successful model verification; keep its route, artifacts and status discoverable."
+  }
+}

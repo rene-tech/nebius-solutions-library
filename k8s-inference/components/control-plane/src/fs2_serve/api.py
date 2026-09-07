@@ -81,6 +81,7 @@ from .model_deployment_admin import ModelDeploymentReadService, model_deployment
 from .model_deployment_bridge import ModelDeploymentRuntimeBridge
 from .model_deployment_mutation import ModelDeploymentMutationService, model_deployment_mutation_router
 from .model_deployment_preview import ModelDeploymentPreviewService, model_deployment_preview_router
+from .model_inventory import ModelInventory, build_model_inventory
 from .models import (
     MAX_IDEMPOTENCY_KEY_LENGTH,
     MAX_MODEL_ID_LENGTH,
@@ -1592,6 +1593,37 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             search=search,
             state=model_state,
             limit=limit,
+        )
+
+    @app.get(
+        "/admin/api/v1/model-inventory",
+        response_model=AdminEnvelope[ModelInventory],
+        responses=admin_problem_responses,
+    )
+    async def admin_model_inventory(
+        identity: Annotated[OperatorPrincipal, Depends(operator)],
+        params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+    ) -> AdminEnvelope[ModelInventory]:
+        await admin_access.authorize_global(identity, OperatorRole.VIEWER, action="model.list")
+        context = selected_context(params)
+        serving = await admin_read.model_list(context, limit=256)
+        scientific_items = []
+        scientific_available = runtime.scientific_admin is None or runtime.scientific_admin.models is None
+        meta = serving.meta.model_copy(deep=True)
+        if runtime.scientific_admin is not None and runtime.scientific_admin.models is not None:
+            scientific = await runtime.scientific_admin.model_list(context, tenant_id=None)
+            scientific_items = scientific.data.items
+            scientific_available = all(source.state == AdminSourceState.AVAILABLE for source in scientific.meta.sources)
+            meta.sources = list({source.id: source for source in [*meta.sources, *scientific.meta.sources]}.values())
+            meta.warnings = [*meta.warnings, *scientific.meta.warnings][:16]
+        return AdminEnvelope(
+            meta=meta,
+            data=build_model_inventory(
+                runtime.registry.list(enabled_only=False),
+                serving.data.items,
+                scientific_items,
+                scientific_projection_available=scientific_available,
+            ),
         )
 
     @app.get(

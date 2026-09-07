@@ -8,6 +8,7 @@ import { useScientificCapabilities } from "../pages/scientific/useScientificCapa
 
 const navigationBeforeScientific = [
   ["Overview", "/admin", "OV"],
+  ["Full model inventory", "/admin/model-inventory", "MI"],
   ["Models", "/admin/models", "MO"],
   ["Live model config", "/admin/model-deployments", "LC"],
   ["Operations", "/admin/operations", "OP"],
