@@ -1,8 +1,10 @@
 # Customer trial remediation and repeat acceptance
 
 Status: r01 completed **14/14 scientific operations**, but **overall acceptance
-is not yet clean**. Both follow-up fixes are committed as `5f5061b28`; deployment
-and two clean complete cohorts remain. See the [r01 workload results](workload/REPORT-r01.md)
+is not yet clean**. Both follow-up fixes are deployed from `5f5061b28`, and the
+focused live admin phase/download check passed. Full r02 started20:10:47UTC;
+two clean complete cohorts remain required. See the [follow-up release](FOLLOWUP-RELEASE.md),
+[r01 workload results](workload/REPORT-r01.md)
 and [whole-window observation](observer/REPORT-r01.md).
 The original failed cohort is preserved unchanged in `../customer-trial-20260907`.
 
