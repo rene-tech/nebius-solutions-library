@@ -36,7 +36,7 @@ metadata:
     app.kubernetes.io/part-of: fs2-serve
     app.kubernetes.io/version: 462165984030d82259a11f4367a4eed129e94a7b
   annotations:
-    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
     fs2.nebius/model-content-digest: sha256:8699099d13a60f34bd19470fa56abd7a8614260b09838bd61a876d5b9d080c81
     fs2.nebius/model-repository: stabilityai/stable-diffusion-xl-base-1.0
     fs2.nebius/model-revision: 462165984030d82259a11f4367a4eed129e94a7b
@@ -60,7 +60,7 @@ spec:
         app.kubernetes.io/part-of: fs2-serve
         app.kubernetes.io/version: 462165984030d82259a11f4367a4eed129e94a7b
       annotations:
-        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
         fs2.nebius/model-content-digest: sha256:8699099d13a60f34bd19470fa56abd7a8614260b09838bd61a876d5b9d080c81
         fs2.nebius/model-repository: stabilityai/stable-diffusion-xl-base-1.0
         fs2.nebius/model-revision: 462165984030d82259a11f4367a4eed129e94a7b
@@ -68,10 +68,6 @@ spec:
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
-      nodeSelector:
-        capacity.fs2.nebius/pool: burst
-        capacity.fs2.nebius/type: preemptible
-        accelerator.fs2.nebius/class: nvidia-b300-sxm6-288gb
       securityContext:
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
@@ -101,7 +97,7 @@ spec:
               test -w "${FS2_RUNTIME_CACHE_ROOT}"
           env:
             - name: FS2_RUNTIME_CACHE_ROOT
-              value: /model-cache/.fs2/runtime/8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07/8699099d13a60f34bd19470fa56abd7a8614260b09838bd61a876d5b9d080c81/driver-580.173.02-sm103
+              value: /model-cache/.fs2/runtime/8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07/8699099d13a60f34bd19470fa56abd7a8614260b09838bd61a876d5b9d080c81/deployment-profile-abi-v1
           resources:
             limits:
               cpu: "1"
@@ -143,17 +139,17 @@ spec:
             - name: HOME
               value: /runtime-cache/home
             - name: CUDA_CACHE_PATH
-              value: /model-cache/.fs2/runtime/8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07/8699099d13a60f34bd19470fa56abd7a8614260b09838bd61a876d5b9d080c81/driver-580.173.02-sm103/cuda
+              value: /model-cache/.fs2/runtime/8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07/8699099d13a60f34bd19470fa56abd7a8614260b09838bd61a876d5b9d080c81/deployment-profile-abi-v1/cuda
             - name: POD_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
             - name: TORCHINDUCTOR_CACHE_DIR
-              value: /model-cache/.fs2/runtime/8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07/8699099d13a60f34bd19470fa56abd7a8614260b09838bd61a876d5b9d080c81/driver-580.173.02-sm103/torchinductor
+              value: /model-cache/.fs2/runtime/8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07/8699099d13a60f34bd19470fa56abd7a8614260b09838bd61a876d5b9d080c81/deployment-profile-abi-v1/torchinductor
             - name: TORCH_EXTENSIONS_DIR
-              value: /model-cache/.fs2/runtime/8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07/8699099d13a60f34bd19470fa56abd7a8614260b09838bd61a876d5b9d080c81/driver-580.173.02-sm103/torch-extensions
+              value: /model-cache/.fs2/runtime/8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07/8699099d13a60f34bd19470fa56abd7a8614260b09838bd61a876d5b9d080c81/deployment-profile-abi-v1/torch-extensions
             - name: TRITON_CACHE_DIR
-              value: /model-cache/.fs2/runtime/8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07/8699099d13a60f34bd19470fa56abd7a8614260b09838bd61a876d5b9d080c81/driver-580.173.02-sm103/triton
+              value: /model-cache/.fs2/runtime/8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07/8699099d13a60f34bd19470fa56abd7a8614260b09838bd61a876d5b9d080c81/deployment-profile-abi-v1/triton
             - name: XDG_CACHE_HOME
               value: /runtime-cache/xdg
           ports:

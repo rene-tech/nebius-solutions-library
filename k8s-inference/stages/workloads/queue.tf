@@ -280,7 +280,7 @@ locals {
   # scheduling module emits the merged map as cpu_classes in the one
   # content-addressed scheduling ConfigMap, against
   # catalog/runtime/schema/cpu-stage-classes.schema.json.
-  reference_cpu_class_backing = {
+  reference_cpu_class_backing = var.reference_data.storage_contract == null ? null : {
     cluster_queue   = var.reference_data.queue.cluster_queue
     resource_flavor = var.reference_data.queue.resource_flavor
     # One pool behind one flavor, so admission identifies the exact pool.

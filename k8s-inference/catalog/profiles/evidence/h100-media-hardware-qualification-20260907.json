@@ -1,0 +1,192 @@
+{
+  "schema": "fs2-serve.nebius.ai/h100-fleet-hardware-qualification/v1",
+  "observed_date": "2026-09-07",
+  "scope": "Direct H100 runtime and semantic verification; public gateway integration is separately tested.",
+  "accelerator_class": "nvidia-h100-sxm5-80gb",
+  "driver": "580.159.04",
+  "models": {
+    "sdxl": {
+      "trials": [
+        {
+          "repetition": "r01",
+          "pod_uid": "ca21c77a-d95d-454d-89e2-a5ff16a3bc49",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+          "cohort": "initial-empty-weight-cache",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-602bc86c-20bf-6908-d2ef-cc0f35d9803b, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "application_ready_at": "2026-09-07T07:50:03.307049644Z",
+          "semantic_status": "PASS",
+          "pod_creation_to_application_ready_seconds": 40.307049,
+          "container_start_to_application_ready_seconds": 33.307049,
+          "first_response_sha256": "3c64ef106b879f166315d8d9ed82187bf3d4925888b7ac5453096914cc4bad04"
+        },
+        {
+          "repetition": "r02",
+          "pod_uid": "27df1919-18c4-467a-8797-8ead10b1b260",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-237a8e9f-8ab5-6eff-d4d6-1c02fdcbbc02, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "application_ready_at": "2026-09-07T07:53:35.628751433Z",
+          "semantic_status": "PASS",
+          "pod_creation_to_application_ready_seconds": 15.628751,
+          "container_start_to_application_ready_seconds": 11.628751,
+          "first_response_sha256": "3c64ef106b879f166315d8d9ed82187bf3d4925888b7ac5453096914cc4bad04"
+        },
+        {
+          "repetition": "r03",
+          "pod_uid": "7384107f-c8a2-4328-876d-dfebebcbf205",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-9f9398a1-b515-06a3-efcf-0b40de81d77b, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "application_ready_at": "2026-09-07T07:54:20.701627340Z",
+          "semantic_status": "PASS",
+          "pod_creation_to_application_ready_seconds": 14.701627,
+          "container_start_to_application_ready_seconds": 11.701627,
+          "first_response_sha256": "3c64ef106b879f166315d8d9ed82187bf3d4925888b7ac5453096914cc4bad04"
+        },
+        {
+          "repetition": "r04",
+          "pod_uid": "8061d3cf-953d-44ee-b020-2d03de119963",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-06730f20-c74e-387f-0a67-a889daceb9df, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "application_ready_at": "2026-09-07T07:55:05.703587043Z",
+          "semantic_status": "PASS",
+          "pod_creation_to_application_ready_seconds": 14.703587,
+          "container_start_to_application_ready_seconds": 11.703587,
+          "first_response_sha256": "3c64ef106b879f166315d8d9ed82187bf3d4925888b7ac5453096914cc4bad04"
+        }
+      ],
+      "gpu_count": 1
+    },
+    "nv-segment-ct": {
+      "trials": [
+        {
+          "repetition": "r01",
+          "pod_uid": "c6245a4a-0b9d-4449-beb4-cca09c066d3a",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd",
+          "cohort": "initial-empty-weight-cache",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-facf5f91-1954-6615-4fbf-418efd69bd0c, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "application_ready_at": "2026-09-07T07:50:12.953119129Z",
+          "semantic_status": "PASS",
+          "pod_creation_to_application_ready_seconds": 48.953119,
+          "container_start_to_application_ready_seconds": 40.953119,
+          "first_response_sha256": null
+        },
+        {
+          "repetition": "r02",
+          "pod_uid": "85004cec-d21c-4886-bcbb-6d29d767198d",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-52f5e5da-cfdc-5e42-f8eb-84dec2969f54, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "application_ready_at": "2026-09-07T07:53:35.359864090Z",
+          "semantic_status": "PASS",
+          "pod_creation_to_application_ready_seconds": 14.359864,
+          "container_start_to_application_ready_seconds": 11.359864,
+          "first_response_sha256": null
+        },
+        {
+          "repetition": "r03",
+          "pod_uid": "56f83335-7eaf-4880-8b65-c08e8360a008",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-56941528-f485-5237-c98a-08e1f253a9c3, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "application_ready_at": "2026-09-07T07:54:17.957690419Z",
+          "semantic_status": "PASS",
+          "pod_creation_to_application_ready_seconds": 13.95769,
+          "container_start_to_application_ready_seconds": 10.95769,
+          "first_response_sha256": null
+        },
+        {
+          "repetition": "r04",
+          "pod_uid": "8b396d89-05a1-4233-beeb-46d3f5704fb4",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-56941528-f485-5237-c98a-08e1f253a9c3, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "application_ready_at": "2026-09-07T07:55:01.100150445Z",
+          "semantic_status": "PASS",
+          "pod_creation_to_application_ready_seconds": 14.10015,
+          "container_start_to_application_ready_seconds": 11.10015,
+          "first_response_sha256": null
+        }
+      ],
+      "gpu_count": 1
+    },
+    "nv-reason-cxr-3b": {
+      "trials": [
+        {
+          "repetition": "r01",
+          "pod_uid": "9aa4857d-c69d-43f5-acdc-4a6752bfe188",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+          "cohort": "initial-empty-weight-cache",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-b1a62569-6a84-851e-8340-1a31f1a20de1, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "application_ready_at": "2026-09-07T07:51:35.222890074Z",
+          "semantic_status": "PASS",
+          "pod_creation_to_application_ready_seconds": 152.22289,
+          "container_start_to_application_ready_seconds": 147.22289,
+          "first_response_sha256": "e540aa59dc0e830546d453fab820c9b5d978389cb02a2161b39ffd0515f66150"
+        },
+        {
+          "repetition": "r02",
+          "pod_uid": "2055eeb9-2283-4932-990c-f8962fbeb1ad",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-2fcd2646-4580-e5db-69a5-b2219ad0e345, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "application_ready_at": "2026-09-07T07:54:35.395090170Z",
+          "semantic_status": "PASS",
+          "pod_creation_to_application_ready_seconds": 82.39509,
+          "container_start_to_application_ready_seconds": 79.39509,
+          "first_response_sha256": "6ae9c83d7911ef61e0723fe24324a7f04ce3fe37fdc3c9b0afa592ca2adb4526"
+        },
+        {
+          "repetition": "r03",
+          "pod_uid": "4291e83a-297a-45ea-ac17-2b63e5e64ae8",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-644f23ac-4f00-aea9-7b7d-a57717848200, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "application_ready_at": "2026-09-07T07:56:29.114968933Z",
+          "semantic_status": "PASS",
+          "pod_creation_to_application_ready_seconds": 80.114968,
+          "container_start_to_application_ready_seconds": 77.114968,
+          "first_response_sha256": "cc768ad598d62b6e41985200f1d8e4cc319f5201973cfe13c166209e57c46fb1"
+        },
+        {
+          "repetition": "r04",
+          "pod_uid": "4c10b90e-20e2-4df0-8e12-2f3c60ccfb10",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+          "cohort": "fresh-process-retained-weights-image-and-runtime-caches",
+          "gpu_identity": [
+            "NVIDIA H100 80GB HBM3, GPU-644f23ac-4f00-aea9-7b7d-a57717848200, 580.159.04, 81559 MiB, 9.0"
+          ],
+          "application_ready_at": "2026-09-07T07:58:19.521467116Z",
+          "semantic_status": "PASS",
+          "pod_creation_to_application_ready_seconds": 86.521467,
+          "container_start_to_application_ready_seconds": 82.521467,
+          "first_response_sha256": "41626538fe4fe322939411b44fb3f2669fe10c408872c7f1204c1e78404dd6a1"
+        }
+      ],
+      "gpu_count": 1
+    }
+  }
+}

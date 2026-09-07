@@ -162,6 +162,10 @@ variable "deployment" {
       enabled         = optional(set(string), [])
       image_overrides = optional(map(string), {})
       pool_overrides  = optional(map(string), {})
+      runtime_overrides = optional(map(object({
+        gpu_count         = optional(number)
+        compile_cache_abi = optional(string)
+      })), {})
       scaling = optional(object({
         mode                     = optional(string, "keda")
         hot                      = optional(set(string), [])
@@ -1535,6 +1539,22 @@ variable "deployment" {
       false,
     )
     error_message = "models.pool_overrides must map selected-profile model IDs to accelerator pools declared by this deployment."
+  }
+
+  validation {
+    condition = try(
+      length(setsubtract(
+        toset(keys(var.deployment.models.runtime_overrides)),
+        var.deployment.models.selection == "profile" ?
+        toset(jsondecode(file("${path.module}/catalog/profiles/model-profiles.json")).profiles[var.deployment.profiles.models].canonical_routes) :
+        var.deployment.models.enabled,
+        )) == 0 && alltrue([
+        for value in values(var.deployment.models.runtime_overrides) :
+        (value.gpu_count == null ? true : value.gpu_count >= 1 && floor(value.gpu_count) == value.gpu_count) &&
+        (value.compile_cache_abi == null ? true : can(regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", value.compile_cache_abi)))
+      ]), false,
+    )
+    error_message = "models.runtime_overrides must name enabled models, positive integer GPU counts, and path-safe compiler-cache ABI names."
   }
 
   validation {

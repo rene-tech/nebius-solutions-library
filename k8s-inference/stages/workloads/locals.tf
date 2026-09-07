@@ -139,7 +139,24 @@ locals {
   public_edge_enabled = var.public_edge_contract.mode == "public"
   public_base_url     = local.public_edge_enabled ? var.public_edge_contract.public_origin : var.public_edge_contract.port_forward.application_origin
 
-  profile_contract = jsondecode(file("${path.module}/../../catalog/profiles/model-profiles.json"))
+  catalog_profile_contract = jsondecode(file("${path.module}/../../catalog/profiles/model-profiles.json"))
+  # A model can need one large-memory accelerator or several smaller ones.
+  # Keep placement, scaling, accounting and rendered requests on the same value.
+  profile_contract = merge(local.catalog_profile_contract, {
+    model_autoscaling_targets = {
+      for model_id, target in local.catalog_profile_contract.model_autoscaling_targets : model_id => merge(target, {
+        gpu_count = coalesce(try(var.model_runtime_overrides[model_id].gpu_count, null), target.gpu_count)
+      })
+    }
+    workload_placements = {
+      for name, placement in local.catalog_profile_contract.workload_placements : name => merge(placement, {
+        gpu_request = coalesce(try(one([
+          for model_id, target in local.catalog_profile_contract.model_autoscaling_targets :
+          try(var.model_runtime_overrides[model_id].gpu_count, null) if target.deployment == name
+        ]), null), placement.gpu_request)
+      })
+    }
+  })
   selected_profile = local.profile_contract.profiles[var.deployment_profile]
   inventory        = jsondecode(file("${local.fs2_root}/components/control-plane/contracts/all-models-live-services.json"))
   runtime_catalog  = jsondecode(file("${local.fs2_root}/catalog/runtime/catalog.json"))
@@ -294,8 +311,46 @@ locals {
       ), null)
     })
   ]
-  raw_model_documents = [
+  model_compile_cache_abis = {
+    for model_id in local.selected_model_ids : model_id => coalesce(
+      try(var.model_runtime_overrides[model_id].compile_cache_abi, null),
+      # The compiler/framework adds its own version keys. This outer namespace
+      # prevents the shared filesystem from mixing accelerator/driver profiles.
+      "profile-${substr(sha256(jsonencode([
+        for pool_id in local.effective_model_placements[model_id].compatible_pool_ids : {
+          accelerator = local.selected_queue_pools[pool_id].accelerator_class
+          driver      = local.selected_queue_pools[pool_id].provider.driver.preset
+        }
+      ])), 0, 24)}",
+    )
+  }
+  runtime_overridden_model_documents = [
     for document in local.identified_model_documents : merge(document, {
+      manifest = jsondecode(replace(
+        document.manifest.kind == "Deployment" && try(var.model_runtime_overrides[document.model_id].gpu_count, null) != null ?
+        jsonencode(merge(document.manifest, {
+          spec = merge(document.manifest.spec, {
+            template = merge(document.manifest.spec.template, {
+              spec = merge(document.manifest.spec.template.spec, {
+                containers = [for container in document.manifest.spec.template.spec.containers :
+                  try(tonumber(container.resources.limits["nvidia.com/gpu"]), 0) > 0 ? merge(container, {
+                    resources = merge(container.resources, {
+                      requests = merge(try(container.resources.requests, {}), { "nvidia.com/gpu" = var.model_runtime_overrides[document.model_id].gpu_count })
+                      limits   = merge(container.resources.limits, { "nvidia.com/gpu" = var.model_runtime_overrides[document.model_id].gpu_count })
+                    })
+                  }) : container
+                ]
+              })
+            })
+          })
+        })) : jsonencode(document.manifest),
+        "deployment-profile-abi-v1",
+        try(local.model_compile_cache_abis[document.model_id], "not-applicable"),
+      ))
+    })
+  ]
+  raw_model_documents = [
+    for document in local.runtime_overridden_model_documents : merge(document, {
       gpu_count = document.manifest.kind == "Deployment" ? sum([
         for container in try(document.manifest.spec.template.spec.containers, []) : try(tonumber(container.resources.limits["nvidia.com/gpu"]), 0)
       ]) : 0

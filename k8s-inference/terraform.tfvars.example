@@ -89,6 +89,14 @@ deployment = {
   models = {
     selection = "profile"
     enabled   = []
+    # Optional per-deployment settings. GPU count also updates scheduling and
+    # accounting, and must match a qualified runtime on the selected hardware.
+    # Compiler caches are separated by accelerator/driver profile by default;
+    # an explicit ABI can reuse an exactly measured cache after qualification.
+    # runtime_overrides = {
+    #   "evo2-40b" = { gpu_count = 2 }
+    #   "sdxl"    = { compile_cache_abi = "driver-580.159.04-sm90" }
+    # }
     scaling = {
       mode                       = "keda"
       # Retained elasticity evidence is still pending, so bootstrap examples

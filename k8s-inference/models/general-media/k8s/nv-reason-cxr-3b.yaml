@@ -36,7 +36,7 @@ metadata:
     app.kubernetes.io/part-of: fs2-serve
     app.kubernetes.io/version: 056bd0383b35226554da9dc5866e095df174ae19
   annotations:
-    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
     fs2.nebius/model-content-digest: sha256:8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c
     fs2.nebius/model-repository: nvidia/NV-Reason-CXR-3B
     fs2.nebius/model-revision: 056bd0383b35226554da9dc5866e095df174ae19
@@ -61,7 +61,7 @@ spec:
         app.kubernetes.io/part-of: fs2-serve
         app.kubernetes.io/version: 056bd0383b35226554da9dc5866e095df174ae19
       annotations:
-        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
         fs2.nebius/model-content-digest: sha256:8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c
         fs2.nebius/model-repository: nvidia/NV-Reason-CXR-3B
         fs2.nebius/model-revision: 056bd0383b35226554da9dc5866e095df174ae19
@@ -70,10 +70,6 @@ spec:
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
-      nodeSelector:
-        capacity.fs2.nebius/pool: burst
-        capacity.fs2.nebius/type: preemptible
-        accelerator.fs2.nebius/class: nvidia-b300-sxm6-288gb
       securityContext:
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
@@ -103,7 +99,7 @@ spec:
               test -w "${FS2_RUNTIME_CACHE_ROOT}"
           env:
             - name: FS2_RUNTIME_CACHE_ROOT
-              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/driver-580.173.02-sm103
+              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/deployment-profile-abi-v1
           resources:
             limits:
               cpu: "1"
@@ -161,15 +157,15 @@ spec:
             - name: HOME
               value: /runtime-cache/home
             - name: CUDA_CACHE_PATH
-              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/driver-580.173.02-sm103/cuda
+              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/deployment-profile-abi-v1/cuda
             - name: TORCH_EXTENSIONS_DIR
-              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/driver-580.173.02-sm103/torch-extensions
+              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/deployment-profile-abi-v1/torch-extensions
             - name: TORCHINDUCTOR_CACHE_DIR
-              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/driver-580.173.02-sm103/torchinductor
+              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/deployment-profile-abi-v1/torchinductor
             - name: TRITON_CACHE_DIR
-              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/driver-580.173.02-sm103/triton
+              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/deployment-profile-abi-v1/triton
             - name: VLLM_CACHE_ROOT
-              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/driver-580.173.02-sm103/vllm
+              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/deployment-profile-abi-v1/vllm
             - name: VLLM_NO_USAGE_STATS
               value: "1"
             - name: XDG_CACHE_HOME

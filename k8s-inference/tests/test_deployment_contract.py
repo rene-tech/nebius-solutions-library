@@ -2992,6 +2992,36 @@ class DeploymentContractTests(unittest.TestCase):
             },
         )
 
+    def test_model_runtime_overrides_are_forwarded_from_the_customer_file(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "evo2-multi-gpu",
+            "profiles": {"models": "full_catalog", "capacity": "full_catalog"},
+            "target": self.catalog_target(),
+            "models": {
+                "selection": "explicit",
+                "enabled": ["evo2-40b"],
+                "pool_overrides": {"evo2-40b": "nebius-b300-preemptible-8x"},
+                "runtime_overrides": {
+                    "evo2-40b": {"gpu_count": 2, "compile_cache_abi": "driver-test-sm90"}
+                },
+            },
+            "edge": {"mode": "internal-only"},
+        }
+        outputs = self._planned_outputs(
+            self._write_configuration("runtime-overrides", deployment), "runtime-overrides"
+        )
+        self.assertEqual(
+            outputs["deployment_contract"]["stages"]["workloads"]["model_runtime_overrides"],
+            deployment["models"]["runtime_overrides"],
+        )
+        deployment["models"]["runtime_overrides"]["evo2-40b"]["gpu_count"] = 0
+        result, _ = self._plan_file(
+            self._write_configuration("invalid-runtime-overrides", deployment), "invalid-runtime-overrides"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("positive integer GPU counts", " ".join((result.stdout + result.stderr).split()))
+
     def test_pool_override_preserves_scale_from_zero_selector_contract(self) -> None:
         source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(
             encoding="utf-8"

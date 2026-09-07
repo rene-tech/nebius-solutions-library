@@ -240,6 +240,12 @@ locals {
       model.runtime.image.reference,
     )
   }
+  effective_model_gpu_counts = {
+    for model_id in local.selected_model_ids : model_id => coalesce(
+      try(var.deployment.models.runtime_overrides[model_id].gpu_count, null),
+      local.model_profile_contract.model_autoscaling_targets[model_id].gpu_count,
+    )
+  }
   selected_model_required_secrets = toset(distinct(flatten([
     for model_id in local.selected_model_ids : try(
       local.model_profile_contract.model_artifacts[model_id].required_secrets,
@@ -840,9 +846,9 @@ locals {
   }
   catalog_model_placements = {
     for model_id in local.selected_model_ids : model_id => try(
-      local.model_profile_contract.workload_placements[
+      merge(local.model_profile_contract.workload_placements[
         local.model_profile_contract.model_autoscaling_targets[model_id].deployment
-      ],
+      ], { gpu_request = local.effective_model_gpu_counts[model_id] }),
       null,
     )
   }
@@ -882,7 +888,7 @@ locals {
         try(local.effective_pool_capacities[pool_id].max_nodes, 0) * (
           try(local.effective_pool_facts[pool_id].gpus_per_node, 0)
         )
-      ]) / local.model_profile_contract.model_autoscaling_targets[model_id].gpu_count
+      ]) / local.effective_model_gpu_counts[model_id]
     ), 0)
   }
 
@@ -1048,6 +1054,7 @@ locals {
     enabled_model_ids               = local.selected_model_ids
     model_image_overrides           = local.effective_model_images
     model_pool_overrides            = var.deployment.models.pool_overrides
+    model_runtime_overrides         = var.deployment.models.runtime_overrides
     model_scaling_mode              = var.deployment.models.scaling.mode
     hot_model_ids                   = sort(tolist(var.deployment.models.scaling.hot))
     model_scaling_overrides         = var.deployment.models.scaling.overrides

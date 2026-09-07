@@ -665,7 +665,11 @@ locals {
         local.model_controller_accelerator_compatibility.models[model_id].runtimes["catalog-canonical"].bindings,
         [],
       ) : binding.accelerator_class
-      if try(binding.enabled && binding.state == "hardware-validated", false)
+      if try(
+        binding.enabled && binding.state == "hardware-validated" &&
+        coalesce(try(binding.gpu_count, null), local.model_controller_accelerator_compatibility.models[model_id].runtimes["catalog-canonical"].requirements.gpu_count) == local.profile_contract.model_autoscaling_targets[model_id].gpu_count,
+        false,
+      )
     ]))
   }
   model_controller_qualified_pool_ids = {
@@ -718,7 +722,9 @@ locals {
         false,
       )
       retained_runtime = try(
-        local.model_controller_qualification_rows[model_id].variant_id == null &&
+        # An explicitly named upstream variant can become the canonical runtime.
+        # Compare its actual source/image/service identities, not a null label;
+        # keep the variant and runtime_origin visible in the qualification API.
         local.model_controller_qualification_rows[model_id].active_runtime.model_revision == local.catalog_models[model_id].model.source.revision &&
         local.model_controller_qualification_rows[model_id].active_runtime.runtime_image_digest == local.catalog_models[model_id].runtime.image.digest &&
         endswith(
@@ -737,7 +743,6 @@ locals {
         false,
       )
       accelerator_tuple = try(
-        local.model_controller_accelerator_compatibility.models[model_id].runtimes["catalog-canonical"].requirements.gpu_count == local.profile_contract.model_autoscaling_targets[model_id].gpu_count &&
         length(local.model_controller_qualified_pool_ids[model_id]) > 0,
         false,
       )

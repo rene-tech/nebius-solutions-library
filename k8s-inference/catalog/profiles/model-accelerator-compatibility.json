@@ -250,6 +250,14 @@
               "enabled": true,
               "catalog_b300_state": "qualified",
               "evidence": "catalog resources.gpu.b300_state"
+            },
+            {
+              "accelerator_class": "nvidia-h100-sxm5-80gb",
+              "pool_template": "unbound-h100",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": null,
+              "evidence": "catalog/profiles/evidence/h100-media-hardware-qualification-20260907.json@sha256:49f20898a7a2017e27d563d268916378d7e38784b65f5fc3e25a2078b0778f9f"
             }
           ],
           "qualification_candidates": []
@@ -277,6 +285,14 @@
               "enabled": true,
               "catalog_b300_state": "qualified",
               "evidence": "catalog resources.gpu.b300_state"
+            },
+            {
+              "accelerator_class": "nvidia-h100-sxm5-80gb",
+              "pool_template": "unbound-h100",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": null,
+              "evidence": "catalog/profiles/evidence/h100-media-hardware-qualification-20260907.json@sha256:49f20898a7a2017e27d563d268916378d7e38784b65f5fc3e25a2078b0778f9f"
             }
           ],
           "qualification_candidates": []
@@ -480,6 +496,14 @@
               "enabled": true,
               "catalog_b300_state": "qualified",
               "evidence": "catalog resources.gpu.b300_state"
+            },
+            {
+              "accelerator_class": "nvidia-h100-sxm5-80gb",
+              "pool_template": "unbound-h100",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": null,
+              "evidence": "catalog/profiles/evidence/h100-media-hardware-qualification-20260907.json@sha256:49f20898a7a2017e27d563d268916378d7e38784b65f5fc3e25a2078b0778f9f"
             }
           ],
           "qualification_candidates": []

@@ -224,6 +224,53 @@ variables {
   nvcrio_dockerconfigjson = "{\"auths\":{}}"
 }
 
+run "deployment_runtime_settings_reach_gpu_requests_and_cache_paths" {
+  command = plan
+
+  variables {
+    enabled_model_ids = ["qwen3-8b", "sdxl"]
+    model_image_overrides = {
+      qwen3-8b = "registry.example.test/fs2/qwen3-8b@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635"
+      sdxl     = "registry.example.test/fs2/sdxl@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07"
+    }
+    model_pool_overrides = {
+      qwen3-8b = "nebius-b300-preemptible-1x"
+      sdxl     = "nebius-b300-preemptible-1x"
+    }
+    model_runtime_overrides = {
+      qwen3-8b = { gpu_count = 2 }
+      sdxl     = { compile_cache_abi = "driver-test-sm90" }
+    }
+    model_controller = merge(var.model_controller, { bootstrap_model_ids = [] })
+  }
+
+  # Render only, with mock providers: deliberately do not deploy the two-GPU
+  # fixture onto a one-GPU pool. The placement validation must detect that.
+  plan_options { target = [terraform_data.model_controller_contract] }
+
+  assert {
+    condition = (
+      local.profile_contract.model_autoscaling_targets["qwen3-8b"].gpu_count == 2 &&
+      local.effective_model_placements["qwen3-8b"].gpu_request == 2 &&
+      alltrue([for document in local.model_documents :
+        tonumber(document.manifest.spec.template.spec.containers[0].resources.requests["nvidia.com/gpu"]) == 2
+        if document.model_id == "qwen3-8b" && document.manifest.kind == "Deployment"
+      ]) &&
+      local.effective_model_placements["qwen3-8b"].gpu_request > local.selected_queue_pools["nebius-b300-preemptible-1x"].node.gpus_per_node
+    )
+    error_message = "GPU arity must agree across requests, limits, accounting and placement, including detecting an undersized pool."
+  }
+
+  assert {
+    condition = alltrue([for document in local.model_documents :
+      !strcontains(jsonencode(document.manifest), "deployment-profile-abi-v1") &&
+      document.manifest.spec.template.metadata.annotations["fs2.nebius/compile-cache-abi"] == "driver-test-sm90"
+      if document.model_id == "sdxl" && document.manifest.kind == "Deployment"
+    ])
+    error_message = "The customer ABI must replace the portable placeholder in annotations and every cache path."
+  }
+}
+
 run "declared_mechanisms_reach_the_model_qualification" {
   command = plan
 

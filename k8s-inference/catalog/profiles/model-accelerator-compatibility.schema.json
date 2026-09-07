@@ -37,6 +37,7 @@
         "pool_template": {"$ref": "#/$defs/id"},
         "state": {"enum": ["declared-unvalidated", "hardware-validated", "historical-evidence-only", "blocked"]},
         "enabled": {"type": "boolean"},
+        "gpu_count": {"type": "integer", "minimum": 1, "description": "Optional accelerator-specific workload arity; defaults to the runtime requirements."},
         "catalog_b300_state": {"type": ["string", "null"]},
         "evidence": {"type": ["string", "null"]}
       }

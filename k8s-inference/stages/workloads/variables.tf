@@ -1210,6 +1210,25 @@ variable "model_pool_overrides" {
   }
 }
 
+variable "model_runtime_overrides" {
+  description = "Per-model GPU arity and optional measured compiler-cache ABI. These are deployment settings, not changes to the portable model catalog."
+  type = map(object({
+    gpu_count         = optional(number)
+    compile_cache_abi = optional(string)
+  }))
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = alltrue([
+      for value in values(var.model_runtime_overrides) :
+      (value.gpu_count == null ? true : value.gpu_count >= 1 && floor(value.gpu_count) == value.gpu_count) &&
+      (value.compile_cache_abi == null ? true : can(regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", value.compile_cache_abi)))
+    ])
+    error_message = "Runtime overrides require positive integer GPU counts and path-safe compiler-cache ABI names."
+  }
+}
+
 variable "model_scaling_mode" {
   description = "Replica owner for routed GPU Deployments. static preserves manifest replicas; keda scales from durable PostgreSQL operation demand."
   type        = string

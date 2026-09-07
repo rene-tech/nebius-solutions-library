@@ -1051,7 +1051,10 @@ def derived_admin_configuration(
             "enabled": True,
             "placement": {
                 "pool_ids": pool_ids,
-                "accelerators": int(gpu["count"]),
+                "accelerators": int(
+                    workloads.get("model_runtime_overrides", {}).get(model_id, {}).get("gpu_count")
+                    or gpu["count"]
+                ),
                 "topology_policy": "single-node",
             },
             "autoscaling": scaling[model_id],
