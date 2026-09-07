@@ -1,0 +1,91 @@
+{
+  "schema": "fs2-h100-fleet-model-integration/v1",
+  "model_id": "boltz2",
+  "status": "direct-h100-semantic-qualified-production-adoption-pending",
+  "source_base": "070ce46fe08ac47949d66c252a9924a02e212968",
+  "catalog_proposal": {
+    "variant_id": "boltz2-hf-portable",
+    "base_model_id": "boltz2",
+    "exposed_model_id": "boltz2",
+    "variant_kind": "independent-runtime",
+    "relationship": {
+      "kind": "exact-model",
+      "reference_model_id": "boltz2",
+      "subject_model_id": "boltz2",
+      "nim_artifact_parity": "unverified",
+      "notes": "Exact public Boltz-2 checkpoint identity in its pinned upstream implementation; NIM package parity remains unverified."
+    },
+    "source": {
+      "kind": "git-plus-huggingface-artifacts",
+      "repository": "github.com/jwohlwend/boltz",
+      "revision": "b1ebfc46ecf57f5414e0d1a6f9027bbb122c53bc",
+      "license": {
+        "id": "MIT",
+        "state": "verified-revision-bound-code-and-model-metadata",
+        "code_license_sha256": "f0667fd5e66c51e1ba8ddaa0249c6d7225b30037e02c45782d8f2c2943ac2617",
+        "code_license_bytes": 1102,
+        "model_card_sha256": "d8d7a46d41a1a37fe4f0a5f637bf55c649310185329127d8a2204632e480be17",
+        "model_card_bytes": 24
+      },
+      "model_repository": "boltz-community/boltz-2",
+      "model_revision": "6fdef46d763fee7fbb83ca5501ccceff43b85607",
+      "artifact": {
+        "kind": "checkpoint-and-chemistry-set",
+        "expected_bytes": 6204362719,
+        "files": {
+          "boltz2_conf.ckpt": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
+          "boltz2_aff.ckpt": "dcc5cd3722b1c9eaa34267e4ae32f55cbbf1963f4c19319381ccfa30fdd2ca9e",
+          "mols.tar": "39e076d96dbec6b4e86982bbda16f3a53a2a60c9bdc17828d88f6f9a0c7d1fd7"
+        }
+      }
+    }
+  },
+  "runtime": {
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/boltz2@sha256:93d5fae96d87dff930206cf331f170b73f2369067f0b32169e0008f0db320a90",
+    "gpu_count": 1,
+    "resources": {
+      "requests": {"cpu": "12", "memory": "96Gi", "nvidia.com/gpu": "1"},
+      "limits": {"cpu": "32", "memory": "192Gi", "nvidia.com/gpu": "1"}
+    },
+    "compile_cache_abi": "deployment-profile-abi-v1",
+    "placement": "controller-selected-compatible-accelerator-pool",
+    "cache": {
+      "claim": "fs2-h100-boltz2-cache-r20260907",
+      "claim_uid": "5bc63576-457c-4b67-8f94-b6cd3a0c3a42",
+      "volume": "pvc-5bc63576-457c-4b67-8f94-b6cd3a0c3a42",
+      "storage_class": "compute-csi-default-sc",
+      "access": "ReadWriteOnce",
+      "size": "32Gi",
+      "mount": "/models",
+      "required_writable_paths": ["/models/home", "/models/huggingface/hub", "/models/huggingface/xet"]
+    },
+    "readiness": {"method": "GET", "path": "/v1/health/ready", "expected_status": 200},
+    "inference": {"method": "POST", "path": "/biology/mit/boltz2/predict"}
+  },
+  "qualification": {
+    "hardware": "H100-80GB-SM90-driver-580.159.04",
+    "fresh_process_repetitions": 3,
+    "semantic_requests_per_repetition": 2,
+    "semantic_status": "PASS-6-of-6",
+    "validator": "boltz2-faststart-semantic-v1",
+    "semantic_invariants": ["two distinct 20-residue sequences", "167 finite mmCIF atom records", "exact sequence and chain echo", "finite confidence and pTM", "distinct responses per repetition"],
+    "runtime_reported_startup_seconds": {
+      "samples": [422.72, 3.364, 3.023],
+      "median": 3.364,
+      "minimum": 3.023,
+      "maximum": 422.72,
+      "first_acquisition": 422.72,
+      "warm_cache": [3.364, 3.023],
+      "boundary": "runtime-process-start-through-exact artifact verification/extraction and CUDA-model-ready"
+    },
+    "request_elapsed_seconds": {
+      "r01_serial": [24.630936, 24.201416],
+      "r02_concurrent_cohort": [172.939144, 26.776804],
+      "r03_concurrent_cohort": [172.66983, 26.426899],
+      "notes": "r02 and r03 ran concurrently on separate H100s on the same node. Their first-call latency is retained but not presented as an isolated throughput baseline."
+    },
+    "job_names": ["fs2-h100-boltz2-r01-a02", "fs2-h100-boltz2-r02", "fs2-h100-boltz2-r03"],
+    "private_evidence_root": "/home/tux/.local/state/fs2-h100-fleet-r20260907/bionemo-structure/final"
+  },
+  "production_boundary": "Isolated digest-pinned test Jobs only; public route verification remains pending root deployment."
+}

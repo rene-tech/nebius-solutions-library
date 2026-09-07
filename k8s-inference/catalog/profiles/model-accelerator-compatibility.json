@@ -33,7 +33,7 @@
               "state": "hardware-validated",
               "enabled": true,
               "catalog_b300_state": null,
-              "evidence": "acceptance/h100-fleet/bionemo-structure/fragments/genmol.json@sha256:86cd059cfcd81876b3ad68d73b859a615d9864f982afae6bd33dcc4f27087c3a"
+              "evidence": "acceptance/h100-fleet/bionemo-structure/fragments/boltz2.json@sha256:0ec2a3b99b4927a8601ee43e3130069ace24e208a03715e439aa00abb2064302"
             }
           ],
           "qualification_candidates": []
@@ -103,7 +103,7 @@
               "state": "hardware-validated",
               "enabled": true,
               "catalog_b300_state": null,
-              "evidence": "acceptance/h100-fleet/bionemo-structure/fragments/molmim.json@sha256:e790380c7cab581317efbcd6d4960e48ac3d8236d6bb880da625d0fc76f9189c"
+              "evidence": "acceptance/h100-fleet/bionemo-structure/fragments/diffdock.json@sha256:cab0ac4bbbcdba0a46f7bdaa689a22a62e14e59af22cc890d8b09a9ff860c2e2"
             }
           ],
           "qualification_candidates": []
@@ -158,6 +158,14 @@
               "enabled": false,
               "catalog_b300_state": "historical-supported",
               "evidence": "catalog resources.gpu.b300_state"
+            },
+            {
+              "accelerator_class": "nvidia-h100-sxm5-80gb",
+              "pool_template": "unbound-h100",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": null,
+              "evidence": "acceptance/h100-fleet/bionemo-structure/fragments/genmol.json@sha256:86cd059cfcd81876b3ad68d73b859a615d9864f982afae6bd33dcc4f27087c3a"
             }
           ],
           "qualification_candidates": []
@@ -212,6 +220,14 @@
               "enabled": false,
               "catalog_b300_state": "incompatible-sm103",
               "evidence": "catalog resources.gpu.b300_state"
+            },
+            {
+              "accelerator_class": "nvidia-h100-sxm5-80gb",
+              "pool_template": "unbound-h100",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": null,
+              "evidence": "acceptance/h100-fleet/bionemo-structure/fragments/molmim.json@sha256:e790380c7cab581317efbcd6d4960e48ac3d8236d6bb880da625d0fc76f9189c"
             }
           ],
           "qualification_candidates": []
@@ -390,6 +406,14 @@
               "enabled": false,
               "catalog_b300_state": "incompatible-sm103",
               "evidence": "catalog resources.gpu.b300_state"
+            },
+            {
+              "accelerator_class": "nvidia-h100-sxm5-80gb",
+              "pool_template": "unbound-h100",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": null,
+              "evidence": "acceptance/h100-fleet/bionemo-structure/fragments/proteinmpnn.json@sha256:52afb0db49933cf11fba90d401a82e1af5044b48805f49a3f7fd7b15283bc66d"
             }
           ],
           "qualification_candidates": []

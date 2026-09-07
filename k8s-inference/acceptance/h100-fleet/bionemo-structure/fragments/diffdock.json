@@ -1,0 +1,71 @@
+{
+  "schema": "fs2-h100-fleet-model-integration/v1",
+  "model_id": "diffdock",
+  "status": "direct-h100-semantic-qualified-production-adoption-pending",
+  "source_base": "070ce46fe08ac47949d66c252a9924a02e212968",
+  "catalog_proposal": {
+    "variant_id": "diffdock-upstream-portable",
+    "base_model_id": "diffdock",
+    "exposed_model_id": "diffdock",
+    "variant_kind": "independent-runtime",
+    "relationship": {
+      "kind": "exact-model",
+      "nim_artifact_parity": "unverified",
+      "notes": "Authoritative DiffDock-L upstream identity. Native response fields are projected from actual generated SDF poses and confidence tensors; NIM bytes and numerical parity remain unverified."
+    },
+    "source": {
+      "kind": "git-plus-release-artifacts",
+      "repository": "github.com/gcorso/DiffDock",
+      "revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",
+      "revision_url": "https://github.com/gcorso/DiffDock/tree/85c49b60d3e0b0182a59ee43a34a6d7036981284",
+      "license": {
+        "id": "MIT",
+        "state": "verified-revision-bound-artifact",
+        "url": "https://raw.githubusercontent.com/gcorso/DiffDock/85c49b60d3e0b0182a59ee43a34a6d7036981284/LICENSE",
+        "sha256": "8efe3b8dac5c278ba290a66887e46261056f71dec75c2815c7da75451856cf1f",
+        "bytes": 1098
+      },
+      "artifact": {
+        "release_archive_sha256": "5a95b6a1555be47ab1d6f0a8ffd25152f7fe32f5956005bb821e13e7a37d4a3d",
+        "files": {
+          "/opt/fs2/model/model/score_model/best_ema_inference_epoch_model.pt": {"bytes": 121063553, "sha256": "64afbdc97f6c700df0309162eb533ee6f2754c71412aca7a3a534a7239667260"},
+          "/opt/fs2/model/model/confidence_model/best_model_epoch75.pt": {"bytes": 19312669, "sha256": "18d0fcc97fc55436786db02305ac61c734ad682aa5f8dee601555369c8461a57"},
+          "/opt/fs2/model/model/esm2_t33_650M_UR50D.pt": {"bytes": 2604537549, "sha256": "ea9d0522b335a8778dea6535a65301f10208dece28cd5865482b0b1fc446168c"},
+          "/opt/fs2/model/model/esm2_t33_650M_UR50D-contact-regression.pt": {"bytes": 3687, "sha256": "8ffe6edbd4173dc8d45c2cd5cb27d43aad77ec26b4c768200c58ae1f96693575"}
+        }
+      }
+    }
+  },
+  "runtime": {
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7",
+    "gpu_count": 1,
+    "resources": {
+      "requests": {"cpu": "8", "memory": "64Gi", "nvidia.com/gpu": "1"},
+      "limits": {"cpu": "24", "memory": "200Gi", "nvidia.com/gpu": "1"}
+    },
+    "compile_cache_abi": "deployment-profile-abi-v1",
+    "placement": "controller-selected-compatible-accelerator-pool",
+    "cache": {"weights": "image-layer", "writable_runtime_cache": "temporary-emptyDir-only"},
+    "readiness": {"method": "GET", "path": "/v1/health/ready", "expected_status": 200},
+    "liveness": {"method": "GET", "path": "/v1/health/live", "meaning": "process-alive"},
+    "inference": {"method": "POST", "path": "/molecular-docking/diffdock/generate"}
+  },
+  "qualification": {
+    "hardware": "H100-80GB-SM90-driver-580.159.04",
+    "fresh_process_repetitions": 3,
+    "semantic_requests_per_repetition": 2,
+    "semantic_status": "PASS-6-of-6",
+    "validator": "diffdock-faststart-semantic-v1",
+    "semantic_invariants": ["real 1UBQ protein input", "13-atom finite V2000 poses", "actual finite model confidence", "two distinct seeded pose outputs per repetition"],
+    "process_to_model_ready_seconds": {
+      "samples": [19.919, 20.708, 19.841],
+      "median": 19.919,
+      "minimum": 19.841,
+      "maximum": 20.708,
+      "boundary": "runtime server_started timestamp to first 200 from state-backed readiness after checkpoint load"
+    },
+    "job_names": ["fs2-h100-diffdock-r01-a03", "fs2-h100-diffdock-r02", "fs2-h100-diffdock-r03"],
+    "private_evidence_root": "/home/tux/.local/state/fs2-h100-fleet-r20260907/bionemo-structure/final"
+  },
+  "production_boundary": "Isolated digest-pinned test Jobs only; public route verification remains pending root deployment."
+}

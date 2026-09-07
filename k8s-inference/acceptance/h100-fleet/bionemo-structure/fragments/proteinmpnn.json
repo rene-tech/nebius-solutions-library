@@ -1,0 +1,74 @@
+{
+  "schema": "fs2-h100-fleet-model-integration/v1",
+  "model_id": "proteinmpnn",
+  "status": "direct-h100-semantic-qualified-production-adoption-pending",
+  "source_base": "070ce46fe08ac47949d66c252a9924a02e212968",
+  "catalog_proposal": {
+    "variant_id": "proteinmpnn-upstream-portable",
+    "base_model_id": "proteinmpnn",
+    "exposed_model_id": "proteinmpnn",
+    "variant_kind": "independent-runtime",
+    "relationship": {
+      "kind": "exact-model",
+      "nim_artifact_parity": "unverified",
+      "notes": "Authoritative ProteinMPNN source and repository-owned v_48 checkpoint. The adapter implements the native endpoint shape from genuine sampled tensors and does not claim NIM byte or numerical parity."
+    },
+    "source": {
+      "kind": "git",
+      "repository": "github.com/dauparas/ProteinMPNN",
+      "revision": "8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+      "revision_url": "https://github.com/dauparas/ProteinMPNN/tree/8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+      "license": {
+        "id": "MIT",
+        "state": "verified-revision-bound-artifact",
+        "url": "https://raw.githubusercontent.com/dauparas/ProteinMPNN/8907e6671bfbfc92303b5f79c4b5e6ce47cdef57/LICENSE",
+        "sha256": "82009d25ce585631f452b2b24589bdb29c559ccfefa2f200ef312ed5b501a586",
+        "bytes": 1072
+      },
+      "artifact": {
+        "kind": "repository-owned-checkpoint-set",
+        "selected_checkpoint": "/opt/fs2/model/upstream/vanilla_model_weights/v_48_020.pt",
+        "selected_checkpoint_bytes": 6681301,
+        "selected_checkpoint_sha256": "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
+        "expected_checkpoint_count": 11,
+        "all_expected_sha256_source": "catalog/runtime/contracts/model-variants.json#/variants/proteinmpnn-upstream-portable/source/artifact/expected_content_sha256"
+      }
+    }
+  },
+  "runtime": {
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/proteinmpnn@sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38",
+    "gpu_count": 1,
+    "resources": {
+      "requests": {"cpu": "4", "memory": "16Gi", "nvidia.com/gpu": "1"},
+      "limits": {"cpu": "16", "memory": "128Gi", "nvidia.com/gpu": "1"}
+    },
+    "compile_cache_abi": "deployment-profile-abi-v1",
+    "placement": "controller-selected-compatible-accelerator-pool",
+    "cache": {"weights": "image-layer", "writable_runtime_cache": "temporary-emptyDir-only"},
+    "readiness": {"method": "GET", "path": "/v1/health/ready", "expected_status": 200},
+    "liveness": {"method": "GET", "path": "/v1/health/live", "meaning": "process-alive"},
+    "inference": {"method": "POST", "path": "/biology/ipd/proteinmpnn/predict"}
+  },
+  "qualification": {
+    "hardware": "H100-80GB-SM90-driver-580.159.04",
+    "fresh_process_repetitions": 3,
+    "semantic_requests_per_repetition": 2,
+    "semantic_status": "PASS-6-of-6",
+    "validator": "proteinmpnn-faststart-semantic-v1",
+    "semantic_invariants": ["two 76-residue designs", "probability shape 1x76x21", "finite probabilities", "genuine model score and sequence recovery", "seed reflected in response"],
+    "response_sha256_per_request": [
+      "97047be6f6cff6d8e83f994ac53b32914e7486a188ecf692aaac9a8825f82c5f",
+      "ebd838aafb8122205c82709a0c802dba6dbfc5499102e895b51bf97410deb885"
+    ],
+    "process_to_model_ready_seconds": {
+      "samples": [2.922, 2.289, 2.462],
+      "median": 2.462,
+      "minimum": 2.289,
+      "maximum": 2.922,
+      "boundary": "runtime server_started timestamp to first 200 from state-backed readiness; model load occurs before readiness"
+    },
+    "job_names": ["fs2-h100-proteinmpnn-r01-a04", "fs2-h100-proteinmpnn-r02", "fs2-h100-proteinmpnn-r03"],
+    "private_evidence_root": "/home/tux/.local/state/fs2-h100-fleet-r20260907/bionemo-structure/final"
+  },
+  "production_boundary": "Isolated digest-pinned test Jobs only; public route verification remains pending root deployment."
+}
