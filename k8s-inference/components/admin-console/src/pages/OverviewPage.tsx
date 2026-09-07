@@ -13,6 +13,7 @@ export function OverviewPage() {
   const query = useQuery({
     queryKey: ["admin-overview", context.toString()],
     queryFn: ({ signal }) => adminApi.overview(context, signal),
+    refetchInterval: 10000,
   });
 
   return (
@@ -25,10 +26,19 @@ export function OverviewPage() {
               <Link to={{ pathname: "/admin/models", search: context.toString() }} className="text-link">View models</Link>
             </div>
             <div className="metric-grid">
-              <MetricCard label="Requests" value={data.requests_per_second} detail="Current observed rate" />
+              <MetricCard label="Requests" value={data.requests_per_second} detail="Selected-window sampled rate · all model IDs" />
               <MetricCard label="Tokens" value={data.tokens_per_second} detail="Across text runtimes" />
               <MetricCard label="Error rate" value={data.error_rate} detail="Terminal operations" />
-              <MetricCard label="Queued" value={data.queued_operations} detail="Durable pending work" />
+              <MetricCard label="Queued" value={data.queued_operations} detail="Serving requests pending now" />
+            </div>
+          </section>
+
+          <section className="panel" aria-labelledby="completed-window-heading">
+            <div className="section-heading"><div><span className="eyebrow">Same time window and scope</span><h2 id="completed-window-heading">Completed requests</h2></div></div>
+            <div className="metric-grid metric-grid--small">
+              <MetricCard label="Durable completed" value={data.reconciliation.durable_terminal_operations} detail="Exact completed_at window · serving and scientific models" />
+              <MetricCard label="Sampled completed" value={data.reconciliation.prometheus_terminal_operations} detail="Prometheus change over the same window · replicas deduplicated" />
+              <MetricCard label="Sampled minus durable" value={data.reconciliation.difference} detail="Scrape boundary and extrapolation may differ; not an all-time comparison" />
             </div>
           </section>
 

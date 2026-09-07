@@ -1791,6 +1791,15 @@ def build_status(
     available = _known_total([item.available_replicas for item in deployments])
     phase_counts = _pod_phase_counts(discovery.pods)
     rollout_complete = bool(deployments) and all(_deployment_rollout_complete(item) for item in deployments)
+    # Serving availability and total elastic-capacity convergence are separate.
+    # A burst Deployment may change replicas before its controller observes the
+    # generation or creates a Pod. That must not withdraw an unchanged, fully
+    # observed hot Deployment. Each serving candidate still needs its exact
+    # rollout, and `converged` below fences the complete desired inventory.
+    serving_rollout_ready = any(
+        _deployment_rollout_complete(item) and item.ready_replicas is not None and item.ready_replicas > 0
+        for item in deployments
+    )
     autoscaler_handoff_complete = _autoscaler_handoff_complete(plan.render, discovery, owner_uid)
     desired_resources = {
         f"{item.api_version}/{item.kind}/{item.namespace}/{item.name}": item
@@ -1823,7 +1832,7 @@ def build_status(
         else:
             terminal, reason, phase = "Draining", "DrainInProgress", "Draining"
             message = "publication, active-operation, or zero-replica observation is incomplete"
-    elif converged and rollout_complete and autoscaler_handoff_complete and ready is not None and ready > 0:
+    elif converged and serving_rollout_ready and autoscaler_handoff_complete:
         terminal, reason, phase = "Ready", "RuntimeObservedReady", "Ready"
         message = "at least one controller-owned runtime replica is observed ready"
     elif converged and rollout_complete and autoscaler_handoff_complete and desired == 0 and replicas == 0:

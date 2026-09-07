@@ -33,6 +33,7 @@ from .scientific_admin import (
     ScientificRunListSnapshot,
     ScientificRunQuery,
 )
+from .scientific_admin_accounting import project_gpu_accounting
 from .scientific_admin_catalog import (
     ScientificCatalogFileAdapter,
     ScientificProfileDiscoveryAdapter,
@@ -164,12 +165,37 @@ def _stage_status(stage: ScientificStageState) -> str:
         return "cancelled"
     if not stage.attempts:
         return "queued"
-    latest = stage.attempts[-1]
-    if latest.last_phase in {LifecyclePhase.QUEUED, LifecyclePhase.SCHEDULING}:
-        return "queued"
-    if latest.last_phase is LifecyclePhase.ADMITTED:
+    active = [item for item in _latest_shards(stage) if item.outcome is AttemptOutcome.ACTIVE]
+    if any(item.last_phase.rank >= LifecyclePhase.IMAGE_LOADING.rank for item in active):
+        return "running"
+    if any(item.last_phase in {LifecyclePhase.ADMITTED, LifecyclePhase.NODE_PENDING} for item in active):
         return "admitted"
-    return "running"
+    return "queued"
+
+
+def _latest_shards(stage: ScientificStageState) -> list[ScientificAttemptState]:
+    """Current state per independent shard, excluding superseded retries."""
+    latest: dict[str | None, ScientificAttemptState] = {}
+    for attempt in stage.attempts:
+        previous = latest.get(attempt.shard_id)
+        if previous is None or attempt.attempt_number > previous.attempt_number:
+            latest[attempt.shard_id] = attempt
+    return list(latest.values())
+
+
+def _shard_counts(stage: ScientificStageState) -> dict[str, int]:
+    counts: dict[str, int] = defaultdict(int)
+    for attempt in _latest_shards(stage):
+        if attempt.outcome is not AttemptOutcome.ACTIVE:
+            label = attempt.outcome.value
+        elif attempt.last_phase in {LifecyclePhase.QUEUED, LifecyclePhase.SCHEDULING}:
+            label = "pending"
+        elif attempt.last_phase in {LifecyclePhase.ADMITTED, LifecyclePhase.NODE_PENDING}:
+            label = "admitted"
+        else:
+            label = "running"
+        counts[label] += 1
+    return dict(counts)
 
 
 def _run_status(state: ScientificBatchState) -> str:
@@ -181,7 +207,7 @@ def _run_status(state: ScientificBatchState) -> str:
         return "failed"
     if state.status is BatchStatus.CANCELLED:
         return "cancelled"
-    if state.status is BatchStatus.RUNNING:
+    if any(_stage_status(stage) == "running" for stage in state.stages):
         return "running"
     if any(_stage_status(stage) == "admitted" for stage in state.stages):
         return "admitted"
@@ -207,12 +233,13 @@ def _admission_state(state: ScientificBatchState, dispatch_hold: str | None = No
     if state.status is BatchStatus.QUEUED and not state.cancel_requested and dispatch_hold is not None:
         return "pending", _DISPATCH_HOLD_REASONS.get(dispatch_hold, "Dispatch is held by the scientific model policy.")
     stage = _active_stage(state)
-    latest = stage.attempts[-1] if stage.attempts else None
-    if latest is not None and latest.outcome is AttemptOutcome.PREEMPTED:
+    counts = _shard_counts(stage)
+    summary = ", ".join(f"{count} {status}" for status, count in sorted(counts.items()))
+    if counts.get("admitted", 0) + counts.get("running", 0):
+        return "admitted", f"Current {stage.stage_id} shards: {summary}. Pending shards await their own admission."
+    if counts.get("preempted", 0):
         return "evicted", "The latest attempt was preempted and awaits controller reconciliation."
-    if latest is not None and not latest.resource_released and latest.last_phase.rank >= LifecyclePhase.ADMITTED.rank:
-        return "admitted", "The admitted workload has not yet reached its UID-confirmed release boundary."
-    return "pending", "The controller has not observed a Kueue admission event."
+    return "pending", f"Current {stage.stage_id} shards: {summary or 'not yet created'}. Awaiting admission."
 
 
 def _stage_counts(state: ScientificBatchState) -> ScientificStageCounts:
@@ -314,6 +341,7 @@ def _summary(
             admission_reason=admission_reason,
             admitted_at=record.get("admitted_at"),
             queue_position=_unavailable("count", "Queue position is not measured by the controller."),
+            shard_counts=_shard_counts(stage),
         ),
         fast_start=ScientificFastStartObservation(
             tier="not-observed",
@@ -347,9 +375,13 @@ def _attempt(
     *,
     resource_class: ResourceClass,
 ) -> ScientificAttempt:
-    del events
     if attempt.outcome is AttemptOutcome.ACTIVE:
-        status = "queued" if attempt.last_phase in {LifecyclePhase.QUEUED, LifecyclePhase.SCHEDULING} else "running"
+        status = (
+            "queued"
+            if attempt.last_phase
+            in {LifecyclePhase.QUEUED, LifecyclePhase.SCHEDULING, LifecyclePhase.ADMITTED, LifecyclePhase.NODE_PENDING}
+            else "running"
+        )
     else:
         status = attempt.outcome.value
     admission = attempt.scheduling_admission
@@ -357,6 +389,28 @@ def _attempt(
         admission.accelerator_count if admission is not None else (0 if resource_class is ResourceClass.CPU else None)
     )
     failure = None
+    phase_event = next((event for event in reversed(events) if event.draft.phase == attempt.last_phase), None)
+    pending_reasons = {
+        "UnschedulableInsufficientCpu": (
+            "Waiting for a node: the selected pool cannot currently fit this Pod's full CPU request, "
+            "including sidecars."
+        ),
+        "UnschedulableInsufficientMemory": (
+            "Waiting for a node: insufficient allocatable memory for this Pod in the selected pool."
+        ),
+        "UnschedulableInsufficientGpu": (
+            "Waiting for a node: the requested GPUs are not currently available in the selected pool."
+        ),
+        "UnschedulableNodeAffinity": (
+            "Waiting for a matching node: the Pod's placement or affinity requirements are not satisfied."
+        ),
+        "NodeProvisioning": "Waiting for a schedulable node in the selected pool; GPU computation has not started.",
+    }
+    phase_reason = None
+    if attempt.outcome is AttemptOutcome.ACTIVE and attempt.last_phase is LifecyclePhase.NODE_PENDING:
+        phase_reason = pending_reasons.get(
+            (phase_event.draft.code or "") if phase_event else "", pending_reasons["NodeProvisioning"]
+        )
     if attempt.failure_code is not None:
         code = _bounded(attempt.failure_code, 64, "scientific_attempt_failed")
         failure = ScientificError(
@@ -382,6 +436,9 @@ def _attempt(
         checkpoint_input_artifact_id=None,
         checkpoint_output_artifact_id=None,
         error=failure,
+        phase=attempt.last_phase.value,
+        phase_reason=phase_reason,
+        phase_observed_at=phase_event.occurred_at if phase_event is not None else None,
     )
 
 
@@ -461,10 +518,31 @@ class PostgresScientificRunAdminAdapter:
         pool: asyncpg.Pool[Any],
         batches: PostgresScientificBatchRepository,
         models: ScientificModelAdminAdapter,
+        lifecycle_accounting: bool = False,
     ) -> None:
         self.pool = pool
         self.batches = batches
         self.models = models
+        self.lifecycle_accounting = lifecycle_accounting
+
+    async def _accounting(self, states: list[ScientificBatchState]) -> dict[UUID, ScientificGpuAccounting]:
+        if not self.lifecycle_accounting or not states:
+            return {}
+        async with self.pool.acquire() as connection:
+            rows = await connection.fetch(
+                """SELECT subject.operation_id,subject.attempt_id,rollup.*
+                   FROM fs2_telemetry_subjects subject
+                   LEFT JOIN fs2_reporting_lifecycle_latest rollup USING(subject_id)
+                   WHERE subject.operation_id=ANY($1::uuid[]) AND subject.workload_kind='scientific_batch'""",
+                [state.operation_id for state in states],
+            )
+        grouped: dict[UUID, list[Mapping[str, Any]]] = defaultdict(list)
+        for row in rows:
+            grouped[row["operation_id"]].append(row)
+        return {
+            state.operation_id: accounting for state in states
+            if (accounting := project_gpu_accounting(state, grouped[state.operation_id])) is not None
+        }
 
     async def _model_map(self, *, tenant_id: str | None) -> dict[str, ScientificModelReadiness]:
         snapshot = await self.models.list_models(tenant_id=tenant_id)
@@ -563,13 +641,21 @@ class PostgresScientificRunAdminAdapter:
             observed_at = await connection.fetchval("SELECT clock_timestamp()")
             records = await connection.fetch(sql, *args)
         page = records[: query.limit]
+        states = [state_from_value(record["state"]) for record in page]
+        accounting = await self._accounting(states)
         try:
             items = [
-                _summary(cast(Mapping[str, Any], record), state_from_value(record["state"]), models[record["model_id"]])
-                for record in page
+                _summary(cast(Mapping[str, Any], record), state, models[record["model_id"]])
+                for record, state in zip(page, states, strict=True)
             ]
         except KeyError as error:
             raise ScientificAdminSourceUnavailableError("scientific run model identity is absent") from error
+        items = [
+            item.model_copy(update={"gpu_accounting": accounting[UUID(item.id)]})
+            if UUID(item.id) in accounting
+            else item
+            for item in items
+        ]
         next_cursor = None
         if len(records) > query.limit and page:
             next_cursor = _encode_cursor(page[-1]["accepted_at"], page[-1]["id"])
@@ -622,6 +708,11 @@ class PostgresScientificRunAdminAdapter:
                 for kind, label in (("trace", "Request trace"), ("logs", "Workload logs"), ("metrics", "GPU metrics"))
             ],
         )
+        accounting = await self._accounting([state])
+        if operation_id in accounting:
+            detail = detail.model_copy(
+                update={"run": detail.run.model_copy(update={"gpu_accounting": accounting[operation_id]})}
+            )
         return ScientificRunDetailSnapshot(data=detail, observed_at=observed_at)
 
 
@@ -830,6 +921,7 @@ class PostgresScientificArtifactAdminAdapter:
     def _artifact(
         artifact: ArtifactRef,
         *,
+        operation_id: UUID,
         role: str,
         semantic_type: str,
         created_at: datetime,
@@ -850,9 +942,9 @@ class PostgresScientificArtifactAdminAdapter:
             media_type=artifact.media_type,
             created_at=created_at,
             download=ScientificArtifactDownload(
-                available=False,
-                href=None,
-                reason="Use the authorized artifact endpoint to request a short-lived download handle.",
+                available=True,
+                href=f"/admin/api/v1/scientific-runs/{operation_id}/artifacts/{artifact.artifact_id}/content",
+                reason=None,
             ),
         )
 
@@ -875,6 +967,7 @@ class PostgresScientificArtifactAdminAdapter:
         artifacts_by_id: dict[str, ScientificArtifact] = {
             result.input_manifest.artifact_id: self._artifact(
                 result.input_manifest,
+                operation_id=operation_id,
                 role="manifest",
                 semantic_type="scientific-input-manifest",
                 created_at=result.submitted_at,
@@ -883,6 +976,7 @@ class PostgresScientificArtifactAdminAdapter:
         if result.output_manifest is not None:
             artifacts_by_id[result.output_manifest.artifact_id] = self._artifact(
                 result.output_manifest,
+                operation_id=operation_id,
                 role="manifest",
                 semantic_type="scientific-output-manifest",
                 created_at=result.completed_at,
@@ -896,6 +990,7 @@ class PostgresScientificArtifactAdminAdapter:
                 if checkpoint is not None:
                     artifacts_by_id[checkpoint.artifact_id] = self._artifact(
                         checkpoint,
+                        operation_id=operation_id,
                         role="checkpoint",
                         semantic_type=semantic_type,
                         created_at=attempt.completed_at,
@@ -924,6 +1019,22 @@ class PostgresScientificArtifactAdminAdapter:
                     accelerator_resource_name=(admission.accelerator_resource_name if admission is not None else None),
                 )
             )
+        # Include the actual stored output files, not only their JSON manifests.
+        # These are verified, tenant/operation-bound records; no signed handle or
+        # storage location is returned. Canonical manifest names retain priority.
+        for stored in await self.service.list_artifacts(operation_id, tenant_id=tenant_id):
+            artifact_id = str(stored.artifact_id)
+            if artifact_id not in artifacts_by_id:
+                projected = self._artifact(
+                    stored.to_public_ref(),
+                    operation_id=operation_id,
+                    role=stored.direction.value,
+                    semantic_type=f"{stored.stage_id}-artifact",
+                    created_at=stored.created_at,
+                )
+                artifacts_by_id[artifact_id] = projected.model_copy(
+                    update={"name": f"{stored.stage_id}-{projected.name}"[:256]}
+                )
         access = result.access_admission
         error = result.error
         return ScientificArtifactSnapshot(
@@ -937,7 +1048,9 @@ class PostgresScientificArtifactAdminAdapter:
                     else None
                 ),
             ),
-            observed_at=record.committed_at,
+            # Commit time remains on the immutable result and artifact rows.
+            # Freshness describes this successful read, not the result's age.
+            observed_at=datetime.now(UTC),
             terminal_status=result.terminal_status.value,
             completed_at=result.completed_at,
             model_revision=result.execution_identity.model_revision,
@@ -983,7 +1096,9 @@ def postgres_scientific_admin_read_service(
     batches = PostgresScientificBatchRepository(pool)
     renderer = getattr(scientific_batches, "execution_binding", None)
     return ScientificAdminReadService(
-        runs=PostgresScientificRunAdminAdapter(pool=pool, batches=batches, models=run_models),
+        runs=PostgresScientificRunAdminAdapter(
+            pool=pool, batches=batches, models=run_models, lifecycle_accounting=True
+        ),
         artifacts=(PostgresScientificArtifactAdminAdapter(artifact_service) if artifact_service is not None else None),
         controls=PostgresScientificRunControlAdapter(batches=batches),
         policies=PostgresScientificModelPolicyAdminAdapter(

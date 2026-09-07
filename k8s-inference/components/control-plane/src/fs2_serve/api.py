@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
+from urllib.parse import quote
 from uuid import UUID, uuid4
 
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
@@ -1872,6 +1873,54 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                     run_id,
                     tenant_id=authorized_tenant,
                 )
+
+            @app.get(
+                "/admin/api/v1/scientific-runs/{run_id}/artifacts/{artifact_id}/content",
+                response_class=StreamingResponse,
+                responses={**admin_problem_responses, 200: {
+                    "description": "Exact stored artifact bytes; media type is the artifact's declared content type.",
+                    "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+                }},
+            )
+            async def admin_scientific_artifact_content(
+                run_id: UUID,
+                artifact_id: UUID,
+                identity: Annotated[OperatorPrincipal, Depends(operator)],
+                params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+            ) -> Response:
+                """Download exact artifact bytes with the existing run/tenant authority."""
+
+                authorized_tenant = await admin_access.authorize(
+                    identity,
+                    OperatorRole.VIEWER,
+                    action="scientific_run.read",
+                    tenant_id=identity.tenant_id,
+                )
+                detail = await scientific_admin.run_detail(
+                    selected_context(params), run_id, tenant_id=authorized_tenant
+                )
+                selected = next(
+                    (item for item in detail.data.artifacts if item.artifact_id == str(artifact_id)), None
+                )
+                if selected is None or selected.state != "available" or runtime.artifact_service is None:
+                    raise AdminProblemError(404, "artifact_not_found", "scientific artifact was not found")
+                stream = await runtime.artifact_service.open_content(
+                    artifact_id, tenant_id=detail.data.run.attribution.tenant_id
+                )
+                artifact = stream.artifact
+                headers = {
+                    "cache-control": "no-store",
+                    "content-length": str(artifact.size_bytes),
+                    "content-disposition": f"attachment; filename*=UTF-8''{quote(selected.name, safe='')}",
+                    "x-fs2-artifact-id": str(artifact.artifact_id),
+                    "x-fs2-artifact-sha256": artifact.digest.removeprefix("sha256:"),
+                    "x-fs2-artifact-size-bytes": str(artifact.size_bytes),
+                }
+                if artifact.compression is not None:
+                    headers["x-fs2-artifact-compression"] = artifact.compression.value
+                # Do not set Content-Encoding: downloads retain the exact
+                # compressed bytes named by the canonical digest.
+                return StreamingResponse(stream.chunks, media_type=artifact.media_type, headers=headers)
 
             # Cancellation is the only scientific run command the console can
             # issue. It is registered only when a durable writer exists so the

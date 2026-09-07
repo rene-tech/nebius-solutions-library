@@ -280,12 +280,21 @@ variable "accelerator_pool_contract" {
 }
 
 variable "accelerator_node_schedulable_capacity" {
-  description = "Measured per-node Kubernetes schedulable capacity keyed by accelerator pool. Host-memory residency is unavailable unless every declared pool has this physical bound."
+  description = "Measured per-node Kubernetes schedulable capacity keyed by accelerator pool. Scientific whole-Pod eligibility and host-memory residency use this physical bound, never aggregate queue quota."
   type = map(object({
-    cpu_millicores = number
-    memory_mib     = number
+    cpu_millicores        = number
+    memory_mib            = number
+    ephemeral_storage_mib = optional(number)
   }))
   default = {}
+
+  validation {
+    condition = !var.scientific_batch.enabled || alltrue([
+      for pool_id in keys(var.accelerator_pool_contract.pools) :
+      contains(keys(var.accelerator_node_schedulable_capacity), pool_id)
+    ])
+    error_message = "Scientific batches require measured per-node CPU and memory for every accelerator pool. Set deployment.accelerator_pools.<id>.schedulable_capacity or deployment.scheduling.accelerator_schedulable_capacity; an aggregate queue quota is not a per-node fit bound."
+  }
 }
 
 locals {

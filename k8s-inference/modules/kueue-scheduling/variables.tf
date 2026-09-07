@@ -365,6 +365,32 @@ variable "core_capacity" {
   }
 }
 
+variable "accelerator_node_capacity" {
+  description = "Measured usable capacity of one node in each accelerator pool, independent of aggregate Kueue quota. Whole Pods must fit one node; additional nodes cannot fix an oversized Pod."
+  type = map(object({
+    cpu_millicores        = number
+    memory_mib            = number
+    accelerator_count     = number
+    ephemeral_storage_mib = optional(number)
+  }))
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = alltrue([
+      for pool_id, capacity in var.accelerator_node_capacity :
+      contains(keys(var.pools), pool_id) &&
+      floor(capacity.cpu_millicores) == capacity.cpu_millicores && capacity.cpu_millicores >= 1 &&
+      floor(capacity.memory_mib) == capacity.memory_mib && capacity.memory_mib >= 1 &&
+      floor(capacity.accelerator_count) == capacity.accelerator_count && capacity.accelerator_count >= 1 &&
+      (capacity.ephemeral_storage_mib == null ? true : (
+        floor(capacity.ephemeral_storage_mib) == capacity.ephemeral_storage_mib && capacity.ephemeral_storage_mib >= 0
+      ))
+    ])
+    error_message = "Accelerator node capacity must name a declared pool and contain positive whole per-node CPU, memory and accelerator units; optional ephemeral storage is nonnegative whole MiB."
+  }
+}
+
 variable "model_eligible_pool_ids" {
   description = <<-EOT
     Pools each selected model is qualified to run on, taken from the

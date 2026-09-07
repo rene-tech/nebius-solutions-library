@@ -36,6 +36,25 @@ function renderPage(entry = "/admin/scientific-runs", session = testSession) {
 }
 
 describe("scientific runs fixture contract", () => {
+  it("distinguishes a selectable model snapshot from an unobserved individual run", async () => {
+    prepareApi();
+    const models = fixture<Awaited<ReturnType<typeof adminApi.scientificModels>>>("/admin/api/v1/scientific-models");
+    const model = models.data.items.find((item) => item.model_id === "rfdiffusion");
+    if (!model) throw new Error("RFdiffusion fixture is missing");
+    model.caching.gpu_snapshot = "verified";
+    model.caching.runtime_checkpoint = "verified";
+    model.caching.exact_tier = "not-observed";
+    model.caching.reason = "A qualified snapshot is available as an option; individual run restore remains unobserved.";
+    vi.mocked(adminApi.scientificModels).mockResolvedValue(models);
+    renderPage();
+    const row = await screen.findByRole("row", { name: /RFdiffusion.*qualified/ });
+    expect(row).toHaveTextContent("GPU snapshot available as an option");
+    expect(row).toHaveTextContent("No per-run startup observation");
+    expect(row).not.toHaveTextContent("GPU snapshot unsupported");
+    fireEvent.click(screen.getByRole("button", { name: "Refresh runs" }));
+    await waitFor(() => expect(adminApi.scientificRuns).toHaveBeenCalledTimes(2));
+  });
+
   it("shows run attribution, service decisions, access gates, exact tiers, and evidence-qualified GPU accounting", async () => {
     prepareApi();
     renderPage();

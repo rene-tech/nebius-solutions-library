@@ -1620,3 +1620,48 @@ run "core_quota_follows_the_accelerator_share_of_the_same_pool" {
     error_message = "cpu and memory must share the accelerator resourceGroup, or Kueue could grant them from a different pool than the accelerators."
   }
 }
+
+run "publishes_per_node_fit_separately_from_pool_quota" {
+  command = plan
+
+  variables {
+    accelerator_node_capacity = {
+      burst = {
+        cpu_millicores        = 15900
+        memory_mib            = 65536
+        accelerator_count     = 1
+        ephemeral_storage_mib = 102400
+      }
+      reserved = {
+        cpu_millicores    = 47900
+        memory_mib        = 262144
+        accelerator_count = 8
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      output.contract.accelerator_node_capacity_schema == "fs2-serve.nebius.ai/accelerator-node-capacity/v1" &&
+      output.contract.accelerator_node_capacity.burst.cpu_millicores == 15900 &&
+      output.contract.accelerator_node_capacity.burst.accelerator_count == 1 &&
+      output.contract.accelerator_node_capacity.burst.ephemeral_storage_mib == 102400 &&
+      output.contract.accelerator_node_capacity.reserved.ephemeral_storage_mib == null &&
+      output.contract.pools.burst.capacity == 4 &&
+      output.contract.core_capacity.burst.cpu_millicores == 48000
+    )
+    error_message = "One-node fit facts must be published exactly, without replacing or multiplying aggregate pool quotas."
+  }
+}
+
+run "rejects_nonpositive_or_unknown_node_capacity" {
+  command = plan
+
+  variables {
+    accelerator_node_capacity = {
+      missing = { cpu_millicores = 0, memory_mib = 1024, accelerator_count = 1 }
+    }
+  }
+
+  expect_failures = [var.accelerator_node_capacity]
+}

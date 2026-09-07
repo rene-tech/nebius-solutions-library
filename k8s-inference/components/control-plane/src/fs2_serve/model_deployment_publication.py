@@ -159,7 +159,7 @@ def _phase_condition(status: ModelDeploymentStatusView) -> bool:
         ModelDeploymentRuntimePhase.WARMING: ModelDeploymentConditionType.LOADING,
         ModelDeploymentRuntimePhase.ADMITTED: ModelDeploymentConditionType.PROGRESSING,
         ModelDeploymentRuntimePhase.NODE_PENDING: ModelDeploymentConditionType.PROGRESSING,
-        ModelDeploymentRuntimePhase.LOCALIZING: ModelDeploymentConditionType.PROGRESSING,
+        ModelDeploymentRuntimePhase.LOCALIZING: ModelDeploymentConditionType.LOADING,
     }.get(phase)
     if expected is None:
         return False

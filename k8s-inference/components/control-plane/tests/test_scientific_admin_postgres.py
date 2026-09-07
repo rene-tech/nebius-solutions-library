@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -340,6 +341,49 @@ async def test_postgres_run_detail_uses_controller_events_for_closed_phase_durat
     assert result.data.run.cancellation.grace_seconds is None
 
 
+async def test_postgres_list_and_detail_join_durable_gpu_rollups_once_per_page() -> None:
+    state = _state()
+    attempt = state.stages[0].attempts[0]
+
+    class AccountingConnection(FakeConnection):
+        async def fetch(self, query: str, *args: object) -> list[dict[str, Any]]:
+            if "fs2_reporting_lifecycle_latest" not in query:
+                return await super().fetch(query, *args)
+            self.queries.append(query)
+            assert args == ([OPERATION_ID],)
+            return [
+                {
+                    "operation_id": OPERATION_ID,
+                    "attempt_id": attempt.attempt_id,
+                    "rollup_id": uuid4(),
+                    "quality": "application_observed",
+                    "reconciled": True,
+                    "terminal": False,
+                    "scheduler_occupied_gpu_seconds": 25.0,
+                    "active_gpu_seconds": 15.0,
+                    "occupied_idle_gpu_seconds": 10.0,
+                    "phase_gpu_seconds": {"active_compute": 15.0, "artifact_load": 10.0},
+                    "reconciliation_delta_seconds": 0.0,
+                }
+            ]
+
+    connection = AccountingConnection(_record(state))
+    adapter = PostgresScientificRunAdminAdapter(
+        pool=cast(Any, FakePool(connection)),
+        batches=cast(Any, BatchRepository()),
+        models=ModelAdapter(),
+        lifecycle_accounting=True,
+    )
+    listed = await adapter.list_runs(ScientificRunQuery(from_at=NOW - timedelta(hours=1), to_at=NOW))
+    detail = await adapter.get_run(OPERATION_ID, tenant_id="tenant-oncology")
+    assert sum("fs2_reporting_lifecycle_latest" in query for query in connection.queries) == 2
+    for accounting in (listed.data.items[0].gpu_accounting, detail.data.run.gpu_accounting):
+        assert accounting.allocated.value == 25
+        assert accounting.active.value == 15
+        assert accounting.idle_total.value == 10
+        assert accounting.allocated.evidence == "estimated"
+
+
 def test_production_factory_binds_postgres_controller_and_artifact_adapters() -> None:
     connection = FakeConnection(_record(_state()))
     service = postgres_scientific_admin_read_service(
@@ -445,6 +489,24 @@ async def test_artifact_adapter_projects_the_canonical_terminal_result_without_s
             assert tenant_id == "tenant-oncology"
             return record
 
+        async def list_artifacts(self, operation_id: UUID, *, tenant_id: str) -> list[Any]:
+            assert operation_id == OPERATION_ID
+            assert tenant_id == "tenant-oncology"
+            return [
+                SimpleNamespace(
+                    artifact_id="structure-output-01",
+                    stage_id="design",
+                    direction=SimpleNamespace(value="output"),
+                    created_at=NOW,
+                    to_public_ref=lambda: result.output_manifest.model_copy(
+                        update={
+                            "artifact_id": "structure-output-01",
+                            "media_type": "chemical/x-mmcif",
+                        }
+                    ),
+                )
+            ]
+
     adapter = PostgresScientificArtifactAdminAdapter(cast(Any, ResultService()))
     snapshot = await adapter.for_operation(OPERATION_ID, tenant_id="tenant-oncology")
 
@@ -460,8 +522,20 @@ async def test_artifact_adapter_projects_the_canonical_terminal_result_without_s
     assert {artifact.artifact_id for artifact in snapshot.artifacts} == {
         "manifest.input.01",
         "manifest.output.01",
+        "structure-output-01",
     }
-    assert all(not artifact.download.available for artifact in snapshot.artifacts)
+    assert all(artifact.download.available for artifact in snapshot.artifacts)
+    assert all(
+        artifact.download.href
+        == f"/admin/api/v1/scientific-runs/{OPERATION_ID}/artifacts/{artifact.artifact_id}/content"
+        for artifact in snapshot.artifacts
+    )
+    assert snapshot.observed_at > record.committed_at
+    assert snapshot.artifacts[0].created_at == result.submitted_at
+    structure = next(artifact for artifact in snapshot.artifacts if artifact.artifact_id == "structure-output-01")
+    assert structure.role == "output"
+    assert structure.media_type == "chemical/x-mmcif"
+    assert structure.name.startswith("design-")
 
 
 @pytest_asyncio.fixture
@@ -582,6 +656,7 @@ async def test_real_postgres_admin_projection_reads_durable_controller_and_key_a
         pool=postgres_admin_store.pool,
         batches=batches,
         models=ModelAdapter(),
+        lifecycle_accounting=True,
     )
 
     snapshot = await adapter.list_runs(

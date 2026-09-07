@@ -22,6 +22,15 @@ variables {
   kube_system_uid = "00000000-0000-0000-0000-000000000001"
   project_id      = "project-modelexpresstest"
 
+  # Synthetic per-node measurements, deliberately below nominal preset size.
+  accelerator_node_schedulable_capacity = {
+    nebius-b300-preemptible-1x = {
+      cpu_millicores        = 22000
+      memory_mib            = 344064
+      ephemeral_storage_mib = 300000
+    }
+  }
+
   target_contract = {
     project_id                 = "project-modelexpresstest"
     project_name               = "modelexpress-test"
@@ -405,6 +414,18 @@ run "licensed_lanes_and_cpu_class_are_rendered_by_the_stage" {
 
   plan_options {
     target = [module.kueue_scheduling.terraform_data.contract]
+  }
+
+  assert {
+    condition = (
+      module.kueue_scheduling.contract.accelerator_node_capacity_schema ==
+      "fs2-serve.nebius.ai/accelerator-node-capacity/v1" &&
+      module.kueue_scheduling.contract.accelerator_node_capacity["nebius-b300-preemptible-1x"].cpu_millicores == 22000 &&
+      module.kueue_scheduling.contract.accelerator_node_capacity["nebius-b300-preemptible-1x"].memory_mib == 344064 &&
+      module.kueue_scheduling.contract.accelerator_node_capacity["nebius-b300-preemptible-1x"].accelerator_count == 1 &&
+      module.kueue_scheduling.contract.accelerator_node_capacity["nebius-b300-preemptible-1x"].ephemeral_storage_mib == 300000
+    )
+    error_message = "Scientific placement must receive measured per-node CPU/memory/disk and configured GPUs, not nominal preset or aggregate quota."
   }
 
   assert {

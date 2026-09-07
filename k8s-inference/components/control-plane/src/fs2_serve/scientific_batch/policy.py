@@ -21,7 +21,16 @@ from uuid import UUID
 import asyncpg
 
 from .controller import ScientificBatchController
-from .models import BatchClaim, ScientificBatchState
+from .models import (
+    BatchClaim,
+    BatchEventDraft,
+    BatchEventKind,
+    LifecyclePhase,
+    ScientificAttemptState,
+    ScientificBatchState,
+    WorkloadObservation,
+)
+from .observation import DiagnosedWorkloadObservation
 
 MAX_ACTIVE_RUNS_BOUND = 64
 POLICY_AUDIT_ACTION = "scientific_model_policy.set"
@@ -62,6 +71,24 @@ class PolicyAwareScientificBatchController(ScientificBatchController):
 
     async def reconcile_once(self) -> UUID | None:
         return await super().reconcile_once()
+
+    def _ingest_observation(
+        self,
+        record: ScientificBatchState,
+        attempt: ScientificAttemptState,
+        observation: WorkloadObservation,
+    ) -> tuple[ScientificAttemptState, tuple[BatchEventDraft, ...]]:
+        updated, events = super()._ingest_observation(record, attempt, observation)
+        if isinstance(observation, DiagnosedWorkloadObservation) and observation.pending_code is not None:
+            # A reason may arrive after the first pending phase. Code-specific
+            # event identity deduplicates polls without changing failure state
+            # or any qualified execution/controller recipe.
+            events = (*events, self._event(
+                record, BatchEventKind.LIFECYCLE,
+                stage_id=attempt.stage_id, shard_id=attempt.shard_id, attempt_id=attempt.attempt_id,
+                phase=LifecyclePhase.NODE_PENDING, code=observation.pending_code,
+            ))
+        return updated, events
 
 
 class ScientificModelPolicyStaleError(RuntimeError):

@@ -901,6 +901,7 @@ class DeploymentContractTests(unittest.TestCase):
             {
                 pool_id: {
                     **capacity,
+                    "ephemeral_storage_mib": None,
                     "evidence": {**capacity["evidence"], "node_group_id": None},
                 }
                 for pool_id, capacity in ACCELERATOR_CAPACITY_FIXTURE.items()

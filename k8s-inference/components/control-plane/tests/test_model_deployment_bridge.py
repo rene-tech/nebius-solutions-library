@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -110,7 +111,8 @@ def test_kubernetes_camel_case_normalization_preserves_initialisms() -> None:
 
 
 @pytest.mark.asyncio
-async def test_bridge_persists_status_and_publishes_exact_ready_service(registry: Registry) -> None:
+async def test_bridge_persists_status_and_publishes_exact_ready_service(registry: Registry, caplog) -> None:
+    caplog.set_level(logging.INFO, logger="fs2_serve.model_deployment_bridge")
     store = MemoryStore(
         PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
         KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
@@ -178,6 +180,9 @@ async def test_bridge_persists_status_and_publishes_exact_ready_service(registry
     assert await bridge.refresh(force=True)
     assert len(store.model_deployment_status_events[(revision.namespace, revision.name)]) == 1
     assert registry.get("qwen3-8b").binding.backend_service_name == "qwen-event"
+    assert caplog.text.count('"event":"model_publication_changed"') == 1
+    assert '"disposition":"publish","reason":"ready","phase":"Ready"' in caplog.text
+    assert '"source_resource_version":"9"' in caplog.text
 
 
 @pytest.mark.asyncio

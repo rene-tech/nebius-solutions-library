@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
+import hashlib
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -44,6 +47,7 @@ from fs2_serve.scientific_admin_models import (
     ScientificSemanticValidation,
     ScientificServiceClass,
 )
+from fs2_serve.scientific_artifacts import ArtifactContentStream
 from fs2_serve.settings import Settings
 from fs2_serve.telemetry import Metrics
 
@@ -690,6 +694,87 @@ def test_authenticated_admin_routes_use_the_real_bff_service(registry, cipher, h
     assert cancelled.json()["data"]["run"]["id"] == str(OPERATION_ID)
     assert client.post(f"/admin/api/v1/scientific-runs/{uuid4()}:cancel").status_code == 404
     assert client.post("/admin/api/v1/scientific-runs/not-a-uuid:cancel").status_code == 422
+
+
+def test_admin_artifact_download_uses_existing_tenant_authority_and_exact_bytes(registry, cipher, hasher) -> None:
+    artifact_id = uuid4()
+    content = gzip.compress(b"synthetic scientific structure\n", mtime=0)
+    digest = hashlib.sha256(content).hexdigest()
+    calls: list[tuple[UUID, str]] = []
+
+    class DownloadArtifacts(ArtifactAdapter):
+        async def for_operation(self, operation_id: UUID, *, tenant_id: str) -> ScientificArtifactSnapshot:
+            original = await super().for_operation(operation_id, tenant_id=tenant_id)
+            artifact = original.artifacts[0].model_copy(
+                update={"artifact_id": str(artifact_id), "name": "result.cif.gz"}
+            )
+            return ScientificArtifactSnapshot(
+                artifacts=(artifact,),
+                semantic_validation=original.semantic_validation,
+                observed_at=original.observed_at,
+            )
+
+    class ContentService:
+        async def open_content(self, selected: UUID, *, tenant_id: str) -> ArtifactContentStream:
+            calls.append((selected, tenant_id))
+
+            async def chunks():
+                yield content[:5]
+                yield content[5:]
+
+            return ArtifactContentStream(
+                artifact=cast(
+                    Any,
+                    SimpleNamespace(
+                        artifact_id=artifact_id,
+                        size_bytes=len(content),
+                        digest="sha256:" + digest,
+                        media_type="chemical/x-mmcif",
+                        compression=SimpleNamespace(value="gzip"),
+                    ),
+                ),
+                chunks=chunks(),
+            )
+
+    runtime = _runtime(registry, cipher, hasher)
+    runtime.scientific_admin = _service(artifacts=DownloadArtifacts())
+    runtime.artifact_service = cast(Any, ContentService())
+    client = TestClient(create_app(runtime), base_url="https://inference.test.invalid")
+    endpoint = f"/admin/api/v1/scientific-runs/{OPERATION_ID}/artifacts/{artifact_id}/content"
+    assert client.get(endpoint).status_code == 401
+    assert client.post("/admin/api/v1/session", headers={"authorization": f"Bearer {'a' * 32}"}).status_code == 200
+    response = client.get(endpoint)
+    assert response.status_code == 200
+    assert response.content == content
+    assert response.headers["x-fs2-artifact-sha256"] == digest
+    assert "content-encoding" not in response.headers
+    assert "result.cif.gz" in response.headers["content-disposition"]
+    assert calls == [(artifact_id, "tenant-oncology")]
+    assert client.get(endpoint.replace(str(artifact_id), str(uuid4()))).status_code == 404
+    assert client.get(endpoint.replace(str(OPERATION_ID), str(uuid4()))).status_code == 404
+    assert len(calls) == 1
+
+    assert isinstance(runtime.store, MemoryStore)
+    assert runtime.operator_sessions is not None
+    for tenant, expected_status in (("tenant-oncology", 200), ("tenant-other", 404)):
+        principal_id = uuid4()
+        asyncio.run(
+            runtime.store.create_operator_principal(
+                principal_id=principal_id,
+                request=OperatorPrincipalCreate(
+                    subject=f"viewer-{tenant}",
+                    display_name="Test viewer",
+                    kind=PrincipalKind.HUMAN,
+                    role=OperatorRole.VIEWER,
+                    tenant_id=tenant,
+                ),
+                actor="test-bootstrap",
+            )
+        )
+        cookie = asyncio.run(runtime.operator_sessions.issue(principal_id, actor="test-bootstrap")).cookie_value
+        assert (
+            client.get(endpoint, headers={"cookie": f"{ADMIN_SESSION_COOKIE}={cookie}"}).status_code == expected_status
+        )
 
 
 def test_cancel_route_requires_the_operator_role_and_is_absent_without_a_writer(registry, cipher, hasher) -> None:

@@ -81,6 +81,7 @@ from .scientific_batch.capability import ScientificWorkloadCapabilityAuthority
 from .scientific_batch.execution import FileScientificManifestRenderer
 from .scientific_batch.kubernetes import HttpScientificBatchCluster
 from .scientific_batch.lifecycle_bridge import ScientificLifecycleBridge
+from .scientific_batch.placement import execution_resource_envelope
 from .scientific_batch.policy import PolicyAwareScientificBatchController, PostgresScientificModelPolicyRepository
 from .scientific_batch.postgres_repository import PostgresScientificBatchRepository
 from .scientific_batch.profile_catalog import ScientificProfileCatalog
@@ -397,6 +398,14 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             academic_tenant_id=settings.scientific_batch_academic_tenant_id,
             academic_authorization_receipt_sha256=(settings.scientific_batch_academic_authorization_receipt_sha256),
         )
+        scientific_scheduling = SchedulingContractResolver.load(
+            settings.scientific_batch_scheduling_contract_file,
+            expected_sha256=settings.scientific_batch_scheduling_contract_sha256,
+            stage_resources={
+                identity: execution_resource_envelope(execution)
+                for identity, execution in scientific_renderer.executions.items()
+            },
+        )
         scientific_batch_cluster = HttpScientificBatchCluster(
             base_url=settings.scientific_batch_kubernetes_api_url,
             token_file=settings.scientific_batch_kubernetes_token_file,
@@ -405,6 +414,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             fence=scientific_repository,
             controller_id=settings.scientific_batch_controller_id or "scientific-batch-controller",
             writes_enabled=settings.scientific_batch_writes_enabled,
+            pod_placement=scientific_scheduling.pod_placement,
             timeout_seconds=settings.scientific_batch_api_timeout_seconds,
         )
         scientific_artifact_bridge = ArtifactServiceBridge(
@@ -436,10 +446,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             repository=scientific_repository,
             controller=scientific_controller,
             profiles=scientific_profiles,
-            scheduling=SchedulingContractResolver.load(
-                settings.scientific_batch_scheduling_contract_file,
-                expected_sha256=settings.scientific_batch_scheduling_contract_sha256,
-            ),
+            scheduling=scientific_scheduling,
             artifacts=scientific_artifact_bridge,
             execution_binding=scientific_renderer,
             plan_factory=scientific_renderer,

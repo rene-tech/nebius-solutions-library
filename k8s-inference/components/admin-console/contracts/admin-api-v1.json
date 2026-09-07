@@ -405,6 +405,14 @@
     },
     {
       "method": "GET",
+      "path": "/admin/api/v1/scientific-runs/{run_id}/artifacts/{artifact_id}/content",
+      "success_status": 200,
+      "data_schema": null,
+      "response_format": "binary",
+      "cache_control": "no-store"
+    },
+    {
+      "method": "GET",
       "path": "/admin/api/v1/scientific-models",
       "success_status": 200,
       "data_schema": "ScientificModelReadinessList"

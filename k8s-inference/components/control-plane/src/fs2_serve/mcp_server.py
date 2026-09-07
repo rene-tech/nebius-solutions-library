@@ -5,10 +5,11 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import logging
 import math
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI
@@ -20,7 +21,7 @@ from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.shared.exceptions import MCPError
-from mcp_types import INTERNAL_ERROR, INVALID_PARAMS, ListToolsResult
+from mcp_types import INTERNAL_ERROR, INVALID_PARAMS, CallToolResult, ListToolsResult, TextContent
 from pydantic import AnyHttpUrl, ValidationError
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Send
@@ -36,7 +37,7 @@ from .models import (
     Principal,
     Scope,
 )
-from .registry import OperationalModel
+from .registry import ModelRouteUnavailableError, OperationalModel
 from .scientific_artifacts import ArtifactNotFoundError
 from .scientific_batch.service import ScientificProfileDiscovery
 from .scientific_input_uploads import ScientificInputUploadRequest
@@ -65,6 +66,52 @@ CORE_TOOLS = {
 MCP_HTTP_PATH = "/mcp"
 MCP_CHILD_MOUNT_PATH = "/"
 MCP_STREAMABLE_HTTP_PATH = MCP_HTTP_PATH
+LOGGER = logging.getLogger(__name__)
+
+
+def _tool_result(payload: dict[str, Any]) -> CallToolResult:
+    return CallToolResult(
+        content=[TextContent(type="text", text=json.dumps(payload, separators=(",", ":")))],
+        structured_content=payload,
+    )
+
+
+def _route_unavailable(principal: Principal) -> CallToolResult:
+    """An admission availability failure is a tool result, not a protocol crash."""
+
+    request_id = str(uuid4())
+    payload = {
+        "error": {
+            "type": "route_unavailable",
+            "message": "Model route is temporarily unavailable; retry with the same idempotency key.",
+            "retryable": True,
+            "request_id": request_id,
+        }
+    }
+    LOGGER.warning(
+        "%s",
+        json.dumps(
+            {
+                "event": "mcp_admission_unavailable",
+                "request_id": request_id,
+                "principal_id": principal.principal_id,
+                "tenant_id": principal.tenant_id,
+                "token_id": str(principal.token_id),
+                "error_type": "route_unavailable",
+            },
+            separators=(",", ":"),
+        ),
+    )
+    return _tool_result(payload).model_copy(update={"is_error": True})
+
+
+async def _admit_tool(runtime: AppRuntime, **kwargs: Any) -> CallToolResult:
+    try:
+        return _tool_result(await _admit(runtime, **kwargs))
+    except ModelRouteUnavailableError:
+        # Admission revalidates again. Catch that exact race too, but never
+        # turn arbitrary RuntimeError failures into a retryable route claim.
+        return _route_unavailable(_principal())
 
 
 class MCPPublicGatewayBoundary:
@@ -375,7 +422,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         ctx: Context,
         idempotency_key: str | None = None,
         wait_seconds: float = 0,
-    ) -> dict[str, Any]:
+    ) -> Annotated[CallToolResult, dict[str, Any]]:
         """Invoke any currently authorized model discovered by ``list_models``.
 
         Model-specific convenience tools are fixed when the MCP process starts.
@@ -387,13 +434,17 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         principal = _principal()
         await runtime.revalidate_routes()
         try:
-            model = runtime.registry.get(model_id)
+            model = runtime.registry.get(model_id, require_enabled=False)
             runtime.registry.authorize_principal(
                 model,
                 principal,
                 requested_model_id=model_id,
                 surface="mcp",
             )
+            if protocol not in model.gateway.protocols:
+                raise ValueError("model does not implement requested protocol")
+            if not model.enabled:
+                return _route_unavailable(principal)
             operation = runtime.registry.operation_for_protocol(model, protocol)
         except (KeyError, PermissionError, ValueError):
             raise MCPError(code=INVALID_PARAMS, message="model or protocol is outside token policy") from None
@@ -401,7 +452,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
             traceparent = (ctx.headers or {}).get("traceparent")
         except ValueError:
             traceparent = None
-        return await _admit(
+        return await _admit_tool(
             runtime,
             model_id=model_id,
             protocol=protocol,
@@ -644,10 +695,10 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
     ):
         server.add_tool(function, name=function.__name__, meta={"fs2_core": True})
 
-    def named_handler(tool_name: str) -> Callable[..., Awaitable[dict[str, Any]]]:
+    def named_handler(tool_name: str) -> Callable[..., Awaitable[CallToolResult]]:
         async def invoke_named_model(
             payload: dict[str, Any], ctx: Context, idempotency_key: str | None = None, wait_seconds: float = 0
-        ) -> dict[str, Any]:
+        ) -> Annotated[CallToolResult, dict[str, Any]]:
             principal = _principal()
             await runtime.revalidate_routes()
             matches = [
@@ -666,7 +717,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                 # Programmatic calls have no request context; they must not
                 # bypass admission merely to synthesize a tracing header.
                 traceparent = None
-            return await _admit(
+            return await _admit_tool(
                 runtime,
                 model_id=model.id,
                 protocol=protocol,
@@ -686,7 +737,8 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
             request: dict[str, Any], ctx: Context, idempotency_key: str | None = None
         ) -> dict[str, Any]:
             matches = [
-                profile for profile in _scientific_tool_profiles(runtime, _principal())
+                profile
+                for profile in _scientific_tool_profiles(runtime, _principal())
                 if profile.mcp_tool_name == tool_name
             ]
             if len(matches) != 1:

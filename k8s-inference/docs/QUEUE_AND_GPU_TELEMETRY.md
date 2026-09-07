@@ -142,6 +142,45 @@ deployment that mixes a full-GPU resource with a MIG-slice resource must leave
 ClusterQueue grouping is not implemented in this release, and Terraform refuses
 the combination rather than pretending otherwise.
 
+### A whole Pod must fit one node
+
+Kueue's aggregate pool quota does not prove that one Pod fits a node. Scientific
+admission separately publishes and checks `accelerator_node_capacity` for each
+pool: measured allocatable CPU and memory, configured accelerators per node,
+and optionally measured allocatable ephemeral storage. For example, a stage
+requesting 16 CPUs plus its 100m collector cannot use a node with 15.9 allocatable
+CPUs, even when a two-node pool has enough aggregate CPU quota. It remains
+eligible for a larger compatible node; it is not made smaller or given more
+quota. Busy fitting nodes produce normal queueing.
+
+The inputs remain in `terraform.tfvars`, under
+`deployment.accelerator_pools.<pool>.schedulable_capacity` or
+`deployment.scheduling.accelerator_schedulable_capacity.<pool>`. Use measured
+`cpu_millicores` and `memory_mib` with the existing evidence record. Optional
+`ephemeral_storage_mib` adds a disk-fit check; an omitted value means disk
+capacity was not declared, not that the disk is unlimited or checked. GPU count
+comes from the pool's `node.gpus_per_node`, never a hard-coded GPU SKU. Enabling
+scientific execution requires measured CPU/memory capacity for every pool.
+These facts are independent of node count, capacity block or preemptible mode,
+region, GPU family, and the `budget_core_resources` quota setting.
+
+The resolver intersects model compatibility and service-class pool order with
+full-Pod feasibility before freezing placement. It uses the profile's exact
+stage resources, or the same qualified execution-map resources used by older
+profiles; it does not mutate model/runtime/snapshot identities. The concurrent
+collector counts too. Immediately before Job creation, the actual rendered
+manifest is rechecked through the shared PodSet arithmetic: regular containers,
+native sidecars, init-container maxima and Pod overhead all count. Gang members
+are checked per replica, not by comparing their aggregate resources to one node.
+An incompatible rendered Pod is refused before Kubernetes creation.
+
+Migration is additive: a control plane temporarily reading an older contract
+without `accelerator_node_capacity` retains legacy, **unverified** placement
+behavior. Regenerate and apply the workloads scheduling contract to activate the
+fit checks; updating the image alone is insufficient. New contracts require the
+versioned per-node map; pools missing from that map are not eligible. Model
+resources, snapshots and aggregate quota values do not need to change.
+
 ### Cross-queue displacement is not a consequence of priority
 
 Kueue's `reclaimWithinCohort` preempts only what another ClusterQueue borrowed

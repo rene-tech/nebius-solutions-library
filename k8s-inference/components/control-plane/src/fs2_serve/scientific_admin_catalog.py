@@ -80,7 +80,13 @@ class ScientificProfileDiscoveryAdapter:
 
     async def list_models(self, *, tenant_id: str | None = None) -> ScientificModelSnapshot:
         if tenant_id is None and self.global_catalog is not None:
-            return await self.global_catalog.list_models()
+            snapshot = await self.global_catalog.list_models()
+            return ScientificModelSnapshot(
+                data=snapshot.data.model_copy(
+                    update={"items": [self._with_startup_options(item) for item in snapshot.data.items]}
+                ),
+                observed_at=snapshot.observed_at,
+            )
         profiles = (
             ()
             if self.scientific_batches is None
@@ -91,8 +97,31 @@ class ScientificProfileDiscoveryAdapter:
             )
         )
         return ScientificModelSnapshot(
-            data=ScientificModelReadinessList(items=[self._project(profile) for profile in profiles]),
+            data=ScientificModelReadinessList(
+                items=[self._with_startup_options(self._project(profile)) for profile in profiles]
+            ),
             observed_at=self.clock().astimezone(UTC),
+        )
+
+    def _with_startup_options(self, model: ScientificModelReadiness) -> ScientificModelReadiness:
+        renderer = getattr(self.scientific_batches, "execution_binding", None)
+        options = getattr(renderer, "startup_policy_options", None)
+        if model.readiness != "qualified" or options is None or not any(options(model.model_id).values()):
+            return model
+        return model.model_copy(
+            update={
+                "caching": model.caching.model_copy(
+                    update={
+                        "runtime_checkpoint": "verified",
+                        "gpu_snapshot": "verified",
+                        "reason": (
+                            "A qualified snapshot matching the current profile/runtime is available as an option. "
+                            "This is capability, not evidence that this run restored; "
+                            "normal loading remains the default."
+                        ),
+                    }
+                )
+            }
         )
 
     @staticmethod

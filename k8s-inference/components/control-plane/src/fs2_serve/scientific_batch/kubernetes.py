@@ -32,6 +32,8 @@ from .models import (
     WorkloadResource,
     WorkloadState,
 )
+from .observation import DiagnosedWorkloadObservation
+from .placement import AcceleratorPodPlacement, PodPlacementError
 from .podset_envelope import (
     PodSetEnvelopeError,
     WorkloadEnvelope,
@@ -42,6 +44,7 @@ from .podset_envelope import (
     parse_cpu_millis,
 )
 from .protocols import BatchRepositoryConflictError
+from .startup_telemetry import MAX_LOG_BYTES, snapshot_request_started, uses_snapshot_supervisor
 
 ATTEMPT_LABEL = "fs2.nebius.ai/attempt-id"
 OPERATION_LABEL = "fs2.nebius.ai/operation-id"
@@ -132,6 +135,24 @@ def _condition(status: Mapping[str, Any], kind: str, expected: str = "True") -> 
         ),
         None,
     )
+
+
+def _pending_code(status: Mapping[str, Any], accelerator_resource: str | None) -> str | None:
+    """Expose a useful bounded diagnosis, never the raw scheduler message."""
+    condition = _condition(status, "PodScheduled", "False")
+    if condition is None:
+        return None
+    message = str(condition.get("message", "")).lower()
+    for text, code in (
+        ("insufficient cpu", "UnschedulableInsufficientCpu"),
+        ("insufficient memory", "UnschedulableInsufficientMemory"),
+        (f"insufficient {accelerator_resource}".lower(), "UnschedulableInsufficientGpu"),
+        ("node affinity", "UnschedulableNodeAffinity"),
+        ("node selector", "UnschedulableNodeAffinity"),
+    ):
+        if text in message:
+            return code
+    return "NodeProvisioning"
 
 
 def _timestamp(condition: Mapping[str, Any], label: str) -> datetime:
@@ -451,6 +472,7 @@ def _pod_lifecycle(
     *,
     accelerator_resource_name: str | None,
     observed_at: datetime,
+    snapshot_request_at: datetime | None = None,
 ) -> PodLifecycleObservation | None:
     metadata = raw_pod.get("metadata")
     spec = raw_pod.get("spec", {})
@@ -540,6 +562,27 @@ def _pod_lifecycle(
             phase=LifecyclePhase.ACTIVE_COMPUTE,
             fallback_start=max(init_finished, default=fallback_start),
         )
+        if uses_snapshot_supervisor(raw_pod):
+            startup_intervals: list[PodPhaseInterval] = []
+            for interval in stage_intervals:
+                if interval.phase is not LifecyclePhase.ACTIVE_COMPUTE:
+                    startup_intervals.append(interval)
+                elif (
+                    snapshot_request_at is not None
+                    and interval.started_at <= snapshot_request_at <= (interval.ended_at or observed_at)
+                ):
+                    startup_intervals.extend((
+                        PodPhaseInterval(
+                            phase=LifecyclePhase.RESTORING,
+                            started_at=interval.started_at,
+                            ended_at=snapshot_request_at,
+                        ),
+                        replace(interval, started_at=snapshot_request_at),
+                    ))
+                # Without the marker we know GPU occupancy, but not the
+                # startup/compute boundary. Do not persist a false compute
+                # interval that cannot later be retracted from the ledger.
+            stage_intervals = tuple(startup_intervals)
         phases.extend(stage_intervals)
         stage_interval = next(
             (value for value in stage_intervals if value.phase is LifecyclePhase.ACTIVE_COMPUTE),
@@ -729,6 +772,7 @@ class HttpScientificBatchCluster:
         fence: ScientificFenceAuthority,
         renderer: ScientificManifestRenderer,
         writes_enabled: bool,
+        pod_placement: AcceleratorPodPlacement | None = None,
         timeout_seconds: float = 5,
         client: httpx.AsyncClient | None = None,
         clock: Callable[[], datetime] | None = None,
@@ -738,7 +782,9 @@ class HttpScientificBatchCluster:
         self.fence = fence
         self.renderer = renderer
         self.writes_enabled = writes_enabled
+        self.pod_placement = pod_placement
         self.clock = clock or _utcnow
+        self._snapshot_markers: dict[str, datetime] = {}
         self._owns_client = client is None
         self.client = client or httpx.AsyncClient(
             base_url=base_url.rstrip("/"), verify=str(ca_file), timeout=httpx.Timeout(timeout_seconds)
@@ -846,6 +892,15 @@ class HttpScientificBatchCluster:
         if resource.scheduling.max_execution_seconds is not None:
             _set_active_deadline(manifest, resource.kind, resource.scheduling.max_execution_seconds)
         envelope = self._frozen_envelope(manifest, resource)
+        if self.pod_placement is not None and resource.scheduling.accelerator_resource_name is not None:
+            try:
+                self.pod_placement.validate_rendered(
+                    envelope,
+                    resource.scheduling.resolved_pool_preference,
+                    resource.scheduling.accelerator_resource_name,
+                )
+            except PodPlacementError as error:
+                raise ScientificKubernetesError(str(error)) from error
         annotations[PODSET_ENVELOPE_ANNOTATION] = envelope.to_json()
         annotations[PODSET_ENVELOPE_DIGEST_ANNOTATION] = envelope.digest
         annotations[MANIFEST_ANNOTATION] = _manifest_digest(manifest)
@@ -966,6 +1021,38 @@ class HttpScientificBatchCluster:
             route_namespace=resource.route_namespace,
         )
 
+    async def _snapshot_request_at(self, pod: Mapping[str, Any], namespace: str) -> datetime | None:
+        if not uses_snapshot_supervisor(pod):
+            return None
+        metadata = pod.get("metadata", {})
+        if not isinstance(metadata, Mapping):
+            return None
+        uid, name = metadata.get("uid"), metadata.get("name")
+        if not isinstance(uid, str) or not isinstance(name, str):
+            return None
+        if uid in self._snapshot_markers:
+            return self._snapshot_markers[uid]
+        path = f"/api/v1/namespaces/{quote(namespace, safe='')}/pods/{quote(name, safe='')}/log"
+        try:
+            response = await self._request("GET", path, params={
+                "container": STAGE_CONTAINER_NAME,
+                "timestamps": "true",
+                "tailLines": "2000",
+                "limitBytes": str(MAX_LOG_BYTES),
+            })
+        except ScientificKubernetesError:
+            # Waiting containers, rotated logs and unavailable telemetry must
+            # not block model execution or manufacture a restore measurement.
+            return None
+        if response.status_code != 200 or len(response.content) > MAX_LOG_BYTES:
+            return None
+        marker = snapshot_request_started(response.text)
+        if marker is not None:
+            if len(self._snapshot_markers) >= 2048:
+                self._snapshot_markers.pop(next(iter(self._snapshot_markers)))
+            self._snapshot_markers[uid] = marker
+        return marker
+
     async def observe(
         self,
         ref: WorkloadRef,
@@ -1028,6 +1115,7 @@ class HttpScientificBatchCluster:
         pod_uids: list[str] = []
         pod_lifecycle: list[PodLifecycleObservation] = []
         pod_statuses: list[Mapping[str, Any]] = []
+        pending_codes: list[str] = []
         scheduled = False
         observed_at = self.clock()
         for raw_pod in pods if isinstance(pods, list) else []:
@@ -1041,6 +1129,7 @@ class HttpScientificBatchCluster:
                 raw_pod,
                 accelerator_resource_name=scheduling.accelerator_resource_name,
                 observed_at=observed_at,
+                snapshot_request_at=await self._snapshot_request_at(raw_pod, ref.namespace),
             )
             if lifecycle is not None:
                 pod_lifecycle.append(lifecycle)
@@ -1048,6 +1137,8 @@ class HttpScientificBatchCluster:
             if not isinstance(pod_status, Mapping):
                 continue
             pod_statuses.append(pod_status)
+            if (pending_code := _pending_code(pod_status, scheduling.accelerator_resource_name)) is not None:
+                pending_codes.append(pending_code)
             pod_phases.append(str(pod_status.get("phase", "Unknown")))
             if isinstance(pod_status.get("reason"), str):
                 failure_reasons.append(cast(str, pod_status["reason"]))
@@ -1146,7 +1237,7 @@ class HttpScientificBatchCluster:
             state = WorkloadState.RUNNING
         else:
             state = WorkloadState.PENDING
-        return WorkloadObservation(
+        return DiagnosedWorkloadObservation(
             ref=ref,
             attempt_id=attempt_id,
             state=state,
@@ -1155,6 +1246,10 @@ class HttpScientificBatchCluster:
             kueue_workload_uid=kueue_workload_uid,
             pod_uids=tuple(dict.fromkeys(pod_uids)),
             pod_lifecycle=tuple(pod_lifecycle),
+            pending_code=(
+                next((code for code in pending_codes if code != "NodeProvisioning"), "NodeProvisioning")
+                if LifecyclePhase.NODE_PENDING in phases else None
+            ),
         )
 
     async def _scheduling_admission(

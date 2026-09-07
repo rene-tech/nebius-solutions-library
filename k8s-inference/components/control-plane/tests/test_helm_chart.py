@@ -1075,6 +1075,7 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
             "verbs": ["get", "create", "delete"],
         },
         {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]},
+        {"apiGroups": [""], "resources": ["pods/log"], "verbs": ["get"]},
         {"apiGroups": ["kueue.x-k8s.io"], "resources": ["workloads"], "verbs": ["get", "list"]},
     ]
     assert binding["subjects"] == [

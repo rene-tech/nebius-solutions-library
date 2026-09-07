@@ -79,6 +79,7 @@ export function ScientificRunsPage() {
       limit: 100,
     }, signal),
     enabled: runsAvailable,
+    refetchInterval: cursor ? false : 5000,
   });
   const modelsQuery = useQuery({
     queryKey: ["admin-scientific-models", context.toString()],
@@ -115,7 +116,7 @@ export function ScientificRunsPage() {
       <section className="section-stack" aria-labelledby="scientific-run-list-title">
         <div className="section-heading">
           <div><span className="eyebrow">Runs</span><h2 id="scientific-run-list-title">Scientific run ledger</h2></div>
-          <span className="section-heading__meta">{runs.length} runs on this page</span>
+          <div className="configuration-actions"><span className="section-heading__meta">{runs.length} runs on this page</span><button className="button" disabled={!runsAvailable || runsQuery.isFetching} onClick={() => void runsQuery.refetch()} type="button">Refresh runs</button></div>
         </div>
         {capabilitiesQuery.isPending ? (
           <div className="state-panel state-panel--loading" role="status">Checking scientific run capability…</div>
@@ -144,9 +145,9 @@ export function ScientificRunsPage() {
                         <td><strong>{run.model.display_name}</strong><span className="secondary-line">{run.model.execution_mode} · {run.model.backend.backend_id}</span><code className="scientific-digest" title={run.model.backend.execution_identity_digest ?? undefined}>{shortDigest(run.model.backend.execution_identity_digest)}</code></td>
                         <td>{run.attribution.user_id}<span className="secondary-line">{run.attribution.principal_id} · key {run.attribution.api_key_prefix}</span><span className="secondary-line">{run.attribution.tenant_id}</span></td>
                         <td>{run.service_class.effective}<span className="secondary-line">requested {run.service_class.requested}</span>{run.service_class.requested !== run.service_class.effective ? <span className="scientific-decision">Policy changed class</span> : null}</td>
-                        <td>{run.queue.tenant_queue}<span className="secondary-line">{run.queue.local_queue} → {run.queue.cluster_queue}</span><ScientificStatusChip state={run.queue.admission_state === "finished" ? "succeeded" : run.queue.admission_state === "inadmissible" ? "blocked" : run.queue.admission_state} label={run.queue.admission_state} reason={run.queue.admission_reason} /></td>
+                        <td>{run.queue.tenant_queue}<span className="secondary-line">{run.queue.local_queue} → {run.queue.cluster_queue}</span><ScientificStatusChip state={run.queue.admission_state === "finished" ? "succeeded" : run.queue.admission_state === "inadmissible" ? "blocked" : run.queue.admission_state} label={run.queue.admission_state} reason={run.queue.admission_reason} /><span className="secondary-line scientific-secondary">{run.queue.admission_reason}</span></td>
                         <td><ScientificStatusChip state={run.status} reason={run.error?.message ?? `Run is ${run.status}.`} /><span className="secondary-line">{completedStages} / {allStages} stages terminal</span><FastStartTier observation={run.fast_start} /></td>
-                        <td><span className="scientific-accounting-line">Allocated <ScientificMeasurement compact value={run.gpu_accounting.allocated} /></span><span className="scientific-accounting-line">Active <ScientificMeasurement compact value={run.gpu_accounting.active} /></span><span className="scientific-accounting-line">Idle <ScientificMeasurement compact value={run.gpu_accounting.idle_total} /></span><span className="scientific-accounting-line">Grace <ScientificMeasurement compact value={run.gpu_accounting.grace_drain} /></span></td>
+                        <td><span className="scientific-accounting-line">Occupied <ScientificMeasurement compact value={run.gpu_accounting.allocated} /></span><span className="scientific-accounting-line">Active <ScientificMeasurement compact value={run.gpu_accounting.active} /></span><span className="scientific-accounting-line">Idle <ScientificMeasurement compact value={run.gpu_accounting.idle_total} /></span><span className="scientific-accounting-line">Grace <ScientificMeasurement compact value={run.gpu_accounting.grace_drain} /></span></td>
                         <td><AccessGate access={run.access} compact /></td>
                       </tr>
                     );
@@ -212,7 +213,7 @@ export function ScientificRunsPage() {
                         </>
                       ) : null}
                     </td>
-                    <td><span className="scientific-tier scientific-tier--declared">{model.caching.exact_tier}</span><span className="secondary-line scientific-secondary">Image {model.caching.image} · artifacts {model.caching.artifacts} · references {model.caching.reference_data}</span><span className="secondary-line scientific-secondary">Checkpoint {model.caching.runtime_checkpoint} · GPU snapshot {model.caching.gpu_snapshot}</span><span className="secondary-line scientific-secondary">{model.caching.reason}</span></td>
+                    <td><span className="scientific-tier scientific-tier--declared">{model.caching.exact_tier === "not-observed" ? "No per-run startup observation" : model.caching.exact_tier}</span><span className="secondary-line scientific-secondary">Image {model.caching.image} · artifacts {model.caching.artifacts} · references {model.caching.reference_data}</span><span className="secondary-line scientific-secondary">GPU snapshot {model.caching.gpu_snapshot === "verified" ? "available as an option" : model.caching.gpu_snapshot}</span><span className="secondary-line scientific-secondary">{model.caching.reason}</span></td>
                   </tr>
                 ))}</tbody>
               </table>

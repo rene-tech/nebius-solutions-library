@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import re
 import time
@@ -134,6 +135,7 @@ class ModelDeploymentRuntimeBridge:
         self._last_success_at: datetime | None = None
         self._last_error: str | None = None
         self._route_inventory_fresh = False
+        self._publication_states: dict[tuple[str, str], tuple[int, str, str]] = {}
 
     async def _current_revisions(self) -> list[ModelDeploymentRevision]:
         values: list[ModelDeploymentRevision] = []
@@ -273,6 +275,37 @@ class ModelDeploymentRuntimeBridge:
             snapshot,
             valid_until=now + timedelta(seconds=self.route_ttl_seconds),
         )
+        # Record decisions only when they change. HTTP 200 from the API server
+        # is not evidence that a model stayed published; retain the exact
+        # controller phase/source version behind withdrawals and recoveries.
+        publication_states = {}
+        for assessment in snapshot.assessments:
+            key = (assessment.namespace, assessment.name)
+            state = (assessment.revision, assessment.disposition.value, assessment.reason.value)
+            publication_states[key] = state
+            if self._publication_states.get(key) == state:
+                continue
+            status = statuses.get(key)
+            observation = status.observation if status is not None else None
+            LOGGER.info(
+                "%s",
+                json.dumps(
+                    {
+                        "event": "model_publication_changed",
+                        "namespace": assessment.namespace,
+                        "name": assessment.name,
+                        "model_ref": assessment.model_ref,
+                        "revision": assessment.revision,
+                        "disposition": assessment.disposition.value,
+                        "reason": assessment.reason.value,
+                        "phase": observation.status.phase.value if observation is not None else None,
+                        "source_resource_version": observation.source_resource_version if observation else None,
+                        "registry_projection_valid": valid,
+                    },
+                    separators=(",", ":"),
+                ),
+            )
+        self._publication_states = publication_states
         if not valid:
             self._last_error = "dynamic-route-projection-invalid"
             self._route_inventory_fresh = False

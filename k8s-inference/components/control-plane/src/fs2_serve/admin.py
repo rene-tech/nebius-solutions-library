@@ -214,6 +214,15 @@ class PrometheusQueryTemplates:
             raise ValueError("model selector is invalid")
         return f'model="{model_id}"'
 
+    @staticmethod
+    def _window_change(labels: str, seconds: int) -> str:
+        # These are restart-safe cumulative PostgreSQL projections published
+        # as gauges by every control-plane replica. Deduplicate before taking
+        # the selected window's change; never compare an all-time total with
+        # the durable completed_at window. Scrape/extrapolation remains sampled.
+        cumulative = f"max by (model, protocol, outcome) (fs2_serve_requests_total{labels})"
+        return f"clamp_min(delta(({cumulative})[{seconds}s:]), 0)"
+
     @classmethod
     def for_window(cls, *, model_id: str | None, seconds: int) -> Mapping[str, str]:
         if not 60 <= seconds <= int(MAX_ADMIN_WINDOW.total_seconds()):
@@ -221,12 +230,11 @@ class PrometheusQueryTemplates:
         selector = cls._selector(model_id)
         labels = f"{{{selector}}}" if selector else ""
         window = f"{seconds}s"
-        requests = f"sum(max by (model, protocol, outcome) (rate(fs2_serve_requests_total{labels}[{window}])))"
-        terminal = f"sum(max by (model, protocol, outcome) (fs2_serve_requests_total{labels}))"
+        change = cls._window_change(labels, seconds)
+        requests = f"sum({change}) / {seconds}"
+        terminal = f"round(sum({change}))"
         error_labels = f'{{{selector + "," if selector else ""}outcome!="succeeded"}}'
-        error_requests = (
-            f"sum(max by (model, protocol, outcome) (rate(fs2_serve_requests_total{error_labels}[{window}])))"
-        )
+        error_requests = f"sum({cls._window_change(error_labels, seconds)}) / {seconds}"
         errors = f"clamp((({error_requests}) or vector(0)) / clamp_min(({requests}), 1e-12), 0, 1)"
         latency = {
             quantile: (
@@ -263,14 +271,11 @@ class PrometheusQueryTemplates:
         labels = f"{{{selector}}}" if selector else ""
         error_labels = f'{{{selector + "," if selector else ""}outcome!="succeeded"}}'
         window = f"{seconds}s"
-        requests = (
-            "sum by (model) (max by (model, protocol, outcome) "
-            f"(rate(fs2_serve_requests_total{labels}[{window}])))"
-        )
-        terminal = f"sum by (model) (max by (model, protocol, outcome) (fs2_serve_requests_total{labels}))"
+        change = PrometheusQueryTemplates._window_change(labels, seconds)
+        requests = f"sum by (model) ({change}) / {seconds}"
+        terminal = f"round(sum by (model) ({change}))"
         error_requests = (
-            "sum by (model) (max by (model, protocol, outcome) "
-            f"(rate(fs2_serve_requests_total{error_labels}[{window}])))"
+            f"sum by (model) ({PrometheusQueryTemplates._window_change(error_labels, seconds)}) / {seconds}"
         )
         errors = f"clamp((({error_requests}) or on(model) (0 * ({requests}))) / clamp_min(({requests}), 1e-12), 0, 1)"
         latency = {
@@ -396,13 +401,13 @@ def _available(value: float, unit: str, source: str) -> AdminMeasurement:
     return AdminMeasurement(value=value, unit=unit, state=AdminValueState.AVAILABLE, source=source)
 
 
-def _estimated(value: float, unit: str, source: str) -> AdminMeasurement:
+def _estimated(value: float, unit: str, source: str, *, reason: str | None = None) -> AdminMeasurement:
     return AdminMeasurement(
         value=value,
         unit=unit,
         state=AdminValueState.ESTIMATED,
         source=source,
-        reason="value is accounting estimate, not measured device utilization",
+        reason=reason or "value is accounting estimate, not measured device utilization",
     )
 
 
@@ -1192,12 +1197,28 @@ class AdminReadService:
                         else _unavailable("operations", "postgresql", "durable total is unavailable")
                     ),
                     prometheus_terminal_operations=(
-                        _available(prom_count, "operations", "prometheus")
+                        _estimated(
+                            prom_count,
+                            "operations",
+                            "prometheus",
+                            reason=(
+                                "Sampled change across the selected completed-operation window; "
+                                "all model IDs, replicas deduplicated."
+                            ),
+                        )
                         if prom_count is not None
                         else _unavailable("operations", "prometheus", "bounded metric total is unavailable")
                     ),
                     difference=(
-                        _available(difference, "operations", "bff")
+                        _estimated(
+                            difference,
+                            "operations",
+                            "bff",
+                            reason=(
+                                "Sampled Prometheus window minus exact durable window; "
+                                "scrape boundary/extrapolation can differ."
+                            ),
+                        )
                         if difference is not None
                         else _unavailable("operations", "bff", "both totals are required for reconciliation")
                     ),

@@ -114,6 +114,7 @@ class ScientificQueueState(StrictModel):
     admission_reason: str = Field(min_length=1, max_length=300)
     admitted_at: AwareDatetime | None = None
     queue_position: ScientificMeasurement
+    shard_counts: dict[str, int] = Field(default_factory=dict, max_length=8)
 
 
 class ScientificServiceClassDecision(StrictModel):
@@ -203,6 +204,9 @@ class ScientificAttempt(StrictModel):
     checkpoint_input_artifact_id: str | None = Field(default=None, max_length=128)
     checkpoint_output_artifact_id: str | None = Field(default=None, max_length=128)
     error: ScientificError | None = None
+    phase: str | None = Field(default=None, max_length=64)
+    phase_reason: str | None = Field(default=None, max_length=300)
+    phase_observed_at: AwareDatetime | None = None
 
 
 class ScientificStage(StrictModel):

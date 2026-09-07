@@ -99,6 +99,7 @@ export interface ScientificQueueState {
   admission_reason: string;
   admitted_at: string | null;
   queue_position: ScientificEvidenceMeasurement;
+  shard_counts?: Record<string, number>;
 }
 
 export interface ScientificServiceClassDecision {
@@ -169,6 +170,9 @@ export interface ScientificAttempt {
   checkpoint_input_artifact_id: string | null;
   checkpoint_output_artifact_id: string | null;
   error: ScientificError | null;
+  phase?: string | null;
+  phase_reason?: string | null;
+  phase_observed_at?: string | null;
 }
 
 export interface ScientificStage {

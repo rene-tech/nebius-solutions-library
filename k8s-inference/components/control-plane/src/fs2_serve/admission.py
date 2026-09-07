@@ -47,7 +47,7 @@ from .models import (
     RuntimeLifecycleObservation,
     RuntimeObservationSource,
 )
-from .registry import OperationalModel, Registry
+from .registry import ModelRouteUnavailableError, OperationalModel, Registry
 from .runtime import ActivationError, PreemptedError, RouteUnavailableError, RuntimeClient, RuntimeOperationError
 from .store import ConflictError, StaleLeaseError, Store
 from .telemetry import Metrics
@@ -192,7 +192,7 @@ class AdmissionService:
             routes_fresh = await self.route_refresh()
         model = self.registry.get(admission.model_id)
         if not routes_fresh and model.dynamic_policy is not None:
-            raise RuntimeError("dynamic model route evidence is unavailable")
+            raise ModelRouteUnavailableError("dynamic model route evidence is unavailable")
         self.registry.authorize_principal(
             model,
             principal,

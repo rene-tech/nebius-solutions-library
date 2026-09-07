@@ -280,7 +280,9 @@ def test_promql_is_fixed_bounded_and_rejects_selector_injection() -> None:
         "latency_p99_seconds",
     }
     assert all("glm-5-2-fp8" in query for query in queries.values())
-    assert all("[300s]" in query for name, query in queries.items() if name != "terminal_operations")
+    assert all("[300s]" in query or "[300s:]" in query for query in queries.values())
+    assert "delta((max by (model, protocol, outcome)" in queries["terminal_operations"]
+    assert queries["terminal_operations"].startswith("round(sum(")
     grouped = PrometheusQueryTemplates.by_model_for_window(seconds=300)
     assert set(grouped) == set(queries)
     assert all("glm-5-2-fp8" not in query for query in grouped.values())
@@ -823,7 +825,12 @@ def test_openapi_matches_typed_versioned_admin_contract(registry: Any, cipher: A
         responses = operation["responses"]
         success_response = responses[str(route["success_status"])]
         expected_data_schema = route["data_schema"]
-        if expected_data_schema is None:
+        if route.get("response_format") == "binary":
+            assert success_response["content"]["application/octet-stream"]["schema"] == {
+                "type": "string", "format": "binary"
+            }
+            assert route["cache_control"] == "no-store"
+        elif expected_data_schema is None:
             assert "content" not in success_response
         else:
             success_schema = success_response["content"]["application/json"]["schema"]

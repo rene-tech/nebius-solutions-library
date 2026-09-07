@@ -671,6 +671,25 @@ async def test_admin_discovery_preserves_global_candidate_catalog_without_bypass
     assert global_catalog.calls == 1
 
 
+async def test_scientific_catalog_reports_selectable_snapshot_without_claiming_a_restore() -> None:
+    class Renderer:
+        def startup_policy_options(self, model_id):
+            assert model_id == "protein-design"
+            return {"design": ["qualified-exact-bundle"]}
+
+    service = DiscoveryService()
+    service.execution_binding = Renderer()
+    adapter = ScientificProfileDiscoveryAdapter(scientific_batches=service, clock=lambda: FIXED_NOW)
+    snapshot = await adapter.list_models(tenant_id="tenant-a")
+    caching = snapshot.data.items[0].caching
+    assert caching.gpu_snapshot == "verified"
+    assert caching.runtime_checkpoint == "verified"
+    assert caching.exact_tier == "not-observed"
+    assert "available as an option" in caching.reason
+    assert "not evidence that this run restored" in caching.reason
+    assert (await adapter.list_models(tenant_id="tenant-other")).data.items == []
+
+
 class ProfileStateConsistencyTests(unittest.TestCase):
     """A candidate is never routed; a dispatchable or qualified profile always is."""
 

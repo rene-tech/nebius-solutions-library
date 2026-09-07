@@ -563,9 +563,7 @@ def test_public_catalog_discovers_native_http_model_published_on_mcp_surface(reg
     revision = _revision(registry)
     spec = revision.spec.model_copy(
         update={
-            "exposure": revision.spec.exposure.model_copy(
-                update={"open_ai": False, "open_ai_aliases": [], "mcp": True}
-            )
+            "exposure": revision.spec.exposure.model_copy(update={"open_ai": False, "open_ai_aliases": [], "mcp": True})
         }
     )
     revision = revision.model_copy(update={"spec": spec, "etag": spec_digest(spec)})
@@ -1731,6 +1729,7 @@ async def test_mcp_invocation_uses_admission_and_result_survives_status_cancel_u
             context,
             convert_result=False,
         )
+        admitted = _mcp_payload(admitted)
         operation_id = admitted["id"]
         assert admitted["status"] == "succeeded" and admitted["result_available"] is True
         assert "result" not in admitted
@@ -1747,7 +1746,7 @@ async def test_mcp_invocation_uses_admission_and_result_survives_status_cancel_u
             context,
             convert_result=False,
         )
-        assert generic["status"] == "succeeded"
+        assert _mcp_payload(generic)["status"] == "succeeded"
 
         result = await server._tool_manager.call_tool(  # type: ignore[attr-defined]
             "get_operation_result", {"operation_id": operation_id}, context, convert_result=False

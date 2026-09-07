@@ -522,6 +522,12 @@ module "kueue_scheduling" {
   model_eligible_pool_ids = local.model_eligible_pool_ids
 
   core_capacity = var.scheduling.core_pool_capacity
+  accelerator_node_capacity = {
+    for pool_id, pool in local.selected_queue_pools : pool_id => merge(
+      var.accelerator_node_schedulable_capacity[pool_id],
+      { accelerator_count = pool.node.gpus_per_node },
+    ) if contains(keys(var.accelerator_node_schedulable_capacity), pool_id)
+  }
   # The reference-data class exists to run the raw AlphaFold 3 data stage, so
   # its request is derived rather than optional: omitting it would bypass every
   # per-node and quota fit check. An operator may raise it, never remove it.

@@ -65,8 +65,9 @@ variable "deployment" {
       # size is not schedulable capacity and a quota derived from it
       # over-admits. Declared per pool, the same way the CPU pools declare it.
       schedulable_capacity = optional(object({
-        cpu_millicores = number
-        memory_mib     = number
+        cpu_millicores        = number
+        memory_mib            = number
+        ephemeral_storage_mib = optional(number)
         # Where the number came from, so a reviewer can check it rather than
         # take it on trust. A bare pair of integers in tfvars is a claim; this
         # is a claim with an origin, a time and a digest of the payload it was
@@ -244,8 +245,9 @@ variable "deployment" {
       # producer here measures it. Required for every selected pool once
       # core_capacity is set; a custom pool declares the same facts inline.
       accelerator_schedulable_capacity = optional(map(object({
-        cpu_millicores = number
-        memory_mib     = number
+        cpu_millicores        = number
+        memory_mib            = number
+        ephemeral_storage_mib = optional(number)
         # Where the number came from, so a reviewer can check it rather than
         # take it on trust. A bare pair of integers in tfvars is a claim; this
         # is a claim with an origin, a time and a digest of the payload it was

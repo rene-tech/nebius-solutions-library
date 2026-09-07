@@ -722,6 +722,10 @@ locals {
     # An empty intersection with a service class's pool order is a refusal, and
     # a model or stage absent from these maps has no lane in this deployment.
     model_eligible_pool_ids = var.model_eligible_pool_ids
+    # Unlike core_capacity, these are per-node limits, not max-node-count
+    # totals. Consumers intersect model eligibility with whole-Pod feasibility.
+    accelerator_node_capacity_schema = "fs2-serve.nebius.ai/accelerator-node-capacity/v1"
+    accelerator_node_capacity        = var.accelerator_node_capacity
     pools = {
       for pool_id, pool in var.pools : pool_id => {
         resource_flavor           = pool.flavor_name

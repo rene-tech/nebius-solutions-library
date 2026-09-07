@@ -16,9 +16,11 @@ from .models import (
     ScientificBatchPlan,
     ServiceClass,
     StagePlacementClass,
+    StageResourceEnvelope,
     StageSchedulingDecision,
     StageToleration,
 )
+from .placement import AcceleratorPodPlacement, PodPlacementError, stage_pod_request
 
 SCHEDULING_SCHEMA = "fs2-serve.nebius.ai/kueue-scheduling/v1"
 
@@ -50,8 +52,15 @@ def _read(path: Path, *, expected_sha256: str | None = None) -> tuple[dict[str, 
 class SchedulingContractResolver:
     """Resolve queue, priority, pool, flavor, and preemption exactly once."""
 
-    def __init__(self, contract: Mapping[str, Any], *, raw_contract_sha256: str | None = None) -> None:
+    def __init__(
+        self,
+        contract: Mapping[str, Any],
+        *,
+        raw_contract_sha256: str | None = None,
+        stage_resources: Mapping[tuple[str, str], StageResourceEnvelope] | None = None,
+    ) -> None:
         self.contract = dict(contract)
+        self.stage_resources = dict(stage_resources or {})
         if self.contract.get("schema") != SCHEDULING_SCHEMA:
             raise SchedulingContractError("Kueue scheduling contract schema is unsupported")
         canonical = json.dumps(self.contract, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
@@ -65,6 +74,10 @@ class SchedulingContractResolver:
         )
         self.local_queue_routes = _object(self.contract.get("local_queue_routes"), "Kueue local queue routes")
         self.pools = _object(self.contract.get("pools"), "Kueue accelerator pools")
+        try:
+            self.pod_placement = AcceleratorPodPlacement(self.contract)
+        except PodPlacementError as error:
+            raise SchedulingContractError(str(error)) from error
         self.cpu_classes = _object(self.contract.get("cpu_classes"), "Kueue CPU placement classes")
         if self.cpu_classes and self.contract.get("cpu_classes_schema") != ("fs2-serve.nebius.ai/cpu-stage-classes/v1"):
             raise SchedulingContractError("Kueue CPU placement class schema is absent or unsupported")
@@ -93,9 +106,15 @@ class SchedulingContractResolver:
             raise SchedulingContractError("Kueue contract uses a non-canonical accelerator pool label")
 
     @classmethod
-    def load(cls, path: Path, *, expected_sha256: str | None = None) -> SchedulingContractResolver:
+    def load(
+        cls,
+        path: Path,
+        *,
+        expected_sha256: str | None = None,
+        stage_resources: Mapping[tuple[str, str], StageResourceEnvelope] | None = None,
+    ) -> SchedulingContractResolver:
         contract, digest = _read(path, expected_sha256=expected_sha256)
-        return cls(contract, raw_contract_sha256=digest)
+        return cls(contract, raw_contract_sha256=digest, stage_resources=stage_resources)
 
     def freeze(
         self,
@@ -342,6 +361,37 @@ class SchedulingContractResolver:
                 if stage_accelerator is not None and stage_accelerator.get("resource_name") != accelerator_resource:
                     raise SchedulingContractError("profile stage accelerator resource differs from Kueue")
                 accelerator_count = stage_gpu_count
+                if not self.pod_placement.legacy_unverified:
+                    execution_resources = self.stage_resources.get((model_id, stage.stage_id))
+                    if (
+                        stage.resources is not None
+                        and execution_resources is not None
+                        and stage.resources != execution_resources
+                    ):
+                        raise SchedulingContractError("profile stage resources differ from its qualified execution map")
+                    requested_resources = stage.resources or execution_resources
+                    if requested_resources is None:
+                        raise SchedulingContractError(
+                            f"scientific stage {stage.stage_id} lacks its per-Pod resource envelope"
+                        )
+                    pod_request = stage_pod_request(
+                        requested_resources,
+                        accelerator_resource=accelerator_resource,
+                        accelerator_count=accelerator_count,
+                    )
+                    resolved_pools = self.pod_placement.eligible_pools(
+                        resolved_pools, pod_request, accelerator_resource
+                    )
+                    if not resolved_pools:
+                        raise SchedulingContractError(
+                            f"scientific stage {stage.stage_id} cannot fit a compatible accelerator node: "
+                            f"whole Pod requests {pod_request.cpu_millis}m CPU "
+                            f"and {pod_request.memory_bytes} bytes memory"
+                        )
+                    if requested_flavor is not None and not any(
+                        self.pools[pool_id]["resource_flavor"] == requested_flavor for pool_id in resolved_pools
+                    ):
+                        raise SchedulingContractError("requested ResourceFlavor cannot fit the whole scientific Pod")
 
             decisions.append(
                 StageSchedulingDecision(

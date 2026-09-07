@@ -43,6 +43,10 @@ class RegistryError(ValueError):
     pass
 
 
+class ModelRouteUnavailableError(RuntimeError):
+    """A known model has no currently valid route for new admissions."""
+
+
 @dataclass(frozen=True)
 class ProbeSpec:
     method: str
@@ -756,7 +760,7 @@ class Registry:
         except KeyError as exc:
             raise KeyError(f"unknown model: {model_id}") from exc
         if require_enabled and not model.enabled:
-            raise RuntimeError("model is not routable")
+            raise ModelRouteUnavailableError("model is not routable")
         return model
 
     def get_revision(

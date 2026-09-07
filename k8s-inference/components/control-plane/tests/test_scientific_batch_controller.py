@@ -35,6 +35,8 @@ from fs2_serve.scientific_batch.models import (
     BatchEventKind,
     ScientificIdentityError,
 )
+from fs2_serve.scientific_batch.observation import DiagnosedWorkloadObservation
+from fs2_serve.scientific_batch.policy import PolicyAwareScientificBatchController
 from fs2_serve.scientific_batch.protocols import BatchRepositoryConflictError
 
 NOW = datetime(2026, 9, 2, 20, 40, tzinfo=UTC)
@@ -830,6 +832,43 @@ async def test_infrastructure_failure_is_retried_but_phase_replay_is_idempotent(
     latest = repository.records[operation_id].stage("dock").latest_attempt("main")
     assert latest is not None and latest.attempt_number == 2
     assert len(cluster.apply_history) == 2
+
+
+@pytest.mark.asyncio
+async def test_pending_reason_arriving_after_pending_phase_is_durable_and_nonterminal() -> None:
+    repository = FakeScientificBatchRepository()
+    cluster = FakeScientificBatchCluster()
+    reconciler = PolicyAwareScientificBatchController(
+        repository=repository, cluster=cluster, controller_id="test-controller",
+        namespace="fs2-scientific", clock=lambda: NOW,
+    )
+    operation_id = uuid4()
+    batch_plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="dock"),))
+    await reconciler.admit(
+        operation_id=operation_id, tenant_id="tenant-a", model_id="protein-design",
+        plan=batch_plan, scheduling=snapshot(batch_plan),
+    )
+    await reconciler.reconcile_once()
+    attempt = repository.records[operation_id].stage("dock").attempts[0]
+    observation = DiagnosedWorkloadObservation(
+        ref=attempt.workload, attempt_id=attempt.attempt_id, state=WorkloadState.PENDING,
+        phases=(LifecyclePhase.ADMITTED, LifecyclePhase.NODE_PENDING),
+        scheduling_admission=SchedulingAdmission(
+            resolved_pool_id="h100-preemptible", admitted_resource_flavor="inference-h100-1x",
+            accelerator_resource_name="nvidia.com/gpu", accelerator_count=1, admitted_at=NOW,
+        ),
+    )
+    cluster.set_observation(attempt.workload, observation)
+    await reconciler.reconcile_once()
+    cluster.set_observation(attempt.workload, replace(observation, pending_code="UnschedulableInsufficientCpu"))
+    await reconciler.reconcile_once()
+    count = len(repository.events[operation_id])
+    await reconciler.reconcile_once()
+    assert len(repository.events[operation_id]) == count
+    events = [event for event in repository.events[operation_id] if event.draft.code == "UnschedulableInsufficientCpu"]
+    assert len(events) == 1 and events[0].draft.phase is LifecyclePhase.NODE_PENDING
+    latest = repository.records[operation_id].stage("dock").attempts[0]
+    assert latest.outcome is AttemptOutcome.ACTIVE and latest.failure_code is None
 
 
 @pytest.mark.asyncio

@@ -57,6 +57,53 @@ function renderPage(
 }
 
 describe("scientific run detail", () => {
+  it("offers the authorized binary artifact download without exposing storage handles", async () => {
+    const detail = detailFixture();
+    const artifact = detail.data.artifacts.find((item) => item.role === "output");
+    if (!artifact) throw new Error("Output artifact fixture is missing");
+    artifact.download = {
+      available: true,
+      href: `/admin/api/v1/scientific-runs/${detail.data.run.id}/artifacts/${artifact.artifact_id}/content`,
+      reason: null,
+    };
+    renderPage(() => Promise.resolve(detail));
+    const row = await screen.findByRole("row", { name: /candidate-backbones.tar.zst.*output.*available/ });
+    const download = within(row).getByRole("link", { name: "Download artifact" });
+    expect(download).toHaveAttribute("href", artifact.download.href);
+    expect(download).toHaveAttribute("download", artifact.name);
+    expect(download.getAttribute("href")).not.toMatch(/token=|s3:\/\/|storage_handle/);
+  });
+
+  it("shows actionable pending placement and mixed-shard admission without claiming compute", async () => {
+    const detail = cancellableDetail();
+    detail.data.run.status = "admitted";
+    detail.data.run.queue.shard_counts = { running: 2, pending: 1 };
+    detail.data.run.queue.admission_reason = "Current diffuse shards: 2 running, 1 pending. Pending shards await their own admission.";
+    const attempt = detail.data.stages[1].attempts[0];
+    attempt.status = "queued";
+    attempt.phase = "node_pending";
+    attempt.phase_reason = "Waiting for a node: insufficient CPU including sidecars in the selected pool.";
+    attempt.error = null;
+    renderPage(() => Promise.resolve(detail));
+    const notice = await screen.findByRole("region", { name: "Placement progress" });
+    expect(notice).toHaveTextContent("insufficient CPU including sidecars");
+    expect(notice).toHaveTextContent("Admission does not mean GPU computation has started");
+    const row = screen.getByRole("row", { name: /attempt-diffuse-1/ });
+    expect(row).toHaveTextContent("queued");
+    expect(row).toHaveTextContent("node pending");
+    expect(row).toHaveTextContent("No error");
+    expect(screen.getByText(/Current diffuse shards: 2 running, 1 pending/)).toBeInTheDocument();
+  });
+
+  it("automatically refreshes an active run to its durable terminal result", async () => {
+    let calls = 0;
+    renderPage(() => Promise.resolve(++calls === 1 ? cancellableDetail() : detailFixture()));
+    expect(await screen.findByRole("button", { name: "Request cancellation" })).toBeInTheDocument();
+    await waitFor(() => expect(adminApi.scientificRun).toHaveBeenCalledTimes(2), { timeout: 6500 });
+    expect(await screen.findByText("This run is terminal and can no longer be cancelled.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Request cancellation" })).not.toBeInTheDocument();
+  }, 8000);
+
   it("renders lifecycle, DAG attempts, artifacts, retry, cancellation, and correlated signals", async () => {
     renderPage();
 

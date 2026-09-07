@@ -191,7 +191,7 @@ class FakePrometheusModelReader:
             return "p99"
         if 'outcome!="succeeded"' in query:
             return "error"
-        if "rate(" in query:
+        if "delta(" in query and "round(" not in query:
             return "rate"
         return "terminal"
 
@@ -239,6 +239,9 @@ async def test_prometheus_model_metrics_uses_constant_batch_query_count() -> Non
 
     assert len(reader.scalar_queries) == len(reader.vector_queries) == 6
     assert all('model=~"hot-model|cold-model"' in query for query in reader.vector_queries)
+    totals = [query for query in reader.vector_queries if "fs2_serve_requests_total" in query]
+    assert all("delta(" in query and "[3600s:]" in query for query in totals)
+    assert all("max by (model, protocol, outcome)" in query for query in totals)
     assert snapshot.requests_per_second == 2.5
     assert snapshot.terminal_operations == 10
     assert snapshot.error_rate == 0.1

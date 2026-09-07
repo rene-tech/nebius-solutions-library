@@ -121,6 +121,10 @@ export function ScientificRunDetailPage() {
     queryKey,
     queryFn: ({ signal }) => adminApi.scientificRun(runId, context, signal),
     enabled: Boolean(runId) && runsAvailable,
+    refetchInterval: (current) => {
+      const status = current.state.data?.data.run.status;
+      return status && ["succeeded", "failed", "cancelled"].includes(status) ? false : 5000;
+    },
   });
 
   async function requestCancellation() {
@@ -146,13 +150,22 @@ export function ScientificRunDetailPage() {
       {({ data }) => {
         const { run } = data;
         const measuredIdleCauses = run.gpu_accounting.idle_by_cause.filter((entry) => entry.duration.evidence === "measured");
+        const waitingReasons = [...new Set(data.stages.flatMap((stage) => stage.attempts)
+          .filter((attempt) => attempt.status === "queued" && attempt.phase_reason)
+          .map((attempt) => attempt.phase_reason))];
         return (
           <div className="page-stack scientific-page">
-            <Link className="back-link" to={{ pathname: "/admin/scientific-runs", search: backParams.toString() }}>← All scientific runs</Link>
+            <div className="configuration-actions">
+              <Link className="back-link" to={{ pathname: "/admin/scientific-runs", search: backParams.toString() }}>← All scientific runs</Link>
+              <button className="button" disabled={query.isFetching} onClick={() => void query.refetch()} type="button">Refresh run</button>
+              <span className="supporting-copy">Active runs update every 5 seconds.</span>
+            </div>
             <section className="identity-panel scientific-run-identity">
               <div><span className="eyebrow">{run.model.display_name} · {run.operation}</span><h2>{run.display_name}</h2><code>{run.id}</code></div>
               <ScientificStatusChip state={run.status} reason={run.error?.message ?? `Run is ${run.status}.`} />
             </section>
+
+            {waitingReasons.length ? <section className="inline-notice inline-notice--warning" aria-label="Placement progress"><strong>Waiting for placement</strong>{waitingReasons.map((reason) => <p key={reason}>{reason}</p>)}<span>See each attempt's selected pool below. Admission does not mean GPU computation has started.</span></section> : null}
 
             <section className={`inline-notice ${run.access.state === "blocked" ? "inline-notice--error" : run.access.state === "unverified" ? "inline-notice--warning" : ""}`} aria-labelledby="scientific-access-title">
               <strong id="scientific-access-title">Access admission</strong>
@@ -161,7 +174,7 @@ export function ScientificRunDetailPage() {
             </section>
 
             <div className="metric-grid">
-              <ScientificMetricCard label="GPU allocated" value={run.gpu_accounting.allocated} detail={`${run.gpu_accounting.gpu_count === null ? "GPU count unavailable" : `${run.gpu_accounting.gpu_count} GPU`} · ${run.gpu_accounting.capacity_type}`} />
+              <ScientificMetricCard label="GPU occupied" value={run.gpu_accounting.allocated} detail={`Scheduler occupancy · ${run.gpu_accounting.gpu_count === null ? "GPU count unavailable" : `${run.gpu_accounting.gpu_count} GPU per attempt`} · ${run.gpu_accounting.capacity_type}`} />
               <ScientificMetricCard label="GPU active" value={run.gpu_accounting.active} detail="Active compute from the lifecycle ledger" />
               <ScientificMetricCard label="GPU idle" value={run.gpu_accounting.idle_total} detail={`${measuredIdleCauses.length} measured idle causes`} />
               <ScientificMetricCard label="GPU grace / drain" value={run.gpu_accounting.grace_drain} detail="Measured separately from active compute" />
@@ -196,6 +209,7 @@ export function ScientificRunDetailPage() {
                   <div><dt>Position at observation</dt><dd><ScientificMeasurement compact value={run.queue.queue_position} /></dd></div>
                 </dl>
                 <p className="supporting-copy">{run.queue.admission_reason}</p>
+                {Object.keys(run.queue.shard_counts ?? {}).length ? <div className="chip-list" aria-label="Current shard admission">{Object.entries(run.queue.shard_counts ?? {}).map(([state, count]) => <span className="mini-chip" key={state}>{count} {state}</span>)}</div> : null}
               </section>
             </div>
 
@@ -228,7 +242,7 @@ export function ScientificRunDetailPage() {
               <div className="scientific-accounting-grid">
                 {run.gpu_accounting.idle_by_cause.map((entry) => <div key={entry.cause}><span>{entry.cause}</span><strong><ScientificMeasurement value={entry.duration} /></strong><small>{entry.duration.reason ?? entry.duration.source}</small></div>)}
               </div>
-              <p className="supporting-copy">Allocated GPU time is partitioned into active, idle-by-cause, and grace/drain. An estimated allocation boundary cannot be presented as measured or reconciled as exact.</p>
+              <p className="supporting-copy">Scheduler-occupied GPU time is partitioned into active, idle-by-cause, and grace/drain across every attempt, including retries. It is not GPU-memory allocation or DCGM utilization. Estimated or incomplete boundaries remain labelled.</p>
             </section>
 
             <section className="section-stack" aria-labelledby="scientific-dag-title">
@@ -247,7 +261,7 @@ export function ScientificRunDetailPage() {
                         <thead><tr><th scope="col">Attempt</th><th scope="col">Status</th><th scope="col">Started</th><th scope="col">Completed</th><th scope="col">Workload / job</th><th scope="col">Admission / placement</th><th scope="col">Checkpoint</th><th scope="col">Error</th></tr></thead>
                         <tbody>{stage.attempts.map((attempt) => <tr key={attempt.id}>
                           <th scope="row">#{attempt.number}<span className="secondary-line">{attempt.id}</span></th>
-                          <td><ScientificStatusChip state={attempt.status} reason={attempt.error?.message ?? `Attempt is ${attempt.status}.`} /></td>
+                          <td><ScientificStatusChip state={attempt.status} reason={attempt.error?.message ?? attempt.phase_reason ?? `Attempt is ${attempt.status}.`} />{attempt.phase ? <span className="secondary-line">{attempt.phase.replaceAll("_", " ")}</span> : null}{attempt.phase_reason ? <span className="secondary-line scientific-secondary">{attempt.phase_reason}</span> : null}</td>
                           <td>{formatTimestamp(attempt.started_at)}</td>
                           <td>{formatTimestamp(attempt.completed_at)}</td>
                           <td><code>{attempt.workload_uid ?? "Not created"}</code><span className="secondary-line">{attempt.job_uid ?? "No job"}</span></td>
@@ -275,7 +289,7 @@ export function ScientificRunDetailPage() {
                     <td>{artifact.sha256 ? <code title={artifact.sha256}>{shortDigest(artifact.sha256)}</code> : "Digest pending"}</td>
                     <td><ScientificMeasurement compact value={artifact.size_bytes} /></td>
                     <td>{formatTimestamp(artifact.created_at)}</td>
-                    <td>{artifact.download.available && artifact.download.href?.startsWith("/admin/") ? <a className="text-link" href={artifact.download.href}>Open artifact</a> : <span title={artifact.download.reason ?? undefined}>Not available</span>}</td>
+                    <td>{artifact.download.available && artifact.download.href?.startsWith("/admin/") ? <a className="text-link" href={artifact.download.href} download={artifact.name}>Download artifact</a> : <span title={artifact.download.reason ?? undefined}>Not available</span>}</td>
                   </tr>)}</tbody>
                 </table>
               </div>
