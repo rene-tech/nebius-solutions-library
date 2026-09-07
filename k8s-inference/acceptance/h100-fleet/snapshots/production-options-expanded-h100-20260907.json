@@ -1,7 +1,8 @@
 {
   "schema": "fs2-serve.nebius.ai/expanded-production-snapshot-option-proof/v1",
   "observed_date": "2026-09-07",
-  "deployed_source_commit": "7d0bab4619dc5d39082655b4ddc628c5b4708240",
+  "deployment_identity_note": "Deployment source is bound separately to each receipt; models were accepted across multiple releases.",
+  "completion_status": "complete",
   "cluster": "mk8scluster-e00j5z9te7x5dd9g6a",
   "project": "project-e00rene",
   "region": "eu-north1",
@@ -14,9 +15,481 @@
   "scope": "Only completed actual production CUDA restores with original valid outputs and restored policies/floors. Fresh-process cached startup trials remain separate; no disk-cold timing claim.",
   "models": [
     {
+      "model_id": "genmol",
+      "bundle_id": "genmol-h100-cuda-criu-20260907-r07",
+      "status": "passed",
+      "receipt_name": "expanded-genmol-snapshot-r02",
+      "private_release_identity_sha256": "58e68604e4c0f9a85651521a8811b8e62e5ecaa74a451f26fbb66b288d64d248",
+      "deployed_source_commit": "cdf7c508c1dc826358e28b56979975aaff8e04da",
+      "source_identity_basis": "per-attempt release-identity.json",
+      "selection": "Actual HTTPS admin form: drain, observed zero, exact snapshot Prefer, original floor, preview/apply; complete original desired specification restored in finally.",
+      "public_requests": [
+        {
+          "surface": "http",
+          "operation_id": "036f4dd1-6b7a-45d4-af31-b6c4fc0eea2b",
+          "pod_uid": "148f3650-1969-47a8-9747-7403e6cfeb48",
+          "started_at": "2026-09-07T13:48:38.187Z",
+          "completed_at": "2026-09-07T13:48:39.608Z",
+          "request_sha256": "050d9d440d6f09573d68b35a0fc26d3119407a6be22896293062752d822cfc3b",
+          "response_sha256": "3a786078c64e5e1f7d8e4635ab76a913016b00b0177c63e59b70eeaccd8c56a5",
+          "response_bytes": 293,
+          "public_request_seconds": 1.4203945714980364
+        },
+        {
+          "surface": "http",
+          "operation_id": "064d38e5-2bf8-47c4-891c-2834747f6f3e",
+          "pod_uid": "148f3650-1969-47a8-9747-7403e6cfeb48",
+          "started_at": "2026-09-07T13:48:41.027Z",
+          "completed_at": "2026-09-07T13:48:42.711Z",
+          "request_sha256": "c2ee9474d485d56430bdf3b6885c9bb0dfef4130eb080be9559e7eb372a462e1",
+          "response_sha256": "61a7e4e375990b633bac9db219adf038d4559ca62b8105cb58db42b5ed658d98",
+          "response_bytes": 288,
+          "public_request_seconds": 1.6830678889527917
+        },
+        {
+          "surface": "mcp",
+          "operation_id": "821a7a2b-28d9-4fdd-853d-35dd10938611",
+          "pod_uid": "148f3650-1969-47a8-9747-7403e6cfeb48",
+          "started_at": "2026-09-07T13:48:45.756Z",
+          "completed_at": "2026-09-07T13:48:49.059Z",
+          "request_sha256": "050d9d440d6f09573d68b35a0fc26d3119407a6be22896293062752d822cfc3b",
+          "response_sha256": "abcd67e50fd69a1009fad216e69b64e941847ce74db817d2f3e67badc03aaa3f",
+          "response_bytes": 276,
+          "public_request_seconds": 3.3028088193386793
+        },
+        {
+          "surface": "mcp",
+          "operation_id": "3481eeb3-8c6e-47f5-be1a-7e8d798bffbf",
+          "pod_uid": "148f3650-1969-47a8-9747-7403e6cfeb48",
+          "started_at": "2026-09-07T13:48:50.462Z",
+          "completed_at": "2026-09-07T13:48:53.085Z",
+          "request_sha256": "c2ee9474d485d56430bdf3b6885c9bb0dfef4130eb080be9559e7eb372a462e1",
+          "response_sha256": "7d83ec5372008b885d58e6dd0fd5ed50cb15a420876ccd0a04a56a68d4f16d97",
+          "response_bytes": 283,
+          "public_request_seconds": 2.623580656014383
+        }
+      ],
+      "actual_runtimes": [
+        {
+          "pod": "genmol-b300-hot-h100-reserved-8x-5cb4f8f4c5-48xkd",
+          "pod_uid": "148f3650-1969-47a8-9747-7403e6cfeb48",
+          "runtime": {
+            "expected_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf",
+            "model_content_digest": "sha256:7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a",
+            "model_revision": "2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80",
+            "namespace": "fs2-models",
+            "pod": "genmol-b300-hot-h100-reserved-8x-5cb4f8f4c5-48xkd",
+            "pod_uid": "148f3650-1969-47a8-9747-7403e6cfeb48",
+            "route_revision": "dynamic:sha256:0a7b290af2a1d53e3c85fe39ea717c1637ea9bb9dba6d86340832dbc2e89cede",
+            "runtime_image_ids": [
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf"
+            ],
+            "source_revision_binding": "selected-manifest-plus-exact-image-and-model-content"
+          },
+          "actual_marker": {
+            "event": "serving_snapshot_runtime",
+            "mechanism": "cuda-criu-restored"
+          },
+          "checkpoint_components_seconds": {
+            "criu": 3.7940427740104496,
+            "restore": 0.5174216919695027,
+            "unlock": 0.023031884978991002
+          },
+          "log_sha256": "9d699890a7aa28d6b9837fe77d86e22bd9aaa9b4c7d63e96e2b9fe10a2f92fd0",
+          "container_started_at": "2026-09-07T13:48:26Z"
+        }
+      ],
+      "original_hot_floor": 1,
+      "restored_hot_floor": 1,
+      "original_desired_spec_restored": true,
+      "original_revision": 7,
+      "restored_revision": 11,
+      "private_public_report_sha256": "a658c40c5da0f7e7e23d944d5708687feb051db88fc9b0304c92ab8aafa18a18",
+      "private_actual_restore_proof_sha256": "59711b451f01434e389c90b5a93f4cf5d9def28ea433603761edeea4817537ec",
+      "private_policy_restoration_sha256": "20e4edbcf4912746610ca9e954a0b414c062dc1bc594e7111d5ebfc32eccfc02",
+      "clock_note": "Per-request durations are public end-to-end inference times, not snapshot startup; checkpoint component clocks come from actual restored Pod logs."
+    },
+    {
+      "model_id": "diffdock",
+      "bundle_id": "diffdock-h100-cuda-criu-20260907-r01",
+      "status": "passed",
+      "receipt_name": "expanded-diffdock-snapshot-r02",
+      "private_release_identity_sha256": "58e68604e4c0f9a85651521a8811b8e62e5ecaa74a451f26fbb66b288d64d248",
+      "deployed_source_commit": "cdf7c508c1dc826358e28b56979975aaff8e04da",
+      "source_identity_basis": "per-attempt release-identity.json",
+      "selection": "Actual HTTPS admin form: drain, observed zero, exact snapshot Prefer, original floor, preview/apply; complete original desired specification restored in finally.",
+      "public_requests": [
+        {
+          "surface": "http",
+          "operation_id": "1f2f6874-7b81-4ce9-a325-82d8c17d1040",
+          "pod_uid": "5a43444b-a378-418c-9183-1aa12096a722",
+          "started_at": "2026-09-07T13:48:42.338Z",
+          "completed_at": "2026-09-07T13:48:47.208Z",
+          "request_sha256": "83fcc4d31c87b25b62137bb36c41fb80f49feb9bad72f8d846ee557bcdbadd61",
+          "response_sha256": "5da7c3bca41b51042a3de16a7656f1cfda86023d8d83cc30ab35e9a67b5450d3",
+          "response_bytes": 80921,
+          "public_request_seconds": 4.86941346898675
+        },
+        {
+          "surface": "http",
+          "operation_id": "583a9c9b-e5b9-4a73-a9b1-541533206980",
+          "pod_uid": "5a43444b-a378-418c-9183-1aa12096a722",
+          "started_at": "2026-09-07T13:48:48.575Z",
+          "completed_at": "2026-09-07T13:48:53.118Z",
+          "request_sha256": "d89edc43ffec40cc8324ad780d76d707aa1999a405957fc69d0d0b6bc03680c7",
+          "response_sha256": "f5f99b829d6ab9deeca830f24a297db8b4c4ad630c1d5d3c8e6743701ccfc51e",
+          "response_bytes": 80921,
+          "public_request_seconds": 4.543427997268736
+        },
+        {
+          "surface": "mcp",
+          "operation_id": "fcdbbbf8-b994-4ea2-9db2-533189997399",
+          "pod_uid": "5a43444b-a378-418c-9183-1aa12096a722",
+          "started_at": "2026-09-07T13:48:55.737Z",
+          "completed_at": "2026-09-07T13:49:00.353Z",
+          "request_sha256": "83fcc4d31c87b25b62137bb36c41fb80f49feb9bad72f8d846ee557bcdbadd61",
+          "response_sha256": "69ab7826dfb13919f849573dfbaa591e67c37db4d050250e142981e6529a45db",
+          "response_bytes": 80921,
+          "public_request_seconds": 4.61569419503212
+        },
+        {
+          "surface": "mcp",
+          "operation_id": "b2cad80d-12c7-4fba-94fc-a8e2b143c85f",
+          "pod_uid": "5a43444b-a378-418c-9183-1aa12096a722",
+          "started_at": "2026-09-07T13:49:01.736Z",
+          "completed_at": "2026-09-07T13:49:06.671Z",
+          "request_sha256": "d89edc43ffec40cc8324ad780d76d707aa1999a405957fc69d0d0b6bc03680c7",
+          "response_sha256": "3c7affa59717aa626384dd85e3de72370224e4844b26ca8c6f9120bdc04ab05c",
+          "response_bytes": 80919,
+          "public_request_seconds": 4.935108778998256
+        }
+      ],
+      "actual_runtimes": [
+        {
+          "pod": "diffdock-b300-hot-h100-reserved-8x-5c546d94d4-hgmcx",
+          "pod_uid": "5a43444b-a378-418c-9183-1aa12096a722",
+          "runtime": {
+            "expected_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7",
+            "model_content_digest": "sha256:fe05bca0521f77e120fe135021f555269b0128e929e60f201542d4c17483329c",
+            "model_revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",
+            "namespace": "fs2-models",
+            "pod": "diffdock-b300-hot-h100-reserved-8x-5c546d94d4-hgmcx",
+            "pod_uid": "5a43444b-a378-418c-9183-1aa12096a722",
+            "route_revision": "dynamic:sha256:9e3e3047ef3da18869d7cf37df2eeffbac31786b3ca9231c636cfffe90a42c84",
+            "runtime_image_ids": [
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7"
+            ],
+            "source_revision_binding": "selected-manifest-plus-exact-image-and-model-content"
+          },
+          "actual_marker": {
+            "event": "serving_snapshot_runtime",
+            "mechanism": "cuda-criu-restored"
+          },
+          "checkpoint_components_seconds": {
+            "criu": 2.961333387007471,
+            "restore": 0.6955171899753623,
+            "unlock": 0.021534391038585454
+          },
+          "log_sha256": "8b25c260f0d38c997988251e52b46d93ae55bba9ba37bd715f1a81ee5cdb620a",
+          "container_started_at": "2026-09-07T13:48:29Z"
+        }
+      ],
+      "original_hot_floor": 1,
+      "restored_hot_floor": 1,
+      "original_desired_spec_restored": true,
+      "original_revision": 5,
+      "restored_revision": 9,
+      "private_public_report_sha256": "231a4fd0ff2f5b8d616d4bf8398a938a785c95ea006f5129769f01337ae0b7e7",
+      "private_actual_restore_proof_sha256": "7288530797a6f8bb44e734846ed888aeea2c7ec265fd6b1d1e77150871615235",
+      "private_policy_restoration_sha256": "ffe03732a28427b6300849a5ee270954c23e5bd4a4c7e4f6c3521c229030eaca",
+      "clock_note": "Per-request durations are public end-to-end inference times, not snapshot startup; checkpoint component clocks come from actual restored Pod logs."
+    },
+    {
+      "model_id": "nv-reason-cxr-3b",
+      "bundle_id": "nv-reason-cxr-3b-h100-cuda-criu-20260907-r05",
+      "status": "passed",
+      "receipt_name": "expanded-cxr-snapshot-r02",
+      "private_release_identity_sha256": "f4d827e0757f1b4617a983ede762f3298c14ffe6072274588477b7b253497e0a",
+      "deployed_source_commit": "0c1c6f9e268b768717c64b73059add02114382e0",
+      "source_identity_basis": "per-attempt release-identity.json",
+      "selection": "Actual HTTPS admin form: drain, observed zero, exact snapshot Prefer, original floor, preview/apply; complete original desired specification restored in finally.",
+      "public_requests": [
+        {
+          "surface": "http",
+          "operation_id": "28141a99-cd9a-469f-a325-6bce2a4f0ed1",
+          "pod_uid": "33e8e128-c1a0-477b-af9c-bd1f5b6e2209",
+          "started_at": "2026-09-07T13:56:02.168Z",
+          "completed_at": "2026-09-07T13:56:06.071Z",
+          "request_sha256": "f83d028f7b12122726f33e4048d35893bde1543f391a077f7b6cc7fa5f49a5ce",
+          "response_sha256": "d72d08ab213089d25c4eed24104d59b61eff717a70a9d286ca1aa56bac8b78a1",
+          "response_bytes": 3653,
+          "public_request_seconds": 3.9030908085405827
+        },
+        {
+          "surface": "http",
+          "operation_id": "2b4335a1-80df-440c-b776-868f5da1840d",
+          "pod_uid": "33e8e128-c1a0-477b-af9c-bd1f5b6e2209",
+          "started_at": "2026-09-07T13:56:07.477Z",
+          "completed_at": "2026-09-07T13:56:10.949Z",
+          "request_sha256": "888958b85746f93f1bdea8e2f2e683ad1ea368b09157d9df3f3ec503d01753de",
+          "response_sha256": "678987359198ef258ed86f437732720fa3830affc78f475cc748e70da453331a",
+          "response_bytes": 3615,
+          "public_request_seconds": 3.471091383136809
+        },
+        {
+          "surface": "mcp",
+          "operation_id": "3053cda7-8e95-4122-bd47-58015fc749b7",
+          "pod_uid": "33e8e128-c1a0-477b-af9c-bd1f5b6e2209",
+          "started_at": "2026-09-07T13:56:13.507Z",
+          "completed_at": "2026-09-07T13:56:17.671Z",
+          "request_sha256": "f83d028f7b12122726f33e4048d35893bde1543f391a077f7b6cc7fa5f49a5ce",
+          "response_sha256": "dc66adee46bda3fa4442edef45ad3c519eae7c40fdc5124efe7195a8cc00b22e",
+          "response_bytes": 3653,
+          "public_request_seconds": 4.164063069038093
+        },
+        {
+          "surface": "mcp",
+          "operation_id": "9d559a32-78c5-4c08-97df-0057563a7d34",
+          "pod_uid": "33e8e128-c1a0-477b-af9c-bd1f5b6e2209",
+          "started_at": "2026-09-07T13:56:18.955Z",
+          "completed_at": "2026-09-07T13:56:23.024Z",
+          "request_sha256": "888958b85746f93f1bdea8e2f2e683ad1ea368b09157d9df3f3ec503d01753de",
+          "response_sha256": "c9f7d45cb0ac2f1ed625f4b6e719729b90ab54d2d97f91c234a91fe51588cf56",
+          "response_bytes": 3615,
+          "public_request_seconds": 4.0688885087147355
+        }
+      ],
+      "actual_runtimes": [
+        {
+          "pod": "nv-reason-cxr-3b-hot-h100-reserved-8x-65d988d694-5zzkb",
+          "pod_uid": "33e8e128-c1a0-477b-af9c-bd1f5b6e2209",
+          "runtime": {
+            "expected_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "model_revision": "056bd0383b35226554da9dc5866e095df174ae19",
+            "namespace": "fs2-models",
+            "pod": "nv-reason-cxr-3b-hot-h100-reserved-8x-65d988d694-5zzkb",
+            "pod_uid": "33e8e128-c1a0-477b-af9c-bd1f5b6e2209",
+            "route_revision": "dynamic:sha256:e54a319e6b8ea24c2bac9faa3ba40ca7bfe58a70ff92b3dccee3558ff590fa9f",
+            "runtime_image_ids": [
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635"
+            ]
+          },
+          "actual_marker": {
+            "event": "serving_snapshot_runtime",
+            "mechanism": "cuda-criu-restored"
+          },
+          "checkpoint_components_seconds": {
+            "criu": 33.09697605500696,
+            "restore": 9.67091807804536,
+            "unlock": 0.03997031005565077
+          },
+          "log_sha256": "666938c314fea7266d74753a5e75b0316fe55599881ea627a9bea01f1a024695",
+          "container_started_at": "2026-09-07T13:55:08Z"
+        }
+      ],
+      "original_hot_floor": 1,
+      "restored_hot_floor": 1,
+      "original_desired_spec_restored": true,
+      "original_revision": 5,
+      "restored_revision": 9,
+      "private_public_report_sha256": "b70d7e840540196f9d9845e3e59466c7226bee2772cd0a66e806816338e7650b",
+      "private_actual_restore_proof_sha256": "76f9752c36ff0886a787fcad13e80ed8a985d2822f27d60256fc0d134b823519",
+      "private_policy_restoration_sha256": "60c97b26da842361ee0e61ed7186c2ec3b8ada0cf99b150401165136e13da1e3",
+      "clock_note": "Per-request durations are public end-to-end inference times, not snapshot startup; checkpoint component clocks come from actual restored Pod logs."
+    },
+    {
+      "model_id": "nv-segment-ct",
+      "bundle_id": "nv-segment-ct-h100-cuda-criu-20260907-r01",
+      "status": "passed",
+      "receipt_name": "expanded-segment-snapshot-r02",
+      "private_release_identity_sha256": "58e68604e4c0f9a85651521a8811b8e62e5ecaa74a451f26fbb66b288d64d248",
+      "deployed_source_commit": "cdf7c508c1dc826358e28b56979975aaff8e04da",
+      "source_identity_basis": "per-attempt release-identity.json",
+      "selection": "Actual HTTPS admin form: drain, observed zero, exact snapshot Prefer, original floor, preview/apply; complete original desired specification restored in finally.",
+      "public_requests": [
+        {
+          "surface": "http",
+          "operation_id": "8a0b21cc-a00d-42e8-9b9a-19b916df6c36",
+          "pod_uid": "295f1deb-acdb-434b-a2dd-c004aa08b799",
+          "started_at": "2026-09-07T13:48:38.383Z",
+          "completed_at": "2026-09-07T13:48:39.831Z",
+          "request_sha256": "22356103ec58e1155720440c8e328a01c3e2f8cae4e2bf3623138d228591ba43",
+          "response_sha256": "cb0e8120f043a6154f75cd81df771b662a1ec7e891187e326d7b463f4886c0ac",
+          "response_bytes": 21156,
+          "public_request_seconds": 1.4477390525862575
+        },
+        {
+          "surface": "http",
+          "operation_id": "52709d29-6abc-4a8d-a77a-57f9c77eca0d",
+          "pod_uid": "295f1deb-acdb-434b-a2dd-c004aa08b799",
+          "started_at": "2026-09-07T13:48:41.251Z",
+          "completed_at": "2026-09-07T13:48:42.898Z",
+          "request_sha256": "ae71a66865a5033cce594bc8eb72d218fc5c0da5dfef79b3224cac289d08d480",
+          "response_sha256": "010f84e80384c18773cd3579130046a3714123accfd8a6f1e46ac6d55afafa5e",
+          "response_bytes": 21437,
+          "public_request_seconds": 1.6469283243641257
+        },
+        {
+          "surface": "mcp",
+          "operation_id": "4fe08116-24e8-4465-8e29-90288ff54326",
+          "pod_uid": "295f1deb-acdb-434b-a2dd-c004aa08b799",
+          "started_at": "2026-09-07T13:48:45.834Z",
+          "completed_at": "2026-09-07T13:48:49.447Z",
+          "request_sha256": "22356103ec58e1155720440c8e328a01c3e2f8cae4e2bf3623138d228591ba43",
+          "response_sha256": "7ed6da59c42359beb26073eb7fe4cdde108f924968deb7734ebc58c3fbe158b8",
+          "response_bytes": 21156,
+          "public_request_seconds": 3.613240827806294
+        },
+        {
+          "surface": "mcp",
+          "operation_id": "821af8f9-9d7f-4ba3-b510-028805ef2173",
+          "pod_uid": "295f1deb-acdb-434b-a2dd-c004aa08b799",
+          "started_at": "2026-09-07T13:48:50.883Z",
+          "completed_at": "2026-09-07T13:48:53.790Z",
+          "request_sha256": "ae71a66865a5033cce594bc8eb72d218fc5c0da5dfef79b3224cac289d08d480",
+          "response_sha256": "2dc9531d2838a8585fc507eb410dc9748c67938adf0e53c77994371ca77aa7f8",
+          "response_bytes": 21437,
+          "public_request_seconds": 2.907519668340683
+        }
+      ],
+      "actual_runtimes": [
+        {
+          "pod": "nv-segment-ct-hot-h100-reserved-8x-7c8c4d7cc9-gj6lx",
+          "pod_uid": "295f1deb-acdb-434b-a2dd-c004aa08b799",
+          "runtime": {
+            "expected_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd",
+            "model_revision": "afb51518689f71e6abb367ee6301b2cd0225c66a",
+            "namespace": "fs2-models",
+            "pod": "nv-segment-ct-hot-h100-reserved-8x-7c8c4d7cc9-gj6lx",
+            "pod_uid": "295f1deb-acdb-434b-a2dd-c004aa08b799",
+            "route_revision": "dynamic:sha256:c6508de260943cbf6ae6f65ad74b2bb5dccb846865e7eb171035eb925033ec55",
+            "runtime_image_ids": [
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd"
+            ]
+          },
+          "actual_marker": {
+            "event": "serving_snapshot_runtime",
+            "mechanism": "cuda-criu-restored"
+          },
+          "checkpoint_components_seconds": {
+            "criu": 1.9952701260335743,
+            "restore": 0.49994373699883,
+            "unlock": 0.024083668016828597
+          },
+          "log_sha256": "5b41e0a3347948bbddae4bc2cda6767d0272e73929b45db6d9d8070f9186fa1b",
+          "container_started_at": "2026-09-07T13:48:25Z"
+        }
+      ],
+      "original_hot_floor": 1,
+      "restored_hot_floor": 1,
+      "original_desired_spec_restored": true,
+      "original_revision": 5,
+      "restored_revision": 9,
+      "private_public_report_sha256": "4dc19d69d77eb5d295d4bb28a586f58e9075e4694f1658f94e1a6f93b36e5ff1",
+      "private_actual_restore_proof_sha256": "85e1806fba8c35fe59979d37dc22d5b92b7b857a9a6364500e9a56c4018a9fd0",
+      "private_policy_restoration_sha256": "45bcd9a778a72008bb81c9770b978a3d817d4a51f797be267de19e0f3a25186b",
+      "clock_note": "Per-request durations are public end-to-end inference times, not snapshot startup; checkpoint component clocks come from actual restored Pod logs."
+    },
+    {
+      "model_id": "openfold3",
+      "bundle_id": "openfold3-preview2-h100-cuda-criu-20260907-r02",
+      "status": "passed",
+      "receipt_name": "expanded-openfold3-snapshot-r02",
+      "private_release_identity_sha256": "58e68604e4c0f9a85651521a8811b8e62e5ecaa74a451f26fbb66b288d64d248",
+      "deployed_source_commit": "cdf7c508c1dc826358e28b56979975aaff8e04da",
+      "source_identity_basis": "per-attempt release-identity.json",
+      "selection": "Actual HTTPS admin form: drain, observed zero, exact snapshot Prefer, original floor, preview/apply; complete original desired specification restored in finally.",
+      "public_requests": [
+        {
+          "surface": "http",
+          "operation_id": "a30593cd-210e-405f-8a62-36d3d180e5c3",
+          "pod_uid": "ca287ad7-ed62-4481-a6d4-3600fd648265",
+          "started_at": "2026-09-07T13:48:49.286Z",
+          "completed_at": "2026-09-07T13:49:00.883Z",
+          "request_sha256": "f60e849fd5264226f19c045a25ad1e0365ac6a6e6d50f4fbea4b606227e28825",
+          "response_sha256": "bfa136094980763bc73a968957d796c3416bc8c56bfa937e36f4f92e13765821",
+          "response_bytes": 22261,
+          "public_request_seconds": 11.596644453704357
+        },
+        {
+          "surface": "http",
+          "operation_id": "b02a4f39-877e-412c-9b1a-33b145a0678b",
+          "pod_uid": "ca287ad7-ed62-4481-a6d4-3600fd648265",
+          "started_at": "2026-09-07T13:49:02.262Z",
+          "completed_at": "2026-09-07T13:49:12.858Z",
+          "request_sha256": "d5e1d5c1de3600034f213c961b40d18c69c3ec9130da7302bd8902893a340766",
+          "response_sha256": "db91fa9d6c2a39181b50490e94f2073655d97ae4c432fefca1d7a71cc853538a",
+          "response_bytes": 22093,
+          "public_request_seconds": 10.595350201241672
+        },
+        {
+          "surface": "mcp",
+          "operation_id": "67ef82b4-8897-41e6-9d6c-ca61d48f6642",
+          "pod_uid": "ca287ad7-ed62-4481-a6d4-3600fd648265",
+          "started_at": "2026-09-07T13:49:15.361Z",
+          "completed_at": "2026-09-07T13:49:27.499Z",
+          "request_sha256": "f60e849fd5264226f19c045a25ad1e0365ac6a6e6d50f4fbea4b606227e28825",
+          "response_sha256": "892e46f9bf502829aa70459fdb17ce91761dcde40c6cfc3b062003021ad287d0",
+          "response_bytes": 21925,
+          "public_request_seconds": 12.13817161694169
+        },
+        {
+          "surface": "mcp",
+          "operation_id": "ce06807c-bbcc-407b-bee9-723b2dad89ef",
+          "pod_uid": "ca287ad7-ed62-4481-a6d4-3600fd648265",
+          "started_at": "2026-09-07T13:49:28.789Z",
+          "completed_at": "2026-09-07T13:49:39.338Z",
+          "request_sha256": "d5e1d5c1de3600034f213c961b40d18c69c3ec9130da7302bd8902893a340766",
+          "response_sha256": "c229a0c706eebdd61b5b31c5a23e3132412c2d055bbd65d8e085988ce19ae190",
+          "response_bytes": 21926,
+          "public_request_seconds": 10.54950006492436
+        }
+      ],
+      "actual_runtimes": [
+        {
+          "pod": "openfold3-hot-h100-reserved-8x-96cc96d4d-9mplw",
+          "pod_uid": "ca287ad7-ed62-4481-a6d4-3600fd648265",
+          "runtime": {
+            "expected_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+            "model_revision": "4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e",
+            "namespace": "fs2-models",
+            "pod": "openfold3-hot-h100-reserved-8x-96cc96d4d-9mplw",
+            "pod_uid": "ca287ad7-ed62-4481-a6d4-3600fd648265",
+            "route_revision": "dynamic:sha256:12a2887d06b237d3be181b9bff1f0f2f13a3d798f5577b966d285d82674c6a4b",
+            "runtime_image_ids": [
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c"
+            ]
+          },
+          "actual_marker": {
+            "event": "serving_snapshot_runtime",
+            "mechanism": "cuda-criu-restored"
+          },
+          "checkpoint_components_seconds": {
+            "criu": 5.3656141349929385,
+            "restore": 0.6990189559874125,
+            "unlock": 0.02178842795547098
+          },
+          "log_sha256": "3069edfb6ed0e6c96536fb3af8aa0642c8d72618aaea79a00055d7decbaf4a12",
+          "container_started_at": "2026-09-07T13:48:33Z"
+        }
+      ],
+      "original_hot_floor": 1,
+      "restored_hot_floor": 1,
+      "original_desired_spec_restored": true,
+      "original_revision": 5,
+      "restored_revision": 9,
+      "private_public_report_sha256": "5e2bb4fb74ffd3308f051e48f4574ccbcdafb152f7059708d8288752fc3726f0",
+      "private_actual_restore_proof_sha256": "9a84ba2e37e2d40564932f03d244b83910711f72c8d88b673a57545821e3cfad",
+      "private_policy_restoration_sha256": "c0cab2d18617197837edfaf2b466d6cb927f4f778c584a80b87ad853de7a0103",
+      "clock_note": "Per-request durations are public end-to-end inference times, not snapshot startup; checkpoint component clocks come from actual restored Pod logs."
+    },
+    {
       "model_id": "rfdiffusion",
       "bundle_id": "rfdiffusion-h100-cuda-criu-20260907-r3",
       "status": "passed",
+      "receipt_name": "rfdiffusion-public-snapshot-r01",
+      "deployed_source_commit": "7d0bab4619dc5d39082655b4ddc628c5b4708240",
+      "source_identity_basis": "explicit per-attempt deployment source supplied to exporter",
       "selection": "Existing public scientific-model policy API selected exact inference bundle; original effective model policy restored in finally.",
       "public_requests": [
         {
@@ -182,8 +655,12 @@
         "esmfold2",
         "esmfold2-fast"
       ],
+      "receipt_name": "esmfold-production-options-20260907.json",
+      "deployed_source_commit": "7d0bab4619dc5d39082655b4ddc628c5b4708240",
+      "source_identity_basis": "explicit per-attempt deployment source supplied to exporter",
       "note": "Independent ESM public acceptance export; see linked operation/Pod/restore/collector and policy-restoration evidence."
     }
   ],
-  "exported_at": "2026-09-07T13:28:47.508801+00:00"
+  "pending_receipts": [],
+  "exported_at": "2026-09-07T13:58:47.492188+00:00"
 }

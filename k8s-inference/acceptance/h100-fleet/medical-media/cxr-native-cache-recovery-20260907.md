@@ -1,6 +1,6 @@
 # CXR native-cache recovery and snapshot isolation
 
-Status at 2026-09-07 13:44:48 UTC: the original native deployment is Ready with
+Initial recovery at 2026-09-07 13:44:48 UTC: the original native deployment is Ready with
 one desired, ready and available replica. Its full original desired spec was
 restored unchanged. The public snapshot r01 run passed both original inputs over
 HTTP and MCP, with actual CUDA restore evidence, but its overall helper exited 1
@@ -62,7 +62,37 @@ Validation: 32 focused serving-snapshot/metadata tests pass; Ruff and
 check AOT links and private writes, missing-cache fallback, exact existing
 default renders, and the previously fixed original HTTP readiness gate. The
 retained actual CXR deployment plus qualified bundle also renders successfully.
-No frozen source bytes or bundle identities changed. This renderer change is
-**not yet deployed or live-restore-qualified** in this note; a subsequent release
-must verify the isolated cache mount through the original public semantics and
-native-policy restoration.
+No frozen source bytes or bundle identities changed. Live verification followed
+in the separate release recorded below; the initial code handoff did not itself
+claim live qualification.
+
+## Final isolated production r02: passed
+
+Source `0c1c6f9e2` was deployed before the new public retry. Actual CUDA restore
+was logged at 13:55:52.549432075 UTC. Both original inputs passed over HTTP and
+MCP (four outputs). The complete original desired spec was restored; its native
+Pod reached Ready with zero restarts, and the full helper exited 0 at 13:58:29.
+
+A CPU-only, read-only witness independently observed the native cache before,
+during and after the snapshot requests. The nested scratch mount used different
+device/inode backing while preserving the exact captured absolute cache path.
+All **46 files / 26,834,815 bytes**, including **44 AOT artifacts**, matched in
+content, ownership, mode and timestamp between the initial native tree and the
+seeded/Ready snapshot tree. The witness proved the native tree stayed unchanged
+through the completed snapshot requests. Its initializer source was read-only;
+the runtime's nested cache mount used the existing per-Pod emptyDir.
+
+After the ordinary native reload, all file contents/owners/modes still matched.
+Only the autotune JSON and its parent directory timestamps changed during normal
+UID 1000 warmup; this is not reported as byte-for-byte metadata immutability after
+native reloading. The read-only witness was deleted and absence verified at
+14:00:49 UTC. No cache writes, repairs, policy changes or GPU work were performed
+by the evidence observer.
+
+Private comparison proof: `releases/cxr-cache-isolation-r02/comparison-proof.json`,
+SHA-256 `86fdfa3e2116de4c1835365c09f14fea8ced41f659da3060daac0ca9576af021`.
+It binds nine exact file manifests, mount/seed evidence, cleanup, original/restored
+specs, public semantic receipts and actual restore proof. The invariant
+content/ownership digest is
+`78197a15cc1d32dbb061e1d9d92a916efc6615c77ffecbf410d73bb4915e90f9`.
+The earlier r01 timeout/failure and one-file repair remain separate evidence.

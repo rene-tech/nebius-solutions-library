@@ -63,6 +63,11 @@ retains the excluded GLM entry as not deployed rather than hiding it.
 
 All ten scientific profiles passed fresh public requests after the full-fleet
 rollout; see [the retained regression](scientific-regression-20260907/README.md).
+All ten also passed the
+[expanded snapshot-release regression](scientific-regression-snapshot-release-20260907/README.md),
+with successful operation/result/batch states, original semantic validation and
+exact current scientific execution identities. That campaign ran on `7d0bab46`;
+the later serving-readiness/cache fixes do not relabel it as a new benchmark.
 The serving cohorts retain separate semantic HTTP/MCP acceptance receipts in
 [Bio/structure](bionemo-structure/public-h100-20260907.md),
 [medical/media](medical-media/README.md), and
@@ -94,12 +99,47 @@ failed qualification Pods; the public inventory is 24/24 healthy or
 intentionally cold, without treating those historical task Pods as serving
 replicas.
 
-## Expanded snapshot acceptance — rollout in progress
+## Expanded snapshot acceptance — completed
 
-Main `1c0898a20` adds production renderer/UI support and RFdiffusion's observed
-startup metadata. These additional **isolated qualifications are not yet
-production-option acceptance**. Each has three normal/fresh-restore pairs and
-two original valid inputs per trial:
+**All eleven snapshot options have completed actual production acceptance**,
+including the original Qwen/Cosmos/Protenix proof above. The
+[expanded production receipts](snapshots/production-options-expanded-h100-20260907.json)
+retain completed GenMol, DiffDock, NV-Reason-CXR-3B, NV-Segment-CT, standalone
+OpenFold3 and RFdiffusion tests, and link the independent
+[ESMFold2/Fast public proof](snapshots/esmfold-production-options-20260907.json).
+Every selected serving test returned to its complete original desired
+specification and native hot floor; temporary scientific policies were restored.
+
+The final live release is source
+`0c1c6f9e268b768717c64b73059add02114382e0`, control-plane image `fd7e0c0a…`,
+with admin image `75b9f702…` unchanged. The
+[final public/admin inventory](public-inventory-20260907.json), observed at
+13:58:30 UTC, confirms all **24 configured and discoverable model/profile IDs**,
+all **11 selectable qualified snapshot options**, and all ten scientific
+profiles batch-ready. Serving models retain their intended hot replicas except
+Cosmos, which retains its original cold floor. Excluded GLM remains explicit.
+
+GenMol, DiffDock, Segment and standalone OpenFold3 each passed two original HTTP
+requests and two original MCP requests after actual CUDA restore. Their r02
+helpers exited successfully, restored the complete original desired
+specification, and observed the original hot floor of one Ready replica.
+Release `cdf7c508c1dc826358e28b56979975aaff8e04da` preserves each native health
+endpoint in the snapshot probe and GenMol's measured interpreter PATH. Earlier
+failed r01 attempts remain separate, not reclassified as successful retries.
+
+RFdiffusion passed both original public requests with observed restore metadata
+and restored its original normal-load policy. Its 96-residue output is identical
+to the matching first-request-on-a-fresh-worker native result. A reused worker's
+second-after-76-residues reference is order-sensitive in both native and restored
+trials; it is not used to claim request-order-independent determinism. ESMFold2
+and Fast each passed one original public request, including the production
+confidence collector, and restored their original policies. These tests ran on
+`7d0bab4619dc5d39082655b4ddc628c5b4708240`; release identity is recorded per
+receipt rather than assigning one release to the entire campaign.
+
+The separate isolated qualifications below each retain three
+normal/fresh-restore pairs and two original valid inputs per trial. Their
+startup measurements are not inferred from the public request durations:
 
 | Runtime | Native → restore, seconds | Evidence |
 | --- | ---: | --- |
@@ -123,14 +163,25 @@ separate OpenBind profile.
 
 Initial public ESMFold2/Fast snapshot attempts restored CUDA and produced valid
 structures, but the production confidence collector correctly rejected their
-captured weights identity. Corrected captures now preserve the image-locked
-weights revision separately from the catalog source revision. Both replacement
+captured weights identity. Corrected captures preserve the image-locked weights
+revision separately from the catalog source revision. Both replacement
 qualifications pass three fresh restores and both original inputs through the
 production confidence collector, using the original five-capability restore
-environment. Normal public policies were restored; earlier isolated results
-are preserved separately and are not proof of a successful production option.
-The corrected bundles still need the final Terraform rollout and public smoke
-tests.
+environment. Their subsequent public production tests are now complete as
+linked above; the failed identity attempts remain historical evidence.
+
+CXR r01 passed both original HTTP/MCP pairs and actual CUDA restore. Its helper
+then timed out returning to the native hot floor: a shared FlashInfer cache file
+written by an earlier root-run normal benchmark was unreadable by the native
+UID. The complete original desired specification was restored, and a separate
+one-file ownership repair recovered the native Ready replica without changing
+the file contents. This is **partial acceptance plus recovery, not a whole-pass**.
+A renderer change now isolates the snapshot runtime's writable vLLM cache.
+On final release `0c1c6f9e2`, the clean CXR r02 test passed both original HTTP/MCP
+pairs and actual CUDA restore, then exited successfully after restoring the
+complete original specification and observing the native Ready replica at floor
+one. Its successful retry is retained separately from the earlier failure and
+recovery; it does not overwrite them.
 
 Proteina and BoltzGen remain normal-load runtimes: the
 [exact-source assessment](snapshots/proteina-boltzgen-model-only-assessment-20260907.md)
