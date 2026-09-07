@@ -1,0 +1,135 @@
+{
+  "after": {
+    "batch": {
+      "batch_id": "612ce470-8df1-5bca-a430-6af2f39f32cd",
+      "failure_code": "cancelled",
+      "result_published": false,
+      "status": "cancelled"
+    },
+    "operation": {
+      "accepted_at": "2026-09-07T15:05:04.392029Z",
+      "completed_at": "2026-09-07T15:12:46.872219Z",
+      "failure_code": null,
+      "id": "2ec36323-564e-4a58-9091-9c55e6e7d064",
+      "model_id": "bindcraft",
+      "reused": false,
+      "runtime": {
+        "gpu_count": 0,
+        "gpu_uuids": [],
+        "node_uid": null,
+        "pod_uid": null,
+        "preemptible": null
+      },
+      "semantic_outcome": "failed",
+      "started_at": "2026-09-07T15:05:04.544612Z",
+      "status": "cancelled"
+    },
+    "stages": [
+      {
+        "attempts": [
+          {
+            "attempt_id": "9524ffe2-706c-5976-a6b4-d24d6157eab5",
+            "attempt_number": 1,
+            "failure_code": "cancelled",
+            "failure_kind": null,
+            "last_phase": "teardown",
+            "outcome": "cancelled",
+            "resource_released": true,
+            "scheduling_admission": {
+              "accelerator_count": 1,
+              "accelerator_resource_name": "nvidia.com/gpu",
+              "admitted_at": "2026-09-07T15:05:04Z",
+              "admitted_resource_flavor": "inference-h100-1x",
+              "resolved_pool_id": "h100-1x"
+            },
+            "shard_id": "design-000",
+            "workload_name": "fs2-design-design-000-a1-dc7900545d35",
+            "workload_namespace": "fs2-academic-poc",
+            "workload_uid": "d5ef5097-e3c3-4da7-a7a1-e40358435930"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "design",
+        "status": "cancelled"
+      },
+      {
+        "attempts": [],
+        "failure_code": null,
+        "stage_id": "aggregate",
+        "status": "cancelled"
+      }
+    ]
+  },
+  "approved_action": "Explicitly cancel only the blocked test-owned operation. No retry, capacity, queue or policy changes.",
+  "before": {
+    "batch": {
+      "batch_id": "612ce470-8df1-5bca-a430-6af2f39f32cd",
+      "failure_code": null,
+      "result_published": false,
+      "status": "running"
+    },
+    "operation": {
+      "accepted_at": "2026-09-07T15:05:04.392029Z",
+      "completed_at": null,
+      "failure_code": null,
+      "id": "2ec36323-564e-4a58-9091-9c55e6e7d064",
+      "model_id": "bindcraft",
+      "reused": false,
+      "runtime": {
+        "gpu_count": 0,
+        "gpu_uuids": [],
+        "node_uid": null,
+        "pod_uid": null,
+        "preemptible": null
+      },
+      "semantic_outcome": null,
+      "started_at": "2026-09-07T15:05:04.544612Z",
+      "status": "running"
+    },
+    "stages": [
+      {
+        "attempts": [
+          {
+            "attempt_id": "9524ffe2-706c-5976-a6b4-d24d6157eab5",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "node_pending",
+            "outcome": "active",
+            "resource_released": false,
+            "scheduling_admission": {
+              "accelerator_count": 1,
+              "accelerator_resource_name": "nvidia.com/gpu",
+              "admitted_at": "2026-09-07T15:05:04Z",
+              "admitted_resource_flavor": "inference-h100-1x",
+              "resolved_pool_id": "h100-1x"
+            },
+            "shard_id": "design-000",
+            "workload_name": "fs2-design-design-000-a1-dc7900545d35",
+            "workload_namespace": "fs2-academic-poc",
+            "workload_uid": "d5ef5097-e3c3-4da7-a7a1-e40358435930"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "design",
+        "status": "active"
+      },
+      {
+        "attempts": [],
+        "failure_code": null,
+        "stage_id": "aggregate",
+        "status": "pending"
+      }
+    ]
+  },
+  "delete_at": "2026-09-07T15:12:46.188191Z",
+  "delete_status": 202,
+  "finished_at": "2026-09-07T15:12:47.100019Z",
+  "observer_evidence": "observer/bindcraft2-unschedulable-r02.json",
+  "operation_id": "2ec36323-564e-4a58-9091-9c55e6e7d064",
+  "outcome": "failed_scheduler_blocked",
+  "reason": "BindCraft stage requests 16 CPU plus a 0.1 CPU collector and cannot fit selected h100-1x node allocatable CPU; FailedScheduling Insufficient cpu and NotTriggerScaleUp retained by observer. Not ordinary elastic capacity waiting.",
+  "resources_released": true,
+  "scenario_id": "batch-06-bindcraft",
+  "schema": "fs2-serve.nebius.ai/customer-trial-explicit-cleanup/v1"
+}

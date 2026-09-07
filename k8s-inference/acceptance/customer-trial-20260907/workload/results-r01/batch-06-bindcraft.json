@@ -1,0 +1,70 @@
+{
+  "error_code": "operation_terminal_failure",
+  "id": "batch-06-bindcraft",
+  "input_sha256": "9b652d670a286044c42556183906be45ca2fb1ee5af36919f724d642b7e22e00",
+  "model_id": "bindcraft",
+  "operation_id": "2ec36323-564e-4a58-9091-9c55e6e7d064",
+  "outcome": "failed",
+  "parameters": {
+    "binder_length": {
+      "maximum": 67,
+      "minimum": 67
+    },
+    "designs": 1,
+    "mpnn_lane": "soluble",
+    "seed": 912083,
+    "target": {
+      "chain": "A",
+      "hotspot_residues": [
+        37,
+        39,
+        98,
+        104,
+        106
+      ]
+    }
+  },
+  "service_class": "customer-batch",
+  "terminal": {
+    "failure_code": "cancelled",
+    "stages": [
+      {
+        "attempts": [
+          {
+            "attempt_id": "9524ffe2-706c-5976-a6b4-d24d6157eab5",
+            "attempt_number": 1,
+            "failure_code": "cancelled",
+            "failure_kind": null,
+            "last_phase": "teardown",
+            "outcome": "cancelled",
+            "resource_released": true,
+            "route_namespace": "fs2-academic-poc",
+            "scheduling_admission": {
+              "accelerator_count": 1,
+              "accelerator_resource_name": "nvidia.com/gpu",
+              "admitted_at": "2026-09-07T15:05:04Z",
+              "admitted_resource_flavor": "inference-h100-1x",
+              "resolved_pool_id": "h100-1x"
+            },
+            "shard_id": "design-000",
+            "workload_kind": "Job",
+            "workload_name": "fs2-design-design-000-a1-dc7900545d35",
+            "workload_namespace": "fs2-academic-poc",
+            "workload_uid": "d5ef5097-e3c3-4da7-a7a1-e40358435930"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "design",
+        "status": "cancelled"
+      },
+      {
+        "attempts": [],
+        "failure_code": null,
+        "stage_id": "aggregate",
+        "status": "cancelled"
+      }
+    ],
+    "status": "cancelled"
+  },
+  "wall_seconds": 468.237
+}

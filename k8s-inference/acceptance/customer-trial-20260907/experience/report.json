@@ -1,0 +1,3185 @@
+{
+  "schema": "fs2-serve.nebius.ai/customer-trial-experience/v1",
+  "status": "complete",
+  "exported_at": "2026-09-07T15:23:09.043074+00:00",
+  "scope": "One synthetic short Qwen request every25seconds, one client, HTTP/MCP alternating alongside the separate scientific campaign. Known valid fixtures; not unaided onboarding, scientific validation, stress/load capacity or a production SLA.",
+  "clock": "End-to-end non-streaming public request, including network/session setup, admission, status polling and complete response validation. Not TTFT, isolated decode throughput or model cold start.",
+  "credential_scope": {
+    "http_qwen": "existing inference key",
+    "mcp_qwen": "existing MCP inference key",
+    "science_discovery_and_mcp_readback": "existing academic scientific key",
+    "browser": "Existing bootstrap administrator operator session; not a customer-scoped login."
+  },
+  "total": {
+    "samples": 71,
+    "passed": 70,
+    "failed": 1,
+    "median_seconds": 2.445775,
+    "min_seconds": 0.96245,
+    "max_seconds": 4.142357,
+    "p95_seconds": 3.6759385,
+    "p95_note": "Linear empirical percentile, descriptive only."
+  },
+  "by_surface": {
+    "http": {
+      "samples": 36,
+      "passed": 36,
+      "failed": 0,
+      "median_seconds": 2.0182155,
+      "min_seconds": 1.282211,
+      "max_seconds": 2.550697,
+      "p95_seconds": 2.3314405,
+      "p95_note": "Linear empirical percentile, descriptive only."
+    },
+    "mcp": {
+      "samples": 35,
+      "passed": 34,
+      "failed": 1,
+      "median_seconds": 3.148246,
+      "min_seconds": 0.96245,
+      "max_seconds": 4.142357,
+      "p95_seconds": 3.9281101,
+      "p95_note": "Linear empirical percentile, descriptive only."
+    }
+  },
+  "successful_response_latency": {
+    "samples": 70,
+    "passed": 70,
+    "failed": 0,
+    "median_seconds": 2.498236,
+    "min_seconds": 1.282211,
+    "max_seconds": 4.142357,
+    "p95_seconds": 3.68161215,
+    "p95_note": "Linear empirical percentile, descriptive only."
+  },
+  "latency_population": "Total and phase/surface distributions include failed requests through their failure boundary; successful_response_latency is explicitly separate.",
+  "by_phase": {
+    "baseline": {
+      "samples": 3,
+      "passed": 3,
+      "failed": 0,
+      "median_seconds": 1.934533,
+      "min_seconds": 1.368581,
+      "max_seconds": 2.670851,
+      "p95_seconds": null,
+      "p95_note": "Not reported with fewer than20 observations."
+    },
+    "during": {
+      "samples": 65,
+      "passed": 64,
+      "failed": 1,
+      "median_seconds": 2.550697,
+      "min_seconds": 0.96245,
+      "max_seconds": 4.142357,
+      "p95_seconds": 3.7099803999999996,
+      "p95_note": "Linear empirical percentile, descriptive only."
+    },
+    "after": {
+      "samples": 3,
+      "passed": 3,
+      "failed": 0,
+      "median_seconds": 1.492584,
+      "min_seconds": 1.36657,
+      "max_seconds": 2.666753,
+      "p95_seconds": null,
+      "p95_note": "Not reported with fewer than20 observations."
+    }
+  },
+  "by_phase_surface": {
+    "baseline": {
+      "http": {
+        "samples": 2,
+        "passed": 2,
+        "failed": 0,
+        "median_seconds": 1.651557,
+        "min_seconds": 1.368581,
+        "max_seconds": 1.934533,
+        "p95_seconds": null,
+        "p95_note": "Not reported with fewer than20 observations."
+      },
+      "mcp": {
+        "samples": 1,
+        "passed": 1,
+        "failed": 0,
+        "median_seconds": 2.670851,
+        "min_seconds": 2.670851,
+        "max_seconds": 2.670851,
+        "p95_seconds": null,
+        "p95_note": "Not reported with fewer than20 observations."
+      }
+    },
+    "during": {
+      "http": {
+        "samples": 32,
+        "passed": 32,
+        "failed": 0,
+        "median_seconds": 2.027673,
+        "min_seconds": 1.282211,
+        "max_seconds": 2.550697,
+        "p95_seconds": 2.3619296999999997,
+        "p95_note": "Linear empirical percentile, descriptive only."
+      },
+      "mcp": {
+        "samples": 33,
+        "passed": 32,
+        "failed": 1,
+        "median_seconds": 3.168733,
+        "min_seconds": 0.96245,
+        "max_seconds": 4.142357,
+        "p95_seconds": 3.9297158000000003,
+        "p95_note": "Linear empirical percentile, descriptive only."
+      }
+    },
+    "after": {
+      "http": {
+        "samples": 2,
+        "passed": 2,
+        "failed": 0,
+        "median_seconds": 1.429577,
+        "min_seconds": 1.36657,
+        "max_seconds": 1.492584,
+        "p95_seconds": null,
+        "p95_note": "Not reported with fewer than20 observations."
+      },
+      "mcp": {
+        "samples": 1,
+        "passed": 1,
+        "failed": 0,
+        "median_seconds": 2.666753,
+        "min_seconds": 2.666753,
+        "max_seconds": 2.666753,
+        "p95_seconds": null,
+        "p95_note": "Not reported with fewer than20 observations."
+      }
+    }
+  },
+  "requests": [
+    {
+      "ordinal": 1,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "baseline",
+      "started_at": "2026-09-07T14:53:07.957271+00:00",
+      "completed_at": "2026-09-07T14:53:09.891805+00:00",
+      "client_seconds": 1.934533,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "dd55842f4759363dd87152244225e1dda8a554b76adb1efd03150c4212a91ac9",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "9c90438d-23a8-4a7b-b9f0-c2aa1cb83b7f",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 2,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "baseline",
+      "started_at": "2026-09-07T14:53:32.983532+00:00",
+      "completed_at": "2026-09-07T14:53:35.654391+00:00",
+      "client_seconds": 2.670851,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "3293248403c2bae1aeee5377d90aae0d90c2f3e20f654793dcdfdddfeaf752f4",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "d6e4342c-24ab-4d81-b99d-5b8b901ce915",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 3,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "baseline",
+      "started_at": "2026-09-07T14:53:58.190536+00:00",
+      "completed_at": "2026-09-07T14:53:59.559125+00:00",
+      "client_seconds": 1.368581,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "e2a244b5266ab6c256863d993d7b016b3ee0a52325dfffb215d1bd98488feb17",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "51dfa302-79f5-4a11-bcb2-02e6d2153be1",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 4,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T14:54:23.597898+00:00",
+      "completed_at": "2026-09-07T14:54:26.478757+00:00",
+      "client_seconds": 2.880853,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "131574d5e69ea54bbad62ce4f4a0f44b3103785e28dbd9f6a4dcfbcdca2c1ae8",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "3778b48e-734c-488b-a5df-115120863dcf",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 5,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T14:54:48.836297+00:00",
+      "completed_at": "2026-09-07T14:54:50.840707+00:00",
+      "client_seconds": 2.004404,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "a7df8a38141dc5652cf267ac52a43bec37989e12287227336a1b6a253831718e",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "1c10b3d9-4da8-4345-87f1-9defc17a9493",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 6,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T14:55:13.877852+00:00",
+      "completed_at": "2026-09-07T14:55:16.856268+00:00",
+      "client_seconds": 2.978411,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "bd7f12e3b5050a7781d434583533193c0fd10dcf22d1adc88aa53384eb408916",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "c43ead15-98c3-4723-b4db-ff22e5294a48",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 7,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T14:55:38.891886+00:00",
+      "completed_at": "2026-09-07T14:55:40.580305+00:00",
+      "client_seconds": 1.688416,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "70981c9b34b617e1850fe37b4acd43d3c9cfee6d604fa00109442d0019c52a83",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "4758184c-baeb-4432-95d5-4addca5a8631",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 8,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T14:56:04.115250+00:00",
+      "completed_at": "2026-09-07T14:56:07.196656+00:00",
+      "client_seconds": 3.081405,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "d4cf2acb556997aa19088609a8fab621775091355c7a6027cd2fb33f42d779a6",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "1f9fe166-944d-4e73-b2f9-bf7bea0ff8af",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 9,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T14:56:29.253633+00:00",
+      "completed_at": "2026-09-07T14:56:31.143957+00:00",
+      "client_seconds": 1.890328,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "2cb5616f34d0dcfa79446cd33b720a619aa84b8fb353d32a7ec2bbf3d1c2492d",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "dfcee27d-18b5-49e4-9076-4cb3caa9db0f",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 10,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T14:56:54.681289+00:00",
+      "completed_at": "2026-09-07T14:56:57.324410+00:00",
+      "client_seconds": 2.643117,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "d0417f50ae171358db8acb141fce638f17b5bedfb0f78bad68f820aaf54f709e",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "c346ea27-b3b6-4275-a78d-738255cd31ac",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 11,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T14:57:19.861287+00:00",
+      "completed_at": "2026-09-07T14:57:21.716231+00:00",
+      "client_seconds": 1.854953,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "104a3f7e81fef0ab24fc2f62aec1d840f5d56302344a790c611a81f54eff362a",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "4f50c9fb-86e0-4a24-97ef-52df5e52709b",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 12,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T14:57:45.254070+00:00",
+      "completed_at": "2026-09-07T14:57:48.353520+00:00",
+      "client_seconds": 3.099444,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "7372cf758d0b598ea78dff138b3657ee1f6e724882ade6453a30bc1dcba16fce",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "be8ed4ff-4aa9-4d28-b0ed-2139f8a9ec7f",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 13,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T14:58:10.401643+00:00",
+      "completed_at": "2026-09-07T14:58:12.268922+00:00",
+      "client_seconds": 1.867298,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "ceba448d028b7052f2f3a8d038e0a1f524a982dd254c262f07dd726db2a84617",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "8ca31626-9722-44f5-8363-d862c370d776",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 14,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T14:58:35.807200+00:00",
+      "completed_at": "2026-09-07T14:58:39.042602+00:00",
+      "client_seconds": 3.235396,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "af97f09c5ae9df0313276ffde475a14aff5ab8ffad1ea9783d21853a20d3b182",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "3e7b9f9c-bec6-47c1-9e71-7b328947b292",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 15,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T14:59:01.078884+00:00",
+      "completed_at": "2026-09-07T14:59:03.215351+00:00",
+      "client_seconds": 2.136473,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "e124833a57695f4490f4c7ac8b1d207d183a5c6f2823c302673faf827b065f58",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "69b8118d-82ee-4804-a67f-5a38ca3a17d3",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 16,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T14:59:26.100613+00:00",
+      "completed_at": "2026-09-07T14:59:29.833286+00:00",
+      "client_seconds": 3.732675,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "f77427a8b2eaf9b50bb674648fb6606715951af642f7acff4332d3f050c4ae0b",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "c4f06eb4-6fd4-4552-9fae-12b7f0bf9ec1",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 17,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T14:59:51.386071+00:00",
+      "completed_at": "2026-09-07T14:59:53.218975+00:00",
+      "client_seconds": 1.832899,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "fcfff79871f493dabc247d7e4909e5862c61e9353f1cb8527595626955d6fa0e",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "d8e46b85-ba85-455a-9b4b-92d6efe85659",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 18,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:00:16.756709+00:00",
+      "completed_at": "2026-09-07T15:00:20.297721+00:00",
+      "client_seconds": 3.541006,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "ec9b377cf563efd0d8e92bc9fb07275f3b2b3d618f120a4214692f3a734a51d4",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "20fba6a5-f704-4d81-8f89-fa508e3fc4b9",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 19,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:00:41.833513+00:00",
+      "completed_at": "2026-09-07T15:00:44.126848+00:00",
+      "client_seconds": 2.293329,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "394050cb9518eabaa3fda606104693c0e8ed174623bfa2a32992f35614fcaff9",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "e349190f-330f-4ce0-a4c7-213b23c53f10",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 20,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:01:07.164859+00:00",
+      "completed_at": "2026-09-07T15:01:10.580361+00:00",
+      "client_seconds": 3.415497,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "6e520e04077c793cf59cf8360be7f96fd7ff64f28c128e56408f73ccb9c4018d",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "789cfcbc-513d-472e-8c2f-5d18819eb4ea",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 21,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:01:32.663885+00:00",
+      "completed_at": "2026-09-07T15:01:34.692644+00:00",
+      "client_seconds": 2.028752,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "da499f32fc529e15ce19763e4574a9fb6d3c5046d6df29346679e3aa4b295605",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "3d4e35be-b67b-4646-b2c0-171f827f6c0b",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 22,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:01:57.730778+00:00",
+      "completed_at": "2026-09-07T15:02:01.278594+00:00",
+      "client_seconds": 3.547813,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "e853f280a68d47a2d70d6ef132bb22c05d410ee3336ffb5bdc70fe11bbc849e1",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "ed223150-6514-43b4-b0fc-7ba479f15f5d",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 23,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:02:22.814550+00:00",
+      "completed_at": "2026-09-07T15:02:24.898429+00:00",
+      "client_seconds": 2.083872,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "e25edb970671f8681355a5906105182222519a1680a112b1b5c9955f9a9c4564",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "04e01008-7bde-4031-9674-0d2177d207d4",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 24,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:02:47.936188+00:00",
+      "completed_at": "2026-09-07T15:02:51.450081+00:00",
+      "client_seconds": 3.513887,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "0bbf674d3c76f9e2ffe29630669aaa777aeafeb9d7350e50ba851748889e63f8",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "0393a091-cddc-4b6d-a949-3a693b4e8362",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 25,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:03:12.982304+00:00",
+      "completed_at": "2026-09-07T15:03:15.099831+00:00",
+      "client_seconds": 2.117521,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "c1ea75a5a72814f75fd92195e2f460437b322d71bb19932eecab1b048663cf1a",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "61cb2945-7160-4f98-a307-7e9d224bdadb",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 26,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:03:38.138190+00:00",
+      "completed_at": "2026-09-07T15:03:41.445889+00:00",
+      "client_seconds": 3.307692,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "69775a24245121023ca33b5c30f8d647264b40701ccb34df79ab76210df600e1",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "918f4266-0329-4950-8140-6336715c2169",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 27,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:04:03.482598+00:00",
+      "completed_at": "2026-09-07T15:04:05.525537+00:00",
+      "client_seconds": 2.042934,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "ae54eeb10eff584d71bd303158bb42a2b6d26ea474dd7db83652b8bbf388b2f5",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "174e17db-e859-4f68-a26d-ff143ac2cab9",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 28,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:04:28.563535+00:00",
+      "completed_at": "2026-09-07T15:04:31.622223+00:00",
+      "client_seconds": 3.058682,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "436f7a06c966e798779f8da37940b763505913b97a006869a58fc63e6c7693f9",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "ae4f3f6b-2d3b-400c-b935-90e7b14f81c3",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 29,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:04:53.668145+00:00",
+      "completed_at": "2026-09-07T15:04:55.606284+00:00",
+      "client_seconds": 1.938131,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "d9b63061630d11f0dc40fe9e97d5a6b1ba613c251b312bc7a13f0d74c4bb5f5d",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "64edb404-26a1-4e32-bd26-fc713fbe2bb2",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 30,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:05:19.144991+00:00",
+      "completed_at": "2026-09-07T15:05:22.277956+00:00",
+      "client_seconds": 3.132959,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "612217add9cb76fc90db88eb2450126c16fcec41eb36b06934c7281407965869",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "fa79b239-3e0f-4bd0-9d40-07165ccce07a",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 31,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:05:44.314496+00:00",
+      "completed_at": "2026-09-07T15:05:46.322783+00:00",
+      "client_seconds": 2.008279,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "6d1e84a230868e348d19a23ad0d5d05c40c84de5c2614719e18062cbefe75ecf",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "c00b2c6b-e5e3-40d0-8b8b-31e13efaa6b1",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 32,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:06:09.360174+00:00",
+      "completed_at": "2026-09-07T15:06:13.283471+00:00",
+      "client_seconds": 3.923293,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "995109da2a737540bca96628e432b43a60b7db002b6552f622cbfa5b619adf4b",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "726540a1-54ff-4a3f-9da7-b32ee032cd34",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 33,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:06:34.708218+00:00",
+      "completed_at": "2026-09-07T15:06:36.181310+00:00",
+      "client_seconds": 1.473086,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "b6dae07f47681052a6409b0ae382166e7bd41816fb586d7a154a412d3ca326a6",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "1f55504b-8ce1-4279-896f-2ea3859bc5c0",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 34,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:06:59.719754+00:00",
+      "completed_at": "2026-09-07T15:07:03.113791+00:00",
+      "client_seconds": 3.394033,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "08a2d9526adfbf2be2f920b06e416baf5c7387c52178ea312fccd1092591172b",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "51329fdd-08d1-481d-b1eb-bd6282b4e7b6",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 35,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:07:25.148870+00:00",
+      "completed_at": "2026-09-07T15:07:27.173009+00:00",
+      "client_seconds": 2.024135,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "d4e95a8381e0c34275cd319adcf8457feb030457ad821fc026958a55697270ec",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "c8a0dffc-5ee7-49a3-9ad4-a22f02514220",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 36,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:07:50.210345+00:00",
+      "completed_at": "2026-09-07T15:07:53.530809+00:00",
+      "client_seconds": 3.320459,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "6ef28643f890bdeb95234a438eeaff6493fde34ea3d26d667e7a6c764092b8b5",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "11137ae6-d676-484d-b779-e6548322ea1f",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 37,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:08:15.453497+00:00",
+      "completed_at": "2026-09-07T15:08:17.492646+00:00",
+      "client_seconds": 2.039142,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "393603cf4a678e06d7e8057fd24e9fe1b0315702ec6f6f4a15359f185056e37d",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "58cc886b-23bd-4d86-a1de-c56e98fd8498",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 38,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:08:40.530240+00:00",
+      "completed_at": "2026-09-07T15:08:43.795836+00:00",
+      "client_seconds": 3.265594,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "724affe07cb683cd76d008f104344e71356b323bf0f74deb6448865fe886ca27",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "a57d6970-ca65-4786-9da9-fe01c321226e",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 39,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:09:05.831287+00:00",
+      "completed_at": "2026-09-07T15:09:07.322488+00:00",
+      "client_seconds": 1.491195,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "5c145e813a42f3816c9999b4be1ac4c9056816079b909e39fc4dbcb73b9d0e6c",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "edd3e0d5-8598-41cf-8c35-89964cae75fc",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 40,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:09:30.861180+00:00",
+      "completed_at": "2026-09-07T15:09:34.426319+00:00",
+      "client_seconds": 3.565132,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "1561c7fe54601883ed7c77586d5e3c1b7b5ab55711bd96a92dbe079368990d54",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "773d6376-d700-4536-8384-4493771ddbf2",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 41,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:09:56.083685+00:00",
+      "completed_at": "2026-09-07T15:09:58.132483+00:00",
+      "client_seconds": 2.048791,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "d162298d55cf75abd462ffffb0cd1051d95dbee486f6698d8563fbcd4dc9b3d1",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "608ed12d-d164-4858-a9e0-722ded039d5a",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 42,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:10:21.170102+00:00",
+      "completed_at": "2026-09-07T15:10:24.453833+00:00",
+      "client_seconds": 3.283729,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "a354c88ff6fe4735462e67795bbb130dafc4436459c36896195ee831ebfc8762",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "b25ce746-8167-4945-b48f-e91c8d46f94b",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 43,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:10:46.489607+00:00",
+      "completed_at": "2026-09-07T15:10:48.450911+00:00",
+      "client_seconds": 1.961297,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "e15be4ba20e8fa174612d893dd8c8cac7fc53ba70d2718e0c51a81d29bc9bc36",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "55b472b9-5e87-45da-927d-5cfebda381f9",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 44,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:11:11.988787+00:00",
+      "completed_at": "2026-09-07T15:11:16.131149+00:00",
+      "client_seconds": 4.142357,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "9b543ee50018e852b018325359f0bc174036113c4e91f077236efc98889674b2",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "4f5befc9-072c-434b-9707-86978ab46eed",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 45,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:11:37.034556+00:00",
+      "completed_at": "2026-09-07T15:11:39.480336+00:00",
+      "client_seconds": 2.445775,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "f80e182a06e2fb74b2ca93e5e47672f8c83ad104b5b01f0472b25b3cccbcdb48",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "697af77a-4ac4-4387-aa8b-9c8fc7864624",
+      "submission_attempts": 1,
+      "status_polls": 3,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 46,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:12:02.515582+00:00",
+      "completed_at": "2026-09-07T15:12:03.478037+00:00",
+      "client_seconds": 0.96245,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "expected_output": "42",
+      "status": "failed",
+      "failure": "ExceptionGroup",
+      "correctness_passed": false,
+      "submission_attempts": 1,
+      "status_polls": 0,
+      "operation_status": null,
+      "model_revision": null,
+      "runtime": null,
+      "server_attempt": null
+    },
+    {
+      "ordinal": 47,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:12:27.515991+00:00",
+      "completed_at": "2026-09-07T15:12:29.559562+00:00",
+      "client_seconds": 2.043564,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "07a17d0f6c288c7f18dbd75862740c31bb6479366e5f2e4ca5d13887049f064d",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "2c15b173-db9a-4035-9ef7-9de8bceaa13c",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 48,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:12:52.596310+00:00",
+      "completed_at": "2026-09-07T15:12:56.535667+00:00",
+      "client_seconds": 3.93935,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "87b37f0d72d4cd20f43d866b5cfb304796b19336fa49dbd2d26abfc4ee37c86c",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "c7a4929d-4e56-4746-bce8-09638572de6b",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 49,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:13:17.993646+00:00",
+      "completed_at": "2026-09-07T15:13:20.040856+00:00",
+      "client_seconds": 2.047212,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "eb30920b37cb8c4f5cb700923c2aa09fdff09fbfc3c0ca7cadfe2a2f4c14990c",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "3c0f5129-1fd5-4c73-9104-fa1950054e3c",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 50,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:13:43.077449+00:00",
+      "completed_at": "2026-09-07T15:13:46.085839+00:00",
+      "client_seconds": 3.008386,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "dbb8ae382947a0a1b09783480cb9671c5c6636a38a21d50a10218759ad3d5b35",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "c4c5bacd-7a57-4ebd-9971-0554800eb571",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 51,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:14:08.122382+00:00",
+      "completed_at": "2026-09-07T15:14:10.247591+00:00",
+      "client_seconds": 2.125202,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "bf7d511049ea3d2a6ca5fe4404b8f10a67b65fa2908a895f1081b85878031da6",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "086756f1-07c3-4e1e-842b-baedddecb4f0",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 52,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:14:33.285515+00:00",
+      "completed_at": "2026-09-07T15:14:36.433766+00:00",
+      "client_seconds": 3.148246,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "5e2c00ce47467e4e3c20450b0c919284ad0f537c751a17c09d6919f9735d1946",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "7148a4b6-fc5e-4f7c-a507-e3a305052d34",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 53,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:14:58.354299+00:00",
+      "completed_at": "2026-09-07T15:15:00.414999+00:00",
+      "client_seconds": 2.060692,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "e9ab4721f80cca51b2bb45ea278a691f772aff6c30bd6b62d2faee11dba962d8",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "abe39a8e-8a3f-4fce-9ac2-5bd1acfceeae",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 54,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:15:23.452734+00:00",
+      "completed_at": "2026-09-07T15:15:27.071942+00:00",
+      "client_seconds": 3.619202,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "394bfee880254bcbda856f0c7c81dcd8473833f1ff58d13ebc995cd25b61f67e",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "082f534c-a9dd-4d22-bd6c-c8f194d039ad",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 55,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:15:48.606490+00:00",
+      "completed_at": "2026-09-07T15:15:50.633092+00:00",
+      "client_seconds": 2.026594,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "8ee4849135d87e3ac00b49b1bd8fa066a80619101365cbef6c2fbaca8cfdd851",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "812e00cb-866e-400f-9e3d-0a27dff0826c",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 56,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:16:13.671576+00:00",
+      "completed_at": "2026-09-07T15:16:16.840316+00:00",
+      "client_seconds": 3.168733,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "ad660746922ee5581b6fbc5440c2395326944cee916c1abd015a94077bec3683",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "e9a5844a-783e-4680-a84c-bd0bd5505525",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 57,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:16:38.993868+00:00",
+      "completed_at": "2026-09-07T15:16:40.276079+00:00",
+      "client_seconds": 1.282211,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "571e5846e3f1f51f361f36572c1b1effa114bf4b8793e4cfea31b7d2c5ba65a4",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "f6c21797-7570-4e91-9fc2-f0aa90bd156c",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 58,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:17:04.316092+00:00",
+      "completed_at": "2026-09-07T15:17:07.364785+00:00",
+      "client_seconds": 3.048691,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "28b7e0f7d6daab3e4346f63416f6587870b7e267d0fdd1869be237029c840f0c",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "0867ddd1-b2b7-4d34-a28c-ef3a43261b8e",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 59,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:17:29.400491+00:00",
+      "completed_at": "2026-09-07T15:17:31.951191+00:00",
+      "client_seconds": 2.550697,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "06aaad2f4528af47150c234ea1dce14b63a94c6c9e82560a35d03aa6db37abe6",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "38713c03-9f20-4a90-9fa8-8c014705b450",
+      "submission_attempts": 1,
+      "status_polls": 3,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 60,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:17:54.488066+00:00",
+      "completed_at": "2026-09-07T15:17:57.369547+00:00",
+      "client_seconds": 2.881477,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "dcb7e595e39661881fa51b3a4579870a61d3b3099808a37f88580755e01d5a61",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "2f327353-7c61-4aaa-9d50-1baa2bc73964",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 61,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:18:19.923982+00:00",
+      "completed_at": "2026-09-07T15:18:22.060874+00:00",
+      "client_seconds": 2.136885,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "9f3b66c39ac0011e3776b11e506638ea7971d58c435bb664f4a9bc3048c3555f",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "8011fce9-0417-4a61-ad2f-d84f61e33b85",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 62,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:18:45.097017+00:00",
+      "completed_at": "2026-09-07T15:18:48.098138+00:00",
+      "client_seconds": 3.001119,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "f6de7da0f742a839b0c4244627136abce5d45ea14188a1601bd1daeafb571e2e",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "1ba19b71-4633-4749-adae-08cc25f0be58",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 63,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:19:10.134146+00:00",
+      "completed_at": "2026-09-07T15:19:12.244045+00:00",
+      "client_seconds": 2.109898,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "d3538588aa043132670b1b65507478f0494c853a10dc8b2910100561333e75c5",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "3495e54b-d43c-457c-b493-cfd3de3053e2",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 64,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:19:35.281951+00:00",
+      "completed_at": "2026-09-07T15:19:38.318625+00:00",
+      "client_seconds": 3.036672,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "2535f06ab80abbe3ad531db38e83e405ee33a123c69f7e123ea7f85a9a470bbe",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "78826a08-b7ba-4c02-ae8d-28dc22b9d9dc",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 65,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:20:00.715526+00:00",
+      "completed_at": "2026-09-07T15:20:02.533445+00:00",
+      "client_seconds": 1.817915,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "22ee1e649b937ae0be78b139ee5fdccac888fd914f2f8175a0678b421167fa54",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "56308477-c04d-45a4-ae00-73acf7b5f16d",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 66,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-07T15:20:26.071519+00:00",
+      "completed_at": "2026-09-07T15:20:29.188691+00:00",
+      "client_seconds": 3.117167,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "03df6bf7f23b952aabec77757f64ff48d2210dae263291cf9eeaecdda1b0618e",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "7ecff168-d6bb-475c-946e-a2c941f224ec",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 67,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-07T15:20:51.223262+00:00",
+      "completed_at": "2026-09-07T15:20:53.235562+00:00",
+      "client_seconds": 2.012296,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "30e478d2c76c0ba0c4d92d94744bfa9de68a45905d4f4f7024a0c6f7d8337c14",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "1faa4059-6b60-48b7-b5ad-9fbf39d8dd6d",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 68,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-07T15:21:16.272677+00:00",
+      "completed_at": "2026-09-07T15:21:19.142505+00:00",
+      "client_seconds": 2.86982,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "0bc5c928808595bfc4430423fb2ef136622639c66d3abba159fdae337c0d28a5",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "cd77909f-a1ff-4715-8820-bad8f70712f4",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 69,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "after",
+      "started_at": "2026-09-07T15:21:41.513080+00:00",
+      "completed_at": "2026-09-07T15:21:43.005665+00:00",
+      "client_seconds": 1.492584,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "8a68a4c6206988bdbc6153bd1ed6445cfb76f57b2e0c2e251a8c183939391de3",
+      "expected_output": "ACGT",
+      "actual_output": "ACGT",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "c70c6d6d-cfc0-4b13-bf64-a2e2cc1e9722",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 35,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 70,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "after",
+      "started_at": "2026-09-07T15:22:06.543312+00:00",
+      "completed_at": "2026-09-07T15:22:09.210069+00:00",
+      "client_seconds": 2.666753,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "c3e0ce6c292b0941d1ac148614f926e7388b9683194c617534393e759fd659ee",
+      "expected_output": "42",
+      "actual_output": "42",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "594721d5-0ff6-4f5e-98f9-174241c473d9",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 71,
+      "surface": "http",
+      "case": "translation",
+      "phase": "after",
+      "started_at": "2026-09-07T15:22:31.745018+00:00",
+      "completed_at": "2026-09-07T15:22:33.111591+00:00",
+      "client_seconds": 1.36657,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "5c0bbc14c54cc39ecb1cdc91f4192dac78089f7276363935b593b1454c410b91",
+      "expected_output": "Katze",
+      "actual_output": "Katze",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "ecc55cc9-f1f0-46a5-b4b4-fd32995a1174",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 29,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "operation_status": "succeeded",
+      "model_revision": "dynamic:sha256:584854b8f082ea9ef53afd639709ca705e01f2fd351f97016d4295ac0064840e",
+      "runtime": {
+        "pod_uid": "2c04bb56-77ea-4838-8198-256330c55b07",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuids": [
+          "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+        ],
+        "gpu_count": 1,
+        "preemptible": false
+      },
+      "server_attempt": 1
+    }
+  ],
+  "discovery_checks": {
+    "/healthz": {
+      "checks": 4,
+      "http_status_counts": {
+        "404": 4
+      },
+      "model_id_sets": []
+    },
+    "/v1/models": {
+      "checks": 18,
+      "http_status_counts": {
+        "200": 18
+      },
+      "model_id_sets": [
+        [
+          "msa-search-pdb70"
+        ],
+        [
+          "boltz2",
+          "cosmos3-nano",
+          "diffdock",
+          "evo2-40b",
+          "genmol",
+          "molmim",
+          "msa-search-pdb70",
+          "nv-reason-cxr-3b",
+          "nv-segment-ct",
+          "openfold2",
+          "openfold3",
+          "proteinmpnn",
+          "qwen3-8b",
+          "sdxl"
+        ]
+      ]
+    },
+    "/v1/scientific-models": {
+      "checks": 18,
+      "http_status_counts": {
+        "200": 18
+      },
+      "model_id_sets": [
+        [
+          "alphafold3",
+          "bindcraft",
+          "boltzgen",
+          "esmfold2",
+          "esmfold2-fast",
+          "mosaic",
+          "openfold3-openbind",
+          "proteina-complexa",
+          "protenix-v2",
+          "rfdiffusion"
+        ]
+      ]
+    },
+    "/readyz": {
+      "checks": 14,
+      "http_status_counts": {
+        "200": 14
+      },
+      "model_id_sets": []
+    }
+  },
+  "handoff": {
+    "previous_ordinal": 15,
+    "next_ordinal": 16,
+    "last_r01_started_at": "2026-09-07T14:59:01.078884+00:00",
+    "last_r01_completed_at": "2026-09-07T14:59:03.215351+00:00",
+    "first_r02_started_at": "2026-09-07T14:59:26.100613+00:00",
+    "start_to_start_seconds": 25.021729,
+    "idle_between_completed_and_next_start_seconds": 22.885262,
+    "reason": "Approved graceful monitoring-route correction. Next ordinal and HTTP/MCP alternation preserved; no inference was retried."
+  },
+  "browser_evidence": [
+    {
+      "name": "after-recovered-model-inventory.json",
+      "sha256": "2481decdede1ddf63988fe2064c8082bef6b19afde8ef72c55c5b37b7bf00e9c",
+      "observed_at": "2026-09-07T15:21:25.505Z",
+      "screenshot_sha256": "4eb682e44b7e6c1cdbd5fdeb765abb83d2808778e11632c13cf4c7fc2c9cc266"
+    },
+    {
+      "name": "during-bindcraft-placement-blocker.json",
+      "sha256": "e2eb8e1ac75f50cbbb3c58d926a5b6df1531b1d82d2395ac6ef5a481d7af7a0a",
+      "observed_at": "2026-09-07T15:11:30.959Z",
+      "screenshot_sha256": "8cc852600ec21f3e28a53164417b487b13be34720c854720067a44652442b8bf"
+    },
+    {
+      "name": "during-bindcraft-placement-cancelled.json",
+      "sha256": "5181240cf49499264f3c06459448f7dff182bb2e010a202f4b04d52b4779c96b",
+      "observed_at": "2026-09-07T15:17:40.593Z",
+      "screenshot_sha256": "46a01546155b6b3e1072cd1ded4120beeb1bc8265cf475d0a7ac88cb6a93568a"
+    },
+    {
+      "name": "during-capacity-initial.json",
+      "sha256": "6bfc3156cbb6ff146997e2b3189b04a876a47619edf06311e203f473c3b4929d",
+      "observed_at": "2026-09-07T14:56:25.238Z",
+      "screenshot_sha256": "6d3d7515184b2ac3ec71fd1106a144c151eb7b47bf2eed8a6aab1bdad9401764"
+    },
+    {
+      "name": "during-capacity-loaded.json",
+      "sha256": "3bf938290cd16adc0ce3e17e67d67383c7fed65b337fb68ba07860fd168229a3",
+      "observed_at": "2026-09-07T14:56:39.589Z",
+      "screenshot_sha256": "6d3d7515184b2ac3ec71fd1106a144c151eb7b47bf2eed8a6aab1bdad9401764"
+    },
+    {
+      "name": "during-esm-preemptible-recovery-detail.json",
+      "sha256": "6c12ee47fa03dce23d370ebf95cc4969cc3563b9f3db3f86fa46bf749bcdbaac",
+      "observed_at": "2026-09-07T15:08:47.033Z",
+      "screenshot_sha256": "ce8093a2ef14ace8c7f72b9b3d3e01611fd666987f5a519ccf54925e0782691d"
+    },
+    {
+      "name": "during-mixed-capacity.json",
+      "sha256": "64b2608ad11d9805fec34dc91736683f270c347809b127b0bb064b84a63a5b68",
+      "observed_at": "2026-09-07T15:07:17.925Z",
+      "screenshot_sha256": "cd08c3aa2f759f25ee021a8e137ede8351621b06740212df0cb157aa2bf8fae6"
+    },
+    {
+      "name": "during-mixed-scientific-ledger.json",
+      "sha256": "6816d0d51d5f36a69734b5c362b8596e533cff7ff2853c6c3af9360cbf2782b6",
+      "observed_at": "2026-09-07T15:06:44.759Z",
+      "screenshot_sha256": "f7e6ffb33d1c5723178d76e02200ec06eba9bedd7b6ac77e8dfc69da588d8361"
+    },
+    {
+      "name": "during-model-inventory.json",
+      "sha256": "26718a31fe3e4567ecfebeadcccf4270d2a0fcb004ec632134c745ec4c440fb2",
+      "observed_at": "2026-09-07T14:57:36.294Z",
+      "screenshot_sha256": "71eab335719bb697a1700e740097e0102f1613aae65d05c3d64289d242f5e59c"
+    },
+    {
+      "name": "during-protenix-actual-artifact-check.json",
+      "sha256": "237d7db2a57300171e629231b61c0a7556c6f751aa2b94db4cee8d277629c998",
+      "observed_at": "2026-09-07T15:02:26.909Z",
+      "screenshot_sha256": "484155ed933b367a5aa5cfe024ec843775e9f2024c36fada1e395d7227bce1c6"
+    },
+    {
+      "name": "during-protenix-artifact-check.json",
+      "sha256": "651a48100bbeb5483f96837834915e3ddc8da0bc8e008bf52c77295d119d2882",
+      "observed_at": "2026-09-07T15:02:14.166Z",
+      "screenshot_sha256": "c40721b801b3cf4168ea41c909ebe27dd507860e2fedb8250a56499567b1723f"
+    },
+    {
+      "name": "during-protenix-artifact-source-metadata.json",
+      "sha256": "d372f716c6af38fda0d39b8c11861ef3e421bbc6af0f4cbfcd0f917e54f5f417",
+      "observed_at": "2026-09-07T15:04:51.336Z",
+      "screenshot_sha256": "e4be76f31892502ea781f6551d9983f0fcb613461ca18b67a1f4905e0b7ad7ec"
+    },
+    {
+      "name": "during-rf-artifact-source-metadata.json",
+      "sha256": "b036d9fa262b691244e7d35f51d96ec7cec08f140c22ea3edd70299945e3d403",
+      "observed_at": "2026-09-07T15:04:27.928Z",
+      "screenshot_sha256": "0bbd78ecbbc50954c11caabd199a4d0aa163af18742314b0f97d379be41b805c"
+    },
+    {
+      "name": "during-rf-bulk-live.json",
+      "sha256": "0193446db31f5d09729347bc3f28ef0d1b87acc5e4cc45fdc63b7991b0e56fb9",
+      "observed_at": "2026-09-07T15:13:32.680Z",
+      "screenshot_sha256": "637d80970a564a13c645264332e9c50c0c5f89f7e05da47c7025ffac87ec4927"
+    },
+    {
+      "name": "during-rf-bulk-terminal-reload.json",
+      "sha256": "9ecd0c8def315e41315db4731bdb5171a836ffd8290c112d0fd5710fb4974d3d",
+      "observed_at": "2026-09-07T15:17:48.464Z",
+      "screenshot_sha256": "fc0c9db12dbc4d5d224b4304301bf9a570a1c9aadb15dfc3cc613affca449830"
+    },
+    {
+      "name": "during-rf-bulk-terminal.json",
+      "sha256": "b8803f43f6d6e1e09a80e98791f66885e8257bb8d14f588559ff3ac24e9e11a2",
+      "observed_at": "2026-09-07T15:17:32.136Z",
+      "screenshot_sha256": "637d80970a564a13c645264332e9c50c0c5f89f7e05da47c7025ffac87ec4927"
+    },
+    {
+      "name": "during-rf-correlated-logs-link.json",
+      "sha256": "32eb21a65e432e28719a04c0103ba94881a1b36d4ed35c0656841942cab3094d",
+      "observed_at": "2026-09-07T15:00:19.879Z",
+      "screenshot_sha256": "c43a184f112666cd8e12f4b1f587012b881521ed3ee210db99e62cc936de8d13"
+    },
+    {
+      "name": "during-rf-correlated-logs-loaded.json",
+      "sha256": "31b957e1f445d4b28df257768ffe43a555697cc43accac5bf3bfc7cbbc987b8b",
+      "observed_at": "2026-09-07T15:00:45.587Z",
+      "screenshot_sha256": "c43a184f112666cd8e12f4b1f587012b881521ed3ee210db99e62cc936de8d13"
+    },
+    {
+      "name": "during-rf-detail-terminal-check.json",
+      "sha256": "f2497137fcc6e501b6651a3b1a756e333d4d0d01c6ad0c562f20732bfa57609a",
+      "observed_at": "2026-09-07T14:57:53.236Z",
+      "screenshot_sha256": "c98cc0eb691bec424c4d2141bb685a1ec403aa52df91b3e950818685e155e24e"
+    },
+    {
+      "name": "during-rf-first-detail-loaded.json",
+      "sha256": "aff00de6ab91f3c0193fe9746a168e0bdccc22d4f22321beb34707e95d378eed",
+      "observed_at": "2026-09-07T14:55:39.717Z",
+      "screenshot_sha256": "cdb594ed94975b36611fab42b29718f370655b61c2caf580596c8da009d25f08"
+    },
+    {
+      "name": "during-rf-first-detail.json",
+      "sha256": "cd297b30b2ca9f5c4676847bf75b93008c8a1bb49abbe66de93f094c3d7e3479",
+      "observed_at": "2026-09-07T14:55:32.623Z",
+      "screenshot_sha256": "f6374d408bb761e5f1d6b2787ab236daf564ad7348d69513f0a63a36bf38ae3f"
+    },
+    {
+      "name": "during-rf-single-refresh-artifacts.json",
+      "sha256": "f831612144d087f295e3501ec6b017ee96c2b7a523b9c17de274ca6ba8521900",
+      "observed_at": "2026-09-07T15:01:26.479Z",
+      "screenshot_sha256": "b5442fed6c0b4118477d4df7d079c9f295eaf39b914d350b3949741ad44929c3"
+    },
+    {
+      "name": "during-rf-terminal-loaded.json",
+      "sha256": "0216a1243dcc82b7f72c11758efca3a330f7d639f5af7dd87056a4eb7916278b",
+      "observed_at": "2026-09-07T14:59:21.008Z",
+      "screenshot_sha256": "c98cc0eb691bec424c4d2141bb685a1ec403aa52df91b3e950818685e155e24e"
+    },
+    {
+      "name": "during-scientific-runs-initial.json",
+      "sha256": "6c0b017b060841cb91d723da549e1db5e5023797b13ddbdfdbb6ef2fa41226c3",
+      "observed_at": "2026-09-07T14:55:20.487Z",
+      "screenshot_sha256": "3bf044f2bc2dbacc2c8d4c7d6cb81c5408fa3257d8cd2ab472df8cd1316e8de5"
+    }
+  ],
+  "harness_caveats": [
+    "r01 requested nonexistent public /healthz; every404 is retained and excluded from platform availability. r02 uses verified public /readyz.",
+    "r01 used academic scope for general model discovery and correctly saw only msa-search-pdb70. r02 uses general scope and sees14 serving models; scientific discovery uses academic scope and sees10.",
+    "One manual Protenix URL contained an incorrect UUID; browser returned404 twice (frontend GET retry). Correct receipt-derived UUID succeeded. This is a harness navigation error, not a failed real operation.",
+    "Initial unauthenticated browser session lookup401 is the expected sign-in exchange; no inference401 was hidden.",
+    "CLI VM could not read credentials in memory (require/import unavailable); an in-memory Playwright session was used without writing a cookie/session file.",
+    "One-time /livez route discovery also returned404 before selecting /readyz; it did not submit an inference request."
+  ],
+  "raw_receipts": [
+    {
+      "name": "interactive.jsonl",
+      "sha256": "ac4eeb391fa244aa8fa799844a7a0df802799a49a96615448f5732fbf6c3a600"
+    },
+    {
+      "name": "r02/interactive.jsonl",
+      "sha256": "ac98f20ce9c0406dc104975f88fd2e517da1517f2ae51f04bde9e22a94a476fc"
+    },
+    {
+      "name": "discovery.jsonl",
+      "sha256": "50517680ff387dc5b72065c152dfb500c716b1352b6ae3cb0000b559432a4c6f"
+    },
+    {
+      "name": "r02/discovery.jsonl",
+      "sha256": "ad1962498743f1c3f63e5037a4c97d2d058ea1ad6e1a99b39f7c3b1997993423"
+    },
+    {
+      "name": "interactive_sampler-r01.py",
+      "sha256": "3fb385eb06164f6ceac73b21d18c51e2d725a1f302d0d765fe02f634f78efa2e"
+    },
+    {
+      "name": "r02/harness.json",
+      "sha256": "a00b6f9801480bd0b0374ba6b1c8d9ddd9e5958114ee7baed715cb5f68c2c3df"
+    },
+    {
+      "name": "phase.json",
+      "sha256": "7ae5f9e536de8d29755913fe374d4270529dfb565fb82ee9db51f72459afd497"
+    },
+    {
+      "name": "r02/stop.json",
+      "sha256": "b69d03f3d9097a04a917a3d32ed23954f0f07dc49ae7c6b1334ef6cd2c0fa61e"
+    }
+  ],
+  "scientific_mcp_readback": {
+    "scope": "Academic-token MCP discovery/status/result reads of existing completed HTTP submissions. No scientific MCP submission, artifact grant or GPU workload is created.",
+    "started_at": "2026-09-07T15:04:12.534666+00:00",
+    "completed_at": "2026-09-07T15:04:16.579277+00:00",
+    "protocol": "2026-07-28",
+    "status": "passed",
+    "calls": [
+      {
+        "tool": "list_scientific_models",
+        "completed_at": "2026-09-07T15:04:14.056735+00:00",
+        "client_seconds": 0.6797135239467025,
+        "model_ids": [
+          "alphafold3",
+          "bindcraft",
+          "boltzgen",
+          "esmfold2",
+          "esmfold2-fast",
+          "mosaic",
+          "openfold3-openbind",
+          "proteina-complexa",
+          "protenix-v2",
+          "rfdiffusion"
+        ],
+        "status": "passed"
+      },
+      {
+        "tool": "get_scientific_status",
+        "operation_id": "b80a8b11-9015-4dac-8dcb-206225e1baa5",
+        "started_at": "2026-09-07T15:04:14.056749+00:00",
+        "response_sha256": "97f17ffbe8bc9ec4edd47b61d2c230b68e43cf9db2662f007b3d6893dc718f99",
+        "model_id": "rfdiffusion",
+        "operation_status": "succeeded",
+        "batch_status": "succeeded",
+        "result_available": true,
+        "status": "passed",
+        "completed_at": "2026-09-07T15:04:14.686133+00:00",
+        "client_seconds": 0.6293915593996644
+      },
+      {
+        "tool": "get_scientific_result",
+        "operation_id": "b80a8b11-9015-4dac-8dcb-206225e1baa5",
+        "started_at": "2026-09-07T15:04:14.686145+00:00",
+        "response_sha256": "3355ba25b6015d736594755be0155b5555f8d99cbabbca3b36893a2efdfe52af",
+        "terminal_status": "succeeded",
+        "semantic_validation": "passed",
+        "result_digest": "sha256:5f98440c2f61f0d79f423b14efc735178a5da87f4ffceb1bf6bd66dda2000e53",
+        "output_manifest": {
+          "artifact_id": "5790ffb2-fd04-496b-9a81-f8968bf58a11",
+          "size_bytes": 711
+        },
+        "status": "passed",
+        "completed_at": "2026-09-07T15:04:15.172533+00:00",
+        "client_seconds": 0.4863926889374852
+      },
+      {
+        "tool": "get_scientific_status",
+        "operation_id": "e2f0915b-75dd-4673-ab7e-f82c6a551da9",
+        "started_at": "2026-09-07T15:04:15.172543+00:00",
+        "response_sha256": "dbfa0ee94384aa341880d2b8b7e2f6da024d2dc4f987295aef3a5cf1c71bd42e",
+        "model_id": "protenix-v2",
+        "operation_status": "succeeded",
+        "batch_status": "succeeded",
+        "result_available": true,
+        "status": "passed",
+        "completed_at": "2026-09-07T15:04:15.809441+00:00",
+        "client_seconds": 0.6369061442092061
+      },
+      {
+        "tool": "get_scientific_result",
+        "operation_id": "e2f0915b-75dd-4673-ab7e-f82c6a551da9",
+        "started_at": "2026-09-07T15:04:15.809452+00:00",
+        "response_sha256": "6d6a31ebfa9eb755ff3f21f0cf4dd76bc9ab9027d419b9aeea09a26e13219b2f",
+        "terminal_status": "succeeded",
+        "semantic_validation": "passed",
+        "result_digest": "sha256:2570c1fd2f0821eed6daccae8e982ca8e231289b81fcf23b2570ac4a1c0639f5",
+        "output_manifest": {
+          "artifact_id": "27457e9d-d0b5-4883-9c33-0b0cfe2a21f6",
+          "size_bytes": 1006
+        },
+        "status": "passed",
+        "completed_at": "2026-09-07T15:04:16.578760+00:00",
+        "client_seconds": 0.7693133093416691
+      }
+    ],
+    "private_receipt_sha256": "044c7119e1c167ef4027d4c312b53dd4e459e60a47829b53cbae4ce7efc4dd3c"
+  }
+}

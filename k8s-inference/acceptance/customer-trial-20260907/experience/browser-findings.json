@@ -1,0 +1,136 @@
+{
+  "schema": "fs2-serve.nebius.ai/customer-trial-browser-findings/v1",
+  "status": "complete-with-customer-readiness-blockers",
+  "scope": "Actual public browser with the existing bootstrap administrator session. Operator-assisted customer experience, not customer-scoped authorization or unaided onboarding. No control mutations or scientific submissions.",
+  "platform": {
+    "starting_repository_commit": "b707b5e0c3fd9252892893eed0008306c21ee873",
+    "deployed_control_plane_source": "0c1c6f9e268b768717c64b73059add02114382e0",
+    "deployed_control_plane_image": "sha256:fd7e0c0a7f083ffc43cf0de06eb6e30f086f6a26bf75a9f55d041d3a801d7a5f",
+    "public_origin": "https://89.169.99.188"
+  },
+  "independent_rating": {
+    "scale": "Subjective 1-10 experience rating, not an SLA, scientific-quality assessment or statistically calibrated score.",
+    "interactive_api": 7,
+    "interactive_api_basis": "70 of 71 exact synthetic Qwen outputs passed across HTTP/MCP, no client retries, short observed latencies and three successful recovery probes. One server-side MCP tool failure prevents an uninterrupted-availability claim.",
+    "scientific_unattended_batch": 4,
+    "scientific_unattended_batch_basis": "The companion workload lane completed 13 of 14 operations and RF recovered two preempted attempts automatically. One impossible BindCraft CPU/flavor fit required operator diagnosis and cancellation; its UI gave no actionable error.",
+    "admin_operator_ui": 4,
+    "admin_operator_ui_basis": "Model visibility, run detail and observability navigation are useful, but missing artifact-download action, misleading immutable-result freshness, unavailable per-run GPU totals and unhelpful placement/progress summaries impede customer work.",
+    "verdict": "Suitable only for an operator-assisted pilot with known inputs and API result retrieval. Not ready for an unattended or unassisted customer batch trial until the scheduling, transient routability and result-access issues are fixed and tested."
+  },
+  "completion": {
+    "scientific_campaign_terminal_at": "2026-09-07T15:20:44.960235Z",
+    "scientific_campaign_outcomes": "13 passed, one scheduler-blocked BindCraft explicitly cancelled; owned and reported by the independent workload lane.",
+    "sampler_stopped_at": "2026-09-07T15:22:54.645826+00:00",
+    "sampler_exit_code": 0,
+    "browser_closed_at": "2026-09-07T15:22:54.832Z",
+    "browser_exit_code": 0,
+    "cleanup": "Only this lane's sampler and browser processes were stopped; process lookup found neither remaining. All 70 returned Qwen operations were succeeded before recording PASS; the one failed MCP call returned no operation ID. No task GPU Pods, PVCs or scientific runs were created by this lane, and the existing Qwen serving Pod was retained.",
+    "recovery_browser": "At 15:21:25, full inventory showed 24 configured of 25 known (GLM excluded), Qwen hot 1/1, Cosmos intentionally cold 0/0 and scientific profiles batch-ready. This does not override the observed BindCraft placement failure under mixed load.",
+    "evidence": ["after-recovered-model-inventory.json"]
+  },
+  "interactive_failure": {
+    "ordinal": 46,
+    "started_at": "2026-09-07T15:12:02.515582+00:00",
+    "completed_at": "2026-09-07T15:12:03.478037+00:00",
+    "surface": "mcp",
+    "client_seconds": 0.96245,
+    "client_failure": "ExceptionGroup",
+    "server_correlation": "Root's independent observer found Tool invoke_model unexpected exception at 15:12:03.426 in control-plane Pod pwmqv: RuntimeError that the registry model was not routable. MCP transport HTTP 200 at 15:12:03.429 does not mean the tool succeeded.",
+    "cause_boundary": "Server-side MCP tool failure is established. Why the route was unavailable is not yet established. The sampler discarded nested ExceptionGroup details, so the client record alone could not explain it.",
+    "retry_policy": "No client retry or replay; later independently scheduled HTTP and MCP requests passed. No claim of uninterrupted availability."
+  },
+  "findings": [
+    {
+      "id": "bindcraft-unschedulable-placement-not-actionable",
+      "priority": "must-fix-before-unattended-customer-batch",
+      "pages": ["/admin/scientific-runs/2ec36323-564e-4a58-9091-9c55e6e7d064"],
+      "observed_at": "2026-09-07T15:11:30.959Z",
+      "observed": "The BindCraft run and Design attempt say running and admitted on h100-1x, with 1 pod, node count unavailable, No error and No terminal error. No node_pending, Insufficient CPU, impossible resource fit or actionable recovery is displayed.",
+      "independent_workload_diagnosis": "The selected one-GPU pool cannot fit the Pod's 16.1 CPU request on 15.9 allocatable CPUs; scheduler/autoscaler evidence reports insufficient CPU and no scale-up/fallback. The workload owner explicitly cancelled only this test run at 15:12:46 after preserving the failure; it is not a successful unattended operation.",
+      "evidence": ["during-bindcraft-placement-blocker.json", "during-bindcraft-placement-cancelled.json"],
+      "recommendation": "Correct resource-fit-aware placement or fallback for this existing model, and project the actual unschedulable reason and duration into the run UI. Do not treat Kueue admission alone as running computation."
+    },
+    {
+      "id": "mixed-bulk-admission-summary",
+      "priority": "clarify-before-unassisted-batch-trial",
+      "pages": ["/admin/scientific-runs/7abc44a6-0759-4825-87a9-447bf227ca96"],
+      "observed_at": "2026-09-07T15:13:32.680Z",
+      "observed": "RF's four independent attempts are usefully visible as two running, one preempted/retryable and one queued. The aggregate Queue and priority section simultaneously says pending, shows an Admitted timestamp, and says the controller has not observed a Kueue admission event.",
+      "qualification": "This is a mixed-shard summary inconsistency, not proof that all four shards failed or that platform priority/preemption failed. Final workload outcomes are reported separately.",
+      "evidence": ["during-rf-bulk-live.json", "during-rf-bulk-terminal-reload.json"],
+      "recommendation": "Summarize admission per shard, including queued/admitted/running/preempted counts, instead of applying one binary admission label to a partially admitted bulk run."
+    },
+    {
+      "id": "scientific-detail-live-refresh",
+      "priority": "usability-follow-up",
+      "pages": ["/admin/scientific-runs/7abc44a6-0759-4825-87a9-447bf227ca96"],
+      "observed": "A detail page opened at 15:13:32 remained unchanged in a 15:17:32 snapshot, including its 15:13:31 Updated header and old running/queued attempts. The public operation had completed at 15:16:34. One fresh navigation at 15:17:47 displayed succeeded, semantic validation passed, four successful shard outcomes and two preserved preempted attempts followed by successful second attempts.",
+      "qualification": "The terminal result exists and refresh works. This finding is lack of observed automatic progress refresh, not a failed operation or inaccessible result API. Two server-side retries after preemption are distinct from zero client resubmissions.",
+      "evidence": ["during-rf-bulk-live.json", "during-rf-bulk-terminal.json", "during-rf-bulk-terminal-reload.json"],
+      "recommendation": "Provide a clear refresh action or bounded automatic refresh while runs are nonterminal, retaining the observation timestamp."
+    },
+    {
+      "id": "result-download-action",
+      "priority": "must-fix-before-unassisted-ui-result-retrieval",
+      "pages": ["/admin/scientific-runs/b80a8b11-9015-4dac-8dcb-206225e1baa5", "/admin/scientific-runs/e2f0915b-75dd-4673-ab7e-f82c6a551da9"],
+      "observed": "RFdiffusion and Protenix succeeded with semantic validation passed, but both manifest rows show Access: Not available. The API projection says artifact.state=available and artifact.download.available=false, href=null.",
+      "cause": "The current admin adapter hardcodes no download action and instructs callers to use the authorized artifact endpoint. This is independent of the freshness warning; no artifact loss or authorization failure was observed.",
+      "evidence": ["during-rf-single-refresh-artifacts.json", "during-protenix-actual-artifact-check.json", "during-rf-artifact-source-metadata.json", "during-protenix-artifact-source-metadata.json"],
+      "workaround": "Use the existing public scientific result/artifact API with the customer's own scientific key. The workload lane verified those actual downloads; this lane verified MCP status/result documents without creating grants.",
+      "recommendation": "Wire a clear authorized artifact-download action into the existing result UI; keep current tenant/model access checks. No new authorization architecture is needed."
+    },
+    {
+      "id": "immutable-artifact-freshness",
+      "priority": "must-fix-before-unassisted-ui-trial",
+      "observed": "Refreshing a completed RF result once and opening a newer completed Protenix result both show Stale data: scientific-artifacts observation exceeded the freshness bound.",
+      "rf_api_generated_at": "2026-09-07T15:04:27.313033Z",
+      "rf_artifact_observed_at": "2026-09-07T14:55:38.863339Z",
+      "rf_source_age_seconds": 528.449694,
+      "protenix_api_generated_at": "2026-09-07T15:04:50.745958Z",
+      "protenix_artifact_observed_at": "2026-09-07T14:56:54.929159Z",
+      "protenix_source_age_seconds": 475.816799,
+      "cause": "Artifact observation time is set to immutable result commit time, then evaluated by a live-source freshness bound. A newly fetched completed result is therefore mislabeled stale.",
+      "evidence": ["during-rf-artifact-source-metadata.json", "during-protenix-artifact-source-metadata.json"],
+      "recommendation": "Keep result creation/commit time distinct from the current read observation time, or explicitly classify immutable terminal evidence rather than applying live-metric staleness semantics."
+    },
+    {
+      "id": "per-run-gpu-accounting-presentation",
+      "priority": "must-fix-before-customer-usage-accounting",
+      "observed": "Completed RF and Protenix pages and the mixed-run ledger show allocated, active, idle and grace GPU cards as unavailable. Lower RF phase cards expose59.31s active-compute and2.24s allocated-idle; completed stage rows retain1GPU and pool names. The UI cannot currently provide a reconciled per-run customer GPU-time total.",
+      "evidence": ["during-rf-first-detail-loaded.json", "during-rf-terminal-loaded.json", "during-protenix-actual-artifact-check.json", "during-mixed-scientific-ledger.json"],
+      "qualification": "This finding concerns the displayed per-run accounting projection. It does not infer missing backend samples, convert CPU/phase durations into GPU-seconds, or claim billing-ready totals from allocation estimates.",
+      "recommendation": "Join the actual allocation/release and active/idle lifecycle evidence into the existing run summary, with uncertainty and GPU multiplicity retained. Root's independent observer owns the accounting diagnosis."
+    },
+    {
+      "id": "scientific-catalog-snapshot-wording",
+      "priority": "clarify-before-unassisted-option-selection",
+      "observed": "Scientific runs → Scientific model catalog says Checkpoint unavailable · GPU snapshot unavailable for ESMFold2/Fast, Protenix and RF, while Full model inventory correctly says Available as an option for their installed qualified bundles.",
+      "api_field": "GET /admin/api/v1/scientific-models: data.items[].caching.gpu_snapshot / runtime_checkpoint / reason",
+      "evidence": ["during-scientific-runs-initial.json", "during-model-inventory.json", "during-mixed-scientific-ledger.json"],
+      "qualification": "A normal-loaded run saying restore not-observed is truthful and not a bug. The inconsistency is a model-level capability display using the same unavailable wording for absence of a per-run observation.",
+      "recommendation": "Separate qualified/selectable capability, configured preference and observed execution backend in model-level copy. Do not mark a normal-loaded run as restored."
+    },
+    {
+      "id": "capacity-status-interpretation",
+      "priority": "operator-follow-up-not-inference-failure",
+      "observed": "Capacity & queues exposes Kueue resource quotas, admitted/pending workloads, reserved16GPU capacity and a preemptible pool that appeared during the campaign. An early Node scaler capability card said Healthy: No despite available adapter data; GPU Healthy values were unavailable without explicit health evidence.",
+      "evidence": ["during-capacity-loaded.json", "during-mixed-capacity.json"],
+      "qualification": "No claim that node scaling failed: a real scientific job used the preemptible pool and completed. Healthy GPU count, configured pool health and successful scheduling are separate facts.",
+      "recommendation": "Explain the exact unhealthy pool/bound condition in the operator card instead of a generic fleet-level message, and keep lack of health telemetry distinct from unhealthy hardware."
+    }
+  ],
+  "positive_observations": [
+    "Consistent navigation/layout; the scientific ledger links directly to detailed run pages with tenant/key-prefix attribution, effective service class, stage DAG and statuses, timestamps, retries and semantic validation.",
+    "Actual mixed-run progress was visible: completed RF/Protenix/Mosaic and concurrent BoltzGen/BindCraft/Proteina/ESMFold2 stages, without relying on hidden Kubernetes inspection to find their UI state.",
+    "Full inventory distinguishes hot serving replicas, intentionally cold Cosmos and dispatchable scientific profiles; it explains snapshot option qualification separately from current execution.",
+    "The operation's observability link preserves the selected operation and exposes healthy Grafana/Loki/Tempo/Prometheus/DCGM/OTel/Kueue/KEDA tools. This lane did not establish that every external dashboard view automatically opens the intended query.",
+    "Existing academic credentials successfully discover all10 scientific profiles and read canonical completed RF/Protenix status/results through MCP. This is five read-only MCP calls, not an all-model MCP submission campaign."
+  ],
+  "harness_errors_not_platform_failures": [
+    "r01 periodic /healthz requests returned404 because that route is not published; r02 uses verified /readyz. One-time /livez route discovery also returned404.",
+    "One manual Protenix URL contained an incorrect UUID and produced two frontend404 responses; the exact receipt-derived operation URL worked. The incorrect-attempt screenshot/record is retained.",
+    "Initial unauthenticated admin session lookup401 is expected; successful sign-in used an existing operator credential entirely in memory.",
+    "Playwright CLI could not read local credentials in its VM; the existing Node Playwright pattern was used with an in-memory session, without writing credentials or browser storage state."
+  ]
+}

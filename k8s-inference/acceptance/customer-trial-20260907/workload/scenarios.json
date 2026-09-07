@@ -1,0 +1,16 @@
+[
+  {"id":"switch-01-rfdiffusion","phase":"sequential-switch","model_id":"rfdiffusion"},
+  {"id":"switch-02-protenix","phase":"sequential-switch","model_id":"protenix-v2"},
+  {"id":"switch-03-mosaic","phase":"sequential-switch","model_id":"mosaic"},
+  {"id":"batch-01-boltzgen","phase":"mixed-batch","model_id":"boltzgen"},
+  {"id":"batch-02-bindcraft","phase":"mixed-batch","model_id":"bindcraft"},
+  {"id":"batch-03-proteina","phase":"mixed-batch","model_id":"proteina-complexa"},
+  {"id":"batch-04-esmfold2","phase":"mixed-batch","model_id":"esmfold2"},
+  {"id":"batch-05-boltzgen","phase":"mixed-batch","model_id":"boltzgen"},
+  {"id":"batch-06-bindcraft","phase":"mixed-batch","model_id":"bindcraft"},
+  {"id":"batch-07-proteina","phase":"mixed-batch","model_id":"proteina-complexa"},
+  {"id":"batch-08-mosaic","phase":"mixed-batch","model_id":"mosaic"},
+  {"id":"batch-09-rfdiffusion-bulk","phase":"mixed-batch","model_id":"rfdiffusion","service_class":"bulk-backfill","parameters":{"num_designs":4,"contigs":["96-96"],"seed":8200},"expected_shards":{"inference":4}},
+  {"id":"batch-10-esmfold2-fast","phase":"mixed-batch","model_id":"esmfold2-fast"},
+  {"id":"batch-11-alphafold3","phase":"mixed-batch","model_id":"alphafold3"}
+]
