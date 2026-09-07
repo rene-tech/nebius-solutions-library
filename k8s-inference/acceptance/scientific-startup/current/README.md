@@ -1,5 +1,7 @@
 # Current-model startup campaign — 7 September 2026
 
+[Current H100 measurements and interpretation](current-h100-20260907.md).
+
 This campaign measures new starts, not historical complete-job durations.
 Baseline solution source is `71547004`; the deployed control plane is
 `adf1d842`. Scientific execution identities and general-serving image digests
