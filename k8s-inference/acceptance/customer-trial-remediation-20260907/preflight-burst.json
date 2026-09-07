@@ -1,0 +1,1041 @@
+{
+  "schema": "fs2.customer-trial-qwen-burst-regression/v1",
+  "deployed_source": "5fec52059",
+  "harness_source": "1d6cff9f3",
+  "result": {
+    "status": "coverage-not-observed",
+    "request_count": 36,
+    "failed_ordinals": [],
+    "all_public_calls_succeeded": true,
+    "transition_samples": 0,
+    "overlapping_request_ordinals": [],
+    "model_ready_during_transition": false,
+    "baseline_hot_uids": [
+      "2c04bb56-77ea-4838-8198-256330c55b07"
+    ],
+    "baseline_burst_uids": [],
+    "new_burst_pod_uids": [],
+    "trigger_attribution": "Temporal observation only; preexisting burst Pods are not counted as test-created.",
+    "hot_readiness_losses": [],
+    "observation_errors": 0,
+    "desired_spec_unchanged": true,
+    "nonterminal_or_unknown_operation_ids": [],
+    "coverage_note": "Sampled evidence, not a continuous availability SLA. No observed overlap means no live transition qualification.",
+    "completed_at": "2026-09-07T16:06:48.763194+00:00"
+  },
+  "requests": [
+    {
+      "ordinal": 1,
+      "surface": "http",
+      "case": "arithmetic",
+      "started_at": "2026-09-07T16:04:18.650472+00:00",
+      "completed_at": "2026-09-07T16:04:20.671144+00:00",
+      "client_seconds": 2.020675,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "1aec7fa18711c5a5c441019f8d7cd7d749dd3025e9c0466d2688fa36115b8114",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "ed9177af-d338-4697-b0e0-17f40377b26d",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 2,
+      "surface": "mcp",
+      "case": "translation",
+      "started_at": "2026-09-07T16:04:18.670395+00:00",
+      "completed_at": "2026-09-07T16:04:21.934158+00:00",
+      "client_seconds": 3.263765,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "8d3aacb6116fa373961281b16562d99fbf93d71af679298b048dec7a404e6bcd",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "fa5c7fbf-48b8-4a37-a17e-a2caacbc348d",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 3,
+      "surface": "http",
+      "case": "sorting",
+      "started_at": "2026-09-07T16:04:18.680421+00:00",
+      "completed_at": "2026-09-07T16:04:20.824403+00:00",
+      "client_seconds": 2.143986,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "3bba9aaf17dd772ff52cb992eebbc794aa21e075b4280958c15af85717dda7bd",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "7a42e1e1-9931-4d3e-8e01-850f1cd3b7a3",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 4,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "started_at": "2026-09-07T16:04:28.650747+00:00",
+      "completed_at": "2026-09-07T16:04:32.579513+00:00",
+      "client_seconds": 3.928764,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "f4ac408ac396944ff9b893e7cf1760877f398e163ef9dd1eb77dca7a4f272b60",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "df19e068-547d-47e2-a079-85a3cda9baa3",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 5,
+      "surface": "http",
+      "case": "translation",
+      "started_at": "2026-09-07T16:04:28.651676+00:00",
+      "completed_at": "2026-09-07T16:04:31.695522+00:00",
+      "client_seconds": 3.043858,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "323d142067c6a3b2b74e3acb56aff0592bbf76e123baa4f2bbf65cd4f61d4cd2",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "f17716e2-0666-4034-977a-12d6aa15533f",
+      "submission_attempts": 1,
+      "status_polls": 4,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 6,
+      "surface": "mcp",
+      "case": "sorting",
+      "started_at": "2026-09-07T16:04:28.656221+00:00",
+      "completed_at": "2026-09-07T16:04:31.988647+00:00",
+      "client_seconds": 3.33243,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "bcd8595962e871659c15882aa96d2909efe1abe75a13110169989d1b7605711a",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "47d12999-9368-49e3-a153-8d99ee9892d2",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 7,
+      "surface": "http",
+      "case": "arithmetic",
+      "started_at": "2026-09-07T16:04:38.651124+00:00",
+      "completed_at": "2026-09-07T16:04:40.864317+00:00",
+      "client_seconds": 2.213184,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "1bf8712255c3bf9e48b27582a6f8dc0f59c0b086d96c3c7e82e6d169c04c3db4",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "7e2a076c-a2dd-422c-af11-b1aab014784a",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 8,
+      "surface": "mcp",
+      "case": "translation",
+      "started_at": "2026-09-07T16:04:38.655922+00:00",
+      "completed_at": "2026-09-07T16:04:41.449717+00:00",
+      "client_seconds": 2.79378,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "e317820457e5c4d63a28f5fda4a207c973881e4c22aa345331dbf24044fe53f9",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "c595af1e-fe83-49cc-8160-ab5159dd2bcf",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 9,
+      "surface": "http",
+      "case": "sorting",
+      "started_at": "2026-09-07T16:04:38.656580+00:00",
+      "completed_at": "2026-09-07T16:04:40.855842+00:00",
+      "client_seconds": 2.199267,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "993f2c6351a3d2604a80f7e89647a572e34f81d8c6096aebd66066cad94fec8f",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "78ea98a0-61fd-451d-926f-06d979e52efb",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 10,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "started_at": "2026-09-07T16:04:48.651690+00:00",
+      "completed_at": "2026-09-07T16:04:51.993086+00:00",
+      "client_seconds": 3.34139,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "d58f5f64a0d5c6358138d3b14b2b9d1b4b981e9e81457421e03aab383f3d5075",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "96f00911-0c83-4612-bf74-313c078b36b6",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 11,
+      "surface": "http",
+      "case": "translation",
+      "started_at": "2026-09-07T16:04:48.652617+00:00",
+      "completed_at": "2026-09-07T16:04:50.458637+00:00",
+      "client_seconds": 1.806023,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "8df7fa2408ceca5fedd302e76d0799ad150f8ed1a99b37e27e612590595066c4",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "43c35e3a-a039-4236-85d5-eceedb8a10a2",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 12,
+      "surface": "mcp",
+      "case": "sorting",
+      "started_at": "2026-09-07T16:04:48.657533+00:00",
+      "completed_at": "2026-09-07T16:04:51.820584+00:00",
+      "client_seconds": 3.163054,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "eb944d813354c8f7b53714c05946c88b57ca0ce5222ae703fc28739a9b29751d",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "12d1336a-3ec3-4242-b70b-c9149014a2bc",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 13,
+      "surface": "http",
+      "case": "arithmetic",
+      "started_at": "2026-09-07T16:04:58.652211+00:00",
+      "completed_at": "2026-09-07T16:05:01.040734+00:00",
+      "client_seconds": 2.388517,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "4a2338abc7fe7a07c1ef3c0f9ea9ee350ab6372048bf0ec887ca46d8f83f9737",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "5ff6222a-c34d-45f1-8a5a-5cc777e178a6",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 14,
+      "surface": "mcp",
+      "case": "translation",
+      "started_at": "2026-09-07T16:04:58.657137+00:00",
+      "completed_at": "2026-09-07T16:05:02.698191+00:00",
+      "client_seconds": 4.041056,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "9fd9b61cb57182109ecd6af7d49895ac9125f2abfe8b50ea53b65cff8347a363",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "c77001e2-4010-4dd9-b73e-de67e25051ec",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 15,
+      "surface": "http",
+      "case": "sorting",
+      "started_at": "2026-09-07T16:04:58.657803+00:00",
+      "completed_at": "2026-09-07T16:05:01.395072+00:00",
+      "client_seconds": 2.737272,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "5c485a5b78117c281a31275b834ec1db3c4ec0897dbc4a660204656018d51788",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "9ef5c163-ca46-4be3-bcd7-e9e18e9c9fec",
+      "submission_attempts": 1,
+      "status_polls": 3,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 16,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "started_at": "2026-09-07T16:05:08.652810+00:00",
+      "completed_at": "2026-09-07T16:05:11.496468+00:00",
+      "client_seconds": 2.84364,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "ea29a512dd3ee3b9f67d607e19648db003aca44930366cf0d85e95ea602fec60",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "ed12ce3b-fdca-4ab1-ad9d-d907a60dcc46",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 17,
+      "surface": "http",
+      "case": "translation",
+      "started_at": "2026-09-07T16:05:08.653714+00:00",
+      "completed_at": "2026-09-07T16:05:10.893861+00:00",
+      "client_seconds": 2.240151,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "bd2ece087d6829accdc353ee4f2e744c167e93204d86b07c705028c9ee481d77",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "48535c4a-4c6a-499e-a52d-7fffc4bbcf9b",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 18,
+      "surface": "mcp",
+      "case": "sorting",
+      "started_at": "2026-09-07T16:05:08.658315+00:00",
+      "completed_at": "2026-09-07T16:05:11.823746+00:00",
+      "client_seconds": 3.165434,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "fddf57d4140803a6757809e767af8f72eab5aabd791496a2087ec702e73c4552",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "3cb5cad7-71a2-4ea4-b212-d1ac745c927d",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 19,
+      "surface": "http",
+      "case": "arithmetic",
+      "started_at": "2026-09-07T16:05:18.653783+00:00",
+      "completed_at": "2026-09-07T16:05:20.613177+00:00",
+      "client_seconds": 1.959387,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "6a8647add021265a04c5e3763aafb97e28383fa21a57f9873e22c42e287bc989",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "c0fd41ab-a6b0-4aaf-a586-1d54a49f0209",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 20,
+      "surface": "mcp",
+      "case": "translation",
+      "started_at": "2026-09-07T16:05:18.658689+00:00",
+      "completed_at": "2026-09-07T16:05:21.963283+00:00",
+      "client_seconds": 3.304598,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "19754605c01fce50b9bc883617e3933acad9e0bc213e12e2a66912121c22d4fd",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "2701e49a-096b-490a-b87e-141d5547b1a5",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 21,
+      "surface": "http",
+      "case": "sorting",
+      "started_at": "2026-09-07T16:05:18.659334+00:00",
+      "completed_at": "2026-09-07T16:05:20.594383+00:00",
+      "client_seconds": 1.935053,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "d1fca4e198ce8b35de0ee1a34a3143ce759963b08ec69c6d99404865d33cb349",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "46a7c1ee-00f4-40ec-bf39-2572b81bc4a8",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 22,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "started_at": "2026-09-07T16:05:28.654517+00:00",
+      "completed_at": "2026-09-07T16:05:32.035417+00:00",
+      "client_seconds": 3.380896,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "b864c3de3248acab8855d5600cc77d8c05e00eb5b11d1acdcae09984615f923c",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "77e88030-461e-444b-bb2a-8e42ead7518e",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 23,
+      "surface": "http",
+      "case": "translation",
+      "started_at": "2026-09-07T16:05:28.655413+00:00",
+      "completed_at": "2026-09-07T16:05:31.164466+00:00",
+      "client_seconds": 2.50906,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "526606da99e62736d00562e3bde1caf8689a15b1fea654d3754f7cf7cfd2d4bd",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "ed456a7e-c4fe-41b2-9420-5773936005a4",
+      "submission_attempts": 1,
+      "status_polls": 3,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 24,
+      "surface": "mcp",
+      "case": "sorting",
+      "started_at": "2026-09-07T16:05:28.659880+00:00",
+      "completed_at": "2026-09-07T16:05:31.616495+00:00",
+      "client_seconds": 2.956619,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "4fa3646525e4c28039807f68e4e1d1a1e3127bd6cffa548d6a505393cbc0c336",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "db4409dd-2362-44b4-b30f-3886f11995c7",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 25,
+      "surface": "http",
+      "case": "arithmetic",
+      "started_at": "2026-09-07T16:05:38.655434+00:00",
+      "completed_at": "2026-09-07T16:05:40.495714+00:00",
+      "client_seconds": 1.840274,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "c32ab85f5ca58f6e43cf581b9f8aa812f81cecb2c83b07d979c31017bbe0a567",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "0bbc6b4b-b3a4-4678-b195-eb865d13a037",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 26,
+      "surface": "mcp",
+      "case": "translation",
+      "started_at": "2026-09-07T16:05:38.660246+00:00",
+      "completed_at": "2026-09-07T16:05:41.802601+00:00",
+      "client_seconds": 3.142359,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "3876f0e8c10ed5dbfa60e721a663b728b8e15efc51003b0c17208b81899fb8f0",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "507c8ec7-60dc-4f53-8b9c-4940c70f9de8",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 27,
+      "surface": "http",
+      "case": "sorting",
+      "started_at": "2026-09-07T16:05:38.660868+00:00",
+      "completed_at": "2026-09-07T16:05:40.662533+00:00",
+      "client_seconds": 2.001671,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "e2d8cb7e34e3a9a01e0840afe9a63e21fd8daa4a554db25be67ce7c463d3d201",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "158fddea-e0be-4c56-a725-03350114ca10",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 28,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "started_at": "2026-09-07T16:05:48.656421+00:00",
+      "completed_at": "2026-09-07T16:05:51.577464+00:00",
+      "client_seconds": 2.921041,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "d37d426af87d2ce975ccc33abd29764a20ee80a0aafa8c88adef655ece7a3864",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "abd1e0fb-9577-404c-8918-e4b2539758e4",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 29,
+      "surface": "http",
+      "case": "translation",
+      "started_at": "2026-09-07T16:05:48.657291+00:00",
+      "completed_at": "2026-09-07T16:05:50.538641+00:00",
+      "client_seconds": 1.881355,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "ac9c2c3fd72976e4608a9a5dc4daac60ceeda6cd5e9efce31de22ce0af259f9b",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "1e0b2586-940e-425f-b9fa-57c7084ee7a1",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 30,
+      "surface": "mcp",
+      "case": "sorting",
+      "started_at": "2026-09-07T16:05:48.661695+00:00",
+      "completed_at": "2026-09-07T16:05:51.850051+00:00",
+      "client_seconds": 3.18836,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "31e95d2e8a1e7ed8d9df288307c6300b83d5e15f9d4a8889cd28111d303a266d",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "4c3caee4-8f02-45d5-b68e-596285382d74",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 31,
+      "surface": "http",
+      "case": "arithmetic",
+      "started_at": "2026-09-07T16:05:58.657911+00:00",
+      "completed_at": "2026-09-07T16:06:00.562181+00:00",
+      "client_seconds": 1.904265,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "9ee83f58ccce19f7816a22fe89c61f4a199390b2a923ce5c130754a4d45a9725",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "a1652986-b913-48a2-a952-0a88c21c7dc4",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 32,
+      "surface": "mcp",
+      "case": "translation",
+      "started_at": "2026-09-07T16:05:58.662853+00:00",
+      "completed_at": "2026-09-07T16:06:01.893083+00:00",
+      "client_seconds": 3.230234,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "acc7fed16511c5b68fbddc619e178f4e6f1398587195a160453e56d33a11f517",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "5507ba17-0665-4257-85fb-04009148bf4a",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 33,
+      "surface": "http",
+      "case": "sorting",
+      "started_at": "2026-09-07T16:05:58.663464+00:00",
+      "completed_at": "2026-09-07T16:06:00.858509+00:00",
+      "client_seconds": 2.195049,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "f6d672f0d0590c5c1d6ca9d233cff28cd571d9cd6616a271e6ba061445089427",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "d55f108b-257d-40c0-b1ce-423931ebd141",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 34,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "started_at": "2026-09-07T16:06:08.659004+00:00",
+      "completed_at": "2026-09-07T16:06:12.341512+00:00",
+      "client_seconds": 3.682499,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "3304cee5b1dd6afb33b6cfa400460556b4790641629e04267856e816a8a6d060",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "1f17a1a9-89b9-4f4b-989a-3ee4bfe163da",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 35,
+      "surface": "http",
+      "case": "translation",
+      "started_at": "2026-09-07T16:06:08.660042+00:00",
+      "completed_at": "2026-09-07T16:06:10.807607+00:00",
+      "client_seconds": 2.14757,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "fed643d2c75a005e16180452ec4cfaf94f1775d05dbb6c12fdf3ca13c6a261a7",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "bb8e780c-257e-4aff-8980-94cd1df1f1d4",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "mcp_http_statuses": null,
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 36,
+      "surface": "mcp",
+      "case": "sorting",
+      "started_at": "2026-09-07T16:06:08.664787+00:00",
+      "completed_at": "2026-09-07T16:06:12.121987+00:00",
+      "client_seconds": 3.457205,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "14c30df66129454672ecb027e35272f1ef86c1387964ae9e20875203061efec3",
+      "status": "passed",
+      "correctness_passed": true,
+      "operation_id": "e5b0cb17-62bf-4864-b154-0b30bc673789",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    }
+  ]
+}

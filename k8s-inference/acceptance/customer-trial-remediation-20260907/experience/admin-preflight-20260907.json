@@ -1,0 +1,106 @@
+{
+  "schema": "fs2-serve.nebius.ai/admin-remediation-preflight-summary/v1",
+  "status": "passed",
+  "deployed_source_commit": "5fec520596b6aa9b8a2eb1194d742f0c35fde575",
+  "started_at": "2026-09-07T16:06:27.433Z",
+  "completed_at": "2026-09-07T16:06:36.610Z",
+  "scope": "Real public Chromium with existing bootstrap operator session; authorized read/download only. This does not prove customer-scoped onboarding or the subsequent concurrent campaign.",
+  "fresh_completed_runs": [
+    {
+      "model": "rfdiffusion",
+      "operation_id": "b80a8b11-9015-4dac-8dcb-206225e1baa5",
+      "completed_at": "2026-09-07T14:55:38.678980Z",
+      "artifact_observed_at": "2026-09-07T16:06:30.346382Z",
+      "artifact_source_state": "available",
+      "listed_artifacts": 8,
+      "occupied_gpu_seconds": 69,
+      "active_gpu_seconds": 60,
+      "idle_gpu_seconds": 9,
+      "grace_gpu_seconds": 0
+    },
+    {
+      "model": "protenix-v2",
+      "operation_id": "e2f0915b-75dd-4673-ab7e-f82c6a551da9",
+      "completed_at": "2026-09-07T14:56:54.753469Z",
+      "artifact_observed_at": "2026-09-07T16:06:32.139083Z",
+      "artifact_source_state": "available",
+      "listed_artifacts": 9,
+      "occupied_gpu_seconds": 38,
+      "active_gpu_seconds": 23,
+      "idle_gpu_seconds": 15,
+      "grace_gpu_seconds": 0
+    },
+    {
+      "model": "rfdiffusion-four-shard-bulk",
+      "operation_id": "7abc44a6-0759-4825-87a9-447bf227ca96",
+      "completed_at": "2026-09-07T15:16:34.301500Z",
+      "artifact_observed_at": "2026-09-07T16:06:33.806004Z",
+      "artifact_source_state": "available",
+      "listed_artifacts": 23,
+      "occupied_gpu_seconds": 336.644635,
+      "active_gpu_seconds": 276.732065,
+      "idle_gpu_seconds": 59.91257,
+      "grace_gpu_seconds": 0
+    }
+  ],
+  "accounting_qualification": "All values above are explicitly estimated application-observed lifecycle totals, not DCGM utilization or billing precision. Occupied equals active plus idle plus grace within floating-point tolerance, including retained retries; no historical telemetry was rewritten.",
+  "actual_browser_downloads": [
+    {
+      "model": "rfdiffusion",
+      "artifact_id": "35275dec-a929-4fc8-8999-20a7aa71deab",
+      "media_type": "chemical/x-pdb",
+      "bytes": 20368,
+      "sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+      "browser_download_seconds": 0.37472371,
+      "canonical_size_and_digest_match": true
+    },
+    {
+      "model": "protenix-v2",
+      "artifact_id": "eb15a2b5-9956-4160-a2c1-7821b7d4cf62",
+      "media_type": "chemical/x-mmcif",
+      "bytes": 32475,
+      "sha256": "583468ffaedbadb6c0fe6faa289730a1b4e7e28633b01464dd637e98c6b4361b",
+      "browser_download_seconds": 0.250227343,
+      "canonical_size_and_digest_match": true
+    }
+  ],
+  "scientific_snapshot_capability": {
+    "models": ["rfdiffusion", "protenix-v2", "esmfold2", "esmfold2-fast"],
+    "api_verified_and_browser_available_as_option": true,
+    "individual_run_startup_observation_not_inferred": true
+  },
+  "overview": {
+    "from_at": "2026-09-07T15:06:36.227666Z",
+    "to_at": "2026-09-07T16:06:36.227666Z",
+    "scope": "All model IDs, serving and scientific; Prometheus replicas deduplicated before selected-window delta.",
+    "durable_completed_exact": 92,
+    "prometheus_completed_sampled_estimate": 93,
+    "sampled_minus_durable_estimate": 1,
+    "sampling_boundary_and_extrapolation_disclaimer_visible": true
+  },
+  "browser_errors": {
+    "unexpected": 0,
+    "expected_initial_anonymous_session_401": 1
+  },
+  "retained_attempts": [
+    {
+      "attempt": "preflight-r01",
+      "status": "harness-assertion-error",
+      "reason": "All run/download/capability checks passed; final harness assertion incorrectly read DTO quality instead of state.",
+      "private_report_sha256": "f7cd9f2b4e37e1c1aea414faa63c155ac62e865e1c7c3fd7adbf6a232bff7de3"
+    },
+    {
+      "attempt": "preflight-r02",
+      "status": "harness-timing-error",
+      "reason": "All run/download and capability API checks passed; screenshot assertion ran before asynchronously loaded model rows. Corrected to wait for the actual capability text.",
+      "private_report_sha256": "1749f67dea5187996aca4dc8c7694a156bbe41f277296aa8d2d6a79485e95995"
+    },
+    {
+      "attempt": "preflight-r03",
+      "status": "passed",
+      "private_report_sha256": "cca5f3a87ebf2a41ae4e67e78db832dfcee6fdffe348dcc28d606312180c49ab"
+    }
+  ],
+  "cleanup": "Each preflight browser closed; temporary downloaded files deleted after hash validation. No model policies, API keys, workloads or resource limits changed. A separate read-only browser session is retained for the upcoming active cohort.",
+  "pending": ["Actual active-run automatic refresh", "Mixed-shard live admission and pending progress", "Two complete unchanged concurrent customer campaigns"]
+}

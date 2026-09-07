@@ -73,8 +73,10 @@ these offline checks.
 New scripts under this directory preserve the historical harness and receipts:
 
 - `observer/sample_cluster.py`: the existing 25-second sampler, extended to all
-  Kueue namespaces, academic Pod CPU/RAM, disk available/size bytes and the exact
-  Qwen ModelDeployment status. Missing metrics remain missing, never zero.
+  Kueue namespaces, disk available/size bytes and the exact Qwen ModelDeployment
+  status. Academic Pod CPU/RAM was intended but missing in r01's query filters;
+  those two filters are corrected for r02 onward, and r01's missing scope is
+  documented without retrofilled measurements. Missing metrics remain missing.
 - `experience/interactive_sampler.py`: same three synthetic Qwen checks, one
   client, 25-second cadence, alternating HTTP and MCP, no submission retries.
   It now retains bounded nested exception types, HTTP/protocol codes, per-call

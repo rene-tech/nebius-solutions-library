@@ -1,0 +1,245 @@
+{
+  "artifact_digests": {
+    "input_manifest": {
+      "artifact_id": "0b66bccc-72d5-4693-9d63-3fc561080a33",
+      "compression": "none",
+      "media_type": "application/vnd.fs2.scientific-manifest+json",
+      "sha256": "9ff56d306f60c215e5d88da9cef96cd1c05d3c057dcc7bb52c2b20acacdd491a",
+      "size_bytes": 413
+    },
+    "output_manifest": {
+      "artifact_id": "1087aa2b-307b-477f-9dc9-2ff8def322a7",
+      "compression": "none",
+      "media_type": "application/vnd.fs2.scientific-manifest+json",
+      "sha256": "4b2c2042b667635a8f7359381cb1c0b65d6d3e0b93d741f73f0016a4f47ed728",
+      "size_bytes": 711
+    },
+    "semantic_validation_receipt_sha256": "174a1d80a528e8f1a5ad474b9c63200cd434693a5e117d54f21c09c47052e9e2",
+    "uploads": [
+      {
+        "artifact_id": "2d7246dc-e894-4c43-961f-804abccaf4ef",
+        "compression": "none",
+        "media_type": "text/plain",
+        "name": "design_constraint",
+        "role": "manifest-artifact",
+        "sha256": "1c39599c570c19364722ff11504b2aae84ea3758a1af2b80b8c64b8591fcc2a8",
+        "size_bytes": 45
+      },
+      {
+        "artifact_id": "0b66bccc-72d5-4693-9d63-3fc561080a33",
+        "compression": "none",
+        "media_type": "application/vnd.fs2.scientific-manifest+json",
+        "role": "request-input-manifest",
+        "sha256": "9ff56d306f60c215e5d88da9cef96cd1c05d3c057dcc7bb52c2b20acacdd491a",
+        "size_bytes": 413
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "attempt_id": "e56b3fa1-dc08-570a-85a7-fe046d332028",
+      "attempt_number": 1,
+      "checkpoint_input": null,
+      "checkpoint_output": null,
+      "completed_at": "2026-09-07T16:09:37.630890Z",
+      "gpu_uuids": [],
+      "k8s_job_uid": "e6cf068f-05c7-48f4-83bf-c56339d3aeec",
+      "kueue_workload_uid": "c50dd43c-a69b-464f-b58b-174708605054",
+      "node_uids": [],
+      "pod_uids": [
+        "6661d4fc-38db-4348-855e-e39b46a32e97"
+      ],
+      "scheduling_admission": {
+        "accelerator_count": 0,
+        "accelerator_resource_name": null,
+        "admitted_at": "2026-09-07T16:09:23Z",
+        "admitted_resource_flavor": null,
+        "resolved_pool_id": null
+      },
+      "shard_id": "main",
+      "stage_id": "collect",
+      "started_at": "2026-09-07T16:09:22.992011Z",
+      "status": "succeeded"
+    },
+    {
+      "attempt_id": "c69f63d2-b1ed-548b-aae9-a736b7b63800",
+      "attempt_number": 1,
+      "checkpoint_input": null,
+      "checkpoint_output": null,
+      "completed_at": "2026-09-07T16:09:22.436412Z",
+      "gpu_uuids": [],
+      "k8s_job_uid": "f07c1c4d-eca4-4e42-a930-59de8a4ae0bf",
+      "kueue_workload_uid": "5922fafc-46ab-4312-83c8-20df709da83c",
+      "node_uids": [],
+      "pod_uids": [
+        "075f075d-e801-4078-8f24-3098e2befe2c"
+      ],
+      "scheduling_admission": {
+        "accelerator_count": 1,
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "admitted_at": "2026-09-07T16:08:20Z",
+        "admitted_resource_flavor": "inference-h100-reserved-8x",
+        "resolved_pool_id": "h100-reserved-8x"
+      },
+      "shard_id": "design-000",
+      "stage_id": "inference",
+      "started_at": "2026-09-07T16:08:20.493353Z",
+      "status": "succeeded"
+    }
+  ],
+  "cold_start": {
+    "cold_start_seconds": null,
+    "runtime": {
+      "gpu_count": 0,
+      "gpu_uuids": [],
+      "node_uid": null,
+      "pod_uid": null,
+      "preemptible": null
+    }
+  },
+  "endpoint": {
+    "host": "89.169.99.188",
+    "tls": true
+  },
+  "execution_identity": {
+    "execution_identity_sha256": "5e819d407d360d7cdc08ce3b984bc948e37182ef87c627b93b4e893c4348a082",
+    "model_artifact_manifest_digest": "931ae8f26343abe60d3fd4efb71da9ca2822899bde61357044eea09ca85bfc2d",
+    "model_id": "rfdiffusion",
+    "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+    "runtime_image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+    "runtime_recipe_sha256": "f099f92b47bd174715c40504d22d007780424d0256b9f134a4deb133725355fc",
+    "variant_id": "rfdiffusion-v1-1-0",
+    "workload_recipe_sha256": "625ac765fe08415199b937a1ddb8b6289ed7924e0b88b9f5f342391076891bde"
+  },
+  "model": {
+    "model_id": "rfdiffusion",
+    "variant_id": "rfdiffusion-v1-1-0"
+  },
+  "operation_identity": {
+    "batch_id": "6c1d6022-b49a-5540-99e5-4f8162506411",
+    "operation_id": "31d05ba2-5929-41b9-8826-29233a4f61b7",
+    "workload_id": "8d973e8a-e368-5b51-9d84-cdfa3d7eefd2"
+  },
+  "queue": {
+    "captured_at": "2026-09-07T16:08:20.326546Z",
+    "model_lane": "rfdiffusion",
+    "observed_stages": [
+      {
+        "attempts": [
+          {
+            "attempt_id": "c69f63d2-b1ed-548b-aae9-a736b7b63800",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "teardown",
+            "outcome": "succeeded",
+            "resource_released": true,
+            "route_namespace": "fs2-models",
+            "scheduling_admission": {
+              "accelerator_count": 1,
+              "accelerator_resource_name": "nvidia.com/gpu",
+              "admitted_at": "2026-09-07T16:08:20Z",
+              "admitted_resource_flavor": "inference-h100-reserved-8x",
+              "resolved_pool_id": "h100-reserved-8x"
+            },
+            "shard_id": "design-000",
+            "workload_kind": "Job",
+            "workload_name": "fs2-inference-design-000-a1-15b0ef1cc5d9",
+            "workload_namespace": "fs2-models",
+            "workload_uid": "f07c1c4d-eca4-4e42-a930-59de8a4ae0bf"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "inference",
+        "status": "succeeded"
+      },
+      {
+        "attempts": [
+          {
+            "attempt_id": "e56b3fa1-dc08-570a-85a7-fe046d332028",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "teardown",
+            "outcome": "succeeded",
+            "resource_released": true,
+            "route_namespace": "fs2-models",
+            "scheduling_admission": {
+              "accelerator_count": 0,
+              "accelerator_resource_name": null,
+              "admitted_at": "2026-09-07T16:09:23Z",
+              "admitted_resource_flavor": null,
+              "resolved_pool_id": null
+            },
+            "shard_id": "main",
+            "workload_kind": "Job",
+            "workload_name": "fs2-collect-main-a1-31d9b1a98dc3",
+            "workload_namespace": "fs2-models",
+            "workload_uid": "e6cf068f-05c7-48f4-83bf-c56339d3aeec"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "collect",
+        "status": "succeeded"
+      }
+    ],
+    "policy_revision": "860794472dcee231080bcfe11c3726cf203723f087bf87dd6915805c8541bbe1",
+    "scheduling_snapshot_digest": "sha256:b1b5af58fed0f89986d43b77fac63ea9ed824ee3aa3c5e90c3c7077735d532d6",
+    "service_class": "customer-batch",
+    "stage_decisions": [
+      {
+        "accelerator_count": 1,
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "checkpoint_mode": "restart",
+        "max_execution_seconds": null,
+        "max_queue_seconds": null,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "inference-accelerators",
+        "resolved_local_queue": "inference-models",
+        "resolved_pool_preference": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "resource_class": "gpu",
+        "stage_id": "inference",
+        "workload_priority_class": "standard",
+        "workload_priority_value": 0
+      },
+      {
+        "accelerator_count": 0,
+        "accelerator_resource_name": null,
+        "checkpoint_mode": "none",
+        "max_execution_seconds": null,
+        "max_queue_seconds": null,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "general-cpu",
+        "resolved_local_queue": "general-cpu",
+        "resolved_pool_preference": [
+          "batch-cpu"
+        ],
+        "resource_class": "cpu",
+        "stage_id": "collect",
+        "workload_priority_class": "standard",
+        "workload_priority_value": 0
+      }
+    ],
+    "tenant_queue": "general-cpu"
+  },
+  "schema": "fs2-serve.nebius.ai/scientific-fleet-acceptance-receipt/v1",
+  "terminal_state": {
+    "batch": "succeeded",
+    "operation": "succeeded",
+    "result": "succeeded",
+    "semantic_validation": "passed"
+  },
+  "timestamps": {
+    "accepted_at": "2026-09-07T16:08:20.326546Z",
+    "activation_started_at": null,
+    "available_at": "2026-09-07T16:08:20.326546Z",
+    "completed_at": "2026-09-07T16:09:38.516945Z",
+    "ready_at": null,
+    "result_completed_at": "2026-09-07T16:09:38.515998Z",
+    "result_submitted_at": "2026-09-07T16:08:20.326546Z",
+    "started_at": "2026-09-07T16:08:20.528837Z"
+  }
+}

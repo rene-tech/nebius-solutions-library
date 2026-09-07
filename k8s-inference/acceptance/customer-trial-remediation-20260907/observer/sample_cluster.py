@@ -25,8 +25,14 @@ QUERIES = {
     "node_cpu_busy_percent": '100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[2m])))',
     "node_memory_used_percent": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)",
     "node_root_disk_used_percent": '100 * (1 - node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"})',
-    "pod_cpu_cores": 'sum by (namespace,pod) (rate(container_cpu_usage_seconds_total{namespace=~"fs2-system|fs2-models",container!="",container!="POD"}[2m]))',
-    "pod_memory_bytes": 'sum by (namespace,pod) (container_memory_working_set_bytes{namespace=~"fs2-system|fs2-models",container!="",container!="POD"})',
+    "pod_cpu_cores": (
+        'sum by (namespace,pod) (rate(container_cpu_usage_seconds_total{'
+        'namespace=~"fs2-system|fs2-models|fs2-academic-poc",container!="",container!="POD"}[2m]))'
+    ),
+    "pod_memory_bytes": (
+        'sum by (namespace,pod) (container_memory_working_set_bytes{'
+        'namespace=~"fs2-system|fs2-models|fs2-academic-poc",container!="",container!="POD"})'
+    ),
     # Durable database projections repeat on each CP replica: max deduplicates.
     "operations": "max by (model,state) (fs2_serve_operations)",
     "oldest_queue_seconds": "max by (model) (fs2_serve_oldest_queued_operation_age_seconds)",

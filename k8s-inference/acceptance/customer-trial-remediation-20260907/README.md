@@ -1,6 +1,9 @@
 # Customer trial remediation and repeat acceptance
 
-Status: implementation/integration in progress; **not yet a passing live rerun**.
+Status: r01 completed **14/14 scientific operations**, but **overall acceptance
+is not yet clean**. Both follow-up fixes are committed as `5f5061b28`; deployment
+and two clean complete cohorts remain. See the [r01 workload results](workload/REPORT-r01.md)
+and [whole-window observation](observer/REPORT-r01.md).
 The original failed cohort is preserved unchanged in `../customer-trial-20260907`.
 
 The customer scenario uses the nine already qualified scientific profiles,
@@ -57,8 +60,26 @@ driver change, recapture, broad audit or security-policy project.
 
 ## Verification so far
 
-Root telemetry/controller/production-adapter suite: 122 passing tests. The
-separate MCP and placement lanes record their focused checks in their handoffs.
-Live timing and customer-experience conclusions remain pending deployment and
-the repeat cohorts. The private credential bundle, logs and Terraform states
-are never committed with this evidence.
+The first release passed 1,594 non-external backend tests, 19 isolated PostgreSQL
+tests and 149 UI tests. Its complete live r01 ran 24m52.891s: all fourteen
+scientific operations succeeded, 28 artifact downloads verified and 1,004
+scientific HTTP calls had no errors. All 66 sampled ordinary HTTP/MCP requests
+succeeded. BindCraft placement, automatic capacity growth and three automatic
+priority-preemption recoveries were observed.
+
+This is not a clean overall result: whole-window logs show two approximately
+five-second Qwen route withdrawals during burst scale-down, despite its hot
+Pod staying ready. The separate admin phase table showed restore0s from ingestion
+clocks, although the ledger correctly recorded3.946846 restore GPU-seconds.
+Follow-up code retains fixed hot routes during the narrow asynchronous idle
+acknowledgement and projects actual phase-signal wall-time unions; no ingestion
+or GPU-second-to-wall-time inference. Runtime qualification hashes are unchanged.
+Focused follow-up routing tests107passed; admin backend100passed including
+populated PostgreSQL, UI149passed. Full non-external backend suite1611passed,
+4optional skips and76external-service tests deselected in222.09s. R01 is preserved and does not count toward the clean
+streak. Academic Pod CPU/RAM was missing from r01's two filtered PromQL queries;
+the report corrects that scope, and future cohorts include the namespace.
+
+The private credential bundle, raw logs and Terraform states are never committed
+with this evidence. Customer elapsed times are not fresh-node cold-start
+benchmarks or scientific quality claims.

@@ -1,0 +1,54 @@
+{
+  "schema": "fs2-serve.nebius.ai/admin-remediation-live-browser/v1",
+  "status": "completed-with-reporting-defects",
+  "deployed_source_commit": "5fec520596b6aa9b8a2eb1194d742f0c35fde575",
+  "scope": "Existing bootstrap-operator browser; read-only views. No policy changes, cancellations, workload submissions or manual recovery by this lane.",
+  "automatic_progress": {
+    "operation_id": "31d05ba2-5929-41b9-8826-29233a4f61b7",
+    "model": "rfdiffusion",
+    "initial_navigation_at": "2026-09-07T16:08:48.752Z",
+    "initial_state": "GPU inference running / active_compute",
+    "automatic_intermediate_observation_at": "2026-09-07T16:09:25.452Z",
+    "intermediate_state": "GPU inference succeeded; CPU collect running",
+    "automatic_terminal_observation_at": "2026-09-07T16:10:03.927Z",
+    "terminal_state": "succeeded; semantic validation passed; artifact download links visible",
+    "navigation_or_manual_refresh_between_observations": false,
+    "occupied_gpu_seconds_estimated": 59,
+    "active_gpu_seconds_estimated": 48,
+    "idle_gpu_seconds_estimated": 11,
+    "grace_gpu_seconds_estimated": 0,
+    "status": "passed",
+    "private_evidence": ["r01-rf-initial.json", "r01-rf-auto-progress.json", "r01-rf-auto-terminal.json"]
+  },
+  "protenix_restore": {
+    "operation_id": "18efdb3c-fa99-42a7-9a39-876d22a2021b",
+    "model": "protenix-v2",
+    "same_page_automatic_terminal_transition": true,
+    "occupied_gpu_seconds_estimated": 33,
+    "restore_gpu_seconds_estimated": 3.946846,
+    "restore_gpu_seconds_browser_display": "3.95 GPU-s estimated",
+    "ledger_and_idle_cause_projection": "passed",
+    "separate_phase_duration_display": "0s measured",
+    "phase_duration_status": "incorrect-ingestion-clock-projection",
+    "private_evidence": ["r01-protenix-initial.json", "r01-protenix-auto-progress.json"]
+  },
+  "remaining_findings": [
+    {
+      "id": "phase-duration-ingestion-clock",
+      "observed": "Protenix restore is correctly3.946846GPU-s in the durable lifecycle projection, but the separate Phase durations card incorrectly reports0s measured.",
+      "cause": "scientific_admin_postgres._lifecycle uses BatchEvent.occurred_at controller-ingestion timestamps. Backfilled RESTORING and ACTIVE events may share ingestion time. The durable lifecycle signals preserve the actual occurred_at versus observed_at boundaries.",
+      "required_followup": "Project actual paired lifecycle signal boundaries for phase durations; do not infer wall latency from aggregate GPU-seconds or label ingestion-time intervals as precise runtime measurements.",
+      "production_changed_during_cohort": false
+    },
+    {
+      "id": "global-updated-label-scope",
+      "observed": "The run body updates automatically, but the global header retains Updated16:08:48 on the RF page. The header does not say it represents cluster-context freshness.",
+      "cause": "AppShell reads contextQuery.meta.generated_at, not the page query's refreshed metadata.",
+      "qualification": "This is an ambiguous timestamp label, not stale run contents. Consider an explicit current-view observation timestamp or a context-freshness label at the coordinated post-cohort assessment.",
+      "production_changed_during_cohort": false
+    }
+  ],
+  "cohort_outcome": "Independent workload lane completed14/14; ordinary traffic lane66/66. Not a clean acceptance cohort: the phase table defect and observer route gaps remain recorded.",
+  "observation_limit": "Agent/model-capacity interruption prevented this lane from completing later mixed-shard browser observations and new-run browser downloads. Independent workload/observer evidence is reported separately, not reclassified as browser proof.",
+  "followup": "Phase/timestamp fix implemented and locally tested offline after r01; no changes were deployed during the cohort. New live browser/clean-cohort acceptance awaits root deployment."
+}
