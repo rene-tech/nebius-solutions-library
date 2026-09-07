@@ -1,0 +1,1446 @@
+{
+  "date": "2026-09-07",
+  "immutable_model_mounts": [
+    {
+      "mountPath": "/opt/fs2/artifacts/boltzgen-checkpoints",
+      "name": "boltzgen-checkpoints",
+      "readOnly": true,
+      "subPath": "scientific-localization/public/generations/boltzgen-checkpoints/sha256/ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf"
+    },
+    {
+      "mountPath": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+      "name": "boltzgen-inference-molecules",
+      "readOnly": true,
+      "subPath": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
+    }
+  ],
+  "limitations": [
+    "No global cache flush; not disk-cold or checkpoint-restore timing",
+    "The model-ready marker follows native setup/restore and CUDA synchronization; lazy compilation can follow",
+    "Pod creation is the isolated start clock, not a public request",
+    "The complete design stage is validated, not all later folding and filtering stages",
+    "Three trials support median/range, not tail latency claims",
+    "Kubernetes container timestamps have one-second granularity"
+  ],
+  "model_id": "boltzgen",
+  "node_condition": "shared retained H100 nodes; trials overlap on separately allocated GPUs",
+  "raw_receipt_sha256": {
+    "boltz-isolated-a/fs2-start-boltzgen-a-r01.receipt.json": "900d41a7ebde393058859dcfa58db8639f0772cbf39c8ad9b38e6e41274e50e9",
+    "boltz-isolated-b/fs2-start-boltzgen-b-r01.receipt.json": "2192378d78c891c8509f5adc9df3343a91d8eab410e335585f5a0554a44fd39f",
+    "boltz-isolated-c/fs2-start-boltzgen-c-r01.receipt.json": "6d43cfc46fc93c55cec83678e9aca86264b908a11700e09595bccac6bf1ca5bf"
+  },
+  "report_source_sha256": {
+    "boltz_recover_template.py": "6eb94e2da8b6faa232daee131ee9d8d38897b4c7070e159c7e162cb28d64fec9",
+    "boltz_sitecustomize.py": "f00a47ec47b21631d4d5cf3f2789c210c999a6f8bb03e4534871df84a37fd66e",
+    "boltz_supervise.py": "82a2ef4f5cd558710184f6f365013e72db58343444f9b4aeae4ddd1e667f9902",
+    "primary_isolated_runs.py": "09047ca3d9a833930d16b1ae1b8fa3048964adbd5711a96595c4a2139dd3ed07",
+    "primary_local_materialize.py": "5fbc879286ae72174988269b169736c556fe412e378a20b6a4651b0c4563db82"
+  },
+  "resource_envelope_unchanged": {
+    "limits": {
+      "cpu": "32",
+      "ephemeral-storage": "128Gi",
+      "memory": "256Gi",
+      "nvidia.com/gpu": "1"
+    },
+    "requests": {
+      "cpu": "8",
+      "ephemeral-storage": "32Gi",
+      "memory": "96Gi",
+      "nvidia.com/gpu": "1"
+    }
+  },
+  "result": "PASS",
+  "schema": "fs2-serve.nebius.ai/boltz-current-startup-report/v1",
+  "scope": "exact current design stage, 20 candidates, fresh processes and current cached weights/images",
+  "source_hash_note": "Published harness files at reporting time; native hook source is also hashed inside each measured process. Boltz hook and supervisor were unchanged across all three trials.",
+  "source_pod_spec_sha256": "cad0c4c5ee541693dc662d4d3ed8d809e6039e26be6dab012d36e3c94d8060c1",
+  "source_pod_uid": "8c41e6df-81d2-449e-9e67-4e8532de641a",
+  "statistics": {
+    "container_start_to_model_ready": {
+      "maximum": 36.159712,
+      "median": 36.051575,
+      "minimum": 33.897238,
+      "n": 3
+    },
+    "container_start_to_valid_stage_output": {
+      "maximum": 306.054427,
+      "median": 288.319133,
+      "minimum": 286.196142,
+      "n": 3
+    },
+    "pod_create_to_container_start": {
+      "maximum": 9.0,
+      "median": 9.0,
+      "minimum": 8.0,
+      "n": 3
+    },
+    "pod_create_to_model_ready": {
+      "maximum": 45.051575,
+      "median": 44.159712,
+      "minimum": 42.897238,
+      "n": 3
+    },
+    "pod_create_to_valid_stage_output": {
+      "maximum": 315.054427,
+      "median": 296.319133,
+      "minimum": 295.196142,
+      "n": 3
+    },
+    "python_process_to_model_ready": {
+      "maximum": 32.52291981695453,
+      "median": 32.490844607993495,
+      "minimum": 30.620367954019457,
+      "n": 3
+    }
+  },
+  "trials": [
+    {
+      "cache_condition": "fresh process; current image/node and immutable reference-data caches unchanged; no eviction",
+      "campaign_repetition": 1,
+      "container_started_at": "2026-09-07T06:09:51Z",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+      "image_events": [
+        {
+          "event_time": "2026-09-07T06:09:43Z",
+          "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:4134c130d4d265212886b0a17a03b0b8051d01bd592032b00509ed657378623a\" already present on machine and can be accessed by the pod",
+          "reason": "Pulled"
+        },
+        {
+          "event_time": "2026-09-07T06:09:46Z",
+          "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:4134c130d4d265212886b0a17a03b0b8051d01bd592032b00509ed657378623a\" already present on machine and can be accessed by the pod",
+          "reason": "Pulled"
+        },
+        {
+          "event_time": "2026-09-07T06:09:48Z",
+          "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:4134c130d4d265212886b0a17a03b0b8051d01bd592032b00509ed657378623a\" already present on machine and can be accessed by the pod",
+          "reason": "Pulled"
+        },
+        {
+          "event_time": "2026-09-07T06:09:50Z",
+          "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e\" already present on machine and can be accessed by the pod",
+          "reason": "Pulled"
+        }
+      ],
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+      "init_phases": [
+        {
+          "finished_at": "2026-09-07T06:09:45Z",
+          "name": "prepare-workspace",
+          "started_at": "2026-09-07T06:09:43Z"
+        },
+        {
+          "finished_at": "2026-09-07T06:09:47Z",
+          "name": "verify-runtime-artifacts",
+          "started_at": "2026-09-07T06:09:46Z"
+        },
+        {
+          "finished_at": "2026-09-07T06:09:50Z",
+          "name": "materialize-0",
+          "started_at": "2026-09-07T06:09:48Z"
+        }
+      ],
+      "inputs": [
+        {
+          "artifact_id": "5440bbaa-3abb-4ecc-8eac-6f23e2967944",
+          "bytes": 76680,
+          "sha256": "1f14c9c158d9349e464eaf7e6d68db589d3a4ded3d7e95f6ff8e3a5d16b839dd"
+        }
+      ],
+      "job": "fs2-start-boltzgen-a-r01",
+      "markers": [
+        {
+          "boundary": "_PredictionLoop._on_predict_start return after native setup/restore/device placement and CUDA synchronization",
+          "compilation": "not-warmed; first-shape compilation remains prediction work",
+          "compute_capability": [
+            9,
+            0
+          ],
+          "cuda_version": "12.6",
+          "device": "NVIDIA H100 80GB HBM3",
+          "model_id": "boltzgen",
+          "native_hook_source_sha256": "b53addac3078f71caa586a90a84fee26fa05c99c4882cc3058ad3672ff6680f6",
+          "phase": "model_ready",
+          "pid": 174,
+          "python_process_seconds": 30.620367954019457,
+          "schema": "fs2-startup-benchmark/v1",
+          "torch_version": "2.7.1+cu126",
+          "utc": "2026-09-07T06:10:24.897238+00:00"
+        },
+        {
+          "model_id": "boltzgen",
+          "phase": "semantic_output_verified",
+          "schema": "fs2-startup-benchmark/v1",
+          "scope": "complete design stage, not later folding/filtering stages or scientific affinity qualification",
+          "structures": [
+            {
+              "atoms": 1603,
+              "bytes": 140142,
+              "designed_residues": 79,
+              "filename": "pdl1-face_00.cif",
+              "metadata_sha256": "44e6e03c2a6c46ad7e22737ad1d602455cc319a0215b8e2b86c4ea1d8801c06e",
+              "sha256": "c07876cb338792d78b5daa32ef74dc24567e8127f215ec6047b467ee4586476d"
+            },
+            {
+              "atoms": 1480,
+              "bytes": 129050,
+              "designed_residues": 61,
+              "filename": "pdl1-face_01.cif",
+              "metadata_sha256": "29eda3715b58df857f3bfa075b788bded7e483a4c17dda0e64c0484abd5c672a",
+              "sha256": "ae0ed6401d3abce632fe1403c22ad615d4e958f72548d130fb2badb30f0f0be8"
+            },
+            {
+              "atoms": 1497,
+              "bytes": 130950,
+              "designed_residues": 70,
+              "filename": "pdl1-face_02.cif",
+              "metadata_sha256": "d8900e3f0c0852db0430ad7e069cab07f42014f5420df78c0d7d12fbb97b030d",
+              "sha256": "7f7b51df3006050d62e785315eebfc6612bdb1d2067d2633a2c26772bf394c55"
+            },
+            {
+              "atoms": 1545,
+              "bytes": 134639,
+              "designed_residues": 71,
+              "filename": "pdl1-face_03.cif",
+              "metadata_sha256": "c983392c75267878f062e6e6280c16208fe63fec65bc772159acbee7506ee46f",
+              "sha256": "94a88743901f57a7b5f58f7149143c5d5087c10462a5de2d9d60cabf720643f8"
+            },
+            {
+              "atoms": 1463,
+              "bytes": 128013,
+              "designed_residues": 64,
+              "filename": "pdl1-face_04.cif",
+              "metadata_sha256": "ed50fa81b3e2e2edaccc9a3574f51a05009f97e87688da5c2dd66c49b00a0cfb",
+              "sha256": "320942a8788401c36138e5422bbbb1b0d2ffc6be831fbc9fba1b18625c71f1b7"
+            },
+            {
+              "atoms": 1432,
+              "bytes": 125457,
+              "designed_residues": 64,
+              "filename": "pdl1-face_05.cif",
+              "metadata_sha256": "ed50fa81b3e2e2edaccc9a3574f51a05009f97e87688da5c2dd66c49b00a0cfb",
+              "sha256": "a33d4a5d12077ddfd2511fe275e5d95e6769825ac5e70924e9bd7485131de37e"
+            },
+            {
+              "atoms": 1622,
+              "bytes": 141630,
+              "designed_residues": 80,
+              "filename": "pdl1-face_06.cif",
+              "metadata_sha256": "929f82016d258872123a769553eff2bfc5436f32b0087d59966c3807fe7ccb90",
+              "sha256": "1c925bbbdfbcc59404a3f4d97b4d16b5ac3bf1cce843cf970289c806b9cd14fc"
+            },
+            {
+              "atoms": 1621,
+              "bytes": 141046,
+              "designed_residues": 78,
+              "filename": "pdl1-face_07.cif",
+              "metadata_sha256": "7d01f5462c2ad28b78a4af5063da7b6e7ce1abf4aa4d8256f6a2327ac29f1088",
+              "sha256": "bfe1b75168c0e4ea960c362a819daa124d0b5aa41c0de2652107c01d25bfd593"
+            },
+            {
+              "atoms": 1592,
+              "bytes": 139171,
+              "designed_residues": 76,
+              "filename": "pdl1-face_08.cif",
+              "metadata_sha256": "c848063abfc528b7cb15724d6371a2724cf65ba1b1d2585cc1fcce8821ebba4e",
+              "sha256": "707500d22204b3f6626e7efb2b74e185a08fd8386426befb652798c942a74b62"
+            },
+            {
+              "atoms": 1569,
+              "bytes": 136903,
+              "designed_residues": 73,
+              "filename": "pdl1-face_09.cif",
+              "metadata_sha256": "17a8be034f7ceec54506604cbf06d3cee7eaec728364416c08eb9bb34ac9b1ac",
+              "sha256": "2670d8a91352f5be11e38252412a4c0e2c71a2a6123650a1cc637d01618cc03c"
+            },
+            {
+              "atoms": 1299,
+              "bytes": 115108,
+              "designed_residues": 61,
+              "filename": "pdl1-face_10.cif",
+              "metadata_sha256": "29eda3715b58df857f3bfa075b788bded7e483a4c17dda0e64c0484abd5c672a",
+              "sha256": "678c970063503807e31eb9b59ba94957952a73df0dc7c68f80d99c6cb73df719"
+            },
+            {
+              "atoms": 1509,
+              "bytes": 132140,
+              "designed_residues": 71,
+              "filename": "pdl1-face_11.cif",
+              "metadata_sha256": "c983392c75267878f062e6e6280c16208fe63fec65bc772159acbee7506ee46f",
+              "sha256": "e420932f2b31d7c1489a2785588cc55ffe3c50af9ebc196d52b4f241738aa40a"
+            },
+            {
+              "atoms": 1413,
+              "bytes": 124282,
+              "designed_residues": 70,
+              "filename": "pdl1-face_12.cif",
+              "metadata_sha256": "d8900e3f0c0852db0430ad7e069cab07f42014f5420df78c0d7d12fbb97b030d",
+              "sha256": "307fcb5b57ebbf50c2a70e766aa5f448eb25d8a7a7b19061e61ade616df7c036"
+            },
+            {
+              "atoms": 1413,
+              "bytes": 124247,
+              "designed_residues": 65,
+              "filename": "pdl1-face_13.cif",
+              "metadata_sha256": "3624f9dd2a3cfd950d5bebcfc19944b7f32b90b7fc44f4846c00828b832b8ea4",
+              "sha256": "08112fdf6aa26d8fab5abaf04ebeaebeb5942adfc7e9a4559d8bc5ba07ef9d21"
+            },
+            {
+              "atoms": 1570,
+              "bytes": 137264,
+              "designed_residues": 76,
+              "filename": "pdl1-face_14.cif",
+              "metadata_sha256": "c848063abfc528b7cb15724d6371a2724cf65ba1b1d2585cc1fcce8821ebba4e",
+              "sha256": "c7cb2a28a176ccec6e0f3dec0ad98a1620c3bcfa16a66ae5d6ed39b2fa39918f"
+            },
+            {
+              "atoms": 1319,
+              "bytes": 117126,
+              "designed_residues": 67,
+              "filename": "pdl1-face_15.cif",
+              "metadata_sha256": "122722c3706c6629a1dd62fb80ebbd8e9d3997dd4bfac5486e665bed87adb504",
+              "sha256": "9bbe805e9fded9c6301fb34e87597c8f362d78b4a881dc0ea7fe296fdd33472e"
+            },
+            {
+              "atoms": 1430,
+              "bytes": 126253,
+              "designed_residues": 79,
+              "filename": "pdl1-face_16.cif",
+              "metadata_sha256": "44e6e03c2a6c46ad7e22737ad1d602455cc319a0215b8e2b86c4ea1d8801c06e",
+              "sha256": "f5702d753933cfba94e8123d19f26f330d2145919b5d5972863372143eb3acfa"
+            },
+            {
+              "atoms": 1330,
+              "bytes": 118391,
+              "designed_residues": 75,
+              "filename": "pdl1-face_17.cif",
+              "metadata_sha256": "178007f30c1abb0bc3fd75ed2bef7f4cc3acefa2286d1bbad9bece6c82abf524",
+              "sha256": "152785b9d89012e335932fb73c80e19d4362ec03b5ca40d206b75dcf40ee17ac"
+            },
+            {
+              "atoms": 1532,
+              "bytes": 133973,
+              "designed_residues": 75,
+              "filename": "pdl1-face_18.cif",
+              "metadata_sha256": "178007f30c1abb0bc3fd75ed2bef7f4cc3acefa2286d1bbad9bece6c82abf524",
+              "sha256": "43b9c56613940f9aaca44e03ac3e93187ef284f5fee89ab8c6d791db110678f8"
+            },
+            {
+              "atoms": 1489,
+              "bytes": 130426,
+              "designed_residues": 73,
+              "filename": "pdl1-face_19.cif",
+              "metadata_sha256": "17a8be034f7ceec54506604cbf06d3cee7eaec728364416c08eb9bb34ac9b1ac",
+              "sha256": "13c5a4259a362c0ae639ff0c4d7354e805fd9be119db4c0680dffe048fbecbb1"
+            }
+          ],
+          "unchanged_runtime_exit_code": 0,
+          "utc": "2026-09-07T06:14:37.196142+00:00"
+        }
+      ],
+      "model_id": "boltzgen",
+      "original_command_sha256": "3b1618a5c9a97486bbbbd50d2e5166f534a5dd1a9918ef6b3a132b119f1c553a",
+      "pod_created_at": "2026-09-07T06:09:42Z",
+      "pod_started_at": "2026-09-07T06:09:42Z",
+      "ready": {
+        "boundary": "_PredictionLoop._on_predict_start return after native setup/restore/device placement and CUDA synchronization",
+        "compilation": "not-warmed; first-shape compilation remains prediction work",
+        "compute_capability": [
+          9,
+          0
+        ],
+        "cuda_version": "12.6",
+        "device": "NVIDIA H100 80GB HBM3",
+        "model_id": "boltzgen",
+        "native_hook_source_sha256": "b53addac3078f71caa586a90a84fee26fa05c99c4882cc3058ad3672ff6680f6",
+        "phase": "model_ready",
+        "pid": 174,
+        "python_process_seconds": 30.620367954019457,
+        "schema": "fs2-startup-benchmark/v1",
+        "torch_version": "2.7.1+cu126",
+        "utc": "2026-09-07T06:10:24.897238+00:00"
+      },
+      "repetition": 1,
+      "schema": "fs2-serve.nebius.ai/primary-isolated-startup-receipt/v1",
+      "semantic_output": {
+        "model_id": "boltzgen",
+        "phase": "semantic_output_verified",
+        "schema": "fs2-startup-benchmark/v1",
+        "scope": "complete design stage, not later folding/filtering stages or scientific affinity qualification",
+        "structures": [
+          {
+            "atoms": 1603,
+            "bytes": 140142,
+            "designed_residues": 79,
+            "filename": "pdl1-face_00.cif",
+            "metadata_sha256": "44e6e03c2a6c46ad7e22737ad1d602455cc319a0215b8e2b86c4ea1d8801c06e",
+            "sha256": "c07876cb338792d78b5daa32ef74dc24567e8127f215ec6047b467ee4586476d"
+          },
+          {
+            "atoms": 1480,
+            "bytes": 129050,
+            "designed_residues": 61,
+            "filename": "pdl1-face_01.cif",
+            "metadata_sha256": "29eda3715b58df857f3bfa075b788bded7e483a4c17dda0e64c0484abd5c672a",
+            "sha256": "ae0ed6401d3abce632fe1403c22ad615d4e958f72548d130fb2badb30f0f0be8"
+          },
+          {
+            "atoms": 1497,
+            "bytes": 130950,
+            "designed_residues": 70,
+            "filename": "pdl1-face_02.cif",
+            "metadata_sha256": "d8900e3f0c0852db0430ad7e069cab07f42014f5420df78c0d7d12fbb97b030d",
+            "sha256": "7f7b51df3006050d62e785315eebfc6612bdb1d2067d2633a2c26772bf394c55"
+          },
+          {
+            "atoms": 1545,
+            "bytes": 134639,
+            "designed_residues": 71,
+            "filename": "pdl1-face_03.cif",
+            "metadata_sha256": "c983392c75267878f062e6e6280c16208fe63fec65bc772159acbee7506ee46f",
+            "sha256": "94a88743901f57a7b5f58f7149143c5d5087c10462a5de2d9d60cabf720643f8"
+          },
+          {
+            "atoms": 1463,
+            "bytes": 128013,
+            "designed_residues": 64,
+            "filename": "pdl1-face_04.cif",
+            "metadata_sha256": "ed50fa81b3e2e2edaccc9a3574f51a05009f97e87688da5c2dd66c49b00a0cfb",
+            "sha256": "320942a8788401c36138e5422bbbb1b0d2ffc6be831fbc9fba1b18625c71f1b7"
+          },
+          {
+            "atoms": 1432,
+            "bytes": 125457,
+            "designed_residues": 64,
+            "filename": "pdl1-face_05.cif",
+            "metadata_sha256": "ed50fa81b3e2e2edaccc9a3574f51a05009f97e87688da5c2dd66c49b00a0cfb",
+            "sha256": "a33d4a5d12077ddfd2511fe275e5d95e6769825ac5e70924e9bd7485131de37e"
+          },
+          {
+            "atoms": 1622,
+            "bytes": 141630,
+            "designed_residues": 80,
+            "filename": "pdl1-face_06.cif",
+            "metadata_sha256": "929f82016d258872123a769553eff2bfc5436f32b0087d59966c3807fe7ccb90",
+            "sha256": "1c925bbbdfbcc59404a3f4d97b4d16b5ac3bf1cce843cf970289c806b9cd14fc"
+          },
+          {
+            "atoms": 1621,
+            "bytes": 141046,
+            "designed_residues": 78,
+            "filename": "pdl1-face_07.cif",
+            "metadata_sha256": "7d01f5462c2ad28b78a4af5063da7b6e7ce1abf4aa4d8256f6a2327ac29f1088",
+            "sha256": "bfe1b75168c0e4ea960c362a819daa124d0b5aa41c0de2652107c01d25bfd593"
+          },
+          {
+            "atoms": 1592,
+            "bytes": 139171,
+            "designed_residues": 76,
+            "filename": "pdl1-face_08.cif",
+            "metadata_sha256": "c848063abfc528b7cb15724d6371a2724cf65ba1b1d2585cc1fcce8821ebba4e",
+            "sha256": "707500d22204b3f6626e7efb2b74e185a08fd8386426befb652798c942a74b62"
+          },
+          {
+            "atoms": 1569,
+            "bytes": 136903,
+            "designed_residues": 73,
+            "filename": "pdl1-face_09.cif",
+            "metadata_sha256": "17a8be034f7ceec54506604cbf06d3cee7eaec728364416c08eb9bb34ac9b1ac",
+            "sha256": "2670d8a91352f5be11e38252412a4c0e2c71a2a6123650a1cc637d01618cc03c"
+          },
+          {
+            "atoms": 1299,
+            "bytes": 115108,
+            "designed_residues": 61,
+            "filename": "pdl1-face_10.cif",
+            "metadata_sha256": "29eda3715b58df857f3bfa075b788bded7e483a4c17dda0e64c0484abd5c672a",
+            "sha256": "678c970063503807e31eb9b59ba94957952a73df0dc7c68f80d99c6cb73df719"
+          },
+          {
+            "atoms": 1509,
+            "bytes": 132140,
+            "designed_residues": 71,
+            "filename": "pdl1-face_11.cif",
+            "metadata_sha256": "c983392c75267878f062e6e6280c16208fe63fec65bc772159acbee7506ee46f",
+            "sha256": "e420932f2b31d7c1489a2785588cc55ffe3c50af9ebc196d52b4f241738aa40a"
+          },
+          {
+            "atoms": 1413,
+            "bytes": 124282,
+            "designed_residues": 70,
+            "filename": "pdl1-face_12.cif",
+            "metadata_sha256": "d8900e3f0c0852db0430ad7e069cab07f42014f5420df78c0d7d12fbb97b030d",
+            "sha256": "307fcb5b57ebbf50c2a70e766aa5f448eb25d8a7a7b19061e61ade616df7c036"
+          },
+          {
+            "atoms": 1413,
+            "bytes": 124247,
+            "designed_residues": 65,
+            "filename": "pdl1-face_13.cif",
+            "metadata_sha256": "3624f9dd2a3cfd950d5bebcfc19944b7f32b90b7fc44f4846c00828b832b8ea4",
+            "sha256": "08112fdf6aa26d8fab5abaf04ebeaebeb5942adfc7e9a4559d8bc5ba07ef9d21"
+          },
+          {
+            "atoms": 1570,
+            "bytes": 137264,
+            "designed_residues": 76,
+            "filename": "pdl1-face_14.cif",
+            "metadata_sha256": "c848063abfc528b7cb15724d6371a2724cf65ba1b1d2585cc1fcce8821ebba4e",
+            "sha256": "c7cb2a28a176ccec6e0f3dec0ad98a1620c3bcfa16a66ae5d6ed39b2fa39918f"
+          },
+          {
+            "atoms": 1319,
+            "bytes": 117126,
+            "designed_residues": 67,
+            "filename": "pdl1-face_15.cif",
+            "metadata_sha256": "122722c3706c6629a1dd62fb80ebbd8e9d3997dd4bfac5486e665bed87adb504",
+            "sha256": "9bbe805e9fded9c6301fb34e87597c8f362d78b4a881dc0ea7fe296fdd33472e"
+          },
+          {
+            "atoms": 1430,
+            "bytes": 126253,
+            "designed_residues": 79,
+            "filename": "pdl1-face_16.cif",
+            "metadata_sha256": "44e6e03c2a6c46ad7e22737ad1d602455cc319a0215b8e2b86c4ea1d8801c06e",
+            "sha256": "f5702d753933cfba94e8123d19f26f330d2145919b5d5972863372143eb3acfa"
+          },
+          {
+            "atoms": 1330,
+            "bytes": 118391,
+            "designed_residues": 75,
+            "filename": "pdl1-face_17.cif",
+            "metadata_sha256": "178007f30c1abb0bc3fd75ed2bef7f4cc3acefa2286d1bbad9bece6c82abf524",
+            "sha256": "152785b9d89012e335932fb73c80e19d4362ec03b5ca40d206b75dcf40ee17ac"
+          },
+          {
+            "atoms": 1532,
+            "bytes": 133973,
+            "designed_residues": 75,
+            "filename": "pdl1-face_18.cif",
+            "metadata_sha256": "178007f30c1abb0bc3fd75ed2bef7f4cc3acefa2286d1bbad9bece6c82abf524",
+            "sha256": "43b9c56613940f9aaca44e03ac3e93187ef284f5fee89ab8c6d791db110678f8"
+          },
+          {
+            "atoms": 1489,
+            "bytes": 130426,
+            "designed_residues": 73,
+            "filename": "pdl1-face_19.cif",
+            "metadata_sha256": "17a8be034f7ceec54506604cbf06d3cee7eaec728364416c08eb9bb34ac9b1ac",
+            "sha256": "13c5a4259a362c0ae639ff0c4d7354e805fd9be119db4c0680dffe048fbecbb1"
+          }
+        ],
+        "unchanged_runtime_exit_code": 0,
+        "utc": "2026-09-07T06:14:37.196142+00:00"
+      },
+      "source_operation_id": "c28e2d5a-2326-491c-b883-dbcd996a6619",
+      "source_variant_id": "upstream-v0-3-2",
+      "status": "passed",
+      "timings_seconds": {
+        "container_start_to_model_ready": 33.897238,
+        "container_start_to_valid_stage_output": 286.196142,
+        "pod_create_to_container_start": 9.0,
+        "pod_create_to_model_ready": 42.897238,
+        "pod_create_to_valid_stage_output": 295.196142,
+        "python_process_to_model_ready": 30.620367954019457
+      }
+    },
+    {
+      "cache_condition": "fresh process; current image/node and immutable reference-data caches unchanged; no eviction",
+      "campaign_repetition": 2,
+      "container_started_at": "2026-09-07T06:11:15Z",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+      "image_events": [
+        {
+          "event_time": "2026-09-07T06:11:07Z",
+          "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:4134c130d4d265212886b0a17a03b0b8051d01bd592032b00509ed657378623a\" already present on machine and can be accessed by the pod",
+          "reason": "Pulled"
+        },
+        {
+          "event_time": "2026-09-07T06:11:10Z",
+          "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:4134c130d4d265212886b0a17a03b0b8051d01bd592032b00509ed657378623a\" already present on machine and can be accessed by the pod",
+          "reason": "Pulled"
+        },
+        {
+          "event_time": "2026-09-07T06:11:12Z",
+          "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:4134c130d4d265212886b0a17a03b0b8051d01bd592032b00509ed657378623a\" already present on machine and can be accessed by the pod",
+          "reason": "Pulled"
+        },
+        {
+          "event_time": "2026-09-07T06:11:14Z",
+          "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e\" already present on machine and can be accessed by the pod",
+          "reason": "Pulled"
+        }
+      ],
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+      "init_phases": [
+        {
+          "finished_at": "2026-09-07T06:11:10Z",
+          "name": "prepare-workspace",
+          "started_at": "2026-09-07T06:11:07Z"
+        },
+        {
+          "finished_at": "2026-09-07T06:11:11Z",
+          "name": "verify-runtime-artifacts",
+          "started_at": "2026-09-07T06:11:10Z"
+        },
+        {
+          "finished_at": "2026-09-07T06:11:14Z",
+          "name": "materialize-0",
+          "started_at": "2026-09-07T06:11:12Z"
+        }
+      ],
+      "inputs": [
+        {
+          "artifact_id": "5440bbaa-3abb-4ecc-8eac-6f23e2967944",
+          "bytes": 76680,
+          "sha256": "1f14c9c158d9349e464eaf7e6d68db589d3a4ded3d7e95f6ff8e3a5d16b839dd"
+        }
+      ],
+      "job": "fs2-start-boltzgen-b-r01",
+      "markers": [
+        {
+          "boundary": "_PredictionLoop._on_predict_start return after native setup/restore/device placement and CUDA synchronization",
+          "compilation": "not-warmed; first-shape compilation remains prediction work",
+          "compute_capability": [
+            9,
+            0
+          ],
+          "cuda_version": "12.6",
+          "device": "NVIDIA H100 80GB HBM3",
+          "model_id": "boltzgen",
+          "native_hook_source_sha256": "b53addac3078f71caa586a90a84fee26fa05c99c4882cc3058ad3672ff6680f6",
+          "phase": "model_ready",
+          "pid": 172,
+          "python_process_seconds": 32.490844607993495,
+          "schema": "fs2-startup-benchmark/v1",
+          "torch_version": "2.7.1+cu126",
+          "utc": "2026-09-07T06:11:51.051575+00:00"
+        },
+        {
+          "model_id": "boltzgen",
+          "phase": "semantic_output_verified",
+          "schema": "fs2-startup-benchmark/v1",
+          "scope": "complete design stage, not later folding/filtering stages or scientific affinity qualification",
+          "structures": [
+            {
+              "atoms": 1486,
+              "bytes": 130501,
+              "designed_residues": 69,
+              "filename": "pdl1-face_00.cif",
+              "metadata_sha256": "4cd303b24e0fbea6f2558f5a0efbc29728d083b769e8d11115abe2aed05a2f9f",
+              "sha256": "4d4da3f704f47a03aa921f15160831ab2eb4f8fba3cacc229c1f4af80ca3f829"
+            },
+            {
+              "atoms": 1466,
+              "bytes": 128068,
+              "designed_residues": 64,
+              "filename": "pdl1-face_01.cif",
+              "metadata_sha256": "ed50fa81b3e2e2edaccc9a3574f51a05009f97e87688da5c2dd66c49b00a0cfb",
+              "sha256": "06d3ca4da1a2a5d450eeaba19484b82e3d4e304717eaff4c8c8c4de14688c8ac"
+            },
+            {
+              "atoms": 1577,
+              "bytes": 137399,
+              "designed_residues": 75,
+              "filename": "pdl1-face_02.cif",
+              "metadata_sha256": "178007f30c1abb0bc3fd75ed2bef7f4cc3acefa2286d1bbad9bece6c82abf524",
+              "sha256": "cee424e0ff6ee04006cc86e1deaf8f0d095ae0d55ddddaf8c96840614e1a77d4"
+            },
+            {
+              "atoms": 1472,
+              "bytes": 128907,
+              "designed_residues": 65,
+              "filename": "pdl1-face_03.cif",
+              "metadata_sha256": "3624f9dd2a3cfd950d5bebcfc19944b7f32b90b7fc44f4846c00828b832b8ea4",
+              "sha256": "f5b94c2ec42ddd972ecab86ba275975be68353590bb0998e71fd3df9eed1a8bc"
+            },
+            {
+              "atoms": 1508,
+              "bytes": 132020,
+              "designed_residues": 68,
+              "filename": "pdl1-face_04.cif",
+              "metadata_sha256": "cff242c5370654fd20138cef7fbfab03a77a7df21cb3955ebe7af9ef39b4ff88",
+              "sha256": "9ac5ae97f60421c1a8e07a75b651601434d3e09617c6a207981f928585e09831"
+            },
+            {
+              "atoms": 1599,
+              "bytes": 139933,
+              "designed_residues": 79,
+              "filename": "pdl1-face_05.cif",
+              "metadata_sha256": "44e6e03c2a6c46ad7e22737ad1d602455cc319a0215b8e2b86c4ea1d8801c06e",
+              "sha256": "c1e4821bca62d501c151f310dbca42d5633fa0cc5cd259cc2ec2cb2197f3b71c"
+            },
+            {
+              "atoms": 1445,
+              "bytes": 126542,
+              "designed_residues": 60,
+              "filename": "pdl1-face_06.cif",
+              "metadata_sha256": "0a9561a97823f7f17308fb92abccebc5856d569ffa49ab197f9bc2093a432893",
+              "sha256": "d75b6f110fe72bac3fb363b9f7d3f197e3a9e9068e7b4445f1959dcb07842a38"
+            },
+            {
+              "atoms": 1487,
+              "bytes": 130534,
+              "designed_residues": 69,
+              "filename": "pdl1-face_07.cif",
+              "metadata_sha256": "4cd303b24e0fbea6f2558f5a0efbc29728d083b769e8d11115abe2aed05a2f9f",
+              "sha256": "effee158dd76bd689587ed36dfb73c32a6a397fdbbaefdaadd75e8a0b363f2d8"
+            },
+            {
+              "atoms": 1447,
+              "bytes": 126802,
+              "designed_residues": 61,
+              "filename": "pdl1-face_08.cif",
+              "metadata_sha256": "29eda3715b58df857f3bfa075b788bded7e483a4c17dda0e64c0484abd5c672a",
+              "sha256": "cddbbf4c09ae47e57c2873177a9d245a69718fc14a80e2887f2c2cca934a887a"
+            },
+            {
+              "atoms": 1446,
+              "bytes": 126488,
+              "designed_residues": 62,
+              "filename": "pdl1-face_09.cif",
+              "metadata_sha256": "f99972ad44c2e8ca828fc416e97ec52c41ade45b9db2a34a13e5a04e00e7b527",
+              "sha256": "973b905c8e44734aff5b90447dcbc78cb86c0ed808f0afdac27c41418e4b5215"
+            },
+            {
+              "atoms": 1576,
+              "bytes": 137628,
+              "designed_residues": 77,
+              "filename": "pdl1-face_10.cif",
+              "metadata_sha256": "0aa5580b859cdc1b75dc228c3c62208415f0f27c726c1ca69d3eaa208ccc2935",
+              "sha256": "281ffcfe53359466c07602e48e62269f55a858f592326af3248f68519ef79aa3"
+            },
+            {
+              "atoms": 1576,
+              "bytes": 137656,
+              "designed_residues": 77,
+              "filename": "pdl1-face_11.cif",
+              "metadata_sha256": "0aa5580b859cdc1b75dc228c3c62208415f0f27c726c1ca69d3eaa208ccc2935",
+              "sha256": "d3d3c9783e9dd2ba734a8ceeddb72cd21dffefaddf6dc088adb855fdd2522bd4"
+            },
+            {
+              "atoms": 1563,
+              "bytes": 136664,
+              "designed_residues": 80,
+              "filename": "pdl1-face_12.cif",
+              "metadata_sha256": "929f82016d258872123a769553eff2bfc5436f32b0087d59966c3807fe7ccb90",
+              "sha256": "bdeade3bd7a5b4f642bff152e0cb7814b83dd7bbd953a8f9965af54ad30608ff"
+            },
+            {
+              "atoms": 1414,
+              "bytes": 124543,
+              "designed_residues": 65,
+              "filename": "pdl1-face_13.cif",
+              "metadata_sha256": "3624f9dd2a3cfd950d5bebcfc19944b7f32b90b7fc44f4846c00828b832b8ea4",
+              "sha256": "d89f319d2fb0a739637e4d329250377d316a3553929391fde0a71b05251d1147"
+            },
+            {
+              "atoms": 1368,
+              "bytes": 120853,
+              "designed_residues": 65,
+              "filename": "pdl1-face_14.cif",
+              "metadata_sha256": "3624f9dd2a3cfd950d5bebcfc19944b7f32b90b7fc44f4846c00828b832b8ea4",
+              "sha256": "5e30963663d191a933e86431bdbed5b14612c54636a17d6ee992cc8a21ea6314"
+            },
+            {
+              "atoms": 1415,
+              "bytes": 124654,
+              "designed_residues": 69,
+              "filename": "pdl1-face_15.cif",
+              "metadata_sha256": "4cd303b24e0fbea6f2558f5a0efbc29728d083b769e8d11115abe2aed05a2f9f",
+              "sha256": "707eddab85541af062c097773c790cb76dc608722d43186e88e40a72e1f91823"
+            },
+            {
+              "atoms": 1541,
+              "bytes": 134991,
+              "designed_residues": 76,
+              "filename": "pdl1-face_16.cif",
+              "metadata_sha256": "c848063abfc528b7cb15724d6371a2724cf65ba1b1d2585cc1fcce8821ebba4e",
+              "sha256": "02fdae1d018aaaa3083493ede376b71e8ef4bd1f2c2abc0316a66eacee0306c3"
+            },
+            {
+              "atoms": 1424,
+              "bytes": 125227,
+              "designed_residues": 69,
+              "filename": "pdl1-face_17.cif",
+              "metadata_sha256": "4cd303b24e0fbea6f2558f5a0efbc29728d083b769e8d11115abe2aed05a2f9f",
+              "sha256": "2e40a50fc59f5f1e8da8e05325de1bc0830d42b70e11b8939bff739084dbfd92"
+            },
+            {
+              "atoms": 1400,
+              "bytes": 122908,
+              "designed_residues": 63,
+              "filename": "pdl1-face_18.cif",
+              "metadata_sha256": "e790509d7c2a9c8d3e149b050f35bc67aaea14bff98a29c6d68221cc962bcf75",
+              "sha256": "d0f6f1000fd550c4770423f3fd6cb02e7cb8da566c3e67ca722e4b1dfb7c51c5"
+            },
+            {
+              "atoms": 1321,
+              "bytes": 117060,
+              "designed_residues": 68,
+              "filename": "pdl1-face_19.cif",
+              "metadata_sha256": "cff242c5370654fd20138cef7fbfab03a77a7df21cb3955ebe7af9ef39b4ff88",
+              "sha256": "5e110fb20a3e59ee8ff90963c2beea0e5665d9adb563879e40133c01364f385c"
+            }
+          ],
+          "unchanged_runtime_exit_code": 0,
+          "utc": "2026-09-07T06:16:21.054427+00:00"
+        }
+      ],
+      "model_id": "boltzgen",
+      "original_command_sha256": "3b1618a5c9a97486bbbbd50d2e5166f534a5dd1a9918ef6b3a132b119f1c553a",
+      "pod_created_at": "2026-09-07T06:11:06Z",
+      "pod_started_at": "2026-09-07T06:11:06Z",
+      "ready": {
+        "boundary": "_PredictionLoop._on_predict_start return after native setup/restore/device placement and CUDA synchronization",
+        "compilation": "not-warmed; first-shape compilation remains prediction work",
+        "compute_capability": [
+          9,
+          0
+        ],
+        "cuda_version": "12.6",
+        "device": "NVIDIA H100 80GB HBM3",
+        "model_id": "boltzgen",
+        "native_hook_source_sha256": "b53addac3078f71caa586a90a84fee26fa05c99c4882cc3058ad3672ff6680f6",
+        "phase": "model_ready",
+        "pid": 172,
+        "python_process_seconds": 32.490844607993495,
+        "schema": "fs2-startup-benchmark/v1",
+        "torch_version": "2.7.1+cu126",
+        "utc": "2026-09-07T06:11:51.051575+00:00"
+      },
+      "repetition": 1,
+      "schema": "fs2-serve.nebius.ai/primary-isolated-startup-receipt/v1",
+      "semantic_output": {
+        "model_id": "boltzgen",
+        "phase": "semantic_output_verified",
+        "schema": "fs2-startup-benchmark/v1",
+        "scope": "complete design stage, not later folding/filtering stages or scientific affinity qualification",
+        "structures": [
+          {
+            "atoms": 1486,
+            "bytes": 130501,
+            "designed_residues": 69,
+            "filename": "pdl1-face_00.cif",
+            "metadata_sha256": "4cd303b24e0fbea6f2558f5a0efbc29728d083b769e8d11115abe2aed05a2f9f",
+            "sha256": "4d4da3f704f47a03aa921f15160831ab2eb4f8fba3cacc229c1f4af80ca3f829"
+          },
+          {
+            "atoms": 1466,
+            "bytes": 128068,
+            "designed_residues": 64,
+            "filename": "pdl1-face_01.cif",
+            "metadata_sha256": "ed50fa81b3e2e2edaccc9a3574f51a05009f97e87688da5c2dd66c49b00a0cfb",
+            "sha256": "06d3ca4da1a2a5d450eeaba19484b82e3d4e304717eaff4c8c8c4de14688c8ac"
+          },
+          {
+            "atoms": 1577,
+            "bytes": 137399,
+            "designed_residues": 75,
+            "filename": "pdl1-face_02.cif",
+            "metadata_sha256": "178007f30c1abb0bc3fd75ed2bef7f4cc3acefa2286d1bbad9bece6c82abf524",
+            "sha256": "cee424e0ff6ee04006cc86e1deaf8f0d095ae0d55ddddaf8c96840614e1a77d4"
+          },
+          {
+            "atoms": 1472,
+            "bytes": 128907,
+            "designed_residues": 65,
+            "filename": "pdl1-face_03.cif",
+            "metadata_sha256": "3624f9dd2a3cfd950d5bebcfc19944b7f32b90b7fc44f4846c00828b832b8ea4",
+            "sha256": "f5b94c2ec42ddd972ecab86ba275975be68353590bb0998e71fd3df9eed1a8bc"
+          },
+          {
+            "atoms": 1508,
+            "bytes": 132020,
+            "designed_residues": 68,
+            "filename": "pdl1-face_04.cif",
+            "metadata_sha256": "cff242c5370654fd20138cef7fbfab03a77a7df21cb3955ebe7af9ef39b4ff88",
+            "sha256": "9ac5ae97f60421c1a8e07a75b651601434d3e09617c6a207981f928585e09831"
+          },
+          {
+            "atoms": 1599,
+            "bytes": 139933,
+            "designed_residues": 79,
+            "filename": "pdl1-face_05.cif",
+            "metadata_sha256": "44e6e03c2a6c46ad7e22737ad1d602455cc319a0215b8e2b86c4ea1d8801c06e",
+            "sha256": "c1e4821bca62d501c151f310dbca42d5633fa0cc5cd259cc2ec2cb2197f3b71c"
+          },
+          {
+            "atoms": 1445,
+            "bytes": 126542,
+            "designed_residues": 60,
+            "filename": "pdl1-face_06.cif",
+            "metadata_sha256": "0a9561a97823f7f17308fb92abccebc5856d569ffa49ab197f9bc2093a432893",
+            "sha256": "d75b6f110fe72bac3fb363b9f7d3f197e3a9e9068e7b4445f1959dcb07842a38"
+          },
+          {
+            "atoms": 1487,
+            "bytes": 130534,
+            "designed_residues": 69,
+            "filename": "pdl1-face_07.cif",
+            "metadata_sha256": "4cd303b24e0fbea6f2558f5a0efbc29728d083b769e8d11115abe2aed05a2f9f",
+            "sha256": "effee158dd76bd689587ed36dfb73c32a6a397fdbbaefdaadd75e8a0b363f2d8"
+          },
+          {
+            "atoms": 1447,
+            "bytes": 126802,
+            "designed_residues": 61,
+            "filename": "pdl1-face_08.cif",
+            "metadata_sha256": "29eda3715b58df857f3bfa075b788bded7e483a4c17dda0e64c0484abd5c672a",
+            "sha256": "cddbbf4c09ae47e57c2873177a9d245a69718fc14a80e2887f2c2cca934a887a"
+          },
+          {
+            "atoms": 1446,
+            "bytes": 126488,
+            "designed_residues": 62,
+            "filename": "pdl1-face_09.cif",
+            "metadata_sha256": "f99972ad44c2e8ca828fc416e97ec52c41ade45b9db2a34a13e5a04e00e7b527",
+            "sha256": "973b905c8e44734aff5b90447dcbc78cb86c0ed808f0afdac27c41418e4b5215"
+          },
+          {
+            "atoms": 1576,
+            "bytes": 137628,
+            "designed_residues": 77,
+            "filename": "pdl1-face_10.cif",
+            "metadata_sha256": "0aa5580b859cdc1b75dc228c3c62208415f0f27c726c1ca69d3eaa208ccc2935",
+            "sha256": "281ffcfe53359466c07602e48e62269f55a858f592326af3248f68519ef79aa3"
+          },
+          {
+            "atoms": 1576,
+            "bytes": 137656,
+            "designed_residues": 77,
+            "filename": "pdl1-face_11.cif",
+            "metadata_sha256": "0aa5580b859cdc1b75dc228c3c62208415f0f27c726c1ca69d3eaa208ccc2935",
+            "sha256": "d3d3c9783e9dd2ba734a8ceeddb72cd21dffefaddf6dc088adb855fdd2522bd4"
+          },
+          {
+            "atoms": 1563,
+            "bytes": 136664,
+            "designed_residues": 80,
+            "filename": "pdl1-face_12.cif",
+            "metadata_sha256": "929f82016d258872123a769553eff2bfc5436f32b0087d59966c3807fe7ccb90",
+            "sha256": "bdeade3bd7a5b4f642bff152e0cb7814b83dd7bbd953a8f9965af54ad30608ff"
+          },
+          {
+            "atoms": 1414,
+            "bytes": 124543,
+            "designed_residues": 65,
+            "filename": "pdl1-face_13.cif",
+            "metadata_sha256": "3624f9dd2a3cfd950d5bebcfc19944b7f32b90b7fc44f4846c00828b832b8ea4",
+            "sha256": "d89f319d2fb0a739637e4d329250377d316a3553929391fde0a71b05251d1147"
+          },
+          {
+            "atoms": 1368,
+            "bytes": 120853,
+            "designed_residues": 65,
+            "filename": "pdl1-face_14.cif",
+            "metadata_sha256": "3624f9dd2a3cfd950d5bebcfc19944b7f32b90b7fc44f4846c00828b832b8ea4",
+            "sha256": "5e30963663d191a933e86431bdbed5b14612c54636a17d6ee992cc8a21ea6314"
+          },
+          {
+            "atoms": 1415,
+            "bytes": 124654,
+            "designed_residues": 69,
+            "filename": "pdl1-face_15.cif",
+            "metadata_sha256": "4cd303b24e0fbea6f2558f5a0efbc29728d083b769e8d11115abe2aed05a2f9f",
+            "sha256": "707eddab85541af062c097773c790cb76dc608722d43186e88e40a72e1f91823"
+          },
+          {
+            "atoms": 1541,
+            "bytes": 134991,
+            "designed_residues": 76,
+            "filename": "pdl1-face_16.cif",
+            "metadata_sha256": "c848063abfc528b7cb15724d6371a2724cf65ba1b1d2585cc1fcce8821ebba4e",
+            "sha256": "02fdae1d018aaaa3083493ede376b71e8ef4bd1f2c2abc0316a66eacee0306c3"
+          },
+          {
+            "atoms": 1424,
+            "bytes": 125227,
+            "designed_residues": 69,
+            "filename": "pdl1-face_17.cif",
+            "metadata_sha256": "4cd303b24e0fbea6f2558f5a0efbc29728d083b769e8d11115abe2aed05a2f9f",
+            "sha256": "2e40a50fc59f5f1e8da8e05325de1bc0830d42b70e11b8939bff739084dbfd92"
+          },
+          {
+            "atoms": 1400,
+            "bytes": 122908,
+            "designed_residues": 63,
+            "filename": "pdl1-face_18.cif",
+            "metadata_sha256": "e790509d7c2a9c8d3e149b050f35bc67aaea14bff98a29c6d68221cc962bcf75",
+            "sha256": "d0f6f1000fd550c4770423f3fd6cb02e7cb8da566c3e67ca722e4b1dfb7c51c5"
+          },
+          {
+            "atoms": 1321,
+            "bytes": 117060,
+            "designed_residues": 68,
+            "filename": "pdl1-face_19.cif",
+            "metadata_sha256": "cff242c5370654fd20138cef7fbfab03a77a7df21cb3955ebe7af9ef39b4ff88",
+            "sha256": "5e110fb20a3e59ee8ff90963c2beea0e5665d9adb563879e40133c01364f385c"
+          }
+        ],
+        "unchanged_runtime_exit_code": 0,
+        "utc": "2026-09-07T06:16:21.054427+00:00"
+      },
+      "source_operation_id": "c28e2d5a-2326-491c-b883-dbcd996a6619",
+      "source_variant_id": "upstream-v0-3-2",
+      "status": "passed",
+      "timings_seconds": {
+        "container_start_to_model_ready": 36.051575,
+        "container_start_to_valid_stage_output": 306.054427,
+        "pod_create_to_container_start": 9.0,
+        "pod_create_to_model_ready": 45.051575,
+        "pod_create_to_valid_stage_output": 315.054427,
+        "python_process_to_model_ready": 32.490844607993495
+      }
+    },
+    {
+      "cache_condition": "fresh process; current image/node and immutable reference-data caches unchanged; no eviction",
+      "campaign_repetition": 3,
+      "container_started_at": "2026-09-07T06:11:16Z",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+      "image_events": [
+        {
+          "event_time": "2026-09-07T06:11:08Z",
+          "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:4134c130d4d265212886b0a17a03b0b8051d01bd592032b00509ed657378623a\" already present on machine and can be accessed by the pod",
+          "reason": "Pulled"
+        },
+        {
+          "event_time": "2026-09-07T06:11:11Z",
+          "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:4134c130d4d265212886b0a17a03b0b8051d01bd592032b00509ed657378623a\" already present on machine and can be accessed by the pod",
+          "reason": "Pulled"
+        },
+        {
+          "event_time": "2026-09-07T06:11:13Z",
+          "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:4134c130d4d265212886b0a17a03b0b8051d01bd592032b00509ed657378623a\" already present on machine and can be accessed by the pod",
+          "reason": "Pulled"
+        },
+        {
+          "event_time": "2026-09-07T06:11:15Z",
+          "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e\" already present on machine and can be accessed by the pod",
+          "reason": "Pulled"
+        }
+      ],
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+      "init_phases": [
+        {
+          "finished_at": "2026-09-07T06:11:11Z",
+          "name": "prepare-workspace",
+          "started_at": "2026-09-07T06:11:09Z"
+        },
+        {
+          "finished_at": "2026-09-07T06:11:13Z",
+          "name": "verify-runtime-artifacts",
+          "started_at": "2026-09-07T06:11:11Z"
+        },
+        {
+          "finished_at": "2026-09-07T06:11:15Z",
+          "name": "materialize-0",
+          "started_at": "2026-09-07T06:11:13Z"
+        }
+      ],
+      "inputs": [
+        {
+          "artifact_id": "5440bbaa-3abb-4ecc-8eac-6f23e2967944",
+          "bytes": 76680,
+          "sha256": "1f14c9c158d9349e464eaf7e6d68db589d3a4ded3d7e95f6ff8e3a5d16b839dd"
+        }
+      ],
+      "job": "fs2-start-boltzgen-c-r01",
+      "markers": [
+        {
+          "boundary": "_PredictionLoop._on_predict_start return after native setup/restore/device placement and CUDA synchronization",
+          "compilation": "not-warmed; first-shape compilation remains prediction work",
+          "compute_capability": [
+            9,
+            0
+          ],
+          "cuda_version": "12.6",
+          "device": "NVIDIA H100 80GB HBM3",
+          "model_id": "boltzgen",
+          "native_hook_source_sha256": "b53addac3078f71caa586a90a84fee26fa05c99c4882cc3058ad3672ff6680f6",
+          "phase": "model_ready",
+          "pid": 174,
+          "python_process_seconds": 32.52291981695453,
+          "schema": "fs2-startup-benchmark/v1",
+          "torch_version": "2.7.1+cu126",
+          "utc": "2026-09-07T06:11:52.159712+00:00"
+        },
+        {
+          "model_id": "boltzgen",
+          "phase": "semantic_output_verified",
+          "schema": "fs2-startup-benchmark/v1",
+          "scope": "complete design stage, not later folding/filtering stages or scientific affinity qualification",
+          "structures": [
+            {
+              "atoms": 1480,
+              "bytes": 129662,
+              "designed_residues": 68,
+              "filename": "pdl1-face_00.cif",
+              "metadata_sha256": "cff242c5370654fd20138cef7fbfab03a77a7df21cb3955ebe7af9ef39b4ff88",
+              "sha256": "81f73fbb1cf83c962e1bfb2d12b6ffa554030645b5b08cb5360b99cca5f63ff7"
+            },
+            {
+              "atoms": 1588,
+              "bytes": 138636,
+              "designed_residues": 75,
+              "filename": "pdl1-face_01.cif",
+              "metadata_sha256": "178007f30c1abb0bc3fd75ed2bef7f4cc3acefa2286d1bbad9bece6c82abf524",
+              "sha256": "267d5919dfa7becdbdb4d9c14b7fbc9c44ae565c978e95778241f4a483cb20c3"
+            },
+            {
+              "atoms": 1475,
+              "bytes": 129593,
+              "designed_residues": 68,
+              "filename": "pdl1-face_02.cif",
+              "metadata_sha256": "cff242c5370654fd20138cef7fbfab03a77a7df21cb3955ebe7af9ef39b4ff88",
+              "sha256": "0b7ce166ffa67b94182792e0abe00117a8b7569424dfbdc69beb61836803fb78"
+            },
+            {
+              "atoms": 1500,
+              "bytes": 131192,
+              "designed_residues": 68,
+              "filename": "pdl1-face_03.cif",
+              "metadata_sha256": "cff242c5370654fd20138cef7fbfab03a77a7df21cb3955ebe7af9ef39b4ff88",
+              "sha256": "379f3ec46b66e964f83a213335e5108339d02ae817796bef584040d7e0cd4749"
+            },
+            {
+              "atoms": 1528,
+              "bytes": 133785,
+              "designed_residues": 71,
+              "filename": "pdl1-face_04.cif",
+              "metadata_sha256": "c983392c75267878f062e6e6280c16208fe63fec65bc772159acbee7506ee46f",
+              "sha256": "8752b5ff6b51e7dd07053ae2edc752c7affa58aa8e04469daff3f61b4e673047"
+            },
+            {
+              "atoms": 1471,
+              "bytes": 129160,
+              "designed_residues": 68,
+              "filename": "pdl1-face_05.cif",
+              "metadata_sha256": "cff242c5370654fd20138cef7fbfab03a77a7df21cb3955ebe7af9ef39b4ff88",
+              "sha256": "7641cef6c88989798b4955c33522c9e7bd4c52db25542883db6a7b8eea43b003"
+            },
+            {
+              "atoms": 1472,
+              "bytes": 128739,
+              "designed_residues": 67,
+              "filename": "pdl1-face_06.cif",
+              "metadata_sha256": "122722c3706c6629a1dd62fb80ebbd8e9d3997dd4bfac5486e665bed87adb504",
+              "sha256": "d089717b6835187942d991c8d05993644a13c05565eb553c52a46fc9ae30966a"
+            },
+            {
+              "atoms": 1586,
+              "bytes": 138245,
+              "designed_residues": 76,
+              "filename": "pdl1-face_07.cif",
+              "metadata_sha256": "c848063abfc528b7cb15724d6371a2724cf65ba1b1d2585cc1fcce8821ebba4e",
+              "sha256": "bf9d559013903848c3df918e81bc8e9e8a2927e81320f521af646ac8ed266a89"
+            },
+            {
+              "atoms": 1440,
+              "bytes": 126603,
+              "designed_residues": 69,
+              "filename": "pdl1-face_08.cif",
+              "metadata_sha256": "4cd303b24e0fbea6f2558f5a0efbc29728d083b769e8d11115abe2aed05a2f9f",
+              "sha256": "49221b868e4fffd4f8ddc54e8b7f6ed8edaeefb697f9b0059892909cfd25e9cb"
+            },
+            {
+              "atoms": 1579,
+              "bytes": 137527,
+              "designed_residues": 76,
+              "filename": "pdl1-face_09.cif",
+              "metadata_sha256": "c848063abfc528b7cb15724d6371a2724cf65ba1b1d2585cc1fcce8821ebba4e",
+              "sha256": "eb07d041bf1efd88bda4e14552bfd8a848b095fb0929f8d5448a691fe148474a"
+            },
+            {
+              "atoms": 1405,
+              "bytes": 123501,
+              "designed_residues": 68,
+              "filename": "pdl1-face_10.cif",
+              "metadata_sha256": "cff242c5370654fd20138cef7fbfab03a77a7df21cb3955ebe7af9ef39b4ff88",
+              "sha256": "d1c9c0e1b6887848b787067892e8761f07bc1a121e81e6c5c155d817c67eaa67"
+            },
+            {
+              "atoms": 1398,
+              "bytes": 122513,
+              "designed_residues": 62,
+              "filename": "pdl1-face_11.cif",
+              "metadata_sha256": "f99972ad44c2e8ca828fc416e97ec52c41ade45b9db2a34a13e5a04e00e7b527",
+              "sha256": "50f5dd25811987d1c7c37323f7fccb82ceff1011624b1752fec69070a5afaafe"
+            },
+            {
+              "atoms": 1545,
+              "bytes": 134752,
+              "designed_residues": 73,
+              "filename": "pdl1-face_12.cif",
+              "metadata_sha256": "17a8be034f7ceec54506604cbf06d3cee7eaec728364416c08eb9bb34ac9b1ac",
+              "sha256": "fe0fc1a65463347c314ef12e2db8a6c9010403983b1a9099de85e6dac5743385"
+            },
+            {
+              "atoms": 1417,
+              "bytes": 124342,
+              "designed_residues": 63,
+              "filename": "pdl1-face_13.cif",
+              "metadata_sha256": "e790509d7c2a9c8d3e149b050f35bc67aaea14bff98a29c6d68221cc962bcf75",
+              "sha256": "cdaa642ad747bd1e76a268117c0eacfe6f0f5461ef32b0d7403267e267c89e62"
+            },
+            {
+              "atoms": 1447,
+              "bytes": 126801,
+              "designed_residues": 67,
+              "filename": "pdl1-face_14.cif",
+              "metadata_sha256": "122722c3706c6629a1dd62fb80ebbd8e9d3997dd4bfac5486e665bed87adb504",
+              "sha256": "ec76fe762ed3d0a33366c4407737220cc24a10dd43795be03a28222bf47356f7"
+            },
+            {
+              "atoms": 1548,
+              "bytes": 135473,
+              "designed_residues": 75,
+              "filename": "pdl1-face_15.cif",
+              "metadata_sha256": "178007f30c1abb0bc3fd75ed2bef7f4cc3acefa2286d1bbad9bece6c82abf524",
+              "sha256": "086ecd489651112bae2cc540e0e383cc3c730edc7859ba09314b5acf2a5f54f2"
+            },
+            {
+              "atoms": 1324,
+              "bytes": 118007,
+              "designed_residues": 72,
+              "filename": "pdl1-face_16.cif",
+              "metadata_sha256": "e42164d3d6bb0627ecb6ab9d412568aa89573b7822cb8469e433c0c42ed1e6f7",
+              "sha256": "6bf7528220e244f9eb7c3178bcb88416e77103ba65a252e170b64215ecb88345"
+            },
+            {
+              "atoms": 1312,
+              "bytes": 116579,
+              "designed_residues": 66,
+              "filename": "pdl1-face_17.cif",
+              "metadata_sha256": "2eafdc0da778d6196799eae09ad3caf28e58c27575aeef0a3ca707ac4b1a5198",
+              "sha256": "8fbbfb8a6171caead3320e82fede06cee38d82737d22917bbd68d6897d305776"
+            },
+            {
+              "atoms": 1415,
+              "bytes": 124261,
+              "designed_residues": 60,
+              "filename": "pdl1-face_18.cif",
+              "metadata_sha256": "0a9561a97823f7f17308fb92abccebc5856d569ffa49ab197f9bc2093a432893",
+              "sha256": "2092141eceb1daea1fe9b5eeddbf6213cc3905a8d02b3abd46df5d2454e707cc"
+            },
+            {
+              "atoms": 1313,
+              "bytes": 116240,
+              "designed_residues": 60,
+              "filename": "pdl1-face_19.cif",
+              "metadata_sha256": "0a9561a97823f7f17308fb92abccebc5856d569ffa49ab197f9bc2093a432893",
+              "sha256": "98d7b7e2e771b665fb67950c1dfda5442ed943ebf7a91014081a61f2f58bf960"
+            }
+          ],
+          "unchanged_runtime_exit_code": 0,
+          "utc": "2026-09-07T06:16:04.319133+00:00"
+        }
+      ],
+      "model_id": "boltzgen",
+      "original_command_sha256": "3b1618a5c9a97486bbbbd50d2e5166f534a5dd1a9918ef6b3a132b119f1c553a",
+      "pod_created_at": "2026-09-07T06:11:08Z",
+      "pod_started_at": "2026-09-07T06:11:08Z",
+      "ready": {
+        "boundary": "_PredictionLoop._on_predict_start return after native setup/restore/device placement and CUDA synchronization",
+        "compilation": "not-warmed; first-shape compilation remains prediction work",
+        "compute_capability": [
+          9,
+          0
+        ],
+        "cuda_version": "12.6",
+        "device": "NVIDIA H100 80GB HBM3",
+        "model_id": "boltzgen",
+        "native_hook_source_sha256": "b53addac3078f71caa586a90a84fee26fa05c99c4882cc3058ad3672ff6680f6",
+        "phase": "model_ready",
+        "pid": 174,
+        "python_process_seconds": 32.52291981695453,
+        "schema": "fs2-startup-benchmark/v1",
+        "torch_version": "2.7.1+cu126",
+        "utc": "2026-09-07T06:11:52.159712+00:00"
+      },
+      "repetition": 1,
+      "schema": "fs2-serve.nebius.ai/primary-isolated-startup-receipt/v1",
+      "semantic_output": {
+        "model_id": "boltzgen",
+        "phase": "semantic_output_verified",
+        "schema": "fs2-startup-benchmark/v1",
+        "scope": "complete design stage, not later folding/filtering stages or scientific affinity qualification",
+        "structures": [
+          {
+            "atoms": 1480,
+            "bytes": 129662,
+            "designed_residues": 68,
+            "filename": "pdl1-face_00.cif",
+            "metadata_sha256": "cff242c5370654fd20138cef7fbfab03a77a7df21cb3955ebe7af9ef39b4ff88",
+            "sha256": "81f73fbb1cf83c962e1bfb2d12b6ffa554030645b5b08cb5360b99cca5f63ff7"
+          },
+          {
+            "atoms": 1588,
+            "bytes": 138636,
+            "designed_residues": 75,
+            "filename": "pdl1-face_01.cif",
+            "metadata_sha256": "178007f30c1abb0bc3fd75ed2bef7f4cc3acefa2286d1bbad9bece6c82abf524",
+            "sha256": "267d5919dfa7becdbdb4d9c14b7fbc9c44ae565c978e95778241f4a483cb20c3"
+          },
+          {
+            "atoms": 1475,
+            "bytes": 129593,
+            "designed_residues": 68,
+            "filename": "pdl1-face_02.cif",
+            "metadata_sha256": "cff242c5370654fd20138cef7fbfab03a77a7df21cb3955ebe7af9ef39b4ff88",
+            "sha256": "0b7ce166ffa67b94182792e0abe00117a8b7569424dfbdc69beb61836803fb78"
+          },
+          {
+            "atoms": 1500,
+            "bytes": 131192,
+            "designed_residues": 68,
+            "filename": "pdl1-face_03.cif",
+            "metadata_sha256": "cff242c5370654fd20138cef7fbfab03a77a7df21cb3955ebe7af9ef39b4ff88",
+            "sha256": "379f3ec46b66e964f83a213335e5108339d02ae817796bef584040d7e0cd4749"
+          },
+          {
+            "atoms": 1528,
+            "bytes": 133785,
+            "designed_residues": 71,
+            "filename": "pdl1-face_04.cif",
+            "metadata_sha256": "c983392c75267878f062e6e6280c16208fe63fec65bc772159acbee7506ee46f",
+            "sha256": "8752b5ff6b51e7dd07053ae2edc752c7affa58aa8e04469daff3f61b4e673047"
+          },
+          {
+            "atoms": 1471,
+            "bytes": 129160,
+            "designed_residues": 68,
+            "filename": "pdl1-face_05.cif",
+            "metadata_sha256": "cff242c5370654fd20138cef7fbfab03a77a7df21cb3955ebe7af9ef39b4ff88",
+            "sha256": "7641cef6c88989798b4955c33522c9e7bd4c52db25542883db6a7b8eea43b003"
+          },
+          {
+            "atoms": 1472,
+            "bytes": 128739,
+            "designed_residues": 67,
+            "filename": "pdl1-face_06.cif",
+            "metadata_sha256": "122722c3706c6629a1dd62fb80ebbd8e9d3997dd4bfac5486e665bed87adb504",
+            "sha256": "d089717b6835187942d991c8d05993644a13c05565eb553c52a46fc9ae30966a"
+          },
+          {
+            "atoms": 1586,
+            "bytes": 138245,
+            "designed_residues": 76,
+            "filename": "pdl1-face_07.cif",
+            "metadata_sha256": "c848063abfc528b7cb15724d6371a2724cf65ba1b1d2585cc1fcce8821ebba4e",
+            "sha256": "bf9d559013903848c3df918e81bc8e9e8a2927e81320f521af646ac8ed266a89"
+          },
+          {
+            "atoms": 1440,
+            "bytes": 126603,
+            "designed_residues": 69,
+            "filename": "pdl1-face_08.cif",
+            "metadata_sha256": "4cd303b24e0fbea6f2558f5a0efbc29728d083b769e8d11115abe2aed05a2f9f",
+            "sha256": "49221b868e4fffd4f8ddc54e8b7f6ed8edaeefb697f9b0059892909cfd25e9cb"
+          },
+          {
+            "atoms": 1579,
+            "bytes": 137527,
+            "designed_residues": 76,
+            "filename": "pdl1-face_09.cif",
+            "metadata_sha256": "c848063abfc528b7cb15724d6371a2724cf65ba1b1d2585cc1fcce8821ebba4e",
+            "sha256": "eb07d041bf1efd88bda4e14552bfd8a848b095fb0929f8d5448a691fe148474a"
+          },
+          {
+            "atoms": 1405,
+            "bytes": 123501,
+            "designed_residues": 68,
+            "filename": "pdl1-face_10.cif",
+            "metadata_sha256": "cff242c5370654fd20138cef7fbfab03a77a7df21cb3955ebe7af9ef39b4ff88",
+            "sha256": "d1c9c0e1b6887848b787067892e8761f07bc1a121e81e6c5c155d817c67eaa67"
+          },
+          {
+            "atoms": 1398,
+            "bytes": 122513,
+            "designed_residues": 62,
+            "filename": "pdl1-face_11.cif",
+            "metadata_sha256": "f99972ad44c2e8ca828fc416e97ec52c41ade45b9db2a34a13e5a04e00e7b527",
+            "sha256": "50f5dd25811987d1c7c37323f7fccb82ceff1011624b1752fec69070a5afaafe"
+          },
+          {
+            "atoms": 1545,
+            "bytes": 134752,
+            "designed_residues": 73,
+            "filename": "pdl1-face_12.cif",
+            "metadata_sha256": "17a8be034f7ceec54506604cbf06d3cee7eaec728364416c08eb9bb34ac9b1ac",
+            "sha256": "fe0fc1a65463347c314ef12e2db8a6c9010403983b1a9099de85e6dac5743385"
+          },
+          {
+            "atoms": 1417,
+            "bytes": 124342,
+            "designed_residues": 63,
+            "filename": "pdl1-face_13.cif",
+            "metadata_sha256": "e790509d7c2a9c8d3e149b050f35bc67aaea14bff98a29c6d68221cc962bcf75",
+            "sha256": "cdaa642ad747bd1e76a268117c0eacfe6f0f5461ef32b0d7403267e267c89e62"
+          },
+          {
+            "atoms": 1447,
+            "bytes": 126801,
+            "designed_residues": 67,
+            "filename": "pdl1-face_14.cif",
+            "metadata_sha256": "122722c3706c6629a1dd62fb80ebbd8e9d3997dd4bfac5486e665bed87adb504",
+            "sha256": "ec76fe762ed3d0a33366c4407737220cc24a10dd43795be03a28222bf47356f7"
+          },
+          {
+            "atoms": 1548,
+            "bytes": 135473,
+            "designed_residues": 75,
+            "filename": "pdl1-face_15.cif",
+            "metadata_sha256": "178007f30c1abb0bc3fd75ed2bef7f4cc3acefa2286d1bbad9bece6c82abf524",
+            "sha256": "086ecd489651112bae2cc540e0e383cc3c730edc7859ba09314b5acf2a5f54f2"
+          },
+          {
+            "atoms": 1324,
+            "bytes": 118007,
+            "designed_residues": 72,
+            "filename": "pdl1-face_16.cif",
+            "metadata_sha256": "e42164d3d6bb0627ecb6ab9d412568aa89573b7822cb8469e433c0c42ed1e6f7",
+            "sha256": "6bf7528220e244f9eb7c3178bcb88416e77103ba65a252e170b64215ecb88345"
+          },
+          {
+            "atoms": 1312,
+            "bytes": 116579,
+            "designed_residues": 66,
+            "filename": "pdl1-face_17.cif",
+            "metadata_sha256": "2eafdc0da778d6196799eae09ad3caf28e58c27575aeef0a3ca707ac4b1a5198",
+            "sha256": "8fbbfb8a6171caead3320e82fede06cee38d82737d22917bbd68d6897d305776"
+          },
+          {
+            "atoms": 1415,
+            "bytes": 124261,
+            "designed_residues": 60,
+            "filename": "pdl1-face_18.cif",
+            "metadata_sha256": "0a9561a97823f7f17308fb92abccebc5856d569ffa49ab197f9bc2093a432893",
+            "sha256": "2092141eceb1daea1fe9b5eeddbf6213cc3905a8d02b3abd46df5d2454e707cc"
+          },
+          {
+            "atoms": 1313,
+            "bytes": 116240,
+            "designed_residues": 60,
+            "filename": "pdl1-face_19.cif",
+            "metadata_sha256": "0a9561a97823f7f17308fb92abccebc5856d569ffa49ab197f9bc2093a432893",
+            "sha256": "98d7b7e2e771b665fb67950c1dfda5442ed943ebf7a91014081a61f2f58bf960"
+          }
+        ],
+        "unchanged_runtime_exit_code": 0,
+        "utc": "2026-09-07T06:16:04.319133+00:00"
+      },
+      "source_operation_id": "c28e2d5a-2326-491c-b883-dbcd996a6619",
+      "source_variant_id": "upstream-v0-3-2",
+      "status": "passed",
+      "timings_seconds": {
+        "container_start_to_model_ready": 36.159712,
+        "container_start_to_valid_stage_output": 288.319133,
+        "pod_create_to_container_start": 8.0,
+        "pod_create_to_model_ready": 44.159712,
+        "pod_create_to_valid_stage_output": 296.319133,
+        "python_process_to_model_ready": 32.52291981695453
+      }
+    }
+  ]
+}
