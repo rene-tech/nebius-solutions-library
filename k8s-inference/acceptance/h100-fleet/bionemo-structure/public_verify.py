@@ -18,6 +18,9 @@ import subprocess
 import sys
 from functools import lru_cache
 from pathlib import Path
+import re
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
 MEDIA = ROOT / "acceptance/h100-fleet/medical-media"
@@ -34,6 +37,19 @@ def load_module(path, name):
 
 public = load_module(MEDIA / "public_verify.py", "fs2_bio_public_transport")
 MODELS = ("molmim", "genmol", "proteinmpnn", "diffdock", "boltz2", "msa-search-pdb70")
+SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
+NATIVE_VALIDATORS = {
+    "proteinmpnn": (
+        "proteinmpnn-native/validate_proteinmpnn.py",
+        "2e3c21af0987f4b9c7da2cef3f3e4d210a7b223049f231c24e871e2a553b48d3",
+        "proteinmpnn-faststart-semantic-v1",
+    ),
+    "diffdock": (
+        "diffdock-native/validate_diffdock.py",
+        "245ae98a98db09c34924cd7a499b99da9eb35742667043aaee3e497c33268008",
+        "diffdock-faststart-semantic-v1",
+    ),
+}
 
 
 @lru_cache
@@ -53,15 +69,146 @@ def validator(model):
     return load_module(path, "fs2_bio_public_validator_" + model)
 
 
+@lru_cache
+def native_validator(model):
+    """Load the frozen validator for the native public response contract."""
+    relative, expected_sha256, _contract = NATIVE_VALIDATORS[model]
+    path = (
+        ROOT
+        / "catalog/runtime/packaged-repository/nim-fast-start/faststart-v2"
+        / relative
+    )
+    if hashlib.sha256(path.read_bytes()).hexdigest() != expected_sha256:
+        raise ValueError("native public validator bytes differ from the pinned contract")
+    return load_module(path, "fs2_bio_native_public_validator_" + model)
+
+
+def native_validator_contract(model):
+    relative, source_sha256, contract = NATIVE_VALIDATORS[model]
+    return {
+        "kind": "repository-native-response-validator",
+        "contract": contract,
+        "source_path": (
+            "k8s-inference/catalog/runtime/packaged-repository/"
+            "nim-fast-start/faststart-v2/" + relative
+        ),
+        "source_sha256": source_sha256,
+        "request_count": 2,
+        "distinct_requests": True,
+        "distinct_responses": True,
+    }
+
+
+@lru_cache
+def expected_runtime(model):
+    """Bind source revision, image and weights through the selected manifest."""
+    candidate = entry(model)
+    record = candidate["record"]
+    profiles = json.loads((ROOT / "catalog/profiles/model-profiles.json").read_text())
+    manifest_paths = profiles["model_artifacts"][model]["manifest_paths"]
+    deployments = []
+    for relative in manifest_paths:
+        documents = yaml.safe_load_all((ROOT / relative).read_text())
+        deployments.extend(item for item in documents if item and item.get("kind") == "Deployment")
+    if len(deployments) != 1:
+        raise ValueError("selected Bio runtime must resolve to exactly one Deployment")
+    deployment = deployments[0]
+    metadata_annotations = deployment["metadata"].get("annotations", {})
+    pod_annotations = deployment["spec"]["template"]["metadata"].get("annotations", {})
+    annotations = {**metadata_annotations, **pod_annotations}
+    image = record["runtime"]["image"]["reference"]
+    image_digest = record["runtime"]["image"]["digest"]
+    content_digest = annotations.get("fs2.nebius/model-content-digest")
+    if (
+        not SHA256.fullmatch(content_digest or "")
+        or image.split("@", 1)[1] != image_digest
+        or annotations.get("fs2.nebius/runtime-image-digest") != image_digest
+    ):
+        raise ValueError("selected Bio manifest does not bind exact image and model content")
+    revision = record["model"]["source"]["revision"]
+    revision_values = {
+        value
+        for source in (metadata_annotations, pod_annotations)
+        for key, value in source.items()
+        if key.endswith("revision")
+    }
+    if revision not in revision_values:
+        raise ValueError("selected Bio manifest does not bind the exact model revision")
+    return {
+        "image": image,
+        "model_revision": revision,
+        "model_content_digest": content_digest,
+        "manifest_paths": manifest_paths,
+    }
+
+
+def runtime_binding(pods, operation, expected):
+    """Bind a dynamic operation to exact selected code, weights, and route."""
+    pod_uid = operation.get("runtime", {}).get("pod_uid")
+    matches = [pod for pod in pods if pod["metadata"]["uid"] == pod_uid]
+    if len(matches) != 1:
+        raise public.AcceptanceError("runtime_pod_identity_missing")
+    pod = matches[0]
+    metadata = pod["metadata"]
+    annotations = metadata.get("annotations", {})
+    digest = expected["image"].split("@", 1)[1]
+    image_ids = [
+        item.get("imageID", "")
+        for item in pod["status"].get("containerStatuses", [])
+    ]
+    route_revision = "dynamic:" + annotations.get(
+        "fs2-serve.nebius.ai/spec-digest", ""
+    )
+    if (
+        annotations.get("fs2.nebius/runtime-image-digest") != digest
+        or annotations.get("fs2.nebius/model-content-digest")
+        != expected["model_content_digest"]
+        or not any(image.endswith("@" + digest) for image in image_ids)
+        or operation.get("model_revision") != route_revision
+    ):
+        raise public.AcceptanceError("runtime_image_or_revision_mismatch")
+    return {
+        "namespace": metadata["namespace"],
+        "pod": metadata["name"],
+        "pod_uid": pod_uid,
+        "model_revision": expected["model_revision"],
+        "model_content_digest": expected["model_content_digest"],
+        "route_revision": route_revision,
+        "runtime_image_ids": image_ids,
+        "expected_image": expected["image"],
+        "source_revision_binding": "selected-manifest-plus-exact-image-and-model-content",
+    }
+
+
 def cases_for(model):
     record = entry(model)["record"]
-    module = validator(model)
+    module = native_validator(model) if model in NATIVE_VALIDATORS else validator(model)
     if model == "msa-search-pdb70":
         fixture = ROOT / "catalog/runtime/packaged-repository" / record["semantic_validator"]["fixture_path"]
         template = module._read_fixture(fixture)
         payloads = [module._request_for_case(template, query) for query in (module.QUERY_1, module.QUERY_2)]
-    elif model in {"proteinmpnn", "diffdock"}:
-        payloads = module._requests(model)
+    elif model == "proteinmpnn":
+        fixture = (
+            ROOT
+            / "catalog/runtime/packaged-repository/nim-fast-start/faststart-v2/"
+            "proteinmpnn-native/fixtures/1ubq-request.json"
+        )
+        template = module._read_fixture(fixture)
+        payloads = [
+            {**template, "random_seed": seed}
+            for seed in (2370, 2371)
+        ]
+    elif model == "diffdock":
+        fixture = (
+            ROOT
+            / "catalog/runtime/packaged-repository/nim-fast-start/faststart-v2/"
+            "diffdock-native/fixtures/1ubq-aspirin-request.json"
+        )
+        template = module._read_fixture(fixture)
+        payloads = [
+            {**template, "random_seed": seed}
+            for seed in (2370, 2371)
+        ]
     elif model == "boltz2":
         payloads = [probe.payload for probe in module.build_probes(("bio-public-a", "bio-public-b"))]
     else:
@@ -74,22 +221,36 @@ def cases_for(model):
         gpu_required=model != "msa-search-pdb70") for payload in payloads]
     if len(cases) != 2 or len({case.payload_sha256 for case in cases}) != 2:
         raise ValueError("original two distinct requests are required")
-    return record["semantic_validator"], cases
+    contract = (
+        native_validator_contract(model)
+        if model in NATIVE_VALIDATORS
+        else record["semantic_validator"]
+    )
+    return contract, cases
 
 
 def validate_pair(model, contract, paths, directory):
     del directory
-    module = validator(model)
+    module = native_validator(model) if model in NATIVE_VALIDATORS else validator(model)
     responses = [json.loads(path.read_bytes()) for path in paths]
     if len(responses) != 2 or paths[0].read_bytes() == paths[1].read_bytes():
         raise ValueError("two distinct responses are required")
     if model == "msa-search-pdb70":
         results = [module._validate_response(response, query)
             for response, query in zip(responses, (module.QUERY_1, module.QUERY_2), strict=True)]
-    elif model in {"proteinmpnn", "diffdock"}:
-        if any(not response.get("backend_id") for response in responses):
-            raise ValueError("response omits the original runtime backend identity")
-        results = [module._validate(model, response) for response in responses]
+    elif model == "proteinmpnn":
+        results = [
+            module._validate_response(response, seed)
+            for response, seed in zip(responses, (2370, 2371), strict=True)
+        ]
+    elif model == "diffdock":
+        fixture = (
+            ROOT
+            / "catalog/runtime/packaged-repository/nim-fast-start/faststart-v2/"
+            "diffdock-native/fixtures/1ubq-aspirin-request.json"
+        )
+        template = module._read_fixture(fixture)
+        results = [module._validate_response(response, template) for response in responses]
     elif model == "boltz2":
         probes = module.build_probes(("bio-public-a", "bio-public-b"))
         results = [module.validate_response(response, probe.sequence, probe.chain_id)
@@ -110,9 +271,11 @@ def actual_runtime(args, operation, model):
         "-n", "fs2-models", "get", "pods", "-o", "json",
     ]))
     candidate = entry(model)
-    expected = {"image": candidate["record"]["runtime"]["image"]["reference"],
-        "model_revision": candidate["record"]["model"]["source"]["revision"]}
     if model == "msa-search-pdb70":
+        expected = {
+            "image": candidate["record"]["runtime"]["image"]["reference"],
+            "model_revision": candidate["record"]["model"]["source"]["revision"],
+        }
         # This exact CPU lane is Terraform-owned rather than a dynamic GPU
         # publication. Its code and embedded database are bound by the image.
         service = candidate["qualification"]["active_runtime"]["service"]
@@ -140,7 +303,8 @@ def actual_runtime(args, operation, model):
             "pod_uid": uid, "model_revision": expected["model_revision"],
             "route_revision": operation["model_revision"], "runtime_image_ids": image_ids,
             "expected_image": expected["image"], "gpu_count": 0}
-    return public.runtime_binding(pods["items"], operation, expected)
+    expected = expected_runtime(model)
+    return runtime_binding(pods["items"], operation, expected)
 
 
 async def main(args):

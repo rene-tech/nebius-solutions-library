@@ -1,0 +1,142 @@
+{
+  "attempts": [
+    {
+      "model": "openfold3",
+      "model_revision": "4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e",
+      "requests": [
+        {
+          "completed_at": "2026-09-07T11:34:10.136Z",
+          "duration_seconds": 10.650170180015266,
+          "operation": {
+            "attempt": 1,
+            "cold_start_seconds": 0.137622,
+            "estimated_gpu_seconds": 3600,
+            "id": "65529bc9-e968-45aa-b926-11cff367499c",
+            "status": "succeeded"
+          },
+          "request_sha256": "f60e849fd5264226f19c045a25ad1e0365ac6a6e6d50f4fbea4b606227e28825",
+          "response_bytes": 22260,
+          "response_sha256": "aca1a42893bc6da1278bafdb657580d770c7a1d2189836dff7f1deb9ea4915e2",
+          "runtime": {
+            "expected_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+            "model_revision": "4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e",
+            "namespace": "fs2-models",
+            "pod": "openfold3-hot-h100-reserved-8x-688b8bc445-r8cvv",
+            "pod_uid": "24393d53-db6e-4dc4-885f-294fd4c3db70",
+            "route_revision": "dynamic:sha256:2f03f595099fa406264f6f789e4da0d775f267e789d38d0f190449e39cf9992f",
+            "runtime_image_ids": [
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c"
+            ]
+          },
+          "started_at": "2026-09-07T11:33:59.486Z"
+        },
+        {
+          "completed_at": "2026-09-07T11:34:22.185Z",
+          "duration_seconds": 10.717504516243935,
+          "operation": {
+            "attempt": 1,
+            "cold_start_seconds": 0.217171,
+            "estimated_gpu_seconds": 3600,
+            "id": "ce061483-209f-42cf-8ff9-1b0cdb6a23fa",
+            "status": "succeeded"
+          },
+          "request_sha256": "d5e1d5c1de3600034f213c961b40d18c69c3ec9130da7302bd8902893a340766",
+          "response_bytes": 22092,
+          "response_sha256": "b204da942773a0081c193ae2ffccc2e85f061cafed1ee1a0bf2584c5e42a09f8",
+          "runtime": {
+            "expected_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+            "model_revision": "4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e",
+            "namespace": "fs2-models",
+            "pod": "openfold3-hot-h100-reserved-8x-688b8bc445-r8cvv",
+            "pod_uid": "24393d53-db6e-4dc4-885f-294fd4c3db70",
+            "route_revision": "dynamic:sha256:2f03f595099fa406264f6f789e4da0d775f267e789d38d0f190449e39cf9992f",
+            "runtime_image_ids": [
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c"
+            ]
+          },
+          "started_at": "2026-09-07T11:34:11.468Z"
+        }
+      ],
+      "route_revision": "dynamic:sha256:2f03f595099fa406264f6f789e4da0d775f267e789d38d0f190449e39cf9992f",
+      "status": "PASS",
+      "surface": "http",
+      "semantic_status": "PASS"
+    },
+    {
+      "model": "openfold3",
+      "model_revision": "4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e",
+      "requests": [
+        {
+          "completed_at": "2026-09-07T11:34:36.944Z",
+          "duration_seconds": 12.203412195667624,
+          "operation": {
+            "attempt": 1,
+            "cold_start_seconds": 0.198229,
+            "estimated_gpu_seconds": 3600,
+            "id": "705c26c6-587c-4a77-86f3-235ec1a7205a",
+            "status": "succeeded"
+          },
+          "request_sha256": "f60e849fd5264226f19c045a25ad1e0365ac6a6e6d50f4fbea4b606227e28825",
+          "response_bytes": 21924,
+          "response_sha256": "c9ae2867b570bbc8a9021f657ff6a507624226dee316e3de28462638eab29332",
+          "runtime": {
+            "expected_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+            "model_revision": "4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e",
+            "namespace": "fs2-models",
+            "pod": "openfold3-hot-h100-reserved-8x-688b8bc445-r8cvv",
+            "pod_uid": "24393d53-db6e-4dc4-885f-294fd4c3db70",
+            "route_revision": "dynamic:sha256:2f03f595099fa406264f6f789e4da0d775f267e789d38d0f190449e39cf9992f",
+            "runtime_image_ids": [
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c"
+            ]
+          },
+          "started_at": "2026-09-07T11:34:24.740Z"
+        },
+        {
+          "completed_at": "2026-09-07T11:34:49.922Z",
+          "duration_seconds": 11.730866418220103,
+          "operation": {
+            "attempt": 1,
+            "cold_start_seconds": 0.262238,
+            "estimated_gpu_seconds": 3600,
+            "id": "7ac50e68-6dd7-443d-9377-dfd168fed3b0",
+            "status": "succeeded"
+          },
+          "request_sha256": "d5e1d5c1de3600034f213c961b40d18c69c3ec9130da7302bd8902893a340766",
+          "response_bytes": 22093,
+          "response_sha256": "17c4c81b52fb5fc0787d658d28cbfb7d54569774b2b95d4779f43b5bb1699610",
+          "runtime": {
+            "expected_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+            "model_revision": "4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e",
+            "namespace": "fs2-models",
+            "pod": "openfold3-hot-h100-reserved-8x-688b8bc445-r8cvv",
+            "pod_uid": "24393d53-db6e-4dc4-885f-294fd4c3db70",
+            "route_revision": "dynamic:sha256:2f03f595099fa406264f6f789e4da0d775f267e789d38d0f190449e39cf9992f",
+            "runtime_image_ids": [
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c"
+            ]
+          },
+          "started_at": "2026-09-07T11:34:38.192Z"
+        }
+      ],
+      "route_revision": "dynamic:sha256:2f03f595099fa406264f6f789e4da0d775f267e789d38d0f190449e39cf9992f",
+      "status": "PASS",
+      "surface": "mcp",
+      "semantic_status": "PASS"
+    }
+  ],
+  "discovered_route_revisions": {
+    "openfold3": "dynamic:sha256:2f03f595099fa406264f6f789e4da0d775f267e789d38d0f190449e39cf9992f"
+  },
+  "finished_at": "2026-09-07T11:34:51.280Z",
+  "mcp_tool": "invoke_model",
+  "origin": "https://89.169.99.188",
+  "schema": "fs2-h100-openfold3-preview2-public-verification/v1",
+  "started_at": "2026-09-07T11:33:58.846Z",
+  "startup_boundary": "routes already hot; public request-to-validated-result is not cold activation",
+  "status": "PASS",
+  "tls_mode": "verified",
+  "cohort": "post-repair-hot-route",
+  "operation_clock_note": "All four requests used the ready exact-image production Pod with retained compiled kernels. Operation cold_start_seconds is hot-route activation telemetry, not process startup.",
+  "model_scope": "Standalone upstream OpenFold3 Preview2; not OpenBind and not NVIDIA NIM. Original two 20-aa request IDs and unchanged native structural validator."
+}

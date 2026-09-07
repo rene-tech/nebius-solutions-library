@@ -3,7 +3,8 @@
 This is a distinct upstream Preview2 runtime, **not** the current OpenFold3
 OpenBind scientific profile and **not** NVIDIA NIM. The exact v4 image passed
 three cached fresh-process trials and a separate first-compilation trial on H100.
-Public HTTP/MCP qualification remains separate and pending root deployment.
+It is deployed and passed both original inputs over public HTTP and MCP.
+Public request timing is kept separate from process startup.
 
 The archived native image is
 `nvcr.io/nim/openfold/openfold3@sha256:6286cc7c02247ed3efe42f0f1af6c2f6f6a680b1e5cae669512c44b636aa42d2`.
@@ -101,3 +102,31 @@ selected independent runtime and retained task cache. The source manifest is
 manifest. Its cache ABI is deployment-selected; only H100 is measured. Production
 uses Terraform-owned storage: adopt the existing compile-cache PVC or copy its
 entire tree into the new claim before bootstrap, preserving source storage.
+
+The production destination `openfold3-preview2-cache-rwx-3668448b` was created
+by Terraform and seeded before startup on 2026-09-07. CPU-only `copy_compile_cache.py`
+copied and verified 69 files / 35,127,243 bytes, including the image/driver/SM
+path above. The final metadata pass completed at 11:02:47 UTC. Hashes, ownership,
+modes and Ninja dependency mtimes are preserved; both copy Pods were deleted
+and the source claim is retained. Production source-clock `MODEL_READY` was
+11:05:56.934284 UTC. This readiness observation is not public acceptance.
+
+`public_verify.py` reuses the existing public transport and unchanged native
+validator for the two original 20-aa request IDs over HTTP and MCP, with valid
+TLS and exact operation-to-Pod/image/model binding. The different 40-aa input
+remains in the direct qualification above. Public results are reported
+separately from fresh-process startup and native JIT compilation.
+
+The clean post-repair public cohort passed all four outputs between
+11:33:58.846 and 11:34:51.280 UTC. HTTP request-to-validated-result times were
+10.650 and 10.718 seconds; MCP times were 12.203 and 11.731 seconds. All four
+operations completed on their first attempt with the exact qualified v4 image,
+upstream source revision and independently verified production Pod UID. See
+`public-results.json`; these are already-hot requests, not startup trials.
+
+`public-repair-window.json` separately preserves the first accepted operation
+that waited for the common renderer's missing `component=model-runtime` label.
+The preexisting gateway network policy required that label. After the normal
+controller release, the original request recovered and passed; its 1,506.195-second
+activation interval is repair time, not model startup. The common renderer fix
+did not change the model image, template identity, inputs, or validator.

@@ -35,7 +35,55 @@ disjoint runtime directories. No quota/limit increases, B300 changes, host
 driver/MIG changes or unrequested hardening are part of this work. The current
 cluster and its existing models remain available during the rollout.
 
-## Initial state — 7 September 2026
+## Live acceptance — 7 September 2026, 11:35 UTC
+
+The Terraform rollout now configures **all 24 in-scope model/profile IDs**.
+Authenticated `/v1/models` exposes all 14 serving models and
+`/v1/scientific-models` exposes all ten scientific profiles. The admin inventory
+retains the excluded GLM entry as not deployed rather than hiding it.
+
+- Admin inventory: `https://89.169.99.188/admin/model-inventory`.
+- Inventory API: `GET /admin/api/v1/model-inventory`, using an admin session.
+- Public inference: `https://89.169.99.188/v1`; MCP: `https://89.169.99.188/mcp`.
+- `verify_inventory.py --credential-bundle /path/to/private/access.json
+  --output /path/to/new/receipt.json` checks the fixed denominator against both
+  public discovery endpoints and the admin API. This is a configuration check,
+  not a substitute for inference validation.
+
+All ten scientific profiles passed fresh public requests after the full-fleet
+rollout; see [the retained regression](scientific-regression-20260907/README.md).
+The serving cohorts retain separate semantic HTTP/MCP acceptance receipts in
+[Bio/structure](bionemo-structure/public-h100-20260907.md),
+[medical/media](medical-media/README.md), and
+[standalone OpenFold3](openfold3-standalone/README.md). The latter's original
+request recovered after fixing a missing runtime Pod label; that repair-window
+wait must not be reported as model startup. Its separate clean follow-up passed
+all four original HTTP/MCP outputs on first attempt.
+
+Qwen, Cosmos and Protenix have selectable shared-filesystem CUDA+CRIU bundles,
+three matched native/restore trials and actual production restore plus new-input
+proof. [Production receipts](snapshots/production-options-h100-20260907.json)
+bind the successful operations to the restored Pod/GPU. Cached container-start
+medians are respectively **99.80→51.49 s**, **59.02→28.08 s**, and
+**66.25→3.76 s**; they exclude node provisioning/image acquisition and are not
+guarantees for arbitrary requests or other GPU/driver combinations.
+
+Serving startup choices are under **Model deployments → model → Model startup
+path**. Scientific choices are under **Scientific runs → Scientific model
+dispatch policy → Edit policy → Startup for stage**. Normal loading remains
+available. Changing a serving snapshot needs the supported drain/zero-replica
+cutover; restore the intended enabled state and hot floor afterward. Qwen kept
+its original floor of one; Cosmos kept its original floor of zero. No other
+model has been permanently scaled down during this campaign.
+
+ESMFold2/Fast, GenMol, CXR and RFdiffusion snapshot work remains in progress;
+it is not described as a production option until fresh-Pod restore and new-input
+validation pass. Mosaic's current JAX runtime has a tested CUDA restore
+incompatibility and retains normal loading. The admin state fix for retained
+failed qualification Pods is awaiting the next release; current successful
+inference receipts are not invalidated by those historical task Pods.
+
+## Initial state — 7 September 2026 (historical)
 
 The public admin API reports two serving models (Qwen hot, Cosmos cold) and ten
 qualified scientific profiles. The twelve other required standalone services

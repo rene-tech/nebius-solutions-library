@@ -30,7 +30,9 @@ Existing specialized endpoints remain:
 
 - `/admin/api/v1/models`: configured serving deployments and metrics.
 - `/admin/api/v1/scientific-models`: scientific runtime readiness and evidence.
-- `/v1/models`: authorized OpenAI-compatible models only.
+- `/v1/models`: authorized serving models, including native scientific/media
+  HTTP runtimes as well as OpenAI-compatible runtimes. A discovery entry does
+  not change its model-specific inference request schema.
 - `/v1/scientific-models` and MCP `list_scientific_models`: authorized batch
   profiles, operations and request schemas.
 
@@ -56,3 +58,34 @@ For controller-owned deployments, add the model to
 model configuration after its runtime is qualified. A completed ownership
 handoff is retained across later catalog additions and template updates;
 operators should not release working deployments again for each new model.
+
+## GPU snapshot options
+
+The inventory publishes `snapshot_selectable`, `snapshot_bundle_ids`,
+`snapshot_evidence_scope`, and measured native/restore startup clocks. The
+evidence must match the configured immutable runtime, not merely a similarly
+named catalog entry. Dynamic route revisions and upstream artifact revisions
+are different identities; the API resolves the validated publication before
+checking snapshot compatibility.
+
+Install tested bundles with the Terraform
+`deployment.dynamic_models.gpu_snapshots.bundle_files` or
+`deployment.scientific_batch.gpu_snapshots.bundle_files` settings. Files carry
+the exact runtime/source/storage identity and qualification evidence. Their
+paths are relative to `k8s-inference`, or may be absolute operator-owned paths.
+Do not copy an H100 qualification to a different GPU/driver and call it tested.
+
+After installation, select a serving snapshot in **Model deployments → model →
+Model startup path**. Use **Scientific runs → Scientific model dispatch policy**
+for a batch-stage startup option. These live choices do not require editing
+Terraform for each customer workload. A serving change requiring a zero-replica
+cutover uses the explicit drain action; afterward restore the intended hot
+floor and enabled state. Scientific choices apply to newly admitted runs;
+existing operations retain their selected policy and bundle.
+
+Selectable means the configured bundle has passed qualification, not that
+every operation used it. Check operation/runtime evidence for an actual
+`cuda-criu-restored` event, versus normal loading or fallback. Successful Job
+logs remain in the existing observability system after Pod cleanup. The
+[production option receipts](../acceptance/h100-fleet/snapshots/production-options-h100-20260907.json)
+demonstrate this correlation without requiring the original Pod to still exist.

@@ -139,14 +139,18 @@ including imports; first-use compilation took 25.318832 seconds. This was
 prelocalized checkpoint storage, but first-process disk I/O, not a download.
 Both devices hold model parameters (41,125,446,656 and 41,117,041,664 bytes).
 
-The release owner will create the normal shared-filesystem destination
+The release owner created the normal shared-filesystem destination
 `evo2-40b-cache-rwx-ecc3e914`. `cache_copy.py` mounts the source read-only,
 copies the checkpoint, verifies its complete destination SHA256, then preserves
 the materialization receipt and exact-image compile cache. It never changes
 claims or deletes the RWO source. `probe.py --existing-cache-pvc ...
 --cache-cohort ...` records a separate fresh-process shared-FS qualification;
 copy/hash activity makes that an explicitly cache-conditioned measurement.
-The RWO source and hot r08 Pod remain retained until this handoff is verified.
+The full destination digest passed at 10:23:54 UTC, followed by the separate
+r09 fresh-process proof above and the production Pod's two original outputs
+at 10:42:37–43 UTC. Task GPU Pods r08 and r09 were then deleted. The RWO source
+remains retained; its old read-only CPU holder expired naturally and is not
+recreated. No source weights were deleted.
 
 ### Evo2 oracle reconciliation
 
@@ -177,10 +181,16 @@ runtime identities are in `public-results.json`. Private full semantic and
 operation receipts are under `medical-media/public-all-r04` in the task's
 private artifact root.
 
+Evo2 subsequently passed all four original public HTTP/MCP outputs between
+11:04:23.485 and 11:04:44.898 UTC. `evo2-public-results.json` binds the actual
+production v5 image, model revision and Pod UID independently of the discovered
+route revision. These requests used the already-hot shared-FS production Pod;
+the operation's small `cold_start_seconds` telemetry is not process startup.
+
 `public_verify.py` exercises two original semantic inputs per model through
 both public HTTP and generic MCP `invoke_model`. Credentials stay in memory;
 TLS verification is enabled. It independently discovers deployment route
-revisions with MCP `list_models`, then checks each operation's bound Pod UID,
+revisions with public `/v1/models`, then checks each operation's bound Pod UID,
 immutable runtime image, HF weight revision and deployment spec digest. Route
 revision and weight revision are deliberately recorded as separate identities.
 For SDXL only the first response envelope changes from direct PNG to base64

@@ -1,0 +1,92 @@
+{
+  "schema": "fs2-serve.nebius.ai/production-snapshot-option-proof/v1",
+  "observed_date": "2026-09-07",
+  "cluster": "mk8scluster-e00j5z9te7x5dd9g6a",
+  "project": "project-e00rene",
+  "region": "eu-north1",
+  "deployed_source_commit": "dbe67b216954d22ed32c3ae4b76f4653f425ad1f",
+  "scope": "Actual production requests after selecting installed bundles. Single production restores supplement, not replace, the matched three-trial qualification reports. Cached images/shared filesystems; not storage-cold or new-node latency guarantees.",
+  "models": [
+    {
+      "model_id": "qwen3-8b",
+      "bundle_id": "qwen3-8b-h100-cuda-criu-20260907-r12",
+      "selection": "Real HTTPS admin UI: drain, observe zero, select snapshot Prefer, restore original Enabled state and hot floor 1, preview and apply.",
+      "desired_revision": 6,
+      "pod_uid": "cdaea527-ca6e-43bc-b11e-1a461a712c66",
+      "node": "computeinstance-e00m0hsph76ajt9sdb",
+      "gpu_uuid": "GPU-9f9398a1-b515-06a3-efcf-0b40de81d77b",
+      "pod_created_at": "2026-09-07T11:17:37Z",
+      "container_started_at": "2026-09-07T11:18:10Z",
+      "restore_report_logged_at": "2026-09-07T11:18:54.616214263Z",
+      "kubernetes_ready_at": "2026-09-07T11:19:03Z",
+      "restore_status": "passed",
+      "mechanism": "cuda-criu-restored",
+      "criu_seconds": 33.52369129797444,
+      "cuda_restore_seconds": 9.815601832000539,
+      "container_to_restore_report_seconds": 44.616214,
+      "pod_to_kubernetes_ready_seconds": 86,
+      "public_requests": [
+        "356bd74c-7695-4d60-88ae-534d81a25634",
+        "2b9d8b0e-9ac9-44d4-898c-a5ef375d1389"
+      ],
+      "public_exact_outputs_passed": 2,
+      "public_receipt_sha256": "e14fe90685f8df7850febf35e59fb7d90d9b3390ca32127245dce94bfc833fa2",
+      "private_runtime_log_sha256": "31ada5988c8879e1bcbdae0c4076fee9a2b50edd990352d194b39e33f8dfe730",
+      "clock_note": "First request arrived after the restore completed; its 8.47s accepted-to-ready value is not the full snapshot startup time. Both operations name this exact restored Pod/GPU."
+    },
+    {
+      "model_id": "protenix-v2",
+      "bundle_id": "protenix-v2-h100-cuda-criu-20260907-r2",
+      "selection": "Existing scientific model-policy API selected sample-structure cuda-criu; immutable admitted policy and normal fallback retained.",
+      "operation_id": "1b0f0ce4-4d50-45d8-8c74-26c66a256bd3",
+      "pod_uid": "d9138b37-9ea8-473d-ab32-64b7fb17e95c",
+      "pod_name": "fs2-sample-structure-main-a1-e2f686ef01eb-hc49h",
+      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "container": "scientific-stage",
+      "restore_status": "passed",
+      "mechanism": "cuda-criu-restored",
+      "criu_seconds": 2.8538599829771556,
+      "cuda_restore_seconds": 0.5347479209885933,
+      "cuda_unlock_seconds": 0.028556280012708157,
+      "public_semantic_validation": "passed",
+      "output_structure_sha256": "13f8b0460e9ce4f94cf689e170153bbcba215da3506ed93d5f8080848ffb8e52",
+      "public_receipt_sha256": "00525d079728f1c7d2cef50b4c4afee6cbd475bca18a3e0d8272221543f4c526",
+      "private_loki_response_sha256": "28bba79980f0a924327e91c7b19bc3abc79fc835ca23ec27ec70d90db3db7d04",
+      "log_retrieval": "Authenticated public Grafana datasource proxy -> existing Loki, exact Pod and 11:05-11:16 UTC range; Kubernetes had already removed the successful Job Pod.",
+      "clock_note": "278.843s client completion includes waiting for existing GPU capacity plus the full workflow; it is not model loading time."
+    },
+    {
+      "model_id": "cosmos3-nano",
+      "bundle_id": "cosmos3-nano-h100-cuda-criu-20260907-r7",
+      "selection": "Real HTTPS admin UI: drain, observe zero, select snapshot Prefer, restore original Enabled state and hot floor 0, preview and apply.",
+      "desired_revision": 11,
+      "pod_uid": "6a924c78-90a6-4511-a0e5-d845b36fe307",
+      "pod_name": "cosmos3-nano-burst-h100-1x-5fb784686-sk4l5",
+      "node": "computeinstance-e00hz5vj4k6j4rsrqc",
+      "gpu_uuid": "GPU-42923edc-45f7-13a3-bf79-6151a3964d9e",
+      "preemptible": true,
+      "restore_report_logged_at": "2026-09-07T11:25:38.030084873Z",
+      "restore_status": "passed",
+      "mechanism": "cuda-criu-restored",
+      "criu_seconds": 27.947464623000087,
+      "cuda_restore_seconds": [4.637313701000039, 0.035813578000215784],
+      "cuda_unlock_seconds": [0.01610136399995099, 0.014225590000023658],
+      "public_requests": [
+        "ec4a7a5c-a397-4f8b-b432-ee7b621f796b",
+        "fea51748-9b3e-41b4-8ec9-e52face33ac4"
+      ],
+      "public_distinct_videos_passed": 2,
+      "output_video_sha256": [
+        "9f40b644602adf4e3d78e79db8ca4bfc1a11bb1698552e14b66e01c92ab81554",
+        "d77d41340a8e93a034dfb9294b60080fc90f5f2f25e37056e3acc020fb54173b"
+      ],
+      "public_receipt_sha256": "c14eba6ea23e6d89b8dcb1bf54dc0b240968372f649de04671580cabf89c89a8",
+      "private_loki_response_sha256": "172e22c90e9d2c029a03ec77d44c16001f6d7ca63bb313bab3ea4e1b838d5bbf",
+      "log_retrieval": "Authenticated public Grafana datasource proxy -> existing Loki, exact Pod and 11:19-11:27 UTC range; original zero hot floor removed the idle Pod after successful requests.",
+      "clock_note": "414.283s first request includes GPU queuing, fresh-node image acquisition and full inference; second hot request took 4.443s. Neither is the isolated restore latency. Both operations name this exact restored Pod/GPU.",
+      "diagnostics": "CRIU returned zero and CUDA restore/unlock passed. The captured restore log also contains TUN and iptables diagnostics printed on supervisor shutdown; retained without hiding them. They did not prevent two validated video outputs."
+    }
+  ],
+  "pending_production_proofs": [],
+  "private_evidence_root": "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/releases"
+}

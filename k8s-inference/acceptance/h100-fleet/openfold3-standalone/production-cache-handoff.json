@@ -1,0 +1,32 @@
+{
+  "schema": "fs2-h100-openfold3-preview2-cache-handoff/v1",
+  "status": "PASS",
+  "date": "2026-09-07",
+  "source_pvc": "fs2-mm-openfold3-preview2-cache-20260907",
+  "source_pvc_uid": "9e825186-d1f6-4878-b690-d589e769d7dc",
+  "destination_pvc": "openfold3-preview2-cache-rwx-3668448b",
+  "destination_pvc_uid": "205d061a-c4f4-4d9e-b3f9-60b4c0e454a9",
+  "relative_path": "1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c/driver-580.159.04-sm90",
+  "files": 69,
+  "bytes": 35127243,
+  "file_manifest_sha256": "cb0dec55c7e8a7169dbf9306c52a0a9b239ecebe47c94bb26fdec41032454c76",
+  "copy_started_at": "2026-09-07T11:01:31.028988+00:00",
+  "copy_finished_at": "2026-09-07T11:01:33.800191+00:00",
+  "metadata_verification_started_at": "2026-09-07T11:02:45.332223+00:00",
+  "metadata_verification_finished_at": "2026-09-07T11:02:47.150882+00:00",
+  "metadata": "Source SHA256, ownership, mode and file mtimes preserved; matching existing files are never replaced. Ninja dependency timestamps retained.",
+  "gpu_allocated_for_copy": false,
+  "copy_pods_deleted": true,
+  "source_pvc_retained": true,
+  "weights_copied": false,
+  "weight_scope": "Exact Preview2 checkpoint and CCD are image-baked, not part of this compiler cache.",
+  "production_observation": {
+    "pod": "openfold3-hot-h100-reserved-8x-746bf5bccd-n85v9",
+    "pod_uid": "d87929a5-b239-4c24-b8f4-61881d1579e2",
+    "container_started_at": "2026-09-07T11:05:25Z",
+    "source_process_started_at": "2026-09-07T11:05:25.122476+00:00",
+    "source_model_ready_at": "2026-09-07T11:05:56.934284+00:00",
+    "pid1_cache_path_verified": true,
+    "boundary": "One production readiness observation after copy; not the three-run startup cohort or public acceptance. OS page cache uncontrolled."
+  }
+}

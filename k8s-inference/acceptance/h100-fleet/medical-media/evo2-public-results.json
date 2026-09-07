@@ -1,0 +1,144 @@
+{
+  "attempts": [
+    {
+      "model": "evo2-40b",
+      "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+      "requests": [
+        {
+          "completed_at": "2026-09-07T11:04:26.688Z",
+          "duration_seconds": 2.5227558026090264,
+          "operation": {
+            "attempt": 1,
+            "cold_start_seconds": 0.22227,
+            "estimated_gpu_seconds": 7200,
+            "id": "ca06db31-d6a7-4555-aa20-bb55c7207d3e",
+            "status": "succeeded"
+          },
+          "request_sha256": "b0d734cf2a9ce28f9b3407e6e4a9838749fe4c98a171740f0792405a7e178df9",
+          "response_bytes": 312,
+          "response_sha256": "153b882f7d9a4efc2d0c2852c04c191ef9a2d42973f279741851077f9df806f2",
+          "runtime": {
+            "expected_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+            "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+            "namespace": "fs2-models",
+            "pod": "evo2-40b-b47745ccb-mbl2t",
+            "pod_uid": "bfcc8307-9a56-4136-9d55-842263f18496",
+            "route_revision": "dynamic:sha256:520736f19ffe47314f91f20e7bb7c13f7bc0761c240ed39400239c3df51871b4",
+            "runtime_image_ids": [
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5"
+            ]
+          },
+          "started_at": "2026-09-07T11:04:24.166Z"
+        },
+        {
+          "completed_at": "2026-09-07T11:04:30.661Z",
+          "duration_seconds": 2.51903008390218,
+          "operation": {
+            "attempt": 1,
+            "cold_start_seconds": 0.322169,
+            "estimated_gpu_seconds": 7200,
+            "id": "1aa07b2e-6a8d-4d4f-8ea3-bad9fbe87c16",
+            "status": "succeeded"
+          },
+          "request_sha256": "c3a7e2511cc1b7cab666fff2f854bcda108c8c8e6e8f6f0c37866fbf17de0ab8",
+          "response_bytes": 315,
+          "response_sha256": "5546e528f3cc73d87c960410e75c4e6c00ff28788fe9006a9eb261b5f4907564",
+          "runtime": {
+            "expected_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+            "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+            "namespace": "fs2-models",
+            "pod": "evo2-40b-b47745ccb-mbl2t",
+            "pod_uid": "bfcc8307-9a56-4136-9d55-842263f18496",
+            "route_revision": "dynamic:sha256:520736f19ffe47314f91f20e7bb7c13f7bc0761c240ed39400239c3df51871b4",
+            "runtime_image_ids": [
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5"
+            ]
+          },
+          "started_at": "2026-09-07T11:04:28.142Z"
+        }
+      ],
+      "route_revision": "dynamic:sha256:520736f19ffe47314f91f20e7bb7c13f7bc0761c240ed39400239c3df51871b4",
+      "status": "PASS",
+      "surface": "http",
+      "semantic_status": "PASS"
+    },
+    {
+      "model": "evo2-40b",
+      "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+      "requests": [
+        {
+          "completed_at": "2026-09-07T11:04:38.199Z",
+          "duration_seconds": 4.856498028151691,
+          "operation": {
+            "attempt": 1,
+            "cold_start_seconds": 0.230925,
+            "estimated_gpu_seconds": 7200,
+            "id": "cf1feee8-12d1-4ba4-8a30-8575f9a7d767",
+            "status": "succeeded"
+          },
+          "request_sha256": "b0d734cf2a9ce28f9b3407e6e4a9838749fe4c98a171740f0792405a7e178df9",
+          "response_bytes": 318,
+          "response_sha256": "8bd0aea5e632c11d00b2ab42ca163f35d1e30e12da6a7fad57ce0eddf15268fe",
+          "runtime": {
+            "expected_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+            "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+            "namespace": "fs2-models",
+            "pod": "evo2-40b-b47745ccb-mbl2t",
+            "pod_uid": "bfcc8307-9a56-4136-9d55-842263f18496",
+            "route_revision": "dynamic:sha256:520736f19ffe47314f91f20e7bb7c13f7bc0761c240ed39400239c3df51871b4",
+            "runtime_image_ids": [
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5"
+            ]
+          },
+          "started_at": "2026-09-07T11:04:33.343Z"
+        },
+        {
+          "completed_at": "2026-09-07T11:04:43.486Z",
+          "duration_seconds": 3.72281695343554,
+          "operation": {
+            "attempt": 1,
+            "cold_start_seconds": 0.188686,
+            "estimated_gpu_seconds": 7200,
+            "id": "996ac6b8-da7d-4260-a476-c0f3f1f3cc7a",
+            "status": "succeeded"
+          },
+          "request_sha256": "c3a7e2511cc1b7cab666fff2f854bcda108c8c8e6e8f6f0c37866fbf17de0ab8",
+          "response_bytes": 316,
+          "response_sha256": "e678ab9e383c3384488333c239240ef32f16c33e44e79de296a628eaecece93b",
+          "runtime": {
+            "expected_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+            "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+            "namespace": "fs2-models",
+            "pod": "evo2-40b-b47745ccb-mbl2t",
+            "pod_uid": "bfcc8307-9a56-4136-9d55-842263f18496",
+            "route_revision": "dynamic:sha256:520736f19ffe47314f91f20e7bb7c13f7bc0761c240ed39400239c3df51871b4",
+            "runtime_image_ids": [
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+              "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5"
+            ]
+          },
+          "started_at": "2026-09-07T11:04:39.764Z"
+        }
+      ],
+      "route_revision": "dynamic:sha256:520736f19ffe47314f91f20e7bb7c13f7bc0761c240ed39400239c3df51871b4",
+      "status": "PASS",
+      "surface": "mcp",
+      "semantic_status": "PASS"
+    }
+  ],
+  "discovered_route_revisions": {
+    "evo2-40b": "dynamic:sha256:520736f19ffe47314f91f20e7bb7c13f7bc0761c240ed39400239c3df51871b4"
+  },
+  "finished_at": "2026-09-07T11:04:44.898Z",
+  "mcp_tool": "invoke_model",
+  "origin": "https://89.169.99.188",
+  "schema": "fs2-h100-medical-media-public-verification/v1",
+  "started_at": "2026-09-07T11:04:23.485Z",
+  "startup_boundary": "routes already hot; public request-to-validated-result is not cold activation",
+  "status": "PASS",
+  "tls_mode": "verified",
+  "operation_clock_note": "Operation cold_start_seconds is retained telemetry from an already-hot route; it is not process startup or cold activation."
+}

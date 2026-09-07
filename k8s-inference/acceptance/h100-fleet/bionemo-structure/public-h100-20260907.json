@@ -1,0 +1,98 @@
+{
+  "schema": "fs2-h100-bionemo-structure-public-cohort/v1",
+  "status": "PASS",
+  "hardware": "NVIDIA-H100-80GB-HBM3",
+  "scope": "public HTTPS and MCP, two semantic requests per surface",
+  "models": {
+    "molmim": {
+      "source_revision": "9ba9b2c337917fc815ffbd5d99f78d9db7904493",
+      "runtime_image_digest": "sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958",
+      "receipt": "/home/tux/.local/state/fs2-bio-public-20260907-r07/molmim/report.json",
+      "http": "PASS-2-of-2",
+      "mcp": "PASS-2-of-2",
+      "validator_source_sha256": "0d87fd53b554a629b8fb83c5abc79b074220f223ea97f7c1d8802d48e4833bd7"
+    },
+    "genmol": {
+      "source_revision": "2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80",
+      "runtime_image_digest": "sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf",
+      "receipt": "/home/tux/.local/state/fs2-bio-public-20260907-r07/genmol/report.json",
+      "http": "PASS-2-of-2",
+      "mcp": "PASS-2-of-2",
+      "validator_source_sha256": "f85da2029aaa459d687983e5ebeec6c69dffb19a66f34c084409fe2ccc2efad4"
+    },
+    "proteinmpnn": {
+      "source_revision": "8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+      "runtime_image_digest": "sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38",
+      "receipt": "/home/tux/.local/state/fs2-bio-public-20260907-r09/proteinmpnn/report.json",
+      "http": "PASS-2-of-2",
+      "mcp": "PASS-2-of-2",
+      "validator_source_sha256": "2e3c21af0987f4b9c7da2cef3f3e4d210a7b223049f231c24e871e2a553b48d3"
+    },
+    "diffdock": {
+      "source_revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",
+      "runtime_image_digest": "sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7",
+      "receipt": "/home/tux/.local/state/fs2-bio-public-20260907-r09/diffdock/report.json",
+      "http": "PASS-2-of-2",
+      "mcp": "PASS-2-of-2",
+      "validator_source_sha256": "245ae98a98db09c34924cd7a499b99da9eb35742667043aaee3e497c33268008"
+    },
+    "boltz2": {
+      "source_revision": "6fdef46d763fee7fbb83ca5501ccceff43b85607",
+      "runtime_image_digest": "sha256:93d5fae96d87dff930206cf331f170b73f2369067f0b32169e0008f0db320a90",
+      "receipt": "/home/tux/.local/state/fs2-bio-public-20260907-r07/boltz2/report.json",
+      "http": "PASS-2-of-2",
+      "mcp": "PASS-2-of-2",
+      "validator_source_sha256": "4b4e04b62cd8aff2027844f75002012439d7cb5d44f91f4ac514a99abf2217c8"
+    },
+    "msa-search-pdb70": {
+      "source_revision": "8cc5ce367b5638c4306c2d7cfc652dd099a4643f",
+      "runtime_image_digest": "sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85",
+      "receipt": "/home/tux/.local/state/fs2-bio-public-20260907-r08/msa-search-pdb70/report.json",
+      "http": "PASS-2-of-2",
+      "mcp": "PASS-2-of-2",
+      "validator_source_sha256": "20e8951ceaaa1b81e8129d86b787c6bb009cf2e207d55829cf13f4fa9489188b"
+    },
+    "openfold2": {
+      "source_revision": "6344b2a680cbbae20b8afdb7f154228cc5b0cb27",
+      "runtime_image_digest": "sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164",
+      "receipt": "/home/tux/.local/state/fs2-openfold2-public-20260907-r01/report.json",
+      "http": "PASS-2-of-2",
+      "mcp": "PASS-2-of-2",
+      "validator_source_sha256": "66c75652e7f17b35ff569a59cc6a21bc09416329d9fbf30178041aed9006a9ed"
+    }
+  },
+  "negative_attempts": [
+    {
+      "run": "r06",
+      "models": ["molmim", "genmol", "proteinmpnn", "diffdock", "boltz2"],
+      "result": "FAIL",
+      "reason": "acceptance resolver compared the source revision to the dynamic route revision; operations and native responses completed but the identity gate correctly did not promote them"
+    },
+    {
+      "run": "r07",
+      "models": ["proteinmpnn", "diffdock"],
+      "result": "FAIL",
+      "reason": "strict direct-server validator was applied to the native public response shape"
+    },
+    {
+      "run": "r07",
+      "models": ["msa-search-pdb70"],
+      "result": "FAIL",
+      "reason": "acceptance-only helper attempted GPU manifest resolution for the CPU static route"
+    },
+    {
+      "run": "r08",
+      "models": ["proteinmpnn", "diffdock"],
+      "result": "FAIL",
+      "reason": "an envelope-only projection still did not validate the native ProteinMPNN and DiffDock field contracts"
+    },
+    {
+      "run": "r09",
+      "models": ["proteinmpnn", "diffdock"],
+      "result": "PASS",
+      "reason": "pinned native validators, exact operation runtime identity, and canonical 1UBQ requests all passed"
+    }
+  ],
+  "identity_gate": "Every GPU operation binds the exact Pod UID, imageID digest, model-content digest and dynamic route spec digest; the CPU MSA route binds the single Ready Service endpoint and exact image digest.",
+  "redaction": "No bearer token, API key, request body, response body, or Kubernetes Secret is included. Full raw receipts remain mode-private at the recorded local paths."
+}
