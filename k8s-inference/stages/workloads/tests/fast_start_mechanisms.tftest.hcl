@@ -271,6 +271,35 @@ run "deployment_runtime_settings_reach_gpu_requests_and_cache_paths" {
   }
 }
 
+run "completed_handoff_does_not_repeat_for_new_templates" {
+  command = plan
+  variables {
+    model_controller = merge(var.model_controller, {
+      fresh_install                 = false
+      handoff_receipt               = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      existing_controller_ownership = true
+    })
+  }
+  plan_options { target = [terraform_data.model_controller_contract] }
+  assert {
+    condition     = terraform_data.model_controller_contract.input.accepted_handoff_receipt == var.model_controller.handoff_receipt
+    error_message = "The original accepted handoff must persist across model/template changes."
+  }
+}
+
+run "initial_handoff_still_requires_the_matching_receipt" {
+  command = plan
+  variables {
+    model_controller = merge(var.model_controller, {
+      fresh_install                 = false
+      handoff_receipt               = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      existing_controller_ownership = false
+    })
+  }
+  plan_options { target = [terraform_data.model_controller_contract] }
+  expect_failures = [terraform_data.model_controller_contract]
+}
+
 run "declared_mechanisms_reach_the_model_qualification" {
   command = plan
 

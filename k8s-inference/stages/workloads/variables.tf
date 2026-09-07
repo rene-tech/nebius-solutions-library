@@ -906,12 +906,15 @@ variable "fast_start_claims" {
 variable "model_controller" {
   description = "Feature-gated dynamic ModelDeployment controller. Internal envelopes and renderer bundles are derived from the selected catalog, effective accelerator pools, queue, tenant, images, and scaling inputs."
   type = object({
-    enabled                                    = bool
-    writes_enabled                             = bool
-    workload_owner                             = string
-    bootstrap_model_ids                        = set(string)
-    fresh_install                              = bool
-    handoff_receipt                            = optional(string)
+    enabled             = bool
+    writes_enabled      = bool
+    workload_owner      = string
+    bootstrap_model_ids = set(string)
+    fresh_install       = bool
+    handoff_receipt     = optional(string)
+    # Derived by inference-stack from this run's accepted workloads state.
+    # Not a customer switch: initial legacy migration still uses its receipt.
+    existing_controller_ownership              = optional(bool, false)
     fast_start_evidence_file                   = optional(string)
     fast_start_environment_qualifications_file = optional(string)
     fast_start_measurement_contracts_file      = optional(string)

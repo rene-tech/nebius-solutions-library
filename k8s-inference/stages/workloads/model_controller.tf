@@ -1283,6 +1283,7 @@ resource "terraform_data" "model_controller_contract" {
     renderer_bundles_sha256  = sha256(local.model_controller_bundles_json)
     bootstrap_model_ids      = sort(tolist(var.model_controller.bootstrap_model_ids))
     expected_handoff_receipt = local.model_controller_expected_handoff_receipt
+    accepted_handoff_receipt = var.model_controller.handoff_receipt
     modelexpress_resources   = local.modelexpress_resource_counts
   }
 
@@ -1346,6 +1347,7 @@ resource "terraform_data" "model_controller_contract" {
       condition = (
         var.model_controller.workload_owner != "controller" ||
         var.model_controller.fresh_install ||
+        var.model_controller.existing_controller_ownership ||
         var.model_controller.handoff_receipt == local.model_controller_expected_handoff_receipt
       )
       error_message = "An existing static deployment must first apply workload_owner=released and then copy its dynamic_model_handoff_receipt output into deployment.dynamic_models.handoff_receipt."

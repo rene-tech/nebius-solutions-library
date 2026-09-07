@@ -247,6 +247,41 @@ def regional_dynamic(run_root: Path) -> dict:
 
 
 class InferenceStackTests(unittest.TestCase):
+    def test_completed_model_handoff_survives_catalog_additions(self) -> None:
+        def resource(name, value):
+            return {"mode": "managed", "type": "terraform_data", "name": name,
+                    "instances": [{"attributes": {"input": {"value": value}}}]}
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
+            controller = {"workload_owner": "controller", "expected_handoff_receipt": "receipt-original"}
+            state = {"resources": [resource("cluster_contract", {"cluster_id": "cluster-test"}),
+                                   resource("model_controller_contract", controller)]}
+            path = root / "workloads.tfstate"
+
+            def save():
+                path.write_text(json.dumps(state))
+
+            save()
+            self.assertTrue(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
+            self.assertFalse(STACK.existing_controller_ownership(root, "wrong-cluster", "receipt-original"))
+            self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "wrong-receipt"))
+            controller.update(accepted_handoff_receipt="receipt-original", expected_handoff_receipt="new-model-template")
+            save()
+            self.assertTrue(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
+            state["resources"].append({"mode": "managed", "type": "kubernetes_manifest", "name": "model",
+                                       "instances": [{"attributes": {"manifest": {"value": {"kind": "PersistentVolumeClaim"}}}}]})
+            save()
+            self.assertTrue(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
+            state["resources"][-1]["instances"][0]["attributes"]["manifest"]["value"]["kind"] = "Deployment"
+            save()
+            self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
+            state["resources"].pop()
+            controller["workload_owner"] = "terraform"
+            save()
+            self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
+
     def test_workloads_plan_refuses_execution_map_drift_before_terraform(self) -> None:
         configuration = contract()
         expected_map = json.loads(

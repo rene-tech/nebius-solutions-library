@@ -40,3 +40,19 @@ H100 restoration scope is [24 model/profile IDs](../acceptance/h100-fleet/expect
 with GLM explicitly excluded. The [campaign record](../acceptance/h100-fleet/README.md)
 explains the earlier fleet migration gap and current work; it does not claim
 completion before public inference and startup tests pass.
+
+## Deployment settings
+
+Select serving IDs in `deployment.models.enabled` with `selection = "explicit"`.
+Use `image_overrides` for a qualified runtime and `pool_overrides` for placement.
+An optional `runtime_overrides` entry can set `gpu_count` (for example, a model
+requiring multiple smaller GPUs) and `compile_cache_abi` for an exactly measured
+compiler cache. GPU count propagates to requests, limits, placement, scaling
+and accounting; it does not claim that an untested GPU/runtime combination works.
+Otherwise compiler cache paths use the selected accelerator/driver profile.
+
+For controller-owned deployments, add the model to
+`deployment.dynamic_models.bootstrap_model_ids`, or create it through live
+model configuration after its runtime is qualified. A completed ownership
+handoff is retained across later catalog additions and template updates;
+operators should not release working deployments again for each new model.

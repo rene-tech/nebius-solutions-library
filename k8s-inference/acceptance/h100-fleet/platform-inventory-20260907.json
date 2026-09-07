@@ -1,0 +1,22 @@
+{
+  "schema": "fs2-serve.nebius.ai/fleet-inventory-ui-acceptance/v1",
+  "observed_date": "2026-09-07",
+  "endpoint": "https://89.169.99.188",
+  "application_source_commit": "b65af3327cb7177e0ab42a830074dc221f77bc44",
+  "control_plane_image_digest": "sha256:d405f2e0522c999c6be4212ffa5f6b1c3f2018e4b75953102aa713546ff8547b",
+  "admin_console_image_digest": "sha256:71efc33ac3f3d48f77be78c2fe7b96126df0d8351d75d4f7dd174cd6b08da943",
+  "checks": {
+    "tls_verified": true,
+    "admin_session_post_status": 200,
+    "model_inventory_get_status": 200,
+    "api_session_logout_status": 204,
+    "known_models_including_excluded_glm": 25,
+    "configured_before_restore_cohort": 12,
+    "missing_before_restore_cohort_including_excluded_glm": 13,
+    "scientific_projection_available": true,
+    "browser_authenticated_inventory_rendered": true,
+    "browser_search_protenix_showed_qualified_batch_profile": true,
+    "browser_missing_only_filter_count": 13
+  },
+  "boundary": "Inventory/API/UI rollout only. Missing models remain explicitly missing; this receipt is not full-fleet or GPU snapshot acceptance. Three restored media routes are integrated separately after this observation."
+}

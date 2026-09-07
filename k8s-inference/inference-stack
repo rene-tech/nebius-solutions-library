@@ -1616,6 +1616,52 @@ def infrastructure_outputs(
     }
 
 
+def existing_controller_ownership(
+    run_root: Path, cluster_id: str, handoff_receipt: str | None
+) -> bool:
+    """Recognize a completed handoff without repeating it for every new model.
+
+    The initial receipt still proves the transition. Later model/template
+    changes do not invalidate that transition when the same accepted state
+    already has a single controller owner and no legacy serving objects.
+    """
+    state_path = run_root / "workloads.tfstate"
+    if not handoff_receipt or state_path.is_symlink() or not state_path.is_file():
+        return False
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        resources = state["resources"]
+        inputs = {
+            resource["name"]: resource["instances"][0]["attributes"]["input"]["value"]
+            for resource in resources
+            if resource.get("mode") == "managed"
+            and resource.get("type") == "terraform_data"
+            and not resource.get("module")
+            and resource.get("name") in {"cluster_contract", "model_controller_contract"}
+        }
+        controller = inputs["model_controller_contract"]
+        accepted = controller.get("accepted_handoff_receipt") or controller.get("expected_handoff_receipt")
+        if (
+            inputs["cluster_contract"]["cluster_id"] != cluster_id
+            or controller.get("workload_owner") != "controller"
+            or accepted != handoff_receipt
+        ):
+            return False
+        for resource in resources:
+            if resource.get("mode") != "managed" or resource.get("type") != "kubernetes_manifest":
+                continue
+            if resource.get("name") == "model_scaler" and resource.get("instances"):
+                return False
+            if resource.get("name") == "model":
+                for instance in resource.get("instances", []):
+                    manifest = instance["attributes"]["manifest"]["value"]
+                    if manifest.get("kind") in {"Deployment", "Service", "ServiceAccount", "ConfigMap"}:
+                        return False
+        return True
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        return False
+
+
 def write_downstream_variables(
     run_root: Path,
     contract: Mapping[str, Any],
@@ -1642,6 +1688,14 @@ def write_downstream_variables(
         "nebius_profile": dynamic.get("nebius_profile", "sandbox"),
         "public_edge_contract": dynamic["public_edge_contract"],
     }
+    controller = workloads.get("model_controller")
+    if isinstance(controller, Mapping):
+        workloads["model_controller"] = {
+            **controller,
+            "existing_controller_ownership": existing_controller_ownership(
+                run_root, dynamic["cluster_id"], controller.get("handoff_receipt")
+            ),
+        }
     reference_data = workloads.get("reference_data")
     if isinstance(reference_data, Mapping):
         enabled = reference_data.get("enabled") is True
