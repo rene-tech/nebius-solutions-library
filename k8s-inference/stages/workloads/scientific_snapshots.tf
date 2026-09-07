@@ -6,22 +6,39 @@ locals {
   scientific_snapshot_enabled = (
     var.scientific_batch.enabled && length(local.scientific_snapshot_bundles) > 0
   )
+  # Most captured helpers live together. A model-owned wrapper can retain its
+  # canonical source location instead of maintaining a duplicate snapshot copy.
+  # Add such exceptions here when qualifying another scientific stage adapter.
+  scientific_snapshot_source_paths = {
+    "run_esmfold2.py" = "${local.fs2_root}/models/cancer-immunotherapy/images/structure-secondary/run_esmfold2.py"
+  }
+  scientific_snapshot_cli_paths = merge(local.scientific_snapshot_source_paths, {
+    protenix = "${local.fs2_root}/models/scientific-snapshot/protenix_cli_proxy.py"
+  })
   scientific_snapshot_sources = {
     for id, bundle in local.scientific_snapshot_bundles : bundle.source_configmap => {
       for filename, digest in bundle.source_sha256 : filename => file(
-        "${local.fs2_root}/models/scientific-snapshot/${filename}"
+        lookup(local.scientific_snapshot_source_paths, filename, "${local.fs2_root}/models/scientific-snapshot/${filename}")
       )
     }...
   }
   scientific_snapshot_cli_sources = {
     for id, bundle in local.scientific_snapshot_bundles : bundle.cli_configmap => {
-      (bundle.cli_key) = file("${local.fs2_root}/models/scientific-snapshot/protenix_cli_proxy.py")
+      (bundle.cli_key) = file(lookup(
+        local.scientific_snapshot_cli_paths, bundle.cli_key,
+        "${local.fs2_root}/models/scientific-snapshot/${bundle.cli_key}"
+      ))
     }...
   }
-  scientific_snapshot_configmaps = merge(
-    { for name, sources in local.scientific_snapshot_sources : name => sources[0] },
-    { for name, sources in local.scientific_snapshot_cli_sources : name => sources[0] },
-  )
+  # Several independently qualified models may share immutable helpers, and
+  # one ConfigMap may carry both the server sources and its CLI overlay.
+  scientific_snapshot_configmaps = {
+    for name in setunion(toset(keys(local.scientific_snapshot_sources)), toset(keys(local.scientific_snapshot_cli_sources))) :
+    name => merge(concat(
+      try(local.scientific_snapshot_sources[name], []),
+      try(local.scientific_snapshot_cli_sources[name], []),
+    )...)
+  }
   scientific_snapshot_adoption = (
     local.scientific_snapshot_enabled && var.scientific_batch.gpu_snapshots.adopt_existing
   )
@@ -66,9 +83,15 @@ resource "kubernetes_config_map_v1" "scientific_snapshot_sources" {
         for bundle in values(local.scientific_snapshot_bundles) : [
           alltrue([
             for filename, digest in bundle.source_sha256 :
-            filesha256("${local.fs2_root}/models/scientific-snapshot/${filename}") == digest
+            filesha256(lookup(
+              local.scientific_snapshot_source_paths, filename,
+              "${local.fs2_root}/models/scientific-snapshot/${filename}"
+            )) == digest
           ]),
-          filesha256("${local.fs2_root}/models/scientific-snapshot/protenix_cli_proxy.py") == bundle.cli_sha256,
+          filesha256(lookup(
+            local.scientific_snapshot_cli_paths, bundle.cli_key,
+            "${local.fs2_root}/models/scientific-snapshot/${bundle.cli_key}"
+          )) == bundle.cli_sha256,
         ]
       ]))
       error_message = "Snapshot source files must match the bytes used to qualify the captured bundle."

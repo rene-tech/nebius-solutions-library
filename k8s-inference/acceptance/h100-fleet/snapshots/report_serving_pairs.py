@@ -25,7 +25,7 @@ def project(receipt):
             raise ValueError("trial must finish successfully and release its Pod")
         requests = run["semantics"]["requests"]
         if len(requests) != 2 or not all(item["passed"] for item in requests):
-            raise ValueError("both unseen inputs must produce valid full output")
+            raise ValueError("both inputs must produce valid full output")
         row = {
             key: run[key]
             for key in (
@@ -83,7 +83,7 @@ def project(receipt):
         "clock_notes": [
             "Every trial starts a fresh Pod; restore cannot pass from HTTP health alone before CUDA completion.",
             "Kubernetes container timestamps have one-second resolution; Pod-create request clock is client monotonic.",
-            "Health polling includes kubectl transport and observation delay. First unseen input may still compile request-specific kernels.",
+            "Health polling includes kubectl transport and observation delay. First input may still compile request-specific kernels.",
             "Both-full-outputs clock includes two sequential inputs and client validation; it is not first-output latency or a pure inference benchmark.",
             "Existing image, weight and shared-filesystem caches are retained. No host cache eviction, node acquisition or reserved-RAM guarantee.",
             "The optional bridge changes only snapshot compatibility plumbing, not model image, precision, GPU memory utilization, output shape or generation steps.",
@@ -95,6 +95,11 @@ def project(receipt):
         result["semantic_scope"] = "original two pinned non-clinical X-rays, also used before capture; not unseen-input evidence"
         result["clock_notes"].append(
             "CXR restores retain the donor's original-fixture prefix/encoder cache state; output latency is not a controlled cold-input inference comparison."
+        )
+    elif receipt["model"] == "genmol":
+        result["semantic_scope"] = (
+            "original two pinned QED and LogP requests, also used before capture; "
+            "not unseen-input evidence"
         )
     return result
 

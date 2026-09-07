@@ -1,0 +1,41 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-snapshot-bundle/v1",
+  "bundle_id": "esmfold2-fast-h100-cuda-criu-20260907-r2",
+  "model_id": "esmfold2-fast",
+  "stage_id": "fold",
+  "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+  "profile_model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+  "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+  "source_configmap": "fs2-fleet-snapshot-esmfold-current-v2",
+  "source_sha256": {
+    "esmfold2_server.py": "c0c6648e0824030e950b3caa53f2b8123219afc99592d57cd393ab9c22c24993",
+    "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+    "run_esmfold2.py": "fea343d1e8d50bc453cd11610ae5d65dceb430c78c5374622b77030e86d787f8",
+    "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c"
+  },
+  "cli_configmap": "fs2-fleet-snapshot-esmfold-current-v2",
+  "cli_sha256": "fea343d1e8d50bc453cd11610ae5d65dceb430c78c5374622b77030e86d787f8",
+  "pvc": "fs2-fleet-snapshots-rwx-r20260907",
+  "bundle_path": "esmfold2-fast-current-r20260907-r2",
+  "manifest_sha256": "f7c514a0a696f423ca62c30a04a8fdd346b1583912c3655da5f80b3a3b08b403",
+  "qualification_receipt_sha256": "b8b066ce530a74319617f109b839cc0ea6926668383673b7d2897445c81247c7",
+  "qualified": true,
+  "python": "/opt/esm/.pixi/envs/gpu/bin/python",
+  "cli_path": "/opt/fs2/run_esmfold2.py",
+  "cli_key": "run_esmfold2.py",
+  "worker_variable": "FS2_ESMFOLD2_WORKER_URL",
+  "compatibility": {
+    "gpu_name": "NVIDIA H100 80GB HBM3",
+    "compute_capability": "9.0",
+    "driver_version": "580.159.04",
+    "kernel_release": "6.11.0-1016-nvidia"
+  },
+  "worker_log": {
+    "sha256": "d7cd493b60b052a0662ccee90082caaa3b005a812b8dacb0e244cf7903f3a386",
+    "bytes": 722,
+    "mode": 420,
+    "uid": 0,
+    "gid": 0
+  }
+}

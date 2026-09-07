@@ -104,10 +104,9 @@ def render(
         item for item in spec["initContainers"] if item["name"] == "snapshot-tools"
     )
     initializer["volumeMounts"].append(mount)
-    initializer["command"][2] = initializer["command"][2].replace('"$1/cache" ', "") + (
-        ' && for part in runtime-cache tmp; do if [ -d "/snapshot-bundle/$part" ]; then '
-        'cp -a "/snapshot-bundle/$part/." "$1/$part/"; fi; done'
-    )
+    from fs2_serve.snapshot_metadata import snapshot_cache_copy_command
+
+    initializer["command"][2] = initializer["command"][2].replace('"$1/cache" ', "") + " && " + snapshot_cache_copy_command()
     if network_configmap and not any(
         volume["name"] == "snapshot-network-source" for volume in spec["volumes"]
     ):

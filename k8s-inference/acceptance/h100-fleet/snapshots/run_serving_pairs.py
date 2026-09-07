@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Matched current-image normal/restore trials with full unseen-input outputs.
+"""Matched current-image normal/restore trials with two full semantic outputs.
 
 The source is an actual private donor Pod receipt. Model image, argv, resource
 limits, localization and adapter remain unchanged. Only the measured optional
@@ -22,7 +22,11 @@ from render_serving_recapture import render as normal
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", choices=("qwen3-8b", "cosmos3-nano", "nv-reason-cxr-3b"), required=True)
+    parser.add_argument(
+        "--model",
+        choices=("qwen3-8b", "cosmos3-nano", "nv-reason-cxr-3b", "genmol"),
+        required=True,
+    )
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--container", required=True)
     parser.add_argument("--source-configmap", required=True)
@@ -35,6 +39,14 @@ def main():
     os.umask(0o077)
     args.directory.mkdir(parents=True, exist_ok=False)
     source = json.loads(args.source.read_bytes())
+    source_runtime = next(
+        item for item in source["spec"]["containers"] if item["name"] == args.container
+    )
+    source_command = source_runtime["command"]
+    source_checkpoint_directory = source_command[source_command.index("--directory") + 1]
+    if not source_checkpoint_directory.startswith("/checkpoints/"):
+        raise ValueError("source snapshot directory is outside /checkpoints")
+    source_run = Path(source_checkpoint_directory).name
     kube = [
         "kubectl",
         "--kubeconfig",
@@ -122,6 +134,9 @@ def main():
                         mode == "normal"
                         or '"mechanism": "cuda-criu-restored"' in logs.stdout
                     ):
+                        health_path = (
+                            "/v1/health/ready" if args.model == "genmol" else "/health"
+                        )
                         probe = call(
                             [
                                 "exec",
@@ -131,7 +146,9 @@ def main():
                                 "--",
                                 "python3",
                                 "-c",
-                                "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2).status)",
+                                "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000"
+                                + health_path
+                                + "',timeout=2).status)",
                             ]
                         )
                         if probe.returncode == 0 and probe.stdout.strip() == "200":
@@ -176,6 +193,26 @@ def main():
                         capture_output=True, text=True, check=True, timeout=900,
                     )
                     row["semantics"] = json.loads(validation.stdout)
+                elif args.model == "genmol":
+                    validation = subprocess.run(
+                        [
+                            sys.executable,
+                            str(Path(__file__).with_name("validate_genmol.py")),
+                            "--kubeconfig",
+                            args.kubeconfig,
+                            "--pod",
+                            active,
+                            "--container",
+                            args.container,
+                            "--output",
+                            str(args.directory / active),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                        timeout=1300,
+                    )
+                    row["semantics"] = json.loads(validation.stdout)
                 else:
                     validation = subprocess.run(
                         [
@@ -201,6 +238,9 @@ def main():
                 ).isoformat()
                 if not row["semantics"]["passed"]:
                     raise RuntimeError("full semantic model output failed")
+                # The snapshot PVC contains retained bundles for many models.
+                # Capture only this run's worker log so evidence from another
+                # model can never be mistaken for the measured runtime.
                 (args.directory / f"{active}-worker.log").write_text(
                     call(
                         [
@@ -211,7 +251,8 @@ def main():
                             "--",
                             "sh",
                             "-c",
-                            'for p in /checkpoints/*/worker.log; do if [ -f "$p" ]; then tail -n 150 "$p"; fi; done',
+                            f"tail -n 150 /checkpoints/"
+                            f"{suffix if mode == 'normal' else source_run}/worker.log",
                         ]
                     ).stdout
                 )

@@ -17,7 +17,12 @@ from typing import Any, Literal
 from pydantic import Field, model_validator
 
 from .models import StrictModel
-from .snapshot_metadata import SnapshotWorkerLog, prepare_worker_log_shadow, preserve_shared_snapshot_metadata
+from .snapshot_metadata import (
+    SnapshotWorkerLog,
+    prepare_worker_log_shadow,
+    preserve_shared_snapshot_metadata,
+    snapshot_cache_copy_command,
+)
 
 CAPTURED_TMP_PATH = "/tmp"  # noqa: S108 - captured per-Pod emptyDir mount, never host tmp
 
@@ -46,6 +51,11 @@ class ServingSnapshotBundle(StrictModel):
     captured_pod_ip: str
     image_entrypoint: list[str] = Field(min_length=1, max_length=16)
     runtime_command: list[str] = Field(min_length=1, max_length=128)
+    fallback_command_prefix: list[str] = Field(
+        default_factory=lambda: ["python3", "/snapshot-source/serving_launcher.py"],
+        min_length=2,
+        max_length=16,
+    )
     worker_log: SnapshotWorkerLog | None = None
 
     @model_validator(mode="after")
@@ -59,7 +69,13 @@ class ServingSnapshotBundle(StrictModel):
             "sitecustomize.py",
             "supervisor.py",
         }
-        if set(self.source_sha256) != expected_sources:
+        source_names = set(self.source_sha256)
+        working_directory_source = "working_directory_launcher.py"
+        allowed_source_sets = (
+            expected_sources,
+            expected_sources | {working_directory_source},
+        )
+        if source_names not in allowed_source_sets:
             raise ValueError("serving snapshot requires the captured source set")
         if any(re.fullmatch(r"[a-f0-9]{64}", digest) is None for digest in self.source_sha256.values()):
             raise ValueError("serving snapshot source digests differ")
@@ -67,6 +83,27 @@ class ServingSnapshotBundle(StrictModel):
             raise ValueError("serving snapshot must state GPU/driver/kernel compatibility")
         if any(not value for value in self.compatibility.values()):
             raise ValueError("serving snapshot compatibility cannot be empty")
+        default_prefix = ["python3", "/snapshot-source/serving_launcher.py"]
+        prefix = self.fallback_command_prefix
+        uses_working_directory_launcher = (
+            len(prefix) == 9
+            and prefix[0:2]
+            == ["python3", "/snapshot-source/working_directory_launcher.py"]
+            and prefix[2] == "--directory"
+            and PurePosixPath(prefix[3]).is_absolute()
+            and ".." not in PurePosixPath(prefix[3]).parts
+            and prefix[4] == "--uid"
+            and prefix[5].isdigit()
+            and int(prefix[5]) > 0
+            and prefix[6] == "--gid"
+            and prefix[7].isdigit()
+            and int(prefix[7]) > 0
+            and prefix[8] == "--"
+        )
+        if prefix != default_prefix and not uses_working_directory_launcher:
+            raise ValueError("serving snapshot fallback launcher differs")
+        if (working_directory_source in source_names) != uses_working_directory_launcher:
+            raise ValueError("serving snapshot working-directory source differs from fallback launcher")
         path = PurePosixPath(self.bundle_path)
         if path.is_absolute() or path.as_posix() != self.bundle_path or any(part in {".", ".."} for part in path.parts):
             raise ValueError("serving snapshot requires a contained bundle path")
@@ -104,8 +141,7 @@ def configure_serving_snapshot(
         "--allow-device-remap",
         "restore",
         "--",
-        "python3",
-        "/snapshot-source/serving_launcher.py",
+        *config.fallback_command_prefix,
         *original,
     ]
     runtime.pop("args", None)
@@ -181,8 +217,7 @@ def configure_serving_snapshot(
                 "cp -L /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libm.so.6 "
                 "/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /tools/lib/ && "
                 'mkdir -p "$1/runtime-cache" "$1/tmp" && '
-                'for part in runtime-cache tmp; do if [ -d "/snapshot-bundle/$part" ]; then '
-                'cp -a "/snapshot-bundle/$part/." "$1/$part/"; fi; done && '
+                + snapshot_cache_copy_command() + ' && '
                 "mkdir -p /tools/usr/sbin /tools/usr/lib/x86_64-linux-gnu && "
                 "cp -L /usr/sbin/xtables-nft-multi /tools/usr/sbin/ && "
                 "cp -L /usr/lib/x86_64-linux-gnu/libxtables.so.12 /usr/lib/x86_64-linux-gnu/libmnl.so.0 "

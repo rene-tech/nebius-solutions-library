@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import json
+from pathlib import Path
 
 import pytest
 from test_model_deployment import digest, envelope, model_spec, render_context, renderer
@@ -17,6 +19,8 @@ from fs2_serve.model_deployment import (
 )
 from fs2_serve.model_deployment_controller import ControllerFiles
 from fs2_serve.serving_snapshot import ServingSnapshotBundle
+
+SOLUTION_ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_snapshot_registry_accepts_future_model_ids_without_code_changes():
@@ -215,3 +219,64 @@ def test_normal_loading_ignores_available_optional_bundle():
         source, context
     )
     assert with_bundle == without_bundle
+
+
+def test_working_directory_fallback_is_exactly_bound_to_its_captured_source():
+    source, infrastructure, bundle, config, context = fixture()
+    payload = config.model_dump(by_alias=True)
+    payload["source_sha256"] = {
+        **payload["source_sha256"],
+        "working_directory_launcher.py": "6" * 64,
+    }
+    payload["fallback_command_prefix"] = [
+        "python3",
+        "/snapshot-source/working_directory_launcher.py",
+        "--directory",
+        "/opt/fs2",
+        "--uid",
+        "1000",
+        "--gid",
+        "1000",
+        "--",
+    ]
+    config = ServingSnapshotBundle.model_validate(payload)
+    infrastructure.qualifications[source.model_ref].gpu_snapshot_bundles = {
+        config.bundle_id: config
+    }
+    plan = ControllerFiles(
+        infrastructure_envelope=infrastructure, bundles=[bundle]
+    ).renderer().render(source, context)
+    workload = next(item.manifest for item in plan.resources if item.kind == "Deployment")
+    command = workload["spec"]["template"]["spec"]["containers"][0]["command"]
+    separator = command.index("--")
+    assert command[separator + 1 : separator + 10] == config.fallback_command_prefix
+    assert command[separator + 10 :] == config.runtime_command
+
+    missing_source = {**payload, "source_sha256": fixture()[3].source_sha256}
+    with pytest.raises(ValueError, match="working-directory source"):
+        ServingSnapshotBundle.model_validate(missing_source)
+    unused_source = {**payload, "fallback_command_prefix": ["python3", "/snapshot-source/serving_launcher.py"]}
+    with pytest.raises(ValueError, match="working-directory source"):
+        ServingSnapshotBundle.model_validate(unused_source)
+
+
+def test_published_genmol_bundle_uses_the_qualified_working_directory_launcher():
+    payload = json.loads(
+        (
+            SOLUTION_ROOT
+            / "acceptance/h100-fleet/snapshots/genmol-bundle.json"
+        ).read_bytes()
+    )
+    config = ServingSnapshotBundle.model_validate(payload)
+    assert config.model_ref == "genmol"
+    assert config.fallback_command_prefix == [
+        "python3",
+        "/snapshot-source/working_directory_launcher.py",
+        "--directory",
+        "/opt/fs2",
+        "--uid",
+        "1000",
+        "--gid",
+        "1000",
+        "--",
+    ]

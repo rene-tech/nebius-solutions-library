@@ -26,9 +26,10 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--case", type=Path, action="append", required=True)
     parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--resume", action="store_true", help="Keep completed trials and retain failed attempts separately")
     args = parser.parse_args()
     os.umask(0o077)
-    args.directory.mkdir(parents=True, exist_ok=False)
+    args.directory.mkdir(parents=True, exist_ok=args.resume)
     source = json.loads(args.source.read_bytes())
     config = json.loads(args.config.read_bytes())
     kube = [
@@ -45,6 +46,14 @@ def main():
         "runs": [],
         "status": "running",
     }
+    if args.resume:
+        receipt = json.loads((args.directory / "receipt.json").read_bytes())
+        unfinished = [row for row in receipt["runs"] if row.get("status") != "passed"]
+        for row in unfinished:
+            row["status"] = "failed"
+        receipt.setdefault("failed_attempts", []).extend(unfinished)
+        receipt["runs"] = [row for row in receipt["runs"] if row.get("status") == "passed"]
+        receipt["status"] = "running"
     active = None
 
     def call(command, *, payload=None, check=True):
@@ -63,7 +72,14 @@ def main():
     try:
         for repetition in range(1, args.repetitions + 1):
             for mode in ("normal", "restore"):
-                active = f"fs2-snap-protenix-{args.directory.name}-{repetition}-{mode}"
+                if any(row["repetition"] == repetition and row["mode"] == mode
+                       for row in receipt["runs"]):
+                    continue
+                active = f"fs2-snap-{config['model_id']}-{args.directory.name}-{repetition}-{mode}"
+                attempts = sum(row["repetition"] == repetition and row["mode"] == mode
+                               for row in receipt.get("failed_attempts", []))
+                if attempts:
+                    active += f"-a{attempts + 1}"
                 local = {**config, "name": active}
                 pod = scientific_restore(source, local)
                 runtime = next(
@@ -77,7 +93,7 @@ def main():
                         entrypoint_json="[]",
                         asyncio_loop=False,
                         python=config["python"],
-                        run=f"protenix-{args.directory.name}-normal-{repetition}",
+                        run=f"{config['model_id']}-{args.directory.name}-normal-{repetition}",
                         fallback="fail",
                         mode="donor",
                         request_uid=10001,
@@ -129,6 +145,8 @@ def main():
                 }
                 receipt["runs"].append(row)
                 call(["create", "-f", "-"], payload=json.dumps(pod))
+                print(json.dumps({"event": "trial_created", "model_id": config["model_id"],
+                                  "repetition": repetition, "mode": mode, "pod": active}), flush=True)
                 health = "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=1).read().decode())"
                 while time.monotonic() - started < 900:
                     observed = json.loads(
@@ -170,6 +188,9 @@ def main():
                 row["container_started_at"] = container["state"]["running"]["startedAt"]
                 row["cases"] = []
                 save()
+                print(json.dumps({"event": "model_ready", "model_id": config["model_id"],
+                                  "repetition": repetition, "mode": mode,
+                                  "creation_to_ready_observed_seconds": row["creation_to_ready_observed_seconds"]}), flush=True)
                 for case in args.case:
                     archive = case / "prepared-workspace.tar"
                     subprocess.run(
@@ -271,8 +292,21 @@ def main():
                     flush=True,
                 )
         receipt["status"] = "passed"
+    except BaseException as error:
+        receipt["status"] = "failed"
+        receipt["error"] = str(error)
+        raise
     finally:
         if active:
+            state = call(["get", "pod", active, "-o", "json"], check=False)
+            (args.directory / f"{active}-failure-pod-private.json").write_text(state.stdout)
+            try:
+                failed_pod = json.loads(state.stdout)
+            except json.JSONDecodeError:
+                failed_pod = {}
+            for container in failed_pod.get("spec", {}).get("initContainers", []):
+                init_log = call(["logs", active, "-c", container["name"], "--timestamps"], check=False)
+                (args.directory / f"{active}-{container['name']}-failure.log").write_text(init_log.stdout + init_log.stderr)
             logs = call(
                 ["logs", active, "-c", "scientific-stage", "--timestamps"], check=False
             )

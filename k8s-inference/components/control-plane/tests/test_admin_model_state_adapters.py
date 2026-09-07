@@ -117,6 +117,17 @@ def _model_state_values() -> dict[str, list[dict[str, Any]]]:
         ],
         "/api/v1/namespaces/fs2-models/pods": [
             _pod("hot-model", ready=True),
+            {
+                **_pod("hot-model", ready=False, failed=True, style="legacy"),
+                "metadata": {
+                    "name": "hot-model-retained-qualification",
+                    "uid": "hot-model-retained-qualification-uid",
+                    "labels": {
+                        "fs2.nebius.ai/model-id": "hot-model",
+                        "app.kubernetes.io/instance": "retained-qualification",
+                    },
+                },
+            },
             _pod("loading-model", ready=False, style="application"),
             _pod("failed-model", ready=False, failed=True),
         ],

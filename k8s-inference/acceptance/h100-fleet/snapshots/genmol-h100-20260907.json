@@ -1,0 +1,405 @@
+{
+  "schema": "fs2-serve.nebius.ai/serving-snapshot-qualification/v1",
+  "model_id": "genmol",
+  "status": "fresh-pod-qualified",
+  "date": "2026-09-07",
+  "mechanism": "cuda-criu",
+  "default": "normal-load",
+  "production_selectable": false,
+  "qualification_scope": "isolated exact-image serving worker; production renderer and fallback rollout are separate",
+  "cache": "existing images and localized weights; shared snapshot filesystem cache retained, no eviction or reserved-RAM guarantee",
+  "ready_boundary": "application HTTP health after supervisor completed CUDA+CRIU restoration; normal trials use the original server health endpoint",
+  "clock_notes": [
+    "Every trial starts a fresh Pod; restore cannot pass from HTTP health alone before CUDA completion.",
+    "Kubernetes container timestamps have one-second resolution; Pod-create request clock is client monotonic.",
+    "Health polling includes kubectl transport and observation delay. First input may still compile request-specific kernels.",
+    "Both-full-outputs clock includes two sequential inputs and client validation; it is not first-output latency or a pure inference benchmark.",
+    "Existing image, weight and shared-filesystem caches are retained. No host cache eviction, node acquisition or reserved-RAM guarantee.",
+    "The optional bridge changes only snapshot compatibility plumbing, not model image, precision, GPU memory utilization, output shape or generation steps."
+  ],
+  "statistics": {
+    "normal": {
+      "pod_create_request_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 17.424289722926915,
+        "min_seconds": 17.40805379115045,
+        "max_seconds": 65.55817338451743
+      },
+      "container_start_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 12.198096,
+        "min_seconds": 11.729437,
+        "max_seconds": 14.349146
+      },
+      "container_start_to_both_full_outputs_seconds": {
+        "n": 3,
+        "median_seconds": 29.628242,
+        "min_seconds": 29.163794,
+        "max_seconds": 31.289101
+      }
+    },
+    "restore": {
+      "pod_create_request_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 14.603677311912179,
+        "min_seconds": 14.581139381974936,
+        "max_seconds": 59.197924797423184
+      },
+      "container_start_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 8.653759,
+        "min_seconds": 8.332844,
+        "max_seconds": 9.521446
+      },
+      "container_start_to_both_full_outputs_seconds": {
+        "n": 3,
+        "median_seconds": 25.317403,
+        "min_seconds": 25.099099,
+        "max_seconds": 26.367615
+      }
+    }
+  },
+  "runs": [
+    {
+      "mode": "normal",
+      "repetition": 1,
+      "pod_uid": "47b08017-2a99-46f9-8059-e61374dc9597",
+      "created_request_at": "2026-09-07T11:27:13.790976+00:00",
+      "pod_created_at": "2026-09-07T11:27:15Z",
+      "container_started_at": "2026-09-07T11:28:05Z",
+      "ready_observed_at": "2026-09-07T11:28:19.349146+00:00",
+      "pod_create_request_to_ready_seconds": 65.55817338451743,
+      "both_full_outputs_observed_at": "2026-09-07T11:28:36.289101+00:00",
+      "container_start_to_ready_seconds": 14.349146,
+      "container_start_to_both_full_outputs_seconds": 31.289101,
+      "requests": [
+        {
+          "passed": true,
+          "name": "qed",
+          "input_id": "snapshot-qed-034de111bd",
+          "request_sha256": "050d9d440d6f09573d68b35a0fc26d3119407a6be22896293062752d822cfc3b",
+          "response_sha256": "08b0243aa1b865abfb8db5b96e2ff7e8b221af068a6a906fff9775c8adcf5be9",
+          "elapsed_seconds": 0.327625,
+          "invariant": {
+            "absolute_error": 0.0,
+            "atom_count": 27,
+            "rdkit_score": 0.1459754656495484,
+            "score": 0.1459754656495484,
+            "scoring": "QED",
+            "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCC",
+            "tolerance": 0.02
+          }
+        },
+        {
+          "passed": true,
+          "name": "logp",
+          "input_id": "snapshot-logp-034de111bd",
+          "request_sha256": "c2ee9474d485d56430bdf3b6885c9bb0dfef4130eb080be9559e7eb372a462e1",
+          "response_sha256": "a170f984c3dcb629aa491081b6c67ac0ffb14d82c02e8c6f4326eac48ade07db",
+          "elapsed_seconds": 0.307753,
+          "invariant": {
+            "absolute_error": 0.0,
+            "atom_count": 22,
+            "rdkit_score": 3.640220000000003,
+            "score": 3.640220000000003,
+            "scoring": "LogP",
+            "smiles": "Cc1ccc(C(=O)N[C@@]2(C)CCN(c3cccc(Cl)c3)C2)o1",
+            "tolerance": 0.05
+          }
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "restore",
+      "repetition": 1,
+      "pod_uid": "525ec224-784f-49b3-971e-d9a40f3cf387",
+      "created_request_at": "2026-09-07T11:28:40.323524+00:00",
+      "pod_created_at": "2026-09-07T11:28:42Z",
+      "container_started_at": "2026-09-07T11:29:30Z",
+      "ready_observed_at": "2026-09-07T11:29:39.521446+00:00",
+      "pod_create_request_to_ready_seconds": 59.197924797423184,
+      "both_full_outputs_observed_at": "2026-09-07T11:29:56.367615+00:00",
+      "container_start_to_ready_seconds": 9.521446,
+      "container_start_to_both_full_outputs_seconds": 26.367615,
+      "requests": [
+        {
+          "passed": true,
+          "name": "qed",
+          "input_id": "snapshot-qed-468be3f7eb",
+          "request_sha256": "050d9d440d6f09573d68b35a0fc26d3119407a6be22896293062752d822cfc3b",
+          "response_sha256": "cd75f1a75bf5e33d537b7d02df24e8419fbfa7de8c8a1627a351156bbe0d0913",
+          "elapsed_seconds": 0.222387,
+          "invariant": {
+            "absolute_error": 0.0,
+            "atom_count": 26,
+            "rdkit_score": 0.21742198200330917,
+            "score": 0.21742198200330917,
+            "scoring": "QED",
+            "smiles": "CCCCCCCCCCCCCCCCCCc1cc(O)ccc1P",
+            "tolerance": 0.02
+          }
+        },
+        {
+          "passed": true,
+          "name": "logp",
+          "input_id": "snapshot-logp-468be3f7eb",
+          "request_sha256": "c2ee9474d485d56430bdf3b6885c9bb0dfef4130eb080be9559e7eb372a462e1",
+          "response_sha256": "e3edee7c75278935e52bdc778780a7650021067dd8fc2144017fe86ecb902c4a",
+          "elapsed_seconds": 0.223489,
+          "invariant": {
+            "absolute_error": 0.0,
+            "atom_count": 17,
+            "rdkit_score": 3.9352000000000027,
+            "score": 3.9352000000000027,
+            "scoring": "LogP",
+            "smiles": "CC(C)CCC(C)(C)c1cccc(CCO)c1",
+            "tolerance": 0.05
+          }
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "normal",
+      "repetition": 2,
+      "pod_uid": "6896b6c6-30fb-4f68-8d3b-eeb5821e6acf",
+      "created_request_at": "2026-09-07T11:30:10.305152+00:00",
+      "pod_created_at": "2026-09-07T11:30:12Z",
+      "container_started_at": "2026-09-07T11:30:16Z",
+      "ready_observed_at": "2026-09-07T11:30:27.729437+00:00",
+      "pod_create_request_to_ready_seconds": 17.424289722926915,
+      "both_full_outputs_observed_at": "2026-09-07T11:30:45.163794+00:00",
+      "container_start_to_ready_seconds": 11.729437,
+      "container_start_to_both_full_outputs_seconds": 29.163794,
+      "requests": [
+        {
+          "passed": true,
+          "name": "qed",
+          "input_id": "snapshot-qed-1267fb8d5f",
+          "request_sha256": "050d9d440d6f09573d68b35a0fc26d3119407a6be22896293062752d822cfc3b",
+          "response_sha256": "da4dd7780bf4ceaa974d7b853f83d24b1badeac519dfe0c0b0c6227157f54b79",
+          "elapsed_seconds": 0.426356,
+          "invariant": {
+            "absolute_error": 0.0,
+            "atom_count": 17,
+            "rdkit_score": 0.8676539685013549,
+            "score": 0.8676539685013549,
+            "scoring": "QED",
+            "smiles": "CCNC1CCN(c2ccc(F)cc2)CC1C",
+            "tolerance": 0.02
+          }
+        },
+        {
+          "passed": true,
+          "name": "logp",
+          "input_id": "snapshot-logp-1267fb8d5f",
+          "request_sha256": "c2ee9474d485d56430bdf3b6885c9bb0dfef4130eb080be9559e7eb372a462e1",
+          "response_sha256": "c12e34f8b5df46cf7d5bb084672b0283ef040631dc3d239eab4d7cb9daf02fd6",
+          "elapsed_seconds": 0.358884,
+          "invariant": {
+            "absolute_error": 0.0,
+            "atom_count": 26,
+            "rdkit_score": 2.787720000000001,
+            "score": 2.787720000000001,
+            "scoring": "LogP",
+            "smiles": "Cc1cc(F)ccc1CC(=O)Nc1ccc(C(=O)N2CCOCC2)cc1",
+            "tolerance": 0.05
+          }
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "restore",
+      "repetition": 2,
+      "pod_uid": "186caa30-021e-441e-9f82-921cb52ddcc2",
+      "created_request_at": "2026-09-07T11:30:49.729165+00:00",
+      "pod_created_at": "2026-09-07T11:30:51Z",
+      "container_started_at": "2026-09-07T11:30:56Z",
+      "ready_observed_at": "2026-09-07T11:31:04.332844+00:00",
+      "pod_create_request_to_ready_seconds": 14.603677311912179,
+      "both_full_outputs_observed_at": "2026-09-07T11:31:21.099099+00:00",
+      "container_start_to_ready_seconds": 8.332844,
+      "container_start_to_both_full_outputs_seconds": 25.099099,
+      "requests": [
+        {
+          "passed": true,
+          "name": "qed",
+          "input_id": "snapshot-qed-07f68529dd",
+          "request_sha256": "050d9d440d6f09573d68b35a0fc26d3119407a6be22896293062752d822cfc3b",
+          "response_sha256": "e92e532c1a1d4930d62a531301151c00a50851d10c38a3e270a480c538f2a825",
+          "elapsed_seconds": 0.197884,
+          "invariant": {
+            "absolute_error": 0.0,
+            "atom_count": 26,
+            "rdkit_score": 0.21742198200330917,
+            "score": 0.21742198200330917,
+            "scoring": "QED",
+            "smiles": "CCCCCCCCCCCCCCCCCCc1cc(O)ccc1P",
+            "tolerance": 0.02
+          }
+        },
+        {
+          "passed": true,
+          "name": "logp",
+          "input_id": "snapshot-logp-07f68529dd",
+          "request_sha256": "c2ee9474d485d56430bdf3b6885c9bb0dfef4130eb080be9559e7eb372a462e1",
+          "response_sha256": "d49681a3348d210c25a7c685a7583178a07ccbc6751f354f4efe4e5201bda8bd",
+          "elapsed_seconds": 0.196288,
+          "invariant": {
+            "absolute_error": 0.0,
+            "atom_count": 17,
+            "rdkit_score": 3.9352000000000027,
+            "score": 3.9352000000000027,
+            "scoring": "LogP",
+            "smiles": "CC(C)CCC(C)(C)c1cccc(CCO)c1",
+            "tolerance": 0.05
+          }
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "normal",
+      "repetition": 3,
+      "pod_uid": "f65f936e-ad32-4e1d-9dbb-9c27c50c010a",
+      "created_request_at": "2026-09-07T11:31:24.790050+00:00",
+      "pod_created_at": "2026-09-07T11:31:26Z",
+      "container_started_at": "2026-09-07T11:31:30Z",
+      "ready_observed_at": "2026-09-07T11:31:42.198096+00:00",
+      "pod_create_request_to_ready_seconds": 17.40805379115045,
+      "both_full_outputs_observed_at": "2026-09-07T11:31:59.628242+00:00",
+      "container_start_to_ready_seconds": 12.198096,
+      "container_start_to_both_full_outputs_seconds": 29.628242,
+      "requests": [
+        {
+          "passed": true,
+          "name": "qed",
+          "input_id": "snapshot-qed-6a5aa54a15",
+          "request_sha256": "050d9d440d6f09573d68b35a0fc26d3119407a6be22896293062752d822cfc3b",
+          "response_sha256": "9a14ddd262bac98a023d6d891704c7592f05f1501735499e29b21cab8c2012de",
+          "elapsed_seconds": 0.3851,
+          "invariant": {
+            "absolute_error": 0.0,
+            "atom_count": 12,
+            "rdkit_score": 0.655372872062453,
+            "score": 0.655372872062453,
+            "scoring": "QED",
+            "smiles": "NC(=O)[C@H]1C[C@H]1C1CCOCC1",
+            "tolerance": 0.02
+          }
+        },
+        {
+          "passed": true,
+          "name": "logp",
+          "input_id": "snapshot-logp-6a5aa54a15",
+          "request_sha256": "c2ee9474d485d56430bdf3b6885c9bb0dfef4130eb080be9559e7eb372a462e1",
+          "response_sha256": "f099b27222c2a2689150a51ff244628a1c023fa90a0a31f3fec201482514c75e",
+          "elapsed_seconds": 0.255451,
+          "invariant": {
+            "absolute_error": 0.0,
+            "atom_count": 21,
+            "rdkit_score": 3.261400000000002,
+            "score": 3.261400000000002,
+            "scoring": "LogP",
+            "smiles": "C[C@@H]1CCCN(C(=O)[C@H]2CCC[C@@H](n3cccn3)C2)[C@@H]1C",
+            "tolerance": 0.05
+          }
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "restore",
+      "repetition": 3,
+      "pod_uid": "a8c84df8-a4b7-4165-a837-2d332648dbd5",
+      "created_request_at": "2026-09-07T11:32:04.072624+00:00",
+      "pod_created_at": "2026-09-07T11:32:05Z",
+      "container_started_at": "2026-09-07T11:32:10Z",
+      "ready_observed_at": "2026-09-07T11:32:18.653759+00:00",
+      "pod_create_request_to_ready_seconds": 14.581139381974936,
+      "both_full_outputs_observed_at": "2026-09-07T11:32:35.317403+00:00",
+      "container_start_to_ready_seconds": 8.653759,
+      "container_start_to_both_full_outputs_seconds": 25.317403,
+      "requests": [
+        {
+          "passed": true,
+          "name": "qed",
+          "input_id": "snapshot-qed-6a4528f681",
+          "request_sha256": "050d9d440d6f09573d68b35a0fc26d3119407a6be22896293062752d822cfc3b",
+          "response_sha256": "6e2b788af314c2a896fc8cc95357ba8ddc4493917ef8ec9f2ccb2e42ed282e8c",
+          "elapsed_seconds": 0.21394,
+          "invariant": {
+            "absolute_error": 0.0,
+            "atom_count": 26,
+            "rdkit_score": 0.21742198200330917,
+            "score": 0.21742198200330917,
+            "scoring": "QED",
+            "smiles": "CCCCCCCCCCCCCCCCCCc1cc(O)ccc1P",
+            "tolerance": 0.02
+          }
+        },
+        {
+          "passed": true,
+          "name": "logp",
+          "input_id": "snapshot-logp-6a4528f681",
+          "request_sha256": "c2ee9474d485d56430bdf3b6885c9bb0dfef4130eb080be9559e7eb372a462e1",
+          "response_sha256": "c67e0fe8555eb00ab8aa9c765ed556390b9a0394478160a839aade2effd4ba96",
+          "elapsed_seconds": 0.20332,
+          "invariant": {
+            "absolute_error": 0.0,
+            "atom_count": 17,
+            "rdkit_score": 3.9352000000000027,
+            "score": 3.9352000000000027,
+            "scoring": "LogP",
+            "smiles": "CC(C)CCC(C)(C)c1cccc(CCO)c1",
+            "tolerance": 0.05
+          }
+        }
+      ],
+      "gpu_pod_deleted": true
+    }
+  ],
+  "semantic_scope": "original two pinned QED and LogP requests, also used before capture; not unseen-input evidence",
+  "compatibility": {
+    "generated_cache": [
+      {
+        "bytes": 26961,
+        "path": "matplotlib/fontlist-v3.11.0.json",
+        "sha256": "a2de2e17dccd83f080ad244989bcd4e4b1e0b00432bbc7bc89d9be59a2d0b7f0"
+      }
+    ],
+    "runtime_identity": {
+      "compute_capability": "9.0",
+      "driver_version": "580.159.04",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "gpu_uuid": "GPU-644f23ac-4f00-aea9-7b7d-a57717848200",
+      "kernel_release": "6.11.0-1016-nvidia",
+      "model_revision": "2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80",
+      "runtime_id": "genmol",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf",
+      "snapshot_source_sha256": {
+        "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+        "serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+        "serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+        "serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+        "serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+        "sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+        "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c",
+        "working_directory_launcher.py": "3bd73d58a3278a732170c6501cbc9f2bc7f731966abb7ceae987450d73fe5c1b"
+      },
+      "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
+    },
+    "schema": "fs2-serve.nebius.ai/scientific-process-checkpoint/v1"
+  },
+  "bundle": {
+    "manifest_schema": "captured-content-and-filesystem-metadata/v1",
+    "manifest_sha256": "24256fa84376c40814ef25db41cda7b850c6199c7839c1e6ff97fc8ef76fee32",
+    "bytes": 4704296927,
+    "entry_count": 235,
+    "storage": "existing shared filesystem; read-only captured bundle, private per-Pod writable scratch"
+  },
+  "private_receipt_sha256": "f52d28eb73a7633c273b7f525e302a2f70b95d8f85bd0827a38b14fe2dbbe8b2",
+  "publication_receipt_sha256": "5723f6094013b543de9e167f87a879117189e63e8d175c1ba2b8d3c178e92736"
+}

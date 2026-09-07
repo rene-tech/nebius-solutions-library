@@ -58,19 +58,23 @@ def render(source: dict, args: argparse.Namespace) -> dict:
         *original,
     ]
     runtime.pop("args", None)
+    capabilities = [
+        "SYS_ADMIN",
+        "SYS_PTRACE",
+        "CHECKPOINT_RESTORE",
+        "NET_ADMIN",
+        "SYS_TIME",
+    ]
+    if args.mode == "donor":
+        # CRIU reads every worker rlimit while dumping. A root supervisor
+        # capturing the production uid/gid worker needs CAP_SYS_RESOURCE for
+        # that cross-uid prlimit operation. Restore never needs this capability.
+        capabilities.append("SYS_RESOURCE")
     runtime["securityContext"] = {
         "runAsUser": 0,
         "runAsGroup": 0,
         "runAsNonRoot": False,
-        "capabilities": {
-            "add": [
-                "SYS_ADMIN",
-                "SYS_PTRACE",
-                "CHECKPOINT_RESTORE",
-                "NET_ADMIN",
-                "SYS_TIME",
-            ]
-        },
+        "capabilities": {"add": capabilities},
         "seccompProfile": {"type": "Unconfined"},
         "appArmorProfile": {"type": "Unconfined"},
     }

@@ -18,7 +18,11 @@ import time
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", choices=("qwen3-8b", "cosmos3-nano", "nv-reason-cxr-3b"), required=True)
+    parser.add_argument(
+        "--model",
+        choices=("qwen3-8b", "cosmos3-nano", "nv-reason-cxr-3b", "genmol"),
+        required=True,
+    )
     parser.add_argument("--pod", required=True)
     parser.add_argument("--container", required=True)
     parser.add_argument("--kubeconfig", required=True)
@@ -71,6 +75,9 @@ def main():
                 else '"mechanism": "cuda-criu-restored"'
             )
             if expected_event in logs.stdout:
+                health_path = (
+                    "/v1/health/ready" if args.model == "genmol" else "/health"
+                )
                 probe = call(
                     [
                         "exec",
@@ -80,7 +87,9 @@ def main():
                         "--",
                         "python3",
                         "-c",
-                        "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2).status)",
+                        "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000"
+                        + health_path
+                        + "',timeout=2).status)",
                     ]
                 )
                 if probe.returncode == 0 and probe.stdout.strip() == "200":
@@ -138,6 +147,26 @@ def main():
                 capture_output=True, text=True, check=True, timeout=900,
             )
             (args.directory / "semantics.log").write_text(result.stdout + result.stderr)
+        elif args.model == "genmol":
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("validate_genmol.py")),
+                    "--kubeconfig",
+                    args.kubeconfig,
+                    "--pod",
+                    args.pod,
+                    "--container",
+                    args.container,
+                    "--output",
+                    str(args.directory / "semantics"),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=1300,
+            )
+            (args.directory / "semantics.log").write_text(result.stdout + result.stderr)
         else:
             result = subprocess.run(
                 [
@@ -159,7 +188,11 @@ def main():
             )
             (args.directory / "semantics.log").write_text(result.stdout + result.stderr)
         receipt["status"] = "passed"
-        receipt["original_inputs_passed" if args.model == "nv-reason-cxr-3b" else "unseen_inputs_passed"] = 2
+        receipt[
+            "original_inputs_passed"
+            if args.model in ("nv-reason-cxr-3b", "genmol")
+            else "unseen_inputs_passed"
+        ] = 2
     except Exception as error:
         receipt["status"] = "failed"
         receipt["error"] = str(error)

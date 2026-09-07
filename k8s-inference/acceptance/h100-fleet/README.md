@@ -30,6 +30,17 @@ restore separately. Scaling to zero is allowed only after verification and must
 not remove the model from discovery. Scientific profiles use queued Jobs and
 do not require permanent GPU workers.
 
+The retained startup measurements are split by runtime cohort, not lost with
+temporary Pods:
+
+- [Ten scientific profiles plus Qwen/Cosmos](../scientific-startup/current/current-h100-20260907.md).
+- [Medical/media and Evo2](medical-media/README.md).
+- [Bio/structure per-model measurements](bionemo-structure/fragments/), with
+  exact clocks, repetitions and separately identified acquisition cases.
+- [Standalone OpenFold3 Preview2](openfold3-standalone/README.md).
+- Optional snapshot comparisons live in `snapshots/`; installed matching
+  evidence is also exposed in the admin inventory API and UI.
+
 Root serializes shared Terraform/control-plane changes; parallel workers own
 disjoint runtime directories. No quota/limit increases, B300 changes, host
 driver/MIG changes or unrequested hardening are part of this work. The current

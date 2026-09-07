@@ -15,10 +15,37 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
 
-from ..snapshot_metadata import SnapshotWorkerLog, prepare_worker_log_shadow, preserve_shared_snapshot_metadata
+from ..snapshot_metadata import (
+    SnapshotWorkerLog,
+    prepare_worker_log_shadow,
+    preserve_shared_snapshot_metadata,
+    snapshot_cache_copy_command,
+)
 
 BUNDLE_SCHEMA = "fs2-serve.nebius.ai/scientific-snapshot-bundle/v1"
 CAPTURED_TMP_PATH = "/tmp"  # noqa: S108 - per-Pod emptyDir at the captured runtime path
+
+
+@dataclass(frozen=True, slots=True)
+class _StageSnapshotAdapter:
+    cli: tuple[str, str, str, str]
+    sources: frozenset[str]
+
+
+_ESMFOLD_ADAPTER = _StageSnapshotAdapter(
+    ("/opt/esm/.pixi/envs/gpu/bin/python", "/opt/fs2/run_esmfold2.py", "run_esmfold2.py", "FS2_ESMFOLD2_WORKER_URL"),
+    frozenset({"supervisor.py", "process_checkpoint.py", "esmfold2_server.py", "run_esmfold2.py"}),
+)
+# Adapter support does not qualify an image: each independently captured model
+# still needs a matching immutable registry record and successful receipt.
+_STAGE_SNAPSHOT_ADAPTERS = {
+    ("protenix-v2", "sample-structure"): _StageSnapshotAdapter(
+        ("/opt/protenix-venv/bin/python", "/opt/protenix-venv/bin/protenix", "protenix", "FS2_PROTENIX_WORKER_URL"),
+        frozenset({"supervisor.py", "process_checkpoint.py", "protenix_server.py", "scientific_server.py"}),
+    ),
+    ("esmfold2", "fold"): _ESMFOLD_ADAPTER,
+    ("esmfold2-fast", "fold"): _ESMFOLD_ADAPTER,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +126,8 @@ def validate_bundle(value: Any, bundle_id: str) -> dict[str, Any]:
         raise ValueError("snapshot bundle must name its captured driver/GPU/kernel compatibility")
     if bundle["schema"] != BUNDLE_SCHEMA or bundle["bundle_id"] != bundle_id:
         raise ValueError("scientific snapshot bundle identity differs")
-    if (bundle["model_id"], bundle["stage_id"]) != ("protenix-v2", "sample-structure"):
+    adapter = _STAGE_SNAPSHOT_ADAPTERS.get((bundle["model_id"], bundle["stage_id"]))
+    if adapter is None:
         raise ValueError("snapshot bundle has no qualified scientific stage adapter")
     for field in ("runtime_image", "tools_image"):
         if not isinstance(bundle[field], str) or re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", bundle[field]) is None:
@@ -114,25 +142,22 @@ def validate_bundle(value: Any, bundle_id: str) -> dict[str, Any]:
     sources = bundle["source_sha256"]
     if (
         not isinstance(sources, dict)
-        or set(sources) != {"supervisor.py", "process_checkpoint.py", "protenix_server.py", "scientific_server.py"}
+        or set(sources) != adapter.sources
         or any(
             not isinstance(digest, str) or re.fullmatch(r"[a-f0-9]{64}", digest) is None for digest in sources.values()
         )
     ):
         raise ValueError("snapshot bundle requires the captured source identities")
-    for field in ("source_configmap", "cli_configmap", "pvc", "cli_key"):
+    for field in ("source_configmap", "cli_configmap", "pvc"):
         if not isinstance(bundle[field], str) or re.fullmatch(r"[a-z0-9][a-z0-9.-]{0,252}", bundle[field]) is None:
             raise ValueError("snapshot bundle Kubernetes source identity is invalid")
+    if not isinstance(bundle["cli_key"], str) or re.fullmatch(r"[A-Za-z0-9_.-]{1,253}", bundle["cli_key"]) is None:
+        raise ValueError("snapshot bundle ConfigMap key is invalid")
     path = PurePosixPath(bundle["bundle_path"])
     if path.is_absolute() or path.as_posix() != bundle["bundle_path"] or any(p in {".", ".."} for p in path.parts):
         raise ValueError("snapshot bundle path must be a contained relative path")
-    if (bundle["python"], bundle["cli_path"], bundle["cli_key"], bundle["worker_variable"]) != (
-        "/opt/protenix-venv/bin/python",
-        "/opt/protenix-venv/bin/protenix",
-        "protenix",
-        "FS2_PROTENIX_WORKER_URL",
-    ):
-        raise ValueError("snapshot bundle must preserve the qualified Protenix CLI bridge")
+    if (bundle["python"], bundle["cli_path"], bundle["cli_key"], bundle["worker_variable"]) != adapter.cli:
+        raise ValueError("snapshot bundle must preserve its qualified scientific CLI bridge")
     return bundle
 
 
@@ -166,7 +191,7 @@ def select_startup_policy(
 
 
 def apply_startup_policy(pod: dict[str, Any], policy: StageStartupPolicy, *, request_uid: int) -> dict[str, Any]:
-    """Production form of the measured Protenix restore transform.
+    """Production form of the measured scientific restore transform.
 
     No probe labels, node pinning, scheduler bypass or resource changes are added.
     The supervisor retains its tested ordinary-load fallback and drops identity
@@ -278,8 +303,7 @@ def apply_startup_policy(pod: dict[str, Any], policy: StageStartupPolicy, *, req
                     "/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /tools/lib/ && "
                     'mkdir -p "$1/runtime-cache" "$1/tmp" && '
                     'if [ -n "$2" ]; then chown "$2:$2" "$1/runtime-cache" "$1/tmp"; fi'
-                    ' && for part in runtime-cache tmp; do if [ -d "/snapshot-bundle/$part" ]; then '
-                    'cp -a "/snapshot-bundle/$part/." "$1/$part/"; fi; done'
+                    ' && ' + snapshot_cache_copy_command()
                 ),
                 "snapshot-tools",
                 directory,

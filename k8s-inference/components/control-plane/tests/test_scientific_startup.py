@@ -88,6 +88,32 @@ def test_default_normal_load_is_identity_transform():
     assert apply_startup_policy(pod, StageStartupPolicy(), request_uid=10001) is pod
 
 
+@pytest.mark.parametrize("model_id", ["esmfold2", "esmfold2-fast"])
+def test_esm_adapters_require_independent_exact_bundle_identity(bundle, model_id):
+    # Synthetic contract fixture only: this does not qualify a live capture.
+    bundle.update(
+        model_id=model_id, stage_id="fold", python="/opt/esm/.pixi/envs/gpu/bin/python",
+        cli_path="/opt/fs2/run_esmfold2.py", cli_key="run_esmfold2.py",
+        worker_variable="FS2_ESMFOLD2_WORKER_URL",
+        source_sha256={name: "a" * 64 for name in (
+            "supervisor.py", "process_checkpoint.py", "esmfold2_server.py", "run_esmfold2.py",
+        )},
+    )
+    policy = choose(bundle)
+    assert policy.backend == "cuda-criu"
+    assert json.loads(policy.bundle_json)["model_id"] == model_id
+    other_model = "esmfold2-fast" if model_id == "esmfold2" else "esmfold2"
+    with pytest.raises(ValueError, match="identity"):
+        select_startup_policy(
+            {"backend": "cuda-criu", "bundle_id": bundle["bundle_id"]},
+            {bundle["bundle_id"]: bundle}, model_id=other_model, stage_id="fold",
+            model_revision=bundle["profile_model_revision"], runtime_image=bundle["runtime_image"],
+        )
+    bundle["qualified"] = False
+    with pytest.raises(ValueError, match="qualified"):
+        choose(bundle)
+
+
 def test_complete_committed_execution_map_keeps_normal_qualification_with_registry(tmp_path, bundle):
     profiles = ScientificProfileCatalog.load(CATALOG_ROOT)
     document = json.loads((CATALOG_ROOT / "contracts/scientific-execution-map.json").read_text())

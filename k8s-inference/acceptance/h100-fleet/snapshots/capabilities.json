@@ -105,29 +105,55 @@
     },
     {
       "model_id": "esmfold2",
-      "status": "historical-isolated-proof",
+      "status": "fresh-pod-qualified",
       "selectable": false,
-      "reason": "Prior isolated CUDA+CRIU fresh-Pod and changed-input proofs passed; same-node cached restore was about11.45s but file-cold restore about324.65s. The current shared-storage production option still requires exact bundle/runtime/bridge qualification.",
-      "runtime_image_digest": null,
-      "model_revision": null,
-      "bundle": null,
-      "normal_startup": null,
-      "restore_startup": null,
-      "fresh_pod_restore_passed": false,
-      "distinct_inputs_passed": 0
+      "reason": "Current exact-image ESMFold2 restored across H100 nodes in all three fresh-Pod trials; both original short and ubiquitin wrappers passed with unchanged BF16, loops20 and steps200. Median container-to-ready improved modestly from18.321s to16.110s. First Pod path342.5s included318s scheduling wait, not a slow CUDA restore. Shared caches were retained; historical disk-cold results are separate. Normal loading remains default; availability requires this exact registered bundle.",
+      "runtime_image_digest": "sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
+      "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "bundle": {
+        "id": "esmfold2-h100-cuda-criu-20260907-r2",
+        "sha256": "b23ffd52d39540487fda33f103a04eeb4c25d1f8c66fdc3c8481f08fa62cba88",
+        "qualification_receipt": "esmfold2-h100-20260907.json",
+        "qualification_receipt_sha256": "9b5d23c8f2e00498d74d9fac6cc216891f1fde48e9107fbdef4edbf65e9bdab3"
+      },
+      "normal_startup": {
+        "clock": "container-start-to-CUDA-synchronized-initialization-observed-over-HTTP",
+        "n": 3, "median_seconds": 18.321336, "min_seconds": 17.340322, "max_seconds": 20.087256,
+        "cache": "existing image/shared files; no cache eviction; fresh per-Pod runtime cache"
+      },
+      "restore_startup": {
+        "clock": "container-start-to-completed-CUDA-restore-and-model-health-observed",
+        "n": 3, "median_seconds": 16.109618, "min_seconds": 15.374464, "max_seconds": 21.063109,
+        "cache": "shared filesystem cache retained; no eviction; not reserved RAM; excludes scheduling/init"
+      },
+      "fresh_pod_restore_passed": true,
+      "distinct_inputs_passed": 2
     },
     {
       "model_id": "esmfold2-fast",
-      "status": "not-yet-qualified",
+      "status": "fresh-pod-qualified",
       "selectable": false,
-      "reason": "Not independently snapshot-qualified. This fast execution profile must not inherit the ordinary ESMFold2 snapshot's precision/backend qualification.",
-      "runtime_image_digest": null,
-      "model_revision": null,
-      "bundle": null,
-      "normal_startup": null,
-      "restore_startup": null,
-      "fresh_pod_restore_passed": false,
-      "distinct_inputs_passed": 0
+      "reason": "Independently captured current ESMFold2-Fast image restored from shared storage on a different H100 node in all three trials; both original short and ubiquitin wrappers passed unchanged BF16, loops20 and steps200. Median container-to-ready improved from18.884s to13.803s. First Pod path220.6s included194s scheduling wait; it was not a disk-cold test. This profile does not reuse ordinary ESMFold2 state. Normal loading remains default; availability requires this exact registered bundle.",
+      "runtime_image_digest": "sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+      "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "bundle": {
+        "id": "esmfold2-fast-h100-cuda-criu-20260907-r2",
+        "sha256": "f7c514a0a696f423ca62c30a04a8fdd346b1583912c3655da5f80b3a3b08b403",
+        "qualification_receipt": "esmfold2-fast-h100-20260907.json",
+        "qualification_receipt_sha256": "b8b066ce530a74319617f109b839cc0ea6926668383673b7d2897445c81247c7"
+      },
+      "normal_startup": {
+        "clock": "container-start-to-CUDA-synchronized-initialization-observed-over-HTTP",
+        "n": 3, "median_seconds": 18.883734, "min_seconds": 17.985346, "max_seconds": 19.893965,
+        "cache": "existing image/shared files; no cache eviction; fresh per-Pod runtime cache"
+      },
+      "restore_startup": {
+        "clock": "container-start-to-completed-CUDA-restore-and-model-health-observed",
+        "n": 3, "median_seconds": 13.802760, "min_seconds": 13.443167, "max_seconds": 22.503257,
+        "cache": "shared filesystem cache retained; no eviction; not reserved RAM; excludes scheduling/init"
+      },
+      "fresh_pod_restore_passed": true,
+      "distinct_inputs_passed": 2
     },
     {
       "model_id": "evo2-40b",
@@ -144,16 +170,51 @@
     },
     {
       "model_id": "genmol",
-      "status": "not-yet-qualified",
+      "status": "fresh-pod-qualified",
       "selectable": false,
-      "reason": "Not yet snapshot-qualified on the independent upstream H100 runtime. Measured cached process-to-ready median is 96.121s, making GenMol a meaningful next snapshot candidate; immutable initialized model state must accept different generation requests.",
-      "runtime_image_digest": null,
-      "model_revision": null,
-      "bundle": null,
-      "normal_startup": null,
-      "restore_startup": null,
-      "fresh_pod_restore_passed": false,
-      "distinct_inputs_passed": 0
+      "reason": "Current exact upstream GenMol image restored from shared storage in all three fresh-Pod trials; both original pinned QED and LogP requests passed strict independent RDKit validation. In the matched current-production cache/launcher environment, median container-to-ready improved from12.198s to8.654s. The historical96.121s cohort baseline used a different block-PVC/cache layout and is not part of this paired comparison. Normal loading remains default; availability requires this exact registered bundle.",
+      "runtime_image_digest": "sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf",
+      "model_revision": "2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80",
+      "accelerator_classes": [
+        "nvidia-h100-sxm5-80gb"
+      ],
+      "compatibility": {
+        "gpu_name": "NVIDIA H100 80GB HBM3",
+        "compute_capability": "9.0",
+        "driver_version": "580.159.04",
+        "kernel_release": "6.11.0-1016-nvidia"
+      },
+      "bundle": {
+        "id": "genmol-h100-cuda-criu-20260907-r07",
+        "sha256": "24256fa84376c40814ef25db41cda7b850c6199c7839c1e6ff97fc8ef76fee32",
+        "qualification_receipt": "genmol-h100-20260907.json",
+        "qualification_receipt_sha256": "5a2751c9ee6ca222ccc1b72fcd9ce3a7ddcf4e465056e9f50c99a1bf7438ae49"
+      },
+      "normal_startup": {
+        "clock": "container-start-to-serving-application-ready",
+        "n": 3,
+        "median_seconds": 12.198096,
+        "min_seconds": 11.729437,
+        "max_seconds": 14.349146,
+        "cache": "current production-derived image, hydrated regional RWX weights and ABI-namespaced runtime caches retained; no eviction"
+      },
+      "restore_startup": {
+        "clock": "container-start-to-completed-CUDA-restore-and-serving-health-observed",
+        "n": 3,
+        "median_seconds": 8.653759,
+        "min_seconds": 8.332844,
+        "max_seconds": 9.521446,
+        "cache": "shared filesystem cache retained; no eviction; not reserved RAM; excludes scheduling/init"
+      },
+      "fresh_pod_restore_passed": true,
+      "distinct_inputs_passed": 2,
+      "restore_components": {
+        "clock": "CUDA checkpoint plus CRIU dump captured once; excludes bundle publication, Pod startup and restore readiness",
+        "n": 1,
+        "cuda_checkpoint_seconds": 1.2555541420006193,
+        "criu_dump_seconds": 47.68735069199465,
+        "durable_flush_seconds": 0.34631419903598726
+      }
     },
     {
       "model_id": "molmim",
@@ -229,7 +290,7 @@
       "model_id": "openfold2",
       "status": "not-yet-qualified",
       "selectable": false,
-      "reason": "Not yet snapshot-qualified. The original NIM service needs request-independent capture and distinct-sequence/MSA tests; another OpenFold runtime is not evidence.",
+      "reason": "Not yet snapshot-qualified. The current standalone route is the exact upstream OpenFold v.06_22 model_3_ptm implementation and is distinct from the unavailable archived NIM; request-independent capture still needs distinct-sequence/MSA restore tests on this exact portable runtime.",
       "runtime_image_digest": null,
       "model_revision": null,
       "bundle": null,

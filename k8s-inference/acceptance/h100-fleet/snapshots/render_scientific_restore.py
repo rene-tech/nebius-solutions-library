@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from fs2_serve.snapshot_metadata import snapshot_cache_copy_command
 
 from render_serving_probe import render
 
@@ -114,11 +115,7 @@ def scientific_restore(source, config):
         item for item in spec["initContainers"] if item["name"] == "snapshot-tools"
     )
     initializer["volumeMounts"].append(bundle_mount)
-    initializer["command"][2] += (
-        " && for part in runtime-cache tmp; do "
-        'if [ -d "/snapshot-bundle/$part" ]; then '
-        'cp -a "/snapshot-bundle/$part/." "$1/$part/"; fi; done'
-    )
+    initializer["command"][2] += " && " + snapshot_cache_copy_command()
     # The supervisor copies cache and worker.log from the source. Its cache
     # mkdir must not already exist when --source-directory is used.
     initializer["command"][2] = initializer["command"][2].replace('"$1/cache" ', "")

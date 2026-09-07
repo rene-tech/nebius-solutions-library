@@ -10,6 +10,7 @@ from fs2_serve.snapshot_metadata import (
     SnapshotWorkerLog,
     prepare_worker_log_shadow,
     preserve_shared_snapshot_metadata,
+    snapshot_copy_command,
 )
 
 
@@ -57,3 +58,33 @@ def test_legacy_snapshot_without_metadata_keeps_existing_command():
     prepare_worker_log_shadow(initializer, runtime, "/checkpoints/run", None)
     assert runtime["command"][-1] == "/snapshot-bundle"
     assert initializer["command"][2] == "true"
+
+
+def test_tree_copy_preserves_numeric_metadata_into_existing_destination(tmp_path):
+    source, target = tmp_path / "source", tmp_path / "target"
+    source.mkdir(mode=0o750)
+    target.mkdir(mode=0o700)
+    payload = source / "compiled.so"
+    payload.write_bytes(b"unchanged executable bytes")
+    payload.chmod(0o751)
+    os.utime(payload, ns=(1750000000123456789, 1750000000987654321))
+    (source / "link").symlink_to("compiled.so")
+    before = payload.stat()
+    command = snapshot_copy_command(str(source), str(target))
+    assert "cp -a" not in command
+    assert "--no-acls --no-xattrs" in command
+    subprocess.run(["/bin/sh", "-c", command], check=True, capture_output=True)  # noqa: S603
+    copied = (target / payload.name).stat()
+    assert (target / payload.name).read_bytes() == payload.read_bytes()
+    assert (copied.st_uid, copied.st_gid, stat.S_IMODE(copied.st_mode), copied.st_mtime_ns) == (
+        before.st_uid, before.st_gid, 0o751, before.st_mtime_ns
+    )
+    assert stat.S_IMODE(target.stat().st_mode) == 0o750
+    assert (target / "link").is_symlink()
+    assert payload.stat().st_mtime_ns == before.st_mtime_ns
+
+
+def test_tree_copy_propagates_missing_source_error(tmp_path):
+    command = snapshot_copy_command(str(tmp_path / "absent"), str(tmp_path))
+    result = subprocess.run(["/bin/sh", "-c", command], check=False, capture_output=True)  # noqa: S603
+    assert result.returncode != 0

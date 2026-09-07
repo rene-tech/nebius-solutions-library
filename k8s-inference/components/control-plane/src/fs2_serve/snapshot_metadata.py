@@ -1,5 +1,6 @@
 """Reconstruct captured mutable files without changing a shared snapshot."""
 
+import shlex
 from typing import Any
 
 from pydantic import Field
@@ -13,6 +14,33 @@ class SnapshotWorkerLog(StrictModel):
     mode: int = Field(ge=0, le=0o777)
     uid: int = Field(ge=0)
     gid: int = Field(ge=0)
+
+
+def snapshot_copy_command(source: str, destination: str, entries: tuple[str, ...] = (".",)) -> str:
+    """Copy ordinary captured metadata without querying unsupported shared-FS ACLs.
+
+    Source/destination are renderer-owned shell expressions (including positional
+    arguments), not user strings. A private archive preserves bytes, links, numeric
+    ownership, modes and nanosecond timestamps. It never copies GPU pages unless
+    explicitly requested, and neither changes nor recursively chmods the source.
+    """
+    selected = " ".join(shlex.quote(entry) for entry in entries)
+    return (
+        '{ fs2_copy_archive=$(mktemp /tmp/fs2-snapshot-copy.XXXXXX) && '
+        f'tar --format=pax --no-acls --no-xattrs --numeric-owner -C "{source}" '
+        f'-cf "$fs2_copy_archive" {selected} && '
+        f'tar --no-acls --no-xattrs --numeric-owner --same-owner --same-permissions -C "{destination}" '
+        '-xf "$fs2_copy_archive"; fs2_copy_status=$?; '
+        'rm -f "$fs2_copy_archive"; (exit "$fs2_copy_status"); }'
+    )
+
+
+def snapshot_cache_copy_command() -> str:
+    return (
+        'for part in runtime-cache tmp; do if [ -d "/snapshot-bundle/$part" ]; then '
+        + snapshot_copy_command("/snapshot-bundle/$part", "$1/$part")
+        + ' || exit $?; fi; done'
+    )
 
 
 def preserve_shared_snapshot_metadata(spec: dict[str, Any]) -> None:
@@ -44,8 +72,7 @@ def prepare_worker_log_shadow(
         f' && {{ mkdir -p "{target}"; '
         f'ln -s /snapshot-bundle/images "{target}/images"; '
         f'ln -s /snapshot-bundle/filesystem "{target}/filesystem"; '
-        f'if cp -a /snapshot-bundle/cache "{target}/cache" && '
-        f'cp -a /snapshot-bundle/worker.log "{target}/worker.log"; then '
+        f'if {snapshot_copy_command("/snapshot-bundle", target, ("cache", "worker.log"))}; then '
         f'if printf "%s  %s\\n" "{checksum}" "{target}/worker.log" | sha256sum -c -; then '
         f'chmod "{mode}" "{target}/worker.log" && chown "{uid}:{gid}" "{target}/worker.log"; '
         f'else mv "{target}/worker.log" "{target}/worker.log.invalid"; fi; fi; true; }}'

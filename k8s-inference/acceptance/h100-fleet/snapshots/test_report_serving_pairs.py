@@ -54,6 +54,14 @@ def test_uses_independent_clocks_and_does_not_imply_production_selection():
     assert "private_credentials" not in result["runs"][0]
 
 
+def test_genmol_reports_original_fixture_scope_without_claiming_unseen_inputs():
+    source = receipt()
+    source["model"] = "genmol"
+    result = report.project(source)
+    assert "original two pinned QED and LogP" in result["semantic_scope"]
+    assert all("First unseen input" not in note for note in result["clock_notes"])
+
+
 @pytest.mark.parametrize("change", ["missing", "invalid-output", "not-released"])
 def test_incomplete_qualification_does_not_produce_success(change):
     source = receipt()

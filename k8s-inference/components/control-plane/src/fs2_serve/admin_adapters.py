@@ -632,8 +632,15 @@ class KubernetesModelStateAdminAdapter:
             }
             served_ready_pods.discard("")
             ready = min(desired, deployment_ready, len(served_ready_pods))
+            # A model label is also carried by retained qualification and
+            # benchmark Pods. Their historical terminal state must not make a
+            # healthy serving Deployment permanently unhealthy. Attribute a
+            # Pod failure only when an active model Service selects that Pod;
+            # Deployment-level rollout failures remain authoritative.
             explicit_failure = any(_deployment_failed(value) for value in model_deployments) or any(
-                _pod_failed(value) for value in model_pods
+                _pod_failed(value)
+                and any(_service_selects(service, value) for service in model_services)
+                for value in model_pods
             )
             semantic_healthy: bool | None
             if not model_deployments or not model_services:

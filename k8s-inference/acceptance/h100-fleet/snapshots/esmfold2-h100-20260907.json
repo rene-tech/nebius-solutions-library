@@ -1,0 +1,414 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-snapshot-qualification/v1",
+  "model_id": "esmfold2",
+  "stage_id": "fold",
+  "status": "fresh-pod-qualified",
+  "production_selectable": false,
+  "qualification_scope": "Original immutable model image plus versioned optional canonical wrapper overlay; request-independent GPU state, original controller-issued short and ubiquitin arguments/localization/handoffs, full normal CIF/confidence outputs; production rollout separate",
+  "date": "2026-09-07",
+  "mechanism": "cuda-criu",
+  "default": "normal-load",
+  "cache": "existing image and shared filesystem cache; no global or file cache eviction",
+  "ready_boundary": "HTTP health after immutable model state and CUDA synchronization; request-specific compilation excluded",
+  "clock_notes": [
+    "Readiness is polled from kubectl exec; observation includes polling and transport overhead.",
+    "Kubernetes container startedAt has one-second resolution; Pod-create request clock is client monotonic.",
+    "The restored worker's model_load_seconds is the donor's historical loader time, never a restore measurement.",
+    "First valid output includes deliberate post-readiness fixture localization, exec/validation overhead and full scientific computation.",
+    "Matched trials retained existing node/image/filesystem caches without eviction or a RAM-residency guarantee. Pod-create clocks include observed scheduler waits on the shared fleet; container-start clocks exclude those waits. An image manifest/layer-cache resolution is not a full image-cold benchmark."
+  ],
+  "parameters": {
+    "esmc_precision": "bf16",
+    "attention": "flash_attention_2",
+    "num_loops": 20,
+    "num_sampling_steps": 200,
+    "mode": "single-sequence"
+  },
+  "inputs": [
+    {
+      "raw_sha256": "effc08e211b66f0af2c6d51bf19e997febbae3baa38af757669d806bfe24e17c",
+      "seed": 101
+    },
+    {
+      "raw_sha256": "ec742098c5197a3d04336904f5449badfca34b95efe9d7bd1344b03e1ea8020d",
+      "seed": 102
+    }
+  ],
+  "bundle": {
+    "id": "esmfold2-h100-cuda-criu-20260907-r2",
+    "sha256": "b23ffd52d39540487fda33f103a04eeb4c25d1f8c66fdc3c8481f08fa62cba88",
+    "bytes": 28803898841,
+    "file_count": 228,
+    "subpath": "esmfold2-current-r20260907-r2",
+    "captured_runtime_path": "/checkpoints/esmfold2-current-r20260907-r2",
+    "ownership": "per-file mode, UID and GID are bound into the canonical bundle manifest",
+    "storage": "existing regional shared filesystem, read-only bundle; per-Pod mutable scratch"
+  },
+  "compatibility": {
+    "generated_cache": [],
+    "runtime_identity": {
+      "compute_capability": "9.0",
+      "driver_version": "580.159.04",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "gpu_uuid": "GPU-237a8e9f-8ab5-6eff-d4d6-1c02fdcbbc02",
+      "kernel_release": "6.11.0-1016-nvidia",
+      "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "runtime_id": "esmfold2",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
+      "snapshot_source_sha256": {
+        "esmfold2_server.py": "c0c6648e0824030e950b3caa53f2b8123219afc99592d57cd393ab9c22c24993",
+        "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+        "run_esmfold2.py": "fea343d1e8d50bc453cd11610ae5d65dceb430c78c5374622b77030e86d787f8",
+        "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c"
+      },
+      "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
+    },
+    "schema": "fs2-serve.nebius.ai/scientific-process-checkpoint/v1"
+  },
+  "statistics": {
+    "normal": {
+      "pod_create_request_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 22.704112004488707,
+        "min_seconds": 19.986324527300894,
+        "max_seconds": 185.52323396038264
+      },
+      "container_start_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 18.321336,
+        "min_seconds": 17.340322,
+        "max_seconds": 20.087256
+      },
+      "pod_created_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 21.087256,
+        "min_seconds": 18.340322,
+        "max_seconds": 184.321336
+      },
+      "container_start_to_first_valid_output_seconds": {
+        "n": 3,
+        "median_seconds": 31.989637,
+        "min_seconds": 30.931378,
+        "max_seconds": 33.888822
+      }
+    },
+    "restore": {
+      "pod_create_request_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 18.759478464722633,
+        "min_seconds": 18.669375324621797,
+        "max_seconds": 342.4991349745542
+      },
+      "container_start_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 16.109618,
+        "min_seconds": 15.374464,
+        "max_seconds": 21.063109
+      },
+      "pod_created_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 17.374464,
+        "min_seconds": 17.109618,
+        "max_seconds": 341.063109
+      },
+      "container_start_to_first_valid_output_seconds": {
+        "n": 3,
+        "median_seconds": 29.379538,
+        "min_seconds": 28.558262,
+        "max_seconds": 34.569291
+      }
+    }
+  },
+  "runs": [
+    {
+      "repetition": 1,
+      "mode": "normal",
+      "pod_uid": "b2990959-8c58-4bd8-b6ba-5f025b3eb1f1",
+      "created_request_at": "2026-09-07T11:17:34.798120+00:00",
+      "pod_created_at": "2026-09-07T11:17:36Z",
+      "container_started_at": "2026-09-07T11:20:22Z",
+      "ready_observed_at": "2026-09-07T11:20:40.321336+00:00",
+      "pod_create_request_to_ready_seconds": 185.52323396038264,
+      "container_start_to_ready_seconds": 18.321336,
+      "pod_created_to_ready_seconds": 184.321336,
+      "container_start_to_first_valid_output_seconds": 31.989637,
+      "normal_model_loader_seconds": 16.76170815499995,
+      "cases": [
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T11:20:43.455878+00:00",
+          "finished_at": "2026-09-07T11:20:53.989637+00:00",
+          "execution_seconds": 10.533759066999892,
+          "argv_sha256": "0e80285e373612c7e9b86eef7b20829e0b3220fdc9032d1f0f7725762c3ad45a",
+          "structures": [
+            {
+              "path": "fs2-result.cif",
+              "bytes": 26292,
+              "sha256": "7d2b85a57632c8405909d96644da62e04a4cb5d530ca9ab9f36443a7310b4985",
+              "finite_atoms": 320
+            }
+          ]
+        },
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T11:20:58.645949+00:00",
+          "finished_at": "2026-09-07T11:21:02.213994+00:00",
+          "execution_seconds": 3.5680439430000206,
+          "argv_sha256": "b6dccadbcc93e04e54d95fd0d8e2476fd15a9584462698122d0fe5bafd87f2c4",
+          "structures": [
+            {
+              "path": "fs2-result.cif",
+              "bytes": 49279,
+              "sha256": "8fbf6b85816fb0965e22255bdfc66fd8dfad76dbe515ce2665ad53d41aed6878",
+              "finite_atoms": 601
+            }
+          ]
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "repetition": 1,
+      "mode": "restore",
+      "pod_uid": "b69c7581-d4db-41aa-b82f-9f193f4fc4cc",
+      "created_request_at": "2026-09-07T11:21:07.563995+00:00",
+      "pod_created_at": "2026-09-07T11:21:09Z",
+      "container_started_at": "2026-09-07T11:26:29Z",
+      "ready_observed_at": "2026-09-07T11:26:50.063109+00:00",
+      "pod_create_request_to_ready_seconds": 342.4991349745542,
+      "container_start_to_ready_seconds": 21.063109,
+      "pod_created_to_ready_seconds": 341.063109,
+      "container_start_to_first_valid_output_seconds": 34.569291,
+      "normal_model_loader_seconds": null,
+      "cases": [
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T11:26:53.103514+00:00",
+          "finished_at": "2026-09-07T11:27:03.569291+00:00",
+          "execution_seconds": 10.465780529000085,
+          "argv_sha256": "0e80285e373612c7e9b86eef7b20829e0b3220fdc9032d1f0f7725762c3ad45a",
+          "structures": [
+            {
+              "path": "fs2-result.cif",
+              "bytes": 26292,
+              "sha256": "f534d84c3706a04b18a0884009aec44388afe76cc6ca61ba1280fb0cffb921c7",
+              "finite_atoms": 320
+            }
+          ]
+        },
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T11:27:08.268967+00:00",
+          "finished_at": "2026-09-07T11:27:12.043417+00:00",
+          "execution_seconds": 3.774449182000126,
+          "argv_sha256": "b6dccadbcc93e04e54d95fd0d8e2476fd15a9584462698122d0fe5bafd87f2c4",
+          "structures": [
+            {
+              "path": "fs2-result.cif",
+              "bytes": 49279,
+              "sha256": "821e2ee20e21e90eb9e5fefa2fdfbf317c4fb4cb66c96970dca7701690bcb2e0",
+              "finite_atoms": 601
+            }
+          ]
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "repetition": 2,
+      "mode": "normal",
+      "pod_uid": "e6c4b22b-2534-4021-83b4-e85363c44ed5",
+      "created_request_at": "2026-09-07T11:27:17.383160+00:00",
+      "pod_created_at": "2026-09-07T11:27:19Z",
+      "container_started_at": "2026-09-07T11:27:20Z",
+      "ready_observed_at": "2026-09-07T11:27:40.087256+00:00",
+      "pod_create_request_to_ready_seconds": 22.704112004488707,
+      "container_start_to_ready_seconds": 20.087256,
+      "pod_created_to_ready_seconds": 21.087256,
+      "container_start_to_first_valid_output_seconds": 33.888822,
+      "normal_model_loader_seconds": 16.434005146000118,
+      "cases": [
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T11:27:43.113451+00:00",
+          "finished_at": "2026-09-07T11:27:53.888822+00:00",
+          "execution_seconds": 10.775373797999919,
+          "argv_sha256": "0e80285e373612c7e9b86eef7b20829e0b3220fdc9032d1f0f7725762c3ad45a",
+          "structures": [
+            {
+              "path": "fs2-result.cif",
+              "bytes": 26292,
+              "sha256": "0337cc310951b08eb0aeab58191dd6c3fdbf58b27dcb39cfd84012a636bfefb5",
+              "finite_atoms": 320
+            }
+          ]
+        },
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T11:27:58.519576+00:00",
+          "finished_at": "2026-09-07T11:28:02.190146+00:00",
+          "execution_seconds": 3.6705651500001295,
+          "argv_sha256": "b6dccadbcc93e04e54d95fd0d8e2476fd15a9584462698122d0fe5bafd87f2c4",
+          "structures": [
+            {
+              "path": "fs2-result.cif",
+              "bytes": 49279,
+              "sha256": "470308fc0ddadf51c1a8531cbe014931493d7b88a7b369494bb024e86e774935",
+              "finite_atoms": 601
+            }
+          ]
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "repetition": 2,
+      "mode": "restore",
+      "pod_uid": "6cb840b3-a195-4ed9-b575-4efdc92770d2",
+      "created_request_at": "2026-09-07T11:35:16.615005+00:00",
+      "pod_created_at": "2026-09-07T11:35:18Z",
+      "container_started_at": "2026-09-07T11:35:20Z",
+      "ready_observed_at": "2026-09-07T11:35:35.374464+00:00",
+      "pod_create_request_to_ready_seconds": 18.759478464722633,
+      "container_start_to_ready_seconds": 15.374464,
+      "pod_created_to_ready_seconds": 17.374464,
+      "container_start_to_first_valid_output_seconds": 28.558262,
+      "normal_model_loader_seconds": null,
+      "cases": [
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T11:35:38.379234+00:00",
+          "finished_at": "2026-09-07T11:35:48.558262+00:00",
+          "execution_seconds": 10.17903178000006,
+          "argv_sha256": "0e80285e373612c7e9b86eef7b20829e0b3220fdc9032d1f0f7725762c3ad45a",
+          "structures": [
+            {
+              "path": "fs2-result.cif",
+              "bytes": 26292,
+              "sha256": "77bed2e3e1a81426c5ff9e54d342eb5174c4a38fece1c4bc5b45c22532b10443",
+              "finite_atoms": 320
+            }
+          ]
+        },
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T11:35:53.147005+00:00",
+          "finished_at": "2026-09-07T11:35:56.954387+00:00",
+          "execution_seconds": 3.807383107000078,
+          "argv_sha256": "b6dccadbcc93e04e54d95fd0d8e2476fd15a9584462698122d0fe5bafd87f2c4",
+          "structures": [
+            {
+              "path": "fs2-result.cif",
+              "bytes": 49279,
+              "sha256": "0d30b5937a47e056c2668ba7a23395617301120d1896a4641bc8f124ab852b48",
+              "finite_atoms": 601
+            }
+          ]
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "repetition": 3,
+      "mode": "normal",
+      "pod_uid": "520c6784-d9f8-4363-881d-b5b30ef09e19",
+      "created_request_at": "2026-09-07T11:36:02.354016+00:00",
+      "pod_created_at": "2026-09-07T11:36:04Z",
+      "container_started_at": "2026-09-07T11:36:05Z",
+      "ready_observed_at": "2026-09-07T11:36:22.340322+00:00",
+      "pod_create_request_to_ready_seconds": 19.986324527300894,
+      "container_start_to_ready_seconds": 17.340322,
+      "pod_created_to_ready_seconds": 18.340322,
+      "container_start_to_first_valid_output_seconds": 30.931378,
+      "normal_model_loader_seconds": 16.217211320999922,
+      "cases": [
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T11:36:25.388336+00:00",
+          "finished_at": "2026-09-07T11:36:35.931378+00:00",
+          "execution_seconds": 10.543043289000252,
+          "argv_sha256": "0e80285e373612c7e9b86eef7b20829e0b3220fdc9032d1f0f7725762c3ad45a",
+          "structures": [
+            {
+              "path": "fs2-result.cif",
+              "bytes": 26292,
+              "sha256": "2b38b3aa9ab474e643c733fb3278ab97b38c6605f969b6bd06438ff2a246057e",
+              "finite_atoms": 320
+            }
+          ]
+        },
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T11:36:40.708689+00:00",
+          "finished_at": "2026-09-07T11:36:44.458376+00:00",
+          "execution_seconds": 3.7496877100002166,
+          "argv_sha256": "b6dccadbcc93e04e54d95fd0d8e2476fd15a9584462698122d0fe5bafd87f2c4",
+          "structures": [
+            {
+              "path": "fs2-result.cif",
+              "bytes": 49279,
+              "sha256": "54df330360e5a9cb3b17ebba61dd16ecd97888b5cbfeeedf87efabca4532d7b0",
+              "finite_atoms": 601
+            }
+          ]
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "repetition": 3,
+      "mode": "restore",
+      "pod_uid": "3932d76d-3921-41b4-a1d1-def3ad076a41",
+      "created_request_at": "2026-09-07T11:36:49.440264+00:00",
+      "pod_created_at": "2026-09-07T11:36:51Z",
+      "container_started_at": "2026-09-07T11:36:52Z",
+      "ready_observed_at": "2026-09-07T11:37:08.109618+00:00",
+      "pod_create_request_to_ready_seconds": 18.669375324621797,
+      "container_start_to_ready_seconds": 16.109618,
+      "pod_created_to_ready_seconds": 17.109618,
+      "container_start_to_first_valid_output_seconds": 29.379538,
+      "normal_model_loader_seconds": null,
+      "cases": [
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T11:37:11.123763+00:00",
+          "finished_at": "2026-09-07T11:37:21.379538+00:00",
+          "execution_seconds": 10.25578045500015,
+          "argv_sha256": "0e80285e373612c7e9b86eef7b20829e0b3220fdc9032d1f0f7725762c3ad45a",
+          "structures": [
+            {
+              "path": "fs2-result.cif",
+              "bytes": 26292,
+              "sha256": "d1fa4a860f07715467deffb6870eb0756472fcdc15cc21ca2e39ab71b3e1e070",
+              "finite_atoms": 320
+            }
+          ]
+        },
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T11:37:25.999654+00:00",
+          "finished_at": "2026-09-07T11:37:29.780254+00:00",
+          "execution_seconds": 3.7806015549999756,
+          "argv_sha256": "b6dccadbcc93e04e54d95fd0d8e2476fd15a9584462698122d0fe5bafd87f2c4",
+          "structures": [
+            {
+              "path": "fs2-result.cif",
+              "bytes": 49279,
+              "sha256": "0ec9ba413bbdd1d7151ade1e1abc46f04a2c173d862ab4d0c0e3c0ef452c5e32",
+              "finite_atoms": 601
+            }
+          ]
+        }
+      ],
+      "gpu_pod_deleted": true
+    }
+  ],
+  "source_overlay_sha256": "fea343d1e8d50bc453cd11610ae5d65dceb430c78c5374622b77030e86d787f8",
+  "failed_init_attempts": {
+    "count": 2,
+    "cause": "shared-filesystem ACL metadata read returned ENODATA to cp -a before runtime startup",
+    "resolution": "copy small cache files with numeric ownership/modes/timestamps via tar; GPU pages remain read-only",
+    "statistics": "failed pre-runtime attempts retained in private receipt and excluded from the three completed pairs"
+  },
+  "private_receipt_sha256": "5604cb8dd8b71577fed4c7dd3792a397b54992b05e82044f4d7bd2a0a10368d5"
+}
