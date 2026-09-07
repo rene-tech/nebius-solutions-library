@@ -644,6 +644,22 @@ describe("ModelDeployment workspace", () => {
     expect(await screen.findByRole("heading", { name: "Revision r3 projected" })).toBeInTheDocument();
   });
 
+  it("explains a cold cutover without disabling the required drain action as an ETag conflict", async () => {
+    mockReadSurface();
+    vi.spyOn(adminApi, "planModelDeployment").mockResolvedValue(testEnvelope(modelDeploymentPlanFixture));
+    vi.spyOn(adminApi, "applyModelDeployment").mockRejectedValue(
+      new AdminApiError("drain before changing runtime material", 409, "request-cutover", "cold_cutover_required"),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "qwen-live" });
+    fireEvent.click(screen.getByRole("button", { name: "Preview render plan" }));
+    await screen.findByRole("heading", { name: "Render plan" });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(await screen.findByText(/This startup change needs a cold cutover/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Drain" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Refresh current revision" })).not.toBeInTheDocument();
+  });
+
   it("confirms drain, reuses its idempotency key after a transient failure, and records success", async () => {
     mockReadSurface();
     const drain = vi.spyOn(adminApi, "drainModelDeployment")

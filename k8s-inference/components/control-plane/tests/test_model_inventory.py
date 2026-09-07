@@ -280,3 +280,33 @@ def test_serving_snapshot_does_not_project_h100_success_onto_other_gpu_or_driver
         serving_snapshot_bundles={bundle["bundle_id"]: changed},
     )
     assert not next(item for item in result.items if item.model_id == "qwen3-8b").snapshot_selectable
+
+
+def test_dynamic_route_revision_does_not_hide_matching_artifact_snapshot(registry, cipher, hasher):
+    from datetime import UTC, datetime, timedelta
+
+    from test_dynamic_routes import _revision
+    from test_model_deployment_publication import status_view
+
+    from fs2_serve.model_deployment_publication import project_dynamic_publications
+
+    capabilities, bundle, serving = _serving_snapshot_inputs(registry, cipher, hasher)
+    revision = _revision(registry)
+    assert revision.spec.artifact.revision == bundle["model_revision"]
+    snapshot = project_dynamic_publications(
+        [revision], {(revision.namespace, revision.name): status_view(revision)}
+    )
+    assert registry.set_dynamic_publications(snapshot, valid_until=datetime.now(UTC) + timedelta(minutes=1))
+    serving.identity.model_revision = registry.get("qwen3-8b").model_revision
+    assert serving.identity.model_revision.startswith("dynamic:")
+    result = build_model_inventory(
+        registry.list(), [serving], [], scientific_projection_available=True,
+        snapshot_capabilities=capabilities, serving_snapshot_bundles={bundle["bundle_id"]: bundle},
+    )
+    assert next(item for item in result.items if item.model_id == "qwen3-8b").snapshot_selectable
+    changed = {**bundle, "model_revision": "another-weight-revision"}
+    result = build_model_inventory(
+        registry.list(), [serving], [], scientific_projection_available=True,
+        snapshot_capabilities=capabilities, serving_snapshot_bundles={bundle["bundle_id"]: changed},
+    )
+    assert not next(item for item in result.items if item.model_id == "qwen3-8b").snapshot_selectable

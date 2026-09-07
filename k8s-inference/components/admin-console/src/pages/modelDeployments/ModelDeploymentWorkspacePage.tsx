@@ -567,6 +567,10 @@ export function ModelDeploymentWorkspacePage({ create = false }: { create?: bool
   }
 
   function failed(caught: unknown, fallback = "Model deployment request failed.") {
+    if (caught instanceof AdminApiError && caught.code === "cold_cutover_required") {
+      setActionError("This startup change needs a cold cutover. Drain this deployment, wait for observed zero replicas, then select the startup path and restore its desired state and hot floor before applying.");
+      return;
+    }
     if (caught instanceof AdminApiError && caught.status === 409) {
       setConflict(true);
       setActionError("This desired revision changed on the server. Refresh it before retrying the request.");

@@ -97,6 +97,7 @@ def _snapshot_inventory(
     bundles: Mapping[str, Mapping[str, Any]],
     serving: AdminModelSummary | None = None,
     serving_bundles: Mapping[str, Mapping[str, Any]] | None = None,
+    serving_artifact_revision: str | None = None,
 ) -> SnapshotInventory:
     evidence = capabilities.get(model_id)
     if evidence is None:
@@ -173,7 +174,9 @@ def _snapshot_inventory(
                 if bundle.get("qualified") is True
                 and bundle.get("model_ref") == model_id
                 and _image_digest(bundle.get("runtime_image")) == _image_digest(runtime_image) == measured_image
-                and bundle.get("model_revision") == serving.identity.model_revision == evidence.get("model_revision")
+                and bundle.get("model_revision")
+                == (serving_artifact_revision or serving.identity.model_revision)
+                == evidence.get("model_revision")
                 and serving.identity.gpu_class in bundle.get("accelerator_classes", [])
                 and bundle.get("compatibility") == evidence.get("compatibility")
                 and bundle_id == captured.get("id")
@@ -257,6 +260,10 @@ def build_model_inventory(
             snapshot_bundles or {},
             deployed,
             serving_snapshot_bundles or {},
+            # Dynamic model_revision identifies the desired route, not the
+            # weights. Its already-validated publication retains the exact
+            # underlying artifact revision that the snapshot captured.
+            record.dynamic_policy.publication.artifact_revision if record and record.dynamic_policy else None,
         )
         items.append(
             ModelInventoryItem(

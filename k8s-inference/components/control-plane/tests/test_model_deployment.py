@@ -802,6 +802,7 @@ def test_renderer_injects_exact_modelexpress_vllm_client_without_claiming_a_leve
         "app": "qwen",
         "app.kubernetes.io/managed-by": "fs2-model-controller",
         "app.kubernetes.io/part-of": "fs2-serve",
+        "app.kubernetes.io/component": "model-runtime",
         "fs2-serve.nebius.ai/model-deployment": "qwen-live",
         "fs2-serve.nebius.ai/model-id": "qwen.3-8b",
     }

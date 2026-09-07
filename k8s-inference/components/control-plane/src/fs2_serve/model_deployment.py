@@ -2237,6 +2237,10 @@ class LegacyManifestRenderer:
         labels = {
             "app.kubernetes.io/managed-by": "fs2-model-controller",
             "app.kubernetes.io/part-of": "fs2-serve",
+            # The gateway's existing runtime network selector uses this
+            # component label. Every renderer-owned serving Pod needs it,
+            # including templates that never declared application labels.
+            "app.kubernetes.io/component": "model-runtime",
             MODEL_DEPLOYMENT_LABEL: bounded_label_value(context.name),
             MODEL_ID_LABEL: bounded_label_value(spec.model_ref),
         }
