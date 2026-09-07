@@ -4,6 +4,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -24,7 +25,12 @@ from fs2_serve.model_deployment import (
     validate_model_deployment,
 )
 from fs2_serve.model_deployment_controller import ControllerFiles
-from fs2_serve.serving_snapshot import DEFAULT_SUPERVISOR_PATH, ServingSnapshotBundle, configure_serving_snapshot
+from fs2_serve.serving_snapshot import (
+    DEFAULT_SUPERVISOR_PATH,
+    ServingSnapshotBundle,
+    _isolate_vllm_cache,
+    configure_serving_snapshot,
+)
 
 SOLUTION_ROOT = Path(__file__).resolve().parents[3]
 
@@ -55,6 +61,77 @@ def test_published_bundles_keep_byte_identical_render_with_default_interpreters(
     configure_serving_snapshot(pod, config=config, runtime_container_name="model", fallback="normal-load")
     actual = hashlib.sha256(json.dumps(pod, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     assert actual == expected
+
+
+def test_snapshot_vllm_cache_shadows_only_mutable_subtree_and_retains_captured_paths():
+    config = fixture()[3]
+    pod = direct_pod(config)
+    runtime = pod["containers"][0]
+    cache = "/model-cache/.fs2/runtime/exact-image/exact-weights/exact-abi/vllm"
+    runtime["env"].extend([{"name": "VLLM_CACHE_ROOT", "value": cache},
+                           {"name": "HF_HOME", "value": "/model-cache"}])
+    original_mount = {"name": "weights", "mountPath": "/model-cache", "subPath": "tenant/cxr"}
+    runtime["volumeMounts"].append(copy.deepcopy(original_mount))
+    pod["volumes"].append({"name": "weights", "persistentVolumeClaim": {"claimName": "native-model-cache"}})
+    configure_serving_snapshot(pod, config=config, runtime_container_name="model", fallback="normal-load")
+    assert original_mount in runtime["volumeMounts"]  # Weights and native PVC remain unchanged.
+    assert next(item for item in runtime["env"] if item["name"] == "VLLM_CACHE_ROOT")["value"] == cache
+    assert runtime["command"][-len(config.runtime_command):] == config.runtime_command
+    shadow = next(item for item in runtime["volumeMounts"] if item["mountPath"] == cache)
+    assert shadow == {"name": "snapshot-checkpoints", "mountPath": cache,
+                      "subPath": config.bundle_path + "/native-vllm-cache"}
+    assert next(item for item in pod["volumes"] if item["name"] == shadow["name"])["emptyDir"] == {}
+    initializer = next(item for item in pod["initContainers"] if item["name"] == "snapshot-tools")
+    source = next(item for item in initializer["volumeMounts"] if item["name"] == "weights")
+    assert source == {**original_mount, "mountPath": "/snapshot-native-vllm-source", "readOnly": True}
+    expected_source = "/snapshot-native-vllm-source/.fs2/runtime/exact-image/exact-weights/exact-abi/vllm"
+    assert expected_source in initializer["command"][2]
+
+
+@pytest.mark.parametrize("populated", [True, False])
+def test_snapshot_vllm_seed_preserves_aot_closure_without_writing_source(tmp_path, populated):
+    source = tmp_path / "source"
+    cache = source / "runtime/vllm"
+    scratch = tmp_path / "scratch"
+    if populated:
+        cache.mkdir(parents=True)
+        library = cache / "aot.so"
+        library.write_bytes(b"captured-mapped-library")
+        library.chmod(0o755)
+        (cache / "mapped.so").symlink_to("aot.so")
+        autotune = cache / "autotune_configs.json"
+        autotune.write_text("{}")
+        autotune.chmod(0o600)
+        before = {name: (cache / name).stat() for name in ("aot.so", "autotune_configs.json")}
+    runtime = {"env": [{"name": "VLLM_CACHE_ROOT", "value": "/model-cache/runtime/vllm"}],
+               "volumeMounts": [{"name": "weights", "mountPath": "/model-cache"}]}
+    pod = {"volumes": [{"name": "weights", "persistentVolumeClaim": {"claimName": "native-cache"}}]}
+    initializer = {"command": ["sh", "-c", "true"], "volumeMounts": []}
+    _isolate_vllm_cache(pod, runtime, initializer, str(scratch))
+    command = initializer["command"][2].replace("/snapshot-native-vllm-source", str(source))
+    subprocess.run(["/bin/sh", "-c", command], check=True, capture_output=True)  # noqa: S603 - renderer under test
+    copied = scratch / "native-vllm-cache"
+    assert copied.is_dir()  # A missing optional native cache still permits normal fallback.
+    if populated:
+        assert (copied / "mapped.so").is_symlink()
+        assert (copied / "mapped.so").read_bytes() == b"captured-mapped-library"
+        for name, expected in before.items():
+            original, restored = (cache / name).stat(), (copied / name).stat()
+            assert (restored.st_mode, restored.st_uid, restored.st_gid, restored.st_mtime_ns) == (
+                expected.st_mode, expected.st_uid, expected.st_gid, expected.st_mtime_ns)
+            assert original == expected
+        (copied / "autotune_configs.json").write_text('{"new":"private"}')
+        assert (cache / "autotune_configs.json").read_text() == "{}"
+
+
+def test_snapshot_vllm_cache_already_on_scratch_is_unchanged():
+    runtime = {"env": [{"name": "VLLM_CACHE_ROOT", "value": "/cache/vllm"}],
+               "volumeMounts": [{"name": "snapshot-checkpoints", "mountPath": "/cache"}]}
+    pod = {"volumes": [{"name": "snapshot-checkpoints", "emptyDir": {}}]}
+    initializer = {"command": ["sh", "-c", "true"], "volumeMounts": []}
+    before = copy.deepcopy((pod, runtime, initializer))
+    _isolate_vllm_cache(pod, runtime, initializer, "/checkpoints/test")
+    assert (pod, runtime, initializer) == before
 
 
 def load_frozen_readiness(monkeypatch):

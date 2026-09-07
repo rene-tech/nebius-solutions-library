@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import re
+import shlex
 from ipaddress import IPv4Address
 from pathlib import PurePosixPath
 from typing import Any, Literal
@@ -22,6 +23,7 @@ from .snapshot_metadata import (
     prepare_worker_log_shadow,
     preserve_shared_snapshot_metadata,
     snapshot_cache_copy_command,
+    snapshot_copy_command,
 )
 
 CAPTURED_TMP_PATH = "/tmp"  # noqa: S108 - captured per-Pod emptyDir mount, never host tmp
@@ -148,6 +150,47 @@ def _snapshot_probe_command(
         f"Request({url!r}, headers={headers!r})) else 1)"
     )
     return [config.supervisor_python, "-c", code]
+
+
+def _isolate_vllm_cache(
+    pod_spec: dict[str, Any], runtime: dict[str, Any], initializer: dict[str, Any], directory: str
+) -> None:
+    """Keep captured absolute vLLM paths without root writes to the native PVC.
+
+    The frozen supervisor relocates CUDA/Triton caches but not VLLM_CACHE_ROOT.
+    vLLM's root also holds AOT artifacts, so seed the complete small subtree,
+    preserving mapped-file bytes/metadata, rather than only the autotune JSON.
+    The nested mount keeps the restored process's captured environment intact.
+    """
+    value = next((item.get("value") for item in runtime.get("env", []) if item["name"] == "VLLM_CACHE_ROOT"), None)
+    if not value:
+        return
+    cache_path = PurePosixPath(value)
+    mounts = runtime["volumeMounts"]
+    candidates = [item for item in mounts if cache_path.is_relative_to(PurePosixPath(item["mountPath"]))]
+    if not candidates:
+        return  # Container-local caches do not contaminate a shared native PVC.
+    source = max(candidates, key=lambda item: len(PurePosixPath(item["mountPath"]).parts))
+    volume = next(item for item in pod_spec["volumes"] if item["name"] == source["name"])
+    if "persistentVolumeClaim" not in volume:
+        return  # Already bound to per-Pod snapshot scratch or another emptyDir.
+    relative = cache_path.relative_to(PurePosixPath(source["mountPath"]))
+    source_mount = copy.deepcopy(source)
+    source_mount.update(mountPath="/snapshot-native-vllm-source", readOnly=True)
+    initializer["volumeMounts"].append(source_mount)
+    origin = str(PurePosixPath(source_mount["mountPath"]) / relative)
+    destination = directory + "/native-vllm-cache"
+    initializer["command"][2] += (
+        f" && mkdir -p {shlex.quote(destination)} && if [ -d {shlex.quote(origin)} ]; then "
+        + snapshot_copy_command(origin, destination)
+        + "; fi"
+    )
+    shadow = {"name": "snapshot-checkpoints", "mountPath": value,
+              "subPath": directory.removeprefix("/checkpoints/") + "/native-vllm-cache"}
+    if source["mountPath"] == value:
+        mounts[mounts.index(source)] = shadow
+    else:
+        mounts.append(shadow)
 
 
 def configure_serving_snapshot(
@@ -290,6 +333,7 @@ def configure_serving_snapshot(
         "resources": {"requests": {"cpu": "100m", "memory": "64Mi"}, "limits": {"cpu": "1", "memory": "128Mi"}},
         "volumeMounts": [{"name": "snapshot-address-source", "mountPath": "/snapshot-address", "readOnly": True}],
     }
+    _isolate_vllm_cache(pod_spec, runtime, initializer, directory)
     prepare_worker_log_shadow(initializer, runtime, directory, config.worker_log)
     pod_spec.setdefault("initContainers", [])[:0] = [address_initializer, initializer]
     readiness_probe = runtime.get("readinessProbe")
