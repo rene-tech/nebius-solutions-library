@@ -1,0 +1,46 @@
+{
+  "schema": "fs2-serve.nebius.ai/snapshot-production-correction/v1",
+  "date": "2026-09-07",
+  "model_id": "protenix-v2",
+  "bundle_id": "protenix-v2-h100-cuda-criu-20260907-r2",
+  "status": "isolated-production-spec-restore-and-original-wrapper-passed",
+  "shared_api_rollout_acceptance": "parent-owned, pending next release",
+  "failure": {
+    "boundary": "CPU CRIU restore before CUDA",
+    "original_public_restore_seconds": 0.08744327799649909,
+    "diagnostic": "File checkpoints/protenix-r2/worker.log has bad mode 0100664 (expect 0100644)",
+    "cause": "A serving probe inherited fsGroup=1000 while mounting the shared snapshot claim. Kubelet changed captured file ownership/permissions. The snapshot content was unchanged, but copy2 propagated the changed log mode into per-Pod scratch.",
+    "original_behavior": "normal-load fallback completed a valid scientific result",
+    "failed_reproduction_log_sha256": "6b7475e9e8f8f5ac360cff0f1a3993c76f5db2f988407ecabf79976c6ccb54c2"
+  },
+  "correction": {
+    "group_access": "Remove fsGroup/fsGroupChangePolicy only for selected snapshot Pods; retain group membership using supplementalGroups.",
+    "scratch": "Copy tiny cache/log into per-Pod shadow, verify the original captured log SHA256, reconstruct its recorded mode/UID/GID, then use the unchanged frozen supervisor. Large checkpoint pages remain read-only on shared storage.",
+    "failure_semantics": "Missing/changed source log keeps restore preparation unavailable; existing Prefer/Require fallback behavior decides the result.",
+    "frozen_sources_changed": false,
+    "shared_bundle_modified": false,
+    "metadata_source": "Original immutable bundle manifest, worker.log: 2802 bytes, SHA256 0fdec95de71579f147a252636551c6a74bcc8f2dfc1a2ee02a0e876e54430a0c, mode0644 uid0 gid0.",
+    "helper_sha256": "3efd49513ded561bbff657b22626cbbec987880eb88fe82f78e515e70874da12",
+    "scientific_startup_sha256": "afe2fcecf4df84e3b290b2fcd761792da874d706d4fb22486ec404f3f6a41218"
+  },
+  "real_gpu_result": {
+    "fresh_pod": true,
+    "donor_deleted": true,
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "driver": "580.159.04",
+    "gpu_uuid_remapped": true,
+    "cpu_criu_restore_seconds": 2.8113608920248225,
+    "cuda_restore_seconds": 0.4878117049811408,
+    "cuda_unlock_seconds": 0.02254008100135252,
+    "clock_note": "Component durations, not end-to-end cold start. Existing node/image/shared-filesystem cache retained.",
+    "method": "Cloned actual production Pod with exact runtime/mount/security settings; helper applied, one server-mode request window retained. Authorized previously prepared inputs were copied unchanged and both original scientific wrappers executed as UID10001. Not a new full public admission/collector run.",
+    "wrapper_cases": [
+      {"name": "original-profile-fixture", "seeds": [101], "finite_atoms": [321], "execution_seconds": 16.397305906983092},
+      {"name": "distinct-ubiquitin-input", "seeds": [101, 102], "finite_atoms": [602, 602], "execution_seconds": 17.013269193994347}
+    ],
+    "restore_log_sha256": "696890bae2278e06a5e38f53ce8236c0d996b21e7914028dc5eded068f9c0258",
+    "semantic_receipt_sha256": "2b05b89957861d0f8f65bbd7895b50df0cc85d7da6227658742980fd3845c579"
+  },
+  "local_tests": {"backend_passed": 61, "strict_mypy_modules": 3, "ruff": "passed"},
+  "cleanup": "All three diagnostic/restore GPU Pods and the two CPU readers were deleted; retained snapshot claim and original contents unchanged. No cloud, quota, driver or production deployment mutation."
+}

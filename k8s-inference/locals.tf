@@ -1154,7 +1154,7 @@ locals {
       namespace                = var.deployment.scientific_batch.namespace
       runtime_cache            = var.deployment.scientific_batch.runtime_cache
       execution_map            = local.scientific_execution_map
-      gpu_snapshots            = var.deployment.scientific_batch.gpu_snapshots
+      gpu_snapshots            = local.normalized_snapshot_settings.scientific
       workers                  = var.deployment.scientific_batch.workers
       poll_seconds             = var.deployment.scientific_batch.poll_seconds
       lease_seconds            = var.deployment.scientific_batch.lease_seconds
@@ -1220,6 +1220,7 @@ locals {
       )))
       fresh_install                              = var.deployment.dynamic_models.fresh_install
       handoff_receipt                            = var.deployment.dynamic_models.handoff_receipt
+      gpu_snapshots                              = local.normalized_snapshot_settings.serving
       fast_start_evidence_file                   = var.deployment.dynamic_models.fast_start_evidence_file
       fast_start_environment_qualifications_file = var.deployment.dynamic_models.fast_start_environment_qualifications_file
       fast_start_measurement_contracts_file      = var.deployment.dynamic_models.fast_start_measurement_contracts_file

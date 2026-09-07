@@ -375,11 +375,53 @@
             }
           ],
           "qualification_candidates": []
+        },
+        "openfold2-upstream-portable": {
+          "runtime_variant": "openfold2-upstream-portable",
+          "runtime_ref": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164",
+          "runtime_ref_kind": "container-image-digest",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-h100-sxm5-80gb",
+              "pool_template": "unbound-h100",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": null,
+              "evidence": "acceptance/h100-fleet/bionemo-structure/fragments/openfold2.json@sha256:f6e1089c5d260753a577855e109a48440c27c2b7b5ba763660ba09872f71f300"
+            }
+          ],
+          "qualification_candidates": []
         }
       }
     },
     "openfold3": {
       "runtimes": {
+        "openfold3-preview2-upstream-portable": {
+          "runtime_variant": "openfold3-preview2-upstream-portable",
+          "runtime_ref": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+          "runtime_ref_kind": "container-image-digest",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": ["amd64"]
+          },
+          "bindings": [{
+            "accelerator_class": "nvidia-h100-sxm5-80gb",
+            "pool_template": "unbound-h100",
+            "state": "hardware-validated",
+            "enabled": true,
+            "catalog_b300_state": null,
+            "evidence": "acceptance/h100-fleet/openfold3-standalone/qualification.json@sha256:cbeb59dcff780cf10ccfb95f5996144ab12d063de60953774452ebf485da9dc1"
+          }],
+          "qualification_candidates": []
+        },
         "catalog-canonical": {
           "runtime_variant": "catalog-canonical",
           "runtime_ref": "catalog/models/openfold3.json",

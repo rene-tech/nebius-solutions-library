@@ -134,7 +134,12 @@ class ControllerFiles(StrictModel):
         indexed = {(item.model_ref, item.template_digest): item for item in self.bundles}
         if len(indexed) != len(self.bundles):
             raise ValueError("model controller bundle identities must be unique")
-        return LegacyManifestRenderer(indexed)
+        snapshots = {
+            (qualification.model_ref, name): bundle
+            for qualification in self.infrastructure_envelope.qualifications.values()
+            for name, bundle in qualification.gpu_snapshot_bundles.items()
+        }
+        return LegacyManifestRenderer(indexed, snapshot_bundles=snapshots)
 
 
 class LeaseFence(StrictModel):

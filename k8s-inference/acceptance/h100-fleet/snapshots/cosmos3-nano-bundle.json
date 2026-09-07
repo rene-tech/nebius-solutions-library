@@ -1,0 +1,67 @@
+{
+  "schema": "fs2-serve.nebius.ai/serving-snapshot-bundle/v1",
+  "worker_log": {
+    "bytes": 28023,
+    "sha256": "06266570de26853adb78ad0d4af8cb392cbd99e9228e607cf0742c07ec3424c5",
+    "mode": 420,
+    "uid": 0,
+    "gid": 1000
+  },
+  "bundle_id": "cosmos3-nano-h100-cuda-criu-20260907-r7",
+  "model_ref": "cosmos3-nano",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+  "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+  "artifact_manifest_digest": "sha256:49b4bf03d84857892b86366ef2f6c3b68ac575cb1a3f2de4122c41e638f4cc6e",
+  "manifest_sha256": "4975911cfd2ba92a0ef0537d69966ef63af457eca4f658c796e88851a9500bb8",
+  "qualification_receipt_sha256": "6f0c8c7d53ad7a6612f4469bbd2855e6172f4ff6f749fdadb13d0f71f14cf400",
+  "qualified": true,
+  "accelerator_classes": [
+    "nvidia-h100-sxm5-80gb"
+  ],
+  "compatibility": {
+    "gpu_name": "NVIDIA H100 80GB HBM3",
+    "compute_capability": "9.0",
+    "driver_version": "580.159.04",
+    "kernel_release": "6.11.0-1016-nvidia"
+  },
+  "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+  "source_configmap": "fs2-fleet-snapshot-serving-v7",
+  "source_sha256": {
+    "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+    "serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+    "serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+    "serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+    "serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+    "sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+    "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c"
+  },
+  "entrypoint_configmap": "fs2-fleet-snapshot-serving-entrypoint-v1",
+  "entrypoint_sha256": "bd6b80c17cf764caf94648f229682da68c3f73b80b99a35400a80a1eee4e81ce",
+  "network_configmap": "fs2-fleet-snapshot-net-tools-v1",
+  "address_configmap": "fs2-fleet-snapshot-address-v1",
+  "pvc": "fs2-fleet-snapshots-rwx-r20260907",
+  "bundle_path": "cosmos-r7",
+  "captured_pod_ip": "10.6.122.212",
+  "image_entrypoint": [
+    "vllm"
+  ],
+  "runtime_command": [
+    "vllm",
+    "serve",
+    "/model-cache/cosmos3-nano/sha256/dfa7b03382ba78d7f80703652706c3cfa777cefac48634df49345c4302af2c95/payload",
+    "--omni",
+    "--served-model-name",
+    "nvidia/Cosmos3-Nano",
+    "--revision",
+    "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8000",
+    "--init-timeout",
+    "1800",
+    "--no-guardrails",
+    "--model-class-name",
+    "Cosmos3OmniDiffusersPipeline"
+  ]
+}

@@ -1,0 +1,8 @@
+#!/bin/sh
+# CRIU locks only connections inside this Pod's network namespace. Reuse the
+# immutable tools image's nft backend without changing host networking.
+export XTABLES_LIBDIR=/tools/usr/lib/x86_64-linux-gnu/xtables
+backend=${0##*/}
+exec /tools/lib/ld-linux-x86-64.so.2 \
+  --library-path /tools/usr/lib/x86_64-linux-gnu:/tools/lib \
+  /tools/usr/sbin/xtables-nft-multi "$backend" "$@"

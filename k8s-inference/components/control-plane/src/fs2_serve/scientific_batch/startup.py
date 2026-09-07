@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
 
+from ..snapshot_metadata import SnapshotWorkerLog, prepare_worker_log_shadow, preserve_shared_snapshot_metadata
+
 BUNDLE_SCHEMA = "fs2-serve.nebius.ai/scientific-snapshot-bundle/v1"
 CAPTURED_TMP_PATH = "/tmp"  # noqa: S108 - per-Pod emptyDir at the captured runtime path
 
@@ -83,9 +85,11 @@ def validate_bundle(value: Any, bundle_id: str) -> dict[str, Any]:
         "worker_variable",
         "compatibility",
     }
-    if not isinstance(value, Mapping) or set(value) != fields:
+    if not isinstance(value, Mapping) or set(value) - {"worker_log"} != fields:
         raise ValueError("scientific snapshot bundle fields differ")
     bundle = copy.deepcopy(dict(value))
+    if "worker_log" in bundle:
+        SnapshotWorkerLog.model_validate(bundle["worker_log"])
     compatibility = bundle["compatibility"]
     if (
         not isinstance(compatibility, dict)
@@ -176,6 +180,7 @@ def apply_startup_policy(pod: dict[str, Any], policy: StageStartupPolicy, *, req
         raise ValueError("snapshot bundle requires the captured scientific workspace identity")
     result = copy.deepcopy(pod)
     spec = result["spec"]
+    preserve_shared_snapshot_metadata(spec)
     runtime = next(item for item in spec["containers"] if item["name"] == "scientific-stage")
     if runtime["image"] != config["runtime_image"]:
         raise ValueError("frozen snapshot runtime image differs from the rendered stage")
@@ -287,6 +292,10 @@ def apply_startup_policy(pod: dict[str, Any], policy: StageStartupPolicy, *, req
                 bundle_mount,
             ],
         },
+    )
+    prepare_worker_log_shadow(
+        spec["initContainers"][0], runtime, directory,
+        SnapshotWorkerLog.model_validate(config["worker_log"]) if config.get("worker_log") else None,
     )
     result.setdefault("metadata", {}).setdefault("annotations", {}).update(
         {

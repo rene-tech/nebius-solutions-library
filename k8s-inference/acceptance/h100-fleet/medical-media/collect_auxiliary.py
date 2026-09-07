@@ -8,7 +8,7 @@ from pathlib import Path
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--kubeconfig", required=True)
-parser.add_argument("--pod", required=True, choices=("fs2-mm-evo2-stage-20260907", "fs2-mm-evo2-preflight-20260907"))
+parser.add_argument("--pod", required=True, choices=("fs2-mm-evo2-stage-20260907", "fs2-mm-evo2-preflight-20260907", "fs2-mm-evo2-cache-copy-20260907"))
 parser.add_argument("--output", required=True, type=Path)
 parser.add_argument("--delete-completed", action="store_true")
 args = parser.parse_args()
@@ -27,6 +27,12 @@ if pod["metadata"]["labels"].get("fs2.nebius/task") != "fs2-h100-fleet-medical-m
 (args.output / "events.json").write_text(kube("get", "events", "--field-selector", "involvedObject.uid=" + pod["metadata"]["uid"], "-o", "json"))
 if pod["spec"].get("nodeName"):
     (args.output / "node.json").write_text(kube("get", "node", pod["spec"]["nodeName"], "-o", "json"))
+for volume in pod["spec"].get("volumes", []):
+    if "persistentVolumeClaim" in volume:
+        claim = json.loads(kube("get", "pvc", volume["persistentVolumeClaim"]["claimName"], "-o", "json"))
+        (args.output / (volume["name"] + "-pvc.json")).write_text(json.dumps(claim, indent=2) + "\n")
+        if claim["spec"].get("volumeName"):
+            (args.output / (volume["name"] + "-pv.json")).write_text(kube("get", "pv", claim["spec"]["volumeName"], "-o", "json"))
 for container in pod.get("status", {}).get("containerStatuses", []):
     if "running" in container["state"] or "terminated" in container["state"]:
         (args.output / (container["name"] + ".log")).write_text(kube("logs", args.pod, "-c", container["name"], "--timestamps"))

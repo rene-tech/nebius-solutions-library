@@ -14,6 +14,10 @@ do not assert that an endpoint has deployed the option.
 
 Configure `deployment.scientific_batch.gpu_snapshots` in `terraform.tfvars`:
 
+- `bundle_files`: qualified JSON bundle paths, relative to `k8s-inference`
+  or absolute, so generated compatibility metadata need not be copied into
+  customer settings. For example,
+  `["acceptance/h100-fleet/snapshots/protenix-v2-bundle.json"]`.
 - `bundles`: registry entries keyed by their `bundle_id`. Each entry records
   the immutable runtime/tools images, captured source files, model identity,
   shared-cache claim and path, manifest, qualification receipt and GPU/driver

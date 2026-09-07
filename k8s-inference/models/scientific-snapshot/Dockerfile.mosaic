@@ -1,0 +1,9 @@
+# Optional immutable successor; preserve the exact qualified scientific image.
+ARG QUALIFIED_RUNTIME
+FROM ${QUALIFIED_RUNTIME}
+USER 0:0
+RUN mv /opt/fs2/mosaic/runtime_entrypoint.py /opt/fs2/mosaic/runtime_entrypoint_original.py
+COPY --chmod=0444 mosaic_server.py scientific_server.py supervisor.py process_checkpoint.py /opt/fs2-snapshot/
+COPY --chmod=0555 mosaic_cli_proxy.py /opt/fs2/mosaic/runtime_entrypoint.py
+ENV XLA_PYTHON_CLIENT_PREALLOCATE=false
+USER 10001:10001

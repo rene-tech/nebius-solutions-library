@@ -1,0 +1,70 @@
+{
+  "schema": "fs2-serve.nebius.ai/openfold3-preview2-integration/v1",
+  "status": "direct-qualified-public-http-mcp-pending",
+  "model_id": "openfold3",
+  "variant_id": "openfold3-preview2-upstream-portable",
+  "source_manifest": "models/structure/openfold3-preview2/k8s.yaml",
+  "deployment_runtime": "catalog/runtime/deployment-runtimes/openfold3-portable-h100.json",
+  "hardware_binding": "acceptance/h100-fleet/openfold3-standalone/hardware-binding.json",
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+  "model_revision": "4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e",
+  "artifact_manifest_digest": "85ab49a4770c61c94f067ee9e0857ec777409384919cd432b7e13e90a1b18527",
+  "artifact_content_digest": "36ae787cface66870e498823d54670103922475757b1610ba24f199174150590",
+  "runtime_command": [
+    "/bin/bash",
+    "-ec",
+    "source /opt/fs2/activate.sh; export TRITON_CACHE_DIR=${FS2_RUNTIME_CACHE_ROOT:-/tmp/of3-cache}/triton TORCH_EXTENSIONS_DIR=${FS2_RUNTIME_CACHE_ROOT:-/tmp/of3-cache}/torch-extensions XDG_CACHE_HOME=${FS2_RUNTIME_CACHE_ROOT:-/tmp/of3-cache}/xdg CUDA_CACHE_PATH=${FS2_RUNTIME_CACHE_ROOT:-/tmp/of3-cache}/cuda; exec python /opt/fs2/openfold3-preview2/server.py"
+  ],
+  "entrypoint_from_image": true,
+  "service": {
+    "namespace": "fs2-models",
+    "name": "openfold3",
+    "port": 8000
+  },
+  "ready": "GET :8000/v1/health/ready",
+  "inference": "POST :8000/biology/openfold/openfold3/predict",
+  "resources": {
+    "requests": {
+      "cpu": "6",
+      "memory": "32Gi",
+      "nvidia.com/gpu": "1"
+    },
+    "limits": {
+      "cpu": "16",
+      "memory": "64Gi",
+      "nvidia.com/gpu": "1"
+    }
+  },
+  "compile_cache_abi": "driver-580.159.04-sm90",
+  "cache": {
+    "pvc": "fs2-mm-openfold3-preview2-cache-20260907",
+    "pvc_uid": "9e825186-d1f6-4878-b690-d589e769d7dc",
+    "pv": "pvc-9e825186-d1f6-4878-b690-d589e769d7dc",
+    "storage_class": "csi-mounted-fs-path-sc",
+    "access": "ReadWriteMany",
+    "requested_size": "4Gi",
+    "mount": "/model-cache",
+    "runtime_path": "/model-cache/1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c/driver-580.159.04-sm90",
+    "weights": "Image-baked 2,351,321,839-byte full-SHA artifact set; no runtime weights download.",
+    "disposition": "Retain source PVC. Terraform owner may adopt or create destination and copy the entire compile-cache tree before bootstrap. No source deletion.",
+    "target_manifest_claim": "openfold3-preview2-cache"
+  },
+  "qualification": {
+    "path": "acceptance/h100-fleet/openfold3-standalone/qualification.json",
+    "sha256": "cbeb59dcff780cf10ccfb95f5996144ab12d063de60953774452ebf485da9dc1",
+    "cached_fresh_process_n": 3,
+    "original_outputs": 6,
+    "varied_40_residue_outputs": 3,
+    "initial_compile_outputs": 3,
+    "container_to_model_ready_median_seconds": 31.437549,
+    "pod_to_model_ready_median_seconds": 35.684628,
+    "first_request_to_validated_output_median_seconds": 12.889123808592558,
+    "initial_compile_first_request_seconds": 397.640486654
+  },
+  "integration_notes": [
+    "Select the NEW own manifest path in the deployment profile; the archived shared openfold-nims.yaml remains unchanged.",
+    "Preserve MAX_JOBS=8, exact image default ENTRYPOINT, resources, /dev/shm 8Gi, native request envelope and original validator.",
+    "Source manifest has no hardware selector; deployment profile chooses H100 and replaces literal deployment-profile-abi-v1 with the measured ABI.",
+    "No public route is claimed until root Terraform integration and actual HTTP/MCP outputs pass."
+  ]
+}

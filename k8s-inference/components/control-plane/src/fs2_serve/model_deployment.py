@@ -57,6 +57,7 @@ from .fast_start_mechanisms import (
 )
 from .fast_start_policy import FastStartHistoryWindow
 from .models import KubernetesModel
+from .serving_snapshot import ServingSnapshotBundle, configure_serving_snapshot
 
 API_VERSION = "inference.fs2.nebius.ai/v1alpha1"
 KIND = "ModelDeployment"
@@ -655,6 +656,7 @@ class ModelQualification(KubernetesModel):
         pattern=r"^[a-z][a-z0-9_]*$",
     )
     snapshot_digests: list[str] = Field(default_factory=list, max_length=64)
+    gpu_snapshot_bundles: dict[str, ServingSnapshotBundle] = Field(default_factory=dict, max_length=32)
     scale_to_zero_qualified: bool
     fast_start_evidence: list[FastStartEvidence] = Field(default_factory=list, max_length=256)
     fast_start_runtime_contracts: list[FastStartRuntimeContract] = Field(default_factory=list, max_length=64)
@@ -696,6 +698,11 @@ class ModelQualification(KubernetesModel):
 
     @model_validator(mode="after")
     def exact_artifacts(self) -> ModelQualification:
+        if any(
+            key != bundle.bundle_id or bundle.model_ref != self.model_ref
+            for key, bundle in self.gpu_snapshot_bundles.items()
+        ):
+            raise ValueError("serving snapshot registry keys and model identities must match")
         revision_pattern = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+\-]*$")
         if any(
             len(revision) > 256 or revision_pattern.fullmatch(revision) is None for revision in self.artifact_revisions
@@ -1145,15 +1152,34 @@ def validate_model_deployment(
                 owner="live-control-plane",
             )
         )
-    if spec.cache.snapshot_preference is not SnapshotPreference.NEVER:
+    snapshot_qualification = envelope.qualifications.get(spec.model_ref)
+    snapshot_bundle = (
+        snapshot_qualification.gpu_snapshot_bundles.get(spec.cache.snapshot_ref.name)
+        if snapshot_qualification is not None and spec.cache.snapshot_ref is not None
+        else None
+    )
+    if spec.cache.snapshot_preference is not SnapshotPreference.NEVER and snapshot_bundle is None:
         issues.append(
             _issue(
                 "snapshot_restore_unsupported",
                 "$.spec.cache.snapshotPreference",
-                "snapshot restore is not rendered by legacy-manifest-v1; use Never and omit snapshotRef",
+                "snapshot restore requires a registered qualified bundle; use Never until one is configured",
                 owner="live-control-plane",
             )
         )
+    if snapshot_bundle is not None:
+        try:
+            _validate_serving_snapshot_selection(
+                spec,
+                snapshot_bundle,
+                [envelope.pools[ref].accelerator_class for ref in spec.placement.pool_refs if ref in envelope.pools],
+            )
+        except ValueError as error:
+            issues.append(
+                _issue(
+                    "snapshot_runtime_unqualified", "$.spec.cache.snapshotRef", str(error), owner="live-control-plane"
+                )
+            )
 
     canonical_model_ids = set(envelope.qualifications)
     for index, alias in enumerate(spec.exposure.open_ai_aliases):
@@ -1272,7 +1298,11 @@ def validate_model_deployment(
                     owner="live-control-plane",
                 )
             )
-        if spec.cache.snapshot_ref is not None and spec.cache.snapshot_ref.digest not in qualification.snapshot_digests:
+        qualified_snapshot_digests = {
+            *qualification.snapshot_digests,
+            *("sha256:" + item.manifest_sha256 for item in qualification.gpu_snapshot_bundles.values()),
+        }
+        if spec.cache.snapshot_ref is not None and spec.cache.snapshot_ref.digest not in qualified_snapshot_digests:
             issues.append(
                 _issue(
                     "snapshot_unqualified",
@@ -2125,6 +2155,38 @@ def _modelexpress_network_policy(
     return manifest
 
 
+def _validate_serving_snapshot_selection(
+    spec: ModelDeploymentSpec,
+    bundle: ServingSnapshotBundle,
+    accelerator_classes: list[str],
+) -> None:
+    reference = spec.cache.snapshot_ref
+    if reference is None or reference.strategy is not SnapshotStrategy.CUDA_CHECKPOINT:
+        raise ValueError("serving snapshot requires the CUDA checkpoint strategy")
+    if (
+        reference.name,
+        reference.digest,
+        spec.model_ref,
+        spec.runtime.image,
+        spec.artifact.revision,
+        spec.artifact.manifest_digest,
+    ) != (
+        bundle.bundle_id,
+        "sha256:" + bundle.manifest_sha256,
+        bundle.model_ref,
+        bundle.runtime_image,
+        bundle.model_revision,
+        bundle.artifact_manifest_digest,
+    ):
+        raise ValueError("snapshot bundle differs from the exact selected model, artifact or runtime")
+    if spec.placement.accelerators_per_replica != 1 or not set(accelerator_classes).issubset(
+        bundle.accelerator_classes
+    ):
+        raise ValueError("snapshot bundle is not qualified for the selected GPU class or count")
+    if spec.cache.tier is not CacheTier.SHARED_FILESYSTEM or spec.cache.mechanism is not None:
+        raise ValueError("serving snapshot uses its qualified shared filesystem without a second loader mechanism")
+
+
 class LegacyManifestRenderer:
     """Deterministically adapt a qualified existing manifest bundle.
 
@@ -2136,8 +2198,14 @@ class LegacyManifestRenderer:
 
     name = "legacy-manifest-v1"
 
-    def __init__(self, bundles: Mapping[tuple[str, str], LegacyTemplateBundle]) -> None:
+    def __init__(
+        self,
+        bundles: Mapping[tuple[str, str], LegacyTemplateBundle],
+        *,
+        snapshot_bundles: Mapping[tuple[str, str], ServingSnapshotBundle] | None = None,
+    ) -> None:
         self._bundles = dict(bundles)
+        self._snapshot_bundles = dict(snapshot_bundles or {})
 
     def render(self, spec: ModelDeploymentSpec, context: RenderContext) -> RenderPlan:
         key = (spec.model_ref, spec.runtime.template_ref.digest)
@@ -2150,6 +2218,21 @@ class LegacyManifestRenderer:
             or bundle.template_digest != spec.runtime.template_ref.digest
         ):
             raise ValueError("legacy template identity differs from desired state")
+
+        selected_snapshot = None
+        if spec.cache.snapshot_preference is not SnapshotPreference.NEVER:
+            reference = spec.cache.snapshot_ref
+            selected_snapshot = self._snapshot_bundles.get((spec.model_ref, reference.name)) if reference else None
+            if selected_snapshot is None:
+                raise ValueError("selected serving snapshot bundle is unavailable")
+            _validate_serving_snapshot_selection(
+                spec, selected_snapshot, [pool.accelerator_class for pool in (context.eligible_pools or [context.pool])]
+            )
+            if context.model_express is not None or (
+                context.fast_start_mechanism is not None
+                and context.fast_start_mechanism.mechanism is not FastStartMechanism.CONVENTIONAL
+            ):
+                raise ValueError("serving snapshot cannot be combined with another effective loader")
 
         labels = {
             "app.kubernetes.io/managed-by": "fs2-model-controller",
@@ -2391,6 +2474,14 @@ class LegacyManifestRenderer:
             ]
             container = runtime_containers[0]
             container["image"] = spec.runtime.image
+            if selected_snapshot is not None:
+                configure_serving_snapshot(
+                    pod_spec,
+                    config=selected_snapshot,
+                    runtime_container_name=bundle.runtime_container_name,
+                    fallback="fail" if spec.cache.snapshot_preference is SnapshotPreference.REQUIRE else "normal-load",
+                )
+                pod_metadata["annotations"]["fs2-serve.nebius.ai/snapshot-bundle"] = selected_snapshot.bundle_id
             transfer_group: str | None = None
             if context.model_express is not None:
                 if segment.pool.pool_id not in context.model_express.pool_refs:

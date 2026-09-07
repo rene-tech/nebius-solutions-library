@@ -13,7 +13,7 @@
     "nv-reason-cxr-3b": {"model_id": "nv-reason-cxr-3b", "runtime_variant": "deployment/nv-reason-cxr-3b", "state": "fixture-only", "gpu_request": 1, "workload_topology": "single-gpu", "host_architectures": ["amd64"], "selection_mode": "accelerator-class", "compatible_pool_ids": ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-b300-sxm6-288gb"}},
     "nv-segment-ct": {"model_id": "nv-segment-ct", "runtime_variant": "deployment/nv-segment-ct", "state": "fixture-only", "gpu_request": 1, "workload_topology": "single-gpu", "host_architectures": ["amd64"], "selection_mode": "accelerator-class", "compatible_pool_ids": ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-b300-sxm6-288gb"}},
     "openfold2-b300": {"model_id": "openfold2", "runtime_variant": "deployment/openfold2-b300", "state": "fixture-only", "gpu_request": 1, "workload_topology": "single-gpu", "host_architectures": ["amd64"], "selection_mode": "accelerator-class", "compatible_pool_ids": ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-b300-sxm6-288gb"}},
-    "openfold3-b300": {"model_id": "openfold3", "runtime_variant": "deployment/openfold3-b300", "state": "fixture-only", "gpu_request": 1, "workload_topology": "single-gpu", "host_architectures": ["amd64"], "selection_mode": "accelerator-class", "compatible_pool_ids": ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-b300-sxm6-288gb"}},
+    "openfold3": {"model_id": "openfold3", "runtime_variant": "deployment/openfold3", "state": "fixture-only", "gpu_request": 1, "workload_topology": "single-gpu", "host_architectures": ["amd64"], "selection_mode": "accelerator-class", "compatible_pool_ids": ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-b300-sxm6-288gb"}},
     "proteinmpnn-b300": {"model_id": "proteinmpnn", "runtime_variant": "deployment/proteinmpnn-b300", "state": "fixture-only", "gpu_request": 1, "workload_topology": "single-gpu", "host_architectures": ["amd64"], "selection_mode": "accelerator-class", "compatible_pool_ids": ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-b300-sxm6-288gb"}},
     "qwen3-8b-b300": {"model_id": "qwen3-8b", "runtime_variant": "deployment/qwen3-8b-b300", "state": "fixture-only", "gpu_request": 1, "workload_topology": "single-gpu", "host_architectures": ["amd64"], "selection_mode": "exact-pool", "compatible_pool_ids": ["nebius-b300-preemptible-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-b300-sxm6-288gb", "accelerator.fs2.nebius/pool-id": "nebius-b300-preemptible-8x"}},
     "rfdiffusion-b300": {"model_id": "rfdiffusion", "runtime_variant": "deployment/rfdiffusion-b300", "state": "fixture-only", "gpu_request": 1, "workload_topology": "single-gpu", "host_architectures": ["amd64"], "selection_mode": "accelerator-class", "compatible_pool_ids": ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-b300-sxm6-288gb"}},
@@ -31,7 +31,7 @@
     "nv-reason-cxr-3b": {"deployment": "nv-reason-cxr-3b", "gpu_count": 1, "ephemeral_storage_request_gib": 8},
     "nv-segment-ct": {"deployment": "nv-segment-ct", "gpu_count": 1, "ephemeral_storage_request_gib": 4},
     "openfold2": {"deployment": "openfold2-b300", "gpu_count": 1, "ephemeral_storage_request_gib": 0},
-    "openfold3": {"deployment": "openfold3-b300", "gpu_count": 1, "ephemeral_storage_request_gib": 0},
+    "openfold3": {"deployment": "openfold3", "gpu_count": 1, "ephemeral_storage_request_gib": 0},
     "proteinmpnn": {"deployment": "proteinmpnn-b300", "gpu_count": 1, "ephemeral_storage_request_gib": 0},
     "qwen3-8b": {"deployment": "qwen3-8b-b300", "gpu_count": 1, "ephemeral_storage_request_gib": 4},
     "rfdiffusion": {"deployment": "rfdiffusion-b300", "gpu_count": 1, "ephemeral_storage_request_gib": 0},
@@ -84,14 +84,13 @@
       "keeper_paths": ["models/cold-start/keepers/nv-segment-ct-b300-1x.yaml"]
     },
     "openfold2": {
-      "manifest_paths": ["models/structure/manifests/openfold-nims.yaml"],
-      "keeper_paths": [],
-      "required_secrets": ["ngc_api_key", "nvcr_dockerconfigjson"]
+      "manifest_paths": ["models/structure/openfold2-upstream/kubernetes.yaml"],
+      "keeper_paths": []
     },
     "openfold3": {
-      "manifest_paths": ["models/structure/manifests/openfold-nims.yaml"],
+      "manifest_paths": ["models/structure/openfold3-preview2/k8s.yaml"],
       "keeper_paths": [],
-      "required_secrets": ["ngc_api_key", "nvcr_dockerconfigjson"]
+      "required_secrets": []
     },
     "proteinmpnn": {
       "manifest_paths": ["models/structure/manifests/proteinmpnn.yaml"],
@@ -156,7 +155,8 @@
         "models/general-media/k8s/qwen3-8b.yaml",
         "models/general-media/k8s/sdxl.yaml",
         "models/structure/manifests/diffdock.yaml",
-        "models/structure/manifests/openfold-nims.yaml",
+        "models/structure/openfold2-upstream/kubernetes.yaml",
+        "models/structure/openfold3-preview2/k8s.yaml",
         "models/structure/manifests/proteinmpnn.yaml",
         "models/structure/manifests/rfdiffusion.yaml"
       ],

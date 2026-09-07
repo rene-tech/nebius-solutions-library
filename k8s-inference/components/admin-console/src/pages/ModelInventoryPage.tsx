@@ -45,6 +45,7 @@ export function ModelInventoryPage() {
                   <td>{item.batch_readiness ?? "Not configured"}</td>
                   <td>
                     {item.snapshot_selectable ? "Available as an option" : item.gpu_snapshot}
+                    {item.snapshot_selectable && item.serving_enabled ? <span className="secondary-line"><Link to={{ pathname: "/admin/model-deployments", search: context.toString() }}>Configure startup</Link></span> : null}
                     <span className="secondary-line">{item.snapshot_reason}</span>
                     {item.snapshot_evidence_scope ? <span className="secondary-line">Evidence: {item.snapshot_evidence_scope}</span> : null}
                     {item.snapshot_normal_startup || item.snapshot_restore_startup ? (

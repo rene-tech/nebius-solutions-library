@@ -17,6 +17,7 @@ from fs2_serve_catalog.loader import load_catalog
 from test_api_mcp import build_runtime
 from test_model_deployment_publication import revision, status_view
 
+from fs2_serve.admin import AdminReadService
 from fs2_serve.deployment_runtimes import SET_SCHEMA, DeploymentRuntimeError, bind_deployment_runtimes
 from fs2_serve.dynamic_routes import DynamicRouteError, bind_dynamic_publication
 from fs2_serve.mcp_server import build_mcp_server
@@ -254,6 +255,14 @@ def test_dynamic_route_pins_image_and_artifact_even_without_archival_binding(inp
     tool = next(item for item in tools if item.name == "molmim_native")
     assert tool.meta is not None
     assert tool.meta["fs2_qualification"] == {
+        "kind": "selected-deployment-runtime",
+        "authority": "explicit-deployment-runtime-record",
+        "observed_at": None,
+        "states": entry["qualification"]["states"],
+    }
+    admin_identity = AdminReadService._identity(runtime_registry.get("molmim"))
+    assert admin_identity.qualification is not None
+    assert admin_identity.qualification.model_dump(mode="json") == {
         "kind": "selected-deployment-runtime",
         "authority": "explicit-deployment-runtime-record",
         "observed_at": None,

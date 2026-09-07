@@ -647,6 +647,12 @@ export interface ModelDeploymentConfigurationOption {
   scale_to_zero_qualified: boolean;
   fast_start_mechanism_choices: ModelDeploymentFastStartMechanismChoice[];
   fast_start_qualified_level: ModelDeploymentFastStartLevel;
+  gpu_snapshot_choices?: Array<{
+    bundle_id: string;
+    digest: string;
+    pool_refs: string[];
+    compatibility: Record<string, string>;
+  }>;
 }
 
 export interface ModelDeploymentMutationCapabilities {

@@ -1,0 +1,150 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openfold2-b300
+  namespace: fs2-models
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openfold2-b300
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: openfold2
+    app.kubernetes.io/instance: openfold2-b300
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/model-id: openfold2
+  annotations:
+    fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
+    fs2.nebius/model-content-digest: sha256:fdb6d20a1442b1a041fb87e03014e64b1ee5b1274e5d5d58a393a2eae796ffc1
+    fs2.nebius/runtime-image-digest: sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164
+    fs2-serve.nebius.ai/source-revision: be2ec1841f16c966c65ae0e7599ebbadc725757d
+    fs2-serve.nebius.ai/model-revision: 6344b2a680cbbae20b8afdb7f154228cc5b0cb27
+    fs2-serve.nebius.ai/runtime-origin: upstream-source-not-nim
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: openfold2-b300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openfold2
+        app.kubernetes.io/instance: openfold2-b300
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/part-of: fs2-serve
+        fs2-serve.nebius.ai/model-id: openfold2
+      annotations:
+        fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
+        fs2.nebius/model-content-digest: sha256:fdb6d20a1442b1a041fb87e03014e64b1ee5b1274e5d5d58a393a2eae796ffc1
+        fs2.nebius/runtime-image-digest: sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164
+        fs2-serve.nebius.ai/source-revision: be2ec1841f16c966c65ae0e7599ebbadc725757d
+        fs2-serve.nebius.ai/model-revision: 6344b2a680cbbae20b8afdb7f154228cc5b0cb27
+        fs2-serve.nebius.ai/runtime-origin: upstream-source-not-nim
+    spec:
+      serviceAccountName: openfold2-b300
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      containers:
+        - name: openfold2
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HOME
+              value: /runtime-cache/home
+            - name: CUDA_CACHE_PATH
+              value: /runtime-cache/cuda
+            - name: TORCH_EXTENSIONS_DIR
+              value: /runtime-cache/torch-extensions
+            - name: XDG_CACHE_HOME
+              value: /runtime-cache/xdg
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "8"
+              memory: 64Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "32"
+              memory: 192Gi
+              nvidia.com/gpu: "1"
+          startupProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 3
+            failureThreshold: 900
+          readinessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /v1/health/live
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+            - name: runtime-cache
+              mountPath: /runtime-cache
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+        - name: runtime-cache
+          emptyDir:
+            sizeLimit: 4Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openfold2-b300
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: openfold2
+    app.kubernetes.io/instance: openfold2-b300
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/model-id: openfold2
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: openfold2-b300
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      protocol: TCP

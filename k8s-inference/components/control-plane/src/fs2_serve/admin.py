@@ -762,18 +762,29 @@ class AdminReadService:
         endpoints = dict(gateway.endpoints) if binding is not None else {}
         projection = gateway.qualification
         active_runtime = None if projection is None else AdminRuntimeOrigin.model_validate(projection["runtime_origin"])
-        qualification = (
-            None
-            if projection is None
-            else AdminQualificationSnapshot.model_validate(
-                {
-                    "kind": "reviewed-evidence-snapshot",
-                    "authority": projection["qualification_authority"],
-                    "observed_at": projection["observed_at"],
-                    "states": projection["states"],
-                }
-            )
-        )
+        qualification = None
+        if projection is not None:
+            if "deployment_runtime" in projection:
+                # An explicitly selected deployment-runtime record is not a
+                # timestamped legacy evidence projection. Preserve its states
+                # and authority without inventing an observation timestamp.
+                qualification = AdminQualificationSnapshot.model_validate(
+                    {
+                        "kind": "selected-deployment-runtime",
+                        "authority": "explicit-deployment-runtime-record",
+                        "observed_at": None,
+                        "states": projection["states"],
+                    }
+                )
+            else:
+                qualification = AdminQualificationSnapshot.model_validate(
+                    {
+                        "kind": "reviewed-evidence-snapshot",
+                        "authority": projection["qualification_authority"],
+                        "observed_at": projection["observed_at"],
+                        "states": projection["states"],
+                    }
+                )
         gpu_class = gateway.gpu_class
         gpu_count = gateway.gpu_allocation_count
         if configured is not None and configuration is not None:

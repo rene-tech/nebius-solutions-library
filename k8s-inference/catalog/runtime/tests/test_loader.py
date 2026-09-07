@@ -54,7 +54,7 @@ class CatalogLoaderTests(unittest.TestCase):
 
     def test_model_variants_are_typed_paired_and_never_static_route_authority(self) -> None:
         catalog = self.load()
-        self.assertEqual(18, len(catalog.model_variants))
+        self.assertEqual(22, len(catalog.model_variants))
         self.assertEqual(tuple(sorted(catalog.model_variants)), catalog.candidate_variant_ids())
         self.assertEqual((), catalog.routable_variant_ids())
         for model_id in (
@@ -138,7 +138,7 @@ class CatalogLoaderTests(unittest.TestCase):
 
     def test_all_fallback_candidates_have_one_explicit_fail_closed_identity_join(self) -> None:
         catalog = self.load()
-        self.assertEqual(12, len(catalog.fallback_candidates))
+        self.assertEqual(13, len(catalog.fallback_candidates))
         self.assertEqual(
             {
                 "boltz2-hf",
@@ -151,6 +151,7 @@ class CatalogLoaderTests(unittest.TestCase):
                 "nv-segment-ct-hf",
                 "openfold2-hf-mirror",
                 "openfold3-preview2-hf",
+                "openfold3-preview2-upstream",
                 "proteinmpnn-upstream-2023-06",
                 "rfdiffusion-upstream",
             },
@@ -176,6 +177,12 @@ class CatalogLoaderTests(unittest.TestCase):
         )
         exact_pdb70 = catalog.fallback_candidate("msa-search-pdb70-mmseqs2-local")
         self.assertEqual("mapped-source-only", exact_pdb70.state)
+        openfold2 = catalog.fallback_candidate("openfold2-hf-mirror")
+        self.assertEqual("mapped-source-only", openfold2.state)
+        self.assertEqual(
+            "openfold2-upstream-portable",
+            openfold2.profile_variants["portable"],
+        )
         self.assertEqual(
             "msa-search-pdb70-mmseqs2-portable",
             exact_pdb70.profile_variants["portable"],

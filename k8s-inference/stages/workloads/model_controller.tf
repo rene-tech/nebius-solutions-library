@@ -1104,7 +1104,11 @@ locals {
         local.inventory.routes[model_id].mcp.tool_name :
         null
       )
-      snapshotDigests           = []
+      snapshotDigests = []
+      gpuSnapshotBundles = {
+        for id, bundle in local.serving_snapshot_bundles : id => bundle
+        if bundle.model_ref == model_id
+      }
       fastStartRuntimeContracts = local.model_controller_fast_start_runtime_contracts[model_id]
       # Fast-start levels (L1..L4) are qualified only by retained benchmark
       # evidence measured from GPU capacity being available until semantic

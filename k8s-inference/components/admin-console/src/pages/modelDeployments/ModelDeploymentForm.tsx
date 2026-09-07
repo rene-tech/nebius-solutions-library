@@ -83,6 +83,22 @@ interface Props {
 export function ModelDeploymentForm({ name, namespace, spec, identityLocked, disabled, configurationOption, onNameChange, onNamespaceChange, onChange }: Props) {
   const presetLocked = Boolean(configurationOption);
   const fastStart = normalizeFastStartPolicy(spec.fastStart);
+  const snapshotActive = spec.cache.snapshotPreference !== "Never";
+  const cudaSnapshotActive = snapshotActive && spec.cache.snapshotRef?.strategy === "CudaCheckpoint";
+  const snapshotId = snapshotActive ? spec.cache.snapshotRef?.name ?? "" : "";
+  const snapshotChoices = configurationOption
+    && spec.runtime.image === configurationOption.default_spec.runtime.image
+    && spec.artifact.revision === configurationOption.default_spec.artifact.revision
+    && spec.artifact.manifestDigest === configurationOption.default_spec.artifact.manifestDigest
+    ? configurationOption.gpu_snapshot_choices ?? [] : [];
+  const selectedSnapshot = snapshotChoices.find((choice) => choice.bundle_id === snapshotId);
+  const unavailableSnapshots = snapshotChoices.filter((choice) =>
+    spec.placement.poolRefs.some((poolRef) => !choice.pool_refs.includes(poolRef)),
+  ).map((choice) => choice.bundle_id);
+  const snapshotUnavailable = snapshotActive && (
+    !selectedSnapshot || unavailableSnapshots.includes(snapshotId)
+    || selectedSnapshot.digest !== spec.cache.snapshotRef?.digest
+  );
   const configuredMechanisms = configurationOption?.fast_start_mechanism_choices.map((choice) => choice.mechanism) ?? [];
   const selectedMechanismChoice = configurationOption?.fast_start_mechanism_choices.find(
     (choice) => choice.mechanism === spec.cache.mechanism,
@@ -159,8 +175,8 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
                     aria-label={`Use ${choice.pool_ref}`}
                     checked={spec.placement.poolRefs.includes(choice.pool_ref)}
                     disabled={Boolean(
-                      selectedMechanismChoice
-                      && !selectedMechanismChoice.pool_refs.includes(choice.pool_ref)
+                      ((selectedMechanismChoice && !selectedMechanismChoice.pool_refs.includes(choice.pool_ref))
+                        || (selectedSnapshot && !selectedSnapshot.pool_refs.includes(choice.pool_ref)))
                       && !spec.placement.poolRefs.includes(choice.pool_ref)
                     )}
                     onChange={(event) => update((next) => {
@@ -219,8 +235,45 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
       </fieldset>
 
       <FormSection disabled={disabled} title="Fast start" detail="Choose the model-ready target customers can understand. Hot is derived from a currently serving replica and is not a selectable cache level.">
+        {configurationOption ? <>
+          <SelectField
+            label="Model startup path"
+            value={snapshotId}
+            values={["", ...snapshotChoices.map((choice) => choice.bundle_id), ...(snapshotId && !selectedSnapshot ? [snapshotId] : [])]}
+            disabledValues={[...unavailableSnapshots, ...(snapshotId && !selectedSnapshot ? [snapshotId] : [])]}
+            formatOption={(value) => value ? `GPU snapshot · ${value}` : "Normal model loading"}
+            hint="Only installed, qualified bundles for this exact runtime are offered. Choose compatible pools first. Selecting a snapshot uses shared storage and disables competing fast-start mechanisms; replica settings stay unchanged."
+            onChange={(value) => update((next) => {
+              if (!value) {
+                next.cache.snapshotPreference = "Never";
+                next.cache.snapshotRef = null;
+                next.cache.tier = configurationOption.default_spec.cache.tier;
+                return;
+              }
+              const choice = snapshotChoices.find((candidate) => candidate.bundle_id === value);
+              if (!choice) return;
+              next.cache = { tier: "SharedFilesystem", snapshotPreference: "Prefer", snapshotRef: {
+                name: choice.bundle_id, digest: choice.digest, strategy: "CudaCheckpoint",
+              }, mechanism: null };
+              next.fastStart = { mode: "Fixed", level: "Off", fallbackPolicy: "AllowLowerLevel" };
+            })}
+          />
+          {snapshotActive ? <SelectField<ModelDeploymentSnapshotPreference>
+            label="Snapshot fallback"
+            value={spec.cache.snapshotPreference}
+            values={["Prefer", "Require"]}
+            formatOption={(value) => value === "Prefer" ? "Fall back to normal loading" : "Require restore (fail if unavailable)"}
+            onChange={(value) => update((next) => { next.cache.snapshotPreference = value; })}
+          /> : null}
+          {selectedSnapshot ? <p className="form-grid__wide">
+            Qualified on {selectedSnapshot.compatibility.gpu_name}, driver {selectedSnapshot.compatibility.driver_version}, kernel {selectedSnapshot.compatibility.kernel_release}.
+            Actual compatibility is checked before each restore. Snapshot selection alone does not certify a customer fast-start level; measured clocks and cache conditions are in Model inventory.
+          </p> : null}
+          {snapshotUnavailable ? <p role="alert">The stored snapshot is unavailable for this runtime or pool set. It is retained in the draft; select normal loading or a compatible qualified bundle.</p> : null}
+        </> : null}
         {!fastStart.configured ? <div className="inline-notice inline-notice--warning form-grid__wide" role="status"><strong>Legacy policy.</strong> This revision has no explicit fast-start class. Select a mode or level to migrate it; no qualification is inferred from its cache fields.</div> : null}
         <SelectField<ModelDeploymentFastStartMode>
+          disabled={cudaSnapshotActive}
           label="Fast-start mode"
           onChange={(value) => update((next) => {
             next.fastStart = value === "Fixed"
@@ -233,6 +286,7 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
         />
         {fastStart.mode === "Fixed" ? (
           <SelectField<ModelDeploymentFastStartLevel>
+            disabled={cudaSnapshotActive}
             hint="Hot appears automatically while a replica is ready."
             label="Fast-start level"
             onChange={(value) => update((next) => { next.fastStart = { mode: "Fixed", level: value, fallbackPolicy: fastStart.fallbackPolicy }; })}
@@ -243,6 +297,7 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
         ) : (
           <>
             <SelectField<ModelDeploymentFastStartLevel>
+              disabled={cudaSnapshotActive}
               label="Minimum fast-start level"
               onChange={(value) => update((next) => {
                 const maximumLevel = fastStartIndex(value) > fastStartIndex(fastStart.maximumLevel) ? value : fastStart.maximumLevel;
@@ -253,6 +308,7 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
               formatOption={fastStartLevelLabel}
             />
             <SelectField<ModelDeploymentFastStartLevel>
+              disabled={cudaSnapshotActive}
               label="Maximum fast-start level"
               onChange={(value) => update((next) => {
                 const minimumLevel = fastStartIndex(value) < fastStartIndex(fastStart.minimumLevel) ? value : fastStart.minimumLevel;
@@ -265,6 +321,7 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
           </>
         )}
         <SelectField<ModelDeploymentFastStartFallbackPolicy>
+          disabled={cudaSnapshotActive}
           hint="Require target blocks an unqualified slower path."
           label="When the target is unavailable"
           onChange={(value) => update((next) => {
@@ -290,7 +347,7 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
           <p>These implementation controls remain visible for diagnosis and backwards compatibility. A cache or snapshot setting alone does not prove a fast-start level.</p>
           <div className="model-deployment-form-grid">
             <SelectField<ModelDeploymentFastStartMechanism | "">
-              disabled={!configurationOption}
+              disabled={!configurationOption || cudaSnapshotActive}
               disabledValues={selectedMechanismUnavailable && spec.cache.mechanism ? [spec.cache.mechanism] : []}
               hint={configurationOption ? "Only mechanisms declared for this installed model tuple are offered. Selecting one applies its pool, cache-tier and hot-capacity requirements." : undefined}
               label="Cold-start mechanism"

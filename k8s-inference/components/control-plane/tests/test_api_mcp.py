@@ -551,6 +551,48 @@ def test_public_catalog_reports_the_admitted_pool_accelerator_class(registry, ci
         assert fallback_qwen["gpu_class"] == canonical_class
 
 
+def test_public_catalog_discovers_native_http_model_published_on_mcp_surface(registry, cipher, hasher) -> None:
+    """Native ``:invoke`` models remain discoverable without fake OpenAI exposure."""
+
+    from test_dynamic_routes import _revision
+    from test_model_deployment_publication import status_view
+
+    from fs2_serve.model_deployment import spec_digest
+    from fs2_serve.model_deployment_publication import project_dynamic_publications
+
+    revision = _revision(registry)
+    spec = revision.spec.model_copy(
+        update={
+            "exposure": revision.spec.exposure.model_copy(
+                update={"open_ai": False, "open_ai_aliases": [], "mcp": True}
+            )
+        }
+    )
+    revision = revision.model_copy(update={"spec": spec, "etag": spec_digest(spec)})
+    snapshot = project_dynamic_publications(
+        [revision],
+        {(revision.namespace, revision.name): status_view(revision)},
+    )
+    assert registry.set_dynamic_publications(
+        snapshot,
+        valid_until=datetime.now(UTC) + timedelta(minutes=5),
+    )
+
+    with TestClient(create_app(build_runtime(registry, cipher, hasher))) as client:
+        token = issue(
+            client,
+            principal="native-client",
+            scopes=["catalog.read", "inference.invoke", "mcp.invoke"],
+        )
+        response = client.get(
+            "/v1/models",
+            headers={"authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["data"]] == ["qwen3-8b"]
+
+
 def test_ip_public_authority_is_enforced_on_v1_mcp_and_both_metadata_paths(registry, cipher, hasher) -> None:
     runtime = build_runtime(registry, cipher, hasher)
     runtime.settings = Settings(

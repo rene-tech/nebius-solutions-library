@@ -1,0 +1,78 @@
+{
+  "schema": "fs2-serve.nebius.ai/serving-snapshot-production-transform-acceptance/v1",
+  "date": "2026-09-07",
+  "status": "passed",
+  "scope": "Exact production renderer transform in isolated labelled Pods; shared controller/admin rollout is parent-owned and separate.",
+  "renderer_sha256": "242f2792898d29d74752e6f6e1cd6c62eba361c1207a3018a679ac093976b46b",
+  "entrypoint_sha256": "bd6b80c17cf764caf94648f229682da68c3f73b80b99a35400a80a1eee4e81ce",
+  "source_configmap": "fs2-fleet-snapshot-serving-v7",
+  "entrypoint_configmap": "fs2-fleet-snapshot-serving-entrypoint-v1",
+  "tests": {
+    "serving_and_inventory": 22,
+    "existing_renderer_and_controller": 84,
+    "snapshot_lifecycle_and_acceptance": 36,
+    "strict_mypy_source_files": 4
+  },
+  "runs": [
+    {
+      "model_id": "qwen3-8b",
+      "mechanism": "cuda-criu-restored",
+      "bundle_id": "qwen3-8b-h100-cuda-criu-20260907-r12",
+      "pod_uid": "64c8fa7a-d4ab-49d5-91ee-e834c72684f4",
+      "pod_created_at": "2026-09-07T10:17:57Z",
+      "container_started_at": "2026-09-07T10:18:04Z",
+      "ready_observed_at": "2026-09-07T10:18:54.448423+00:00",
+      "container_to_ready_seconds": 50.448423,
+      "pod_to_ready_seconds": 57.448423,
+      "cache": "Existing reserved node and image; shared-filesystem snapshot cache retained.",
+      "unseen_inputs_passed": 2,
+      "readiness_exec_passed": true,
+      "gpu_pod_deleted": true,
+      "private_receipt_sha256": "25e2747820e94031255c199d728eda6342689f14ebf791daf44c15a6a637c851"
+    },
+    {
+      "model_id": "cosmos3-nano",
+      "mechanism": "cuda-criu-restored",
+      "bundle_id": "cosmos3-nano-h100-cuda-criu-20260907-r7",
+      "pod_uid": "9f6e6288-b446-4f2c-b638-c31b8253c914",
+      "pod_created_at": "2026-09-07T10:17:23Z",
+      "container_started_at": "2026-09-07T10:23:43Z",
+      "ready_observed_at": "2026-09-07T10:24:17.783973+00:00",
+      "container_to_ready_seconds": 34.783973,
+      "pod_to_ready_seconds": 414.783973,
+      "pod_to_container_start_seconds": 380,
+      "runtime_image_pull_seconds": 173.231,
+      "runtime_image_bytes": 9186624472,
+      "cache": "New preemptible node acquired from the existing min0/max2 pool; first pinned image pull; existing regional shared filesystem retained.",
+      "unseen_inputs_passed": 2,
+      "full_video_output": "Both previously unseen seeds produced fully decoded 25-frame448x256 videos at24fps with distinct hashes.",
+      "readiness_exec_passed": true,
+      "gpu_pod_deleted": true,
+      "private_receipt_sha256": "bf5ab54b5535b931a1ad8146497138a9c0fb1bfdb6ba1720b3434cb8b86b35b2"
+    },
+    {
+      "model_id": "cosmos3-nano",
+      "mechanism": "normal-load-filesystem-fallback",
+      "test_condition": "Only the task Pod source-directory argument points to a nonexistent snapshot. Original model command, image, precision, output bounds and resource limits are unchanged.",
+      "pod_uid": "4ca16ef5-998a-4981-bda6-5db7ca98c0b0",
+      "pod_created_at": "2026-09-07T10:17:23Z",
+      "container_started_at": "2026-09-07T10:24:03Z",
+      "ready_observed_at": "2026-09-07T10:25:04.200682+00:00",
+      "container_to_ready_seconds": 61.200682,
+      "pod_to_ready_seconds": 461.200682,
+      "pod_to_container_start_seconds": 400,
+      "cache": "Second newly autoscaled preemptible node; first image pull and ordinary model initialization after deliberate snapshot preparation failure.",
+      "unseen_inputs_passed": 2,
+      "readiness_exec_passed": true,
+      "gpu_pod_deleted": true,
+      "private_receipt_sha256": "544098326dcbc99a7f7575aa199e01723a091dc120f222c2f794d4493203506f"
+    }
+  ],
+  "cleanup": {
+    "remaining_task_pods": 0,
+    "temporary_cpu_holders_deleted": true,
+    "retained": "Read-only qualified bundles on the shared snapshot PVC plus task RWO capture/failure evidence; no running donor, restored worker or helper remains.",
+    "production_model_mutations": false,
+    "manual_capacity_or_limit_changes": false
+  }
+}

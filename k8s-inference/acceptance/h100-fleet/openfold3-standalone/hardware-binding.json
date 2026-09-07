@@ -1,0 +1,22 @@
+{
+  "model_id": "openfold3",
+  "runtime_variant": "openfold3-preview2-upstream-portable",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+  "requirements": {
+    "gpu_count": 1,
+    "topology": "single-gpu",
+    "host_architectures": [
+      "amd64"
+    ]
+  },
+  "binding": {
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "pool_template": "unbound-h100",
+    "state": "hardware-validated",
+    "enabled": true,
+    "gpu_count": 1,
+    "catalog_b300_state": null,
+    "evidence": "acceptance/h100-fleet/openfold3-standalone/qualification.json@sha256:cbeb59dcff780cf10ccfb95f5996144ab12d063de60953774452ebf485da9dc1"
+  },
+  "scope": "Exact Preview2 v4 H100 runtime only; preserve archived NIM, unqualified Blackwell candidate and separate OpenBind scientific profile."
+}

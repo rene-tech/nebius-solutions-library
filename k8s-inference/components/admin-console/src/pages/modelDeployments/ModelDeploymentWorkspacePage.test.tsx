@@ -63,6 +63,75 @@ function mockReadSurface() {
 }
 
 describe("ModelDeployment workspace", () => {
+  it.each(["qwen3-8b", "cosmos3-nano"])("selects a qualified %s snapshot and normal loading through existing preview fields", async (modelRef) => {
+    const capabilities = structuredClone(modelDeploymentMutationCapabilitiesFixture);
+    const option = capabilities.configuration_options[0]!;
+    option.model_ref = option.default_spec.modelRef = modelRef;
+    option.default_spec.cache.snapshotPreference = "Never";
+    option.default_spec.cache.snapshotRef = null;
+    option.gpu_snapshot_choices = [{
+      bundle_id: `${modelRef}-h100-v1`, digest: `sha256:${"f".repeat(64)}`,
+      pool_refs: option.pool_choices.map((choice) => choice.pool_ref),
+      compatibility: { gpu_name: "H100", driver_version: "580.159.04", kernel_release: "6.11", compute_capability: "9.0" },
+    }];
+    vi.spyOn(adminApi, "modelDeploymentCapabilities").mockResolvedValue(testEnvelope(capabilities));
+    const plan = vi.spyOn(adminApi, "planModelDeployment").mockResolvedValue(testEnvelope(modelDeploymentPlanFixture));
+    renderCreatePage();
+    const model = await screen.findByRole("combobox", { name: "Qualified model" });
+    await waitFor(() => expect(model).toBeEnabled());
+    fireEvent.change(model, { target: { value: modelRef } });
+    expect(screen.getByLabelText("Model startup path")).toHaveValue("");
+    fireEvent.change(screen.getByLabelText("Model startup path"), { target: { value: `${modelRef}-h100-v1` } });
+    expect(screen.getByLabelText("Snapshot fallback")).toHaveValue("Prefer");
+    expect(screen.getByLabelText("Fast-start mode")).toBeDisabled();
+    expect(screen.getByLabelText("Fast-start level")).toHaveValue("Off");
+    fireEvent.change(screen.getByLabelText("Snapshot fallback"), { target: { value: "Require" } });
+    fireEvent.click(screen.getByRole("button", { name: "Preview render plan" }));
+    await waitFor(() => expect(plan).toHaveBeenCalledWith(expect.objectContaining({ spec: expect.objectContaining({
+      cache: { tier: "SharedFilesystem", snapshotPreference: "Require", mechanism: null,
+        snapshotRef: { name: `${modelRef}-h100-v1`, digest: `sha256:${"f".repeat(64)}`, strategy: "CudaCheckpoint" } },
+      placement: option.default_spec.placement,
+      availability: option.default_spec.availability,
+    }) })));
+    fireEvent.change(screen.getByLabelText("Model startup path"), { target: { value: "" } });
+    expect(screen.queryByLabelText("Snapshot fallback")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Fast-start mode")).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Preview render plan" }));
+    await waitFor(() => expect(plan).toHaveBeenLastCalledWith(expect.objectContaining({ spec: expect.objectContaining({
+      cache: { tier: option.default_spec.cache.tier, snapshotPreference: "Never", snapshotRef: null, mechanism: null },
+    }) })));
+  });
+
+  it("requires compatible snapshot pools without silently moving the deployment", async () => {
+    const capabilities = structuredClone(modelDeploymentMutationCapabilitiesFixture);
+    const option = capabilities.configuration_options[0]!;
+    option.gpu_snapshot_choices = [{ bundle_id: "reserved-only", digest: `sha256:${"f".repeat(64)}`,
+      pool_refs: ["reserved-h100"], compatibility: { gpu_name: "H100", driver_version: "580", kernel_release: "6.11" } }];
+    vi.spyOn(adminApi, "modelDeploymentCapabilities").mockResolvedValue(testEnvelope(capabilities));
+    renderCreatePage();
+    const model = await screen.findByRole("combobox", { name: "Qualified model" });
+    await waitFor(() => expect(model).toBeEnabled());
+    fireEvent.change(model, { target: { value: "qwen3-8b" } });
+    expect(screen.getByRole("option", { name: "GPU snapshot · reserved-only" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Use preemptible-h100" }));
+    expect(screen.getByRole("option", { name: "GPU snapshot · reserved-only" })).toBeEnabled();
+    fireEvent.change(screen.getByLabelText("Model startup path"), { target: { value: "reserved-only" } });
+    expect(screen.getByRole("checkbox", { name: "Use preemptible-h100" })).toBeDisabled();
+  });
+
+  it("retains an unavailable stored snapshot until the operator changes it", async () => {
+    mockReadSurface();
+    const revision = structuredClone(modelDeploymentRevisionFixture);
+    revision.spec.cache.snapshotPreference = "Prefer";
+    revision.spec.cache.snapshotRef = { name: "removed-bundle", digest: `sha256:${"f".repeat(64)}`, strategy: "CudaCheckpoint" };
+    vi.mocked(adminApi.modelDeployment).mockResolvedValue(testEnvelope(revision));
+    renderPage();
+    await waitFor(() => expect(screen.getByLabelText("Model startup path")).toHaveValue("removed-bundle"));
+    expect(screen.getByText(/The stored snapshot is unavailable/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Model startup path"), { target: { value: "" } });
+    expect(screen.getByLabelText("Model startup path")).toHaveValue("");
+  });
+
   it("requires an explicit qualified-model selection and seeds the exact server default", async () => {
     vi.spyOn(adminApi, "modelDeploymentCapabilities").mockResolvedValue(testEnvelope(modelDeploymentMutationCapabilitiesFixture));
     renderCreatePage();

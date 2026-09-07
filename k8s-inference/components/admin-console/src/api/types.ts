@@ -133,9 +133,9 @@ export interface AdminModelIdentity {
     nim_artifact_parity: string;
   } | null;
   qualification: {
-    kind: "reviewed-evidence-snapshot";
+    kind: "reviewed-evidence-snapshot" | "selected-deployment-runtime";
     authority: string;
-    observed_at: string;
+    observed_at: string | null;
     states: {
       registered: boolean;
       route_active: boolean;

@@ -294,6 +294,10 @@ resource "helm_release" "control_plane" {
     kubernetes_config_map_v1.model_controller_bundles,
     kubernetes_persistent_volume_claim_v1.fast_start_compile_cache,
     kubernetes_persistent_volume_claim_v1.fast_start_residency_receipt,
+    kubernetes_persistent_volume_claim_v1.scientific_snapshots,
+    kubernetes_config_map_v1.scientific_snapshot_sources,
+    kubernetes_persistent_volume_claim_v1.serving_snapshots,
+    kubernetes_config_map_v1.serving_snapshot_sources,
     kubernetes_config_map_v1.scientific_scheduling_contract,
     kubernetes_manifest.model,
     # The chart renders capacity-reader Roles in every scientific queue

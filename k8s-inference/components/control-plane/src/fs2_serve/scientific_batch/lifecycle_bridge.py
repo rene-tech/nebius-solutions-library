@@ -750,7 +750,67 @@ class ScientificLifecycleBridge:
             correlations.extend(self._pod_correlations(attempt, pod))
             signals.extend(self._pod_signals(state, attempt, pod))
         await self.lifecycle.append_correlations(correlations)
-        await self.lifecycle.append_signals(signals)
+        await self._append_observed_signals(state, attempt, signals)
+
+    async def _append_observed_signals(
+        self,
+        state: ScientificBatchState,
+        attempt: ScientificAttemptState,
+        signals: list[LifecycleSignal],
+    ) -> None:
+        """Append a later observed tail without rewriting an earlier phase end.
+
+        Kubernetes timestamps have one-second resolution. Sequential init
+        containers can share a phase/start timestamp, so their canonical phase
+        window can grow on the next poll. Its previously recorded end remains
+        true for the earlier observation. Record the newly observed tail as a
+        separate interval; the ledger unions overlapping phase windows. This
+        also lets an in-flight run recover after the first shorter end exists.
+        """
+        detail = await self.lifecycle.get_workload(attempt.attempt_id, tenant_id=state.tenant_id)
+        persisted = (
+            {}
+            if detail is None
+            else {signal.event_key: signal.model_copy(update={"sequence": None}) for signal in detail.signals}
+        )
+        expanded: list[LifecycleSignal] = []
+        for signal in signals:
+            existing = persisted.get(signal.event_key)
+            if (
+                existing is not None
+                and signal.clock is LifecycleClock.PHASE
+                and signal.edge is LifecycleEdge.END
+                and signal.occurred_at > existing.occurred_at
+                and signal.model_copy(
+                    update={
+                        "occurred_at": existing.occurred_at,
+                        "observed_at": existing.observed_at,
+                    }
+                )
+                == existing
+            ):
+                interval = (
+                    f"{signal.interval_key}:extension:"
+                    f"{existing.occurred_at.timestamp():.6f}:{signal.occurred_at.timestamp():.6f}"
+                )
+                expanded.append(existing)
+                for edge, occurred_at in (
+                    (LifecycleEdge.START, existing.occurred_at),
+                    (LifecycleEdge.END, signal.occurred_at),
+                ):
+                    expanded.append(
+                        signal.model_copy(
+                            update={
+                                "event_key": f"{interval}:{edge.value}",
+                                "interval_key": interval,
+                                "edge": edge,
+                                "occurred_at": occurred_at,
+                            }
+                        )
+                    )
+            else:
+                expanded.append(signal)
+        await self.lifecycle.append_signals(expanded)
 
     async def _append_unobserved_phases(
         self,

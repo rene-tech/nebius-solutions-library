@@ -48,6 +48,7 @@ REQUIRED_FALLBACK_CANDIDATE_IDS = frozenset(
         "nv-segment-ct-hf",
         "openfold2-hf-mirror",
         "openfold3-preview2-hf",
+        "openfold3-preview2-upstream",
         "proteinmpnn-upstream-2023-06",
         "rfdiffusion-upstream",
     }

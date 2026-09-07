@@ -234,6 +234,7 @@ class AppRuntime:
     scientific_artifact_content_reader: SignedArtifactContentReader | None = None
     scientific_input_uploads: ScientificInputUploadService | None = None
     snapshot_capabilities: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    serving_snapshot_bundles: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
 
     async def revalidate_routes(self) -> bool:
         if self.route_revalidator is not None and not await self.route_revalidator.refresh():
@@ -899,7 +900,13 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     async def models(identity: Annotated[Principal, Depends(principal)]) -> dict[str, Any]:
         identity.require(Scope.CATALOG_READ)
         await runtime.revalidate_routes()
-        visible = runtime.registry.allowed_for_principal(identity, surface="openai")
+        # This catalog backs both OpenAI-compatible operations and the native
+        # ``/v1/models/{id}:invoke`` route. Native HTTP admissions deliberately
+        # use the MCP/model-tool publication bit, so filtering this inventory as
+        # OpenAI-only makes otherwise invocable native models undiscoverable.
+        # The catalog surface retains tenant, principal and model-selector
+        # checks while admitting either configured protocol surface.
+        visible = runtime.registry.allowed_for_principal(identity, surface="catalog")
         pool_classes = await _pool_accelerator_classes(runtime)
         return {
             "object": "list",
@@ -1635,6 +1642,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 scientific_items,
                 scientific_projection_available=scientific_available,
                 snapshot_capabilities=runtime.snapshot_capabilities,
+                serving_snapshot_bundles=runtime.serving_snapshot_bundles,
                 snapshot_bundles=getattr(
                     getattr(runtime.scientific_batches, "execution_binding", None), "snapshot_bundles", {}
                 ),

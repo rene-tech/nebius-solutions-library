@@ -1,0 +1,8 @@
+# Optional immutable successor. Build from the exact qualified Protenix image;
+# do not substitute a generic upstream image or change any model dependencies.
+ARG QUALIFIED_RUNTIME
+FROM ${QUALIFIED_RUNTIME}
+USER 0:0
+COPY --chmod=0444 protenix_server.py scientific_server.py supervisor.py process_checkpoint.py /opt/fs2-snapshot/
+COPY --chmod=0555 protenix_cli_proxy.py /opt/protenix-venv/bin/protenix
+USER 10001:10001

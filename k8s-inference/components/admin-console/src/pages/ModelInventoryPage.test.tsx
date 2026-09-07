@@ -23,7 +23,9 @@ it("shows undeployed models beside cold services and batch-ready profiles", asyn
     meta: fixture.meta,
     data: {
       items: [base,
-        { ...base, model_id: "cosmos3-nano", display_name: "Cosmos", availability: "cold", configured: true, serving_enabled: true, serving_state: "cold", ready_replicas: 0, desired_replicas: 0 },
+        { ...base, model_id: "cosmos3-nano", display_name: "Cosmos", availability: "cold", configured: true, serving_enabled: true, serving_state: "cold", ready_replicas: 0, desired_replicas: 0,
+          gpu_snapshot: "verified", snapshot_selectable: true, snapshot_evidence_scope: "configured-qualified",
+          snapshot_restore_startup: { n: 3, median_seconds: 28.082159, min_seconds: 27.823642, max_seconds: 49.223885, clock: "container-start-to-ready", cache: "retained shared filesystem" } },
         { ...base, model_id: "mosaic", display_name: "Mosaic", availability: "batch-ready", configured: true, batch_readiness: "qualified" },
       ],
       total: 3, configured: 2, not_deployed: 1, scientific_projection_available: true,
@@ -37,6 +39,13 @@ it("shows undeployed models beside cold services and batch-ready profiles", asyn
   expect(within(missing).getByText("not-deployed")).toBeInTheDocument();
   expect(screen.getByText("2 configured / 3 known · 1 not deployed")).toBeInTheDocument();
   expect(screen.getByRole("row", { name: /Cosmos/ })).toHaveTextContent("0 / 0");
+  const cosmos = within(screen.getByRole("row", { name: /Cosmos/ }));
+  expect(cosmos.getByText("Available as an option")).toBeInTheDocument();
+  expect(cosmos.getByRole("link", { name: "Configure startup" })).toHaveAttribute("href", "/admin/model-deployments");
+  fireEvent.click(cosmos.getByText("Measured startup times"));
+  expect(cosmos.getByText(/GPU restore: 28.08s median · n=3/)).toBeInTheDocument();
+  expect(cosmos.getByText("container-start-to-ready")).toBeInTheDocument();
+  expect(cosmos.getByText("Cache: retained shared filesystem")).toBeInTheDocument();
   expect(screen.getByRole("row", { name: /Mosaic/ })).toHaveTextContent("batch-ready");
   fireEvent.click(screen.getByRole("checkbox", { name: "Not deployed only" }));
   expect(screen.queryByRole("row", { name: /Cosmos/ })).not.toBeInTheDocument();

@@ -82,11 +82,11 @@
     "openfold2-hf-mirror": {
       "candidate_id": "openfold2-hf-mirror",
       "lane_id": "openfold2",
-      "state": "deferred-source-reconciliation",
+      "state": "mapped-source-only",
       "relationship": "exact-model",
-      "profile_variants": {"portable": null, "blackwell-sm103": null},
+      "profile_variants": {"portable": "openfold2-upstream-portable", "blackwell-sm103": "openfold2-upstream-blackwell-sm103"},
       "secondary_non_alias_alternative": null,
-      "notes": ["The HF mirror and runtime conversion are not yet reconciled with the tested OpenFold2 package."]
+      "notes": ["The pinned nz/OpenFold mirror contains the documented OpenFold v.06_22 checkpoint and is served by the exact revision-pinned upstream implementation; NIM package and numerical parity remain unverified."]
     },
     "openfold3-preview2-hf": {
       "candidate_id": "openfold3-preview2-hf",
@@ -96,6 +96,20 @@
       "profile_variants": {"portable": null, "blackwell-sm103": null},
       "secondary_non_alias_alternative": null,
       "notes": ["OpenFold3 Preview 2 access and NIM identity reconciliation remain blocked."]
+    },
+    "openfold3-preview2-upstream": {
+      "candidate_id": "openfold3-preview2-upstream",
+      "lane_id": "openfold3",
+      "state": "mapped-source-only",
+      "relationship": "exact-model",
+      "profile_variants": {
+        "portable": "openfold3-preview2-upstream-portable",
+        "blackwell-sm103": "openfold3-preview2-upstream-blackwell-sm103"
+      },
+      "secondary_non_alias_alternative": null,
+      "notes": [
+        "Pinned upstream git 0.4.2 and public Preview2 checkpoint; distinct from OpenBind. Historical HF access failure is preserved separately. NVIDIA NIM numerical parity remains unverified."
+      ]
     },
     "proteinmpnn-upstream-2023-06": {
       "candidate_id": "proteinmpnn-upstream-2023-06",
@@ -1262,6 +1276,388 @@
       },
       "notes": [
         "Research/non-clinical restrictions remain mandatory."
+      ]
+    },
+    "openfold2-upstream-blackwell-sm103": {
+      "variant_id": "openfold2-upstream-blackwell-sm103",
+      "base_model_id": "openfold2",
+      "exposed_model_id": "openfold2",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "openfold2",
+        "subject_model_id": "openfold2",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Exact OpenFold v.06_22 model_3_ptm checkpoint in the pinned upstream OpenFold implementation; NVIDIA NIM package and numerical parity remain unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "openfold2",
+          "execution_identity_sha256": "f83fc9f485ca3a0bf4a37d825bad791963de16b4acd0635708b70e3b8d7c8b8a",
+          "b300_state": "historical-supported",
+          "record_sha256": "559de5416a618a96f408962b60dc94a86773b20d60612274c8e0a145c6b1358a"
+        }
+      },
+      "source": {
+        "kind": "huggingface",
+        "repository": "nz/OpenFold",
+        "revision": "6344b2a680cbbae20b8afdb7f154228cc5b0cb27",
+        "revision_url": "https://huggingface.co/nz/OpenFold/tree/6344b2a680cbbae20b8afdb7f154228cc5b0cb27",
+        "artifact": {
+          "kind": "weights",
+          "uri": "https://huggingface.co/nz/OpenFold/resolve/6344b2a680cbbae20b8afdb7f154228cc5b0cb27/finetuning_no_templ_ptm_1.pt",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 1,
+          "expected_bytes": 373259620,
+          "expected_content_sha256": [
+            "1a179937a6f61143c41f8b6a0b763ac1f4762c9dc63d2fb151240930c110bee1"
+          ],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "CC-BY-4.0",
+          "state": "verified-artifact",
+          "source_url": "https://huggingface.co/nz/OpenFold/blob/6344b2a680cbbae20b8afdb7f154228cc5b0cb27/LICENSE",
+          "artifact_sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411",
+          "commercial_use": "allowed",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "blackwell-sm103",
+        "build_state": "source-only-candidate",
+        "image_digest": null,
+        "device_capability": "sm103-unverified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": [
+          "artifact-manifest",
+          "build-materials",
+          "builder",
+          "immutable-image",
+          "license-artifact",
+          "provenance",
+          "sbom",
+          "scan",
+          "signature",
+          "source-repository-revision"
+        ],
+        "qualification_claims": [
+          "cold-and-warm-cohorts-separate",
+          "compute-capability-10.3",
+          "determinism-and-kernel-dispatch-repeated",
+          "exact-worker-gpu-runtime-tuple",
+          "failures-in-denominator",
+          "network-denied-mounted-artifact-startup",
+          "preemption-recovery",
+          "quality-comparator-identity",
+          "scale-zero-ready-zero",
+          "two-semantic-gateway-responses",
+          "vendor-nim-baseline-evidence",
+          "warm-attempts-at-least-10"
+        ]
+      },
+      "promotion": {
+        "state": "candidate-unqualified",
+        "route_exposed": false,
+        "supply_receipt_digest": null,
+        "qualification_receipt_digest": null,
+        "independent_review_receipt_digest": null
+      },
+      "notes": [
+        "Blackwell is an explicit paired source candidate only; the H100-qualified image has not been qualified on SM103 and must not be selected there."
+      ]
+    },
+    "openfold2-upstream-portable": {
+      "variant_id": "openfold2-upstream-portable",
+      "base_model_id": "openfold2",
+      "exposed_model_id": "openfold2",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "openfold2",
+        "subject_model_id": "openfold2",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Exact OpenFold v.06_22 model_3_ptm checkpoint in the pinned upstream OpenFold implementation; NVIDIA NIM package and numerical parity remain unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "openfold2",
+          "execution_identity_sha256": "f83fc9f485ca3a0bf4a37d825bad791963de16b4acd0635708b70e3b8d7c8b8a",
+          "b300_state": "historical-supported",
+          "record_sha256": "559de5416a618a96f408962b60dc94a86773b20d60612274c8e0a145c6b1358a"
+        }
+      },
+      "source": {
+        "kind": "huggingface",
+        "repository": "nz/OpenFold",
+        "revision": "6344b2a680cbbae20b8afdb7f154228cc5b0cb27",
+        "revision_url": "https://huggingface.co/nz/OpenFold/tree/6344b2a680cbbae20b8afdb7f154228cc5b0cb27",
+        "artifact": {
+          "kind": "weights",
+          "uri": "https://huggingface.co/nz/OpenFold/resolve/6344b2a680cbbae20b8afdb7f154228cc5b0cb27/finetuning_no_templ_ptm_1.pt",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 1,
+          "expected_bytes": 373259620,
+          "expected_content_sha256": [
+            "1a179937a6f61143c41f8b6a0b763ac1f4762c9dc63d2fb151240930c110bee1"
+          ],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "CC-BY-4.0",
+          "state": "verified-artifact",
+          "source_url": "https://huggingface.co/nz/OpenFold/blob/6344b2a680cbbae20b8afdb7f154228cc5b0cb27/LICENSE",
+          "artifact_sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411",
+          "commercial_use": "allowed",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "portable",
+        "build_state": "source-only-candidate",
+        "image_digest": null,
+        "device_capability": "portable-unverified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": [
+          "artifact-manifest",
+          "build-materials",
+          "builder",
+          "immutable-image",
+          "license-artifact",
+          "provenance",
+          "sbom",
+          "scan",
+          "signature",
+          "source-repository-revision"
+        ],
+        "qualification_claims": [
+          "cold-and-warm-cohorts-separate",
+          "compute-capability-10.3",
+          "determinism-and-kernel-dispatch-repeated",
+          "exact-worker-gpu-runtime-tuple",
+          "failures-in-denominator",
+          "network-denied-mounted-artifact-startup",
+          "preemption-recovery",
+          "quality-comparator-identity",
+          "scale-zero-ready-zero",
+          "two-semantic-gateway-responses",
+          "vendor-nim-baseline-evidence",
+          "warm-attempts-at-least-10"
+        ]
+      },
+      "promotion": {
+        "state": "candidate-unqualified",
+        "route_exposed": false,
+        "supply_receipt_digest": null,
+        "qualification_receipt_digest": null,
+        "independent_review_receipt_digest": null
+      },
+      "notes": [
+        "The independently qualified H100 runtime is selected only through an exact deployment-runtime record; this non-authoritative candidate remains fail closed for static promotion and does not imply Blackwell support."
+      ]
+    },
+    "openfold3-preview2-upstream-blackwell-sm103": {
+      "variant_id": "openfold3-preview2-upstream-blackwell-sm103",
+      "base_model_id": "openfold3",
+      "exposed_model_id": "openfold3",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "openfold3",
+        "subject_model_id": "openfold3",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Exact standalone upstream Preview2 of3-p2-155k checkpoint with OpenFold3 0.4.2, distinct from OpenBind. NVIDIA NIM package and numerical parity remain unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "openfold3",
+          "execution_identity_sha256": "e72f9780c3dd295d33f4e4162111f06561c4ee27daaed4b662f7aa8ef52ccfed",
+          "b300_state": "historical-supported",
+          "record_sha256": "05ced35988470ccb538ea3993179f7da023a45da116d6ac9596480b61b65418c"
+        }
+      },
+      "source": {
+        "kind": "git",
+        "repository": "github.com/aqlaboratory/openfold-3",
+        "revision": "4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e",
+        "revision_url": "https://github.com/aqlaboratory/openfold-3/tree/4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e",
+        "artifact": {
+          "kind": "checkpoint-set",
+          "uri": "https://openfold3-data.s3.amazonaws.com/openfold3-parameters/of3-p2-155k.pt",
+          "identity_state": "verified-full-per-file-manifest",
+          "expected_file_count": 2,
+          "expected_bytes": 2351321839,
+          "expected_content_sha256": [],
+          "manifest_sha256": "85ab49a4770c61c94f067ee9e0857ec777409384919cd432b7e13e90a1b18527",
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "Apache-2.0",
+          "state": "verified-artifact",
+          "source_url": "https://raw.githubusercontent.com/aqlaboratory/openfold-3/4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e/LICENSE",
+          "artifact_sha256": "5b16c6df57578e44e330e9094173d6cb7d31d26b7248c496c8ec5a6aa818472b",
+          "commercial_use": "allowed",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "blackwell-sm103",
+        "build_state": "source-only-candidate",
+        "image_digest": null,
+        "device_capability": "sm103-unverified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": [
+          "artifact-manifest",
+          "build-materials",
+          "builder",
+          "immutable-image",
+          "license-artifact",
+          "provenance",
+          "sbom",
+          "scan",
+          "signature",
+          "source-repository-revision"
+        ],
+        "qualification_claims": [
+          "cold-and-warm-cohorts-separate",
+          "compute-capability-10.3",
+          "determinism-and-kernel-dispatch-repeated",
+          "exact-worker-gpu-runtime-tuple",
+          "failures-in-denominator",
+          "network-denied-mounted-artifact-startup",
+          "preemption-recovery",
+          "quality-comparator-identity",
+          "scale-zero-ready-zero",
+          "two-semantic-gateway-responses",
+          "vendor-nim-baseline-evidence",
+          "warm-attempts-at-least-10"
+        ]
+      },
+      "promotion": {
+        "state": "candidate-unqualified",
+        "route_exposed": false,
+        "supply_receipt_digest": null,
+        "qualification_receipt_digest": null,
+        "independent_review_receipt_digest": null
+      },
+      "notes": [
+        "Explicit unqualified Blackwell source candidate; no SM103 runtime test or image selection is implied.",
+        "The older blocked HF candidate and canonical NVIDIA NIM record remain unchanged. The 0.5.x OpenBind scientific worker is a different parameter release."
+      ]
+    },
+    "openfold3-preview2-upstream-portable": {
+      "variant_id": "openfold3-preview2-upstream-portable",
+      "base_model_id": "openfold3",
+      "exposed_model_id": "openfold3",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "openfold3",
+        "subject_model_id": "openfold3",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Exact standalone upstream Preview2 of3-p2-155k checkpoint with OpenFold3 0.4.2, distinct from OpenBind. NVIDIA NIM package and numerical parity remain unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "openfold3",
+          "execution_identity_sha256": "e72f9780c3dd295d33f4e4162111f06561c4ee27daaed4b662f7aa8ef52ccfed",
+          "b300_state": "historical-supported",
+          "record_sha256": "05ced35988470ccb538ea3993179f7da023a45da116d6ac9596480b61b65418c"
+        }
+      },
+      "source": {
+        "kind": "git",
+        "repository": "github.com/aqlaboratory/openfold-3",
+        "revision": "4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e",
+        "revision_url": "https://github.com/aqlaboratory/openfold-3/tree/4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e",
+        "artifact": {
+          "kind": "checkpoint-set",
+          "uri": "https://openfold3-data.s3.amazonaws.com/openfold3-parameters/of3-p2-155k.pt",
+          "identity_state": "verified-full-per-file-manifest",
+          "expected_file_count": 2,
+          "expected_bytes": 2351321839,
+          "expected_content_sha256": [],
+          "manifest_sha256": "85ab49a4770c61c94f067ee9e0857ec777409384919cd432b7e13e90a1b18527",
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "Apache-2.0",
+          "state": "verified-artifact",
+          "source_url": "https://raw.githubusercontent.com/aqlaboratory/openfold-3/4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e/LICENSE",
+          "artifact_sha256": "5b16c6df57578e44e330e9094173d6cb7d31d26b7248c496c8ec5a6aa818472b",
+          "commercial_use": "allowed",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "portable",
+        "build_state": "source-only-candidate",
+        "image_digest": null,
+        "device_capability": "portable-unverified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": [
+          "artifact-manifest",
+          "build-materials",
+          "builder",
+          "immutable-image",
+          "license-artifact",
+          "provenance",
+          "sbom",
+          "scan",
+          "signature",
+          "source-repository-revision"
+        ],
+        "qualification_claims": [
+          "cold-and-warm-cohorts-separate",
+          "compute-capability-10.3",
+          "determinism-and-kernel-dispatch-repeated",
+          "exact-worker-gpu-runtime-tuple",
+          "failures-in-denominator",
+          "network-denied-mounted-artifact-startup",
+          "preemption-recovery",
+          "quality-comparator-identity",
+          "scale-zero-ready-zero",
+          "two-semantic-gateway-responses",
+          "vendor-nim-baseline-evidence",
+          "warm-attempts-at-least-10"
+        ]
+      },
+      "promotion": {
+        "state": "candidate-unqualified",
+        "route_exposed": false,
+        "supply_receipt_digest": null,
+        "qualification_receipt_digest": null,
+        "independent_review_receipt_digest": null
+      },
+      "notes": [
+        "H100 qualification is selected only through the exact deployment-runtime record; this source candidate remains non-authoritative for static promotion and does not imply Blackwell support.",
+        "The older blocked HF candidate and canonical NVIDIA NIM record remain unchanged. The 0.5.x OpenBind scientific worker is a different parameter release."
       ]
     },
     "proteinmpnn-upstream-blackwell-sm103": {

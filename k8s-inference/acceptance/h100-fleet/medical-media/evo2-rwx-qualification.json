@@ -1,0 +1,242 @@
+{
+  "copy": {
+    "checkpoint_bytes": 82253491694,
+    "checkpoint_sha256": "dd299612b1c1cdded0dfdcaf4d16f98fc97458261d80f4d662429f0ccb316bc3",
+    "claims": {
+      "destination": {
+        "claim": "evo2-40b-cache-rwx-ecc3e914",
+        "pv": "pvc-2b501117-a965-4b9e-8d08-f1b9943805e8",
+        "storage_class": "csi-mounted-fs-path-sc",
+        "uid": "2b501117-a965-4b9e-8d08-f1b9943805e8"
+      },
+      "source": {
+        "claim": "fs2-mm-evo2-40b-cache-20260907",
+        "pv": "pvc-e5e41f44-b65f-4915-ad9f-77bf15bc45c8",
+        "storage_class": "compute-csi-default-sc",
+        "uid": "e5e41f44-b65f-4915-ad9f-77bf15bc45c8"
+      }
+    },
+    "copy_log_sha256": "43e00d8f19a3abfd77a541859cce0ba2f46bd4d0b01b86d761fc2e1e8bbea184",
+    "node": "computeinstance-e00p3acr87k9k4mckj",
+    "pod_uid": "7fc2ba9c-2ec9-4bf9-bee7-4fc304873608",
+    "source_clock_receipts": [
+      "2026-09-07T10:13:52.714094854Z COPY_BEGIN 2026-09-07T10:13:52Z",
+      "2026-09-07T10:22:29.251688027Z COPY_BYTES_COMPLETE 2026-09-07T10:22:29Z",
+      "2026-09-07T10:23:54.189358705Z /destination/.fs2-mm-evo2-copy-20260907.partial: OK",
+      "2026-09-07T10:23:54.190979674Z DESTINATION_HASH_VERIFIED 2026-09-07T10:23:54Z",
+      "2026-09-07T10:23:56.904013487Z /destination/evo2_40b.pt 82253491694 bytes mode=444",
+      "2026-09-07T10:23:56.904039404Z /destination/evo2_40b.materialization.json 582 bytes mode=444",
+      "2026-09-07T10:23:56.904898504Z COPY_COMPLETE 2026-09-07T10:23:56Z"
+    ],
+    "source_mounted_readonly": true
+  },
+  "destination_runtime_trial": {
+    "application_ready_at": "2026-09-07T10:26:37.372954618Z",
+    "cohort": "shared-filesystem-after-copy-and-full-hash-retained-image-and-compile-cache",
+    "compile_cache_abi": "driver-580.159.04-sm90",
+    "container_start_to_application_ready_seconds": 44.372954,
+    "container_started_at": "2026-09-07T10:25:53Z",
+    "events": [
+      {
+        "at": "2026-09-07T10:25:49Z",
+        "message": "Successfully assigned fs2-models/fs2-mm-evo2-40b-r09-20260907 to computeinstance-e00p3acr87k9k4mckj",
+        "reason": "Scheduled"
+      },
+      {
+        "at": "2026-09-07T10:25:49Z",
+        "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod",
+        "reason": "Pulled"
+      },
+      {
+        "at": "2026-09-07T10:25:49Z",
+        "message": "Container created",
+        "reason": "Created"
+      },
+      {
+        "at": "2026-09-07T10:25:50Z",
+        "message": "Container started",
+        "reason": "Started"
+      },
+      {
+        "at": "2026-09-07T10:25:50Z",
+        "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod",
+        "reason": "Pulled"
+      },
+      {
+        "at": "2026-09-07T10:25:50Z",
+        "message": "Container created",
+        "reason": "Created"
+      },
+      {
+        "at": "2026-09-07T10:25:51Z",
+        "message": "Container started",
+        "reason": "Started"
+      },
+      {
+        "at": "2026-09-07T10:25:52Z",
+        "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod",
+        "reason": "Pulled"
+      },
+      {
+        "at": "2026-09-07T10:25:52Z",
+        "message": "Container created",
+        "reason": "Created"
+      },
+      {
+        "at": "2026-09-07T10:25:53Z",
+        "message": "Container started",
+        "reason": "Started"
+      },
+      {
+        "at": "2026-09-07T10:25:53Z",
+        "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod",
+        "reason": "Pulled"
+      },
+      {
+        "at": "2026-09-07T10:25:53Z",
+        "message": "Container created",
+        "reason": "Created"
+      },
+      {
+        "at": "2026-09-07T10:25:54Z",
+        "message": "Container started",
+        "reason": "Started"
+      },
+      {
+        "at": "2026-09-07T10:26:04Z",
+        "message": "Startup probe failed: HTTP probe failed with statuscode: 503",
+        "reason": "Unhealthy"
+      }
+    ],
+    "first_request": {
+      "elapsed_seconds": 1.155351,
+      "request_at": "2026-09-07T10:27:03.083954Z",
+      "response_bytes": 319,
+      "response_sha256": "7f27c8d410752a4406eb695e4d836f976afb4d72ecc78106bb663c4d168f61e1"
+    },
+    "first_response_completed_at": "2026-09-07T10:27:04.239305+00:00",
+    "gpu_identity": [
+      "NVIDIA H100 80GB HBM3, GPU-644f23ac-4f00-aea9-7b7d-a57717848200, 580.159.04, 81559 MiB, 9.0",
+      "NVIDIA H100 80GB HBM3, GPU-d0f8bd7b-ca08-783a-56de-6dbaa54932c7, 580.159.04, 81559 MiB, 9.0"
+    ],
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+    "kubernetes_ready_at": "2026-09-07T10:26:49Z",
+    "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+    "node": "computeinstance-e00p3acr87k9k4mckj",
+    "oracle_profile": "historical-h200-nim-exact-dna20",
+    "oracle_sha256": "a68351e5cabd721d61da15a31fe32e7250c069123c238bda6d62a586863cd146",
+    "pod": "fs2-mm-evo2-40b-r09-20260907",
+    "pod_created_at": "2026-09-07T10:25:49Z",
+    "pod_creation_to_application_ready_seconds": 48.372954,
+    "pod_creation_to_kubernetes_ready_seconds": 60.0,
+    "pod_uid": "46929c8c-6a41-402a-84e0-df4caacf5d3f",
+    "probe_requested_at": "2026-09-07T10:25:47.457112+00:00",
+    "process_io_at_ready": "rchar: 593656119\nwchar: 1154386\nsyscr: 9187\nsyscw: 270\nread_bytes: 0\nwrite_bytes: 45056\ncancelled_write_bytes: 4096\n",
+    "repetition": "r09",
+    "runtime_identity": {
+      "identity": {
+        "compute_capability": "9.0",
+        "cuda": "12.9",
+        "cuda_driver": "580.159.04",
+        "cuda_toolchain": {
+          "nvcc": {
+            "binary_sha256": "df9974db233a0b7a6c6d59c0e5d74e011566104098bcb3553495ff1b95bdeaf6",
+            "name": "nvcc",
+            "version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:21:03_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+            "version_sha256": "29dff358a0ed1d94cef7265a8d0434fe4a073b5aaf74a518cab72fc1164aad8b"
+          },
+          "ptxas": {
+            "binary_sha256": "983b0e9283855979f42cebfd80d43f9b6e786eb84f03f7570bf941c4d3a3c461",
+            "name": "ptxas",
+            "version": "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_May_27_02:18:05_PDT_2025\nCuda compilation tools, release 12.9, V12.9.86\nBuild cuda_12.9.r12.9/compiler.36037853_0",
+            "version_sha256": "c76704880131ad6acdf1f6155ab5412a3f311e9e0b60e256972d684ace0455d0"
+          }
+        },
+        "cudnn": "91002",
+        "devices": [
+          {
+            "capability": [
+              9,
+              0
+            ],
+            "index": 0,
+            "name": "NVIDIA H100 80GB HBM3"
+          },
+          {
+            "capability": [
+              9,
+              0
+            ],
+            "index": 1,
+            "name": "NVIDIA H100 80GB HBM3"
+          }
+        ],
+        "flash_attention": "2.8.3.post1",
+        "gpu_name": "NVIDIA H100 80GB HBM3",
+        "kernel_mode": "hcs-hcm-hcl",
+        "model": "evo2-40b",
+        "model_load_ms": 36470.649173,
+        "model_path_bytes": 82253491694,
+        "native_precision": "bf16-with-transformer-engine-fp8-input-projections",
+        "parallelism": "upstream-vortex-layer-model-parallel",
+        "parameter_bytes_by_device": {
+          "cuda:0": 41125446656,
+          "cuda:1": 41117041664
+        },
+        "per_block_cuda_device_guard": true,
+        "torch": "2.8.0+cu129",
+        "torch_arch_list": [
+          "sm_70",
+          "sm_75",
+          "sm_80",
+          "sm_86",
+          "sm_90",
+          "sm_100",
+          "sm_120",
+          "compute_120"
+        ],
+        "transformer_engine": "2.8.0",
+        "triton": "3.4.0",
+        "triton_target": {
+          "arch": "90",
+          "backend": "cuda"
+        },
+        "visible_gpu_count": 2
+      },
+      "status": "ready"
+    },
+    "semantic_status": "PASS",
+    "source_clock_receipt": "2026-09-07T10:26:37.372954618Z evo2-lean-server: READY runtime_identity_sha256=6ee45e8c78400bc710ebac0eb0220ff3f02ac338e7c698016796b0ea6e2dce4b",
+    "startup_phase_seconds": {
+      "engine-build-or-compile": 4.046517,
+      "weight-load": 39.547216
+    },
+    "startup_phases": {
+      "engine-build-or-compile-end": {
+        "at": "2026-09-07T10:26:37.372919381Z",
+        "source_clock_receipt": "2026-09-07T10:26:37.372919381Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-end\"}"
+      },
+      "engine-build-or-compile-start": {
+        "at": "2026-09-07T10:26:33.326402158Z",
+        "source_clock_receipt": "2026-09-07T10:26:33.326402158Z {\"event\": \"fs2-startup-phase\", \"name\": \"engine-build-or-compile-start\"}"
+      },
+      "weight-load-end": {
+        "at": "2026-09-07T10:26:33.326368438Z",
+        "source_clock_receipt": "2026-09-07T10:26:33.326368438Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-end\"}"
+      },
+      "weight-load-start": {
+        "at": "2026-09-07T10:25:53.779152712Z",
+        "source_clock_receipt": "2026-09-07T10:25:53.779152712Z {\"event\": \"fs2-startup-phase\", \"name\": \"weight-load-start\"}"
+      }
+    }
+  },
+  "measurement_notes": [
+    "One distinct shared-filesystem fresh-process cohort, not part of the prior three RWO cached-process median.",
+    "Same image, checkpoint, H100/driver tuple, native kernels, precision and original Hopper semantic oracle.",
+    "The destination was just copied and fully read for SHA256 on this same node; OS page cache was not evicted.",
+    "Not a disk-cold or public activation measurement. Source RWO checkpoint and CPU mount holder are retained.",
+    "Root may now perform production bootstrap and independent public HTTP/MCP verification."
+  ],
+  "schema": "fs2-serve.nebius.ai/evo2-shared-cache-qualification/v1",
+  "status": "PASS"
+}

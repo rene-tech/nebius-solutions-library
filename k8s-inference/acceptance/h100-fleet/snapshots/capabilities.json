@@ -58,23 +58,34 @@
     },
     {
       "model_id": "cosmos3-nano",
-      "status": "isolated-proof",
+      "status": "fresh-pod-qualified",
       "selectable": false,
-      "reason": "True current-image CUDA+CRIU fresh-Pod restore passed two unseen-seed full video outputs with the standard-asyncio/legacy-TCPStore variant, sparse named shm files and private loopback address restoration. First RWO-remount startup was 330.335s, slower than native loading; cached/shared-storage paired repetitions and production wiring remain pending.",
+      "reason": "All three current-image shared-filesystem CUDA+CRIU restores passed two unseen-seed full video outputs with the standard-asyncio/legacy-TCPStore variant. Median container-to-ready improved from59.020s to28.082s. First RWO-remount restoration was330.335s; shared-cache timings do not predict image/node/disk-cold startup. Production availability requires the matching registered bundle; normal loading remains default.",
       "runtime_image_digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
       "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
-      "bundle": null,
+      "accelerator_classes": ["nvidia-h100-sxm5-80gb"],
+      "compatibility": {"gpu_name": "NVIDIA H100 80GB HBM3", "compute_capability": "9.0", "driver_version": "580.159.04", "kernel_release": "6.11.0-1016-nvidia"},
+      "bundle": {
+        "id": "cosmos3-nano-h100-cuda-criu-20260907-r7",
+        "sha256": "4975911cfd2ba92a0ef0537d69966ef63af457eca4f658c796e88851a9500bb8",
+        "qualification_receipt": "cosmos3-nano-h100-20260907.json",
+        "qualification_receipt_sha256": "6f0c8c7d53ad7a6612f4469bbd2855e6172f4ff6f749fdadb13d0f71f14cf400"
+      },
       "normal_startup": {
         "clock": "container-start-to-serving-application-ready",
         "n": 3,
-        "median_seconds": 57.40138,
-        "cache": "existing image/shared weights; fresh runtime cache"
+        "median_seconds": 59.019921,
+        "min_seconds": 58.510875,
+        "max_seconds": 59.276608,
+        "cache": "existing image/shared weights; fresh runtime cache; same CPU-loop variant as restore"
       },
       "restore_startup": {
         "clock": "container-start-to-completed-CUDA-restore-and-serving-health-observed",
-        "n": 1,
-        "median_seconds": 330.335479,
-        "cache": "fresh RWO remount after donor deletion; no explicit cache eviction; observed storage-read-dominated restoration"
+        "n": 3,
+        "median_seconds": 28.082159,
+        "min_seconds": 27.823642,
+        "max_seconds": 49.223885,
+        "cache": "shared filesystem cache retained; no eviction; not reserved RAM; excludes node/image acquisition"
       },
       "fresh_pod_restore_passed": true,
       "distinct_inputs_passed": 2
@@ -319,21 +330,37 @@
     },
     {
       "model_id": "qwen3-8b",
-      "status": "experimental",
+      "status": "fresh-pod-qualified",
       "selectable": false,
-      "reason": "Current vLLM 0.28 process-tree capture and fresh-Pod restore qualification is running; historical vLLM snapshots do not qualify this runtime.",
+      "reason": "Current vLLM0.28 CUDA+CRIU shared-filesystem restores passed all three matched fresh-Pod repetitions and two unseen inputs per trial. Median container-to-ready improved from99.801s to51.493s using the same standard-asyncio/legacy-TCPStore variant. Original image, BF16 precision, context length and GPU memory utilization are unchanged. Production availability requires the matching registered bundle; normal loading remains default.",
       "runtime_image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
       "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
-      "bundle": null,
+      "accelerator_classes": ["nvidia-h100-sxm5-80gb"],
+      "compatibility": {"gpu_name": "NVIDIA H100 80GB HBM3", "compute_capability": "9.0", "driver_version": "580.159.04", "kernel_release": "6.11.0-1016-nvidia"},
+      "bundle": {
+        "id": "qwen3-8b-h100-cuda-criu-20260907-r12",
+        "sha256": "980908af74a2fda33647d819daf556a300eafb652e97467538d14e84ffa81ae2",
+        "qualification_receipt": "qwen3-8b-h100-20260907.json",
+        "qualification_receipt_sha256": "2249d91f40eaaf7ed3ec75c09da660d3544c1ef9c48a8532f322ff8b8f63e1d7"
+      },
       "normal_startup": {
         "clock": "container-start-to-serving-application-ready",
         "n": 3,
-        "median_seconds": 100.034718,
-        "cache": "existing image/shared weights; fresh runtime cache"
+        "median_seconds": 99.800893,
+        "min_seconds": 99.75115,
+        "max_seconds": 100.129065,
+        "cache": "existing image/shared weights; fresh runtime cache; same CPU-loop variant as restore"
       },
-      "restore_startup": null,
-      "fresh_pod_restore_passed": false,
-      "distinct_inputs_passed": 0
+      "restore_startup": {
+        "clock": "container-start-to-completed-CUDA-restore-and-serving-health-observed",
+        "n": 3,
+        "median_seconds": 51.492663,
+        "min_seconds": 45.441728,
+        "max_seconds": 64.496288,
+        "cache": "shared filesystem cache retained; no eviction; not reserved RAM; excludes node/image acquisition"
+      },
+      "fresh_pod_restore_passed": true,
+      "distinct_inputs_passed": 2
     },
     {
       "model_id": "rfdiffusion",

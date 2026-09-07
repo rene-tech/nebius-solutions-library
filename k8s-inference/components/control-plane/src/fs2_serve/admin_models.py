@@ -205,7 +205,7 @@ class AdminQualificationStates(StrictModel):
 class AdminQualificationSnapshot(StrictModel):
     kind: str = Field(min_length=1, max_length=64)
     authority: str = Field(min_length=1, max_length=128)
-    observed_at: AwareDatetime
+    observed_at: AwareDatetime | None
     states: AdminQualificationStates
 
 

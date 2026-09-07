@@ -85,18 +85,26 @@
       "private_evidence": "/home/tux/.local/state/fs2-h100-fleet-r20260907/medical-media/nv-segment-ct/r01"
     },
     "evo2-40b": {
-      "qualification_status": "v5-direct-qualified-r06-r08-six-of-six-original-outputs-plus-six-extra; v4-rejected",
+      "qualification_status": "v5-direct-qualified-r06-r08-plus-separate-shared-filesystem-r09; all-original-outputs-PASS; v4-rejected",
       "source_manifest": "models/general-media/k8s/evo2-40b.yaml",
       "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
       "model_repository": "arcinstitute/evo2_40b",
       "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
-      "cache_pvc": "fs2-mm-evo2-40b-cache-20260907",
-      "cache_pvc_uid": "e5e41f44-b65f-4915-ad9f-77bf15bc45c8",
-      "cache_pv": "pvc-e5e41f44-b65f-4915-ad9f-77bf15bc45c8",
-      "block_disk_id": "computedisk-e00fjnwc9qk5nfzj2t",
-      "storage_class": "compute-csi-default-sc",
-      "cache_access": "ReadWriteOnce",
+      "cache_pvc": "evo2-40b-cache-rwx-ecc3e914",
+      "cache_pvc_uid": "2b501117-a965-4b9e-8d08-f1b9943805e8",
+      "cache_pv": "pvc-2b501117-a965-4b9e-8d08-f1b9943805e8",
+      "block_disk_id": null,
+      "storage_class": "csi-mounted-fs-path-sc",
+      "cache_access": "ReadWriteMany",
       "cache_size": "192Gi",
+      "retained_source_cache": {
+        "claim": "fs2-mm-evo2-40b-cache-20260907",
+        "uid": "e5e41f44-b65f-4915-ad9f-77bf15bc45c8",
+        "pv": "pvc-e5e41f44-b65f-4915-ad9f-77bf15bc45c8",
+        "block_disk_id": "computedisk-e00fjnwc9qk5nfzj2t",
+        "storage_class": "compute-csi-default-sc",
+        "retention": "Source checkpoint and read-only CPU mount holder retained; completed r08 GPU Pod released with root approval after copy/hash."
+      },
       "checkpoint_path": "/model-cache/evo2_40b.pt",
       "checkpoint_bytes": 82253491694,
       "checkpoint_sha256": "dd299612b1c1cdded0dfdcaf4d16f98fc97458261d80f4d662429f0ccb316bc3",
@@ -138,8 +146,13 @@
       "intended_shared_cache": {
         "claim": "evo2-40b-cache-rwx-ecc3e914",
         "terraform_address": "kubernetes_manifest.model[\"9cf1fc06-01-persistentvolumeclaim-evo2-40b-cache\"]",
-        "status": "release-owner-creation-then-one-readonly-source-copy-and-full-destination-hash-pending",
-        "source_retention": "Do not delete retained RWO source or hot probe until shared destination hash and semantic checks pass."
+        "status": "Terraform-created; complete checkpoint copy and full destination SHA256 verified; fresh r09 both original semantic outputs PASS",
+        "qualification_receipt": "acceptance/h100-fleet/medical-media/evo2-rwx-qualification.json",
+        "container_to_ready_seconds": 44.372954,
+        "pod_to_ready_seconds": 48.372954,
+        "repetitions": 1,
+        "cache_condition": "Same-node shared-filesystem after complete copy/hash; retained image and exact compile cache; no OS cache eviction",
+        "source_retention": "Retain original RWO checkpoint and read-only holder until root completes production/public handoff."
       }
     },
     "nv-reason-cxr-3b": {
@@ -173,6 +186,6 @@
     }
   },
   "pending": {
-    "evo2-40b": "One new shared-filesystem cache cohort after release-owned destination creation/copy, then public HTTP/MCP verification after route deployment. No v5 disk-cold figure claimed."
+    "evo2-40b": "Public HTTP/MCP verification after root route bootstrap. Shared-FS copy/hash and separate r09 semantic qualification complete. No v5 disk-cold figure claimed."
   }
 }

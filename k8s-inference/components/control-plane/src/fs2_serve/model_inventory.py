@@ -95,6 +95,8 @@ def _snapshot_inventory(
     profile: ScientificModelReadiness | None,
     capabilities: Mapping[str, Mapping[str, Any]],
     bundles: Mapping[str, Mapping[str, Any]],
+    serving: AdminModelSummary | None = None,
+    serving_bundles: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> SnapshotInventory:
     evidence = capabilities.get(model_id)
     if evidence is None:
@@ -154,6 +156,32 @@ def _snapshot_inventory(
                 and evidence.get("fresh_pod_restore_passed") is True
                 and evidence.get("distinct_inputs_passed", 0) >= 2
             )
+        elif serving is not None and measured_image is not None and runtime_image is not None:
+            if serving.identity.gpu_count != 1 or serving.identity.gpu_class not in evidence.get(
+                "accelerator_classes", []
+            ):
+                projection.snapshot_evidence_scope = "runtime-mismatch"
+                projection.snapshot_reason = (
+                    "Published snapshot measurements do not qualify this configured GPU class/count."
+                )
+                projection.snapshot_normal_startup = None
+                projection.snapshot_restore_startup = None
+                return projection
+            projection.snapshot_bundle_ids = sorted(
+                bundle_id
+                for bundle_id, bundle in (serving_bundles or {}).items()
+                if bundle.get("qualified") is True
+                and bundle.get("model_ref") == model_id
+                and _image_digest(bundle.get("runtime_image")) == _image_digest(runtime_image) == measured_image
+                and bundle.get("model_revision") == serving.identity.model_revision == evidence.get("model_revision")
+                and serving.identity.gpu_class in bundle.get("accelerator_classes", [])
+                and bundle.get("compatibility") == evidence.get("compatibility")
+                and bundle_id == captured.get("id")
+                and bundle.get("manifest_sha256") == captured.get("sha256")
+                and bundle.get("qualification_receipt_sha256") == captured.get("qualification_receipt_sha256")
+                and evidence.get("fresh_pod_restore_passed") is True
+                and evidence.get("distinct_inputs_passed", 0) >= 2
+            )
         if projection.snapshot_bundle_ids:
             projection.gpu_snapshot = "verified"
             projection.snapshot_selectable = True
@@ -163,6 +191,11 @@ def _snapshot_inventory(
                 "Normal loading remains the default; configured availability does not mean "
                 "the current run used a snapshot."
             )
+            if serving is not None:
+                projection.snapshot_reason += (
+                    " GPU class is qualified; the exact captured driver/kernel is checked again inside each Pod. "
+                    "Prefer permits normal fallback; this is not evidence of successful restore on another driver."
+                )
     return projection
 
 
@@ -174,6 +207,7 @@ def build_model_inventory(
     scientific_projection_available: bool,
     snapshot_capabilities: Mapping[str, Mapping[str, Any]] | None = None,
     snapshot_bundles: Mapping[str, Mapping[str, Any]] | None = None,
+    serving_snapshot_bundles: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> ModelInventory:
     """Preserve every known ID, merging shared IDs rather than double-counting."""
 
@@ -221,6 +255,8 @@ def build_model_inventory(
             profile if scientific_projection_available else None,
             snapshot_capabilities or {},
             snapshot_bundles or {},
+            deployed,
+            serving_snapshot_bundles or {},
         )
         items.append(
             ModelInventoryItem(

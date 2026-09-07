@@ -1,0 +1,204 @@
+{
+  "schema": "fs2-serve.nebius.ai/deployment-runtime/v1",
+  "model_id": "openfold2",
+  "variant_id": "openfold2-upstream-portable",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "openfold2",
+      "display_name": "OpenFold2",
+      "family": "bionemo-nim",
+      "tested_lane": true,
+      "source": {
+        "kind": "huggingface",
+        "repository": "nz/OpenFold",
+        "revision": "6344b2a680cbbae20b8afdb7f154228cc5b0cb27",
+        "license": {
+          "id": "CC-BY-4.0",
+          "state": "verified",
+          "notes": "Exact revision-bound model license and card are recorded in the OpenFold2 integration fragment. The independent runtime uses upstream OpenFold code revision be2ec1841f16c966c65ae0e7599ebbadc725757d under Apache-2.0; NVIDIA NIM parity is not claimed.",
+          "artifact": {
+            "url": "https://huggingface.co/nz/OpenFold/blob/6344b2a680cbbae20b8afdb7f154228cc5b0cb27/LICENSE",
+            "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+          }
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "The exact upstream checkpoint is public and is digest-verified in the immutable image."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "portable-h100-20260907-v5",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164",
+        "digest": "sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164",
+        "state": "resolved"
+      },
+      "command": [
+        "python",
+        "/opt/fs2/openfold2/server.py"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 8000,
+      "memory_bytes": 68719476736,
+      "host_ram_min_bytes": 68719476736,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-H100-SXM5-80GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/biology/openfold/openfold2/predict-structure-from-msa-and-template"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 1800
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "predict-structure"
+        ],
+        "license_enforced": true,
+        "non_clinical": false,
+        "commercial_use": "allowed"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "gated",
+          "gate": "fresh-pod-restore-with-original-semantic-output",
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "No GPU process snapshot is qualified for this exact upstream OpenFold2 runtime."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "fs2-serve-localizer",
+      "shared_path": "/mnt/fs2-serve-cache/models/openfold2",
+      "local_path": "/var/lib/fs2-serve/cache/models/openfold2",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "77b81e99939bb7a261741911e3ac298d15066c7f50b5e6fb3e3de7f1c93b1931",
+        "expanded_bytes": 373259620,
+        "minimum_bytes": 373259620,
+        "capacity_bound_bytes": 8589934592,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "two-distinct-openfold2-native-structure-responses/v1",
+      "source_path": "catalog/runtime/packaged-repository/nim-fast-start/faststart-v2/validate_openfold2.py",
+      "source_sha256": "66c75652e7f17b35ff569a59cc6a21bc09416329d9fbf30178041aed9006a9ed",
+      "fixture_path": null,
+      "fixture_sha256": null,
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": false,
+      "limitations": [
+        "Exact OpenFold v.06_22 model_3_ptm checkpoint in the pinned upstream implementation; NVIDIA NIM package and numerical parity are not claimed.",
+        "Three fresh H100 processes and two distinct semantic requests per process passed. Public HTTP/MCP and elasticity qualification remain separate gates."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "1 x NVIDIA H100 SXM5 80GB; SM90; driver 580.159.04",
+        "outcome": "live-qualified",
+        "source_commit": "cfffb95bd60f52a9595326d48f57df5d45fe50ac",
+        "summary": "Three isolated fresh processes passed six exact native structural outputs. Process-to-CUDA-synchronized model-ready median 8.290354 seconds (8.190300-8.310542). See acceptance/h100-fleet/bionemo-structure/fragments/openfold2.json."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "cfffb95bd60f52a9595326d48f57df5d45fe50ac",
+        "tree": "682d48aaa10b6aea4d1f2c5c994ff60bb80aac21",
+        "path": "k8s-inference/acceptance/h100-fleet/bionemo-structure/fragments/openfold2.json",
+        "classification": "measured-handoff"
+      }
+    ]
+  },
+  "qualification": {
+    "active_runtime": {
+      "model_revision": "6344b2a680cbbae20b8afdb7f154228cc5b0cb27",
+      "runtime_image_digest": "sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164",
+      "service": {
+        "namespace": "fs2-models",
+        "name": "openfold2-b300",
+        "port": 8000
+      }
+    },
+    "evidence": {
+      "audited_catalog_sha256": "e00b3acda36808f529dc32ec0db59041d7a716a0122e0fb7573dd217ccf9b694",
+      "audited_live_routes_sha256": null,
+      "cold_start_acceptance_sha256": "f6e1089c5d260753a577855e109a48440c27c2b7b5ba763660ba09872f71f300",
+      "elasticity_acceptance_sha256": null,
+      "http_mcp_acceptance_sha256": null,
+      "mcp_discovery_sha256": null,
+      "model_discovery_sha256": null,
+      "retained_deployments_sha256": "f6e1089c5d260753a577855e109a48440c27c2b7b5ba763660ba09872f71f300"
+    },
+    "model_id": "openfold2",
+    "policy": {
+      "license_id": "CC-BY-4.0",
+      "non_clinical": false,
+      "commercial_use": "allowed"
+    },
+    "runtime_origin": {
+      "kind": "independent-runtime",
+      "variant_id": "openfold2-upstream-portable",
+      "source_kind": "huggingface",
+      "repository": "nz/OpenFold",
+      "relationship": "exact-model",
+      "nim_artifact_parity": "unverified"
+    },
+    "states": {
+      "registered": true,
+      "route_active": false,
+      "runtime_ready": true,
+      "semantic_qualified": true,
+      "http_mcp_qualified": false,
+      "cold_start_qualified": true,
+      "elasticity_qualified": false
+    },
+    "variant_id": "openfold2-upstream-portable"
+  }
+}

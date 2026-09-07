@@ -76,9 +76,13 @@ def main():
         return subprocess.run(k + list(words), input=data, capture_output=True, text=True, check=True).stdout
 
     claims = {name: json.loads(kube("get", "pvc", name, "-o", "json")) for name in (SOURCE, DESTINATION)}
-    if any(pvc.get("status", {}).get("phase") != "Bound" for pvc in claims.values()):
-        raise ValueError("Both claims must already be Bound")
-    if claims[SOURCE]["spec"]["volumeName"] == claims[DESTINATION]["spec"]["volumeName"]:
+    if claims[SOURCE].get("status", {}).get("phase") != "Bound":
+        raise ValueError("Source claim must already be Bound")
+    # The release-owned mounted-filesystem class is WaitForFirstConsumer:
+    # creating this copy Pod is what binds an otherwise valid Pending claim.
+    if claims[DESTINATION].get("status", {}).get("phase") not in ("Pending", "Bound"):
+        raise ValueError("Destination must be Pending first consumer or Bound")
+    if claims[SOURCE]["spec"]["volumeName"] == claims[DESTINATION]["spec"].get("volumeName"):
         raise ValueError("Source and destination must identify distinct PVs")
     if claims[DESTINATION]["spec"]["storageClassName"] != "csi-mounted-fs-path-sc":
         raise ValueError("Destination must be the intended shared-filesystem claim")

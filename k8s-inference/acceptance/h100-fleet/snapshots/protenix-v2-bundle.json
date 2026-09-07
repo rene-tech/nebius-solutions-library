@@ -1,5 +1,12 @@
 {
   "schema": "fs2-serve.nebius.ai/scientific-snapshot-bundle/v1",
+  "worker_log": {
+    "bytes": 2802,
+    "sha256": "0fdec95de71579f147a252636551c6a74bcc8f2dfc1a2ee02a0e876e54430a0c",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0
+  },
   "bundle_id": "protenix-v2-h100-cuda-criu-20260907-r2",
   "model_id": "protenix-v2",
   "stage_id": "sample-structure",

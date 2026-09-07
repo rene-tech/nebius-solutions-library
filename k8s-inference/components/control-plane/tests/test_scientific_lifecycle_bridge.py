@@ -592,10 +592,7 @@ async def test_pod_correlations_are_stable_across_unscheduled_to_scheduled_enric
     correlations = {value.correlation_key: value for value in detail.correlations}
     assert correlations[pod_key].observed_at == scheduled_pod.created_at
     assert correlations[f"{pod_key}:node:{scheduled_pod.node_uid}"].observed_at == scheduled_pod.scheduled_at
-    assert (
-        correlations[f"{pod_key}:device:{GPU_UUID}:0"].observed_at
-        == scheduled_pod.device_allocation_observed_at
-    )
+    assert correlations[f"{pod_key}:device:{GPU_UUID}:0"].observed_at == scheduled_pod.device_allocation_observed_at
     assert len(correlations) == 3
 
     changed_identity = replace(
@@ -828,9 +825,43 @@ async def test_duplicate_restart_preemption_and_cancellation_never_double_charge
     ]
     assert len(preemptions) == (1 if outcome is AttemptOutcome.PREEMPTED else 0)
     assert len([value for value in detail.signals if value.clock is LifecycleClock.DEVICE_ALLOCATED]) == 2
-    device_signals = [
-        value for value in detail.signals if value.clock is LifecycleClock.DEVICE_ALLOCATED
-    ]
+    device_signals = [value for value in detail.signals if value.clock is LifecycleClock.DEVICE_ALLOCATED]
     assert next(value for value in device_signals if value.edge is LifecycleEdge.START).occurred_at == at(3)
     assert next(value for value in device_signals if value.edge is LifecycleEdge.END).occurred_at == at(10)
     assert {value.source_resolution_seconds for value in device_signals} == {5}
+
+
+@pytest.mark.asyncio
+async def test_same_second_init_phase_extension_preserves_prior_facts_and_replays() -> None:
+    state, attempt = terminal_state(AttemptOutcome.CANCELLED)
+    repository = MemoryLifecycleRepository()
+    bridge = ScientificLifecycleBridge(
+        lifecycle=repository,
+        batches=EventSource(lifecycle_events(state, attempt, preempted=False)),
+        operations=OperationSource(operation(state.operation_id, status=OperationStatus.RUNNING)),
+        cluster="k8s-inference-h100",
+    )
+    observation = pod_observation(attempt, observed_at=at(10))
+    pod = observation.pod_lifecycle[0]
+
+    async def observe_end(seconds: int) -> None:
+        phase = PodPhaseInterval(LifecyclePhase.ARTIFACT_LOADING, at(3), at(seconds))
+        await bridge.observe(state, attempt, replace(observation, pod_lifecycle=(replace(pod, phases=(phase,)),)))
+
+    # A completed zero-duration init is followed by a second init sharing its
+    # same phase/start timestamp. Its later end must not stall job completion.
+    for seconds in (3, 5, 5, 6, 6):
+        await observe_end(seconds)
+    detail = await repository.get_workload(attempt.attempt_id, tenant_id=state.tenant_id)
+    assert detail is not None
+    signals = [signal for signal in detail.signals if signal.clock is LifecycleClock.PHASE]
+    original = [signal for signal in signals if ":extension:" not in signal.event_key]
+    assert len(original) == 2
+    assert {signal.occurred_at for signal in original} == {at(3)}
+    extensions = [signal for signal in signals if ":extension:" in signal.event_key]
+    assert len(extensions) == 4
+    assert {signal.occurred_at for signal in extensions if signal.edge is LifecycleEdge.END} == {at(5), at(6)}
+    # Changes unrelated to the observed time-window extension remain errors.
+    with pytest.raises(ValueError, match="event key is already bound to different facts"):
+        bridge.source_resolution_seconds = 1
+        await observe_end(6)

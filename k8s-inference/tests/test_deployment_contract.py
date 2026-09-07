@@ -299,6 +299,16 @@ class DeploymentContractTests(unittest.TestCase):
                 "bootstrap_model_ids": [],
                 "fresh_install": False,
                 "handoff_receipt": None,
+                "gpu_snapshots": {
+                    "bundles": {},
+                    "cache": {
+                        "claim_name": "fs2-serving-gpu-snapshots",
+                        "storage_class_name": "csi-mounted-fs-path-sc",
+                        "size_gib": 128,
+                        "manage_claim": True,
+                    },
+                    "adopt_existing": False,
+                },
                 "fast_start_evidence_file": None,
                 "fast_start_environment_qualifications_file": None,
                 "fast_start_measurement_contracts_file": None,
@@ -1037,6 +1047,15 @@ class DeploymentContractTests(unittest.TestCase):
                 "api_timeout_seconds": "5",
                 "enabled": True,
                 "execution_map": committed_map,
+                "gpu_snapshots": {
+                    "bundles": {},
+                    "cache": {
+                        "claim_name": "fs2-scientific-gpu-snapshots",
+                        "storage_class_name": "csi-mounted-fs-path-sc",
+                        "size_gib": 128,
+                    },
+                    "adopt_existing": False,
+                },
                 "lease_seconds": "30",
                 "writes_enabled": False,
                 "namespace": "fs2-scientific",
@@ -1774,6 +1793,16 @@ class DeploymentContractTests(unittest.TestCase):
                 "bootstrap_model_ids": ["qwen3-8b"],
                 "fresh_install": True,
                 "handoff_receipt": None,
+                "gpu_snapshots": {
+                    "bundles": {},
+                    "cache": {
+                        "claim_name": "fs2-serving-gpu-snapshots",
+                        "storage_class_name": "csi-mounted-fs-path-sc",
+                        "size_gib": 128,
+                        "manage_claim": True,
+                    },
+                    "adopt_existing": False,
+                },
                 "fast_start_evidence_file": None,
                 "fast_start_environment_qualifications_file": None,
                 "fast_start_measurement_contracts_file": None,
@@ -1991,6 +2020,7 @@ class DeploymentContractTests(unittest.TestCase):
     def test_fast_start_inputs_propagate_to_the_workload_stage(self) -> None:
         evidence_file = self.run_root / "fast-start-evidence.json"
         evidence_file.write_text("{}\n", encoding="utf-8")
+        snapshot = json.loads((DEPLOY_ROOT / "acceptance/h100-fleet/snapshots/qwen3-8b-bundle.json").read_text())
         deployment = {
             "schema_version": 1,
             "name": "fs2-fast-start-input-test",
@@ -2008,6 +2038,11 @@ class DeploymentContractTests(unittest.TestCase):
                 "bootstrap_model_ids": ["qwen3-8b"],
                 "fresh_install": True,
                 "fast_start_evidence_file": str(evidence_file),
+                "gpu_snapshots": {
+                    "bundle_files": ["acceptance/h100-fleet/snapshots/qwen3-8b-bundle.json"],
+                    "cache": {"claim_name": snapshot["pvc"], "manage_claim": False},
+                    "adopt_existing": True,
+                },
                 "fast_start_wait_second_value": 0.025,
                 "fast_start_mechanism_hourly_costs": {
                     "shared-cache": 0.1,
@@ -2025,6 +2060,9 @@ class DeploymentContractTests(unittest.TestCase):
         ]
 
         self.assertEqual(dynamic["fast_start_evidence_file"], str(evidence_file))
+        self.assertEqual(dynamic["gpu_snapshots"]["bundles"], {snapshot["bundle_id"]: snapshot})
+        self.assertFalse(dynamic["gpu_snapshots"]["cache"]["manage_claim"])
+        self.assertTrue(dynamic["gpu_snapshots"]["adopt_existing"])
         self.assertEqual(dynamic["fast_start_wait_second_value"], 0.025)
         self.assertEqual(
             dynamic["fast_start_mechanism_hourly_costs"],
@@ -3027,30 +3065,21 @@ class DeploymentContractTests(unittest.TestCase):
             encoding="utf-8"
         )
 
+        for label, expression in (
+            ("accelerator.fs2.nebius/class", "local.selected_queue_pools"),
+            ("accelerator.fs2.nebius/pool-id", "var.model_pool_overrides"),
+            ("kubernetes.io/arch", "local.selected_queue_pools"),
+        ):
+            self.assertRegex(source, re.escape(f'"{label}"') + r"\s*=\s*" + re.escape(expression))
+        normalized = " ".join(source.split())
         self.assertIn(
-            '"accelerator.fs2.nebius/class"   = local.selected_queue_pools',
-            source,
+            "capacity.scale_from_zero && contains( "
+            "local.selected_queue_pools[var.model_pool_overrides[document.model_id]].scheduling.forbidden_scale_zero_selectors, key,",
+            normalized,
         )
         self.assertIn(
-            '"accelerator.fs2.nebius/pool-id" = var.model_pool_overrides',
-            source,
-        )
-        self.assertIn(
-            '"kubernetes.io/arch"             = local.selected_queue_pools',
-            source,
-        )
-        self.assertIn(
-            "capacity.scale_from_zero &&\n"
-            "                    contains(\n"
-            "                      local.selected_queue_pools[var.model_pool_overrides[document.model_id]].scheduling.forbidden_scale_zero_selectors,\n"
-            "                      key,",
-            source,
-        )
-        self.assertIn(
-            "} : key => value\n"
-            "                  if !(\n"
-            "                    local.selected_queue_pools",
-            source,
+            "} : key => value if !( local.selected_queue_pools",
+            normalized,
         )
 
     def test_runtime_lean_routes_carry_the_exact_v4_placement_contract(self) -> None:

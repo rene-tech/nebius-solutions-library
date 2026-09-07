@@ -1,0 +1,59 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-snapshot-qualification/v1",
+  "model_id": "mosaic",
+  "status": "tested-incompatible",
+  "production_selectable": false,
+  "date": "2026-09-07",
+  "mechanism": "cuda-criu",
+  "default": "normal-load",
+  "runtime_image_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
+  "model_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+  "jax_version": "0.10.2",
+  "python_version": "3.12",
+  "driver_version": "580.159.04",
+  "kernel_release": "6.11.0-1016-nvidia",
+  "gpu_name": "NVIDIA H100 80GB HBM3",
+  "compute_capability": "9.0",
+  "donor_deleted_before_restore": true,
+  "restored_on_same_gpu_uuid": true,
+  "worker_state": {
+    "request_independent": true,
+    "original_models": ["Boltz2", "ProteinMPNN"],
+    "synchronized_jax_arrays": 437,
+    "array_bytes": 2084092924
+  },
+  "allocator_variant": {
+    "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+    "XLA_PYTHON_CLIENT_ALLOCATOR": "platform",
+    "note": "Default allocator failed capture; documented platform allocator captured. Model weights, precision and request algorithm unchanged. Allocator performance can differ."
+  },
+  "capture": {
+    "status": "passed",
+    "cuda_lock_seconds": 0.022481301974039525,
+    "cuda_checkpoint_seconds": 4.117129462014418,
+    "criu_dump_seconds": 8.715987706033047,
+    "durability_flush_seconds": 111.16868701000931
+  },
+  "restore": {
+    "status": "failed",
+    "n": 1,
+    "cpu_criu_seconds": 111.6417031850433,
+    "cpu_criu_returncode": 0,
+    "cuda_restore_seconds": 0.5790045850444585,
+    "cuda_restore_returncode": 1,
+    "error": "OS call failed or operation not supported on this OS",
+    "model_ready_seconds": null,
+    "semantic_outputs_passed": false
+  },
+  "conclusion": "The exact tested JAX/H100/runtime combination cannot currently be offered as a GPU snapshot option. Native Mosaic remains the working path. This does not imply all JAX or GPU combinations are unsupported, and CPU restore alone is not successful model restoration.",
+  "cleanup": "All task-owned Mosaic GPU and CPU holder Pods deleted; task snapshot PVC retained as failure evidence.",
+  "private_evidence_sha256": {
+    "capture-r3-platform.json": "fce3111c6d65dc21e403a415c1bee1bd3b66383076c0b42c690794855e94302d",
+    "restore-r2-failure.log": "201b1f9bec5abbc73a4c2938e78c3b9e1c04c645c61cae23666501dc6015e5d6",
+    "restore-r2-criu.log": "1bc71ce6541462381eb4f3ed51aa14969cac1be45efb199d6e6117b653f57af7"
+  },
+  "references": [
+    "https://docs.jax.dev/en/latest/gpu_memory_allocation.html",
+    "https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__CHECKPOINT.html"
+  ]
+}

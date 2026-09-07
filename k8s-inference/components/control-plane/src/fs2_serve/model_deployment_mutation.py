@@ -40,6 +40,7 @@ from .model_deployment import (
     DNS_LABEL_PATTERN,
     DNS_SUBDOMAIN_PATTERN,
     KIND,
+    CacheSpec,
     CacheTier,
     DesiredState,
     FastStartMechanismDecision,
@@ -48,6 +49,9 @@ from .model_deployment import (
     ModelDeploymentSpec,
     ModelRenderer,
     RenderContext,
+    SnapshotPreference,
+    SnapshotRef,
+    SnapshotStrategy,
     ValidationDisposition,
     spec_digest,
     validate_model_deployment,
@@ -354,6 +358,13 @@ class ModelDeploymentFastStartMechanismChoice(StrictModel):
         return self
 
 
+class ModelDeploymentGpuSnapshotChoice(StrictModel):
+    bundle_id: str
+    digest: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
+    pool_refs: list[str] = Field(min_length=1, max_length=128)
+    compatibility: dict[str, str]
+
+
 class ModelDeploymentConfigurationOption(StrictModel):
     model_ref: str = Field(min_length=1, max_length=128)
     suggested_name: str = Field(min_length=1, max_length=253, pattern=DNS_SUBDOMAIN_PATTERN)
@@ -371,6 +382,7 @@ class ModelDeploymentConfigurationOption(StrictModel):
     # Highest fast-start level backed by compatible benchmark evidence for the
     # default spec across every default pool; Off when no evidence exists.
     fast_start_qualified_level: FastStartLevel = FastStartLevel.OFF
+    gpu_snapshot_choices: list[ModelDeploymentGpuSnapshotChoice] = Field(default_factory=list, max_length=32)
 
     @model_validator(mode="after")
     def defaults_are_allowed(self) -> ModelDeploymentConfigurationOption:
@@ -397,6 +409,10 @@ class ModelDeploymentConfigurationOption(StrictModel):
             raise ValueError("configuration option must retain the conventional mechanism")
         if any(not set(choice.pool_refs).issubset(pool_refs) for choice in mechanism_choices.values()):
             raise ValueError("configuration option mechanism pools must be allowed pool choices")
+        if any(not set(choice.pool_refs).issubset(pool_refs) for choice in self.gpu_snapshot_choices):
+            raise ValueError("configuration option snapshot pools must be allowed pool choices")
+        if len({choice.bundle_id for choice in self.gpu_snapshot_choices}) != len(self.gpu_snapshot_choices):
+            raise ValueError("configuration option snapshot bundles must be unique")
         default_mechanism = self.default_spec.cache.mechanism
         if default_mechanism is not None:
             choice = mechanism_choices.get(default_mechanism)
@@ -568,6 +584,52 @@ class ModelDeploymentMutationService:
             pool_refs=[pool_ref],
             maximum_replicas=runtime_pods_per_node,
         )
+
+    def _snapshot_choices(
+        self, default_spec: ModelDeploymentSpec, pool_choices: list[ModelDeploymentPoolChoice]
+    ) -> list[ModelDeploymentGpuSnapshotChoice]:
+        """Offer only exact installed bundles that the normal preview can render."""
+
+        choices: list[ModelDeploymentGpuSnapshotChoice] = []
+        qualification = self.envelope.qualifications[default_spec.model_ref]
+        for bundle in sorted(qualification.gpu_snapshot_bundles.values(), key=lambda item: item.bundle_id):
+            pools = [choice for choice in pool_choices if choice.accelerator_class in bundle.accelerator_classes]
+            if not pools:
+                continue
+            candidate = default_spec.model_copy(deep=True)
+            candidate.placement.pool_refs = [pool.pool_ref for pool in pools]
+            candidate.availability.max_replicas = min(
+                candidate.availability.max_replicas, sum(pool.maximum_replicas for pool in pools)
+            )
+            if candidate.availability.max_replicas < candidate.availability.min_replicas:
+                continue
+            candidate.cache = CacheSpec(
+                tier=CacheTier.SHARED_FILESYSTEM,
+                snapshot_preference=SnapshotPreference.PREFER,
+                snapshot_ref=SnapshotRef(
+                    name=bundle.bundle_id,
+                    digest="sha256:" + bundle.manifest_sha256,
+                    strategy=SnapshotStrategy.CUDA_CHECKPOINT,
+                ),
+            )
+            decision = validate_model_deployment(candidate, self.envelope)
+            if decision.disposition is not ValidationDisposition.ACCEPTED or not self._render_is_proven(
+                spec=candidate,
+                mechanism=decision.fast_start_mechanism,
+                admitted_pool_ref=decision.admitted_pool_ref,
+                name=_dns_safe_name(candidate.model_ref),
+                generation=1,
+            ):
+                continue
+            choices.append(
+                ModelDeploymentGpuSnapshotChoice(
+                    bundle_id=bundle.bundle_id,
+                    digest="sha256:" + bundle.manifest_sha256,
+                    pool_refs=candidate.placement.pool_refs,
+                    compatibility=bundle.compatibility,
+                )
+            )
+        return choices
 
     def configuration_options(self) -> list[ModelDeploymentConfigurationOption]:
         """Return only complete defaults accepted by the installed envelope."""
@@ -838,6 +900,7 @@ class ModelDeploymentMutationService:
                         scale_to_zero_qualified=qualification.scale_to_zero_qualified,
                         fast_start_mechanism_choices=renderable_mechanism_choices,
                         fast_start_qualified_level=decision.fast_start.qualified_level,
+                        gpu_snapshot_choices=self._snapshot_choices(default_spec, pool_choices),
                     )
                 )
             except ValueError:

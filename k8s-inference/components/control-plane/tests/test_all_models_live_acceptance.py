@@ -133,6 +133,36 @@ def test_sdxl_gateway_json_envelope_is_required_and_summarized_without_pixels() 
         response_summary({"data": [{"url": "https://private.invalid"}]}, b"{}", "png-b64-json")
 
 
+@pytest.mark.parametrize(
+    "gpu_required,estimated,gpu_count,passes",
+    [
+        (True, 1.5, 1, True),
+        (True, 0, 1, False),
+        (False, 0, 0, True),
+        (False, 0.5, 0, False),
+        (False, 0, 1, False),
+    ],
+)
+def test_public_operation_accounts_for_cpu_without_fabricated_gpu_usage(gpu_required, estimated, gpu_count, passes):
+    case = AcceptanceCase("test", "revision", "native", "predict", {}, "a" * 64, "json-object", gpu_required)
+    value = {
+        "id": "operation",
+        "model_id": case.model_id,
+        "model_revision": case.revision,
+        "protocol": case.protocol,
+        "operation": case.operation,
+        "status": "succeeded",
+        "semantic_outcome": "protocol_valid",
+        "estimated_gpu_seconds": estimated,
+        "runtime": {"gpu_count": gpu_count},
+    }
+    if passes:
+        assert AcceptanceRunner._operation_summary(value, case, "operation")["estimated_gpu_seconds"] == estimated
+    else:
+        with pytest.raises(AcceptanceError, match="operation_accounting_invalid"):
+            AcceptanceRunner._operation_summary(value, case, "operation")
+
+
 def test_cosmos_mp4_envelope_is_bounded_and_summarized_without_media() -> None:
     mp4 = b"\x00\x00\x00\x18ftypisom" + b"\x00" * 24
     value = {

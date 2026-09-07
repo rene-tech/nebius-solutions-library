@@ -1,0 +1,208 @@
+{
+  "schema": "fs2-serve.nebius.ai/deployment-runtime/v1",
+  "model_id": "openfold3",
+  "variant_id": "openfold3-preview2-upstream-portable",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "openfold3",
+      "display_name": "OpenFold3 Preview2",
+      "family": "bionemo-nim",
+      "tested_lane": true,
+      "source": {
+        "kind": "git",
+        "repository": "github.com/aqlaboratory/openfold-3",
+        "revision": "4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e",
+        "license": {
+          "id": "Apache-2.0",
+          "state": "verified",
+          "notes": "Pinned upstream OpenFold3 0.4.2 code and Preview2 weights; separate CCD data is CC0-1.0. Independent runtime, not NVIDIA NIM.",
+          "artifact": {
+            "url": "https://raw.githubusercontent.com/aqlaboratory/openfold-3/4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e/LICENSE",
+            "sha256": "5b16c6df57578e44e330e9094173d6cb7d31d26b7248c496c8ec5a6aa818472b"
+          }
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "Public upstream Preview2 checkpoint and CCD are full-SHA verified and baked into the immutable image."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "preview2-0.4.2-h100-20260907-v4",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+        "digest": "sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+        "state": "resolved"
+      },
+      "command": [
+        "/bin/bash",
+        "-ec",
+        "source /opt/fs2/activate.sh; export TRITON_CACHE_DIR=${FS2_RUNTIME_CACHE_ROOT:-/tmp/of3-cache}/triton TORCH_EXTENSIONS_DIR=${FS2_RUNTIME_CACHE_ROOT:-/tmp/of3-cache}/torch-extensions XDG_CACHE_HOME=${FS2_RUNTIME_CACHE_ROOT:-/tmp/of3-cache}/xdg CUDA_CACHE_PATH=${FS2_RUNTIME_CACHE_ROOT:-/tmp/of3-cache}/cuda; exec python /opt/fs2/openfold3-preview2/server.py"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 6000,
+      "memory_bytes": 34359738368,
+      "host_ram_min_bytes": 34359738368,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-H100-SXM5-80GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/biology/openfold/openfold3/predict"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 1800
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "predict-structure"
+        ],
+        "license_enforced": true,
+        "non_clinical": false,
+        "commercial_use": "allowed"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "gated",
+          "gate": "fresh-pod-restore-with-original-semantic-output",
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "No GPU process snapshot is qualified for this exact Preview2 runtime. Conventional fresh-process and compilation-cache evidence is not snapshot support."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "fs2-serve-localizer",
+      "shared_path": "/mnt/fs2-serve-cache/models/openfold3",
+      "local_path": "/var/lib/fs2-serve/cache/models/openfold3",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "85ab49a4770c61c94f067ee9e0857ec777409384919cd432b7e13e90a1b18527",
+        "expanded_bytes": 2351321839,
+        "minimum_bytes": 2351321839,
+        "capacity_bound_bytes": 4294967296,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "two-distinct-openfold3-native-structure-responses/v1",
+      "source_path": "nim-fast-start/faststart-v2/openfold3-native/validate_openfold3.py",
+      "source_sha256": "679b3e027b18e78b4646569e8c6395fb5f62c4647704bb5089aa2385a20d11f5",
+      "fixture_path": "nim-fast-start/faststart-v2/openfold3-native/fixtures/request-20aa.json",
+      "fixture_sha256": "09b30bf2132e3764f99d4f417b47713cd6350bd332fe3100cceb1be11589f8ae",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": false,
+      "limitations": [
+        "Standalone upstream Preview2 0.4.2/of3-p2-155k is not OpenBind and is not NVIDIA NIM packaging; NIM numerical parity is unverified.",
+        "The exact one-H100 image passed three cached fresh-process trials with both original native requests and an additional different 40-residue protein. Public HTTP/MCP qualification is pending.",
+        "Source readiness means GPU weights loaded, not first inference compiled: uncached JIT first output took 397.640487 seconds; cached first-output median was 12.889124 seconds.",
+        "Only the retained monomer/inline-A3M cases were measured. No universal hardware, clinical or comprehensive prediction-quality qualification is claimed.",
+        "Rejected v2 CCD-decoding and v3 inline-MSA adapter failures are retained; only this v4 image is qualified."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "1 x NVIDIA H100 SXM5 80GB; SM90; driver 580.159.04",
+        "outcome": "live-qualified",
+        "source_commit": "cfffb95bd60f52a9595326d48f57df5d45fe50ac",
+        "summary": "Working-tree v4 image is digest-bound. Three fresh cached processes passed nine native structural outputs; initial-compile process passed three additional outputs. Container-to-GPU-ready median 31.437549 seconds; Pod-to-ready 35.684628 seconds. See acceptance/h100-fleet/openfold3-standalone/qualification.json."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "cfffb95bd60f52a9595326d48f57df5d45fe50ac",
+        "tree": "682d48aaa10b6aea4d1f2c5c994ff60bb80aac21",
+        "path": "k8s-inference/acceptance/h100-fleet/openfold3-standalone/qualification.json",
+        "classification": "measured-handoff"
+      }
+    ]
+  },
+  "qualification": {
+    "active_runtime": {
+      "model_revision": "4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e",
+      "runtime_image_digest": "sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+      "service": {
+        "namespace": "fs2-models",
+        "name": "openfold3",
+        "port": 8000
+      }
+    },
+    "evidence": {
+      "audited_catalog_sha256": "48b9b1d3bd0f8e1a11532dd70be68168e98a1220ac5a84f9fef4b2fad60939fe",
+      "audited_live_routes_sha256": null,
+      "cold_start_acceptance_sha256": "cbeb59dcff780cf10ccfb95f5996144ab12d063de60953774452ebf485da9dc1",
+      "elasticity_acceptance_sha256": null,
+      "http_mcp_acceptance_sha256": null,
+      "mcp_discovery_sha256": null,
+      "model_discovery_sha256": null,
+      "retained_deployments_sha256": "cbeb59dcff780cf10ccfb95f5996144ab12d063de60953774452ebf485da9dc1"
+    },
+    "model_id": "openfold3",
+    "policy": {
+      "license_id": "Apache-2.0",
+      "non_clinical": false,
+      "commercial_use": "allowed"
+    },
+    "runtime_origin": {
+      "kind": "independent-runtime",
+      "variant_id": "openfold3-preview2-upstream-portable",
+      "source_kind": "git",
+      "repository": "github.com/aqlaboratory/openfold-3",
+      "relationship": "exact-model",
+      "nim_artifact_parity": "unverified"
+    },
+    "states": {
+      "registered": true,
+      "route_active": false,
+      "runtime_ready": true,
+      "semantic_qualified": true,
+      "http_mcp_qualified": false,
+      "cold_start_qualified": true,
+      "elasticity_qualified": false
+    },
+    "variant_id": "openfold3-preview2-upstream-portable"
+  }
+}

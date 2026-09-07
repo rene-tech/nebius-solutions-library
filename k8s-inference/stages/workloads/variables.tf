@@ -923,7 +923,17 @@ variable "model_controller" {
     handoff_receipt     = optional(string)
     # Derived by inference-stack from this run's accepted workloads state.
     # Not a customer switch: initial legacy migration still uses its receipt.
-    existing_controller_ownership              = optional(bool, false)
+    existing_controller_ownership = optional(bool, false)
+    gpu_snapshots = optional(object({
+      bundles = optional(map(any), {})
+      cache = optional(object({
+        claim_name         = optional(string, "fs2-serving-gpu-snapshots")
+        storage_class_name = optional(string, "csi-mounted-fs-path-sc")
+        size_gib           = optional(number, 128)
+        manage_claim       = optional(bool, true)
+      }), {})
+      adopt_existing = optional(bool, false)
+    }), {})
     fast_start_evidence_file                   = optional(string)
     fast_start_environment_qualifications_file = optional(string)
     fast_start_measurement_contracts_file      = optional(string)

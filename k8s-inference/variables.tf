@@ -183,12 +183,25 @@ variable "deployment" {
     }), {})
 
     dynamic_models = optional(object({
-      enabled                                    = optional(bool, false)
-      writes_enabled                             = optional(bool, false)
-      workload_owner                             = optional(string, "terraform")
-      bootstrap_model_ids                        = optional(set(string), [])
-      fresh_install                              = optional(bool, false)
-      handoff_receipt                            = optional(string)
+      enabled             = optional(bool, false)
+      writes_enabled      = optional(bool, false)
+      workload_owner      = optional(string, "terraform")
+      bootstrap_model_ids = optional(set(string), [])
+      fresh_install       = optional(bool, false)
+      handoff_receipt     = optional(string)
+      # Qualified serving checkpoints are optional; select one per model in
+      # the admin console. A shared cache can also serve scientific batches.
+      gpu_snapshots = optional(object({
+        bundles      = optional(map(any), {})
+        bundle_files = optional(set(string), [])
+        cache = optional(object({
+          claim_name         = optional(string, "fs2-serving-gpu-snapshots")
+          storage_class_name = optional(string, "csi-mounted-fs-path-sc")
+          size_gib           = optional(number, 128)
+          manage_claim       = optional(bool, true)
+        }), {})
+        adopt_existing = optional(bool, false)
+      }), {})
       fast_start_evidence_file                   = optional(string)
       fast_start_environment_qualifications_file = optional(string)
       fast_start_measurement_contracts_file      = optional(string)
@@ -571,7 +584,8 @@ variable "deployment" {
       # Optional qualified GPU checkpoint bundles. Normal loading remains the
       # default; operators select a bundle per stage in the admin console.
       gpu_snapshots = optional(object({
-        bundles = optional(map(any), {})
+        bundles      = optional(map(any), {})
+        bundle_files = optional(set(string), [])
         cache = optional(object({
           claim_name         = optional(string, "fs2-scientific-gpu-snapshots")
           storage_class_name = optional(string, "csi-mounted-fs-path-sc")

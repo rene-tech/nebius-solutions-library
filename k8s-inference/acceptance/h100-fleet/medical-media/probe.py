@@ -164,7 +164,9 @@ def run(args):
     if current["metadata"]["labels"].get("fs2.nebius/task") != TASK:
         raise RuntimeError("ownership mismatch")
     if args.action in ("delete", "release-cache"):
-        print(kube("delete", "pod", name, "--grace-period=5", "--wait=true"))
+        result = kube("delete", "pod", name, "--grace-period=5", "--wait=true")
+        write(args.output / "deleted.json", {"pod": name, "uid": current["metadata"]["uid"], "deleted_at": utc(), "result": result})
+        print(result)
         return
     log_files = {}
     followers = []

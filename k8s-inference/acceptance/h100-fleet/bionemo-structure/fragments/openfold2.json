@@ -1,0 +1,133 @@
+{
+  "schema": "fs2-h100-fleet-model-integration/v1",
+  "model_id": "openfold2",
+  "status": "direct-h100-semantic-qualified-production-adoption-pending",
+  "source_base": "cfffb95bd60f52a9595326d48f57df5d45fe50ac",
+  "catalog_proposal": {
+    "variant_id": "openfold2-upstream-portable",
+    "base_model_id": "openfold2",
+    "exposed_model_id": "openfold2",
+    "variant_kind": "independent-runtime",
+    "relationship": {
+      "kind": "exact-model",
+      "reference_model_id": "openfold2",
+      "subject_model_id": "openfold2",
+      "nim_artifact_parity": "unverified",
+      "notes": "Exact OpenFold v.06_22 model_3_ptm checkpoint in the revision-pinned upstream implementation; NVIDIA NIM package and numerical parity are not claimed."
+    },
+    "source": {
+      "kind": "git-plus-huggingface-artifact",
+      "repository": "github.com/aqlaboratory/openfold",
+      "revision": "be2ec1841f16c966c65ae0e7599ebbadc725757d",
+      "revision_url": "https://github.com/aqlaboratory/openfold/tree/be2ec1841f16c966c65ae0e7599ebbadc725757d",
+      "license": {
+        "id": "Apache-2.0",
+        "state": "verified-revision-bound-code-artifact",
+        "url": "https://raw.githubusercontent.com/aqlaboratory/openfold/be2ec1841f16c966c65ae0e7599ebbadc725757d/LICENSE",
+        "sha256": "7a77a0f9b49715d3b124b39607c53c5df8795d26f7aae08b12e6dbb9b1ec1a40",
+        "bytes": 11353
+      },
+      "model_repository": "nz/OpenFold",
+      "model_revision": "6344b2a680cbbae20b8afdb7f154228cc5b0cb27",
+      "model_revision_url": "https://huggingface.co/nz/OpenFold/tree/6344b2a680cbbae20b8afdb7f154228cc5b0cb27",
+      "model_license": {
+        "id": "CC-BY-4.0",
+        "state": "verified-revision-bound-artifact",
+        "url": "https://huggingface.co/nz/OpenFold/blob/6344b2a680cbbae20b8afdb7f154228cc5b0cb27/LICENSE",
+        "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411",
+        "bytes": 18657,
+        "model_card_sha256": "ed67d7fd26f1f8542529d6a2fcb6d1e0a6ab9dcdb9dadb524f48712ac29be072",
+        "model_card_bytes": 2466
+      },
+      "artifact": {
+        "kind": "weights",
+        "manifest": "catalog/runtime/deployment-runtimes/artifacts/openfold2-77b81e99939bb7a261741911e3ac298d15066c7f50b5e6fb3e3de7f1c93b1931.json",
+        "manifest_sha256": "77b81e99939bb7a261741911e3ac298d15066c7f50b5e6fb3e3de7f1c93b1931",
+        "content_digest": "fdb6d20a1442b1a041fb87e03014e64b1ee5b1274e5d5d58a393a2eae796ffc1",
+        "expected_bytes": 373259620,
+        "files": {
+          "finetuning_no_templ_ptm_1.pt": {
+            "bytes": 373259620,
+            "sha256": "1a179937a6f61143c41f8b6a0b763ac1f4762c9dc63d2fb151240930c110bee1"
+          }
+        }
+      }
+    }
+  },
+  "runtime": {
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164",
+    "gpu_count": 1,
+    "resources": {
+      "requests": {"cpu": "8", "memory": "64Gi", "nvidia.com/gpu": "1"},
+      "limits": {"cpu": "32", "memory": "192Gi", "nvidia.com/gpu": "1"}
+    },
+    "compile_cache_abi": "deployment-profile-abi-v1",
+    "placement": "controller-selected-compatible-accelerator-pool",
+    "cache": {
+      "weights": "immutable-image-layer",
+      "writable_runtime_cache": "temporary-emptyDir-only"
+    },
+    "readiness": {"method": "GET", "path": "/v1/health/ready", "expected_status": 200},
+    "liveness": {"method": "GET", "path": "/v1/health/live", "meaning": "process-alive"},
+    "inference": {"method": "POST", "path": "/biology/openfold/openfold2/predict-structure-from-msa-and-template"},
+    "model_configuration": "model_3_ptm",
+    "input_features": "upstream-single-sequence-msa-no-template",
+    "precision": "float32"
+  },
+  "qualification": {
+    "hardware": "H100-80GB-SM90-driver-580.159.04",
+    "fresh_process_repetitions": 3,
+    "semantic_requests_per_repetition": 2,
+    "semantic_status": "PASS-6-of-6",
+    "validator": "openfold2-faststart-semantic-v1",
+    "validator_source": "catalog/runtime/packaged-repository/nim-fast-start/faststart-v2/validate_openfold2.py",
+    "validator_source_sha256": "66c75652e7f17b35ff569a59cc6a21bc09416329d9fbf30178041aed9006a9ed",
+    "semantic_invariants": [
+      "two distinct canonical 20-residue sequences",
+      "exact input sequence recovered from each real PDB",
+      "20 backbone residues and 167 atom records",
+      "501 finite coordinate values",
+      "finite 20-value pLDDT, 20x20 PAE and pTM",
+      "handled-error payload absent"
+    ],
+    "process_to_model_ready_seconds": {
+      "samples": [8.310542, 8.290354, 8.1903],
+      "median": 8.290354,
+      "minimum": 8.1903,
+      "maximum": 8.310542,
+      "boundary": "runtime process start through exact checkpoint verification, model construction/load, CUDA placement and CUDA synchronization"
+    },
+    "request_elapsed_seconds": {
+      "r01": [1.750025, 1.078035],
+      "r02": [1.571875, 0.918843],
+      "r03": [1.627546, 0.942716],
+      "notes": "The three isolated runtimes overlapped on available H100 capacity; these per-request timings are semantic proof, not an isolated throughput baseline."
+    },
+    "response_sha256": {
+      "r01": ["df7e14a4acc9c0065f76ff7644518c45fbb3cd5070301761fec093d9d85f8397", "12e2504a5fe33d7185f57d4cd08d19dc5601ee1fafdda250434cb99c9471cfe7"],
+      "r02": ["0b0f003fd1b5846b1cfad621214d3bb2e84737417dab166812388b357add0c29", "b010bcae51362f91a092775abfc2639e6188e3cca898c94cc035ee8c18ac80bd"],
+      "r03": ["95c0d1f32b8ba532666f3ab7f25ce072f0fe77bf1800d93c7d72dbcc9bd1a43e", "4c73048ffc4850b5712642cabc3690e787e1da29fde4bd2bf47c2d561fe6d906"]
+    },
+    "job_names": ["fs2-h100-openfold2-r01", "fs2-h100-openfold2-r02", "fs2-h100-openfold2-r03"],
+    "pod_uids": [
+      "ad5b74f8-fded-43c0-a49e-437bbc28f4c0",
+      "b3a15a34-4bf3-47cb-ad57-b0cd6d5aa48d",
+      "6d7488a4-598a-47bf-a9f2-0845e8148e8c"
+    ],
+    "excluded_attempts": [
+      {
+        "image_digest": "sha256:7ad3ed844d8db3f4e8633af63e144c993ae9bd7e78cf3b5146a8216fb2bc6c40",
+        "count": 3,
+        "semantic_result": "PASS-6-of-6",
+        "reason": "The runtime emitted the wrong Hugging Face repository label; exact checkpoint bytes/revision were unchanged, but these attempts were excluded from final provenance qualification."
+      },
+      {
+        "count": 1,
+        "semantic_result": "FAIL-0-of-2",
+        "reason": "The first image omitted the pinned pandas runtime dependency; the failure is preserved in private evidence and was fixed without changing the request, validator or resource limits."
+      }
+    ],
+    "private_evidence_root": "/home/tux/.local/state/fs2-h100-fleet-r20260907/bionemo-structure/openfold2"
+  },
+  "production_boundary": "Isolated digest-pinned test Jobs only; public HTTP/MCP route verification remains pending root deployment."
+}

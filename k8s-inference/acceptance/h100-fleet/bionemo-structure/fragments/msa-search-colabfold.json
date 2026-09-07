@@ -1,0 +1,87 @@
+{
+  "schema": "fs2-h100-fleet-model-integration/v1",
+  "model_id": "msa-search-colabfold-federated",
+  "status": "direct-cpu-semantic-qualified-non-alias-alternative-production-policy-pending",
+  "source_base": "070ce46fe08ac47949d66c252a9924a02e212968",
+  "catalog_proposal": {
+    "variant_id": "msa-search-colabfold-federated-portable",
+    "base_model_id": "msa-search-colabfold-federated",
+    "exposed_model_id": "msa-search-colabfold-federated",
+    "variant_kind": "independent-federated-runtime",
+    "relationship": {
+      "kind": "capability-equivalent-non-alias",
+      "reference_model_id": "msa-search-pdb70",
+      "subject_model_id": "msa-search-colabfold-federated",
+      "alias_allowed": false,
+      "exact_pdb70_parity": false,
+      "notes": "The compatibility request field can accept the historical pdb70_220313 name, but results come from the current public ColabFold service over UniRef30 and environmental databases. It must not replace or masquerade as the NVIDIA PDB70 NIM."
+    },
+    "source": {
+      "kind": "git-plus-federated-api",
+      "repository": "github.com/sokrypton/ColabFold",
+      "revision": "0c788a0e8dca909f2c669784f9dd38e8c9682ff0",
+      "license": {
+        "id": "MIT",
+        "state": "verified-revision-bound-code-artifact",
+        "url": "https://raw.githubusercontent.com/sokrypton/ColabFold/0c788a0e8dca909f2c669784f9dd38e8c9682ff0/LICENSE",
+        "sha256": "f7a0429ad8a5ebc35994ba24d65a2962fc8c106ff28d2c7e43125ba4d2208108",
+        "bytes": 1075,
+        "notes": "Code license only; public API service terms and live database provenance still require owner confirmation before a customer-facing production route."
+      },
+      "upstream": {
+        "endpoint": "https://api.colabfold.com",
+        "actual_databases": ["UniRef30", "ColabFold environmental databases"],
+        "network_required_on_cache_miss": true
+      }
+    }
+  },
+  "runtime": {
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/msa-search@sha256:64bd29bc83915a145ac5d55ec9c6de1178bc2be2f2d9fdc1b789b9b6a5c78136",
+    "gpu_count": 0,
+    "resources": {
+      "requests": {"cpu": "2", "memory": "2Gi"},
+      "limits": {"cpu": "8", "memory": "8Gi"}
+    },
+    "placement": "controller-selected-general-cpu-pool",
+    "cache": {
+      "claim": "fs2-h100-msa-block-cache-r20260907",
+      "claim_uid": "daede7b8-c7de-4c61-b1b0-1b081825b00a",
+      "volume": "pvc-daede7b8-c7de-4c61-b1b0-1b081825b00a",
+      "storage_class": "compute-csi-default-sc",
+      "access": "ReadWriteOnce",
+      "size": "4Gi",
+      "mount": "/cache"
+    },
+    "readiness": {"method": "GET", "path": "/v1/health/ready", "expected_status": 200},
+    "inference": {"method": "POST", "path": "/biology/colabfold/msa-search/predict"}
+  },
+  "qualification": {
+    "hardware": "general-cpu-node-in-project-e00rene-eu-north1",
+    "fresh_process_repetitions": 3,
+    "semantic_requests_per_repetition": 2,
+    "semantic_status": "PASS-6-of-6",
+    "validator": "msa-search-faststart-semantic-v1",
+    "semantic_invariants": ["two distinct 76-residue queries echoed", "A3M output", "128 records", "127 non-query homologs", "distinct alignment hashes"],
+    "container_start_to_ready_seconds": {
+      "samples": [1.313, 1.789, 1.279],
+      "median": 1.313,
+      "minimum": 1.279,
+      "maximum": 1.789,
+      "precision": "Kubernetes container startedAt is second-resolution"
+    },
+    "search_elapsed_seconds": {
+      "first_uncached_repetition": [11.851849, 60.698],
+      "warm_cache_repetitions": "under 0.01 per request"
+    },
+    "job_names": ["fs2-h100-msa-search-pdb70-r01-a04", "fs2-h100-msa-search-pdb70-r02", "fs2-h100-msa-search-pdb70-r03"],
+    "private_evidence_root": "/home/tux/.local/state/fs2-h100-fleet-r20260907/bionemo-structure/final"
+  },
+  "canonical_pdb70_blocker": {
+    "model_id": "msa-search-pdb70",
+    "image": "nvcr.io/nim/colabfold/msa-search@sha256:944f3cf845761be8e42b33147ae08b68c61eca7cad67bf5251e1708d03c0165c",
+    "registry_result": "HTTP-403-with-retained-NGC-credential",
+    "state": "not-restored",
+    "reason": "Exact NIM image and database artifact are unavailable; the qualified federated fallback is a distinct service."
+  },
+  "production_boundary": "Isolated test Jobs only. Do not expose this under the canonical msa-search-pdb70 identity without an explicit policy decision that preserves its non-alias identity and federated dependency."
+}

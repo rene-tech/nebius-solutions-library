@@ -63,6 +63,7 @@ class AcceptanceCase:
     payload: dict[str, Any]
     payload_sha256: str
     response_kind: str
+    gpu_required: bool = True
 
 
 def utc_now() -> str:
@@ -651,7 +652,11 @@ class AcceptanceRunner:
         ):
             raise AcceptanceError("operation_terminal_identity_invalid")
         estimated = value.get("estimated_gpu_seconds")
-        if not isinstance(estimated, int | float) or estimated <= 0:
+        if (
+            not isinstance(estimated, int | float)
+            or (case.gpu_required and estimated <= 0)
+            or (not case.gpu_required and (estimated != 0 or value.get("runtime", {}).get("gpu_count") != 0))
+        ):
             raise AcceptanceError("operation_accounting_invalid")
         return {
             "id": operation_id,

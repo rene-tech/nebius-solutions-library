@@ -13,6 +13,14 @@ owner subsequently deployed the three small models with Terraform.
 | NV-Reason-CXR-3B | 79.395 s (77.115–82.521) | 82.395 s | Both pinned CXR fixtures pass unchanged reasoning/answer oracle |
 | Evo2-40B v5, 2 H100 | 23.548 s (23.217–26.169) | 28.548 s | Both original historical Hopper DNA20 fixtures; retained OS page cache |
 
+The separate production-destination shared-filesystem Evo2 trial r09 passed
+both original outputs: **44.373 s container → ready**, **48.373 s Pod → ready**,
+weight load 39.547 s and cached engine setup 4.047 s, **n=1**. It is not mixed
+with the three RWO/page-cache trials above. The complete 82,253,491,694-byte
+destination SHA256 was verified before starting this process; the same-node
+copy/hash may populate OS page cache, which was not evicted. See
+`evo2-rwx-qualification.json` for exact copy/verification and runtime clocks.
+
 The runtime's own SDXL/Segment load timer excludes Python imports and is not
 the full startup number above. Exact source-clock lines, Kubernetes start/ready
 times, image-pull events, GPU identities and separate acquisition trials are

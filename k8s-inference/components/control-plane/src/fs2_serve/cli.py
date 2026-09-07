@@ -8,6 +8,7 @@ import logging
 import sys
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 import uvicorn
 from fastapi import FastAPI
@@ -309,6 +310,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
     model_deployment_read: ModelDeploymentReadService | None = None
     model_deployment_mutation: ModelDeploymentMutationService | None = None
     model_deployment_bridge: ModelDeploymentRuntimeBridge | None = None
+    serving_snapshot_bundles: dict[str, dict[str, Any]] = {}
     scientific_batches: ScientificBatchService | None = None
     scientific_batch_worker: ScientificBatchWorker | None = None
     scientific_batch_cluster: HttpScientificBatchCluster | None = None
@@ -321,6 +323,11 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             settings.model_controller_envelope_file,
             settings.model_controller_bundles_file,
         )
+        serving_snapshot_bundles = {
+            bundle.bundle_id: bundle.model_dump(mode="json", by_alias=True)
+            for qualification in controller_files.infrastructure_envelope.qualifications.values()
+            for bundle in qualification.gpu_snapshot_bundles.values()
+        }
         model_repository = StoreModelDeploymentRepository(store)
         model_deployment_read = ModelDeploymentReadService(model_repository)
         model_deployment_preview = ModelDeploymentPreviewService(
@@ -587,6 +594,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         scientific_artifact_content_reader=artifact_content_reader,
         scientific_input_uploads=scientific_input_uploads,
         snapshot_capabilities=load_snapshot_capabilities(settings.snapshot_capabilities_file),
+        serving_snapshot_bundles=serving_snapshot_bundles,
     )
 
 

@@ -1,0 +1,477 @@
+{
+  "cached_image_fresh_process_trials": [
+    {
+      "cache_cohort": "image-baked-preview2-weights-retained-driver-SM-compile-PVC",
+      "gpu": "NVIDIA H100 80GB HBM3, GPU-56941528-f485-5237-c98a-08e1f253a9c3, 580.159.04, 81559 MiB, 9.0",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "observed_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+      "pod_uid": "42c6ec0d-c281-4605-8400-fc5cc16d6da3",
+      "seconds": {
+        "container_to_model_ready": 30.136136,
+        "first_request_to_validated_response": 11.980028294026852,
+        "pod_created_to_kubernetes_ready": 32.0,
+        "pod_created_to_model_ready": 31.136136,
+        "probe_create_request_to_model_ready": 32.601034,
+        "process_to_model_ready": 29.110109,
+        "ready_to_first_request_gap": 22.037725,
+        "weight_load_to_model_ready": 14.081086
+      },
+      "semantic": {
+        "cases": [
+          {
+            "case": "a",
+            "completed_at": "2026-09-07T10:27:48.153884+00:00",
+            "seconds": 11.980028294026852,
+            "started_at": "2026-09-07T10:27:36.173861+00:00",
+            "validation": {
+              "input_id": "fs2-mm-openfold3-preview2-r04-20260907-a",
+              "scores": {
+                "complex_pde_score": 1.647837,
+                "complex_plddt_score": 57.905266,
+                "confidence_score": 0.183924,
+                "iptm_score": 0.0,
+                "ptm_score": 0.044621
+              },
+              "structure": {
+                "atom_rows": 167,
+                "characters": 21377,
+                "format": "cif",
+                "sha256": "98eef80ba9107131547d858a584f6a838da32cfe880643f0c73770ee7c954c0d"
+              }
+            }
+          },
+          {
+            "case": "b",
+            "completed_at": "2026-09-07T10:27:56.987791+00:00",
+            "seconds": 8.833269499242306,
+            "started_at": "2026-09-07T10:27:48.154532+00:00",
+            "validation": {
+              "input_id": "fs2-mm-openfold3-preview2-r04-20260907-b",
+              "scores": {
+                "complex_pde_score": 1.621527,
+                "complex_plddt_score": 58.404903,
+                "confidence_score": 0.15898,
+                "iptm_score": 0.0,
+                "ptm_score": 0.044899
+              },
+              "structure": {
+                "atom_rows": 167,
+                "characters": 20876,
+                "format": "cif",
+                "sha256": "b284f2b64689e5d7ee321378376a58bbddba66bb565549c1e5b6bed19e3383c5"
+              }
+            }
+          },
+          {
+            "case": "varied",
+            "completed_at": "2026-09-07T10:28:06.203515+00:00",
+            "seconds": 9.215079840272665,
+            "started_at": "2026-09-07T10:27:56.988451+00:00",
+            "validation": {
+              "input_id": "fs2-mm-openfold3-preview2-r04-20260907-varied",
+              "scores": {
+                "complex_pde_score": 0.970732,
+                "complex_plddt_score": 68.870468,
+                "confidence_score": 0.560218,
+                "iptm_score": 0.0,
+                "ptm_score": 0.301092
+              },
+              "structure": {
+                "atom_rows": 338,
+                "characters": 37674,
+                "format": "cif",
+                "sha256": "0614639129a868ab07a9265e3ee7e27213cef33da573e790691ef5a3f645ad87"
+              }
+            }
+          }
+        ],
+        "original_fixture_sha256": "09b30bf2132e3764f99d4f417b47713cd6350bd332fe3100cceb1be11589f8ae",
+        "validator_sha256": "679b3e027b18e78b4646569e8c6395fb5f62c4647704bb5089aa2385a20d11f5"
+      },
+      "source_log_sha256": "5e41b696404b7bf398094aea5442bcf564c0997fb4eeded38a57f68c0e8431a5",
+      "timestamps": {
+        "container_started": "2026-09-07T10:26:44Z",
+        "first_semantic_request": "2026-09-07T10:27:36.173861+00:00",
+        "first_validated_response": "2026-09-07T10:27:48.153884+00:00",
+        "kubernetes_ready": "2026-09-07T10:27:15Z",
+        "model_ready": "2026-09-07T10:27:14.136136+00:00",
+        "pod_created": "2026-09-07T10:26:43Z",
+        "probe_create_request": "2026-09-07T10:26:41.535102+00:00",
+        "process_started": "2026-09-07T10:26:45.026027+00:00",
+        "weight_load_started": "2026-09-07T10:27:00.055050+00:00"
+      },
+      "trial": "r04"
+    },
+    {
+      "cache_cohort": "image-baked-preview2-weights-retained-driver-SM-compile-PVC",
+      "gpu": "NVIDIA H100 80GB HBM3, GPU-eb9c2898-bf6f-83b6-b76c-2c3b5b02500c, 580.159.04, 81559 MiB, 9.0",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "observed_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+      "pod_uid": "2040bf3f-92fc-4b44-bacf-e6092b9a7c71",
+      "seconds": {
+        "container_to_model_ready": 33.684628,
+        "first_request_to_validated_response": 13.017617823556066,
+        "pod_created_to_kubernetes_ready": 37.0,
+        "pod_created_to_model_ready": 35.684628,
+        "probe_create_request_to_model_ready": 36.714661,
+        "process_to_model_ready": 33.281381,
+        "ready_to_first_request_gap": 10.737956,
+        "weight_load_to_model_ready": 18.32537
+      },
+      "semantic": {
+        "cases": [
+          {
+            "case": "a",
+            "completed_at": "2026-09-07T10:30:04.440195+00:00",
+            "seconds": 13.017617823556066,
+            "started_at": "2026-09-07T10:29:51.422584+00:00",
+            "validation": {
+              "input_id": "fs2-mm-openfold3-preview2-r05-20260907-a",
+              "scores": {
+                "complex_pde_score": 1.612164,
+                "complex_plddt_score": 57.493977,
+                "confidence_score": 0.159289,
+                "iptm_score": 0.0,
+                "ptm_score": 0.046443
+              },
+              "structure": {
+                "atom_rows": 167,
+                "characters": 21043,
+                "format": "cif",
+                "sha256": "021dd93ae27557e823f956f45195567f6fde293e600973b9c6a71019ea2d0486"
+              }
+            }
+          },
+          {
+            "case": "b",
+            "completed_at": "2026-09-07T10:30:14.396060+00:00",
+            "seconds": 9.955127509310842,
+            "started_at": "2026-09-07T10:30:04.440948+00:00",
+            "validation": {
+              "input_id": "fs2-mm-openfold3-preview2-r05-20260907-b",
+              "scores": {
+                "complex_pde_score": 1.657048,
+                "complex_plddt_score": 57.55809,
+                "confidence_score": 0.209315,
+                "iptm_score": 0.0,
+                "ptm_score": 0.046574
+              },
+              "structure": {
+                "atom_rows": 167,
+                "characters": 21544,
+                "format": "cif",
+                "sha256": "c643f4dccf35303b7b08e2d5760785e31facdce893344826ed388230fe5b8f0f"
+              }
+            }
+          },
+          {
+            "case": "varied",
+            "completed_at": "2026-09-07T10:30:24.347287+00:00",
+            "seconds": 9.950541842728853,
+            "started_at": "2026-09-07T10:30:14.396757+00:00",
+            "validation": {
+              "input_id": "fs2-mm-openfold3-preview2-r05-20260907-varied",
+              "scores": {
+                "complex_pde_score": 0.968703,
+                "complex_plddt_score": 68.935081,
+                "confidence_score": 0.560249,
+                "iptm_score": 0.0,
+                "ptm_score": 0.301245
+              },
+              "structure": {
+                "atom_rows": 338,
+                "characters": 36998,
+                "format": "cif",
+                "sha256": "23b3693db83db2751fbbefb81b8f4f2a7b201c0537c2e09cc25b9dd50d1c203b"
+              }
+            }
+          }
+        ],
+        "original_fixture_sha256": "09b30bf2132e3764f99d4f417b47713cd6350bd332fe3100cceb1be11589f8ae",
+        "validator_sha256": "679b3e027b18e78b4646569e8c6395fb5f62c4647704bb5089aa2385a20d11f5"
+      },
+      "source_log_sha256": "6118582ad5a3bf98a15258ea1bcf81aeeaf0f273cfdcf3ab189bc52f96086c7c",
+      "timestamps": {
+        "container_started": "2026-09-07T10:29:07Z",
+        "first_semantic_request": "2026-09-07T10:29:51.422584+00:00",
+        "first_validated_response": "2026-09-07T10:30:04.440195+00:00",
+        "kubernetes_ready": "2026-09-07T10:29:42Z",
+        "model_ready": "2026-09-07T10:29:40.684628+00:00",
+        "pod_created": "2026-09-07T10:29:05Z",
+        "probe_create_request": "2026-09-07T10:29:03.969967+00:00",
+        "process_started": "2026-09-07T10:29:07.403247+00:00",
+        "weight_load_started": "2026-09-07T10:29:22.359258+00:00"
+      },
+      "trial": "r05"
+    },
+    {
+      "cache_cohort": "image-baked-preview2-weights-retained-driver-SM-compile-PVC",
+      "gpu": "NVIDIA H100 80GB HBM3, GPU-56941528-f485-5237-c98a-08e1f253a9c3, 580.159.04, 81559 MiB, 9.0",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "observed_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+      "pod_uid": "a020746d-74da-47b4-9bfa-06f747a89ff3",
+      "seconds": {
+        "container_to_model_ready": 31.437549,
+        "first_request_to_validated_response": 12.889123808592558,
+        "pod_created_to_kubernetes_ready": 37.0,
+        "pod_created_to_model_ready": 36.437549,
+        "probe_create_request_to_model_ready": 37.792239,
+        "process_to_model_ready": 31.230446,
+        "ready_to_first_request_gap": 13.351306,
+        "weight_load_to_model_ready": 15.957932
+      },
+      "semantic": {
+        "cases": [
+          {
+            "case": "a",
+            "completed_at": "2026-09-07T10:32:19.677973+00:00",
+            "seconds": 12.889123808592558,
+            "started_at": "2026-09-07T10:32:06.788855+00:00",
+            "validation": {
+              "input_id": "fs2-mm-openfold3-preview2-r06-20260907-a",
+              "scores": {
+                "complex_pde_score": 1.668515,
+                "complex_plddt_score": 57.349602,
+                "confidence_score": 0.209135,
+                "iptm_score": 0.0,
+                "ptm_score": 0.045676
+              },
+              "structure": {
+                "atom_rows": 167,
+                "characters": 21544,
+                "format": "cif",
+                "sha256": "8450cd95dfb8116dae39804cfb7d8b16f9eb6cf06489aed0f85f71d80375dc28"
+              }
+            }
+          },
+          {
+            "case": "b",
+            "completed_at": "2026-09-07T10:32:29.145923+00:00",
+            "seconds": 9.467437457293272,
+            "started_at": "2026-09-07T10:32:19.678535+00:00",
+            "validation": {
+              "input_id": "fs2-mm-openfold3-preview2-r06-20260907-b",
+              "scores": {
+                "complex_pde_score": 1.639929,
+                "complex_plddt_score": 58.000618,
+                "confidence_score": 0.183891,
+                "iptm_score": 0.0,
+                "ptm_score": 0.044454
+              },
+              "structure": {
+                "atom_rows": 167,
+                "characters": 21043,
+                "format": "cif",
+                "sha256": "df70908fc480e3e737e3ab7599713fc48afab51e1bf441ef1744e1b6ca2068bf"
+              }
+            }
+          },
+          {
+            "case": "varied",
+            "completed_at": "2026-09-07T10:32:38.666343+00:00",
+            "seconds": 9.51979249343276,
+            "started_at": "2026-09-07T10:32:29.146581+00:00",
+            "validation": {
+              "input_id": "fs2-mm-openfold3-preview2-r06-20260907-varied",
+              "scores": {
+                "complex_pde_score": 0.967554,
+                "complex_plddt_score": 68.952072,
+                "confidence_score": 0.560284,
+                "iptm_score": 0.0,
+                "ptm_score": 0.30142
+              },
+              "structure": {
+                "atom_rows": 338,
+                "characters": 37336,
+                "format": "cif",
+                "sha256": "4c06e6ad044203dbb2fb329a63aa6df2c9d8d569a84d7802d8b91c142eebd5be"
+              }
+            }
+          }
+        ],
+        "original_fixture_sha256": "09b30bf2132e3764f99d4f417b47713cd6350bd332fe3100cceb1be11589f8ae",
+        "validator_sha256": "679b3e027b18e78b4646569e8c6395fb5f62c4647704bb5089aa2385a20d11f5"
+      },
+      "source_log_sha256": "7f45119f2b9f22d0580e4d0ae862cdea72468d69f9b2f7dd899c55aab0baf1ea",
+      "timestamps": {
+        "container_started": "2026-09-07T10:31:22Z",
+        "first_semantic_request": "2026-09-07T10:32:06.788855+00:00",
+        "first_validated_response": "2026-09-07T10:32:19.677973+00:00",
+        "kubernetes_ready": "2026-09-07T10:31:54Z",
+        "model_ready": "2026-09-07T10:31:53.437549+00:00",
+        "pod_created": "2026-09-07T10:31:17Z",
+        "probe_create_request": "2026-09-07T10:31:15.645310+00:00",
+        "process_started": "2026-09-07T10:31:22.207103+00:00",
+        "weight_load_started": "2026-09-07T10:31:37.479617+00:00"
+      },
+      "trial": "r06"
+    }
+  ],
+  "initial_compile_cohort": {
+    "cache_cohort": "image-baked-preview2-weights-retained-driver-SM-compile-PVC",
+    "gpu": "NVIDIA H100 80GB HBM3, GPU-eb9c2898-bf6f-83b6-b76c-2c3b5b02500c, 580.159.04, 81559 MiB, 9.0",
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+    "node": "computeinstance-e00p3acr87k9k4mckj",
+    "observed_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+    "pod_uid": "643b8faa-2ba0-470a-9b2a-4214c61955b3",
+    "seconds": {
+      "container_to_model_ready": 32.042656,
+      "first_request_to_validated_response": 397.6404866538942,
+      "pod_created_to_kubernetes_ready": 34.0,
+      "pod_created_to_model_ready": 34.042656,
+      "probe_create_request_to_model_ready": 35.227835,
+      "process_to_model_ready": 31.554268,
+      "ready_to_first_request_gap": 10.132856,
+      "weight_load_to_model_ready": 16.957174
+    },
+    "semantic": {
+      "cases": [
+        {
+          "case": "a",
+          "completed_at": "2026-09-07T10:25:30.815994+00:00",
+          "seconds": 397.6404866538942,
+          "started_at": "2026-09-07T10:18:53.175512+00:00",
+          "validation": {
+            "input_id": "fs2-mm-openfold3-preview2-r03-20260907-a",
+            "scores": {
+              "complex_pde_score": 1.615423,
+              "complex_plddt_score": 57.472668,
+              "confidence_score": 0.159303,
+              "iptm_score": 0.0,
+              "ptm_score": 0.046514
+            },
+            "structure": {
+              "atom_rows": 167,
+              "characters": 21043,
+              "format": "cif",
+              "sha256": "43987c7b485ac6ac2b0c5874005a8fd6dba11907243051264f296c0cb461c1a2"
+            }
+          }
+        },
+        {
+          "case": "b",
+          "completed_at": "2026-09-07T10:25:40.384750+00:00",
+          "seconds": 9.568182625807822,
+          "started_at": "2026-09-07T10:25:30.816582+00:00",
+          "validation": {
+            "input_id": "fs2-mm-openfold3-preview2-r03-20260907-b",
+            "scores": {
+              "complex_pde_score": 1.632486,
+              "complex_plddt_score": 58.190598,
+              "confidence_score": 0.158901,
+              "iptm_score": 0.0,
+              "ptm_score": 0.044506
+            },
+            "structure": {
+              "atom_rows": 167,
+              "characters": 21210,
+              "format": "cif",
+              "sha256": "cb5d2320becd1c90cb0d559a15f9369996b859465133a63f72c0f919d31ba184"
+            }
+          }
+        },
+        {
+          "case": "varied",
+          "completed_at": "2026-09-07T10:25:50.531190+00:00",
+          "seconds": 10.145566500723362,
+          "started_at": "2026-09-07T10:25:40.385639+00:00",
+          "validation": {
+            "input_id": "fs2-mm-openfold3-preview2-r03-20260907-varied",
+            "scores": {
+              "complex_pde_score": 0.968694,
+              "complex_plddt_score": 68.934341,
+              "confidence_score": 0.560247,
+              "iptm_score": 0.0,
+              "ptm_score": 0.301236
+            },
+            "structure": {
+              "atom_rows": 338,
+              "characters": 37674,
+              "format": "cif",
+              "sha256": "fac1f94703f1c1adff44c965f83369e1f6c5a888361a966fe2557600110b0e42"
+            }
+          }
+        }
+      ],
+      "original_fixture_sha256": "09b30bf2132e3764f99d4f417b47713cd6350bd332fe3100cceb1be11589f8ae",
+      "validator_sha256": "679b3e027b18e78b4646569e8c6395fb5f62c4647704bb5089aa2385a20d11f5"
+    },
+    "source_log_sha256": "0e66b7de49f772ff655e41764c74363a50112b83deda3f7468df95e521156785",
+    "timestamps": {
+      "container_started": "2026-09-07T10:18:11Z",
+      "first_semantic_request": "2026-09-07T10:18:53.175512+00:00",
+      "first_validated_response": "2026-09-07T10:25:30.815994+00:00",
+      "kubernetes_ready": "2026-09-07T10:18:43Z",
+      "model_ready": "2026-09-07T10:18:43.042656+00:00",
+      "pod_created": "2026-09-07T10:18:09Z",
+      "probe_create_request": "2026-09-07T10:18:07.814821+00:00",
+      "process_started": "2026-09-07T10:18:11.488388+00:00",
+      "weight_load_started": "2026-09-07T10:18:26.085482+00:00"
+    },
+    "trial": "r03"
+  },
+  "measurement_notes": [
+    "Direct isolated Pods, not public activation requests.",
+    "Weights are baked into the image; no network weight load during process startup.",
+    "Runtime compilation cache is retained by exact image and measured driver/SM ABI.",
+    "OS page cache is not evicted or independently controlled.",
+    "GPU weights are loaded before ready; first inference compilation is in first-output latency.",
+    "No percentile estimate is made from three trials.",
+    "Earlier v2 CCD-decoding and v3 inline-MSA adapter failures are retained in private r01/r02; neither is a qualified trial of this v4 image."
+  ],
+  "runtime_origin": "upstream-source-preview2-not-nim",
+  "schema": "fs2-serve.nebius.ai/openfold3-preview2-startup/v1",
+  "statistics": {
+    "container_to_model_ready": {
+      "max": 33.684628,
+      "median": 31.437549,
+      "min": 30.136136,
+      "n": 3
+    },
+    "first_request_to_validated_response": {
+      "max": 13.017617823556066,
+      "median": 12.889123808592558,
+      "min": 11.980028294026852,
+      "n": 3
+    },
+    "pod_created_to_kubernetes_ready": {
+      "max": 37.0,
+      "median": 37.0,
+      "min": 32.0,
+      "n": 3
+    },
+    "pod_created_to_model_ready": {
+      "max": 36.437549,
+      "median": 35.684628,
+      "min": 31.136136,
+      "n": 3
+    },
+    "probe_create_request_to_model_ready": {
+      "max": 37.792239,
+      "median": 36.714661,
+      "min": 32.601034,
+      "n": 3
+    },
+    "process_to_model_ready": {
+      "max": 33.281381,
+      "median": 31.230446,
+      "min": 29.110109,
+      "n": 3
+    },
+    "ready_to_first_request_gap": {
+      "max": 22.037725,
+      "median": 13.351306,
+      "min": 10.737956,
+      "n": 3
+    },
+    "weight_load_to_model_ready": {
+      "max": 18.32537,
+      "median": 15.957932,
+      "min": 14.081086,
+      "n": 3
+    }
+  }
+}

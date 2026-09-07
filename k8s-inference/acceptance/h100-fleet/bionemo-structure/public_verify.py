@@ -33,7 +33,7 @@ def load_module(path, name):
 
 
 public = load_module(MEDIA / "public_verify.py", "fs2_bio_public_transport")
-MODELS = ("molmim", "genmol", "proteinmpnn", "diffdock", "boltz2")
+MODELS = ("molmim", "genmol", "proteinmpnn", "diffdock", "boltz2", "msa-search-pdb70")
 
 
 @lru_cache
@@ -56,7 +56,11 @@ def validator(model):
 def cases_for(model):
     record = entry(model)["record"]
     module = validator(model)
-    if model in {"proteinmpnn", "diffdock"}:
+    if model == "msa-search-pdb70":
+        fixture = ROOT / "catalog/runtime/packaged-repository" / record["semantic_validator"]["fixture_path"]
+        template = module._read_fixture(fixture)
+        payloads = [module._request_for_case(template, query) for query in (module.QUERY_1, module.QUERY_2)]
+    elif model in {"proteinmpnn", "diffdock"}:
         payloads = module._requests(model)
     elif model == "boltz2":
         payloads = [probe.payload for probe in module.build_probes(("bio-public-a", "bio-public-b"))]
@@ -66,7 +70,8 @@ def cases_for(model):
     revision = record["model"]["source"]["revision"]
     operation = record["interface"]["policy"]["operations"][0]
     cases = [public.AcceptanceCase(model, revision, "native", operation, payload,
-        hashlib.sha256(public.canonical_json(payload)).hexdigest(), "json-object") for payload in payloads]
+        hashlib.sha256(public.canonical_json(payload)).hexdigest(), "json-object",
+        gpu_required=model != "msa-search-pdb70") for payload in payloads]
     if len(cases) != 2 or len({case.payload_sha256 for case in cases}) != 2:
         raise ValueError("original two distinct requests are required")
     return record["semantic_validator"], cases
@@ -78,7 +83,10 @@ def validate_pair(model, contract, paths, directory):
     responses = [json.loads(path.read_bytes()) for path in paths]
     if len(responses) != 2 or paths[0].read_bytes() == paths[1].read_bytes():
         raise ValueError("two distinct responses are required")
-    if model in {"proteinmpnn", "diffdock"}:
+    if model == "msa-search-pdb70":
+        results = [module._validate_response(response, query)
+            for response, query in zip(responses, (module.QUERY_1, module.QUERY_2), strict=True)]
+    elif model in {"proteinmpnn", "diffdock"}:
         if any(not response.get("backend_id") for response in responses):
             raise ValueError("response omits the original runtime backend identity")
         results = [module._validate(model, response) for response in responses]
@@ -104,6 +112,34 @@ def actual_runtime(args, operation, model):
     candidate = entry(model)
     expected = {"image": candidate["record"]["runtime"]["image"]["reference"],
         "model_revision": candidate["record"]["model"]["source"]["revision"]}
+    if model == "msa-search-pdb70":
+        # This exact CPU lane is Terraform-owned rather than a dynamic GPU
+        # publication. Its code and embedded database are bound by the image.
+        service = candidate["qualification"]["active_runtime"]["service"]
+        slices = json.loads(subprocess.check_output([
+            "kubectl", "--kubeconfig", str(args.kubeconfig), "--context", args.context,
+            "-n", service["namespace"], "get", "endpointslices",
+            "-l", "kubernetes.io/service-name=" + service["name"], "-o", "json",
+        ]))
+        ready = [endpoint for item in slices["items"] for endpoint in item["endpoints"]
+            if endpoint.get("conditions", {}).get("ready") is True]
+        if len(ready) != 1 or ready[0].get("targetRef", {}).get("kind") != "Pod":
+            raise public.AcceptanceError("cpu_runtime_endpoint_ambiguous")
+        uid = ready[0]["targetRef"]["uid"]
+        matches = [pod for pod in pods["items"] if pod["metadata"]["uid"] == uid]
+        if len(matches) != 1 or operation.get("model_revision") != expected["model_revision"]:
+            raise public.AcceptanceError("cpu_runtime_pod_or_revision_mismatch")
+        pod = matches[0]
+        digest = expected["image"].split("@", 1)[1]
+        image_ids = [container.get("imageID", "") for container in pod["status"].get("containerStatuses", [])]
+        if (pod["metadata"].get("annotations", {}).get("fs2.nebius/runtime-image-digest") != digest
+                or not any(image.endswith("@" + digest) for image in image_ids)):
+            raise public.AcceptanceError("cpu_runtime_image_mismatch")
+        return {"binding_basis": "single-ready-service-endpoint-not-per-operation-GPU-attribution",
+            "namespace": pod["metadata"]["namespace"], "pod": pod["metadata"]["name"],
+            "pod_uid": uid, "model_revision": expected["model_revision"],
+            "route_revision": operation["model_revision"], "runtime_image_ids": image_ids,
+            "expected_image": expected["image"], "gpu_count": 0}
     return public.runtime_binding(pods["items"], operation, expected)
 
 
