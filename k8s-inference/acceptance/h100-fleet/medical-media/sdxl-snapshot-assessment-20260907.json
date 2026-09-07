@@ -1,0 +1,390 @@
+{
+  "schema": "fs2-serve.nebius.ai/serving-snapshot-assessment/v1",
+  "model_id": "sdxl",
+  "status": "measured-not-recommended",
+  "date": "2026-09-07",
+  "mechanism": "cuda-criu",
+  "default": "normal-load",
+  "production_selectable": false,
+  "qualification_scope": "Three matched normal/restore pairs on an isolated exact-image H100 serving worker; the functionally valid restore was rejected because customer-visible startup regressed.",
+  "cache": "existing images and localized weights; shared snapshot filesystem cache retained, no eviction or reserved-RAM guarantee",
+  "ready_boundary": "application HTTP health after supervisor completed CUDA+CRIU restoration; normal trials use the original server health endpoint",
+  "clock_notes": [
+    "Every trial starts a fresh Pod; restore cannot pass from HTTP health alone before CUDA completion.",
+    "Kubernetes container timestamps have one-second resolution; Pod-create request clock is client monotonic.",
+    "Health polling includes kubectl transport and observation delay. First input may still compile request-specific kernels.",
+    "Both-full-outputs clock includes two sequential inputs and client validation; it is not first-output latency or a pure inference benchmark.",
+    "Existing image, weight and shared-filesystem caches are retained. No host cache eviction, node acquisition or reserved-RAM guarantee.",
+    "The optional bridge changes only snapshot compatibility plumbing, not model image, precision, GPU memory utilization, output shape or generation steps.",
+    "The snapshot donor was exercised with both original prompts before capture; therefore the both-full-outputs clock can include retained request-specific state and is not used for the startup selection decision.",
+    "The customer-visible selection boundary is Pod-create request to completed CUDA restore plus application health, not CRIU completion in isolation."
+  ],
+  "statistics": {
+    "normal": {
+      "pod_create_request_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 17.5649517737329,
+        "min_seconds": 17.514111208729446,
+        "max_seconds": 23.266734805889428
+      },
+      "container_start_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 12.20588,
+        "min_seconds": 11.929395,
+        "max_seconds": 17.902118
+      },
+      "container_start_to_both_full_outputs_seconds": {
+        "n": 3,
+        "median_seconds": 20.07614,
+        "min_seconds": 19.745232,
+        "max_seconds": 25.668519
+      }
+    },
+    "restore": {
+      "pod_create_request_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 18.893472571857274,
+        "min_seconds": 18.8324679331854,
+        "max_seconds": 18.928843609057367
+      },
+      "container_start_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 11.585597,
+        "min_seconds": 11.2306,
+        "max_seconds": 11.706136
+      },
+      "container_start_to_both_full_outputs_seconds": {
+        "n": 3,
+        "median_seconds": 17.601554,
+        "min_seconds": 17.113223,
+        "max_seconds": 17.978291
+      }
+    }
+  },
+  "runs": [
+    {
+      "mode": "normal",
+      "repetition": 1,
+      "pod_uid": "9ed6789b-9aa6-4a04-bc12-7b59200ca920",
+      "created_request_at": "2026-09-07T12:57:50.635389+00:00",
+      "pod_created_at": "2026-09-07T12:57:52Z",
+      "container_started_at": "2026-09-07T12:57:56Z",
+      "ready_observed_at": "2026-09-07T12:58:13.902118+00:00",
+      "pod_create_request_to_ready_seconds": 23.266734805889428,
+      "both_full_outputs_observed_at": "2026-09-07T12:58:21.668519+00:00",
+      "container_start_to_ready_seconds": 17.902118,
+      "container_start_to_both_full_outputs_seconds": 25.668519,
+      "requests": [
+        {
+          "id": "sdxl-phase1-green-mountain-seed-2407",
+          "started_at": "2026-09-07T12:58:17.571384+00:00",
+          "finished_at": "2026-09-07T12:58:20.626856+00:00",
+          "seconds": 3.0554671743884683,
+          "input_sha256": "6563a6f464fe5471e54c9ed65af2693c0b40ee0a30187143a7abb58e2e08b4ff",
+          "response_sha256": "8a0b0f3725a32b2224aac7ca1a8e5988acfe9015d9aa297d4fdfb13dcfbd05af",
+          "bytes": 601204,
+          "passed": true
+        },
+        {
+          "id": "sdxl-fs2-silver-moon-seed-2408",
+          "started_at": "2026-09-07T12:58:20.627260+00:00",
+          "finished_at": "2026-09-07T12:58:21.535196+00:00",
+          "seconds": 0.9079476110637188,
+          "input_sha256": "97d662a57345fbe5723cd6d6d9b791fe9faf05c7eed9e1100cf2c293dc6033da",
+          "response_sha256": "85db4bd6b9e77fc6da2845cd5be3cca51478658e53ecf79627ba9ee50bec0a14",
+          "bytes": 691080,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "restore",
+      "repetition": 1,
+      "pod_uid": "a696d782-df5f-495e-97fc-fef6b9dacdf8",
+      "created_request_at": "2026-09-07T12:58:25.398138+00:00",
+      "pod_created_at": "2026-09-07T12:58:27Z",
+      "container_started_at": "2026-09-07T12:58:33Z",
+      "ready_observed_at": "2026-09-07T12:58:44.230600+00:00",
+      "pod_create_request_to_ready_seconds": 18.8324679331854,
+      "both_full_outputs_observed_at": "2026-09-07T12:58:50.113223+00:00",
+      "container_start_to_ready_seconds": 11.2306,
+      "container_start_to_both_full_outputs_seconds": 17.113223,
+      "requests": [
+        {
+          "id": "sdxl-phase1-green-mountain-seed-2407",
+          "started_at": "2026-09-07T12:58:47.890529+00:00",
+          "finished_at": "2026-09-07T12:58:49.120293+00:00",
+          "seconds": 1.2297547860071063,
+          "input_sha256": "6563a6f464fe5471e54c9ed65af2693c0b40ee0a30187143a7abb58e2e08b4ff",
+          "response_sha256": "ba15d69bd4d10a0fbe90cc3e1ff0df34381d1f4b258c68a3aac2d795023be461",
+          "bytes": 601202,
+          "passed": true
+        },
+        {
+          "id": "sdxl-fs2-silver-moon-seed-2408",
+          "started_at": "2026-09-07T12:58:49.120694+00:00",
+          "finished_at": "2026-09-07T12:58:49.977925+00:00",
+          "seconds": 0.8572659213095903,
+          "input_sha256": "97d662a57345fbe5723cd6d6d9b791fe9faf05c7eed9e1100cf2c293dc6033da",
+          "response_sha256": "088cbd65857ba4f0a5fa0689846e8d92dee22467a7aaa25f1c6b6e1c087d49e0",
+          "bytes": 691078,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "normal",
+      "repetition": 2,
+      "pod_uid": "3273aa23-40f8-4054-8236-2ba9b4e7f1e3",
+      "created_request_at": "2026-09-07T12:58:53.364447+00:00",
+      "pod_created_at": "2026-09-07T12:58:55Z",
+      "container_started_at": "2026-09-07T12:58:59Z",
+      "ready_observed_at": "2026-09-07T12:59:10.929395+00:00",
+      "pod_create_request_to_ready_seconds": 17.5649517737329,
+      "both_full_outputs_observed_at": "2026-09-07T12:59:18.745232+00:00",
+      "container_start_to_ready_seconds": 11.929395,
+      "container_start_to_both_full_outputs_seconds": 19.745232,
+      "requests": [
+        {
+          "id": "sdxl-phase1-green-mountain-seed-2407",
+          "started_at": "2026-09-07T12:59:14.552141+00:00",
+          "finished_at": "2026-09-07T12:59:17.686718+00:00",
+          "seconds": 3.134566780179739,
+          "input_sha256": "6563a6f464fe5471e54c9ed65af2693c0b40ee0a30187143a7abb58e2e08b4ff",
+          "response_sha256": "22de008259ab3e8be89592a8927a275909bf85ac0cc1eccd4beacf65780dc286",
+          "bytes": 601204,
+          "passed": true
+        },
+        {
+          "id": "sdxl-fs2-silver-moon-seed-2408",
+          "started_at": "2026-09-07T12:59:17.687150+00:00",
+          "finished_at": "2026-09-07T12:59:18.614671+00:00",
+          "seconds": 0.9275348214432597,
+          "input_sha256": "97d662a57345fbe5723cd6d6d9b791fe9faf05c7eed9e1100cf2c293dc6033da",
+          "response_sha256": "d7b96c716dadf5459067563bc65655ae1c0dafbc40922c1887fa4eaa33ad2155",
+          "bytes": 691080,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "restore",
+      "repetition": 2,
+      "pod_uid": "1602cfe1-40ee-4d2f-a170-6f186a5081a6",
+      "created_request_at": "2026-09-07T12:59:22.656744+00:00",
+      "pod_created_at": "2026-09-07T12:59:24Z",
+      "container_started_at": "2026-09-07T12:59:30Z",
+      "ready_observed_at": "2026-09-07T12:59:41.585597+00:00",
+      "pod_create_request_to_ready_seconds": 18.928843609057367,
+      "both_full_outputs_observed_at": "2026-09-07T12:59:47.978291+00:00",
+      "container_start_to_ready_seconds": 11.585597,
+      "container_start_to_both_full_outputs_seconds": 17.978291,
+      "requests": [
+        {
+          "id": "sdxl-phase1-green-mountain-seed-2407",
+          "started_at": "2026-09-07T12:59:45.211388+00:00",
+          "finished_at": "2026-09-07T12:59:46.634753+00:00",
+          "seconds": 1.4233548399060965,
+          "input_sha256": "6563a6f464fe5471e54c9ed65af2693c0b40ee0a30187143a7abb58e2e08b4ff",
+          "response_sha256": "95a8711503a3be5c5e53caa4391f20ebe79645f9e5b0c2e4070bccb3ee66ac6a",
+          "bytes": 601202,
+          "passed": true
+        },
+        {
+          "id": "sdxl-fs2-silver-moon-seed-2408",
+          "started_at": "2026-09-07T12:59:46.635169+00:00",
+          "finished_at": "2026-09-07T12:59:47.845134+00:00",
+          "seconds": 1.2099780086427927,
+          "input_sha256": "97d662a57345fbe5723cd6d6d9b791fe9faf05c7eed9e1100cf2c293dc6033da",
+          "response_sha256": "7492c81233fb2bfeaeb21513bcdede5e65c462115b5b773c39a0f6e483b6bad2",
+          "bytes": 691078,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "normal",
+      "repetition": 3,
+      "pod_uid": "8fd1cd1e-f2af-438f-97f4-89c69d7c8ef1",
+      "created_request_at": "2026-09-07T12:59:51.691773+00:00",
+      "pod_created_at": "2026-09-07T12:59:53Z",
+      "container_started_at": "2026-09-07T12:59:57Z",
+      "ready_observed_at": "2026-09-07T13:00:09.205880+00:00",
+      "pod_create_request_to_ready_seconds": 17.514111208729446,
+      "both_full_outputs_observed_at": "2026-09-07T13:00:17.076140+00:00",
+      "container_start_to_ready_seconds": 12.20588,
+      "container_start_to_both_full_outputs_seconds": 20.07614,
+      "requests": [
+        {
+          "id": "sdxl-phase1-green-mountain-seed-2407",
+          "started_at": "2026-09-07T13:00:12.833381+00:00",
+          "finished_at": "2026-09-07T13:00:16.016602+00:00",
+          "seconds": 3.1832114569842815,
+          "input_sha256": "6563a6f464fe5471e54c9ed65af2693c0b40ee0a30187143a7abb58e2e08b4ff",
+          "response_sha256": "16660faa5add0bfa0c4e94b3cbb566063bb32e3684152730d80a1842b5bc5ee7",
+          "bytes": 601204,
+          "passed": true
+        },
+        {
+          "id": "sdxl-fs2-silver-moon-seed-2408",
+          "started_at": "2026-09-07T13:00:16.017035+00:00",
+          "finished_at": "2026-09-07T13:00:16.941473+00:00",
+          "seconds": 0.9244515299797058,
+          "input_sha256": "97d662a57345fbe5723cd6d6d9b791fe9faf05c7eed9e1100cf2c293dc6033da",
+          "response_sha256": "b33f1832b541204be490cc8db97f6ddef857a0754e4e18405d0039a3c832e2c5",
+          "bytes": 691080,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "restore",
+      "repetition": 3,
+      "pod_uid": "acb68e33-a1e4-41d1-b345-8ce3bcc8b89b",
+      "created_request_at": "2026-09-07T13:00:20.812670+00:00",
+      "pod_created_at": "2026-09-07T13:00:22Z",
+      "container_started_at": "2026-09-07T13:00:28Z",
+      "ready_observed_at": "2026-09-07T13:00:39.706136+00:00",
+      "pod_create_request_to_ready_seconds": 18.893472571857274,
+      "both_full_outputs_observed_at": "2026-09-07T13:00:45.601554+00:00",
+      "container_start_to_ready_seconds": 11.706136,
+      "container_start_to_both_full_outputs_seconds": 17.601554,
+      "requests": [
+        {
+          "id": "sdxl-phase1-green-mountain-seed-2407",
+          "started_at": "2026-09-07T13:00:43.385310+00:00",
+          "finished_at": "2026-09-07T13:00:44.602336+00:00",
+          "seconds": 1.2170175779610872,
+          "input_sha256": "6563a6f464fe5471e54c9ed65af2693c0b40ee0a30187143a7abb58e2e08b4ff",
+          "response_sha256": "d3186f47c1c451ed458a5c44b0fb647fdfa04451649c462231a60ba25ee382f9",
+          "bytes": 601202,
+          "passed": true
+        },
+        {
+          "id": "sdxl-fs2-silver-moon-seed-2408",
+          "started_at": "2026-09-07T13:00:44.602732+00:00",
+          "finished_at": "2026-09-07T13:00:45.466040+00:00",
+          "seconds": 0.8633183594793081,
+          "input_sha256": "97d662a57345fbe5723cd6d6d9b791fe9faf05c7eed9e1100cf2c293dc6033da",
+          "response_sha256": "9ef784082b549af1ac4c3da33a88f39d8de4d1a23f2ac53a3813bcf11d8a45a3",
+          "bytes": 691078,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    }
+  ],
+  "semantic_scope": "All six Pods passed both original 512x512 prompts at seeds 2407 and 2408 with exact H100 PNG oracles. The donor also passed both before capture; this is not unseen-input evidence.",
+  "compatibility": {
+    "generated_cache": [
+      {
+        "bytes": 178623,
+        "path": "cuda/0/4/df59bccd0562c3",
+        "sha256": "2ad894ffe6f9fa03339a58791752dc16407b78961ecf417712a30df779809911"
+      },
+      {
+        "bytes": 133675,
+        "path": "cuda/0/8/c6c1dfcb3ee3fc",
+        "sha256": "b8aa0cce99b73f9704b05f9cde404f0f4bcf574479a7d250165a09649f22828f"
+      },
+      {
+        "bytes": 169382,
+        "path": "cuda/7/9/1e6c1346ddf0d7",
+        "sha256": "8f1912d85d831404f52fe2ce2b978df9ae85d8cd689f566ab48870669d598f20"
+      },
+      {
+        "bytes": 130927,
+        "path": "cuda/9/8/0f27bc7a23413d",
+        "sha256": "632e99957227c9e7010a5aa59df607db37952292b03ddac4e023415fe831ab36"
+      },
+      {
+        "bytes": 3956,
+        "path": "cuda/a/2/daf144f9da5951",
+        "sha256": "90c447ac8071cff194a1cece571c4d34aabbfc8a135ec4ce8ab2ef5680bb921b"
+      },
+      {
+        "bytes": 241408,
+        "path": "cuda/e/3/aa6d5a83785aec",
+        "sha256": "f3a023081738150b39e7aea812202b0c8154615078e94b0e6da58d85c3b1d3d2"
+      },
+      {
+        "bytes": 164160,
+        "path": "cuda/f/b/515d1c32b0ad2e",
+        "sha256": "930bd34fb1cfaf63005bb1a0dba1c147d62675015b17f88aac8bebd0f953e766"
+      },
+      {
+        "bytes": 128,
+        "path": "cuda/index",
+        "sha256": "b1cf9bd662c8978515087ef7db968d4a3c5ab01bc497db7c21b50c85b9fb11c8"
+      }
+    ],
+    "runtime_identity": {
+      "compute_capability": "9.0",
+      "driver_version": "580.159.04",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "gpu_uuid": "GPU-b1a62569-6a84-851e-8340-1a31f1a20de1",
+      "kernel_release": "6.11.0-1016-nvidia",
+      "model_revision": "462165984030d82259a11f4367a4eed129e94a7b",
+      "runtime_id": "sdxl",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+      "snapshot_source_sha256": {
+        "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+        "serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+        "serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+        "serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+        "serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+        "sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+        "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c",
+        "working_directory_launcher.py": "3bd73d58a3278a732170c6501cbc9f2bc7f731966abb7ceae987450d73fe5c1b"
+      },
+      "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
+    },
+    "schema": "fs2-serve.nebius.ai/scientific-process-checkpoint/v1"
+  },
+  "bundle": {
+    "manifest_schema": "captured-content-and-filesystem-metadata/v1",
+    "manifest_sha256": "c5216d942bc1f81046c95744f85d18f1ab7e71938aeda78de7ab3da7db5a6929",
+    "bytes": 11847843902,
+    "entry_count": 114,
+    "storage": "The exact task-only shared-filesystem bundle was flushed and hashed, then removed after the negative selection decision; no production bundle was registered.",
+    "captured_bundle_sha256": "aa781f840ec61f302a7ef277b77b1058f857d8dfe8283f642664c6cd81d5a446",
+    "disposition": "deleted-after-negative-performance-decision"
+  },
+  "private_receipt_sha256": "2bf11af0b29707ed752962fbcdb03f4fd194ff58361914ef3a01d4a179baf402",
+  "publication_receipt_sha256": "794ba92c3559a4291f715ee013075d45dce9463bbc22d3e4b3c707fc3378ccbe",
+  "functional_status": "fresh-pod-restore-passed",
+  "decision": {
+    "default": "normal-load",
+    "snapshot_option_registered": false,
+    "reason": "Median Pod-create request to observed application readiness was 1.329 seconds (7.6%) slower with restore. The 0.620-second (5.1%) container-start gain does not offset restore init-container and scheduling-path overhead.",
+    "normal_pod_request_to_ready_median_seconds": 17.5649517737329,
+    "restore_pod_request_to_ready_median_seconds": 18.893472571857274,
+    "pod_request_delta_seconds": 1.328520798124373,
+    "pod_request_change_percent": 7.563475352725298,
+    "normal_container_to_ready_median_seconds": 12.20588,
+    "restore_container_to_ready_median_seconds": 11.585597,
+    "container_delta_seconds": -0.6202830000000006,
+    "container_change_percent": -5.081837606137374
+  },
+  "capture": {
+    "cuda_checkpoint_seconds": 4.805024646047968,
+    "criu_dump_seconds": 95.08405120298266,
+    "checkpoint_flush_seconds": 0.7145217260112986,
+    "publication_flush_seconds": 0.16327994101447985
+  },
+  "private_evidence_root": "/home/tux/.local/state/fs2-h100-fleet-r20260907/medical-media/sdxl-snapshot",
+  "raw_evidence_sha256": {
+    "source_deployment": "f710c37d0e9d0f1ac5b4550ac19bc365f3745bae1dc4db6de11b5de121314b41",
+    "donor_pod_manifest": "907ecb48e7a208f0c5a9ce32333bb56a61c759568e51926fe4fe904d683eaf2f",
+    "capture_receipt": "a4a2a1bfdfab98f2ee08646b6243e879699a316a9d15226f686be4f0a3468209",
+    "donor_semantics": "ca27c7fa59a259bbceb951fe8306c5cb78d55b25fdfc3844011dea25cafc3863",
+    "publication_receipt": "794ba92c3559a4291f715ee013075d45dce9463bbc22d3e4b3c707fc3378ccbe",
+    "first_donor_deleted_restore": "8f1c856e3f57cf05338d0a65f6fde2f3c0c12cbf3f1cd7a508eb8a8a26ae9c8b",
+    "matched_pair_receipt": "2bf11af0b29707ed752962fbcdb03f4fd194ff58361914ef3a01d4a179baf402"
+  }
+}

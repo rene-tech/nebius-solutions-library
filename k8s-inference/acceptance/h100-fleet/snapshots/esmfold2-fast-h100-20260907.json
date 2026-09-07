@@ -15,7 +15,7 @@
     "Kubernetes container startedAt has one-second resolution; Pod-create request clock is client monotonic.",
     "The restored worker's model_load_seconds is the donor's historical loader time, never a restore measurement.",
     "First valid output includes deliberate post-readiness fixture localization, exec/validation overhead and full scientific computation.",
-    "Matched trials retained existing node/image/filesystem caches without eviction or a RAM-residency guarantee. Pod-create clocks include observed scheduler waits on the shared fleet; container-start clocks exclude those waits. An image manifest/layer-cache resolution is not a full image-cold benchmark."
+    "Trials do not deliberately evict shared data or node caches; shared files do not guarantee node page-cache residency. Existing-pool autoscaling can introduce a new node and actual image pulls. Pod-create clocks include observed scheduler/init/image waits; container-start clocks exclude those waits. Acquisition events and node identity must be read separately from the model-ready clock; this is not a controlled image-cold benchmark."
   ],
   "parameters": {
     "esmc_precision": "bf16",
@@ -35,12 +35,12 @@
     }
   ],
   "bundle": {
-    "id": "esmfold2-fast-h100-cuda-criu-20260907-r2",
-    "sha256": "f7c514a0a696f423ca62c30a04a8fdd346b1583912c3655da5f80b3a3b08b403",
-    "bytes": 28633254762,
-    "file_count": 60,
-    "subpath": "esmfold2-fast-current-r20260907-r2",
-    "captured_runtime_path": "/checkpoints/esmfold2-fast-current-r20260907-r2",
+    "id": "esmfold2-fast-h100-cuda-criu-20260907-r4",
+    "sha256": "060a9ae443bc5a2aff86349e4bf93d7594bf82f857721afaadd9b1e23447b495",
+    "bytes": 16202161971,
+    "file_count": 228,
+    "subpath": "esmfold2-fast-current-r20260907-r4",
+    "captured_runtime_path": "/checkpoints/esmfold2-fast-current-r20260907-r4",
     "ownership": "per-file mode, UID and GID are bound into the canonical bundle manifest",
     "storage": "existing regional shared filesystem, read-only bundle; per-Pod mutable scratch"
   },
@@ -50,9 +50,9 @@
       "compute_capability": "9.0",
       "driver_version": "580.159.04",
       "gpu_name": "NVIDIA H100 80GB HBM3",
-      "gpu_uuid": "GPU-42923edc-45f7-13a3-bf79-6151a3964d9e",
+      "gpu_uuid": "GPU-644f23ac-4f00-aea9-7b7d-a57717848200",
       "kernel_release": "6.11.0-1016-nvidia",
-      "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
       "runtime_id": "esmfold2-fast",
       "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
       "snapshot_source_sha256": {
@@ -69,53 +69,53 @@
     "normal": {
       "pod_create_request_to_ready_seconds": {
         "n": 3,
-        "median_seconds": 57.034159171395004,
-        "min_seconds": 22.860297192819417,
-        "max_seconds": 87.2090218719095
+        "median_seconds": 24.194208820350468,
+        "min_seconds": 20.53097095899284,
+        "max_seconds": 65.77027590852231
       },
       "container_start_to_ready_seconds": {
         "n": 3,
-        "median_seconds": 18.883734,
-        "min_seconds": 17.985346,
-        "max_seconds": 19.893965
+        "median_seconds": 19.103904,
+        "min_seconds": 18.458775,
+        "max_seconds": 20.442039
       },
       "pod_created_to_ready_seconds": {
         "n": 3,
-        "median_seconds": 55.985346,
-        "min_seconds": 21.883734,
-        "max_seconds": 85.893965
+        "median_seconds": 22.442039,
+        "min_seconds": 19.458775,
+        "max_seconds": 64.103904
       },
       "container_start_to_first_valid_output_seconds": {
         "n": 3,
-        "median_seconds": 31.51736,
-        "min_seconds": 30.707602,
-        "max_seconds": 32.938812
+        "median_seconds": 32.123509,
+        "min_seconds": 31.477361,
+        "max_seconds": 33.358307
       }
     },
     "restore": {
       "pod_create_request_to_ready_seconds": {
         "n": 3,
-        "median_seconds": 18.19039278291166,
-        "min_seconds": 17.732924127951264,
-        "max_seconds": 220.59912060759962
+        "median_seconds": 15.127388595603406,
+        "min_seconds": 14.988256269134581,
+        "max_seconds": 56.978386173024774
       },
       "container_start_to_ready_seconds": {
         "n": 3,
-        "median_seconds": 13.80276,
-        "min_seconds": 13.443167,
-        "max_seconds": 22.503257
+        "median_seconds": 11.754124,
+        "min_seconds": 11.21264,
+        "max_seconds": 15.658895
       },
       "pod_created_to_ready_seconds": {
         "n": 3,
-        "median_seconds": 16.80276,
-        "min_seconds": 16.443167,
-        "max_seconds": 219.503257
+        "median_seconds": 13.754124,
+        "min_seconds": 13.21264,
+        "max_seconds": 55.658895
       },
       "container_start_to_first_valid_output_seconds": {
         "n": 3,
-        "median_seconds": 28.580138,
-        "min_seconds": 26.697362,
-        "max_seconds": 34.984468
+        "median_seconds": 23.912204,
+        "min_seconds": 23.305697,
+        "max_seconds": 28.136548
       }
     }
   },
@@ -123,292 +123,384 @@
     {
       "repetition": 1,
       "mode": "normal",
-      "pod_uid": "c2043299-9579-4361-9d3a-f031717f2a23",
-      "created_request_at": "2026-09-07T11:22:03.684963+00:00",
-      "pod_created_at": "2026-09-07T11:22:05Z",
-      "container_started_at": "2026-09-07T11:23:11Z",
-      "ready_observed_at": "2026-09-07T11:23:30.893965+00:00",
-      "pod_create_request_to_ready_seconds": 87.2090218719095,
-      "container_start_to_ready_seconds": 19.893965,
-      "pod_created_to_ready_seconds": 85.893965,
-      "container_start_to_first_valid_output_seconds": 32.938812,
-      "normal_model_loader_seconds": 16.139158605015837,
+      "pod_uid": "627fd021-83f3-4fd7-a03f-600c35b6affa",
+      "created_request_at": "2026-09-07T13:01:47.333648+00:00",
+      "pod_created_at": "2026-09-07T13:01:49Z",
+      "container_started_at": "2026-09-07T13:02:34Z",
+      "ready_observed_at": "2026-09-07T13:02:53.103904+00:00",
+      "pod_create_request_to_ready_seconds": 65.77027590852231,
+      "container_start_to_ready_seconds": 19.103904,
+      "pod_created_to_ready_seconds": 64.103904,
+      "container_start_to_first_valid_output_seconds": 32.123509,
+      "normal_model_loader_seconds": 15.506292391999978,
       "cases": [
         {
           "status": "passed",
-          "started_at": "2026-09-07T11:23:33.968866+00:00",
-          "finished_at": "2026-09-07T11:23:43.938812+00:00",
-          "execution_seconds": 9.969948862039018,
+          "started_at": "2026-09-07T13:02:56.263618+00:00",
+          "finished_at": "2026-09-07T13:03:06.123509+00:00",
+          "execution_seconds": 9.859892478999882,
           "argv_sha256": "6889a218ed6e78409ed8036670049a11f8ae4e13ebd7b43f0f2dc08aa94f707b",
           "structures": [
             {
               "path": "fs2-result.cif",
               "bytes": 26292,
-              "sha256": "6d94d6105db507c3e11169735b78ff378156a8c17714a207da0c4b854c8bcb14",
+              "sha256": "3cc69b75756ff24c6d3b5bcf295cdd3830c76902e8ff797891230ca2662d348f",
               "finite_atoms": 320
             }
-          ]
+          ],
+          "production_confidence_validation": {
+            "validator_id": "esmfold2-fast",
+            "status": "passed",
+            "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+            "structure_count": 1,
+            "atom_count": 320
+          }
         },
         {
           "status": "passed",
-          "started_at": "2026-09-07T11:23:48.577863+00:00",
-          "finished_at": "2026-09-07T11:23:51.424737+00:00",
-          "execution_seconds": 2.846876691968646,
+          "started_at": "2026-09-07T13:03:10.794289+00:00",
+          "finished_at": "2026-09-07T13:03:13.648137+00:00",
+          "execution_seconds": 2.8538482219996695,
           "argv_sha256": "b04dc8725114affee472909ad1112e8411edfeb7a2998cfd3f9260d70c3a4b85",
           "structures": [
             {
               "path": "fs2-result.cif",
               "bytes": 49279,
-              "sha256": "e6b317e0c5d3e80876c37fade092f3e32d9a46799f01a52e13aad284496d3857",
+              "sha256": "985b834361c6479e2494db45fb75ee103eb284ebc5d13c039395dcda9d203e7b",
               "finite_atoms": 601
             }
-          ]
+          ],
+          "production_confidence_validation": {
+            "validator_id": "esmfold2-fast",
+            "status": "passed",
+            "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+            "structure_count": 1,
+            "atom_count": 601
+          }
         }
       ],
-      "gpu_pod_deleted": true
+      "gpu_pod_deleted": true,
+      "node": "computeinstance-e00xda1mw8y5yt4tdt"
     },
     {
       "repetition": 1,
       "mode": "restore",
-      "pod_uid": "bb150162-d580-4a61-9d45-523c3ec81661",
-      "created_request_at": "2026-09-07T11:23:56.904156+00:00",
-      "pod_created_at": "2026-09-07T11:23:58Z",
-      "container_started_at": "2026-09-07T11:27:15Z",
-      "ready_observed_at": "2026-09-07T11:27:37.503257+00:00",
-      "pod_create_request_to_ready_seconds": 220.59912060759962,
-      "container_start_to_ready_seconds": 22.503257,
-      "pod_created_to_ready_seconds": 219.503257,
-      "container_start_to_first_valid_output_seconds": 34.984468,
+      "pod_uid": "ead34028-b37a-42da-8941-0d54fdfa0424",
+      "created_request_at": "2026-09-07T13:03:18.680532+00:00",
+      "pod_created_at": "2026-09-07T13:03:20Z",
+      "container_started_at": "2026-09-07T13:04:00Z",
+      "ready_observed_at": "2026-09-07T13:04:15.658895+00:00",
+      "pod_create_request_to_ready_seconds": 56.978386173024774,
+      "container_start_to_ready_seconds": 15.658895,
+      "pod_created_to_ready_seconds": 55.658895,
+      "container_start_to_first_valid_output_seconds": 28.136548,
       "normal_model_loader_seconds": null,
       "cases": [
         {
           "status": "passed",
-          "started_at": "2026-09-07T11:27:40.550866+00:00",
-          "finished_at": "2026-09-07T11:27:49.984468+00:00",
-          "execution_seconds": 9.43359678296838,
+          "started_at": "2026-09-07T13:04:18.930039+00:00",
+          "finished_at": "2026-09-07T13:04:28.136548+00:00",
+          "execution_seconds": 9.2065110919998,
           "argv_sha256": "6889a218ed6e78409ed8036670049a11f8ae4e13ebd7b43f0f2dc08aa94f707b",
           "structures": [
             {
               "path": "fs2-result.cif",
               "bytes": 26292,
-              "sha256": "e04f9866ddfb0acc88421c8016e2d20b16e8bd8eea053e41e8758f3b2f605196",
+              "sha256": "e5eb3b85f5c33d480e12f22674474638fa781676367ed55aef627f63e456a3bc",
               "finite_atoms": 320
             }
-          ]
+          ],
+          "production_confidence_validation": {
+            "validator_id": "esmfold2-fast",
+            "status": "passed",
+            "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+            "structure_count": 1,
+            "atom_count": 320
+          }
         },
         {
           "status": "passed",
-          "started_at": "2026-09-07T11:27:54.581007+00:00",
-          "finished_at": "2026-09-07T11:27:57.408907+00:00",
-          "execution_seconds": 2.8278983120108023,
+          "started_at": "2026-09-07T13:04:32.705992+00:00",
+          "finished_at": "2026-09-07T13:04:35.603968+00:00",
+          "execution_seconds": 2.897974944999987,
           "argv_sha256": "b04dc8725114affee472909ad1112e8411edfeb7a2998cfd3f9260d70c3a4b85",
           "structures": [
             {
               "path": "fs2-result.cif",
               "bytes": 49279,
-              "sha256": "411ecca04601285d42509512230577e9bf75c754eb176bf3676def9813854b64",
+              "sha256": "5d209069bad0dfaadae9daab2d1de4d942c50d7b6a651d4550714b2a7b386266",
               "finite_atoms": 601
             }
-          ]
+          ],
+          "production_confidence_validation": {
+            "validator_id": "esmfold2-fast",
+            "status": "passed",
+            "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+            "structure_count": 1,
+            "atom_count": 601
+          }
         }
       ],
-      "gpu_pod_deleted": true
+      "gpu_pod_deleted": true,
+      "node": "computeinstance-e00xda1mw8y5yt4tdt"
     },
     {
       "repetition": 2,
       "mode": "normal",
-      "pod_uid": "90a791d9-9b64-4c69-8280-b3093739298d",
-      "created_request_at": "2026-09-07T11:28:02.951204+00:00",
-      "pod_created_at": "2026-09-07T11:28:04Z",
-      "container_started_at": "2026-09-07T11:28:42Z",
-      "ready_observed_at": "2026-09-07T11:28:59.985346+00:00",
-      "pod_create_request_to_ready_seconds": 57.034159171395004,
-      "container_start_to_ready_seconds": 17.985346,
-      "pod_created_to_ready_seconds": 55.985346,
-      "container_start_to_first_valid_output_seconds": 30.707602,
-      "normal_model_loader_seconds": 15.651761563960463,
+      "pod_uid": "689c56f6-c2d4-4eeb-a5e5-dc4ea06d5048",
+      "created_request_at": "2026-09-07T13:04:40.927822+00:00",
+      "pod_created_at": "2026-09-07T13:04:42Z",
+      "container_started_at": "2026-09-07T13:04:43Z",
+      "ready_observed_at": "2026-09-07T13:05:01.458775+00:00",
+      "pod_create_request_to_ready_seconds": 20.53097095899284,
+      "container_start_to_ready_seconds": 18.458775,
+      "pod_created_to_ready_seconds": 19.458775,
+      "container_start_to_first_valid_output_seconds": 31.477361,
+      "normal_model_loader_seconds": 15.306554089999736,
       "cases": [
         {
           "status": "passed",
-          "started_at": "2026-09-07T11:29:03.137139+00:00",
-          "finished_at": "2026-09-07T11:29:12.707602+00:00",
-          "execution_seconds": 9.570462617033627,
+          "started_at": "2026-09-07T13:05:04.642675+00:00",
+          "finished_at": "2026-09-07T13:05:14.477361+00:00",
+          "execution_seconds": 9.83468439599983,
           "argv_sha256": "6889a218ed6e78409ed8036670049a11f8ae4e13ebd7b43f0f2dc08aa94f707b",
           "structures": [
             {
               "path": "fs2-result.cif",
               "bytes": 26292,
-              "sha256": "ee7ae718cca0d0528f3f93695645c8e0236c93caeed2beb194f8f7ee5a151dd3",
+              "sha256": "da5b467b949d2b88ebed002cc71485aff0253e13a59c51076d3dfe696db60bad",
               "finite_atoms": 320
             }
-          ]
+          ],
+          "production_confidence_validation": {
+            "validator_id": "esmfold2-fast",
+            "status": "passed",
+            "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+            "structure_count": 1,
+            "atom_count": 320
+          }
         },
         {
           "status": "passed",
-          "started_at": "2026-09-07T11:29:17.402724+00:00",
-          "finished_at": "2026-09-07T11:29:20.220670+00:00",
-          "execution_seconds": 2.817939414991997,
+          "started_at": "2026-09-07T13:05:19.141547+00:00",
+          "finished_at": "2026-09-07T13:05:22.098894+00:00",
+          "execution_seconds": 2.957343449000291,
           "argv_sha256": "b04dc8725114affee472909ad1112e8411edfeb7a2998cfd3f9260d70c3a4b85",
           "structures": [
             {
               "path": "fs2-result.cif",
               "bytes": 49279,
-              "sha256": "525162deb30cce48bb3c871602b2fdb552e4edc93cf9bd9275021b78307c7379",
+              "sha256": "1addf9c4d25d658bf7c337cc576d14945f8f0e411a8076fddbdbb5bcc1d217a0",
               "finite_atoms": 601
             }
-          ]
+          ],
+          "production_confidence_validation": {
+            "validator_id": "esmfold2-fast",
+            "status": "passed",
+            "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+            "structure_count": 1,
+            "atom_count": 601
+          }
         }
       ],
-      "gpu_pod_deleted": true
+      "gpu_pod_deleted": true,
+      "node": "computeinstance-e00xda1mw8y5yt4tdt"
     },
     {
       "repetition": 2,
       "mode": "restore",
-      "pod_uid": "3c27de21-ef8a-4b92-9079-37d40ff1e190",
-      "created_request_at": "2026-09-07T11:35:18.252795+00:00",
-      "pod_created_at": "2026-09-07T11:35:20Z",
-      "container_started_at": "2026-09-07T11:35:23Z",
-      "ready_observed_at": "2026-09-07T11:35:36.443167+00:00",
-      "pod_create_request_to_ready_seconds": 18.19039278291166,
-      "container_start_to_ready_seconds": 13.443167,
-      "pod_created_to_ready_seconds": 16.443167,
-      "container_start_to_first_valid_output_seconds": 26.697362,
+      "pod_uid": "cd93ee1d-1edb-4814-a86a-a8bab482a3fd",
+      "created_request_at": "2026-09-07T13:05:27.626757+00:00",
+      "pod_created_at": "2026-09-07T13:05:29Z",
+      "container_started_at": "2026-09-07T13:05:31Z",
+      "ready_observed_at": "2026-09-07T13:05:42.754124+00:00",
+      "pod_create_request_to_ready_seconds": 15.127388595603406,
+      "container_start_to_ready_seconds": 11.754124,
+      "pod_created_to_ready_seconds": 13.754124,
+      "container_start_to_first_valid_output_seconds": 23.912204,
       "normal_model_loader_seconds": null,
       "cases": [
         {
           "status": "passed",
-          "started_at": "2026-09-07T11:35:39.428742+00:00",
-          "finished_at": "2026-09-07T11:35:49.697362+00:00",
-          "execution_seconds": 10.268615133012645,
+          "started_at": "2026-09-07T13:05:45.770375+00:00",
+          "finished_at": "2026-09-07T13:05:54.912204+00:00",
+          "execution_seconds": 9.141826119000143,
           "argv_sha256": "6889a218ed6e78409ed8036670049a11f8ae4e13ebd7b43f0f2dc08aa94f707b",
           "structures": [
             {
               "path": "fs2-result.cif",
               "bytes": 26292,
-              "sha256": "4b719c571520446418c15729d0ec0dd871ad9547fb785efa6c02ad1346735662",
+              "sha256": "59d26dde83250097709e426f7ce4138008cbfd2d5481408b70374505f194b825",
               "finite_atoms": 320
             }
-          ]
+          ],
+          "production_confidence_validation": {
+            "validator_id": "esmfold2-fast",
+            "status": "passed",
+            "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+            "structure_count": 1,
+            "atom_count": 320
+          }
         },
         {
           "status": "passed",
-          "started_at": "2026-09-07T11:35:54.309900+00:00",
-          "finished_at": "2026-09-07T11:35:57.452309+00:00",
-          "execution_seconds": 3.142401305027306,
+          "started_at": "2026-09-07T13:05:59.553278+00:00",
+          "finished_at": "2026-09-07T13:06:02.452637+00:00",
+          "execution_seconds": 2.8993609030003427,
           "argv_sha256": "b04dc8725114affee472909ad1112e8411edfeb7a2998cfd3f9260d70c3a4b85",
           "structures": [
             {
               "path": "fs2-result.cif",
               "bytes": 49279,
-              "sha256": "98074fd7924f63c2128354596238b43077c74a6d1afdf127e6feac5f9c09be22",
+              "sha256": "9455ee3f5cade6df5c607fbb908c20b380f76fbb248203aca633cbdf1c3e055c",
               "finite_atoms": 601
             }
-          ]
+          ],
+          "production_confidence_validation": {
+            "validator_id": "esmfold2-fast",
+            "status": "passed",
+            "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+            "structure_count": 1,
+            "atom_count": 601
+          }
         }
       ],
-      "gpu_pod_deleted": true
+      "gpu_pod_deleted": true,
+      "node": "computeinstance-e00xda1mw8y5yt4tdt"
     },
     {
       "repetition": 3,
       "mode": "normal",
-      "pod_uid": "5e7f6639-8420-418e-b167-d019d78ce9e2",
-      "created_request_at": "2026-09-07T11:36:03.023458+00:00",
-      "pod_created_at": "2026-09-07T11:36:04Z",
-      "container_started_at": "2026-09-07T11:36:07Z",
-      "ready_observed_at": "2026-09-07T11:36:25.883734+00:00",
-      "pod_create_request_to_ready_seconds": 22.860297192819417,
-      "container_start_to_ready_seconds": 18.883734,
-      "pod_created_to_ready_seconds": 21.883734,
-      "container_start_to_first_valid_output_seconds": 31.51736,
-      "normal_model_loader_seconds": 15.186478796997108,
+      "pod_uid": "0dbcb919-9896-477d-9c14-bb7cec0fb858",
+      "created_request_at": "2026-09-07T13:06:07.247847+00:00",
+      "pod_created_at": "2026-09-07T13:06:09Z",
+      "container_started_at": "2026-09-07T13:06:11Z",
+      "ready_observed_at": "2026-09-07T13:06:31.442039+00:00",
+      "pod_create_request_to_ready_seconds": 24.194208820350468,
+      "container_start_to_ready_seconds": 20.442039,
+      "pod_created_to_ready_seconds": 22.442039,
+      "container_start_to_first_valid_output_seconds": 33.358307,
+      "normal_model_loader_seconds": 15.173084246999679,
       "cases": [
         {
           "status": "passed",
-          "started_at": "2026-09-07T11:36:28.951784+00:00",
-          "finished_at": "2026-09-07T11:36:38.517360+00:00",
-          "execution_seconds": 9.565549591963645,
+          "started_at": "2026-09-07T13:06:34.510319+00:00",
+          "finished_at": "2026-09-07T13:06:44.358307+00:00",
+          "execution_seconds": 9.847989582000082,
           "argv_sha256": "6889a218ed6e78409ed8036670049a11f8ae4e13ebd7b43f0f2dc08aa94f707b",
           "structures": [
             {
               "path": "fs2-result.cif",
               "bytes": 26292,
-              "sha256": "9e878ffe062b751ddbc0b680c258016853a7c34b8c9ab728fdd59bafec830484",
+              "sha256": "a4f9e9be3d0b5aadf98256656cca07cb6df69fc11812d75cdfcb8738b3f95339",
               "finite_atoms": 320
             }
-          ]
+          ],
+          "production_confidence_validation": {
+            "validator_id": "esmfold2-fast",
+            "status": "passed",
+            "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+            "structure_count": 1,
+            "atom_count": 320
+          }
         },
         {
           "status": "passed",
-          "started_at": "2026-09-07T11:36:43.200194+00:00",
-          "finished_at": "2026-09-07T11:36:45.984747+00:00",
-          "execution_seconds": 2.7845554719679058,
+          "started_at": "2026-09-07T13:06:48.936791+00:00",
+          "finished_at": "2026-09-07T13:06:51.841148+00:00",
+          "execution_seconds": 2.9043570620005994,
           "argv_sha256": "b04dc8725114affee472909ad1112e8411edfeb7a2998cfd3f9260d70c3a4b85",
           "structures": [
             {
               "path": "fs2-result.cif",
               "bytes": 49279,
-              "sha256": "ee3dd78c0c02dd2c38ffd684beb36fe419a834ff18208c93cfb757117175c9dd",
+              "sha256": "61c4295208f8ef9a005421ec1c6301cc055ec2f79c1801b59eef56a981c24abc",
               "finite_atoms": 601
             }
-          ]
+          ],
+          "production_confidence_validation": {
+            "validator_id": "esmfold2-fast",
+            "status": "passed",
+            "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+            "structure_count": 1,
+            "atom_count": 601
+          }
         }
       ],
-      "gpu_pod_deleted": true
+      "gpu_pod_deleted": true,
+      "node": "computeinstance-e00xda1mw8y5yt4tdt"
     },
     {
       "repetition": 3,
       "mode": "restore",
-      "pod_uid": "9ad80097-550b-4331-8772-d1bb450473c1",
-      "created_request_at": "2026-09-07T11:36:51.069854+00:00",
-      "pod_created_at": "2026-09-07T11:36:52Z",
-      "container_started_at": "2026-09-07T11:36:55Z",
-      "ready_observed_at": "2026-09-07T11:37:08.802760+00:00",
-      "pod_create_request_to_ready_seconds": 17.732924127951264,
-      "container_start_to_ready_seconds": 13.80276,
-      "pod_created_to_ready_seconds": 16.80276,
-      "container_start_to_first_valid_output_seconds": 28.580138,
+      "pod_uid": "6c6859c9-81d1-4d8a-beb6-e156922f6a28",
+      "created_request_at": "2026-09-07T13:06:57.224401+00:00",
+      "pod_created_at": "2026-09-07T13:06:59Z",
+      "container_started_at": "2026-09-07T13:07:01Z",
+      "ready_observed_at": "2026-09-07T13:07:12.212640+00:00",
+      "pod_create_request_to_ready_seconds": 14.988256269134581,
+      "container_start_to_ready_seconds": 11.21264,
+      "pod_created_to_ready_seconds": 13.21264,
+      "container_start_to_first_valid_output_seconds": 23.305697,
       "normal_model_loader_seconds": null,
       "cases": [
         {
           "status": "passed",
-          "started_at": "2026-09-07T11:37:11.854086+00:00",
-          "finished_at": "2026-09-07T11:37:23.580138+00:00",
-          "execution_seconds": 11.726048154989257,
+          "started_at": "2026-09-07T13:07:15.251063+00:00",
+          "finished_at": "2026-09-07T13:07:24.305697+00:00",
+          "execution_seconds": 9.054634551999698,
           "argv_sha256": "6889a218ed6e78409ed8036670049a11f8ae4e13ebd7b43f0f2dc08aa94f707b",
           "structures": [
             {
               "path": "fs2-result.cif",
               "bytes": 26292,
-              "sha256": "de85eacc200c0eba3e3ead0d5a708283567147e39863292bcc55c084897c74b3",
+              "sha256": "0242a2d6abc5941cb8fa227913df32659f4e9f9688e1459f90402860c5a551ce",
               "finite_atoms": 320
             }
-          ]
+          ],
+          "production_confidence_validation": {
+            "validator_id": "esmfold2-fast",
+            "status": "passed",
+            "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+            "structure_count": 1,
+            "atom_count": 320
+          }
         },
         {
           "status": "passed",
-          "started_at": "2026-09-07T11:37:28.147479+00:00",
-          "finished_at": "2026-09-07T11:37:31.283926+00:00",
-          "execution_seconds": 3.1364424119819887,
+          "started_at": "2026-09-07T13:07:28.952609+00:00",
+          "finished_at": "2026-09-07T13:07:31.849032+00:00",
+          "execution_seconds": 2.8964227839996965,
           "argv_sha256": "b04dc8725114affee472909ad1112e8411edfeb7a2998cfd3f9260d70c3a4b85",
           "structures": [
             {
               "path": "fs2-result.cif",
               "bytes": 49279,
-              "sha256": "f0dbe9662fb2b96ea3e4282d17ddfb674be799758fbe8dcad35d94d3c4ca023d",
+              "sha256": "60d8f6e9dc75e0105c3f01c4233646a3d85bce3079c7ae1514ba2ab1d2dfc8ca",
               "finite_atoms": 601
             }
-          ]
+          ],
+          "production_confidence_validation": {
+            "validator_id": "esmfold2-fast",
+            "status": "passed",
+            "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+            "structure_count": 1,
+            "atom_count": 601
+          }
         }
       ],
-      "gpu_pod_deleted": true
+      "gpu_pod_deleted": true,
+      "node": "computeinstance-e00xda1mw8y5yt4tdt"
     }
   ],
+  "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+  "profile_model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
   "source_overlay_sha256": "fea343d1e8d50bc453cd11610ae5d65dceb430c78c5374622b77030e86d787f8",
   "failed_init_attempts": {
-    "count": 2,
+    "count": 0,
     "cause": "shared-filesystem ACL metadata read returned ENODATA to cp -a before runtime startup",
     "resolution": "copy small cache files with numeric ownership/modes/timestamps via tar; GPU pages remain read-only",
     "statistics": "failed pre-runtime attempts retained in private receipt and excluded from the three completed pairs"
   },
-  "private_receipt_sha256": "ceee4d52e64c42f4dc77412aca8ab8462509057299df5dc4b03ed53a30a6c311"
+  "private_receipt_sha256": "e635ede826cd06faf4d819612ebbb52d1dddff23cdee05f21a8091200eb59aaa"
 }

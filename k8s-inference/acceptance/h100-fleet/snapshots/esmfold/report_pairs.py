@@ -11,7 +11,7 @@ import sys
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
-from report_protenix_pairs import project
+from report_protenix_pairs import project  # noqa: E402
 
 
 def esm_report(receipt, manifest, config, cases):
@@ -21,6 +21,12 @@ def esm_report(receipt, manifest, config, cases):
             run["ready"]["model_load_seconds"] = run["ready"]["load_seconds"]
     result = project(adapted, manifest)
     result.update(model_id=config["model_id"], stage_id="fold")
+    for key in ("model_revision", "profile_model_revision"):
+        if key in config:
+            result[key] = config[key]
+    for projected, original in zip(result["runs"], receipt["runs"], strict=True):
+        if "node" in original:
+            projected["node"] = original["node"]
     result["parameters"] = {"esmc_precision": "bf16", "attention": "flash_attention_2",
                             "num_loops": 20, "num_sampling_steps": 200, "mode": "single-sequence"}
     result["inputs"] = cases
@@ -33,9 +39,10 @@ def esm_report(receipt, manifest, config, cases):
     )
     result["source_overlay_sha256"] = config["cli_sha256"]
     result["clock_notes"][-1] = (
-        "Matched trials retained existing node/image/filesystem caches without eviction or a RAM-residency guarantee. "
-        "Pod-create clocks include observed scheduler waits on the shared fleet; container-start clocks exclude those waits. "
-        "An image manifest/layer-cache resolution is not a full image-cold benchmark."
+        "Trials do not deliberately evict shared data or node caches; shared files do not guarantee node page-cache residency. "
+        "Existing-pool autoscaling can introduce a new node and actual image pulls. Pod-create clocks include observed "
+        "scheduler/init/image waits; container-start clocks exclude those waits. Acquisition events and node identity "
+        "must be read separately from the model-ready clock; this is not a controlled image-cold benchmark."
     )
     result["failed_init_attempts"] = {
         "count": len(receipt.get("failed_attempts", [])),

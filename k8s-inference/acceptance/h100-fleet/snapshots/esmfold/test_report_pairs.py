@@ -41,3 +41,14 @@ def test_unfinished_trials_are_not_promoted():
     receipt["runs"][0]["gpu_pod_deleted"] = False
     with pytest.raises(ValueError, match="release"):
         esm_report(receipt, *rest)
+
+
+def test_weight_and_profile_identities_and_actual_trial_nodes_stay_distinct():
+    receipt, manifest, config, cases = inputs()
+    config.update(model_revision="a" * 40, profile_model_revision="b" * 40)
+    receipt["runs"][0]["node"] = "new-autoscaled-h100-node"
+    report = esm_report(receipt, manifest, config, cases)
+    assert report["model_revision"] == "a" * 40
+    assert report["profile_model_revision"] == "b" * 40
+    assert report["runs"][0]["node"] == "new-autoscaled-h100-node"
+    assert "actual image pulls" in report["clock_notes"][-1]

@@ -1,6 +1,7 @@
 # Remaining medical/media snapshot candidates — 2026-09-07
 
-These are explicit candidate decisions, not unmeasured startup results.
+These are explicit candidate decisions. A row reports restore timing only when
+the cited matched measurement exists.
 Read-only `nvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory`
 was run inside the current production Pods; it does not reserve or evict memory.
 GPU allocation is not a checkpoint-size measurement.
@@ -8,17 +9,17 @@ GPU allocation is not a checkpoint-size measurement.
 | Model | Measured normal container → ready | Observed GPU process allocation | Current decision |
 |---|---:|---:|---|
 | NV-Segment-CT | 11.100 s earlier native median, n=3 | 1,936 MiB, one GPU | Subsequently qualified three normal/three restore pairs with both original masks; matched container-to-ready 12.782→8.498 s, Pod-request 17.758→14.525 s |
-| SDXL | 11.702 s median, n=3 | 10,068 MiB, one GPU | No restore timing yet; lower priority because its native loader is already short and state is substantially larger than Segment |
+| SDXL | 12.206 s matched normal median, n=3 | 10,068 MiB, one GPU | Restore passed both original PNG oracles but was not selected: 11.586 s container-ready, while Pod-request-ready regressed 17.565→18.893 s; task bundle removed |
 | Evo2-40B v5 | 23.548 s median, n=3 RWO/page-cache; 44.373 s shared-FS n=1 | 47,672 + 46,590 MiB, two GPUs | Requires a separately versioned two-GPU snapshot identity/remapping contract before a valid experiment |
 
 Segment and SDXL share the existing measured media runtime family but have
-different immutable image digests. Each must retain its own exact image,
-weights, precision, original request settings and output oracle. A small
-snapshot can still cost more than an 11-second normal load once Pod startup,
-filesystem preparation, CRIU and CUDA restore are included. SDXL has no
-measured snapshot benefit yet; it is neither declared unsupported nor enabled.
-For context only, the standalone OpenFold3 first restored 11.34-GB bundle took
-13.944 seconds container-to-observed-ready. That is not a prediction for SDXL.
+different immutable image digests. Each retains its own exact image, weights,
+precision, original request settings and output oracle. The SDXL assessment
+confirmed that a functionally correct snapshot can still be a poor product
+choice once Pod startup, filesystem preparation, CRIU and CUDA restore are
+included: its 11.848-GB capture saved only 0.620 seconds after container start
+and added 1.329 seconds at the Pod-request boundary. It is measured and not
+enabled; normal loading remains the default.
 
 Evo2's limitation is concrete in the **current adapter**, not a claim about
 CUDA's general capabilities: `models/scientific-snapshot/process_checkpoint.py`

@@ -1,9 +1,9 @@
 {
   "schema": "fs2-serve.nebius.ai/scientific-snapshot-bundle/v1",
-  "bundle_id": "esmfold2-h100-cuda-criu-20260907-r2",
+  "bundle_id": "esmfold2-h100-cuda-criu-20260907-r5",
   "model_id": "esmfold2",
   "stage_id": "fold",
-  "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+  "model_revision": "8fc3ff471022fdce52c77030685eb775de0c00a3",
   "profile_model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
   "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
   "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
@@ -17,9 +17,9 @@
   "cli_configmap": "fs2-fleet-snapshot-esmfold-current-v2",
   "cli_sha256": "fea343d1e8d50bc453cd11610ae5d65dceb430c78c5374622b77030e86d787f8",
   "pvc": "fs2-fleet-snapshots-rwx-r20260907",
-  "bundle_path": "esmfold2-current-r20260907-r2",
-  "manifest_sha256": "b23ffd52d39540487fda33f103a04eeb4c25d1f8c66fdc3c8481f08fa62cba88",
-  "qualification_receipt_sha256": "9b5d23c8f2e00498d74d9fac6cc216891f1fde48e9107fbdef4edbf65e9bdab3",
+  "bundle_path": "esmfold2-current-r20260907-r5",
+  "manifest_sha256": "3eea3fa1ebf5d6cbc955a84d6aaf5681a51dc2df774223ee1429c910b47911df",
+  "qualification_receipt_sha256": "b775a12996e07fa4911043ca5038ca8530536f26557e83d2e22943efb6a9fb07",
   "qualified": true,
   "python": "/opt/esm/.pixi/envs/gpu/bin/python",
   "cli_path": "/opt/fs2/run_esmfold2.py",
@@ -32,10 +32,10 @@
     "kernel_release": "6.11.0-1016-nvidia"
   },
   "worker_log": {
-    "sha256": "1da339c9a3fddf7b94acc472f88ee83b5f89940ce2ea10b06efc5e582742ed93",
-    "bytes": 722,
+    "sha256": "165e64b2f7192d38841d5dbba1c35552d25cdb9da17784f94d7fda18f5d06485",
+    "bytes": 799,
     "mode": 420,
     "uid": 0,
-    "gid": 0
+    "gid": 1000
   }
 }

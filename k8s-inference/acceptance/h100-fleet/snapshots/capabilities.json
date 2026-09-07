@@ -149,65 +149,67 @@
       "model_id": "esmfold2",
       "status": "fresh-pod-qualified",
       "selectable": false,
-      "reason": "Current exact-image ESMFold2 restored across H100 nodes in all three fresh-Pod trials; both original short and ubiquitin wrappers passed with unchanged BF16, loops20 and steps200. Median container-to-ready improved modestly from18.321s to16.110s. First Pod path342.5s included318s scheduling wait, not a slow CUDA restore. Shared caches were retained; historical disk-cold results are separate. Normal loading remains default; availability requires this exact registered bundle.",
+      "reason": "Corrected r5 ESMFold2 independently passed three normal and three fresh cross-node restores, with both original short/ubiquitin wrappers and the production confidence collector validating the actual weight revision. Container-to-ready median 20.611s normal versus 13.317s restore. Normal2 used a newly autoscaled node: 69.252s model image pull plus 60.364s container-to-ready; this is not an all-page-cache-hot cohort. Source/profile revision is separate from weights. Historical r2 identity and later capture-capability failures are retained, not mixed into these trials. Normal loading remains default; production selection is separate.",
       "runtime_image_digest": "sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
-      "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "model_revision": "8fc3ff471022fdce52c77030685eb775de0c00a3",
       "bundle": {
-        "id": "esmfold2-h100-cuda-criu-20260907-r2",
-        "sha256": "b23ffd52d39540487fda33f103a04eeb4c25d1f8c66fdc3c8481f08fa62cba88",
+        "id": "esmfold2-h100-cuda-criu-20260907-r5",
+        "sha256": "3eea3fa1ebf5d6cbc955a84d6aaf5681a51dc2df774223ee1429c910b47911df",
         "qualification_receipt": "esmfold2-h100-20260907.json",
-        "qualification_receipt_sha256": "9b5d23c8f2e00498d74d9fac6cc216891f1fde48e9107fbdef4edbf65e9bdab3"
+        "qualification_receipt_sha256": "b775a12996e07fa4911043ca5038ca8530536f26557e83d2e22943efb6a9fb07"
       },
       "normal_startup": {
         "clock": "container-start-to-CUDA-synchronized-initialization-observed-over-HTTP",
         "n": 3,
-        "median_seconds": 18.321336,
-        "min_seconds": 17.340322,
-        "max_seconds": 20.087256,
-        "cache": "existing image/shared files; no cache eviction; fresh per-Pod runtime cache"
+        "median_seconds": 20.610529,
+        "min_seconds": 18.264258,
+        "max_seconds": 60.364347,
+        "cache": "retained shared files; mixed existing/new node page-cache state; no eviction; fresh per-Pod runtime cache; image pull excluded"
       },
       "restore_startup": {
         "clock": "container-start-to-completed-CUDA-restore-and-model-health-observed",
         "n": 3,
-        "median_seconds": 16.109618,
-        "min_seconds": 15.374464,
-        "max_seconds": 21.063109,
+        "median_seconds": 13.317364,
+        "min_seconds": 12.067067,
+        "max_seconds": 15.334515,
         "cache": "shared filesystem cache retained; no eviction; not reserved RAM; excludes scheduling/init"
       },
       "fresh_pod_restore_passed": true,
-      "distinct_inputs_passed": 2
+      "distinct_inputs_passed": 2,
+      "profile_model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918"
     },
     {
       "model_id": "esmfold2-fast",
       "status": "fresh-pod-qualified",
       "selectable": false,
-      "reason": "Independently captured current ESMFold2-Fast image restored from shared storage on a different H100 node in all three trials; both original short and ubiquitin wrappers passed unchanged BF16, loops20 and steps200. Median container-to-ready improved from18.884s to13.803s. First Pod path220.6s included194s scheduling wait; it was not a disk-cold test. This profile does not reuse ordinary ESMFold2 state. Normal loading remains default; availability requires this exact registered bundle.",
+      "reason": "Corrected independent r4 ESMFold2-Fast capture passed three normal and three fresh cross-node restores, with both original short/ubiquitin wrappers and the production confidence collector validating the actual weight revision. Container-to-ready median 19.104s normal versus 11.754s restore; retained image/shared files and no deliberate cache eviction. BF16, loops20 and steps200 remain unchanged. Source/profile revision is separate from weights; no ordinary ESMFold2 state is reused. Historical r2 identity and r3 capture-capability failures are retained separately. Normal loading remains default; production selection is separate.",
       "runtime_image_digest": "sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
-      "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
       "bundle": {
-        "id": "esmfold2-fast-h100-cuda-criu-20260907-r2",
-        "sha256": "f7c514a0a696f423ca62c30a04a8fdd346b1583912c3655da5f80b3a3b08b403",
+        "id": "esmfold2-fast-h100-cuda-criu-20260907-r4",
+        "sha256": "060a9ae443bc5a2aff86349e4bf93d7594bf82f857721afaadd9b1e23447b495",
         "qualification_receipt": "esmfold2-fast-h100-20260907.json",
-        "qualification_receipt_sha256": "b8b066ce530a74319617f109b839cc0ea6926668383673b7d2897445c81247c7"
+        "qualification_receipt_sha256": "0d30c586697554ccfe39b6659f8e40d693d47dfbd6faf27440b4a938bdc05b76"
       },
       "normal_startup": {
         "clock": "container-start-to-CUDA-synchronized-initialization-observed-over-HTTP",
         "n": 3,
-        "median_seconds": 18.883734,
-        "min_seconds": 17.985346,
-        "max_seconds": 19.893965,
+        "median_seconds": 19.103904,
+        "min_seconds": 18.458775,
+        "max_seconds": 20.442039,
         "cache": "existing image/shared files; no cache eviction; fresh per-Pod runtime cache"
       },
       "restore_startup": {
         "clock": "container-start-to-completed-CUDA-restore-and-model-health-observed",
         "n": 3,
-        "median_seconds": 13.80276,
-        "min_seconds": 13.443167,
-        "max_seconds": 22.503257,
+        "median_seconds": 11.754124,
+        "min_seconds": 11.21264,
+        "max_seconds": 15.658895,
         "cache": "shared filesystem cache retained; no eviction; not reserved RAM; excludes scheduling/init"
       },
       "fresh_pod_restore_passed": true,
-      "distinct_inputs_passed": 2
+      "distinct_inputs_passed": 2,
+      "profile_model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918"
     },
     {
       "model_id": "evo2-40b",
@@ -613,14 +615,37 @@
       "model_id": "sdxl",
       "status": "not-yet-qualified",
       "selectable": false,
-      "reason": "Not yet snapshot-qualified on the newly deployed H100 runtime. Preserve text encoders, VAE, scheduler and UNet together and validate different prompts.",
-      "runtime_image_digest": null,
-      "model_revision": null,
+      "reason": "A three-pair exact-image H100 assessment passed both original 512x512 seed-2407/2408 PNG oracles, but restore did not improve customer-visible startup: median Pod-create request to observed readiness increased from 17.565s to 18.893s (1.329s/7.6% slower). Container-to-ready improved only 0.620s (12.206s to 11.586s). The 11.848GB task bundle was removed and no production option was registered; normal loading remains preferred. See ../medical-media/sdxl-snapshot-assessment-20260907.json.",
+      "runtime_image_digest": "sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+      "model_revision": "462165984030d82259a11f4367a4eed129e94a7b",
       "bundle": null,
-      "normal_startup": null,
-      "restore_startup": null,
-      "fresh_pod_restore_passed": false,
-      "distinct_inputs_passed": 0
+      "normal_startup": {
+        "clock": "container-start-to-serving-application-ready",
+        "n": 3,
+        "median_seconds": 12.20588,
+        "min_seconds": 11.929395,
+        "max_seconds": 17.902118,
+        "cache": "existing image/shared weights and runtime caches retained; no eviction"
+      },
+      "restore_startup": {
+        "clock": "container-start-to-completed-CUDA-restore-and-serving-health-observed",
+        "n": 3,
+        "median_seconds": 11.585597,
+        "min_seconds": 11.2306,
+        "max_seconds": 11.706136,
+        "cache": "shared filesystem cache retained during measurement; bundle removed after negative decision; excludes node/image acquisition"
+      },
+      "fresh_pod_restore_passed": true,
+      "distinct_inputs_passed": 2,
+      "accelerator_classes": [
+        "nvidia-h100-sxm5-80gb"
+      ],
+      "compatibility": {
+        "gpu_name": "NVIDIA H100 80GB HBM3",
+        "compute_capability": "9.0",
+        "driver_version": "580.159.04",
+        "kernel_release": "6.11.0-1016-nvidia"
+      }
     }
   ],
   "compatibility": {

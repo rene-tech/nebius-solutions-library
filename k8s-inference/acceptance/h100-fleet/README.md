@@ -87,12 +87,56 @@ cutover; restore the intended enabled state and hot floor afterward. Qwen kept
 its original floor of one; Cosmos kept its original floor of zero. No other
 model has been permanently scaled down during this campaign.
 
-ESMFold2/Fast, GenMol, CXR and RFdiffusion snapshot work remains in progress;
-it is not described as a production option until fresh-Pod restore and new-input
-validation pass. Mosaic's current JAX runtime has a tested CUDA restore
-incompatibility and retains normal loading. The admin state fix for retained
-failed qualification Pods is awaiting the next release; current successful
-inference receipts are not invalidated by those historical task Pods.
+The expanded snapshot rollout is tracked separately below. Mosaic's current
+JAX runtime has a tested CUDA restore incompatibility and retains normal
+loading. Release `01a71fee` also fixes the admin state attribution for retained
+failed qualification Pods; the public inventory is 24/24 healthy or
+intentionally cold, without treating those historical task Pods as serving
+replicas.
+
+## Expanded snapshot acceptance — rollout in progress
+
+Main `1c0898a20` adds production renderer/UI support and RFdiffusion's observed
+startup metadata. These additional **isolated qualifications are not yet
+production-option acceptance**. Each has three normal/fresh-restore pairs and
+two original valid inputs per trial:
+
+| Runtime | Native → restore, seconds | Evidence |
+| --- | ---: | --- |
+| GenMol | 12.198 → 8.654 | [Matched trials](snapshots/genmol-h100-20260907.json) |
+| DiffDock | 24.514 → 8.890 | [Matched trials](snapshots/diffdock-h100-20260907.json) |
+| NV-Reason-CXR-3B | 83.307 → 55.350 | [Matched trials](medical-media/cxr-snapshot-qualification.json) |
+| NV-Segment-CT | 12.782 → 8.498 | [Matched trials](medical-media/segment-snapshot-qualification.json) |
+| OpenFold3 Preview2 (standalone) | 37.451 → 9.817 | [Matched trials](openfold3-standalone/snapshot-qualification.json) |
+| RFdiffusion | 8.507 → 3.070 | [Matched trials](snapshots/rfdiffusion-h100-20260907.json) |
+| ESMFold2 | 20.611 → 13.317 | [Corrected-identity trials](snapshots/esmfold2-h100-20260907.json) |
+| ESMFold2-Fast | 19.104 → 11.754 | [Corrected-identity trials](snapshots/esmfold2-fast-h100-20260907.json) |
+
+These are median **container-start-to-application-ready** clocks with shared
+files retained and no deliberate cache eviction. They exclude node acquisition
+and image pulls, but do not guarantee identical node page-cache residency. One
+ESMFold2 native trial ran on a newly autoscaled node: its separate image pull
+took 69.252 seconds and its container-ready time was 60.364 seconds. The report
+retains that trial and its acquisition events; this is not a controlled
+image-cold comparison. The standalone OpenFold3 result does not qualify the
+separate OpenBind profile.
+
+Initial public ESMFold2/Fast snapshot attempts restored CUDA and produced valid
+structures, but the production confidence collector correctly rejected their
+captured weights identity. Corrected captures now preserve the image-locked
+weights revision separately from the catalog source revision. Both replacement
+qualifications pass three fresh restores and both original inputs through the
+production confidence collector, using the original five-capability restore
+environment. Normal public policies were restored; earlier isolated results
+are preserved separately and are not proof of a successful production option.
+The corrected bundles still need the final Terraform rollout and public smoke
+tests.
+
+Proteina and BoltzGen remain normal-load runtimes: the
+[exact-source assessment](snapshots/proteina-boltzgen-model-only-assessment-20260907.md)
+shows that safe reusable snapshots require stage-specific persistent workers
+which separate model state from each request. Fast native loaders and paths
+whose measured restore is slower should not be presented as acceleration.
 
 ## Initial state — 7 September 2026 (historical)
 

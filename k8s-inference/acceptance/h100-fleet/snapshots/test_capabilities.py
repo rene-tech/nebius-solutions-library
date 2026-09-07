@@ -24,6 +24,17 @@ def test_all_expected_ids_remain_visible_without_invented_qualification():
     assert entries["diffdock"]["bundle"]["qualification_receipt_sha256"] == (
         "6764987544608749f52fa4f0d1c80508b9109bc29864acd7adc85cd01a628abc"
     )
+    assert entries["sdxl"]["status"] == "not-yet-qualified"
+    assert entries["sdxl"]["fresh_pod_restore_passed"]
+    assert entries["sdxl"]["distinct_inputs_passed"] == 2
+    assert entries["sdxl"]["bundle"] is None
+    assert not entries["sdxl"]["selectable"]
+    assert (
+        entries["sdxl"]["restore_startup"]["median_seconds"]
+        < entries["sdxl"]["normal_startup"]["median_seconds"]
+    )
+    assert "Pod-create request" in entries["sdxl"]["reason"]
+    assert "slower" in entries["sdxl"]["reason"]
     for entry in entries.values():
         if entry["status"] in {
             "experimental",

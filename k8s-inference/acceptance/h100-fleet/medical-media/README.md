@@ -262,8 +262,44 @@ snapshot claim. Do not shorten the model context or memory allocation to
 manufacture a smaller snapshot.
 
 See [snapshot-candidates.md](snapshot-candidates.md) for the measured state-size
-assessment of Segment, SDXL and two-GPU Evo2. Candidate status is not a restore
-measurement or a universal hardware-support claim.
+assessment of Segment, SDXL and two-GPU Evo2. Each row states whether restore
+was actually measured; none is a universal hardware-support claim.
+
+## SDXL snapshot assessment (normal load retained)
+
+The exact SDXL H100 image and revision completed three matched normal loads and
+three fresh, donor-deleted CUDA+CRIU restores. Every Pod passed both original
+512x512 prompts at seeds 2407 and 2408 with the unchanged FP16, dimensions,
+steps and guidance settings and the exact H100 PNG oracles.
+
+| Boundary, median (min–max), n=3 per mode | Normal | Restore |
+|---|---:|---:|
+| Container start → observed application ready | 12.206 s (11.929–17.902) | 11.586 s (11.231–11.706) |
+| Pod-create request → observed application ready | 17.565 s (17.514–23.267) | 18.893 s (18.832–18.929) |
+
+The 0.620-second container-level gain does not offset the restore initialization
+path: at the customer-visible Pod-request boundary, restore was 1.329 seconds
+(7.6%) slower. SDXL therefore remains on normal loading and has no registered
+snapshot option. The both-output clock is not used for this decision because
+the donor had already processed the same two original prompts before capture.
+
+Capture itself required 4.805 seconds for CUDA checkpointing and 95.084 seconds
+for the CRIU dump. The exact 11,847,843,902-byte/114-entry task bundle was
+flushed, hashed, and tested before being removed from the shared claim after the
+negative performance decision; no production bundle or cache option was
+created. Its captured-content hash was
+`aa781f840ec61f302a7ef277b77b1058f857d8dfe8283f642664c6cd81d5a446`.
+The initial donor-deleted restore also passed both outputs, but its observer was
+started late and its 25.559-second container clock is retained only as an
+unmeasured harness attempt, outside the matched cohort. All SDXL task Pods were
+deleted and the production Pod was never changed.
+
+See
+[sdxl-snapshot-assessment-20260907.json](sdxl-snapshot-assessment-20260907.json)
+for all six run clocks, output hashes, compatibility identity, capture phases,
+bundle disposition, and private receipt hashes. Reproduce with
+`small_media_snapshot_probe.py --model sdxl`, `publish_existing_bundle.py`, and
+the shared `run_serving_pairs.py`/`report_serving_pairs.py` helpers.
 
 ## Optional Segment GPU snapshot
 
