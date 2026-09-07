@@ -18,6 +18,7 @@ import time
 
 from render_scientific_restore import scientific_restore
 from render_serving_probe import render
+from validate_confidence_archive import validate_confidence_archive
 
 
 def main():
@@ -107,6 +108,10 @@ def main():
                         node=config["node"],
                     )
                     normal = render(source, options)
+                    if config["model_id"] in {"esmfold2", "esmfold2-fast"}:
+                        from esmfold.prepare_donor import restore_compatible_donor
+
+                        restore_compatible_donor(normal)
                     normal["spec"]["volumes"].append(
                         next(
                             copy.deepcopy(v)
@@ -133,6 +138,11 @@ def main():
                     runtime["command"][runtime["command"].index("--fallback") + 1] = (
                         "fail"
                     )
+                if config.get("pool"):
+                    # Existing pool autoscaling can supply independent trials;
+                    # do not pin every run to one temporary preemptible node.
+                    pod["spec"]["nodeSelector"].pop("kubernetes.io/hostname", None)
+                    pod["spec"]["nodeSelector"]["accelerator.fs2.nebius/pool-id"] = config["pool"]
                 (args.directory / f"{active}.pod-private.json").write_text(
                     json.dumps(pod)
                 )
@@ -168,6 +178,15 @@ def main():
                         check=False,
                     )
                     if result.returncode == 0:
+                        # A fast restore can start between the earlier Pod GET
+                        # and this successful exec. Do not read startedAt from
+                        # the stale Pending/container-waiting status snapshot.
+                        observed = json.loads(call(["get", "pod", active, "-o", "json"]).stdout)
+                        current = next((item for item in observed["status"].get("containerStatuses", [])
+                                        if item["name"] == "scientific-stage"), None)
+                        if current is None or "running" not in current["state"]:
+                            time.sleep(1)
+                            continue
                         row["ready"] = json.loads(result.stdout)
                         break
                     time.sleep(1)
@@ -212,7 +231,8 @@ def main():
                         check=True,
                     )
                     command = json.loads((case / "original-command.json").read_bytes())
-                    output = command[command.index("--output-dir") + 1]
+                    output_flag = "--output-dir" if "--output-dir" in command else "--output"
+                    output = command[command.index(output_flag) + 1]
                     validation = subprocess.run(
                         [
                             sys.executable,
@@ -269,6 +289,12 @@ def main():
                     (args.directory / f"{active}-{case.name}-outputs.tar").write_bytes(
                         copied
                     )
+                    if config["model_id"] in {"esmfold2", "esmfold2-fast"}:
+                        # The native wrapper's own PASS is not sufficient: the
+                        # public companion also checks model/input provenance.
+                        result["production_confidence_validation"] = validate_confidence_archive(
+                            copied, command, config["model_revision"]
+                        )
                 logs = call(
                     ["logs", active, "-c", "scientific-stage", "--timestamps"]
                 ).stdout

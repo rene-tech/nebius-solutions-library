@@ -767,6 +767,29 @@ def _expected_upstream_argv(
     return tuple(argv)
 
 
+def _validate_cache_evidence(cache: object) -> None:
+    if not isinstance(cache, Mapping) or cache.get("declared") != "artifact-local":
+        raise ScientificAdapterError("RFdiffusion cache execution evidence differs")
+    if cache.get("source") == "submitter-declared":
+        if cache.get("gpu_snapshot_used") is not False or "observed_startup" in cache:
+            raise ScientificAdapterError("RFdiffusion declared cache cannot claim observed GPU restoration")
+        return
+    observation = cache.get("observed_startup")
+    if (
+        cache.get("source") != "runtime-observed"
+        or not isinstance(cache.get("gpu_snapshot_used"), bool)
+        or not isinstance(observation, Mapping)
+        or set(observation) != {"backend", "bundle_id", "manifest_sha256"}
+        or observation.get("backend") not in {"normal-load", "cuda-criu"}
+        or cache["gpu_snapshot_used"] != (observation["backend"] == "cuda-criu")
+        or not isinstance(observation.get("bundle_id"), str)
+        or not 1 <= len(observation["bundle_id"]) <= 253
+        or not isinstance(observation.get("manifest_sha256"), str)
+        or re.fullmatch(r"[a-f0-9]{64}", observation["manifest_sha256"]) is None
+    ):
+        raise ScientificAdapterError("RFdiffusion observed startup evidence differs")
+
+
 def _validate_result(
     invocation: StageInvocation,
     workspace: Path,
@@ -876,16 +899,8 @@ def _validate_result(
     if upstream.get("returncode") != 0 or upstream.get("log_path") != str(expected_log):
         raise ScientificAdapterError("RFdiffusion upstream completion evidence differs")
     cache = result.get("cache_level")
-    if not isinstance(cache, Mapping) or {
-        "declared": cache.get("declared"),
-        "source": cache.get("source"),
-        "gpu_snapshot_used": cache.get("gpu_snapshot_used"),
-    } != {
-        "declared": "artifact-local",
-        "source": "submitter-declared",
-        "gpu_snapshot_used": False,
-    }:
-        raise ScientificAdapterError("RFdiffusion cache execution evidence differs")
+    _validate_cache_evidence(cache)
+    assert isinstance(cache, Mapping)
     cache_note = cache.get("note")
     if not isinstance(cache_note, str) or not 1 <= len(cache_note) <= 1024:
         raise ScientificAdapterError("RFdiffusion cache execution note is invalid")
@@ -1052,6 +1067,7 @@ def _sanitize_result(result: Mapping[str, object], *, index: int) -> bytes:
         "cache_level": {
             "declared": cache["declared"],
             "gpu_snapshot_used": cache["gpu_snapshot_used"],
+            **({"observed_startup": cache["observed_startup"]} if "observed_startup" in cache else {}),
         },
         "model_ready_seconds": upstream["model_ready_seconds"],
         "design": {

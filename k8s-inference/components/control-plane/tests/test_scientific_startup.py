@@ -88,6 +88,62 @@ def test_default_normal_load_is_identity_transform():
     assert apply_startup_policy(pod, StageStartupPolicy(), request_uid=10001) is pod
 
 
+def rf_contract_bundle(bundle):
+    # Synthetic schema/renderer fixture, never an acceptance receipt.
+    return {
+        **bundle, "model_id": "rfdiffusion", "stage_id": "inference",
+        "python": "/opt/conda/bin/python", "cli_path": "/opt/fs2/runtime_entrypoint.py",
+        "cli_key": "rfdiffusion_observed_cli.py", "worker_variable": "FS2_RFDIFFUSION_WORKER_URL",
+        "source_sha256": {name: "a" * 64 for name in (
+            "supervisor.py", "process_checkpoint.py", "scientific_server.py", "rfdiffusion_server.py",
+            "rfdiffusion_model_cache.py", "rfdiffusion_cli_proxy.py", "rfdiffusion_runtime_entrypoint.py",
+            "sitecustomize.py",
+        )},
+        "entrypoint": {"configmap": "rf-request-v1", "key": "scientific_request_entrypoint.py", "sha256": "b" * 64},
+    }
+
+
+def test_rf_additive_entrypoint_preserves_original_argv_and_frozen_selection(bundle):
+    record = rf_contract_bundle(bundle)
+    policy = choose(record)
+    original = ["/opt/conda/bin/python", "/opt/fs2/runtime_entrypoint.py", "--output", "/work/out"]
+    pod = {"metadata": {}, "spec": {
+        "initContainers": [], "volumes": [], "containers": [{
+            "name": "scientific-stage", "image": record["runtime_image"], "command": original,
+            "env": [{"name": "OMP_NUM_THREADS", "value": "1"}], "volumeMounts": [],
+            "resources": {"requests": {"nvidia.com/gpu": "1", "memory": "48Gi"}},
+        }],
+    }}
+    result = apply_startup_policy(pod, policy, request_uid=10001)
+    runtime = result["spec"]["containers"][0]
+    assert runtime["command"][1] == "/snapshot-entrypoint/scientific_request_entrypoint.py"
+    assert runtime["command"][-len(original):] == original
+    assert runtime["command"][runtime["command"].index("--worker-url-variable") + 1] == "FS2_RFDIFFUSION_WORKER_URL"
+    assert runtime["resources"] == pod["spec"]["containers"][0]["resources"]
+    assert {row["name"]: row["value"] for row in runtime["env"]}["PYTHONPATH"] == "/snapshot-source:/opt/rfdiffusion"
+    mounted = next(row for row in result["spec"]["volumes"] if row["name"] == "snapshot-entrypoint")
+    assert mounted["configMap"]["name"] == "rf-request-v1"
+    record["entrypoint"]["configmap"] = "later-edit"
+    assert json.loads(policy.bundle_json)["entrypoint"]["configmap"] == "rf-request-v1"
+    assert StageStartupPolicy.from_value(policy.to_value()) == policy
+
+
+@pytest.mark.parametrize(
+    "entrypoint", [None, {}, {"configmap": "rf-request-v1", "key": "arbitrary.py", "sha256": "a" * 64}]
+)
+def test_rf_requires_its_exact_request_entrypoint(bundle, entrypoint):
+    record = rf_contract_bundle(bundle)
+    record["entrypoint"] = entrypoint
+    with pytest.raises(ValueError, match="entrypoint"):
+        choose(record)
+
+
+def test_old_adapter_cannot_replace_frozen_supervisor(bundle):
+    bundle["entrypoint"] = rf_contract_bundle(bundle)["entrypoint"]
+    with pytest.raises(ValueError, match="captured supervisor"):
+        choose(bundle)
+
+
 @pytest.mark.parametrize("model_id", ["esmfold2", "esmfold2-fast"])
 def test_esm_adapters_require_independent_exact_bundle_identity(bundle, model_id):
     # Synthetic contract fixture only: this does not qualify a live capture.

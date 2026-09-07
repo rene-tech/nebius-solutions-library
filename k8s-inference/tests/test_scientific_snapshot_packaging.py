@@ -28,8 +28,22 @@ def test_protenix_bytes_and_shared_esm_cli_union(tmp_path):
         "qualified": False, "qualification_receipt_sha256": None,
     }
     fast = {**esm, "bundle_id": "esm-fast-test", "model_id": "esmfold2-fast"}
+    rf_sources = {
+        "rfdiffusion_runtime_entrypoint.py": (
+            ROOT / "models/cancer-immunotherapy/runtime-images/rfdiffusion/runtime_entrypoint.py"
+        ).read_text(),
+        "sitecustomize.py": (source / "python310_sitecustomize.py").read_text(),
+    }
+    rf = {
+        **protenix, "bundle_id": "rf-test", "source_configmap": "rf-sources", "cli_configmap": "rf-request",
+        "cli_key": "rfdiffusion_observed_cli.py", "source_sha256": {
+            name: hashlib.sha256(data.encode()).hexdigest() for name, data in rf_sources.items()
+        },
+        "entrypoint": {"configmap": "rf-request", "key": "scientific_request_entrypoint.py",
+                       "sha256": hashlib.sha256((source / "scientific_request_entrypoint.py").read_bytes()).hexdigest()},
+    }
     config = {"enabled": True, "gpu_snapshots": {
-        "bundles": {item["bundle_id"]: item for item in (protenix, esm, fast)}, "adopt_existing": False,
+        "bundles": {item["bundle_id"]: item for item in (protenix, esm, fast, rf)}, "adopt_existing": False,
     }}
     declarations = 'variable "scientific_batch" { type = any }\n'
     declarations += "locals { fs2_root = " + json.dumps(str(ROOT)) + " }\n"
@@ -49,4 +63,9 @@ def test_protenix_bytes_and_shared_esm_cli_union(tmp_path):
     }
     assert maps[protenix["cli_configmap"]] == {
         protenix["cli_key"]: (source / "protenix_cli_proxy.py").read_text()
+    }
+    assert maps["rf-sources"] == rf_sources
+    assert maps["rf-request"] == {
+        "scientific_request_entrypoint.py": (source / "scientific_request_entrypoint.py").read_text(),
+        "rfdiffusion_observed_cli.py": (source / "rfdiffusion_observed_cli.py").read_text(),
     }

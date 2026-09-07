@@ -47,7 +47,7 @@
       "model_id": "boltzgen",
       "status": "not-yet-qualified",
       "selectable": false,
-      "reason": "Not yet snapshot-qualified. Preserve the accepted bounded-memory runtime and normal full design workflow; request-bound intermediate tensors are not a reusable model snapshot.",
+      "reason": "Exact-source assessment found no clean input-independent GPU boundary in the current one-shot runtime. The 36.052s initialized window is 12.5% of the 288.319s isolated design stage and 2.9% of the current 1239.974s public multistage workflow; the measured post-device boundary already retains the request DataModule/writer/output, the design process swaps a second checkpoint mid-run, and later model stages are separate processes. A safe option requires versioned stage-specific persistent workers; normal load remains preferred. See proteina-boltzgen-model-only-assessment-20260907.json.",
       "runtime_image_digest": null,
       "model_revision": null,
       "bundle": null,
@@ -63,8 +63,15 @@
       "reason": "All three current-image shared-filesystem CUDA+CRIU restores passed two unseen-seed full video outputs with the standard-asyncio/legacy-TCPStore variant. Median container-to-ready improved from59.020s to28.082s. First RWO-remount restoration was330.335s; shared-cache timings do not predict image/node/disk-cold startup. Production availability requires the matching registered bundle; normal loading remains default.",
       "runtime_image_digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
       "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
-      "accelerator_classes": ["nvidia-h100-sxm5-80gb"],
-      "compatibility": {"gpu_name": "NVIDIA H100 80GB HBM3", "compute_capability": "9.0", "driver_version": "580.159.04", "kernel_release": "6.11.0-1016-nvidia"},
+      "accelerator_classes": [
+        "nvidia-h100-sxm5-80gb"
+      ],
+      "compatibility": {
+        "gpu_name": "NVIDIA H100 80GB HBM3",
+        "compute_capability": "9.0",
+        "driver_version": "580.159.04",
+        "kernel_release": "6.11.0-1016-nvidia"
+      },
       "bundle": {
         "id": "cosmos3-nano-h100-cuda-criu-20260907-r7",
         "sha256": "4975911cfd2ba92a0ef0537d69966ef63af457eca4f658c796e88851a9500bb8",
@@ -92,16 +99,51 @@
     },
     {
       "model_id": "diffdock",
-      "status": "not-yet-qualified",
+      "status": "fresh-pod-qualified",
       "selectable": false,
-      "reason": "Not yet snapshot-qualified on the independent upstream H100 runtime. Cached process-to-ready median is 19.919s; capture must retain model-only state and accept different ligand/protein pairs.",
-      "runtime_image_digest": null,
-      "model_revision": null,
-      "bundle": null,
-      "normal_startup": null,
-      "restore_startup": null,
-      "fresh_pod_restore_passed": false,
-      "distinct_inputs_passed": 0
+      "reason": "Current exact upstream DiffDock image restored from shared storage in all three fresh-Pod trials; both original pinned 1UBQ/aspirin requests at accepted seeds 2370 and 2371 passed strict receptor, ligand, coordinate and finite-confidence validation. Median container-to-ready improved from 24.514s to 8.890s. Normal loading remains default; production availability requires this exact registered bundle and a live fallback rollout.",
+      "runtime_image_digest": "sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7",
+      "model_revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",
+      "accelerator_classes": [
+        "nvidia-h100-sxm5-80gb"
+      ],
+      "compatibility": {
+        "gpu_name": "NVIDIA H100 80GB HBM3",
+        "compute_capability": "9.0",
+        "driver_version": "580.159.04",
+        "kernel_release": "6.11.0-1016-nvidia"
+      },
+      "bundle": {
+        "id": "diffdock-h100-cuda-criu-20260907-r01",
+        "sha256": "3d6a2da41134cfb25355a5ddffd3ac84b74f6ebe8d4206901c54905ca354648b",
+        "qualification_receipt": "diffdock-h100-20260907.json",
+        "qualification_receipt_sha256": "6764987544608749f52fa4f0d1c80508b9109bc29864acd7adc85cd01a628abc"
+      },
+      "normal_startup": {
+        "clock": "container-start-to-serving-application-ready",
+        "n": 3,
+        "median_seconds": 24.514227,
+        "min_seconds": 24.096644,
+        "max_seconds": 25.557406,
+        "cache": "current regional image and localized weights retained; no eviction"
+      },
+      "restore_startup": {
+        "clock": "container-start-to-completed-CUDA-restore-and-serving-health-observed",
+        "n": 3,
+        "median_seconds": 8.890269,
+        "min_seconds": 8.836242,
+        "max_seconds": 10.287132,
+        "cache": "shared filesystem cache retained; no eviction; not reserved RAM; excludes scheduling/init"
+      },
+      "fresh_pod_restore_passed": true,
+      "distinct_inputs_passed": 2,
+      "restore_components": {
+        "clock": "CUDA checkpoint plus CRIU dump captured once; excludes bundle publication, Pod startup and restore readiness",
+        "n": 1,
+        "cuda_checkpoint_seconds": 1.870683,
+        "criu_dump_seconds": 69.792447,
+        "durable_flush_seconds": 0.648284
+      }
     },
     {
       "model_id": "esmfold2",
@@ -118,12 +160,18 @@
       },
       "normal_startup": {
         "clock": "container-start-to-CUDA-synchronized-initialization-observed-over-HTTP",
-        "n": 3, "median_seconds": 18.321336, "min_seconds": 17.340322, "max_seconds": 20.087256,
+        "n": 3,
+        "median_seconds": 18.321336,
+        "min_seconds": 17.340322,
+        "max_seconds": 20.087256,
         "cache": "existing image/shared files; no cache eviction; fresh per-Pod runtime cache"
       },
       "restore_startup": {
         "clock": "container-start-to-completed-CUDA-restore-and-model-health-observed",
-        "n": 3, "median_seconds": 16.109618, "min_seconds": 15.374464, "max_seconds": 21.063109,
+        "n": 3,
+        "median_seconds": 16.109618,
+        "min_seconds": 15.374464,
+        "max_seconds": 21.063109,
         "cache": "shared filesystem cache retained; no eviction; not reserved RAM; excludes scheduling/init"
       },
       "fresh_pod_restore_passed": true,
@@ -144,12 +192,18 @@
       },
       "normal_startup": {
         "clock": "container-start-to-CUDA-synchronized-initialization-observed-over-HTTP",
-        "n": 3, "median_seconds": 18.883734, "min_seconds": 17.985346, "max_seconds": 19.893965,
+        "n": 3,
+        "median_seconds": 18.883734,
+        "min_seconds": 17.985346,
+        "max_seconds": 19.893965,
         "cache": "existing image/shared files; no cache eviction; fresh per-Pod runtime cache"
       },
       "restore_startup": {
         "clock": "container-start-to-completed-CUDA-restore-and-model-health-observed",
-        "n": 3, "median_seconds": 13.802760, "min_seconds": 13.443167, "max_seconds": 22.503257,
+        "n": 3,
+        "median_seconds": 13.80276,
+        "min_seconds": 13.443167,
+        "max_seconds": 22.503257,
         "cache": "shared filesystem cache retained; no eviction; not reserved RAM; excludes scheduling/init"
       },
       "fresh_pod_restore_passed": true,
@@ -159,7 +213,7 @@
       "model_id": "evo2-40b",
       "status": "not-yet-qualified",
       "selectable": false,
-      "reason": "Not yet snapshot-qualified. The H100 successor uses two GPUs and requires a coordinated multi-process/multi-GPU capture and changed-sequence qualification; the earlier B300 image is not interchangeable.",
+      "reason": "Current two-H100 runtime is not snapshot-qualified. Its cached loader takes 23.55s (RWO/page-cache cohort) or 44.37s (shared filesystem, one trial). The existing checkpoint bridge maps exactly one GPU UUID; this 92GiB two-GPU state needs a separately versioned ordered multi-GPU mapping contract and measured benefit. This is an adapter limitation, not proof that CUDA multi-GPU snapshots are impossible.",
       "runtime_image_digest": null,
       "model_revision": null,
       "bundle": null,
@@ -262,29 +316,85 @@
     },
     {
       "model_id": "nv-reason-cxr-3b",
-      "status": "not-yet-qualified",
+      "status": "fresh-pod-qualified",
       "selectable": false,
-      "reason": "Not yet snapshot-qualified on the newly deployed H100 runtime. Any capture must preserve the exact multimodal preprocessing and test different X-rays.",
-      "runtime_image_digest": null,
-      "model_revision": null,
-      "bundle": null,
-      "normal_startup": null,
-      "restore_startup": null,
-      "fresh_pod_restore_passed": false,
-      "distinct_inputs_passed": 0
+      "reason": "Three matched fresh-Pod restores passed both original X-rays with the exact runtime and GPU allocation. Cached container-ready median improved from 83.307s to 55.350s. The 75.188GB snapshot retains original-fixture prefix/encoder caches; these are not disk-cold or cold-input inference measurements. Normal loading remains available; production availability requires the matching registered bundle.",
+      "runtime_image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+      "model_revision": "056bd0383b35226554da9dc5866e095df174ae19",
+      "bundle": {
+        "id": "nv-reason-cxr-3b-h100-cuda-criu-20260907-r05",
+        "sha256": "4b4f374c81b855f5c7d3155aea0969a2d146e67575468626343215512d589274",
+        "qualification_receipt": "../medical-media/cxr-snapshot-qualification.json",
+        "qualification_receipt_sha256": "f9f7d4ec018185a1a24cedc59380f590c6fbbb15005da24e50809372957b86b2"
+      },
+      "normal_startup": {
+        "clock": "container-start-to-serving-application-ready",
+        "n": 3,
+        "median_seconds": 83.307303,
+        "min_seconds": 82.390317,
+        "max_seconds": 84.315724,
+        "cache": "existing image/shared weights and runtime caches retained; no eviction"
+      },
+      "restore_startup": {
+        "clock": "container-start-to-completed-CUDA-restore-and-serving-health-observed",
+        "n": 3,
+        "median_seconds": 55.350165,
+        "min_seconds": 50.439832,
+        "max_seconds": 72.28017,
+        "cache": "shared filesystem cache retained; not reserved RAM; excludes node/image acquisition"
+      },
+      "fresh_pod_restore_passed": true,
+      "distinct_inputs_passed": 2,
+      "accelerator_classes": [
+        "nvidia-h100-sxm5-80gb"
+      ],
+      "compatibility": {
+        "gpu_name": "NVIDIA H100 80GB HBM3",
+        "compute_capability": "9.0",
+        "driver_version": "580.159.04",
+        "kernel_release": "6.11.0-1016-nvidia"
+      }
     },
     {
       "model_id": "nv-segment-ct",
-      "status": "not-yet-qualified",
+      "status": "fresh-pod-qualified",
       "selectable": false,
-      "reason": "Not yet snapshot-qualified on the newly deployed H100 runtime. Compare native loader overhead and retain full-volume input/output semantics.",
-      "runtime_image_digest": null,
-      "model_revision": null,
-      "bundle": null,
-      "normal_startup": null,
-      "restore_startup": null,
-      "fresh_pod_restore_passed": false,
-      "distinct_inputs_passed": 0
+      "reason": "Three matched fresh-Pod restores passed both original 35-voxel and 204-voxel synthetic masks, with unchanged runtime image and model settings. Cached container-ready median improved modestly from 12.782s to 8.498s; the snapshot occupies 3.205GB. Normal loading remains the default. These are cache-conditioned startup tests, not clinical validation or disk/node-cold measurements.",
+      "runtime_image_digest": "sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd",
+      "model_revision": "afb51518689f71e6abb367ee6301b2cd0225c66a",
+      "bundle": {
+        "id": "nv-segment-ct-h100-cuda-criu-20260907-r01",
+        "sha256": "fb5a0598d39ed4f626c6f4a118980fbbced8af8a34d0f42d639c381b72bfdd87",
+        "qualification_receipt": "../medical-media/segment-snapshot-qualification.json",
+        "qualification_receipt_sha256": "685b256fe1a398f9f892538fd3ac2e123443f64becdd738c2b18fd11725c2f0e"
+      },
+      "normal_startup": {
+        "clock": "container-start-to-serving-application-ready",
+        "n": 3,
+        "median_seconds": 12.782018,
+        "min_seconds": 12.226618,
+        "max_seconds": 12.790781,
+        "cache": "existing image/shared weights and runtime caches retained; no eviction"
+      },
+      "restore_startup": {
+        "clock": "container-start-to-completed-CUDA-restore-and-serving-health-observed",
+        "n": 3,
+        "median_seconds": 8.497765,
+        "min_seconds": 6.862654,
+        "max_seconds": 8.771297,
+        "cache": "shared filesystem cache retained; not reserved RAM; excludes node/image acquisition"
+      },
+      "fresh_pod_restore_passed": true,
+      "distinct_inputs_passed": 2,
+      "accelerator_classes": [
+        "nvidia-h100-sxm5-80gb"
+      ],
+      "compatibility": {
+        "gpu_name": "NVIDIA H100 80GB HBM3",
+        "compute_capability": "9.0",
+        "driver_version": "580.159.04",
+        "kernel_release": "6.11.0-1016-nvidia"
+      }
     },
     {
       "model_id": "openfold2",
@@ -301,16 +411,44 @@
     },
     {
       "model_id": "openfold3",
-      "status": "not-yet-qualified",
+      "status": "fresh-pod-qualified",
       "selectable": false,
-      "reason": "Not yet snapshot-qualified. This serving runtime is distinct from openfold3-openbind and cannot inherit that profile's evidence.",
-      "runtime_image_digest": null,
-      "model_revision": null,
-      "bundle": null,
-      "normal_startup": null,
-      "restore_startup": null,
-      "fresh_pod_restore_passed": false,
-      "distinct_inputs_passed": 0
+      "reason": "Three matched fresh-Pod restores passed both original structures using the exact Preview2 image, conda interpreter and working-directory identity. Cached container-ready median improved from 37.451s to 9.817s. The independent OpenBind scientific profile is not covered by this bundle. Existing image/shared filesystem caches were retained; normal loading remains available.",
+      "runtime_image_digest": "sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+      "model_revision": "4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e",
+      "bundle": {
+        "id": "openfold3-preview2-h100-cuda-criu-20260907-r02",
+        "sha256": "9494710486412a4bfd004effe6b92e456bcc12c1c92a7a06f632031d5ec54ea0",
+        "qualification_receipt": "../openfold3-standalone/snapshot-qualification.json",
+        "qualification_receipt_sha256": "2855a2e7b8ebdb3c04d658fdd25c426417af8228ab59074a3a38343844f958c8"
+      },
+      "normal_startup": {
+        "clock": "container-start-to-serving-application-ready",
+        "n": 3,
+        "median_seconds": 37.451009,
+        "min_seconds": 30.806292,
+        "max_seconds": 37.916337,
+        "cache": "existing image/shared weights and runtime caches retained; no eviction"
+      },
+      "restore_startup": {
+        "clock": "container-start-to-completed-CUDA-restore-and-serving-health-observed",
+        "n": 3,
+        "median_seconds": 9.817203,
+        "min_seconds": 9.446171,
+        "max_seconds": 9.882581,
+        "cache": "shared filesystem cache retained; not reserved RAM; excludes node/image acquisition"
+      },
+      "fresh_pod_restore_passed": true,
+      "distinct_inputs_passed": 2,
+      "accelerator_classes": [
+        "nvidia-h100-sxm5-80gb"
+      ],
+      "compatibility": {
+        "gpu_name": "NVIDIA H100 80GB HBM3",
+        "compute_capability": "9.0",
+        "driver_version": "580.159.04",
+        "kernel_release": "6.11.0-1016-nvidia"
+      }
     },
     {
       "model_id": "openfold3-openbind",
@@ -329,7 +467,7 @@
       "model_id": "proteina-complexa",
       "status": "not-yet-qualified",
       "selectable": false,
-      "reason": "Not yet snapshot-qualified. Capture must preserve the qualified original protein-generation model, not substitute a similarly named model or request-bound generated state.",
+      "reason": "Exact-source assessment found no clean input-independent GPU boundary in the current one-shot runtime. Checkpoint/autoencoder initialization is 8.239-8.739s (median8.640s), only28.5% of the30.263s initialized clock and3.5% of the244.666s public completion. Before Trainer.predict the model is CPU-resident with request Hydra state; after GPU placement the target/DataLoader/seed/output are request-bound. Protein, ligand and AME also require distinct checkpoint/LoRA/architecture workers. Normal load remains preferred. See proteina-boltzgen-model-only-assessment-20260907.json.",
       "runtime_image_digest": null,
       "model_revision": null,
       "bundle": null,
@@ -396,8 +534,15 @@
       "reason": "Current vLLM0.28 CUDA+CRIU shared-filesystem restores passed all three matched fresh-Pod repetitions and two unseen inputs per trial. Median container-to-ready improved from99.801s to51.493s using the same standard-asyncio/legacy-TCPStore variant. Original image, BF16 precision, context length and GPU memory utilization are unchanged. Production availability requires the matching registered bundle; normal loading remains default.",
       "runtime_image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
       "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
-      "accelerator_classes": ["nvidia-h100-sxm5-80gb"],
-      "compatibility": {"gpu_name": "NVIDIA H100 80GB HBM3", "compute_capability": "9.0", "driver_version": "580.159.04", "kernel_release": "6.11.0-1016-nvidia"},
+      "accelerator_classes": [
+        "nvidia-h100-sxm5-80gb"
+      ],
+      "compatibility": {
+        "gpu_name": "NVIDIA H100 80GB HBM3",
+        "compute_capability": "9.0",
+        "driver_version": "580.159.04",
+        "kernel_release": "6.11.0-1016-nvidia"
+      },
       "bundle": {
         "id": "qwen3-8b-h100-cuda-criu-20260907-r12",
         "sha256": "980908af74a2fda33647d819daf556a300eafb652e97467538d14e84ffa81ae2",
@@ -425,16 +570,44 @@
     },
     {
       "model_id": "rfdiffusion",
-      "status": "not-yet-qualified",
+      "status": "fresh-pod-qualified",
       "selectable": false,
-      "reason": "Not yet snapshot-qualified. Compare the recently optimized native loader/thread settings first; request-independent capture must preserve the actual design configuration.",
-      "runtime_image_digest": null,
-      "model_revision": null,
-      "bundle": null,
-      "normal_startup": null,
-      "restore_startup": null,
-      "fresh_pod_restore_passed": false,
-      "distinct_inputs_passed": 0
+      "reason": "Three fresh-process normal/restore pairs passed both original 76/96-residue requests with different seeds and byte-identical coordinates. The reusable input-free CUDA model becomes ready in a median 3.070s versus 8.507s normally; native per-request Sampler/diffusion-table work remains. A donor-deleted cross-node restore also passed. Production availability requires the exact matching registered bundle; normal loading remains default.",
+      "runtime_image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+      "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+      "accelerator_classes": [
+        "nvidia-h100-sxm5-80gb"
+      ],
+      "compatibility": {
+        "gpu_name": "NVIDIA H100 80GB HBM3",
+        "compute_capability": "9.0",
+        "driver_version": "580.159.04",
+        "kernel_release": "6.11.0-1016-nvidia"
+      },
+      "bundle": {
+        "id": "rfdiffusion-h100-cuda-criu-20260907-r3",
+        "sha256": "38230e1a6da7926330d59cc92c209f81db38b43d34f878c7a09928d3e880cd30",
+        "qualification_receipt": "rfdiffusion-h100-20260907.json",
+        "qualification_receipt_sha256": "2dd79a4847a6be087eab86bfd9baf69c78b89ed9c2356c044e897b1ae4366dd7"
+      },
+      "normal_startup": {
+        "clock": "container-start-to-input-free-CUDA-model-and-worker-health-observed",
+        "n": 3,
+        "median_seconds": 8.507497,
+        "min_seconds": 7.16746,
+        "max_seconds": 10.120549,
+        "cache": "existing image and weights; fresh process; native per-request Sampler work excluded"
+      },
+      "restore_startup": {
+        "clock": "container-start-to-completed-CUDA-restore-and-worker-health-observed",
+        "n": 3,
+        "median_seconds": 3.069855,
+        "min_seconds": 3.029809,
+        "max_seconds": 3.432564,
+        "cache": "existing shared-filesystem cache; no eviction or reserved RAM; node/image acquisition and per-request Sampler work excluded"
+      },
+      "fresh_pod_restore_passed": true,
+      "distinct_inputs_passed": 2
     },
     {
       "model_id": "sdxl",

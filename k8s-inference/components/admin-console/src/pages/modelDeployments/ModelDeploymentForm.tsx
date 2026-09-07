@@ -252,7 +252,9 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
               }
               const choice = snapshotChoices.find((candidate) => candidate.bundle_id === value);
               if (!choice) return;
-              next.cache = { tier: "SharedFilesystem", snapshotPreference: "Prefer", snapshotRef: {
+              // The bundle owns snapshot storage; preserve the qualified
+              // runtime's independent weight-cache tier (including NodeLocal).
+              next.cache = { tier: configurationOption.default_spec.cache.tier, snapshotPreference: "Prefer", snapshotRef: {
                 name: choice.bundle_id, digest: choice.digest, strategy: "CudaCheckpoint",
               }, mechanism: null };
               next.fastStart = { mode: "Fixed", level: "Off", fallbackPolicy: "AllowLowerLevel" };

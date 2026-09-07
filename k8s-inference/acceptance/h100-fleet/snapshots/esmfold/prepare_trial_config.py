@@ -16,6 +16,7 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--model", choices=("esmfold2", "esmfold2-fast"), required=True)
     parser.add_argument("--node", required=True)
+    parser.add_argument("--bundle-id", required=True, help="New immutable capture identity; never reuse a prior bundle ID")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[4]
     profile = next(item for item in json.loads(
@@ -32,7 +33,7 @@ def main():
     worker_log = next(row for row in manifest["manifest"]["files"] if row["path"] == "worker.log")
     config = {
         "schema": "fs2-serve.nebius.ai/scientific-snapshot-bundle/v1",
-        "bundle_id": args.model + "-h100-cuda-criu-20260907-r2",
+        "bundle_id": args.bundle_id,
         "model_id": args.model, "stage_id": "fold",
         "model_revision": identity["model_revision"],
         "profile_model_revision": profile["execution_identity"]["model_revision"],

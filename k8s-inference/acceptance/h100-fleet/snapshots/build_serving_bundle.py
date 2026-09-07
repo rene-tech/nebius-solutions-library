@@ -9,6 +9,24 @@ from pathlib import PurePosixPath
 
 
 DEFAULT_FALLBACK_PREFIX = ["python3", "/snapshot-source/serving_launcher.py"]
+DEFAULT_SUPERVISOR_PATH = "/tools/usr/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+
+def captured_interpreters(runtime, restored=None):
+    """Publish only measured non-default wrapper interpreters/environment."""
+    values = {
+        "supervisor_python": runtime["command"][0],
+        "supervisor_path": next(item["value"] for item in runtime["env"] if item["name"] == "PATH"),
+        "address_python": "python3",
+    }
+    if restored is not None:
+        restored_runtime = next(item for item in restored["spec"]["containers"] if item["name"] == runtime["name"])
+        if restored_runtime["image"] != runtime["image"]:
+            raise ValueError("restore interpreter proof differs from captured image")
+        values["address_python"] = next(item for item in restored["spec"]["initContainers"]
+                                        if item["name"] == "snapshot-local-address")["command"][0]
+    defaults = {"supervisor_python": "python3", "supervisor_path": DEFAULT_SUPERVISOR_PATH, "address_python": "python3"}
+    return {key: value for key, value in values.items() if value != defaults[key]}
 
 
 def unwrap_captured_command(command: list[str]) -> tuple[list[str], list[str]]:
@@ -56,6 +74,11 @@ def main():
     ):
         parser.add_argument("--" + option, type=Path, required=True)
     parser.add_argument("--container", required=True)
+    parser.add_argument(
+        "--deployment-container",
+        help="Production Deployment container name when it differs from the captured donor",
+    )
+    parser.add_argument("--restore", type=Path, help="Actual qualified restore Pod receipt for image-specific interpreter binding")
     parser.add_argument("--accelerator-class", required=True)
     parser.add_argument("--bundle-id", required=True)
     parser.add_argument(
@@ -75,7 +98,7 @@ def main():
     source = next(
         item
         for item in native["spec"]["template"]["spec"]["containers"]
-        if item["name"] == args.container
+        if item["name"] == (args.deployment_container or args.container)
     )
     original, fallback_command_prefix = unwrap_captured_command(runtime["command"])
     image_entrypoint = (
@@ -126,6 +149,7 @@ def main():
         "runtime_command": original,
         "fallback_command_prefix": fallback_command_prefix,
     }
+    bundle.update(captured_interpreters(runtime, json.loads(args.restore.read_bytes()) if args.restore else None))
     args.output.write_text(json.dumps(bundle, indent=2) + "\n")
 
 

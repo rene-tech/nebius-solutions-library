@@ -23,7 +23,7 @@ os.setgid(10001)
 os.setuid(10001)
 started=datetime.now(timezone.utc).isoformat()
 before=time.monotonic()
-result=subprocess.run(request["command"],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+result=subprocess.run(request["command"],cwd=request.get("working_directory"),stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
 print(result.stdout,flush=True)
 if result.returncode:
     raise SystemExit(result.returncode)
@@ -38,6 +38,12 @@ for path in structures:
         assert atoms and all(math.isfinite(v) for a in atoms for v in (a.pos.x,a.pos.y,a.pos.z))
         count=len(atoms)
     except ImportError:
+        if path.suffix==".pdb":
+            atoms=[line for line in path.read_text().splitlines() if line.startswith(("ATOM  ","HETATM"))]
+            assert atoms and all(math.isfinite(float(line[start:start+8])) for line in atoms for start in (30,38,46))
+            count=len(atoms)
+            verified.append({"path":str(path.relative_to(root)),"bytes":path.stat().st_size,"sha256":hashlib.sha256(path.read_bytes()).hexdigest(),"finite_atoms":count})
+            continue
         headers=[];count=0
         for raw in path.read_text().splitlines():
             line=raw.strip()
@@ -70,6 +76,7 @@ def main():
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     environment_file = args.command.with_name("request-environment.json")
+    working_directory_file = args.command.with_name("working-directory.json")
     request = {
         "command": json.loads(args.command.read_bytes()),
         "worker_variable": args.worker_variable,
@@ -77,6 +84,9 @@ def main():
         "environment": json.loads(environment_file.read_bytes())
         if environment_file.exists()
         else {},
+        "working_directory": json.loads(working_directory_file.read_bytes())
+        if working_directory_file.exists()
+        else None,
     }
     command = [
         "kubectl",

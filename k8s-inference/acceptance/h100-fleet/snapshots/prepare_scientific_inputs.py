@@ -37,9 +37,10 @@ def main():
         bundle["endpoints"]["inference_base_url"].removesuffix("/v1"),
         bundle["credentials"]["scientific_access_token"],
     )
+    document = json.loads(args.jobs_file.read_bytes())
     source = next(
         job
-        for job in json.loads(args.jobs_file.read_bytes())["items"]
+        for job in document.get("items", [document])
         if job["metadata"]["labels"].get("fs2.nebius.ai/model-id") == args.model
         and any(
             container.get("resources", {}).get("requests", {}).get("nvidia.com/gpu")
@@ -54,6 +55,8 @@ def main():
     )
     original = stage["command"] + (stage.get("args") or [])
     (args.directory / "original-command.json").write_text(json.dumps(original))
+    if stage.get("workingDir"):
+        (args.directory / "working-directory.json").write_text(json.dumps(stage["workingDir"]))
     # The ordinary wrapper must see its own operation/marker bindings, not
     # those of a previous input used with the same request-ready model.
     environment = {

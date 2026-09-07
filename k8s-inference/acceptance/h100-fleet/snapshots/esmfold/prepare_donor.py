@@ -15,6 +15,34 @@ import subprocess
 import sys
 
 
+def captured_model_revision(image_lock, model):
+    """Preserve the image's weight identity, not its upstream code revision.
+
+    The original scientific collector checks this value in confidence.json.
+    Catalog execution identity separately records the code/profile revision.
+    """
+    matches = [item["build_args"]["MODEL_REVISION"] for item in image_lock["images"]
+               if item.get("build_args", {}).get("RUNTIME_ID") == model]
+    if len(matches) != 1:
+        raise ValueError("the exact runtime must have one locked model revision")
+    return matches[0]
+
+
+def restore_compatible_donor(pod):
+    """Keep the root ESM worker's captured capabilities equal to restore.
+
+    Generic serving donors need SYS_RESOURCE to inspect another UID's rlimits.
+    The ESM model worker and capture process both run as root, so that extra
+    capability is unnecessary and must not become part of its checkpoint.
+    """
+    runtime = next(item for item in pod["spec"]["containers"]
+                   if item["name"] == "scientific-stage")
+    capabilities = runtime["securityContext"]["capabilities"]["add"]
+    if "SYS_RESOURCE" in capabilities:
+        capabilities.remove("SYS_RESOURCE")
+    return pod
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for key in ("jobs", "directory", "kubeconfig"):
@@ -68,14 +96,15 @@ def main():
     runtime["env"] = [{"name": key, "value": value} for key, value in environment.items()]
     template = json.loads((solution / "acceptance/h100-fleet/snapshots/protenix-v2-bundle.json").read_bytes())
     configmap_name = "fs2-fleet-snapshot-esmfold-current-v2"
+    image_lock = json.loads((solution / "models/cancer-immunotherapy/images/structure-secondary/image-lock.json").read_bytes())
     options = argparse.Namespace(
         container="scientific-stage", entrypoint_json="[]", asyncio_loop=False,
         python=python, run=args.bundle_path, fallback="fail", mode="donor", request_uid=10001,
         allow_device_remap=True, tools_image=template["tools_image"],
-        model_revision=original[original.index("--source-revision") + 1], model_id=args.model,
+        model_revision=captured_model_revision(image_lock, args.model), model_id=args.model,
         source_configmap=configmap_name, pvc=args.pvc, name=args.name, node=args.node,
     )
-    pod = render(source, options)
+    pod = restore_compatible_donor(render(source, options))
     next(c for c in pod["spec"]["containers"] if c["name"] == "scientific-stage")["volumeMounts"].append({
         "name": "snapshot-source", "mountPath": "/opt/fs2/run_esmfold2.py",
         "subPath": "run_esmfold2.py", "readOnly": True,

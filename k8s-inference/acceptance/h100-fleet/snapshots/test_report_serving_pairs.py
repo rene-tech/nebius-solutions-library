@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pytest
 
-
 spec = importlib.util.spec_from_file_location(
     "report_serving_pairs", Path(__file__).with_name("report_serving_pairs.py")
 )
@@ -60,6 +59,43 @@ def test_genmol_reports_original_fixture_scope_without_claiming_unseen_inputs():
     result = report.project(source)
     assert "original two pinned QED and LogP" in result["semantic_scope"]
     assert all("First unseen input" not in note for note in result["clock_notes"])
+
+
+def test_openfold3_reports_standalone_original_input_and_native_launch_scope():
+    source = receipt()
+    source["model"] = "openfold3"
+    result = report.project(source)
+    assert "standalone Preview2" in result["semantic_scope"]
+    assert "not unseen-input evidence" in result["semantic_scope"]
+    assert "OpenBind" in result["semantic_scope"]
+    assert any("native bash activation" in note for note in result["clock_notes"])
+
+
+def test_segment_reports_original_nonclinical_masks_without_unseen_claim():
+    source = receipt()
+    source["model"] = "nv-segment-ct"
+    result = report.project(source)
+    assert "synthetic non-clinical CT masks" in result["semantic_scope"]
+    assert "not unseen-input evidence" in result["semantic_scope"]
+
+
+def test_sdxl_reports_exact_original_seed_scope_without_unseen_claim():
+    source = receipt()
+    source["model"] = "sdxl"
+    result = report.project(source)
+    assert "512x512 prompts" in result["semantic_scope"]
+    assert "2407 and 2408" in result["semantic_scope"]
+    assert "not unseen-input evidence" in result["semantic_scope"]
+
+
+def test_diffdock_reports_exact_receptor_ligand_and_seed_scope():
+    source = receipt()
+    source["model"] = "diffdock"
+    result = report.project(source)
+    assert "RCSB 1UBQ receptor" in result["semantic_scope"]
+    assert "aspirin ligand" in result["semantic_scope"]
+    assert "2370 and 2371" in result["semantic_scope"]
+    assert "not unseen-input evidence" in result["semantic_scope"]
 
 
 @pytest.mark.parametrize("change", ["missing", "invalid-output", "not-released"])

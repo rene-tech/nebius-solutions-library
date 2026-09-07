@@ -8,13 +8,13 @@ its output and lifecycle receipts are retained.
 """
 
 import argparse
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 
 from render_readonly_server_restore import render as restore
 from render_serving_recapture import render as normal
@@ -24,7 +24,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--model",
-        choices=("qwen3-8b", "cosmos3-nano", "nv-reason-cxr-3b", "genmol"),
+        choices=(
+            "qwen3-8b",
+            "cosmos3-nano",
+            "nv-reason-cxr-3b",
+            "genmol",
+            "openfold3",
+            "diffdock",
+            "nv-segment-ct",
+            "sdxl",
+        ),
         required=True,
     )
     parser.add_argument("--source", type=Path, required=True)
@@ -32,6 +41,8 @@ def main():
     parser.add_argument("--source-configmap", required=True)
     parser.add_argument("--pvc", required=True)
     parser.add_argument("--address-configmap", required=True)
+    parser.add_argument("--node")
+    parser.add_argument("--address-python", default="python3")
     parser.add_argument("--kubeconfig", required=True)
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--repetitions", type=int, default=3)
@@ -39,11 +50,18 @@ def main():
     os.umask(0o077)
     args.directory.mkdir(parents=True, exist_ok=False)
     source = json.loads(args.source.read_bytes())
+    if args.node is not None:
+        source["spec"]["nodeName"] = args.node
+        source["spec"].setdefault("nodeSelector", {})["kubernetes.io/hostname"] = (
+            args.node
+        )
     source_runtime = next(
         item for item in source["spec"]["containers"] if item["name"] == args.container
     )
     source_command = source_runtime["command"]
-    source_checkpoint_directory = source_command[source_command.index("--directory") + 1]
+    source_checkpoint_directory = source_command[
+        source_command.index("--directory") + 1
+    ]
     if not source_checkpoint_directory.startswith("/checkpoints/"):
         raise ValueError("source snapshot directory is outside /checkpoints")
     source_run = Path(source_checkpoint_directory).name
@@ -100,6 +118,7 @@ def main():
                         container=args.container,
                         pvc=args.pvc,
                         address_configmap=args.address_configmap,
+                        address_python=args.address_python,
                     )
                 (args.directory / f"{active}.pod-private.json").write_text(
                     json.dumps(pod)
@@ -134,9 +153,13 @@ def main():
                         mode == "normal"
                         or '"mechanism": "cuda-criu-restored"' in logs.stdout
                     ):
-                        health_path = (
-                            "/v1/health/ready" if args.model == "genmol" else "/health"
-                        )
+                        health_path = {
+                            "genmol": "/v1/health/ready",
+                            "openfold3": "/v1/health/ready",
+                            "diffdock": "/readyz",
+                            "nv-segment-ct": "/readyz",
+                            "sdxl": "/readyz",
+                        }.get(args.model, "/health")
                         probe = call(
                             [
                                 "exec",
@@ -187,10 +210,54 @@ def main():
                     row["semantics"] = json.loads(validation.stdout)
                 elif args.model == "nv-reason-cxr-3b":
                     validation = subprocess.run(
-                        [sys.executable, str(Path(__file__).parents[1] / "medical-media/cxr_snapshot_probe.py"),
-                         "validate", "--kubeconfig", args.kubeconfig, "--pod", active,
+                        [
+                            sys.executable,
+                            str(
+                                Path(__file__).parents[1]
+                                / "medical-media/cxr_snapshot_probe.py"
+                            ),
+                            "validate",
+                            "--kubeconfig",
+                            args.kubeconfig,
+                            "--pod",
+                            active,
+                            "--output",
+                            str(args.directory / active),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                        timeout=900,
+                    )
+                    row["semantics"] = json.loads(validation.stdout)
+                elif args.model in ("nv-segment-ct", "sdxl"):
+                    validation = subprocess.run(
+                        [sys.executable, str(Path(__file__).parents[1] / "medical-media/small_media_snapshot_probe.py"),
+                         "validate", "--model", args.model, "--kubeconfig", args.kubeconfig, "--pod", active,
                          "--output", str(args.directory / active)],
-                        capture_output=True, text=True, check=True, timeout=900,
+                        capture_output=True, text=True, check=True, timeout=1900,
+                    )
+                    row["semantics"] = json.loads(validation.stdout)
+                elif args.model == "openfold3":
+                    validation = subprocess.run(
+                        [
+                            sys.executable,
+                            str(
+                                Path(__file__).parents[1]
+                                / "openfold3-standalone/snapshot_probe.py"
+                            ),
+                            "validate",
+                            "--kubeconfig",
+                            args.kubeconfig,
+                            "--pod",
+                            active,
+                            "--output",
+                            str(args.directory / active),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                        timeout=1900,
                     )
                     row["semantics"] = json.loads(validation.stdout)
                 elif args.model == "genmol":
@@ -211,6 +278,26 @@ def main():
                         text=True,
                         check=True,
                         timeout=1300,
+                    )
+                    row["semantics"] = json.loads(validation.stdout)
+                elif args.model == "diffdock":
+                    validation = subprocess.run(
+                        [
+                            sys.executable,
+                            str(Path(__file__).with_name("validate_diffdock.py")),
+                            "--kubeconfig",
+                            args.kubeconfig,
+                            "--pod",
+                            active,
+                            "--container",
+                            args.container,
+                            "--output",
+                            str(args.directory / active),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                        timeout=1900,
                     )
                     row["semantics"] = json.loads(validation.stdout)
                 else:

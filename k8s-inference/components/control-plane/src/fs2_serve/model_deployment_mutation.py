@@ -604,7 +604,10 @@ class ModelDeploymentMutationService:
             if candidate.availability.max_replicas < candidate.availability.min_replicas:
                 continue
             candidate.cache = CacheSpec(
-                tier=CacheTier.SHARED_FILESYSTEM,
+                # Snapshot storage is bound by the exact bundle PVC. Keep the
+                # runtime template's independently qualified artifact-cache
+                # tier (for example baked/NodeLocal weights).
+                tier=default_spec.cache.tier,
                 snapshot_preference=SnapshotPreference.PREFER,
                 snapshot_ref=SnapshotRef(
                     name=bundle.bundle_id,

@@ -43,7 +43,8 @@ def install_network_tools(spec, runtime, configmap):
 
 
 def render(
-    source, *, name, container, pvc=None, network_configmap=None, address_configmap=None
+    source, *, name, container, pvc=None, network_configmap=None, address_configmap=None,
+    address_python="python3",
 ):
     pod = {
         "apiVersion": "v1",
@@ -129,7 +130,7 @@ def render(
                 "name": "snapshot-local-address",
                 "image": runtime["image"],
                 "command": [
-                    "python3",
+                    address_python,
                     "/snapshot-address/restore_loopback_address.py",
                     address,
                 ],
@@ -164,6 +165,7 @@ def main():
     parser.add_argument("--pvc")
     parser.add_argument("--network-configmap")
     parser.add_argument("--address-configmap")
+    parser.add_argument("--address-python", default="python3")
     args = parser.parse_args()
     print(
         json.dumps(
@@ -174,6 +176,7 @@ def main():
                 pvc=args.pvc,
                 network_configmap=args.network_configmap,
                 address_configmap=args.address_configmap,
+                address_python=args.address_python,
             ),
             indent=2,
         )

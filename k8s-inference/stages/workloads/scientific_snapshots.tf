@@ -10,7 +10,9 @@ locals {
   # canonical source location instead of maintaining a duplicate snapshot copy.
   # Add such exceptions here when qualifying another scientific stage adapter.
   scientific_snapshot_source_paths = {
-    "run_esmfold2.py" = "${local.fs2_root}/models/cancer-immunotherapy/images/structure-secondary/run_esmfold2.py"
+    "run_esmfold2.py"                   = "${local.fs2_root}/models/cancer-immunotherapy/images/structure-secondary/run_esmfold2.py"
+    "rfdiffusion_runtime_entrypoint.py" = "${local.fs2_root}/models/cancer-immunotherapy/runtime-images/rfdiffusion/runtime_entrypoint.py"
+    "sitecustomize.py"                  = "${local.fs2_root}/models/scientific-snapshot/python310_sitecustomize.py"
   }
   scientific_snapshot_cli_paths = merge(local.scientific_snapshot_source_paths, {
     protenix = "${local.fs2_root}/models/scientific-snapshot/protenix_cli_proxy.py"
@@ -30,13 +32,24 @@ locals {
       ))
     }...
   }
+  # Later adapters can add a thin request launcher without mutating the
+  # supervisor bytes bound into an already captured process image.
+  scientific_snapshot_entrypoint_sources = {
+    for id, bundle in local.scientific_snapshot_bundles : bundle.entrypoint.configmap => {
+      (bundle.entrypoint.key) = file("${local.fs2_root}/models/scientific-snapshot/${bundle.entrypoint.key}")
+    }... if try(bundle.entrypoint, null) != null
+  }
   # Several independently qualified models may share immutable helpers, and
   # one ConfigMap may carry both the server sources and its CLI overlay.
   scientific_snapshot_configmaps = {
-    for name in setunion(toset(keys(local.scientific_snapshot_sources)), toset(keys(local.scientific_snapshot_cli_sources))) :
+    for name in setunion(
+      toset(keys(local.scientific_snapshot_sources)), toset(keys(local.scientific_snapshot_cli_sources)),
+      toset(keys(local.scientific_snapshot_entrypoint_sources))
+    ) :
     name => merge(concat(
       try(local.scientific_snapshot_sources[name], []),
       try(local.scientific_snapshot_cli_sources[name], []),
+      try(local.scientific_snapshot_entrypoint_sources[name], []),
     )...)
   }
   scientific_snapshot_adoption = (
@@ -92,6 +105,9 @@ resource "kubernetes_config_map_v1" "scientific_snapshot_sources" {
             local.scientific_snapshot_cli_paths, bundle.cli_key,
             "${local.fs2_root}/models/scientific-snapshot/${bundle.cli_key}"
           )) == bundle.cli_sha256,
+          try(bundle.entrypoint, null) == null ? true : (
+            filesha256("${local.fs2_root}/models/scientific-snapshot/${bundle.entrypoint.key}") == bundle.entrypoint.sha256
+          ),
         ]
       ]))
       error_message = "Snapshot source files must match the bytes used to qualify the captured bundle."

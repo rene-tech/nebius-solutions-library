@@ -1,0 +1,908 @@
+{
+  "schema": "fs2-serve.nebius.ai/serving-snapshot-qualification/v1",
+  "model_id": "diffdock",
+  "status": "fresh-pod-qualified",
+  "date": "2026-09-07",
+  "mechanism": "cuda-criu",
+  "default": "normal-load",
+  "production_selectable": false,
+  "qualification_scope": "isolated exact-image serving worker; production renderer and fallback rollout are separate",
+  "cache": "existing images and localized weights; shared snapshot filesystem cache retained, no eviction or reserved-RAM guarantee",
+  "ready_boundary": "application HTTP health after supervisor completed CUDA+CRIU restoration; normal trials use the original server health endpoint",
+  "clock_notes": [
+    "Every trial starts a fresh Pod; restore cannot pass from HTTP health alone before CUDA completion.",
+    "Kubernetes container timestamps have one-second resolution; Pod-create request clock is client monotonic.",
+    "Health polling includes kubectl transport and observation delay. First input may still compile request-specific kernels.",
+    "Both-full-outputs clock includes two sequential inputs and client validation; it is not first-output latency or a pure inference benchmark.",
+    "Existing image, weight and shared-filesystem caches are retained. No host cache eviction, node acquisition or reserved-RAM guarantee.",
+    "The optional bridge changes only snapshot compatibility plumbing, not model image, precision, GPU memory utilization, output shape or generation steps."
+  ],
+  "statistics": {
+    "normal": {
+      "pod_create_request_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 29.008103892207146,
+        "min_seconds": 28.829840674996376,
+        "max_seconds": 29.373110917396843
+      },
+      "container_start_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 24.514227,
+        "min_seconds": 24.096644,
+        "max_seconds": 25.557406
+      },
+      "container_start_to_both_full_outputs_seconds": {
+        "n": 3,
+        "median_seconds": 52.319992,
+        "min_seconds": 52.061749,
+        "max_seconds": 53.223815
+      }
+    },
+    "restore": {
+      "pod_create_request_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 14.276327447965741,
+        "min_seconds": 14.211472031660378,
+        "max_seconds": 14.408401117660105
+      },
+      "container_start_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 8.890269,
+        "min_seconds": 8.836242,
+        "max_seconds": 10.287132
+      },
+      "container_start_to_both_full_outputs_seconds": {
+        "n": 3,
+        "median_seconds": 30.692382,
+        "min_seconds": 30.516278,
+        "max_seconds": 32.248124
+      }
+    }
+  },
+  "runs": [
+    {
+      "mode": "normal",
+      "repetition": 1,
+      "pod_uid": "f1d576db-c2e9-4994-b82e-c0eb5a4c779b",
+      "created_request_at": "2026-09-07T12:10:23.088548+00:00",
+      "pod_created_at": "2026-09-07T12:10:24Z",
+      "container_started_at": "2026-09-07T12:10:28Z",
+      "ready_observed_at": "2026-09-07T12:10:52.096644+00:00",
+      "pod_create_request_to_ready_seconds": 29.008103892207146,
+      "both_full_outputs_observed_at": "2026-09-07T12:11:20.061749+00:00",
+      "container_start_to_ready_seconds": 24.096644,
+      "container_start_to_both_full_outputs_seconds": 52.061749,
+      "requests": [
+        {
+          "passed": true,
+          "input_id": "snapshot-diffdock-2370",
+          "random_seed": 2370,
+          "request_sha256": "83fcc4d31c87b25b62137bb36c41fb80f49feb9bad72f8d846ee557bcdbadd61",
+          "response_sha256": "5acc4fa9d9ac157dcd03367639784d9290426fa4a9a80179a76d5f3163c4b224",
+          "elapsed_seconds": 6.470426,
+          "invariant": {
+            "response_keys": [
+              "details",
+              "ligand",
+              "ligand_positions",
+              "position_confidence",
+              "protein",
+              "status",
+              "trajectory"
+            ],
+            "ligand": "CC(=O)Oc1ccccc1C(=O)O",
+            "protein_sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+            "protein_bytes": 78570,
+            "pose": {
+              "format": "V2000",
+              "atom_count": 13,
+              "bond_count": 13,
+              "finite_coordinate_count": 13,
+              "pose_sha256": "fe1bc23942e9baefac48692cec3f669681a23413bf3930b06881bf97634d72b0"
+            },
+            "position_confidence": -2.0069942474365234,
+            "trajectory_count": 1
+          }
+        },
+        {
+          "passed": true,
+          "input_id": "snapshot-diffdock-2371",
+          "random_seed": 2371,
+          "request_sha256": "d89edc43ffec40cc8324ad780d76d707aa1999a405957fc69d0d0b6bc03680c7",
+          "response_sha256": "dfc978dafcd1c276bbb5b752bb5ea58e9464d988f624e6b770d5036ec8c85c5b",
+          "elapsed_seconds": 4.098897,
+          "invariant": {
+            "response_keys": [
+              "details",
+              "ligand",
+              "ligand_positions",
+              "position_confidence",
+              "protein",
+              "status",
+              "trajectory"
+            ],
+            "ligand": "CC(=O)Oc1ccccc1C(=O)O",
+            "protein_sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+            "protein_bytes": 78570,
+            "pose": {
+              "format": "V2000",
+              "atom_count": 13,
+              "bond_count": 13,
+              "finite_coordinate_count": 13,
+              "pose_sha256": "858e8f0885b1e0a61d1e6c2596cae1e95529b1d4d885741cefaf79dcb823ba68"
+            },
+            "position_confidence": -2.158905029296875,
+            "trajectory_count": 1
+          }
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "restore",
+      "repetition": 1,
+      "pod_uid": "69752b08-92d3-4a64-9736-f215cfafcdc4",
+      "created_request_at": "2026-09-07T12:11:23.678792+00:00",
+      "pod_created_at": "2026-09-07T12:11:25Z",
+      "container_started_at": "2026-09-07T12:11:29Z",
+      "ready_observed_at": "2026-09-07T12:11:37.890269+00:00",
+      "pod_create_request_to_ready_seconds": 14.211472031660378,
+      "both_full_outputs_observed_at": "2026-09-07T12:11:59.516278+00:00",
+      "container_start_to_ready_seconds": 8.890269,
+      "container_start_to_both_full_outputs_seconds": 30.516278,
+      "requests": [
+        {
+          "passed": true,
+          "input_id": "snapshot-diffdock-2370",
+          "random_seed": 2370,
+          "request_sha256": "83fcc4d31c87b25b62137bb36c41fb80f49feb9bad72f8d846ee557bcdbadd61",
+          "response_sha256": "262cb704ce7877d3ba20f07522a99401e1155d484f35757456e944143bacf790",
+          "elapsed_seconds": 2.377264,
+          "invariant": {
+            "response_keys": [
+              "details",
+              "ligand",
+              "ligand_positions",
+              "position_confidence",
+              "protein",
+              "status",
+              "trajectory"
+            ],
+            "ligand": "CC(=O)Oc1ccccc1C(=O)O",
+            "protein_sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+            "protein_bytes": 78570,
+            "pose": {
+              "format": "V2000",
+              "atom_count": 13,
+              "bond_count": 13,
+              "finite_coordinate_count": 13,
+              "pose_sha256": "0ac54dc050caf21fe20884c286e7a8ba51b1eb2ca33e4cabf663b82a3f9ecdf5"
+            },
+            "position_confidence": -1.5497748851776123,
+            "trajectory_count": 1
+          }
+        },
+        {
+          "passed": true,
+          "input_id": "snapshot-diffdock-2371",
+          "random_seed": 2371,
+          "request_sha256": "d89edc43ffec40cc8324ad780d76d707aa1999a405957fc69d0d0b6bc03680c7",
+          "response_sha256": "08b9cdd996e7647d30bf01efef4bb2403517c93eec1b30c14fb34717868b11d6",
+          "elapsed_seconds": 2.370689,
+          "invariant": {
+            "response_keys": [
+              "details",
+              "ligand",
+              "ligand_positions",
+              "position_confidence",
+              "protein",
+              "status",
+              "trajectory"
+            ],
+            "ligand": "CC(=O)Oc1ccccc1C(=O)O",
+            "protein_sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+            "protein_bytes": 78570,
+            "pose": {
+              "format": "V2000",
+              "atom_count": 13,
+              "bond_count": 13,
+              "finite_coordinate_count": 13,
+              "pose_sha256": "d84508269a71d7f0865cad7e1e246eed90b84ed0c8ca70ded96977e7f3cd7c4c"
+            },
+            "position_confidence": -1.0484168529510498,
+            "trajectory_count": 1
+          }
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "normal",
+      "repetition": 2,
+      "pod_uid": "086e328e-645a-46d5-8df8-a81a7739e126",
+      "created_request_at": "2026-09-07T12:12:02.684381+00:00",
+      "pod_created_at": "2026-09-07T12:12:04Z",
+      "container_started_at": "2026-09-07T12:12:07Z",
+      "ready_observed_at": "2026-09-07T12:12:31.514227+00:00",
+      "pod_create_request_to_ready_seconds": 28.829840674996376,
+      "both_full_outputs_observed_at": "2026-09-07T12:12:59.319992+00:00",
+      "container_start_to_ready_seconds": 24.514227,
+      "container_start_to_both_full_outputs_seconds": 52.319992,
+      "requests": [
+        {
+          "passed": true,
+          "input_id": "snapshot-diffdock-2370",
+          "random_seed": 2370,
+          "request_sha256": "83fcc4d31c87b25b62137bb36c41fb80f49feb9bad72f8d846ee557bcdbadd61",
+          "response_sha256": "5204e33f19503ba6ad357fb5e9764740964163c2a974f89171840b30d3664edf",
+          "elapsed_seconds": 6.348921,
+          "invariant": {
+            "response_keys": [
+              "details",
+              "ligand",
+              "ligand_positions",
+              "position_confidence",
+              "protein",
+              "status",
+              "trajectory"
+            ],
+            "ligand": "CC(=O)Oc1ccccc1C(=O)O",
+            "protein_sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+            "protein_bytes": 78570,
+            "pose": {
+              "format": "V2000",
+              "atom_count": 13,
+              "bond_count": 13,
+              "finite_coordinate_count": 13,
+              "pose_sha256": "06d962110d837494b87d32ad94f4d2b147bcb8afe9376247966322592a083db9"
+            },
+            "position_confidence": -1.8823766708374023,
+            "trajectory_count": 1
+          }
+        },
+        {
+          "passed": true,
+          "input_id": "snapshot-diffdock-2371",
+          "random_seed": 2371,
+          "request_sha256": "d89edc43ffec40cc8324ad780d76d707aa1999a405957fc69d0d0b6bc03680c7",
+          "response_sha256": "875088f3df324b9e96c9a49c9e3e1559bb2c67879f626e2ac9ba7f6a685500cd",
+          "elapsed_seconds": 4.10879,
+          "invariant": {
+            "response_keys": [
+              "details",
+              "ligand",
+              "ligand_positions",
+              "position_confidence",
+              "protein",
+              "status",
+              "trajectory"
+            ],
+            "ligand": "CC(=O)Oc1ccccc1C(=O)O",
+            "protein_sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+            "protein_bytes": 78570,
+            "pose": {
+              "format": "V2000",
+              "atom_count": 13,
+              "bond_count": 13,
+              "finite_coordinate_count": 13,
+              "pose_sha256": "f910615a9c585a7783666048b352cf01a4046c2056062a393ea6cbe0154067c8"
+            },
+            "position_confidence": -2.13846492767334,
+            "trajectory_count": 1
+          }
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "restore",
+      "repetition": 2,
+      "pod_uid": "e281ffe0-ba63-4297-b136-2bdd8a43b5a3",
+      "created_request_at": "2026-09-07T12:13:03.010797+00:00",
+      "pod_created_at": "2026-09-07T12:13:04Z",
+      "container_started_at": "2026-09-07T12:13:07Z",
+      "ready_observed_at": "2026-09-07T12:13:17.287132+00:00",
+      "pod_create_request_to_ready_seconds": 14.276327447965741,
+      "both_full_outputs_observed_at": "2026-09-07T12:13:39.248124+00:00",
+      "container_start_to_ready_seconds": 10.287132,
+      "container_start_to_both_full_outputs_seconds": 32.248124,
+      "requests": [
+        {
+          "passed": true,
+          "input_id": "snapshot-diffdock-2370",
+          "random_seed": 2370,
+          "request_sha256": "83fcc4d31c87b25b62137bb36c41fb80f49feb9bad72f8d846ee557bcdbadd61",
+          "response_sha256": "50e8910d0839c6e9f5024d9be0863a116553c37a0f692fc64a5f47a15b6daffc",
+          "elapsed_seconds": 2.393816,
+          "invariant": {
+            "response_keys": [
+              "details",
+              "ligand",
+              "ligand_positions",
+              "position_confidence",
+              "protein",
+              "status",
+              "trajectory"
+            ],
+            "ligand": "CC(=O)Oc1ccccc1C(=O)O",
+            "protein_sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+            "protein_bytes": 78570,
+            "pose": {
+              "format": "V2000",
+              "atom_count": 13,
+              "bond_count": 13,
+              "finite_coordinate_count": 13,
+              "pose_sha256": "8d3987b8e5f0506a945c9bf77c58af17fb5e4eb422813dcfa1c41c06b34cb42f"
+            },
+            "position_confidence": -1.5499004125595093,
+            "trajectory_count": 1
+          }
+        },
+        {
+          "passed": true,
+          "input_id": "snapshot-diffdock-2371",
+          "random_seed": 2371,
+          "request_sha256": "d89edc43ffec40cc8324ad780d76d707aa1999a405957fc69d0d0b6bc03680c7",
+          "response_sha256": "85ce968d80595c6b85ae7ef24b0b513399ecf2077b60ddc5c4d76045daa970ff",
+          "elapsed_seconds": 2.406608,
+          "invariant": {
+            "response_keys": [
+              "details",
+              "ligand",
+              "ligand_positions",
+              "position_confidence",
+              "protein",
+              "status",
+              "trajectory"
+            ],
+            "ligand": "CC(=O)Oc1ccccc1C(=O)O",
+            "protein_sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+            "protein_bytes": 78570,
+            "pose": {
+              "format": "V2000",
+              "atom_count": 13,
+              "bond_count": 13,
+              "finite_coordinate_count": 13,
+              "pose_sha256": "758c36648334b25028ab9bdb580ef0253265904757608b6840d36dce082cbcff"
+            },
+            "position_confidence": -1.0484087467193604,
+            "trajectory_count": 1
+          }
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "normal",
+      "repetition": 3,
+      "pod_uid": "b3c789e4-c43f-4640-a06f-5c695706fc7a",
+      "created_request_at": "2026-09-07T12:13:43.184302+00:00",
+      "pod_created_at": "2026-09-07T12:13:44Z",
+      "container_started_at": "2026-09-07T12:13:47Z",
+      "ready_observed_at": "2026-09-07T12:14:12.557406+00:00",
+      "pod_create_request_to_ready_seconds": 29.373110917396843,
+      "both_full_outputs_observed_at": "2026-09-07T12:14:40.223815+00:00",
+      "container_start_to_ready_seconds": 25.557406,
+      "container_start_to_both_full_outputs_seconds": 53.223815,
+      "requests": [
+        {
+          "passed": true,
+          "input_id": "snapshot-diffdock-2370",
+          "random_seed": 2370,
+          "request_sha256": "83fcc4d31c87b25b62137bb36c41fb80f49feb9bad72f8d846ee557bcdbadd61",
+          "response_sha256": "4957ea5e13cece5ab25b4a80511483f89602216251fec94882e907388f87ac14",
+          "elapsed_seconds": 6.287133,
+          "invariant": {
+            "response_keys": [
+              "details",
+              "ligand",
+              "ligand_positions",
+              "position_confidence",
+              "protein",
+              "status",
+              "trajectory"
+            ],
+            "ligand": "CC(=O)Oc1ccccc1C(=O)O",
+            "protein_sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+            "protein_bytes": 78570,
+            "pose": {
+              "format": "V2000",
+              "atom_count": 13,
+              "bond_count": 13,
+              "finite_coordinate_count": 13,
+              "pose_sha256": "8e2f4259560ef4c0f88a99c0c38684eb9986ffaa15655d95f5a246cd30a6c743"
+            },
+            "position_confidence": -1.864815354347229,
+            "trajectory_count": 1
+          }
+        },
+        {
+          "passed": true,
+          "input_id": "snapshot-diffdock-2371",
+          "random_seed": 2371,
+          "request_sha256": "d89edc43ffec40cc8324ad780d76d707aa1999a405957fc69d0d0b6bc03680c7",
+          "response_sha256": "da6dadccc8021461ac0d7552063fb361c6c6a79db8a739f50c774d885f106c4c",
+          "elapsed_seconds": 4.109435,
+          "invariant": {
+            "response_keys": [
+              "details",
+              "ligand",
+              "ligand_positions",
+              "position_confidence",
+              "protein",
+              "status",
+              "trajectory"
+            ],
+            "ligand": "CC(=O)Oc1ccccc1C(=O)O",
+            "protein_sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+            "protein_bytes": 78570,
+            "pose": {
+              "format": "V2000",
+              "atom_count": 13,
+              "bond_count": 13,
+              "finite_coordinate_count": 13,
+              "pose_sha256": "20ac3e4a5709aef5797db672af69652160a024807f83bb5a4dd0cd3dc9edf83c"
+            },
+            "position_confidence": -2.201049566268921,
+            "trajectory_count": 1
+          }
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "restore",
+      "repetition": 3,
+      "pod_uid": "430c333b-aa1b-475b-9516-83d4470d3c59",
+      "created_request_at": "2026-09-07T12:14:44.427847+00:00",
+      "pod_created_at": "2026-09-07T12:14:46Z",
+      "container_started_at": "2026-09-07T12:14:50Z",
+      "ready_observed_at": "2026-09-07T12:14:58.836242+00:00",
+      "pod_create_request_to_ready_seconds": 14.408401117660105,
+      "both_full_outputs_observed_at": "2026-09-07T12:15:20.692382+00:00",
+      "container_start_to_ready_seconds": 8.836242,
+      "container_start_to_both_full_outputs_seconds": 30.692382,
+      "requests": [
+        {
+          "passed": true,
+          "input_id": "snapshot-diffdock-2370",
+          "random_seed": 2370,
+          "request_sha256": "83fcc4d31c87b25b62137bb36c41fb80f49feb9bad72f8d846ee557bcdbadd61",
+          "response_sha256": "9bcddbe34fde7c74091b4bca66c671c155c640c109ba03b991359750818bbddb",
+          "elapsed_seconds": 2.309006,
+          "invariant": {
+            "response_keys": [
+              "details",
+              "ligand",
+              "ligand_positions",
+              "position_confidence",
+              "protein",
+              "status",
+              "trajectory"
+            ],
+            "ligand": "CC(=O)Oc1ccccc1C(=O)O",
+            "protein_sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+            "protein_bytes": 78570,
+            "pose": {
+              "format": "V2000",
+              "atom_count": 13,
+              "bond_count": 13,
+              "finite_coordinate_count": 13,
+              "pose_sha256": "afd8d52a6bea6b1a8fe698013741ece6d7f362ac8062c1172cf13a6aa067f52d"
+            },
+            "position_confidence": -1.5499277114868164,
+            "trajectory_count": 1
+          }
+        },
+        {
+          "passed": true,
+          "input_id": "snapshot-diffdock-2371",
+          "random_seed": 2371,
+          "request_sha256": "d89edc43ffec40cc8324ad780d76d707aa1999a405957fc69d0d0b6bc03680c7",
+          "response_sha256": "1e5a0af0e46025370f9550c75a4571566df1d4f6825107d8e2dbbb03d1e5f7d1",
+          "elapsed_seconds": 2.470341,
+          "invariant": {
+            "response_keys": [
+              "details",
+              "ligand",
+              "ligand_positions",
+              "position_confidence",
+              "protein",
+              "status",
+              "trajectory"
+            ],
+            "ligand": "CC(=O)Oc1ccccc1C(=O)O",
+            "protein_sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+            "protein_bytes": 78570,
+            "pose": {
+              "format": "V2000",
+              "atom_count": 13,
+              "bond_count": 13,
+              "finite_coordinate_count": 13,
+              "pose_sha256": "4c95fabe8eb78076c1948392824478db50a7ba35ddb82a6662d7b02f2a96d4a8"
+            },
+            "position_confidence": -1.0483694076538086,
+            "trajectory_count": 1
+          }
+        }
+      ],
+      "gpu_pod_deleted": true
+    }
+  ],
+  "semantic_scope": "original pinned RCSB 1UBQ receptor and aspirin ligand at accepted random seeds 2370 and 2371, also used before capture; not unseen-input evidence",
+  "compatibility": {
+    "generated_cache": [
+      {
+        "bytes": 11138,
+        "path": "cuda/0/2/2c621f3d6a9283",
+        "sha256": "06e2d66f583c8c0daf2cf40bf5ba6cec128852b37492cfe2094c74356d29843f"
+      },
+      {
+        "bytes": 110434,
+        "path": "cuda/0/3/b807520914c003",
+        "sha256": "2617855e843d55371f3996aa0c838efefe00c05d439e6e31c75ef57bf0883e24"
+      },
+      {
+        "bytes": 13264,
+        "path": "cuda/0/8/28466fb8f79d54",
+        "sha256": "a9224bcca81676fc173c82ae351f0709b8b3806ec08d9b15d5f96b6a4dc321ee"
+      },
+      {
+        "bytes": 9953,
+        "path": "cuda/0/8/a9ca98e209b14b",
+        "sha256": "2b04e61041d279bf789b4a9414a7d75045df1846a60959dd586ac4e0d5846b3b"
+      },
+      {
+        "bytes": 11138,
+        "path": "cuda/0/9/15e8dbbaae57ec",
+        "sha256": "1c25ac3615b3892754e02ecba7776cdf17e77337971dd5f88a4d3b51b6f004b1"
+      },
+      {
+        "bytes": 9935,
+        "path": "cuda/0/f/277738c4e21993",
+        "sha256": "ce0d7841d6605779bb7c6c3ae11a892d9222b35dd1464f86a18cdfd2c0cbc7e6"
+      },
+      {
+        "bytes": 18190,
+        "path": "cuda/1/1/c2e8ade75f28b7",
+        "sha256": "33c804506e6d5c1078c1f42b23b24a729e1d23f32fea45123f1068a87bfeb440"
+      },
+      {
+        "bytes": 11265,
+        "path": "cuda/1/1/eb1f7023445d6c",
+        "sha256": "62b29a68255d8945992e0312581e030c9d4dd8af2214173d87f0510241e8c847"
+      },
+      {
+        "bytes": 7351,
+        "path": "cuda/1/9/1c2a9aa431d21f",
+        "sha256": "548042da2f245ef05c9134e7ab176dc4818d8dd294c89fc5c01111eedcf4c953"
+      },
+      {
+        "bytes": 11177,
+        "path": "cuda/1/9/7e7a07c0c6924e",
+        "sha256": "894abba6c73c9043c428cf7ea39e76883afe63ae2648a572d429547a86db691a"
+      },
+      {
+        "bytes": 11878,
+        "path": "cuda/1/c/55450873c3ffa7",
+        "sha256": "3f9d133881d84761af2bd57537ebc884cc8d5a6561b3f41fac5906e75ba705e1"
+      },
+      {
+        "bytes": 7367,
+        "path": "cuda/2/0/623556fd6f87f1",
+        "sha256": "eb2b71adc86e5c2c993e81c03aaed16529643a154d30998b8926a14876cebac4"
+      },
+      {
+        "bytes": 11270,
+        "path": "cuda/3/1/2cc946d34b13e6",
+        "sha256": "9fea7627596ab5fb6c769801ca0e1688b5a83c2172bf3801732bf9ed1b98c7d9"
+      },
+      {
+        "bytes": 7363,
+        "path": "cuda/3/2/c80037bf625eca",
+        "sha256": "2d683f27299c674829611a59daa53b86360be61c11ce4ff895848b80cca644e6"
+      },
+      {
+        "bytes": 6966,
+        "path": "cuda/3/3/d086eaf2815590",
+        "sha256": "73084c834b43b89e10144e42400e49fb7506b129f6912455264bfceef36b91b2"
+      },
+      {
+        "bytes": 11006,
+        "path": "cuda/3/e/922b4f6f6118ce",
+        "sha256": "c8615b62c7fc664e0983ba8bc5950e765f30249645d75730e440624f6751d515"
+      },
+      {
+        "bytes": 11177,
+        "path": "cuda/3/f/38df52dd55880a",
+        "sha256": "b44d8fe559b022384f22418c40d8bb2a173b6af3df8b58424d0d613e7c90ae7d"
+      },
+      {
+        "bytes": 7534,
+        "path": "cuda/5/2/46a9b96a8919b0",
+        "sha256": "950d7384180d3db0e0e85141c4707a6caad9c1a5fcfff88c68b00d127b14faf7"
+      },
+      {
+        "bytes": 12054,
+        "path": "cuda/5/2/6cd0dcc675f936",
+        "sha256": "d9982ca2bcc39c26efed211cd9293bf2e5626c3d5d4472f48f95cbd88892faa5"
+      },
+      {
+        "bytes": 11159,
+        "path": "cuda/5/9/61e30fb62d3bbe",
+        "sha256": "91521d6983f094b60488a86ecdc18fe7a1ece7ef4c5172a25bc660fea444fc2b"
+      },
+      {
+        "bytes": 8966,
+        "path": "cuda/5/a/9de8fded8d5803",
+        "sha256": "02386de4dac8f7dd2d4dd759127ca64f0d178ea3ddd09df5f497f4f9cb4a886c"
+      },
+      {
+        "bytes": 17310,
+        "path": "cuda/5/e/1362f133fff3aa",
+        "sha256": "789b8dc4267912ff141fc785f522f955a7652799e3bfba3645877567d4c7605b"
+      },
+      {
+        "bytes": 11251,
+        "path": "cuda/5/e/8b355c3cd2cd63",
+        "sha256": "e26b4dd40e1e82745bf2505b36fad7995071947dffb73dfd25c995ab9c181b86"
+      },
+      {
+        "bytes": 9262,
+        "path": "cuda/6/c/4380ac2ea2f69d",
+        "sha256": "b01de3da323ebf37707735a3982806ea112c07c345741a96709cc4265b87734c"
+      },
+      {
+        "bytes": 9262,
+        "path": "cuda/6/d/3449db891979b4",
+        "sha256": "175b9fb7d6fa2a213cb9c9893cd8dc57597f966c2c3e3457d5ebfeebe2011fde"
+      },
+      {
+        "bytes": 9390,
+        "path": "cuda/6/e/dbb9af4e5c5df7",
+        "sha256": "e7c987a6a7677eca71555bf38446a12a6c10a57860f1c1ae605fece6d070932a"
+      },
+      {
+        "bytes": 12046,
+        "path": "cuda/7/0/380ce0f6e2db6f",
+        "sha256": "bb1fe3685c649670f59aab9f423bc4916b8321651d965c6f76e19a72badf6061"
+      },
+      {
+        "bytes": 14594,
+        "path": "cuda/7/6/d29536d45d1698",
+        "sha256": "6bb1ca4f84c637897d46922f59c31474cb38e6038a1c4b2378bbe85986e990bc"
+      },
+      {
+        "bytes": 11010,
+        "path": "cuda/7/8/4b9c016d910506",
+        "sha256": "8ae13c7f0e9c8ed16fb2e720f75821c8e6b6b86b2b99f96e6ea491f56d15d650"
+      },
+      {
+        "bytes": 8555,
+        "path": "cuda/7/9/5481b24ce7acf1",
+        "sha256": "208bebec32bc67f93c85812b49e69091ce116ef8d453bbb03f6246726c5d4ba1"
+      },
+      {
+        "bytes": 13264,
+        "path": "cuda/7/9/76aaf0fe32b2e4",
+        "sha256": "6bf83c30df883f024a2103fae8d3dbd36a43accce198b8a91019761ec5a0ccba"
+      },
+      {
+        "bytes": 9953,
+        "path": "cuda/7/d/84bd2ea454cc9f",
+        "sha256": "76342515751260567cd450ef5df639f70720250af5d2d2fc6e3fdc1fe8d097b3"
+      },
+      {
+        "bytes": 12050,
+        "path": "cuda/8/1/2440f98f73a8fd",
+        "sha256": "6d7b5c1547c41607442ffc9544ea89ef2dedbbfbd53579b16fee5c69c1e8837a"
+      },
+      {
+        "bytes": 11134,
+        "path": "cuda/8/4/d5f63c9863288b",
+        "sha256": "3003b54d8a478b2263dbcdc1fa2346d7a7832707b4acfc4cf265fcba60d03f78"
+      },
+      {
+        "bytes": 11130,
+        "path": "cuda/8/4/f0c6942849d14c",
+        "sha256": "f2546e97d390ea663010843838aec6e970fbe8a9081aa93551870c9badcb8982"
+      },
+      {
+        "bytes": 7395,
+        "path": "cuda/8/8/05bd9146543278",
+        "sha256": "effbc551b933d42adafa5d6d3bcc00abd4f49a7e3a743c95879ea1214771faa5"
+      },
+      {
+        "bytes": 11922,
+        "path": "cuda/8/d/a7c6aa27d200d5",
+        "sha256": "6916f7a990dc4ee9bfe973bbd3ac41e07be89dbfe3094691b378117868ac209b"
+      },
+      {
+        "bytes": 9262,
+        "path": "cuda/8/e/6786c4f3616872",
+        "sha256": "762922c3951d4ebebf725b58dabf52ef4b137098eb717a876d26b90883585f4d"
+      },
+      {
+        "bytes": 10041,
+        "path": "cuda/9/3/481b5278d692c5",
+        "sha256": "082f27f44fe48bd3c35ef8eb4fb72140d4c8541e510fc1ab2e92a6239f98b690"
+      },
+      {
+        "bytes": 9102,
+        "path": "cuda/9/6/66e5db9de312e3",
+        "sha256": "5ba79e2e97d2d6feb59febdc4608fa1f51da076c7b1f96b5d8e807f2651acd25"
+      },
+      {
+        "bytes": 9102,
+        "path": "cuda/9/c/4a7bd3ba16e9b1",
+        "sha256": "bdcf44400b0e9aa2f720588e35f7cefa70b2e42259ecdd9d85961c6b78621ef6"
+      },
+      {
+        "bytes": 7356,
+        "path": "cuda/a/0/aeb757c6c814c6",
+        "sha256": "17cedf8cd72e89ec461bc6ccdc587652da12552112f8bcc1244e8f9ce0b58121"
+      },
+      {
+        "bytes": 11134,
+        "path": "cuda/a/2/ae78522485acdf",
+        "sha256": "a74dd2381006b5e7dfc6b45729a807f47e20a33ab2fe156f3e6c596d5d90909e"
+      },
+      {
+        "bytes": 11926,
+        "path": "cuda/a/b/bf7c7ff326b965",
+        "sha256": "a0ba07c1af2cbc4ba34d3f14ba1eabeec44609188c29c3161742b4d6d43176af"
+      },
+      {
+        "bytes": 171123,
+        "path": "cuda/b/5/2cddd21ed7cd90",
+        "sha256": "df7c59dc2d1860ee661654b99aafbded93b5f330d4a8f4ba3024a93e9764a085"
+      },
+      {
+        "bytes": 10046,
+        "path": "cuda/b/6/d99d5a5d99d4c8",
+        "sha256": "935bd46703ec4725889227bc886d64062d182015b906401398edc7ed034fff13"
+      },
+      {
+        "bytes": 11270,
+        "path": "cuda/b/7/ee650a5f04c6f2",
+        "sha256": "dd7e0bfb027ac6f4048b577aadaa759163ace2e9a7b487a205c86c99fd493cb1"
+      },
+      {
+        "bytes": 9882,
+        "path": "cuda/b/f/453dd08efbd102",
+        "sha256": "d0450fea796df1ae286769b22d4ebb0ed23a41dc1ec8351101f7f46d46247eeb"
+      },
+      {
+        "bytes": 11006,
+        "path": "cuda/c/1/bedfabd5c117f2",
+        "sha256": "71d37e13b9ab90a5536a09ccdbb50a2976f7351641a3c60b8f7c53319f01aba1"
+      },
+      {
+        "bytes": 9630,
+        "path": "cuda/c/2/bf61ad486f8d21",
+        "sha256": "f5cb7a678b32eb2f7f0f6cb821a120564c4583f890d3711888681f8e547915f3"
+      },
+      {
+        "bytes": 12050,
+        "path": "cuda/d/0/71b246b7cb2629",
+        "sha256": "c4d8f05bacae81a439cbb5e56c2e6c80c6d3495e9817cb61caaff45078924b02"
+      },
+      {
+        "bytes": 9390,
+        "path": "cuda/d/2/7504993d9f2798",
+        "sha256": "d1e5ee8aa19c95f79d7f46c8057176a4c2e66458f69696282be397a1f30a8f48"
+      },
+      {
+        "bytes": 18190,
+        "path": "cuda/d/4/c5026d0a040947",
+        "sha256": "c76a8e7966a274239099748111135fd799f5b62d80d4588d200f72e0a8ef9c05"
+      },
+      {
+        "bytes": 9390,
+        "path": "cuda/d/6/65fcb2316a9aee",
+        "sha256": "c7e997873175ef8b6c2b6a4ce5280fd62a1c8bd3ed8c12a67df452bf8efe4951"
+      },
+      {
+        "bytes": 9386,
+        "path": "cuda/d/7/54326812a43f31",
+        "sha256": "8d2035880aa300fbf81b71a13b84a8c33ee29b5e655033946168eab00c03ca17"
+      },
+      {
+        "bytes": 7535,
+        "path": "cuda/d/b/eb6c25d83a824a",
+        "sha256": "a6ea63e3b1b2bf41a3c668007151ea57df57270ab4b1f6ca0d12b0a410e3ad8c"
+      },
+      {
+        "bytes": 8202,
+        "path": "cuda/d/e/7b5934de21f74f",
+        "sha256": "a3c0435a726da80daddc66e226ef48848fa94e0ef60d285670a37081819b2ba0"
+      },
+      {
+        "bytes": 11922,
+        "path": "cuda/e/0/364dd6d93a35f1",
+        "sha256": "bae7bf987f6b68eaa77737b029d2fa866770b5132c46569d12317dbecefd7cd0"
+      },
+      {
+        "bytes": 7368,
+        "path": "cuda/e/3/dc6b3779e82f2b",
+        "sha256": "f628d9f2cab228bacb2bc63cfcb14167dafc5ebfacc9caaf94c8ee9375da51c1"
+      },
+      {
+        "bytes": 8353,
+        "path": "cuda/e/b/d1d837ad5b405a",
+        "sha256": "f0474163f5115fa34efcf2c1795a005b609b1c65bcbd39f34c77e6107ac54c7e"
+      },
+      {
+        "bytes": 7351,
+        "path": "cuda/f/4/d4c7c5302497dd",
+        "sha256": "6c8bea4e0d1378084a1ce230d2144287b78b915ec1a4e75549af68fc99a4f488"
+      },
+      {
+        "bytes": 10046,
+        "path": "cuda/f/6/b406737ede397c",
+        "sha256": "cb48b471075c8c44d70119adb620c9c1b3a5ba27f596fb507630688f0ef55048"
+      },
+      {
+        "bytes": 10027,
+        "path": "cuda/f/6/d86e56f2afa910",
+        "sha256": "a97cb0590a68f4911c655d342faa3f4719aedcbe932d936337e119cb4f275b9a"
+      },
+      {
+        "bytes": 10027,
+        "path": "cuda/f/6/f9683d8710faa5",
+        "sha256": "10e540c37cfc7b122bb2b90c5cb065a5ef0f3fd3eb35f06e63c4c22054c02508"
+      },
+      {
+        "bytes": 7395,
+        "path": "cuda/f/9/490cf00e395aa4",
+        "sha256": "621b573cb26d7caef5bbcb4f6f70152a9fdab5d2e36605a6d7f1b175abb14b96"
+      },
+      {
+        "bytes": 9390,
+        "path": "cuda/f/c/c0b1ff73ebaddb",
+        "sha256": "1b128e93affac5fe9dd9b0c492e62087761a8bc30fd435682c260ec18fad4f7d"
+      },
+      {
+        "bytes": 1072,
+        "path": "cuda/index",
+        "sha256": "3c5d9835066fac1deba5137b5d04ffda9897ca82a88fad983825f6b456e2a1e7"
+      },
+      {
+        "bytes": 64976,
+        "path": "torch/kernels/reduction_prod_arch9.0_nvrtc13.0_sass_33246_8f86751add5207c09eae2bda7b19af4591195091",
+        "sha256": "5cc7cf903e1db0a1064644c4daca4333bc2a5270053e2683f28bac26123b9233"
+      }
+    ],
+    "runtime_identity": {
+      "compute_capability": "9.0",
+      "driver_version": "580.159.04",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "gpu_uuid": "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d",
+      "kernel_release": "6.11.0-1016-nvidia",
+      "model_revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",
+      "runtime_id": "diffdock",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7",
+      "snapshot_source_sha256": {
+        "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+        "serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+        "serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+        "serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+        "serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+        "sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+        "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c",
+        "working_directory_launcher.py": "3bd73d58a3278a732170c6501cbc9f2bc7f731966abb7ceae987450d73fe5c1b"
+      },
+      "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
+    },
+    "schema": "fs2-serve.nebius.ai/scientific-process-checkpoint/v1"
+  },
+  "bundle": {
+    "manifest_schema": "captured-content-and-filesystem-metadata/v1",
+    "manifest_sha256": "3d6a2da41134cfb25355a5ddffd3ac84b74f6ebe8d4206901c54905ca354648b",
+    "bytes": 5881987787,
+    "entry_count": 236,
+    "storage": "existing shared filesystem; read-only captured bundle, private per-Pod writable scratch"
+  },
+  "private_receipt_sha256": "42cfbfce88086a1370b843045340f8cf0c94dd5c871a338d431282011a0275a3",
+  "publication_receipt_sha256": "bb362ccfd013708c3d1557822fd0af1255215f68c89c4ac64b14c13bc7d9523f"
+}

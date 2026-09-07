@@ -2183,8 +2183,8 @@ def _validate_serving_snapshot_selection(
         bundle.accelerator_classes
     ):
         raise ValueError("snapshot bundle is not qualified for the selected GPU class or count")
-    if spec.cache.tier is not CacheTier.SHARED_FILESYSTEM or spec.cache.mechanism is not None:
-        raise ValueError("serving snapshot uses its qualified shared filesystem without a second loader mechanism")
+    if spec.cache.mechanism is not None:
+        raise ValueError("serving snapshot cannot be combined with a second loader mechanism")
 
 
 class LegacyManifestRenderer:

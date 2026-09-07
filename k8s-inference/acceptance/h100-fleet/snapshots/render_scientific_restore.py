@@ -66,8 +66,8 @@ def scientific_restore(source, config):
         "10001",
         "--request-gid",
         "10001",
-        "--worker-url-variable",
-        config["worker_variable"],
+        *(["--request-mode", "server"] if config.get("request_mode") == "server"
+          else ["--worker-url-variable", config["worker_variable"]]),
         "restore",
         "--",
         *original_command,

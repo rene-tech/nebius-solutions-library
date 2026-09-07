@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fs2-mm-cxr-snapshot-capture-20260907
+  namespace: fs2-models
+  labels:
+    fs2.nebius/task: fs2-h100-fleet-medical-media-r20260907
+    snapshot.fs2.nebius/model: nv-reason-cxr-3b
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: compute-csi-default-sc
+  resources:
+    requests:
+      storage: 256Gi

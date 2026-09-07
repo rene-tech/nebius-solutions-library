@@ -7,20 +7,29 @@ health and two complete model outputs. All raw Pod/log receipts stay private.
 """
 
 import argparse
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--model",
-        choices=("qwen3-8b", "cosmos3-nano", "nv-reason-cxr-3b", "genmol"),
+        choices=(
+            "qwen3-8b",
+            "cosmos3-nano",
+            "nv-reason-cxr-3b",
+            "genmol",
+            "openfold3",
+            "diffdock",
+            "nv-segment-ct",
+            "sdxl",
+        ),
         required=True,
     )
     parser.add_argument("--pod", required=True)
@@ -75,9 +84,13 @@ def main():
                 else '"mechanism": "cuda-criu-restored"'
             )
             if expected_event in logs.stdout:
-                health_path = (
-                    "/v1/health/ready" if args.model == "genmol" else "/health"
-                )
+                health_path = {
+                    "genmol": "/v1/health/ready",
+                    "openfold3": "/v1/health/ready",
+                            "diffdock": "/readyz",
+                            "nv-segment-ct": "/readyz",
+                            "sdxl": "/readyz",
+                }.get(args.model, "/health")
                 probe = call(
                     [
                         "exec",
@@ -141,10 +154,54 @@ def main():
             (args.directory / "semantics.json").write_bytes(result.stdout)
         elif args.model == "nv-reason-cxr-3b":
             result = subprocess.run(
-                [sys.executable, str(Path(__file__).parents[1] / "medical-media/cxr_snapshot_probe.py"),
-                 "validate", "--kubeconfig", args.kubeconfig, "--pod", args.pod,
+                [
+                    sys.executable,
+                    str(
+                        Path(__file__).parents[1]
+                        / "medical-media/cxr_snapshot_probe.py"
+                    ),
+                    "validate",
+                    "--kubeconfig",
+                    args.kubeconfig,
+                    "--pod",
+                    args.pod,
+                    "--output",
+                    str(args.directory / "semantics"),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=900,
+            )
+            (args.directory / "semantics.log").write_text(result.stdout + result.stderr)
+        elif args.model in ("nv-segment-ct", "sdxl"):
+            result = subprocess.run(
+                [sys.executable, str(Path(__file__).parents[1] / "medical-media/small_media_snapshot_probe.py"),
+                 "validate", "--model", args.model, "--kubeconfig", args.kubeconfig, "--pod", args.pod,
                  "--output", str(args.directory / "semantics")],
-                capture_output=True, text=True, check=True, timeout=900,
+                capture_output=True, text=True, check=True, timeout=1900,
+            )
+            (args.directory / "semantics.log").write_text(result.stdout + result.stderr)
+        elif args.model == "openfold3":
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(
+                        Path(__file__).parents[1]
+                        / "openfold3-standalone/snapshot_probe.py"
+                    ),
+                    "validate",
+                    "--kubeconfig",
+                    args.kubeconfig,
+                    "--pod",
+                    args.pod,
+                    "--output",
+                    str(args.directory / "semantics"),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=1900,
             )
             (args.directory / "semantics.log").write_text(result.stdout + result.stderr)
         elif args.model == "genmol":
@@ -165,6 +222,26 @@ def main():
                 text=True,
                 check=True,
                 timeout=1300,
+            )
+            (args.directory / "semantics.log").write_text(result.stdout + result.stderr)
+        elif args.model == "diffdock":
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("validate_diffdock.py")),
+                    "--kubeconfig",
+                    args.kubeconfig,
+                    "--pod",
+                    args.pod,
+                    "--container",
+                    args.container,
+                    "--output",
+                    str(args.directory / "semantics"),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=1900,
             )
             (args.directory / "semantics.log").write_text(result.stdout + result.stderr)
         else:
@@ -190,7 +267,7 @@ def main():
         receipt["status"] = "passed"
         receipt[
             "original_inputs_passed"
-            if args.model in ("nv-reason-cxr-3b", "genmol")
+            if args.model in ("nv-reason-cxr-3b", "genmol", "openfold3", "diffdock", "nv-segment-ct", "sdxl")
             else "unseen_inputs_passed"
         ] = 2
     except Exception as error:

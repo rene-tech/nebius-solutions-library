@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-
 HERE = Path(__file__).resolve().parent
 
 
@@ -19,6 +18,12 @@ def test_all_expected_ids_remain_visible_without_invented_qualification():
     assert not entries["mosaic"]["fresh_pod_restore_passed"]
     assert entries["protenix-v2"]["fresh_pod_restore_passed"]
     assert entries["protenix-v2"]["restore_startup"]["n"] == 3
+    assert entries["diffdock"]["status"] == "fresh-pod-qualified"
+    assert entries["diffdock"]["fresh_pod_restore_passed"]
+    assert entries["diffdock"]["distinct_inputs_passed"] == 2
+    assert entries["diffdock"]["bundle"]["qualification_receipt_sha256"] == (
+        "6764987544608749f52fa4f0d1c80508b9109bc29864acd7adc85cd01a628abc"
+    )
     for entry in entries.values():
         if entry["status"] in {
             "experimental",

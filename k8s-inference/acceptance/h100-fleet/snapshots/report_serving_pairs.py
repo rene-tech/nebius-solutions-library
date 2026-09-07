@@ -2,9 +2,9 @@
 """Publish matched serving-snapshot measurements without private Pod specs."""
 
 import argparse
-from datetime import datetime
 import hashlib
 import json
+from datetime import datetime
 from pathlib import Path
 from statistics import median
 
@@ -92,14 +92,40 @@ def project(receipt):
         "runs": rows,
     }
     if receipt["model"] == "nv-reason-cxr-3b":
-        result["semantic_scope"] = "original two pinned non-clinical X-rays, also used before capture; not unseen-input evidence"
+        result["semantic_scope"] = (
+            "original two pinned non-clinical X-rays, also used before capture; not unseen-input evidence"
+        )
         result["clock_notes"].append(
             "CXR restores retain the donor's original-fixture prefix/encoder cache state; output latency is not a controlled cold-input inference comparison."
+        )
+    elif receipt["model"] == "nv-segment-ct":
+        result["semantic_scope"] = (
+            "original two pinned synthetic non-clinical CT masks, also used before capture; "
+            "not unseen-input evidence"
+        )
+    elif receipt["model"] == "sdxl":
+        result["semantic_scope"] = (
+            "original two pinned 512x512 prompts at seeds 2407 and 2408, also used "
+            "before capture; not unseen-input evidence"
         )
     elif receipt["model"] == "genmol":
         result["semantic_scope"] = (
             "original two pinned QED and LogP requests, also used before capture; "
             "not unseen-input evidence"
+        )
+    elif receipt["model"] == "openfold3":
+        result["semantic_scope"] = (
+            "original two standalone Preview2 20-aa request IDs, also used before capture; "
+            "not unseen-input evidence or the OpenBind scientific profile"
+        )
+        result["clock_notes"].append(
+            "OpenFold3 retains the exact native bash activation, working directory and UID/GID; "
+            "only the snapshot supervisor PATH includes the image's pinned conda Python."
+        )
+    elif receipt["model"] == "diffdock":
+        result["semantic_scope"] = (
+            "original pinned RCSB 1UBQ receptor and aspirin ligand at accepted random "
+            "seeds 2370 and 2371, also used before capture; not unseen-input evidence"
         )
     return result
 

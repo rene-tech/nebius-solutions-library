@@ -1,0 +1,326 @@
+{
+  "schema": "fs2-serve.nebius.ai/serving-snapshot-qualification/v1",
+  "model_id": "nv-segment-ct",
+  "status": "fresh-pod-qualified",
+  "date": "2026-09-07",
+  "mechanism": "cuda-criu",
+  "default": "normal-load",
+  "production_selectable": false,
+  "qualification_scope": "isolated exact-image serving worker; production renderer and fallback rollout are separate",
+  "cache": "existing images and localized weights; shared snapshot filesystem cache retained, no eviction or reserved-RAM guarantee",
+  "ready_boundary": "application HTTP health after supervisor completed CUDA+CRIU restoration; normal trials use the original server health endpoint",
+  "clock_notes": [
+    "Every trial starts a fresh Pod; restore cannot pass from HTTP health alone before CUDA completion.",
+    "Kubernetes container timestamps have one-second resolution; Pod-create request clock is client monotonic.",
+    "Health polling includes kubectl transport and observation delay. First input may still compile request-specific kernels.",
+    "Both-full-outputs clock includes two sequential inputs and client validation; it is not first-output latency or a pure inference benchmark.",
+    "Existing image, weight and shared-filesystem caches are retained. No host cache eviction, node acquisition or reserved-RAM guarantee.",
+    "The optional bridge changes only snapshot compatibility plumbing, not model image, precision, GPU memory utilization, output shape or generation steps."
+  ],
+  "statistics": {
+    "normal": {
+      "pod_create_request_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 17.75806090515107,
+        "min_seconds": 17.56874842569232,
+        "max_seconds": 17.776774336583912
+      },
+      "container_start_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 12.782018,
+        "min_seconds": 12.226618,
+        "max_seconds": 12.790781
+      },
+      "container_start_to_both_full_outputs_seconds": {
+        "n": 3,
+        "median_seconds": 18.401661,
+        "min_seconds": 18.058451,
+        "max_seconds": 18.628906
+      }
+    },
+    "restore": {
+      "pod_create_request_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 14.524718791246414,
+        "min_seconds": 14.448274068534374,
+        "max_seconds": 14.6630922826007
+      },
+      "container_start_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 8.497765,
+        "min_seconds": 6.862654,
+        "max_seconds": 8.771297
+      },
+      "container_start_to_both_full_outputs_seconds": {
+        "n": 3,
+        "median_seconds": 13.491032,
+        "min_seconds": 11.731414,
+        "max_seconds": 13.639781
+      }
+    }
+  },
+  "runs": [
+    {
+      "mode": "normal",
+      "repetition": 1,
+      "pod_uid": "915f544d-19f0-4efa-afcf-3d4eb92e65da",
+      "created_request_at": "2026-09-07T12:39:04.468567+00:00",
+      "pod_created_at": "2026-09-07T12:39:06Z",
+      "container_started_at": "2026-09-07T12:39:10Z",
+      "ready_observed_at": "2026-09-07T12:39:22.226618+00:00",
+      "pod_create_request_to_ready_seconds": 17.75806090515107,
+      "both_full_outputs_observed_at": "2026-09-07T12:39:28.058451+00:00",
+      "container_start_to_ready_seconds": 12.226618,
+      "container_start_to_both_full_outputs_seconds": 18.058451,
+      "requests": [
+        {
+          "id": "centered-sphere-r20",
+          "started_at": "2026-09-07T12:39:26.085447+00:00",
+          "finished_at": "2026-09-07T12:39:27.142614+00:00",
+          "seconds": 1.0571545334532857,
+          "input_sha256": "22356103ec58e1155720440c8e328a01c3e2f8cae4e2bf3623138d228591ba43",
+          "response_sha256": "b93dbb79d1e427279c617763472a76a33a1d843af4e181b5d8142dac56297ca5",
+          "bytes": 21181,
+          "passed": true
+        },
+        {
+          "id": "centered-sphere-r24",
+          "started_at": "2026-09-07T12:39:27.142704+00:00",
+          "finished_at": "2026-09-07T12:39:27.861850+00:00",
+          "seconds": 0.7191612916067243,
+          "input_sha256": "ae71a66865a5033cce594bc8eb72d218fc5c0da5dfef79b3224cac289d08d480",
+          "response_sha256": "65f6da3f7377c16380ad849d966b28d5883122de50a4574581a581deea8e1355",
+          "bytes": 21463,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "restore",
+      "repetition": 1,
+      "pod_uid": "fc3bef9f-c7f1-4664-8eec-1846bc84ddb0",
+      "created_request_at": "2026-09-07T12:39:31.973052+00:00",
+      "pod_created_at": "2026-09-07T12:39:33Z",
+      "container_started_at": "2026-09-07T12:39:38Z",
+      "ready_observed_at": "2026-09-07T12:39:46.497765+00:00",
+      "pod_create_request_to_ready_seconds": 14.524718791246414,
+      "both_full_outputs_observed_at": "2026-09-07T12:39:51.491032+00:00",
+      "container_start_to_ready_seconds": 8.497765,
+      "container_start_to_both_full_outputs_seconds": 13.491032,
+      "requests": [
+        {
+          "id": "centered-sphere-r20",
+          "started_at": "2026-09-07T12:39:50.347523+00:00",
+          "finished_at": "2026-09-07T12:39:50.831151+00:00",
+          "seconds": 0.4836208801716566,
+          "input_sha256": "22356103ec58e1155720440c8e328a01c3e2f8cae4e2bf3623138d228591ba43",
+          "response_sha256": "657d4132b3cc7e567cf9a559cd21f52087d45fef1c6c59f9ee5b7e1554a27e23",
+          "bytes": 21182,
+          "passed": true
+        },
+        {
+          "id": "centered-sphere-r24",
+          "started_at": "2026-09-07T12:39:50.831239+00:00",
+          "finished_at": "2026-09-07T12:39:51.306837+00:00",
+          "seconds": 0.475613527931273,
+          "input_sha256": "ae71a66865a5033cce594bc8eb72d218fc5c0da5dfef79b3224cac289d08d480",
+          "response_sha256": "2e016cf50d709c52f394da82fe257aee69fdd67ee08b2ee11e3c1378be52a8fa",
+          "bytes": 21463,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "normal",
+      "repetition": 2,
+      "pod_uid": "ac4ff4fe-af69-4485-ba6c-bc95e23ba498",
+      "created_request_at": "2026-09-07T12:39:55.014013+00:00",
+      "pod_created_at": "2026-09-07T12:39:56Z",
+      "container_started_at": "2026-09-07T12:40:00Z",
+      "ready_observed_at": "2026-09-07T12:40:12.790781+00:00",
+      "pod_create_request_to_ready_seconds": 17.776774336583912,
+      "both_full_outputs_observed_at": "2026-09-07T12:40:18.628906+00:00",
+      "container_start_to_ready_seconds": 12.790781,
+      "container_start_to_both_full_outputs_seconds": 18.628906,
+      "requests": [
+        {
+          "id": "centered-sphere-r20",
+          "started_at": "2026-09-07T12:40:16.719011+00:00",
+          "finished_at": "2026-09-07T12:40:17.769325+00:00",
+          "seconds": 1.0503024095669389,
+          "input_sha256": "22356103ec58e1155720440c8e328a01c3e2f8cae4e2bf3623138d228591ba43",
+          "response_sha256": "aec711eb5341a16d609322056381733011518c53a6ed35e292c75b2734c5b6b3",
+          "bytes": 21181,
+          "passed": true
+        },
+        {
+          "id": "centered-sphere-r24",
+          "started_at": "2026-09-07T12:40:17.769411+00:00",
+          "finished_at": "2026-09-07T12:40:18.444127+00:00",
+          "seconds": 0.6747270887717605,
+          "input_sha256": "ae71a66865a5033cce594bc8eb72d218fc5c0da5dfef79b3224cac289d08d480",
+          "response_sha256": "169a494870fe581027d6a40a90dea71c884b5a2101eb75efaaa6fa8158193156",
+          "bytes": 21463,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "restore",
+      "repetition": 2,
+      "pod_uid": "371b9bc4-d423-4599-8de4-f92a66865009",
+      "created_request_at": "2026-09-07T12:40:22.108208+00:00",
+      "pod_created_at": "2026-09-07T12:40:23Z",
+      "container_started_at": "2026-09-07T12:40:28Z",
+      "ready_observed_at": "2026-09-07T12:40:36.771297+00:00",
+      "pod_create_request_to_ready_seconds": 14.6630922826007,
+      "both_full_outputs_observed_at": "2026-09-07T12:40:41.639781+00:00",
+      "container_start_to_ready_seconds": 8.771297,
+      "container_start_to_both_full_outputs_seconds": 13.639781,
+      "requests": [
+        {
+          "id": "centered-sphere-r20",
+          "started_at": "2026-09-07T12:40:40.579530+00:00",
+          "finished_at": "2026-09-07T12:40:41.064176+00:00",
+          "seconds": 0.4846367258578539,
+          "input_sha256": "22356103ec58e1155720440c8e328a01c3e2f8cae4e2bf3623138d228591ba43",
+          "response_sha256": "37ffab95ff851f08aa8f6284ba62467033b7434cfec7b0f4eeba13018309ef58",
+          "bytes": 21182,
+          "passed": true
+        },
+        {
+          "id": "centered-sphere-r24",
+          "started_at": "2026-09-07T12:40:41.064293+00:00",
+          "finished_at": "2026-09-07T12:40:41.448728+00:00",
+          "seconds": 0.3844458358362317,
+          "input_sha256": "ae71a66865a5033cce594bc8eb72d218fc5c0da5dfef79b3224cac289d08d480",
+          "response_sha256": "9566681857c555e9e89143023e71c5aaeb3e26818b72e04d157baf6346de3c45",
+          "bytes": 21463,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "normal",
+      "repetition": 3,
+      "pod_uid": "c1be294e-5da7-430d-af3e-1800ef32f220",
+      "created_request_at": "2026-09-07T12:40:45.213276+00:00",
+      "pod_created_at": "2026-09-07T12:40:47Z",
+      "container_started_at": "2026-09-07T12:40:50Z",
+      "ready_observed_at": "2026-09-07T12:41:02.782018+00:00",
+      "pod_create_request_to_ready_seconds": 17.56874842569232,
+      "both_full_outputs_observed_at": "2026-09-07T12:41:08.401661+00:00",
+      "container_start_to_ready_seconds": 12.782018,
+      "container_start_to_both_full_outputs_seconds": 18.401661,
+      "requests": [
+        {
+          "id": "centered-sphere-r20",
+          "started_at": "2026-09-07T12:41:06.665482+00:00",
+          "finished_at": "2026-09-07T12:41:07.679804+00:00",
+          "seconds": 1.0143200559541583,
+          "input_sha256": "22356103ec58e1155720440c8e328a01c3e2f8cae4e2bf3623138d228591ba43",
+          "response_sha256": "43bc8fb5609c608071174162f593e4f3caf35db92374a883b4a979509146b4f0",
+          "bytes": 21181,
+          "passed": true
+        },
+        {
+          "id": "centered-sphere-r24",
+          "started_at": "2026-09-07T12:41:07.679971+00:00",
+          "finished_at": "2026-09-07T12:41:08.218018+00:00",
+          "seconds": 0.5380583107471466,
+          "input_sha256": "ae71a66865a5033cce594bc8eb72d218fc5c0da5dfef79b3224cac289d08d480",
+          "response_sha256": "5c8ccee4e8fbd2e0628d87d24bfde6661fc75a6e395e7ae0dc18eb5f17d6f34a",
+          "bytes": 21463,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "restore",
+      "repetition": 3,
+      "pod_uid": "93cfaef9-a923-4028-bfa1-1de156a2d296",
+      "created_request_at": "2026-09-07T12:41:12.414383+00:00",
+      "pod_created_at": "2026-09-07T12:41:14Z",
+      "container_started_at": "2026-09-07T12:41:20Z",
+      "ready_observed_at": "2026-09-07T12:41:26.862654+00:00",
+      "pod_create_request_to_ready_seconds": 14.448274068534374,
+      "both_full_outputs_observed_at": "2026-09-07T12:41:31.731414+00:00",
+      "container_start_to_ready_seconds": 6.862654,
+      "container_start_to_both_full_outputs_seconds": 11.731414,
+      "requests": [
+        {
+          "id": "centered-sphere-r20",
+          "started_at": "2026-09-07T12:41:30.683978+00:00",
+          "finished_at": "2026-09-07T12:41:31.168512+00:00",
+          "seconds": 0.4845201885327697,
+          "input_sha256": "22356103ec58e1155720440c8e328a01c3e2f8cae4e2bf3623138d228591ba43",
+          "response_sha256": "6b79ad1eedfb6ff3478a7f375f14035f8cd0c4693d8d525d1782405a20bea216",
+          "bytes": 21182,
+          "passed": true
+        },
+        {
+          "id": "centered-sphere-r24",
+          "started_at": "2026-09-07T12:41:31.168614+00:00",
+          "finished_at": "2026-09-07T12:41:31.554052+00:00",
+          "seconds": 0.3854520861059427,
+          "input_sha256": "ae71a66865a5033cce594bc8eb72d218fc5c0da5dfef79b3224cac289d08d480",
+          "response_sha256": "bc6355078897ea48dee345b2e160b4c8e39a3d7680d6711b5a6f670ae89c737f",
+          "bytes": 21463,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    }
+  ],
+  "semantic_scope": "original two pinned synthetic non-clinical CT masks, also used before capture; not unseen-input evidence",
+  "compatibility": {
+    "generated_cache": [
+      {
+        "bytes": 3956,
+        "path": "cuda/a/2/daf144f9da5951",
+        "sha256": "90c447ac8071cff194a1cece571c4d34aabbfc8a135ec4ce8ab2ef5680bb921b"
+      },
+      {
+        "bytes": 32,
+        "path": "cuda/index",
+        "sha256": "e63b49bfe2e5dc034eb187f7bda1888b55c8a9c9ce3d34ee33027466562bb45d"
+      }
+    ],
+    "runtime_identity": {
+      "compute_capability": "9.0",
+      "driver_version": "580.159.04",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "gpu_uuid": "GPU-644f23ac-4f00-aea9-7b7d-a57717848200",
+      "kernel_release": "6.11.0-1016-nvidia",
+      "model_revision": "afb51518689f71e6abb367ee6301b2cd0225c66a",
+      "runtime_id": "nv-segment-ct",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd",
+      "snapshot_source_sha256": {
+        "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+        "serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+        "serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+        "serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+        "serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+        "sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+        "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c",
+        "working_directory_launcher.py": "3bd73d58a3278a732170c6501cbc9f2bc7f731966abb7ceae987450d73fe5c1b"
+      },
+      "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
+    },
+    "schema": "fs2-serve.nebius.ai/scientific-process-checkpoint/v1"
+  },
+  "bundle": {
+    "manifest_schema": "captured-content-and-filesystem-metadata/v1",
+    "manifest_sha256": "fb5a0598d39ed4f626c6f4a118980fbbced8af8a34d0f42d639c381b72bfdd87",
+    "bytes": 3204989911,
+    "entry_count": 298,
+    "storage": "existing shared filesystem; read-only captured bundle, private per-Pod writable scratch"
+  },
+  "private_receipt_sha256": "e761b6d8cef067b541d8da1a606c6808cf04d774479cb827395a0242e030fee9",
+  "publication_receipt_sha256": "20002c9ef8d75ec753a0dae1abe53174ced785df2310da4fdf222e74ab593351"
+}

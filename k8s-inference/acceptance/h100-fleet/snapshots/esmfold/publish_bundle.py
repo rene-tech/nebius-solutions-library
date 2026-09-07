@@ -22,9 +22,13 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     for name in ("node", "run", "name", "destination-pvc"):
         parser.add_argument("--" + name, required=True)
+    parser.add_argument("--copy-image", help="Optional immutable CPU copy image with Python3.11+; model bytes are not executed")
+    parser.add_argument("--python", default="/opt/esm/.pixi/envs/gpu/bin/python")
     args = parser.parse_args()
-    if Path(args.run).name != args.run or not args.run.startswith("esmfold2"):
-        parser.error("an exact ESM snapshot subdirectory is required")
+    if Path(args.run).name != args.run or not args.run.startswith(("esmfold2", "rfdiffusion")):
+        parser.error("an exact owned scientific snapshot subdirectory is required")
+    if args.copy_image and "@sha256:" not in args.copy_image:
+        parser.error("copy image must be digest-pinned")
     os.umask(0o077)
     args.directory.mkdir(parents=True, exist_ok=False)
     donor = json.loads(args.donor.read_bytes())
@@ -32,14 +36,14 @@ def main():
     source_claim = next(v["persistentVolumeClaim"]["claimName"] for v in donor["spec"]["volumes"]
                         if v["name"] == "snapshot-checkpoints")
     assert source_claim != args.destination_pvc
-    python = "/opt/esm/.pixi/envs/gpu/bin/python"
+    python = args.python
     pod = {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": args.name, "namespace": "fs2-models",
         "labels": {"snapshot.fs2.nebius/task": "fs2-h100-fleet-snapshot-options-r20260907"}},
         "spec": {"restartPolicy": "Never", "activeDeadlineSeconds": 3600,
             "automountServiceAccountToken": False, "enableServiceLinks": False,
             "nodeSelector": {"kubernetes.io/hostname": args.node},
             "tolerations": donor["spec"].get("tolerations", []),
-            "containers": [{"name": "copy", "image": runtime["image"],
+            "containers": [{"name": "copy", "image": args.copy_image or runtime["image"],
                 "command": [python, "-c", "import time;time.sleep(3500)"],
                 "env": [{"name": "NVIDIA_VISIBLE_DEVICES", "value": "void"}],
                 "securityContext": {"runAsUser": 0, "runAsGroup": 0, "runAsNonRoot": False},

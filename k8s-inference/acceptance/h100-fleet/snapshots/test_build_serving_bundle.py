@@ -10,6 +10,23 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 
+def test_interpreter_projection_uses_measured_donor_and_restore_and_omits_defaults():
+    runtime = {"name": "model", "image": "exact@sha256:" + "a" * 64,
+               "command": ["python3", "/snapshot-source/serving_supervisor.py"],
+               "env": [{"name": "PATH", "value": module.DEFAULT_SUPERVISOR_PATH}]}
+    assert module.captured_interpreters(runtime) == {}
+    interpreter = "/opt/openfold3/.pixi/envs/openfold3-cuda12/bin/python3"
+    runtime["env"][0]["value"] = str(Path(interpreter).parent) + ":" + module.DEFAULT_SUPERVISOR_PATH
+    restored = {"spec": {"containers": [dict(runtime)], "initContainers": [
+        {"name": "snapshot-local-address", "command": [interpreter, "restore-address"]}]}}
+    assert module.captured_interpreters(runtime, restored) == {
+        "supervisor_path": runtime["env"][0]["value"], "address_python": interpreter,
+    }
+    restored["spec"]["containers"][0]["image"] = "different-image"
+    with pytest.raises(ValueError, match="captured image"):
+        module.captured_interpreters(runtime, restored)
+
+
 def test_unwraps_standard_cpu_loop_launcher():
     native, prefix = module.unwrap_captured_command(
         ["supervisor", "--", "python3", "/snapshot-source/serving_launcher.py", "vllm", "serve"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 
@@ -18,9 +19,59 @@ from fs2_serve.model_deployment import (
     validate_model_deployment,
 )
 from fs2_serve.model_deployment_controller import ControllerFiles
-from fs2_serve.serving_snapshot import ServingSnapshotBundle
+from fs2_serve.serving_snapshot import DEFAULT_SUPERVISOR_PATH, ServingSnapshotBundle, configure_serving_snapshot
 
 SOLUTION_ROOT = Path(__file__).resolve().parents[3]
+
+
+def direct_pod(config):
+    probe = {"httpGet": {"path": "/health", "port": 8000}, "periodSeconds": 5}
+    return {
+        "containers": [{"name": "model", "image": config.runtime_image, "command": config.runtime_command,
+                        "env": [{"name": "UNCHANGED", "value": "test"}],
+                        "resources": {"requests": {"nvidia.com/gpu": "1"}, "limits": {"nvidia.com/gpu": "1"}},
+                        "volumeMounts": [], "readinessProbe": dict(probe), "startupProbe": dict(probe)}],
+        "volumes": [], "securityContext": {"fsGroup": 1000},
+    }
+
+
+@pytest.mark.parametrize("model,expected", [
+    ("qwen3-8b", "aaf75536c3257fb41a30a5cfb97d2f11a918c0edfc945ef4ca45f12a3eef9525"),
+    ("cosmos3-nano", "f97eed1b998575b8700f90e1f8e1a483a3fd898c02bb7370423cc80124c73522"),
+    ("genmol", "4dcd72d9d5bdefc91bb7b27cb718cef8185600467fe20dc61451bcc34ea1119f"),
+])
+def test_published_bundles_keep_byte_identical_render_with_default_interpreters(model, expected):
+    # These hashes were measured before adding interpreter/PATH configuration.
+    config = ServingSnapshotBundle.model_validate_json(
+        (SOLUTION_ROOT / f"acceptance/h100-fleet/snapshots/{model}-bundle.json").read_text()
+    )
+    assert config.supervisor_python == config.address_python == "python3"
+    assert config.supervisor_path == DEFAULT_SUPERVISOR_PATH
+    pod = direct_pod(config)
+    configure_serving_snapshot(pod, config=config, runtime_container_name="model", fallback="normal-load")
+    actual = hashlib.sha256(json.dumps(pod, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    assert actual == expected
+
+
+def test_captured_interpreters_change_only_snapshot_wrapper_and_keep_native_argv():
+    _source, _infrastructure, _template, config, _context = fixture()
+    payload = config.model_dump(by_alias=True)
+    interpreter = "/opt/openfold3/.pixi/envs/openfold3-cuda12/bin/python3"
+    payload.update(supervisor_python=interpreter, address_python=interpreter,
+                   supervisor_path=str(Path(interpreter).parent) + ":" + DEFAULT_SUPERVISOR_PATH)
+    selected = ServingSnapshotBundle.model_validate(payload)
+    before, after = direct_pod(config), direct_pod(selected)
+    configure_serving_snapshot(before, config=config, runtime_container_name="model", fallback="normal-load")
+    configure_serving_snapshot(after, config=selected, runtime_container_name="model", fallback="normal-load")
+    expected = copy.deepcopy(before)
+    runtime = expected["containers"][0]
+    runtime["command"][0] = interpreter
+    next(item for item in runtime["env"] if item["name"] == "PATH")["value"] = selected.supervisor_path
+    for name in ("startupProbe", "readinessProbe"):
+        runtime[name]["exec"]["command"][0] = interpreter
+    expected["initContainers"][0]["command"][0] = interpreter
+    assert after == expected
+    assert after["containers"][0]["command"][-len(config.runtime_command):] == config.runtime_command
 
 
 def test_snapshot_registry_accepts_future_model_ids_without_code_changes():
@@ -68,6 +119,101 @@ def test_configuration_options_expose_only_renderable_snapshot_bundles(cipher, h
         update={"runtime_image": "registry.example/changed@" + digest("9")}
     )
     assert service.configuration_options()[0].gpu_snapshot_choices == []
+
+
+def test_configuration_options_expose_snapshot_for_readiness_only_template(
+    cipher, hasher
+):
+    """A long readiness gate is also a valid supervisor startup gate."""
+    from test_model_deployment_mutation import PROMETHEUS_ADDRESS, FakeWriter
+
+    from fs2_serve.memory_store import MemoryStore
+    from fs2_serve.model_deployment_admin import StoreModelDeploymentRepository
+    from fs2_serve.model_deployment_mutation import ModelDeploymentMutationService
+
+    source, infrastructure, template, config, _context = fixture()
+    infrastructure.qualifications[source.model_ref].max_accelerators_per_replica = 1
+    runtime = template.resources[0]["spec"]["template"]["spec"]["containers"][0]
+    original_readiness = copy.deepcopy(runtime["readinessProbe"])
+    runtime.pop("startupProbe")
+    service = ModelDeploymentMutationService(
+        repository=StoreModelDeploymentRepository(MemoryStore(cipher, hasher)),
+        writer=FakeWriter(),
+        envelope=infrastructure,
+        renderer=ControllerFiles(
+            infrastructure_envelope=infrastructure, bundles=[template]
+        ).renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
+    )
+
+    option = service.configuration_options()[0]
+
+    assert [choice.bundle_id for choice in option.gpu_snapshot_choices] == [
+        config.bundle_id
+    ]
+    snapshot_choice = option.gpu_snapshot_choices[0]
+    candidate = option.default_spec.model_copy(deep=True)
+    candidate.placement.pool_refs = snapshot_choice.pool_refs
+    candidate.cache = CacheSpec(
+        tier=CacheTier.SHARED_FILESYSTEM,
+        snapshot_preference=SnapshotPreference.PREFER,
+        snapshot_ref=SnapshotRef(
+            name=config.bundle_id,
+            digest="sha256:" + config.manifest_sha256,
+            strategy=SnapshotStrategy.CUDA_CHECKPOINT,
+        ),
+    )
+    decision = validate_model_deployment(candidate, infrastructure)
+    context = render_context().model_copy(
+        update={
+            "pool": infrastructure.pools[decision.admitted_pool_ref],
+            "eligible_pools": [
+                infrastructure.pools[pool_ref]
+                for pool_ref in candidate.placement.pool_refs
+            ],
+            "fast_start_mechanism": decision.fast_start_mechanism,
+        }
+    )
+    plan = service.renderer.render(candidate, context)
+    deployment = next(
+        resource.manifest for resource in plan.resources if resource.kind == "Deployment"
+    )
+    rendered = deployment["spec"]["template"]["spec"]["containers"][0]
+    assert rendered["startupProbe"] == rendered["readinessProbe"]
+    assert rendered["startupProbe"]["exec"]["command"][-1] == "ready"
+    assert original_readiness["failureThreshold"] == 30
+
+
+def test_snapshot_storage_is_independent_of_the_template_artifact_cache_tier(
+    cipher, hasher
+):
+    """A bundle PVC can accelerate a runtime whose weights are image-baked."""
+    from test_model_deployment_mutation import PROMETHEUS_ADDRESS, FakeWriter
+
+    from fs2_serve.memory_store import MemoryStore
+    from fs2_serve.model_deployment_admin import StoreModelDeploymentRepository
+    from fs2_serve.model_deployment_mutation import ModelDeploymentMutationService
+
+    source, infrastructure, template, config, _context = fixture()
+    qualification = infrastructure.qualifications[source.model_ref]
+    qualification.max_accelerators_per_replica = 1
+    qualification.template_cache_tiers[template.template_digest] = CacheTier.NODE_LOCAL
+    service = ModelDeploymentMutationService(
+        repository=StoreModelDeploymentRepository(MemoryStore(cipher, hasher)),
+        writer=FakeWriter(),
+        envelope=infrastructure,
+        renderer=ControllerFiles(
+            infrastructure_envelope=infrastructure, bundles=[template]
+        ).renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
+    )
+
+    option = service.configuration_options()[0]
+
+    assert option.default_spec.cache.tier is CacheTier.NODE_LOCAL
+    assert [choice.bundle_id for choice in option.gpu_snapshot_choices] == [
+        config.bundle_id
+    ]
 
 
 def fixture():

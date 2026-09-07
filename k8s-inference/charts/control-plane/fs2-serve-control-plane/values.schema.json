@@ -1568,11 +1568,11 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "3defd7e8093fc443f3ee7dd13958ed23911c23c4cbc9d7903ef0958dead5eb86"},
-            "migrationSetSha256": {"const": "00d6e1994f445c98fb5234e3d5f933a358b692fe0c95fb9cfb2feb37f7e880cc"},
-            "migrationCount": {"const": 24},
+            "contractPayloadSha256": {"const": "681e687e9ef7d831d2213dc44ae22b93155020a3611b466b7d0fe6d3bbdb28ec"},
+            "migrationSetSha256": {"const": "3c82ca62fb3d177f4a0f070c15ff87ae73c7c3e1cee179d67f1dcd6868af3d82"},
+            "migrationCount": {"const": 25},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0024_scientific_model_policies.sql"},
+            "lastMigrationVersion": {"const": "0025_scientific_startup_policies.sql"},
             "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false

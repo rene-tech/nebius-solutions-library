@@ -130,3 +130,48 @@ The preexisting gateway network policy required that label. After the normal
 controller release, the original request recovered and passed; its 1,506.195-second
 activation interval is repair time, not model startup. The common renderer fix
 did not change the model image, template identity, inputs, or validator.
+
+## Optional standalone Preview2 GPU snapshot
+
+The exact v4 image passed three matched normal loads and three fresh
+donor-deleted CUDA+CRIU restores. Both original 20-aa structural request IDs
+passed on every trial. This is standalone Preview2, not the OpenBind scientific
+profile. The original donor was deleted; restores mount the captured shared-FS
+bundle read-only with private writable scratch.
+
+| Boundary, median (min–max), n=3 per mode | Normal | Restore |
+|---|---:|---:|
+| Container start → observed application ready | 37.451 s (30.806–37.916) | 9.817 s (9.446–9.883) |
+| Pod-create request → observed application ready | 41.689 s (35.710–41.707) | 14.398 s (14.197–14.407) |
+
+See [snapshot-qualification.json](snapshot-qualification.json) and
+[snapshot-bundle.json](snapshot-bundle.json). Existing images, localized
+weights, exact compile tree and shared-FS caches remain retained. No host cache
+eviction, new-node or reserved-RAM guarantee is claimed. Original inputs were
+also used before capture; these are not unseen-input trials. Application
+readiness requires the actual completed CUDA restore event before HTTP health.
+All donor, first-restore, paired-trial and publication Pods are deleted.
+
+The native bash activation command, cwd `/opt/fs2/openfold3-preview2`, UID/GID
+10001, image, model parameters, request settings and resource limits are
+unchanged. The first donor failed before model loading because the generic
+snapshot PATH hid this image's conda-only Python; that negative receipt is
+retained. The qualified variant prepends the exact existing conda bin only to
+the snapshot supervisor PATH and uses its absolute interpreter for address
+initialization. The native activation still establishes the original worker
+environment. Frozen v8 launcher/source bytes were not changed.
+
+Successful capture took 1.523 seconds for CUDA checkpoint, 75.397 seconds for
+CRIU and 0.752 seconds for required fsync. The 11,341,560,585-byte/119-file
+bundle is retained on `fs2-fleet-snapshots-rwx-r20260907`, subpath
+`of3-preview2-r02`. The qualification manifest digest is
+`9494710486412a4bfd004effe6b92e456bcc12c1c92a7a06f632031d5ec54ea0`.
+The generic hash helper's envelope digest is separately recorded in the
+private publication receipt; it is a different serialization of the same files.
+
+`snapshot_probe.py` reproduces donor/validation/capture/deletion. Use
+`publish_existing_bundle.py`, `run_serving_pairs.py --model openfold3
+--address-python /opt/openfold3/.pixi/envs/openfold3-cuda12/bin/python3`, then
+`report_serving_pairs.py` and `build_serving_bundle.py --restore <actual-pod-receipt>`.
+Production selection and public fallback tests are a separate release step;
+normal-load remains the default.

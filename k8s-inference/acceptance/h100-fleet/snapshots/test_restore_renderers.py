@@ -184,6 +184,20 @@ def test_captured_socket_address_is_added_only_to_private_pod_namespace():
     }
     assert "nvidia.com/gpu" not in initializer["resources"]["requests"]
     assert not result["spec"].get("hostNetwork")
+    assert initializer["command"][0] == "python3"
+    explicit_default = server_restore(
+        donor, name="fresh", container="scientific-stage",
+        address_configmap="address-source", address_python="python3",
+    )
+    assert explicit_default == result
+    interpreter = "/opt/openfold3/.pixi/envs/openfold3-cuda12/bin/python3"
+    alternate = server_restore(
+        donor, name="fresh", container="scientific-stage",
+        address_configmap="address-source", address_python=interpreter,
+    )
+    expected = copy.deepcopy(result)
+    expected["spec"]["initContainers"][0]["command"][0] = interpreter
+    assert alternate == expected
 
 
 def test_qualified_bundle_matches_source_and_receipt_bytes():

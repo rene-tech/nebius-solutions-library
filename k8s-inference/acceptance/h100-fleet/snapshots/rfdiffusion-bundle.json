@@ -1,0 +1,50 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-snapshot-bundle/v1",
+  "model_id": "rfdiffusion",
+  "stage_id": "inference",
+  "bundle_id": "rfdiffusion-h100-cuda-criu-20260907-r3",
+  "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+  "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+  "source_configmap": "fs2-fleet-snapshot-rfdiffusion-v2",
+  "source_sha256": {
+    "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+    "rfdiffusion_cli_proxy.py": "b27ba523acf00c126036355ef7bfe1db7b7b6a5b64a3e7dd1d8acf6dde5d54c9",
+    "rfdiffusion_model_cache.py": "c9b9f1175aca4edbb3c87a138a2038bbfb3b1d348a12a4f56240a01434bebcce",
+    "rfdiffusion_runtime_entrypoint.py": "90250fe1b9a153ec87152426dae8e57ff86d8ae4b4d74173a977bc883841b7dd",
+    "rfdiffusion_server.py": "3e1391743d30e726b4260898e13ca027ba9836dc6e8fa67ebadd2060a780d93e",
+    "scientific_server.py": "6444a528a273d3d47ea0560a0580d52366688c45cf59eaf474ed720c28fb8e52",
+    "sitecustomize.py": "a85a7d973da3677dafc7dc865e88e428315a62d1bde9db15d6849aeed65f6e26",
+    "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c"
+  },
+  "cli_configmap": "fs2-rfdiffusion-request-v1",
+  "cli_sha256": "793c0e5b854e745a9baa602c16eb4ac12a6a1525ce421f286f287383b4c7bb46",
+  "pvc": "fs2-fleet-snapshots-rwx-r20260907",
+  "bundle_path": "rfdiffusion-current-r20260907-r3",
+  "manifest_sha256": "38230e1a6da7926330d59cc92c209f81db38b43d34f878c7a09928d3e880cd30",
+  "qualification_receipt_sha256": "2dd79a4847a6be087eab86bfd9baf69c78b89ed9c2356c044e897b1ae4366dd7",
+  "qualified": true,
+  "python": "/opt/conda/bin/python",
+  "cli_path": "/opt/fs2/runtime_entrypoint.py",
+  "cli_key": "rfdiffusion_observed_cli.py",
+  "worker_variable": "FS2_RFDIFFUSION_WORKER_URL",
+  "compatibility": {
+    "gpu_name": "NVIDIA H100 80GB HBM3",
+    "compute_capability": "9.0",
+    "driver_version": "580.159.04",
+    "kernel_release": "6.11.0-1016-nvidia"
+  },
+  "worker_log": {
+    "sha256": "db65f86d50cbfb0485aa62cd1a2e50052649815c62b60698385b553c339688cd",
+    "bytes": 4082,
+    "mode": 420,
+    "uid": 0,
+    "gid": 0
+  },
+  "profile_model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+  "entrypoint": {
+    "configmap": "fs2-rfdiffusion-request-v1",
+    "key": "scientific_request_entrypoint.py",
+    "sha256": "3d5cdc8475b0d9544040b936484464b3fe4dbcb5b7046233a44d037917296221"
+  }
+}

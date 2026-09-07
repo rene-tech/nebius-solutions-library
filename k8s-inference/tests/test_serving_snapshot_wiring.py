@@ -9,9 +9,17 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize("model", ["qwen3-8b", "cosmos3-nano", "genmol"])
-def test_serving_snapshot_sources_are_the_exact_qualified_bytes(model):
-    bundle = json.loads((ROOT / f"acceptance/h100-fleet/snapshots/{model}-bundle.json").read_text())
+@pytest.mark.parametrize("bundle_path", [
+    "snapshots/qwen3-8b-bundle.json",
+    "snapshots/cosmos3-nano-bundle.json",
+    "snapshots/genmol-bundle.json",
+    "snapshots/diffdock-bundle.json",
+    "medical-media/cxr-snapshot-bundle.json",
+    "medical-media/segment-snapshot-bundle.json",
+    "openfold3-standalone/snapshot-bundle.json",
+])
+def test_serving_snapshot_sources_are_the_exact_qualified_bytes(bundle_path):
+    bundle = json.loads((ROOT / "acceptance/h100-fleet" / bundle_path).read_text())
     sources = ROOT / "models/scientific-snapshot"
     for name, digest in bundle["source_sha256"].items():
         assert hashlib.sha256((sources / name).read_bytes()).hexdigest() == digest

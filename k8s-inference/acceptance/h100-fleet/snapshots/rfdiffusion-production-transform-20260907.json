@@ -1,0 +1,81 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-snapshot-production-transform-acceptance/v1",
+  "date": "2026-09-07",
+  "model_id": "rfdiffusion",
+  "status": "passed",
+  "scope": "Exact production transform in isolated task Pods; original stage argv, completion writer and output validation retained. Public API/admission/collector rollout is separate.",
+  "qualification_sha256": "2dd79a4847a6be087eab86bfd9baf69c78b89ed9c2356c044e897b1ae4366dd7",
+  "runs": [
+    {
+      "actual_startup": {
+        "backend": "cuda-criu",
+        "bundle_id": "rfdiffusion-h100-cuda-criu-20260907-r3",
+        "manifest_sha256": "38230e1a6da7926330d59cc92c209f81db38b43d34f878c7a09928d3e880cd30"
+      },
+      "pod_uid": "8da341c3-67e4-46b2-b975-37cb68c66a2d",
+      "result": {
+        "residues": 76,
+        "seed": 8100,
+        "diffuser_T": 50,
+        "pdb_sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+        "native_sampler_ready_seconds": 31.237,
+        "full_wrapper_seconds": 51.022
+      },
+      "cache_metadata": {
+        "declared": "artifact-local",
+        "gpu_snapshot_used": true,
+        "note": "The one-shot supervisor completed CUDA+CRIU restore before native inference.",
+        "observed_startup": {
+          "backend": "cuda-criu",
+          "bundle_id": "rfdiffusion-h100-cuda-criu-20260907-r3",
+          "manifest_sha256": "38230e1a6da7926330d59cc92c209f81db38b43d34f878c7a09928d3e880cd30"
+        },
+        "source": "runtime-observed"
+      },
+      "original_receipt_sha256": "6c28cd05cc1606dfebec43fb30c20782e05041bee2cef5ca494bfb8c92a8cb65",
+      "log_sha256": "f5f9374d1a1a9160c2ea82d434a578884b2342f4867b7a236a9d92e9d11859bd",
+      "original_cleanup_wait_completed": false,
+      "test_pod_and_inputs_absent_verified": true,
+      "restore_components": {
+        "criu_seconds": 0.7211501350393519,
+        "cuda_restore_seconds": 0.3130149680073373,
+        "cuda_unlock_seconds": 0.09127825102768838,
+        "log_sha256": "f5f9374d1a1a9160c2ea82d434a578884b2342f4867b7a236a9d92e9d11859bd"
+      }
+    },
+    {
+      "actual_startup": {
+        "backend": "normal-load",
+        "bundle_id": "rfdiffusion-h100-cuda-criu-20260907-r3",
+        "manifest_sha256": "38230e1a6da7926330d59cc92c209f81db38b43d34f878c7a09928d3e880cd30"
+      },
+      "pod_uid": "fdd65eb6-56c6-4305-bc63-f07f7bcdb268",
+      "result": {
+        "residues": 76,
+        "seed": 8100,
+        "diffuser_T": 50,
+        "pdb_sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+        "native_sampler_ready_seconds": 37.072,
+        "full_wrapper_seconds": 57.399
+      },
+      "cache_metadata": {
+        "declared": "artifact-local",
+        "gpu_snapshot_used": false,
+        "note": "The one-shot supervisor used ordinary model loading after snapshot fallback.",
+        "observed_startup": {
+          "backend": "normal-load",
+          "bundle_id": "rfdiffusion-h100-cuda-criu-20260907-r3",
+          "manifest_sha256": "38230e1a6da7926330d59cc92c209f81db38b43d34f878c7a09928d3e880cd30"
+        },
+        "source": "runtime-observed"
+      },
+      "original_receipt_sha256": "6e7bf2d33744d65b3f069f3669070180f64333e45ded9f2335ff7fffa8b5d5f8",
+      "log_sha256": "32b187ed97a43561c69d040ecf83d9755950b800ba2b94c29a0794b5e93ea971",
+      "original_cleanup_wait_completed": false,
+      "test_pod_and_inputs_absent_verified": true,
+      "test_condition": "Only this task Pod's source-directory argument points to a nonexistent path; shared bundle and original normal command are unchanged."
+    }
+  ],
+  "cleanup_verified_at": "2026-09-07T12:46:36.102666+00:00",
+  "cleanup_note": "The first harness wait matched the inherited 90s termination grace and timed out before final Pod removal. Original receipts retain false; this later independent check confirms both Pods and input ConfigMaps absent. Retained entrypoint/source ConfigMaps and immutable shared bundle are for Terraform adoption."
+}

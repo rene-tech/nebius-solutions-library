@@ -1,0 +1,686 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-snapshot-qualification/v1",
+  "model_id": "rfdiffusion",
+  "stage_id": "inference",
+  "status": "fresh-pod-qualified",
+  "production_selectable": false,
+  "qualification_scope": "Exact model-only worker and unchanged original CLI/output validators, two original length/seed requests. The paired worker uses the frozen native CLI proxy; the production metadata-only outer CLI and one-shot renderer have separate acceptance.",
+  "date": "2026-09-07",
+  "mechanism": "cuda-criu",
+  "default": "normal-load",
+  "cache": "existing image and shared filesystem cache; no global or file cache eviction",
+  "ready_boundary": "Input-free checkpoint/model on CUDA; each request still creates its native Sampler, contigs and diffusion tables",
+  "clock_notes": [
+    "Readiness is polled from kubectl exec; observation includes polling and transport overhead.",
+    "Kubernetes container startedAt has one-second resolution; Pod-create request clock is client monotonic.",
+    "The restored worker's model_load_seconds is the donor's historical loader time, never a restore measurement.",
+    "First valid output includes deliberate post-readiness fixture localization, exec/validation overhead and full scientific computation.",
+    "No image pull, node acquisition, disk-cache eviction or reserved-RAM guarantee was exercised by these matched pairs.",
+    "Historical 34.87s RF initialization included a request's Sampler; it is not comparable to this narrower immutable-model loader boundary.",
+    "The third normal Pod waited behind another task's GPU capture (423.420s Pod-to-ready); its container-start clock excludes this scheduling delay. Existing image and shared-filesystem caches were retained, with no host cache eviction.",
+    "The first restore repetition's initial observer attempt hit a post-health Pod-status race before running either input. Its failed harness receipt is retained privately; the successful fresh-Pod retry is the measured repetition."
+  ],
+  "parameters": {
+    "diffuser_T": 50,
+    "num_designs": 1,
+    "precision": "unchanged native checkpoint/runtime"
+  },
+  "inputs": [
+    {
+      "residues": 76,
+      "seed": 8100,
+      "pdb_sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+      "normal_restore_coordinate_equality": "6/6 byte-identical"
+    },
+    {
+      "residues": 96,
+      "seed": 8200,
+      "pdb_sha256": "42831fab4e9bda74659b943f700e57d666e50c74ec04c134ab6143280673b6e4",
+      "normal_restore_coordinate_equality": "6/6 byte-identical"
+    }
+  ],
+  "bundle": {
+    "id": "rfdiffusion-h100-cuda-criu-20260907-r3",
+    "sha256": "38230e1a6da7926330d59cc92c209f81db38b43d34f878c7a09928d3e880cd30",
+    "bytes": 1409354626,
+    "file_count": 32,
+    "subpath": "rfdiffusion-current-r20260907-r3",
+    "captured_runtime_path": "/checkpoints/rfdiffusion-current-r20260907-r3",
+    "ownership": "per-file mode, UID and GID are bound into the canonical bundle manifest",
+    "storage": "existing regional shared filesystem, read-only bundle; per-Pod mutable scratch"
+  },
+  "compatibility": {
+    "generated_cache": [],
+    "runtime_identity": {
+      "compute_capability": "9.0",
+      "driver_version": "580.159.04",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "gpu_uuid": "GPU-3861d9c9-21ba-91d3-f032-10d630d65a66",
+      "kernel_release": "6.11.0-1016-nvidia",
+      "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+      "runtime_id": "rfdiffusion",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+      "snapshot_source_sha256": {
+        "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+        "rfdiffusion_cli_proxy.py": "b27ba523acf00c126036355ef7bfe1db7b7b6a5b64a3e7dd1d8acf6dde5d54c9",
+        "rfdiffusion_model_cache.py": "c9b9f1175aca4edbb3c87a138a2038bbfb3b1d348a12a4f56240a01434bebcce",
+        "rfdiffusion_runtime_entrypoint.py": "90250fe1b9a153ec87152426dae8e57ff86d8ae4b4d74173a977bc883841b7dd",
+        "rfdiffusion_server.py": "3e1391743d30e726b4260898e13ca027ba9836dc6e8fa67ebadd2060a780d93e",
+        "scientific_server.py": "6444a528a273d3d47ea0560a0580d52366688c45cf59eaf474ed720c28fb8e52",
+        "sitecustomize.py": "a85a7d973da3677dafc7dc865e88e428315a62d1bde9db15d6849aeed65f6e26",
+        "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c"
+      },
+      "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
+    },
+    "schema": "fs2-serve.nebius.ai/scientific-process-checkpoint/v1"
+  },
+  "statistics": {
+    "normal": {
+      "pod_create_request_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 13.142477639950812,
+        "min_seconds": 11.748318529687822,
+        "max_seconds": 423.4195170029998
+      },
+      "container_start_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 8.507497,
+        "min_seconds": 7.16746,
+        "max_seconds": 10.120549
+      },
+      "pod_created_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 12.120549,
+        "min_seconds": 10.507497,
+        "max_seconds": 422.16746
+      },
+      "container_start_to_first_valid_output_seconds": {
+        "n": 3,
+        "median_seconds": 65.043879,
+        "min_seconds": 64.24443,
+        "max_seconds": 67.22043
+      }
+    },
+    "restore": {
+      "pod_create_request_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 5.84077110234648,
+        "min_seconds": 5.794970178976655,
+        "max_seconds": 5.848007062450051
+      },
+      "container_start_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 3.069855,
+        "min_seconds": 3.029809,
+        "max_seconds": 3.432564
+      },
+      "pod_created_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 4.069855,
+        "min_seconds": 4.029809,
+        "max_seconds": 4.432564
+      },
+      "container_start_to_first_valid_output_seconds": {
+        "n": 3,
+        "median_seconds": 50.359811,
+        "min_seconds": 49.73158,
+        "max_seconds": 52.209198
+      }
+    }
+  },
+  "runs": [
+    {
+      "repetition": 1,
+      "mode": "normal",
+      "pod_uid": "0811f59c-82c7-439d-a50c-b64fb757429c",
+      "created_request_at": "2026-09-07T12:18:20.759199+00:00",
+      "pod_created_at": "2026-09-07T12:18:22Z",
+      "container_started_at": "2026-09-07T12:18:24Z",
+      "ready_observed_at": "2026-09-07T12:18:32.507497+00:00",
+      "pod_create_request_to_ready_seconds": 11.748318529687822,
+      "container_start_to_ready_seconds": 8.507497,
+      "pod_created_to_ready_seconds": 10.507497,
+      "container_start_to_first_valid_output_seconds": 65.043879,
+      "normal_model_loader_seconds": 4.669071769999846,
+      "cases": [
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T12:18:35.483782+00:00",
+          "finished_at": "2026-09-07T12:19:29.043879+00:00",
+          "execution_seconds": 53.56009956799994,
+          "argv_sha256": "cfedb54d8e5738c3a56cf59f9fae7aeb827fe7c79bb922a9191f291342c9dd8e",
+          "structures": [
+            {
+              "path": "designs/design_8100.pdb",
+              "bytes": 20368,
+              "sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+              "finite_atoms": 304
+            },
+            {
+              "path": "designs/traj/design_8100_Xt-1_traj.pdb",
+              "bytes": 769242,
+              "sha256": "1f46006fde07792ae7770cf288e11b2eb642db9d7abba5f1a1b19b1e7cab5072",
+              "finite_atoms": 11476
+            },
+            {
+              "path": "designs/traj/design_8100_pX0_traj.pdb",
+              "bytes": 1018750,
+              "sha256": "a6be83f69ada1c2b406f91075642ff3bcec17246f6e3c83a7e179afc63d1a826",
+              "finite_atoms": 15200
+            }
+          ]
+        },
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T12:19:34.236092+00:00",
+          "finished_at": "2026-09-07T12:20:25.586083+00:00",
+          "execution_seconds": 51.34999435200007,
+          "argv_sha256": "e5d54d6a8a13549363a4320d364da389f28c111bbc6392bae171304b49de36da",
+          "structures": [
+            {
+              "path": "designs/design_8200.pdb",
+              "bytes": 25728,
+              "sha256": "42831fab4e9bda74659b943f700e57d666e50c74ec04c134ab6143280673b6e4",
+              "finite_atoms": 384
+            },
+            {
+              "path": "designs/traj/design_8200_Xt-1_traj.pdb",
+              "bytes": 971582,
+              "sha256": "98df7739e70ec90947a02678db35273f797e0842ec2c193ac245381fb62b50e6",
+              "finite_atoms": 14496
+            },
+            {
+              "path": "designs/traj/design_8200_pX0_traj.pdb",
+              "bytes": 1286750,
+              "sha256": "db40243dc47a1c62a05b056773074deb26e083d04f62e0aaeb42f97bf6c96e5c",
+              "finite_atoms": 19200
+            }
+          ]
+        }
+      ],
+      "gpu_pod_deleted": true,
+      "original_result_checks": [
+        {
+          "residues": 76,
+          "seed": 8100,
+          "diffuser_T": 50,
+          "pdb_sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+          "native_sampler_ready_seconds": 33.231,
+          "full_wrapper_seconds": 53.429
+        },
+        {
+          "residues": 96,
+          "seed": 8200,
+          "diffuser_T": 50,
+          "pdb_sha256": "42831fab4e9bda74659b943f700e57d666e50c74ec04c134ab6143280673b6e4",
+          "native_sampler_ready_seconds": 31.604,
+          "full_wrapper_seconds": 51.217
+        }
+      ]
+    },
+    {
+      "repetition": 1,
+      "mode": "restore",
+      "pod_uid": "6db0e749-93c9-4963-9fd2-7bc01c77cf57",
+      "created_request_at": "2026-09-07T12:22:10.234857+00:00",
+      "pod_created_at": "2026-09-07T12:22:12Z",
+      "container_started_at": "2026-09-07T12:22:13Z",
+      "ready_observed_at": "2026-09-07T12:22:16.029809+00:00",
+      "pod_create_request_to_ready_seconds": 5.794970178976655,
+      "container_start_to_ready_seconds": 3.029809,
+      "pod_created_to_ready_seconds": 4.029809,
+      "container_start_to_first_valid_output_seconds": 50.359811,
+      "normal_model_loader_seconds": null,
+      "cases": [
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T12:22:19.112512+00:00",
+          "finished_at": "2026-09-07T12:23:03.359811+00:00",
+          "execution_seconds": 44.24729935000005,
+          "argv_sha256": "cfedb54d8e5738c3a56cf59f9fae7aeb827fe7c79bb922a9191f291342c9dd8e",
+          "structures": [
+            {
+              "path": "designs/design_8100.pdb",
+              "bytes": 20368,
+              "sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+              "finite_atoms": 304
+            },
+            {
+              "path": "designs/traj/design_8100_Xt-1_traj.pdb",
+              "bytes": 769242,
+              "sha256": "1f46006fde07792ae7770cf288e11b2eb642db9d7abba5f1a1b19b1e7cab5072",
+              "finite_atoms": 11476
+            },
+            {
+              "path": "designs/traj/design_8100_pX0_traj.pdb",
+              "bytes": 1018750,
+              "sha256": "a6be83f69ada1c2b406f91075642ff3bcec17246f6e3c83a7e179afc63d1a826",
+              "finite_atoms": 15200
+            }
+          ]
+        },
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T12:23:08.582392+00:00",
+          "finished_at": "2026-09-07T12:23:54.856500+00:00",
+          "execution_seconds": 46.274113139000065,
+          "argv_sha256": "e5d54d6a8a13549363a4320d364da389f28c111bbc6392bae171304b49de36da",
+          "structures": [
+            {
+              "path": "designs/design_8200.pdb",
+              "bytes": 25728,
+              "sha256": "42831fab4e9bda74659b943f700e57d666e50c74ec04c134ab6143280673b6e4",
+              "finite_atoms": 384
+            },
+            {
+              "path": "designs/traj/design_8200_Xt-1_traj.pdb",
+              "bytes": 971582,
+              "sha256": "98df7739e70ec90947a02678db35273f797e0842ec2c193ac245381fb62b50e6",
+              "finite_atoms": 14496
+            },
+            {
+              "path": "designs/traj/design_8200_pX0_traj.pdb",
+              "bytes": 1286750,
+              "sha256": "db40243dc47a1c62a05b056773074deb26e083d04f62e0aaeb42f97bf6c96e5c",
+              "finite_atoms": 19200
+            }
+          ]
+        }
+      ],
+      "gpu_pod_deleted": true,
+      "original_result_checks": [
+        {
+          "residues": 76,
+          "seed": 8100,
+          "diffuser_T": 50,
+          "pdb_sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+          "native_sampler_ready_seconds": 24.007,
+          "full_wrapper_seconds": 44.116
+        },
+        {
+          "residues": 96,
+          "seed": 8200,
+          "diffuser_T": 50,
+          "pdb_sha256": "42831fab4e9bda74659b943f700e57d666e50c74ec04c134ab6143280673b6e4",
+          "native_sampler_ready_seconds": 26.839,
+          "full_wrapper_seconds": 46.136
+        }
+      ],
+      "actual_restore": {
+        "criu_seconds": 0.6715369629998804,
+        "cuda_restore_seconds": 0.24186695399998825,
+        "cuda_unlock_seconds": 0.015108490999864443,
+        "log_sha256": "569b2eb0873d7dba0e5db46710f995e02647683ac793c59b622459c64dec0e4d"
+      }
+    },
+    {
+      "repetition": 2,
+      "mode": "normal",
+      "pod_uid": "be6cbc1d-cd1a-45d3-8be7-89841b82c6f9",
+      "created_request_at": "2026-09-07T12:23:59.978091+00:00",
+      "pod_created_at": "2026-09-07T12:24:01Z",
+      "container_started_at": "2026-09-07T12:24:03Z",
+      "ready_observed_at": "2026-09-07T12:24:13.120549+00:00",
+      "pod_create_request_to_ready_seconds": 13.142477639950812,
+      "container_start_to_ready_seconds": 10.120549,
+      "pod_created_to_ready_seconds": 12.120549,
+      "container_start_to_first_valid_output_seconds": 67.22043,
+      "normal_model_loader_seconds": 4.66969809200009,
+      "cases": [
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T12:24:16.200933+00:00",
+          "finished_at": "2026-09-07T12:25:10.220430+00:00",
+          "execution_seconds": 54.01948348299993,
+          "argv_sha256": "cfedb54d8e5738c3a56cf59f9fae7aeb827fe7c79bb922a9191f291342c9dd8e",
+          "structures": [
+            {
+              "path": "designs/design_8100.pdb",
+              "bytes": 20368,
+              "sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+              "finite_atoms": 304
+            },
+            {
+              "path": "designs/traj/design_8100_Xt-1_traj.pdb",
+              "bytes": 769242,
+              "sha256": "1f46006fde07792ae7770cf288e11b2eb642db9d7abba5f1a1b19b1e7cab5072",
+              "finite_atoms": 11476
+            },
+            {
+              "path": "designs/traj/design_8100_pX0_traj.pdb",
+              "bytes": 1018750,
+              "sha256": "a6be83f69ada1c2b406f91075642ff3bcec17246f6e3c83a7e179afc63d1a826",
+              "finite_atoms": 15200
+            }
+          ]
+        },
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T12:25:15.418605+00:00",
+          "finished_at": "2026-09-07T12:25:57.188841+00:00",
+          "execution_seconds": 41.77023826100003,
+          "argv_sha256": "e5d54d6a8a13549363a4320d364da389f28c111bbc6392bae171304b49de36da",
+          "structures": [
+            {
+              "path": "designs/design_8200.pdb",
+              "bytes": 25728,
+              "sha256": "42831fab4e9bda74659b943f700e57d666e50c74ec04c134ab6143280673b6e4",
+              "finite_atoms": 384
+            },
+            {
+              "path": "designs/traj/design_8200_Xt-1_traj.pdb",
+              "bytes": 971582,
+              "sha256": "98df7739e70ec90947a02678db35273f797e0842ec2c193ac245381fb62b50e6",
+              "finite_atoms": 14496
+            },
+            {
+              "path": "designs/traj/design_8200_pX0_traj.pdb",
+              "bytes": 1286750,
+              "sha256": "db40243dc47a1c62a05b056773074deb26e083d04f62e0aaeb42f97bf6c96e5c",
+              "finite_atoms": 19200
+            }
+          ]
+        }
+      ],
+      "gpu_pod_deleted": true,
+      "original_result_checks": [
+        {
+          "residues": 76,
+          "seed": 8100,
+          "diffuser_T": 50,
+          "pdb_sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+          "native_sampler_ready_seconds": 33.582,
+          "full_wrapper_seconds": 53.889
+        },
+        {
+          "residues": 96,
+          "seed": 8200,
+          "diffuser_T": 50,
+          "pdb_sha256": "42831fab4e9bda74659b943f700e57d666e50c74ec04c134ab6143280673b6e4",
+          "native_sampler_ready_seconds": 22.299,
+          "full_wrapper_seconds": 41.633
+        }
+      ]
+    },
+    {
+      "repetition": 2,
+      "mode": "restore",
+      "pod_uid": "ba32ef76-625d-4ab2-8a8a-0d5a763e45e2",
+      "created_request_at": "2026-09-07T12:26:02.229099+00:00",
+      "pod_created_at": "2026-09-07T12:26:04Z",
+      "container_started_at": "2026-09-07T12:26:05Z",
+      "ready_observed_at": "2026-09-07T12:26:08.069855+00:00",
+      "pod_create_request_to_ready_seconds": 5.84077110234648,
+      "container_start_to_ready_seconds": 3.069855,
+      "pod_created_to_ready_seconds": 4.069855,
+      "container_start_to_first_valid_output_seconds": 49.73158,
+      "normal_model_loader_seconds": null,
+      "cases": [
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T12:26:11.139668+00:00",
+          "finished_at": "2026-09-07T12:26:54.731580+00:00",
+          "execution_seconds": 43.591916456000035,
+          "argv_sha256": "cfedb54d8e5738c3a56cf59f9fae7aeb827fe7c79bb922a9191f291342c9dd8e",
+          "structures": [
+            {
+              "path": "designs/design_8100.pdb",
+              "bytes": 20368,
+              "sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+              "finite_atoms": 304
+            },
+            {
+              "path": "designs/traj/design_8100_Xt-1_traj.pdb",
+              "bytes": 769242,
+              "sha256": "1f46006fde07792ae7770cf288e11b2eb642db9d7abba5f1a1b19b1e7cab5072",
+              "finite_atoms": 11476
+            },
+            {
+              "path": "designs/traj/design_8100_pX0_traj.pdb",
+              "bytes": 1018750,
+              "sha256": "a6be83f69ada1c2b406f91075642ff3bcec17246f6e3c83a7e179afc63d1a826",
+              "finite_atoms": 15200
+            }
+          ]
+        },
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T12:26:59.930830+00:00",
+          "finished_at": "2026-09-07T12:27:46.194380+00:00",
+          "execution_seconds": 46.2635535469999,
+          "argv_sha256": "e5d54d6a8a13549363a4320d364da389f28c111bbc6392bae171304b49de36da",
+          "structures": [
+            {
+              "path": "designs/design_8200.pdb",
+              "bytes": 25728,
+              "sha256": "42831fab4e9bda74659b943f700e57d666e50c74ec04c134ab6143280673b6e4",
+              "finite_atoms": 384
+            },
+            {
+              "path": "designs/traj/design_8200_Xt-1_traj.pdb",
+              "bytes": 971582,
+              "sha256": "98df7739e70ec90947a02678db35273f797e0842ec2c193ac245381fb62b50e6",
+              "finite_atoms": 14496
+            },
+            {
+              "path": "designs/traj/design_8200_pX0_traj.pdb",
+              "bytes": 1286750,
+              "sha256": "db40243dc47a1c62a05b056773074deb26e083d04f62e0aaeb42f97bf6c96e5c",
+              "finite_atoms": 19200
+            }
+          ]
+        }
+      ],
+      "gpu_pod_deleted": true,
+      "original_result_checks": [
+        {
+          "residues": 76,
+          "seed": 8100,
+          "diffuser_T": 50,
+          "pdb_sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+          "native_sampler_ready_seconds": 23.429,
+          "full_wrapper_seconds": 43.457
+        },
+        {
+          "residues": 96,
+          "seed": 8200,
+          "diffuser_T": 50,
+          "pdb_sha256": "42831fab4e9bda74659b943f700e57d666e50c74ec04c134ab6143280673b6e4",
+          "native_sampler_ready_seconds": 26.434,
+          "full_wrapper_seconds": 46.127
+        }
+      ],
+      "actual_restore": {
+        "criu_seconds": 0.6622620729999653,
+        "cuda_restore_seconds": 0.2570102189999943,
+        "cuda_unlock_seconds": 0.014705424000112544,
+        "log_sha256": "47b608127ebea3338b36327c467104c287a0932a72542f1f03de8ad741ac077f"
+      }
+    },
+    {
+      "repetition": 3,
+      "mode": "normal",
+      "pod_uid": "69ff2db3-569e-4382-b9e7-ddb1f990fa71",
+      "created_request_at": "2026-09-07T12:27:51.747959+00:00",
+      "pod_created_at": "2026-09-07T12:27:53Z",
+      "container_started_at": "2026-09-07T12:34:48Z",
+      "ready_observed_at": "2026-09-07T12:34:55.167460+00:00",
+      "pod_create_request_to_ready_seconds": 423.4195170029998,
+      "container_start_to_ready_seconds": 7.16746,
+      "pod_created_to_ready_seconds": 422.16746,
+      "container_start_to_first_valid_output_seconds": 64.24443,
+      "normal_model_loader_seconds": 4.860485168000196,
+      "cases": [
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T12:34:58.211752+00:00",
+          "finished_at": "2026-09-07T12:35:52.244430+00:00",
+          "execution_seconds": 54.03267963400003,
+          "argv_sha256": "cfedb54d8e5738c3a56cf59f9fae7aeb827fe7c79bb922a9191f291342c9dd8e",
+          "structures": [
+            {
+              "path": "designs/design_8100.pdb",
+              "bytes": 20368,
+              "sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+              "finite_atoms": 304
+            },
+            {
+              "path": "designs/traj/design_8100_Xt-1_traj.pdb",
+              "bytes": 769242,
+              "sha256": "1f46006fde07792ae7770cf288e11b2eb642db9d7abba5f1a1b19b1e7cab5072",
+              "finite_atoms": 11476
+            },
+            {
+              "path": "designs/traj/design_8100_pX0_traj.pdb",
+              "bytes": 1018750,
+              "sha256": "a6be83f69ada1c2b406f91075642ff3bcec17246f6e3c83a7e179afc63d1a826",
+              "finite_atoms": 15200
+            }
+          ]
+        },
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T12:35:57.488997+00:00",
+          "finished_at": "2026-09-07T12:36:42.721863+00:00",
+          "execution_seconds": 45.232868799000244,
+          "argv_sha256": "e5d54d6a8a13549363a4320d364da389f28c111bbc6392bae171304b49de36da",
+          "structures": [
+            {
+              "path": "designs/design_8200.pdb",
+              "bytes": 25728,
+              "sha256": "42831fab4e9bda74659b943f700e57d666e50c74ec04c134ab6143280673b6e4",
+              "finite_atoms": 384
+            },
+            {
+              "path": "designs/traj/design_8200_Xt-1_traj.pdb",
+              "bytes": 971582,
+              "sha256": "98df7739e70ec90947a02678db35273f797e0842ec2c193ac245381fb62b50e6",
+              "finite_atoms": 14496
+            },
+            {
+              "path": "designs/traj/design_8200_pX0_traj.pdb",
+              "bytes": 1286750,
+              "sha256": "db40243dc47a1c62a05b056773074deb26e083d04f62e0aaeb42f97bf6c96e5c",
+              "finite_atoms": 19200
+            }
+          ]
+        }
+      ],
+      "gpu_pod_deleted": true,
+      "original_result_checks": [
+        {
+          "residues": 76,
+          "seed": 8100,
+          "diffuser_T": 50,
+          "pdb_sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+          "native_sampler_ready_seconds": 33.166,
+          "full_wrapper_seconds": 53.895
+        },
+        {
+          "residues": 96,
+          "seed": 8200,
+          "diffuser_T": 50,
+          "pdb_sha256": "42831fab4e9bda74659b943f700e57d666e50c74ec04c134ab6143280673b6e4",
+          "native_sampler_ready_seconds": 24.734,
+          "full_wrapper_seconds": 45.092
+        }
+      ]
+    },
+    {
+      "repetition": 3,
+      "mode": "restore",
+      "pod_uid": "a1d98086-da17-4327-8eee-754388e686e6",
+      "created_request_at": "2026-09-07T12:36:48.584575+00:00",
+      "pod_created_at": "2026-09-07T12:36:50Z",
+      "container_started_at": "2026-09-07T12:36:51Z",
+      "ready_observed_at": "2026-09-07T12:36:54.432564+00:00",
+      "pod_create_request_to_ready_seconds": 5.848007062450051,
+      "container_start_to_ready_seconds": 3.432564,
+      "pod_created_to_ready_seconds": 4.432564,
+      "container_start_to_first_valid_output_seconds": 52.209198,
+      "normal_model_loader_seconds": null,
+      "cases": [
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T12:36:57.500481+00:00",
+          "finished_at": "2026-09-07T12:37:43.209198+00:00",
+          "execution_seconds": 45.708721348999916,
+          "argv_sha256": "cfedb54d8e5738c3a56cf59f9fae7aeb827fe7c79bb922a9191f291342c9dd8e",
+          "structures": [
+            {
+              "path": "designs/design_8100.pdb",
+              "bytes": 20368,
+              "sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+              "finite_atoms": 304
+            },
+            {
+              "path": "designs/traj/design_8100_Xt-1_traj.pdb",
+              "bytes": 769242,
+              "sha256": "1f46006fde07792ae7770cf288e11b2eb642db9d7abba5f1a1b19b1e7cab5072",
+              "finite_atoms": 11476
+            },
+            {
+              "path": "designs/traj/design_8100_pX0_traj.pdb",
+              "bytes": 1018750,
+              "sha256": "a6be83f69ada1c2b406f91075642ff3bcec17246f6e3c83a7e179afc63d1a826",
+              "finite_atoms": 15200
+            }
+          ]
+        },
+        {
+          "status": "passed",
+          "started_at": "2026-09-07T12:37:48.814997+00:00",
+          "finished_at": "2026-09-07T12:38:36.201481+00:00",
+          "execution_seconds": 47.38648635799973,
+          "argv_sha256": "e5d54d6a8a13549363a4320d364da389f28c111bbc6392bae171304b49de36da",
+          "structures": [
+            {
+              "path": "designs/design_8200.pdb",
+              "bytes": 25728,
+              "sha256": "42831fab4e9bda74659b943f700e57d666e50c74ec04c134ab6143280673b6e4",
+              "finite_atoms": 384
+            },
+            {
+              "path": "designs/traj/design_8200_Xt-1_traj.pdb",
+              "bytes": 971582,
+              "sha256": "98df7739e70ec90947a02678db35273f797e0842ec2c193ac245381fb62b50e6",
+              "finite_atoms": 14496
+            },
+            {
+              "path": "designs/traj/design_8200_pX0_traj.pdb",
+              "bytes": 1286750,
+              "sha256": "db40243dc47a1c62a05b056773074deb26e083d04f62e0aaeb42f97bf6c96e5c",
+              "finite_atoms": 19200
+            }
+          ]
+        }
+      ],
+      "gpu_pod_deleted": true,
+      "original_result_checks": [
+        {
+          "residues": 76,
+          "seed": 8100,
+          "diffuser_T": 50,
+          "pdb_sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+          "native_sampler_ready_seconds": 24.749,
+          "full_wrapper_seconds": 45.571
+        },
+        {
+          "residues": 96,
+          "seed": 8200,
+          "diffuser_T": 50,
+          "pdb_sha256": "42831fab4e9bda74659b943f700e57d666e50c74ec04c134ab6143280673b6e4",
+          "native_sampler_ready_seconds": 27.452,
+          "full_wrapper_seconds": 47.245
+        }
+      ],
+      "actual_restore": {
+        "criu_seconds": 0.687729040999784,
+        "cuda_restore_seconds": 0.24506537800016304,
+        "cuda_unlock_seconds": 0.015623745000084455,
+        "log_sha256": "63a776d27a182ffda391cc7f35da8bf8835ac1e66c70d03ce9eef289c58b6508"
+      }
+    }
+  ],
+  "private_receipt_sha256": "05e621537a85f037c390bc27cdbbfd12d1245d1ac290bd8cfcb5cc3bc7153058"
+}

@@ -25,6 +25,7 @@ from .snapshot_metadata import (
 )
 
 CAPTURED_TMP_PATH = "/tmp"  # noqa: S108 - captured per-Pod emptyDir mount, never host tmp
+DEFAULT_SUPERVISOR_PATH = "/tools/usr/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 
 class ServingSnapshotBundle(StrictModel):
@@ -51,6 +52,9 @@ class ServingSnapshotBundle(StrictModel):
     captured_pod_ip: str
     image_entrypoint: list[str] = Field(min_length=1, max_length=16)
     runtime_command: list[str] = Field(min_length=1, max_length=128)
+    supervisor_python: str = Field(default="python3", min_length=1, max_length=1024)
+    supervisor_path: str = Field(default=DEFAULT_SUPERVISOR_PATH, min_length=1, max_length=4096)
+    address_python: str = Field(default="python3", min_length=1, max_length=1024)
     fallback_command_prefix: list[str] = Field(
         default_factory=lambda: ["python3", "/snapshot-source/serving_launcher.py"],
         min_length=2,
@@ -128,7 +132,7 @@ def configure_serving_snapshot(
         raise ValueError("serving snapshot differs from the current runtime image or original arguments")
     directory = "/checkpoints/" + config.bundle_path
     runtime["command"] = [
-        "python3",
+        config.supervisor_python,
         "/snapshot-entrypoint/serving_entrypoint.py",
         "--directory",
         directory,
@@ -161,7 +165,7 @@ def configure_serving_snapshot(
         "FS2_SNAPSHOT_READY_FILE": directory + "/runtime-ready.json",
         "USE_LIBUV": "0",
         "FLASHINFER_WORKSPACE_BASE": directory + "/cache/flashinfer-workspace",
-        "PATH": "/tools/usr/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "PATH": config.supervisor_path,
     }
     runtime["env"] = [item for item in runtime.get("env", []) if item["name"] not in values]
     runtime["env"].extend({"name": key, "value": value} for key, value in values.items())
@@ -240,7 +244,7 @@ def configure_serving_snapshot(
     address_initializer = {
         "name": "snapshot-local-address",
         "image": runtime["image"],
-        "command": ["python3", "/snapshot-address/restore_loopback_address.py", config.captured_pod_ip],
+        "command": [config.address_python, "/snapshot-address/restore_loopback_address.py", config.captured_pod_ip],
         "env": [{"name": "NVIDIA_VISIBLE_DEVICES", "value": "void"}],
         "securityContext": {
             "runAsUser": 0,
@@ -253,10 +257,19 @@ def configure_serving_snapshot(
     }
     prepare_worker_log_shadow(initializer, runtime, directory, config.worker_log)
     pod_spec.setdefault("initContainers", [])[:0] = [address_initializer, initializer]
+    readiness_probe = runtime.get("readinessProbe")
+    if not isinstance(readiness_probe, dict):
+        raise ValueError("serving snapshot requires the original readiness probe")
+    if "startupProbe" not in runtime:
+        # Some qualified serving images use a long-failure-threshold readiness
+        # probe instead of a distinct startup probe. Preserve that exact gate
+        # for the snapshot supervisor rather than hiding an otherwise valid
+        # bundle from the admin configuration options.
+        runtime["startupProbe"] = copy.deepcopy(readiness_probe)
     for name in ("startupProbe", "readinessProbe"):
         probe = runtime.get(name)
         if not isinstance(probe, dict):
             raise ValueError("serving snapshot requires the original startup and readiness probes")
         for handler in ("httpGet", "tcpSocket", "grpc", "exec"):
             probe.pop(handler, None)
-        probe["exec"] = {"command": ["python3", "/snapshot-entrypoint/serving_entrypoint.py", "ready"]}
+        probe["exec"] = {"command": [config.supervisor_python, "/snapshot-entrypoint/serving_entrypoint.py", "ready"]}

@@ -29,8 +29,11 @@ def main():
             raise ValueError(
                 f"bundle contains an unsupported non-regular entry: {path.relative_to(root)}"
             )
+        checksum = hashlib.sha256()
         with path.open("rb") as stream:
-            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                checksum.update(block)
+        digest = checksum.hexdigest()
         files.append(
             {
                 "path": str(path.relative_to(root)),

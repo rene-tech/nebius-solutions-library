@@ -1,0 +1,110 @@
+{
+  "schema": "fs2-serve.nebius.ai/model-only-snapshot-assessment/v1",
+  "date": "2026-09-07",
+  "mechanism_assessed": "cuda-criu-model-only",
+  "accelerator_class": "nvidia-h100-sxm5-80gb",
+  "decision": "keep-normal-load",
+  "gpu_trials_started": 0,
+  "reason_no_gpu_trials": "Neither accepted one-shot runtime has a reusable input-independent GPU-resident boundary. Capturing an input-bound process could appear fast but would not be a valid changed-input model snapshot.",
+  "models": [
+    {
+      "model_id": "proteina-complexa",
+      "variant_id": "upstream-dev-20260827",
+      "runtime_image_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+      "model_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+      "assessment": "no-clean-input-independent-gpu-boundary",
+      "selectable": false,
+      "fresh_pod_restore_passed": false,
+      "distinct_inputs_passed": 0,
+      "normal_startup": {
+        "clock": "container-start-to-native-cfg-gen-marker",
+        "cache_condition": "current image and shared model files retained; fresh process; no eviction",
+        "n": 3,
+        "median_seconds": 30.263,
+        "min_seconds": 29.961,
+        "max_seconds": 30.359
+      },
+      "observed_model_load": {
+        "clock": "upstream-using-checkpoint-log-to-native-cfg-gen-marker",
+        "samples_seconds": [
+          8.64,
+          8.739,
+          8.239
+        ],
+        "median_seconds": 8.64,
+        "min_seconds": 8.239,
+        "max_seconds": 8.739,
+        "share_of_initialized_clock_percent": 28.55,
+        "share_of_native_generation_median_percent": 15.965,
+        "share_of_public_completion_median_percent": 3.531,
+        "note": "This interval includes Proteina.load_from_checkpoint, partial-autoencoder replacement when required, LoRA recreation/reload when required, and configure_inference; it is not a CUDA-ready boundary."
+      },
+      "other_observed_clocks": {
+        "native_generation_median_seconds": 54.12,
+        "public_request_to_validated_completion_median_seconds": 244.666453
+      },
+      "source_findings": [
+        "The accepted runtime entrypoint launches a new upstream Python subprocess for each request.",
+        "load_ckpt_n_configure_inference loads the model and autoencoder on CPU and binds the request's generation configuration before cfg_gen is logged.",
+        "The request-specific target, seed, output root and DataLoader are resolved before Lightning Trainer.predict performs GPU placement.",
+        "A post-placement capture would retain request-bound Hydra configuration, target/DataLoader state and output state.",
+        "Protein, ligand and AME are different checkpoint pairs; ligand and AME also recreate LoRA state, and AME selects a different architecture. One bundle cannot represent all three variants."
+      ],
+      "required_successor": "A versioned persistent worker per checkpoint/architecture/LoRA variant must load and explicitly place only immutable model state on CUDA before accepting requests, then rebuild the exact Hydra config, target, DataLoader, seed, output and validation state for every call. It must pass two original requests per supported variant before any snapshot is selectable.",
+      "evidence": {
+        "startup_report": "../../scientific-startup/current/primary-h100-20260907.json",
+        "startup_report_sha256": "058b21b3367654fcd8cfa1fe08249386668f01589d5fedd881019bcdee9d9cba",
+        "runtime_entrypoint": "../../../models/cancer-immunotherapy/runtime-images/proteina-complexa/runtime_entrypoint.py",
+        "runtime_entrypoint_sha256": "81cf6cb493cc37dfc2cd04753e18ef97f72b37f4094526aa76a5aa0a8f14093f",
+        "upstream_generate_sha256": "87966f47cd72564eaf8ada57a698f51e9e9a541d3d57c1af0e970bc915e684fe",
+        "upstream_proteina_sha256": "3860f99b97cc82464db9b044451a1248afbbb494ad486540b79a06d4e1c25942",
+        "public_semantic_acceptance": "../scientific-regression-20260907/proteina-complexa.json"
+      }
+    },
+    {
+      "model_id": "boltzgen",
+      "variant_id": "upstream-v0-3-2",
+      "runtime_image_digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+      "model_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+      "assessment": "no-clean-single-model-snapshot-boundary",
+      "selectable": false,
+      "fresh_pod_restore_passed": false,
+      "distinct_inputs_passed": 0,
+      "normal_startup": {
+        "clock": "container-start-to-post-restore-prediction-loop-start-after-cuda-sync",
+        "cache_condition": "current image and two immutable shared model/reference-data mounts retained; fresh process; no eviction",
+        "n": 3,
+        "median_seconds": 36.051575,
+        "min_seconds": 33.897238,
+        "max_seconds": 36.159712
+      },
+      "observed_work": {
+        "isolated_design_valid_output_median_seconds": 288.319133,
+        "post_initialized_design_work_median_seconds": 252.298904,
+        "initialized_window_share_of_isolated_design_percent": 12.504,
+        "current_public_multistage_completion_seconds": 1239.973564,
+        "initialized_window_share_of_public_multistage_completion_percent": 2.907
+      },
+      "source_findings": [
+        "The measured safe CUDA boundary is _PredictionLoop._on_predict_start after Trainer.predict has already received the request-specific DataModule.",
+        "The Predict object also retains the request-specific writer, output path and sampling arguments; freezing it is not an input-independent model snapshot.",
+        "The first design checkpoint is loaded on CPU and placed by Lightning, while predict_step deliberately loads the second design checkpoint halfway through the accepted 20-candidate run. A startup snapshot does not eliminate that mid-run checkpoint load.",
+        "The production workflow runs configure, design, inverse-folding, folding, design-folding and optional affinity as separate stage processes with different checkpoints and request-derived workspace handoffs. A single process image cannot accelerate the full route.",
+        "The accepted analysis memory bound remains num_processes=1, data.cfg.num_workers=0 and pin_memory=false; this assessment changes none of those settings."
+      ],
+      "required_successor": "A safe implementation requires separately versioned persistent workers for the design, inverse-folding, folding/design-folding and optional affinity model identities. Each must preload only immutable CUDA model state, accept a stage request after restore, rebuild the original DataModule/writer/workspace state, retain the mid-run design checkpoint switch, and pass two original inputs plus the complete bounded multistage validator before selection.",
+      "evidence": {
+        "startup_report": "../../scientific-startup/current/boltz-h100-20260907.json",
+        "startup_report_sha256": "360622f810afdc776fd8dc0811d474042270abd7ed9eaabae511c4979ea92994",
+        "runtime_driver": "../../../models/cancer-immunotherapy/runtime-images/boltzgen/qualification/runtime_driver.py",
+        "runtime_driver_sha256": "00672fa265f230927a185407a2a85925ef4631f93b211f86b5e4251fd60c400c",
+        "upstream_predict_sha256": "6f077e537c1c1addbd320ba8f935b8a886d425975f40e78e339e446ab024efcb",
+        "upstream_cli_sha256": "56b1f311b8499cbee43ae79a6b5a1435cebe907923e8a7418c9e74e7e487c01b",
+        "upstream_model_sha256": "7686c1046e1e82c9c05dfbc970f1ec3b76a17142563d61ed80f0e35893daa953",
+        "public_semantic_acceptance": "../scientific-regression-20260907/boltzgen.json"
+      }
+    }
+  ],
+  "production_effect": "none",
+  "resource_effect": "No workload, Pod, GPU, PVC, ConfigMap, capacity, quota, runtime argument or resource limit was created or changed for this assessment."
+}

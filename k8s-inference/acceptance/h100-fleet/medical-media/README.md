@@ -211,6 +211,97 @@ verifier attempts are retained: operations succeeded, but the initial harness
 incorrectly compared a dynamic deployment revision with the HF weight revision.
 That is verifier calibration evidence, not a model execution failure.
 
+## Optional CXR GPU snapshot
+
+The exact current CXR image and original settings passed three matched normal
+loads and three fresh, donor-deleted CUDA+CRIU restores on H100. Both original
+non-clinical X-rays passed every run. The optional bundle is qualified for the
+isolated serving worker; production selection/public acceptance remain a
+separate release step. Normal loading remains the default.
+
+| Boundary, median (min–max), n=3 per mode | Normal | Restore |
+|---|---:|---:|
+| Container start → observed application ready | 83.307 s (82.390–84.316) | 55.350 s (50.440–72.280) |
+| Pod-create request → observed application ready | 88.989 s (88.319–89.074) | 62.397 s (57.886–79.722) |
+
+See [cxr-snapshot-qualification.json](cxr-snapshot-qualification.json) and
+[cxr-snapshot-bundle.json](cxr-snapshot-bundle.json). The matched normal cohort
+includes the same snapshot-compatible standard-asyncio/USE_LIBUV plumbing;
+the earlier native-loader baseline is a separate cohort. Image, BF16, single
+GPU, 8,192 context, one concurrent sequence and 0.85 GPU-memory utilization
+are unchanged. Readiness requires the completed CUDA restore event followed
+by HTTP health, not Kubernetes Ready alone. The donor's original-fixture
+prefix/encoder cache is retained; output latency is not a cold-input inference
+comparison. Other bounded cluster work and shared-FS caches are retained;
+there is no host cache eviction, reserved-RAM or new-node claim.
+
+Capture history is deliberately retained:
+
+| Capture storage | Result |
+|---|---|
+| Direct shared FS, r02 | CRIU exceeded unchanged 600-second timeout; donor recovered |
+| Task 128-GiB block disk, r03 | Same timeout; donor recovered |
+| Same task disk expanded to 256 GiB, r05 | CUDA checkpoint 28.008 s; CRIU 573.783 s; required fsync 35.350 s; passed |
+
+The 75,188,424,537-byte bundle was copied once to the existing shared snapshot
+claim, subpath `cxr-r05`, preserving bytes, modes and ownership. Full source/
+destination verification passed at 11:51:23 UTC, with no metadata correction
+needed. Its immutable manifest digest is
+`4b4f374c81b855f5c7d3155aea0969a2d146e67575468626343215512d589274`.
+All donors, first-restore, paired-trial and CPU-copy Pods are deleted. Source
+claim `fs2-mm-cxr-snapshot-capture-20260907`, PV
+`pvc-8d712a22-532f-4458-a8b2-0771d0237d8a`, disk
+`computedisk-e00q00y257f9m140xm` remains retained, including failed capture
+cohorts. The never-started r04 scheduling/resize attempt is not a timing trial.
+
+Reproduce using `cxr_snapshot_probe.py` create/observe/validate/capture/delete,
+`cxr_snapshot_copy.py`, then the shared `run_serving_pairs.py` and
+`report_serving_pairs.py`; private artifacts are under
+`medical-media/cxr-snapshot`. Never apply fsGroup recursively to the shared
+snapshot claim. Do not shorten the model context or memory allocation to
+manufacture a smaller snapshot.
+
+See [snapshot-candidates.md](snapshot-candidates.md) for the measured state-size
+assessment of Segment, SDXL and two-GPU Evo2. Candidate status is not a restore
+measurement or a universal hardware-support claim.
+
+## Optional Segment GPU snapshot
+
+The exact NV-Segment-CT image passed three matched normal loads and three fresh
+donor-deleted CUDA+CRIU restores. Both original synthetic CT requests passed on
+every trial, retaining the unchanged 35-voxel and 204-voxel masks and full
+NIfTI/envelope checks. This is non-clinical benchmark data, not patient evidence.
+
+| Boundary, median (min–max), n=3 per mode | Normal | Restore |
+|---|---:|---:|
+| Container start → observed application ready | 12.782 s (12.227–12.791) | 8.498 s (6.863–8.771) |
+| Pod-create request → observed application ready | 17.758 s (17.569–17.777) | 14.525 s (14.448–14.663) |
+
+The gain is modest in absolute terms: approximately 3.23 seconds at the
+Pod-create-request boundary. See
+[segment-snapshot-qualification.json](segment-snapshot-qualification.json) and
+[segment-snapshot-bundle.json](segment-snapshot-bundle.json). Each mode uses the
+same existing image, weight cache, resource limits and exact model settings.
+The frozen v8 working-directory launcher preserves `/vllm-workspace`, UID/GID
+1000 and the literal native Python/server command. Original inputs were also
+used before capture; this is not unseen-input evidence. Health is checked only
+after actual CUDA restore completion. Existing shared-FS caches are retained,
+without a disk-cold, new-node or reserved-RAM claim.
+
+Capture succeeded with 1.195 seconds CUDA checkpoint, 62.358 seconds CRIU dump
+and 0.575 seconds required fsync. The 3,204,989,911-byte/298-file bundle was
+flushed and hashed after donor deletion. It is retained on the existing shared
+snapshot claim, subpath `segment-r01`; qualification manifest digest
+`fb5a0598d39ed4f626c6f4a118980fbbced8af8a34d0f42d639c381b72bfdd87`.
+All donor, first-restore, six trial and CPU publication Pods are deleted.
+Production option/public tests are a separate release step; normal-load stays
+the default.
+
+Reproduce with `small_media_snapshot_probe.py --model nv-segment-ct`,
+`publish_existing_bundle.py`, and the shared pair/report/bundle helpers. The
+private lifecycle, image, Pod, GPU and original-output receipts are under
+`medical-media/segment-snapshot`.
+
 ## Reproduction
 
 Run `probe.py --help` for bounded create/validate/delete actions. Use a distinct

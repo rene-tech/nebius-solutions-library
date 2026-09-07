@@ -1,0 +1,316 @@
+{
+  "schema": "fs2-serve.nebius.ai/serving-snapshot-qualification/v1",
+  "model_id": "openfold3",
+  "status": "fresh-pod-qualified",
+  "date": "2026-09-07",
+  "mechanism": "cuda-criu",
+  "default": "normal-load",
+  "production_selectable": false,
+  "qualification_scope": "isolated exact-image serving worker; production renderer and fallback rollout are separate",
+  "cache": "existing images and localized weights; shared snapshot filesystem cache retained, no eviction or reserved-RAM guarantee",
+  "ready_boundary": "application HTTP health after supervisor completed CUDA+CRIU restoration; normal trials use the original server health endpoint",
+  "clock_notes": [
+    "Every trial starts a fresh Pod; restore cannot pass from HTTP health alone before CUDA completion.",
+    "Kubernetes container timestamps have one-second resolution; Pod-create request clock is client monotonic.",
+    "Health polling includes kubectl transport and observation delay. First input may still compile request-specific kernels.",
+    "Both-full-outputs clock includes two sequential inputs and client validation; it is not first-output latency or a pure inference benchmark.",
+    "Existing image, weight and shared-filesystem caches are retained. No host cache eviction, node acquisition or reserved-RAM guarantee.",
+    "The optional bridge changes only snapshot compatibility plumbing, not model image, precision, GPU memory utilization, output shape or generation steps.",
+    "OpenFold3 retains the exact native bash activation, working directory and UID/GID; only the snapshot supervisor PATH includes the image's pinned conda Python."
+  ],
+  "statistics": {
+    "normal": {
+      "pod_create_request_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 41.689322136342525,
+        "min_seconds": 35.709573712199926,
+        "max_seconds": 41.707242691889405
+      },
+      "container_start_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 37.451009,
+        "min_seconds": 30.806292,
+        "max_seconds": 37.916337
+      },
+      "container_start_to_both_full_outputs_seconds": {
+        "n": 3,
+        "median_seconds": 61.870445,
+        "min_seconds": 54.789106,
+        "max_seconds": 64.939511
+      }
+    },
+    "restore": {
+      "pod_create_request_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 14.397808181121945,
+        "min_seconds": 14.197015224024653,
+        "max_seconds": 14.406597623601556
+      },
+      "container_start_to_ready_seconds": {
+        "n": 3,
+        "median_seconds": 9.817203,
+        "min_seconds": 9.446171,
+        "max_seconds": 9.882581
+      },
+      "container_start_to_both_full_outputs_seconds": {
+        "n": 3,
+        "median_seconds": 31.157791,
+        "min_seconds": 30.626859,
+        "max_seconds": 32.449439
+      }
+    }
+  },
+  "runs": [
+    {
+      "mode": "normal",
+      "repetition": 1,
+      "pod_uid": "6b913073-7002-40ee-9be2-1a297408cb0f",
+      "created_request_at": "2026-09-07T12:06:13.096727+00:00",
+      "pod_created_at": "2026-09-07T12:06:14Z",
+      "container_started_at": "2026-09-07T12:06:18Z",
+      "ready_observed_at": "2026-09-07T12:06:48.806292+00:00",
+      "pod_create_request_to_ready_seconds": 35.709573712199926,
+      "both_full_outputs_observed_at": "2026-09-07T12:07:12.789106+00:00",
+      "container_start_to_ready_seconds": 30.806292,
+      "container_start_to_both_full_outputs_seconds": 54.789106,
+      "requests": [
+        {
+          "id": "fs2-of3-public-a",
+          "started_at": "2026-09-07T12:06:52.476121+00:00",
+          "finished_at": "2026-09-07T12:07:04.179195+00:00",
+          "seconds": 11.703064911998808,
+          "input_sha256": "f60e849fd5264226f19c045a25ad1e0365ac6a6e6d50f4fbea4b606227e28825",
+          "response_sha256": "41ffb2b3c1ac5c10cabb26498838f4de4f808c9b271a963dc6d8bdbe85f79038",
+          "bytes": 22121,
+          "passed": true
+        },
+        {
+          "id": "fs2-of3-public-b",
+          "started_at": "2026-09-07T12:07:04.179263+00:00",
+          "finished_at": "2026-09-07T12:07:12.683590+00:00",
+          "seconds": 8.50434297323227,
+          "input_sha256": "d5e1d5c1de3600034f213c961b40d18c69c3ec9130da7302bd8902893a340766",
+          "response_sha256": "49bc059ab1740ff677e1471376a935f30be975b421ae7d6320da4b6368cde8a2",
+          "bytes": 22121,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "restore",
+      "repetition": 1,
+      "pod_uid": "ab966fea-9d81-461b-9f2c-35233fb71d45",
+      "created_request_at": "2026-09-07T12:07:16.685574+00:00",
+      "pod_created_at": "2026-09-07T12:07:18Z",
+      "container_started_at": "2026-09-07T12:07:21Z",
+      "ready_observed_at": "2026-09-07T12:07:30.882581+00:00",
+      "pod_create_request_to_ready_seconds": 14.197015224024653,
+      "both_full_outputs_observed_at": "2026-09-07T12:07:52.157791+00:00",
+      "container_start_to_ready_seconds": 9.882581,
+      "container_start_to_both_full_outputs_seconds": 31.157791,
+      "requests": [
+        {
+          "id": "fs2-of3-public-a",
+          "started_at": "2026-09-07T12:07:34.541393+00:00",
+          "finished_at": "2026-09-07T12:07:43.167919+00:00",
+          "seconds": 8.626563639380038,
+          "input_sha256": "f60e849fd5264226f19c045a25ad1e0365ac6a6e6d50f4fbea4b606227e28825",
+          "response_sha256": "515d96bd2e720324ac6aba0e80bc67f1c461e69ec0a22dc3b53c841acacbb2b1",
+          "bytes": 22287,
+          "passed": true
+        },
+        {
+          "id": "fs2-of3-public-b",
+          "started_at": "2026-09-07T12:07:43.168061+00:00",
+          "finished_at": "2026-09-07T12:07:52.048073+00:00",
+          "seconds": 8.880023614503443,
+          "input_sha256": "d5e1d5c1de3600034f213c961b40d18c69c3ec9130da7302bd8902893a340766",
+          "response_sha256": "c611f89b8425dd434679a18dc78e619c81a62c562f9fd73c0c860f2f57fc24bd",
+          "bytes": 22120,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "normal",
+      "repetition": 2,
+      "pod_uid": "58068f1a-1632-4b0d-8932-836d5a3092e5",
+      "created_request_at": "2026-09-07T12:07:55.761694+00:00",
+      "pod_created_at": "2026-09-07T12:07:57Z",
+      "container_started_at": "2026-09-07T12:08:00Z",
+      "ready_observed_at": "2026-09-07T12:08:37.451009+00:00",
+      "pod_create_request_to_ready_seconds": 41.689322136342525,
+      "both_full_outputs_observed_at": "2026-09-07T12:09:01.870445+00:00",
+      "container_start_to_ready_seconds": 37.451009,
+      "container_start_to_both_full_outputs_seconds": 61.870445,
+      "requests": [
+        {
+          "id": "fs2-of3-public-a",
+          "started_at": "2026-09-07T12:08:41.094028+00:00",
+          "finished_at": "2026-09-07T12:08:52.840038+00:00",
+          "seconds": 11.74600593186915,
+          "input_sha256": "f60e849fd5264226f19c045a25ad1e0365ac6a6e6d50f4fbea4b606227e28825",
+          "response_sha256": "d00883beaf5cc5e80dea664f37b158014f4cd3e93dd7b258b01203d18d6de065",
+          "bytes": 21953,
+          "passed": true
+        },
+        {
+          "id": "fs2-of3-public-b",
+          "started_at": "2026-09-07T12:08:52.840132+00:00",
+          "finished_at": "2026-09-07T12:09:01.762369+00:00",
+          "seconds": 8.922252720221877,
+          "input_sha256": "d5e1d5c1de3600034f213c961b40d18c69c3ec9130da7302bd8902893a340766",
+          "response_sha256": "261e66bbdc0945bd31e24bcdb9b8443b8d3d28a2b4b48dea245c24965de004a7",
+          "bytes": 21787,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "restore",
+      "repetition": 2,
+      "pod_uid": "c1d6f022-9328-46af-a683-c9284b795edf",
+      "created_request_at": "2026-09-07T12:09:06.048367+00:00",
+      "pod_created_at": "2026-09-07T12:09:07Z",
+      "container_started_at": "2026-09-07T12:09:11Z",
+      "ready_observed_at": "2026-09-07T12:09:20.446171+00:00",
+      "pod_create_request_to_ready_seconds": 14.397808181121945,
+      "both_full_outputs_observed_at": "2026-09-07T12:09:41.626859+00:00",
+      "container_start_to_ready_seconds": 9.446171,
+      "container_start_to_both_full_outputs_seconds": 30.626859,
+      "requests": [
+        {
+          "id": "fs2-of3-public-a",
+          "started_at": "2026-09-07T12:09:24.071221+00:00",
+          "finished_at": "2026-09-07T12:09:32.773466+00:00",
+          "seconds": 8.702231989242136,
+          "input_sha256": "f60e849fd5264226f19c045a25ad1e0365ac6a6e6d50f4fbea4b606227e28825",
+          "response_sha256": "6927c38f2dbfeebc07b890d6aeabd4b6438d6a207780f9764616add2ce6dd23d",
+          "bytes": 22454,
+          "passed": true
+        },
+        {
+          "id": "fs2-of3-public-b",
+          "started_at": "2026-09-07T12:09:32.773534+00:00",
+          "finished_at": "2026-09-07T12:09:41.517103+00:00",
+          "seconds": 8.743585508316755,
+          "input_sha256": "d5e1d5c1de3600034f213c961b40d18c69c3ec9130da7302bd8902893a340766",
+          "response_sha256": "96f4d458f14b20c0c7f924d95e782d7270a295807e143734b4d3d7969d981453",
+          "bytes": 22288,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "normal",
+      "repetition": 3,
+      "pod_uid": "afe4b354-d95f-4199-93f9-83092b4bd06a",
+      "created_request_at": "2026-09-07T12:09:45.209098+00:00",
+      "pod_created_at": "2026-09-07T12:09:46Z",
+      "container_started_at": "2026-09-07T12:09:49Z",
+      "ready_observed_at": "2026-09-07T12:10:26.916337+00:00",
+      "pod_create_request_to_ready_seconds": 41.707242691889405,
+      "both_full_outputs_observed_at": "2026-09-07T12:10:53.939511+00:00",
+      "container_start_to_ready_seconds": 37.916337,
+      "container_start_to_both_full_outputs_seconds": 64.939511,
+      "requests": [
+        {
+          "id": "fs2-of3-public-a",
+          "started_at": "2026-09-07T12:10:30.579695+00:00",
+          "finished_at": "2026-09-07T12:10:43.768976+00:00",
+          "seconds": 13.189272828400135,
+          "input_sha256": "f60e849fd5264226f19c045a25ad1e0365ac6a6e6d50f4fbea4b606227e28825",
+          "response_sha256": "17b22fef0ab2a16cd4ab9f4aaeb2c8d4861d876aa256bb1dd50a840da2806c80",
+          "bytes": 22289,
+          "passed": true
+        },
+        {
+          "id": "fs2-of3-public-b",
+          "started_at": "2026-09-07T12:10:43.769058+00:00",
+          "finished_at": "2026-09-07T12:10:53.826967+00:00",
+          "seconds": 10.057922097854316,
+          "input_sha256": "d5e1d5c1de3600034f213c961b40d18c69c3ec9130da7302bd8902893a340766",
+          "response_sha256": "df76834ed8ef4e8313e0a3ca23f827df01a5da6389e65244b6896d959d53170b",
+          "bytes": 21950,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    },
+    {
+      "mode": "restore",
+      "repetition": 3,
+      "pod_uid": "3ca88a0b-5bdf-4236-93fb-2cc1fcb0a87e",
+      "created_request_at": "2026-09-07T12:10:57.410608+00:00",
+      "pod_created_at": "2026-09-07T12:10:59Z",
+      "container_started_at": "2026-09-07T12:11:02Z",
+      "ready_observed_at": "2026-09-07T12:11:11.817203+00:00",
+      "pod_create_request_to_ready_seconds": 14.406597623601556,
+      "both_full_outputs_observed_at": "2026-09-07T12:11:34.449439+00:00",
+      "container_start_to_ready_seconds": 9.817203,
+      "container_start_to_both_full_outputs_seconds": 32.449439,
+      "requests": [
+        {
+          "id": "fs2-of3-public-a",
+          "started_at": "2026-09-07T12:11:16.060465+00:00",
+          "finished_at": "2026-09-07T12:11:25.013325+00:00",
+          "seconds": 8.952846077270806,
+          "input_sha256": "f60e849fd5264226f19c045a25ad1e0365ac6a6e6d50f4fbea4b606227e28825",
+          "response_sha256": "3721a05d3686d3cad353bcf0db5dc6d410b48f2651cfd0a997071f54d9c6e39e",
+          "bytes": 21953,
+          "passed": true
+        },
+        {
+          "id": "fs2-of3-public-b",
+          "started_at": "2026-09-07T12:11:25.013394+00:00",
+          "finished_at": "2026-09-07T12:11:34.341064+00:00",
+          "seconds": 9.327685724943876,
+          "input_sha256": "d5e1d5c1de3600034f213c961b40d18c69c3ec9130da7302bd8902893a340766",
+          "response_sha256": "0b9e311a9ca39855b1ac6c481d71c572e9be2ce1bf25f495e116322b527e650d",
+          "bytes": 21786,
+          "passed": true
+        }
+      ],
+      "gpu_pod_deleted": true
+    }
+  ],
+  "semantic_scope": "original two standalone Preview2 20-aa request IDs, also used before capture; not unseen-input evidence or the OpenBind scientific profile",
+  "compatibility": {
+    "generated_cache": [],
+    "runtime_identity": {
+      "compute_capability": "9.0",
+      "driver_version": "580.159.04",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "gpu_uuid": "GPU-56941528-f485-5237-c98a-08e1f253a9c3",
+      "kernel_release": "6.11.0-1016-nvidia",
+      "model_revision": "4a0eaeaeae8ca1d815d0a97d8eb45d639b91a47e",
+      "runtime_id": "openfold3",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+      "snapshot_source_sha256": {
+        "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+        "serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+        "serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+        "serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+        "serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+        "sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+        "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c",
+        "working_directory_launcher.py": "3bd73d58a3278a732170c6501cbc9f2bc7f731966abb7ceae987450d73fe5c1b"
+      },
+      "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
+    },
+    "schema": "fs2-serve.nebius.ai/scientific-process-checkpoint/v1"
+  },
+  "bundle": {
+    "manifest_schema": "captured-content-and-filesystem-metadata/v1",
+    "manifest_sha256": "9494710486412a4bfd004effe6b92e456bcc12c1c92a7a06f632031d5ec54ea0",
+    "bytes": 11341560585,
+    "entry_count": 119,
+    "storage": "existing shared filesystem; read-only captured bundle, private per-Pod writable scratch"
+  },
+  "private_receipt_sha256": "374125f2fc85230c598ba44cd5ac7b87ecadac2df79916feb0c1c7c09412dacf",
+  "publication_receipt_sha256": "6159da1bed9c4308a3cb250e1bb67462825d9617f41bf45b1b9a2e8c1e3256d0"
+}

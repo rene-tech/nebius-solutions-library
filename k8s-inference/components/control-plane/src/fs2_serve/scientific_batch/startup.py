@@ -30,6 +30,8 @@ CAPTURED_TMP_PATH = "/tmp"  # noqa: S108 - per-Pod emptyDir at the captured runt
 class _StageSnapshotAdapter:
     cli: tuple[str, str, str, str]
     sources: frozenset[str]
+    entrypoint_key: str | None = None
+    pythonpath: str | None = None
 
 
 _ESMFOLD_ADAPTER = _StageSnapshotAdapter(
@@ -45,6 +47,17 @@ _STAGE_SNAPSHOT_ADAPTERS = {
     ),
     ("esmfold2", "fold"): _ESMFOLD_ADAPTER,
     ("esmfold2-fast", "fold"): _ESMFOLD_ADAPTER,
+    ("rfdiffusion", "inference"): _StageSnapshotAdapter(
+        ("/opt/conda/bin/python", "/opt/fs2/runtime_entrypoint.py", "rfdiffusion_observed_cli.py",
+         "FS2_RFDIFFUSION_WORKER_URL"),
+        frozenset({
+            "supervisor.py", "process_checkpoint.py", "scientific_server.py", "rfdiffusion_server.py",
+            "rfdiffusion_model_cache.py", "rfdiffusion_cli_proxy.py", "rfdiffusion_runtime_entrypoint.py",
+            "sitecustomize.py",
+        }),
+        entrypoint_key="scientific_request_entrypoint.py",
+        pythonpath="/snapshot-source:/opt/rfdiffusion",
+    ),
 }
 
 
@@ -112,7 +125,7 @@ def validate_bundle(value: Any, bundle_id: str) -> dict[str, Any]:
         "worker_variable",
         "compatibility",
     }
-    if not isinstance(value, Mapping) or set(value) - {"worker_log"} != fields:
+    if not isinstance(value, Mapping) or set(value) - {"worker_log", "entrypoint"} != fields:
         raise ValueError("scientific snapshot bundle fields differ")
     bundle = copy.deepcopy(dict(value))
     if "worker_log" in bundle:
@@ -129,6 +142,20 @@ def validate_bundle(value: Any, bundle_id: str) -> dict[str, Any]:
     adapter = _STAGE_SNAPSHOT_ADAPTERS.get((bundle["model_id"], bundle["stage_id"]))
     if adapter is None:
         raise ValueError("snapshot bundle has no qualified scientific stage adapter")
+    entrypoint = bundle.get("entrypoint")
+    if adapter.entrypoint_key is None:
+        if "entrypoint" in bundle:
+            raise ValueError("snapshot adapter retains its captured supervisor entrypoint")
+    elif (
+        not isinstance(entrypoint, dict)
+        or set(entrypoint) != {"configmap", "key", "sha256"}
+        or entrypoint["key"] != adapter.entrypoint_key
+        or not isinstance(entrypoint["configmap"], str)
+        or re.fullmatch(r"[a-z0-9][a-z0-9.-]{0,252}", entrypoint["configmap"]) is None
+        or not isinstance(entrypoint["sha256"], str)
+        or re.fullmatch(r"[a-f0-9]{64}", entrypoint["sha256"]) is None
+    ):
+        raise ValueError("snapshot adapter requires its exact versioned request entrypoint")
     for field in ("runtime_image", "tools_image"):
         if not isinstance(bundle[field], str) or re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", bundle[field]) is None:
             raise ValueError("snapshot bundle images must be immutable")
@@ -201,6 +228,7 @@ def apply_startup_policy(pod: dict[str, Any], policy: StageStartupPolicy, *, req
         return pod
     assert policy.bundle_json is not None
     config = json.loads(policy.bundle_json)
+    adapter = _STAGE_SNAPSHOT_ADAPTERS[(config["model_id"], config["stage_id"])]
     if request_uid != 10001:
         raise ValueError("snapshot bundle requires the captured scientific workspace identity")
     result = copy.deepcopy(pod)
@@ -213,7 +241,8 @@ def apply_startup_policy(pod: dict[str, Any], policy: StageStartupPolicy, *, req
     directory = "/checkpoints/" + config["bundle_path"]
     runtime["command"] = [
         config["python"],
-        "/snapshot-source/supervisor.py",
+        "/snapshot-entrypoint/" + config["entrypoint"]["key"]
+        if adapter.entrypoint_key is not None else "/snapshot-source/supervisor.py",
         "--directory",
         directory,
         "--source-directory",
@@ -231,6 +260,11 @@ def apply_startup_policy(pod: dict[str, Any], policy: StageStartupPolicy, *, req
         "--",
         *original_command,
     ]
+    if adapter.entrypoint_key is not None:
+        offset = runtime["command"].index("restore")
+        runtime["command"][offset:offset] = [
+            "--bundle-id", config["bundle_id"], "--manifest-sha256", config["manifest_sha256"],
+        ]
     runtime["securityContext"] = {
         "runAsUser": 0,
         "runAsGroup": 0,
@@ -247,6 +281,17 @@ def apply_startup_policy(pod: dict[str, Any], policy: StageStartupPolicy, *, req
             {"name": "FS2_RUNTIME_ID", "value": config["model_id"]},
         ]
     )
+    if adapter.pythonpath is not None:
+        runtime["env"] = [item for item in runtime["env"] if item["name"] != "PYTHONPATH"]
+        runtime["env"].append({"name": "PYTHONPATH", "value": adapter.pythonpath})
+    if adapter.entrypoint_key is not None:
+        runtime["volumeMounts"].append({
+            "name": "snapshot-entrypoint", "mountPath": "/snapshot-entrypoint", "readOnly": True,
+        })
+        spec["volumes"].append({
+            "name": "snapshot-entrypoint",
+            "configMap": {"name": config["entrypoint"]["configmap"], "defaultMode": 292},
+        })
     runtime["volumeMounts"].extend(
         [
             {"name": "snapshot-tools", "mountPath": "/tools"},

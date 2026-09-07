@@ -63,10 +63,11 @@ function mockReadSurface() {
 }
 
 describe("ModelDeployment workspace", () => {
-  it.each(["qwen3-8b", "cosmos3-nano"])("selects a qualified %s snapshot and normal loading through existing preview fields", async (modelRef) => {
+  it.each(["qwen3-8b", "cosmos3-nano", "genmol", "diffdock"])("selects a qualified %s snapshot and normal loading through existing preview fields", async (modelRef) => {
     const capabilities = structuredClone(modelDeploymentMutationCapabilitiesFixture);
     const option = capabilities.configuration_options[0]!;
     option.model_ref = option.default_spec.modelRef = modelRef;
+    option.default_spec.cache.tier = modelRef === "diffdock" ? "NodeLocal" : "SharedFilesystem";
     option.default_spec.cache.snapshotPreference = "Never";
     option.default_spec.cache.snapshotRef = null;
     option.gpu_snapshot_choices = [{
@@ -88,7 +89,7 @@ describe("ModelDeployment workspace", () => {
     fireEvent.change(screen.getByLabelText("Snapshot fallback"), { target: { value: "Require" } });
     fireEvent.click(screen.getByRole("button", { name: "Preview render plan" }));
     await waitFor(() => expect(plan).toHaveBeenCalledWith(expect.objectContaining({ spec: expect.objectContaining({
-      cache: { tier: "SharedFilesystem", snapshotPreference: "Require", mechanism: null,
+      cache: { tier: option.default_spec.cache.tier, snapshotPreference: "Require", mechanism: null,
         snapshotRef: { name: `${modelRef}-h100-v1`, digest: `sha256:${"f".repeat(64)}`, strategy: "CudaCheckpoint" } },
       placement: option.default_spec.placement,
       availability: option.default_spec.availability,
