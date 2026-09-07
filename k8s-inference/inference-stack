@@ -1749,7 +1749,8 @@ def existing_controller_ownership(
 
     The initial receipt still proves the transition. Later model/template
     changes do not invalidate that transition when the same accepted state
-    already has a single controller owner and no legacy serving objects.
+    already has a single GPU controller owner and no legacy GPU serving objects.
+    Exact static CPU services are a separate Terraform-owned lane.
     """
     state_path = run_root / "workloads.tfstate"
     if not handoff_receipt or state_path.is_symlink() or not state_path.is_file():
@@ -1773,6 +1774,24 @@ def existing_controller_ownership(
             or accepted != handoff_receipt
         ):
             return False
+        cpu_resources = set()
+        for resource in resources:
+            if (
+                resource.get("mode") != "managed"
+                or resource.get("type") != "terraform_data"
+                or resource.get("name") != "cpu_model_runtime_contract"
+                or resource.get("module")
+            ):
+                continue
+            for instance in resource.get("instances", []):
+                cpu = instance["attributes"]["input"]["value"]
+                for document in (cpu["deployment"], cpu["service_manifest"]):
+                    metadata = document["metadata"]
+                    cpu_resources.add((document["kind"], metadata["namespace"], metadata["name"]))
+                deployment = cpu["deployment"]
+                account = deployment["spec"]["template"]["spec"].get("serviceAccountName")
+                if account:
+                    cpu_resources.add(("ServiceAccount", deployment["metadata"]["namespace"], account))
         for resource in resources:
             if resource.get("mode") != "managed" or resource.get("type") != "kubernetes_manifest":
                 continue
@@ -1781,6 +1800,9 @@ def existing_controller_ownership(
             if resource.get("name") == "model":
                 for instance in resource.get("instances", []):
                     manifest = instance["attributes"]["manifest"]["value"]
+                    metadata = manifest.get("metadata", {})
+                    if (manifest.get("kind"), metadata.get("namespace"), metadata.get("name")) in cpu_resources:
+                        continue
                     if manifest.get("kind") in {"Deployment", "Service", "ServiceAccount", "ConfigMap"}:
                         return False
         return True

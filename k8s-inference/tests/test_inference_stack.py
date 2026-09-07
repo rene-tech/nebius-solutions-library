@@ -279,6 +279,26 @@ class InferenceStackTests(unittest.TestCase):
             save()
             self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
             state["resources"].pop()
+            cpu_deployment = {"kind": "Deployment", "metadata": {"name": "msa", "namespace": "models"},
+                              "spec": {"template": {"spec": {"serviceAccountName": "msa"}}}}
+            cpu_service = {"kind": "Service", "metadata": {"name": "msa", "namespace": "models"}}
+            state["resources"].append(resource("cpu_model_runtime_contract", {
+                "deployment": cpu_deployment, "service_manifest": cpu_service,
+            }))
+            state["resources"].append({"mode": "managed", "type": "kubernetes_manifest", "name": "model",
+                "instances": [{"attributes": {"manifest": {"value": document}}} for document in (
+                    cpu_deployment, cpu_service,
+                    {"kind": "ServiceAccount", "metadata": {"name": "msa", "namespace": "models"}},
+                )]})
+            save()
+            self.assertTrue(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
+            state["resources"][-1]["instances"].append({"attributes": {"manifest": {"value": {
+                "kind": "Deployment", "metadata": {"name": "legacy-gpu", "namespace": "models"},
+            }}}})
+            save()
+            self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
+            state["resources"].pop()
+            state["resources"].pop()
             controller["workload_owner"] = "terraform"
             save()
             self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
