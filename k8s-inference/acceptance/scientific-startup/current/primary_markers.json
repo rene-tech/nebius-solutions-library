@@ -1,0 +1,36 @@
+{
+  "schema": "fs2-serve.nebius.ai/primary-startup-markers/v1",
+  "markers": {
+    "bindcraft": {
+      "status": "requires-benchmark-loader-hook",
+      "reason": "The production wrapper emits no post-load/pre-design timestamp of its own."
+    },
+    "boltzgen": {
+      "patterns": [
+        "Restored all states from the checkpoint",
+        "Predicting DataLoader"
+      ],
+      "source": "models/cancer-immunotherapy/runtime-images/boltzgen/qualification/runtime_driver.py",
+      "status": "public-diagnostic-marker-only",
+      "reason": "LOCAL_RANK and generic weight-load messages can precede checkpoint restoration or final device placement and are intentionally excluded. Final measurements use the exact post-restore prediction-loop hook and CUDA synchronization documented in boltz-h100-20260907.json."
+    },
+    "mosaic": {
+      "status": "requires-benchmark-loader-hook",
+      "reason": "The production wrapper first emits an optimizer progress row only after initial model execution."
+    },
+    "proteina-complexa": {
+      "patterns": [
+        "cfg_gen:"
+      ],
+      "source": "models/cancer-immunotherapy/runtime-images/proteina-complexa/runtime_entrypoint.py",
+      "status": "upstream-internal-log-marker"
+    },
+    "rfdiffusion": {
+      "patterns": [
+        "Making design "
+      ],
+      "source": "models/cancer-immunotherapy/runtime-images/rfdiffusion/runtime_entrypoint.py",
+      "status": "production-log-marker"
+    }
+  }
+}

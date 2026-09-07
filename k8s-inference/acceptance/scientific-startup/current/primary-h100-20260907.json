@@ -1,0 +1,283 @@
+{
+  "schema": "fs2-serve.nebius.ai/current-primary-startup/v1",
+  "generated_at": "2026-09-07T06:26:26Z",
+  "baseline_solution_source": "7154700489774a43c26fcf389c8adbb54c4586cb",
+  "deployed_platform_source": "adf1d8423e9b75afc5ba208baf53e479e7793922",
+  "measured_on": {
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+    "cluster_context": "k8s-inference-h100",
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "gpu_pool": "h100-reserved-8x",
+    "node_group_id": "mk8snodegroup-e00zswm0km7v78tp2m",
+    "capacity_block_group_id": "capacityblockgroup-e00hfp6svlho8hsoywvzx",
+    "node_ids": [
+      "computeinstance-e00m0hsph76ajt9sdb",
+      "computeinstance-e00p3acr87k9k4mckj"
+    ],
+    "capacity_type": "retained capacity-block; not preemptible"
+  },
+  "scenario": {
+    "condition": "fresh model process on an existing cached node",
+    "image_cache": "runtime images were already present on the measured nodes",
+    "artifact_cache": "immutable model/reference-data mounts remained localized and unchanged",
+    "fresh_workspace": "isolated trials used a fresh emptyDir; public trials used normal fresh stage workspaces",
+    "not_measured": [
+      "disk-cold download",
+      "new-node provisioning",
+      "GPU snapshot restore",
+      "fully shape-warmed first inference"
+    ],
+    "concurrency": "trials used separately allocated GPUs but overlapped on shared H100 nodes with other authorized benchmark work; this is not dedicated-node peak performance",
+    "mutations": "no runtime image, weights, precision, inference settings, resource limit, quota, driver, GPU mode, production policy or production service was changed"
+  },
+  "clock_resolution": {
+    "pod_created_at": "Kubernetes UTC, one-second resolution",
+    "container_started_at": "Kubernetes UTC, one-second resolution",
+    "native_log_markers": "upstream application UTC, millisecond resolution",
+    "isolated_markers": "benchmark hook UTC plus process monotonic clock, microsecond serialization"
+  },
+  "result": {
+    "status": "passed",
+    "assigned_models": 5,
+    "startup_trials": 15,
+    "startup_trials_passed": 15,
+    "valid_output_trials": 15,
+    "valid_output_trials_passed": 15,
+    "percentiles_reported": false
+  },
+  "models": [
+    {
+      "model_id": "proteina-complexa",
+      "variant_id": "upstream-dev-20260827",
+      "method": "unchanged public scientific workflow plus upstream internal-log capture",
+      "boundary": "native cfg_gen marker after checkpoint/model initialization and immediately before generation",
+      "runtime_image_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+      "execution_identity_sha256": "2bd08c94b090780ed2e4b5edd2c22361dadf302e089d0f32a1990618243a58e9",
+      "resource_envelope": {
+        "requests": {"cpu": "8", "memory": "96Gi", "ephemeral-storage": "32Gi", "nvidia.com/gpu": "1"},
+        "limits": {"cpu": "8", "memory": "96Gi", "ephemeral-storage": "32Gi", "nvidia.com/gpu": "1"}
+      },
+      "statistics_seconds": {
+        "request_accept_to_initialized": {"n": 3, "min": 38.747925, "median": 38.844517, "max": 39.69649},
+        "pod_create_to_initialized": {"n": 3, "min": 38.359, "median": 39.263, "max": 39.961},
+        "container_start_to_initialized": {"n": 3, "min": 29.961, "median": 30.263, "max": 30.359},
+        "request_accept_to_complete_validated_public_result": {"n": 3, "min": 244.550999, "median": 244.666453, "max": 245.075328}
+      },
+      "trials": [
+        {
+          "repetition": 1,
+          "operation_id": "0ffb789f-e3f1-424e-be55-3ec4a89071d0",
+          "pod_uid": "356115c0-ab64-4d00-b7a5-f73e75c9bffa",
+          "request_accepted_at": "2026-09-07T06:15:50.611075Z",
+          "pod_created_at": "2026-09-07T06:15:51Z",
+          "container_started_at": "2026-09-07T06:15:59Z",
+          "initialized_at": "2026-09-07T06:16:29.359Z",
+          "public_result_completed_at": "2026-09-07T06:19:55.686403Z",
+          "container_start_to_initialized_seconds": 30.359,
+          "pod_create_to_initialized_seconds": 38.359,
+          "request_accept_to_initialized_seconds": 38.747925,
+          "request_accept_to_complete_validated_result_seconds": 245.075328,
+          "terminal_state": "passed",
+          "public_receipt_sha256": "8855cb4fd443c26616a5802f2f28ed1e1c07029c7e34e84a65dc0e639180cf2b",
+          "native_log_sha256": "d067b0c8dac20fcc6a9909994a5269f37ed058d574fcbb2b7343e4754e709bdf"
+        },
+        {
+          "repetition": 2,
+          "operation_id": "439bb08a-d8a3-4d7f-953d-ed3438691707",
+          "pod_uid": "918b4762-5f10-4b50-a241-260327903272",
+          "request_accepted_at": "2026-09-07T06:17:57.264510Z",
+          "pod_created_at": "2026-09-07T06:17:57Z",
+          "container_started_at": "2026-09-07T06:18:07Z",
+          "initialized_at": "2026-09-07T06:18:36.961Z",
+          "public_result_completed_at": "2026-09-07T06:22:01.930963Z",
+          "container_start_to_initialized_seconds": 29.961,
+          "pod_create_to_initialized_seconds": 39.961,
+          "request_accept_to_initialized_seconds": 39.69649,
+          "request_accept_to_complete_validated_result_seconds": 244.666453,
+          "terminal_state": "passed",
+          "public_receipt_sha256": "7382d968e6075c2ee87d865e0019f87a4a67163ecd5d52f16f04f5c05240647a",
+          "native_log_sha256": "b69f3565a51900a4956874aa34a935573c8bb430e13638a651c7dde442ce3980"
+        },
+        {
+          "repetition": 3,
+          "operation_id": "10b4baa7-2aef-4191-b39d-b68b248e2734",
+          "pod_uid": "e2255a71-f4f1-4292-a658-b0ce45d26f1f",
+          "request_accepted_at": "2026-09-07T06:17:59.418483Z",
+          "pod_created_at": "2026-09-07T06:17:59Z",
+          "container_started_at": "2026-09-07T06:18:08Z",
+          "initialized_at": "2026-09-07T06:18:38.263Z",
+          "public_result_completed_at": "2026-09-07T06:22:03.969482Z",
+          "container_start_to_initialized_seconds": 30.263,
+          "pod_create_to_initialized_seconds": 39.263,
+          "request_accept_to_initialized_seconds": 38.844517,
+          "request_accept_to_complete_validated_result_seconds": 244.550999,
+          "terminal_state": "passed",
+          "public_receipt_sha256": "04fdd4f5251bd314ae2fcca3ae2f010f2c874cd4972ae7baca00967a9c78b5e1",
+          "native_log_sha256": "c5bcf74db85a27bdadfbd16224368f3653d7247295da3061b41658c8e6649ee0"
+        }
+      ],
+      "excluded_successful_controls": [
+        {"operation_id": "e9b73b55-f40c-41ba-8e05-11753c8b210e", "reason": "valid public output but upstream cfg_gen file was not retained", "receipt_sha256": "00850ec7284dec3cbfb154e3ad8cf51d5446392af44cd33bcf41bdbeafc1e54e"},
+        {"operation_id": "c51698c8-f7c2-4a37-8ff2-fe6227cdb310", "reason": "valid public output but observer did not capture cfg_gen before successful Pod cleanup", "receipt_sha256": "96f564036d400f6956bdbed1befd0f34a7f31efd488604cf16a30afbc1115315"}
+      ]
+    },
+    {
+      "model_id": "rfdiffusion",
+      "variant_id": "rfdiffusion-v1-1-0",
+      "method": "unchanged public scientific workflow and native timestamped stdout",
+      "boundary": "native Making design marker after checkpoint load and sampler construction",
+      "runtime_image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+      "execution_identity_sha256": "17e096976c25c72fe992895f566fb204c80e0e4505ac5bd8d88253a3b82f3de7",
+      "resource_envelope": {
+        "requests": {"cpu": "8", "memory": "48Gi", "ephemeral-storage": "16Gi", "nvidia.com/gpu": "1"},
+        "limits": {"cpu": "16", "memory": "64Gi", "ephemeral-storage": "32Gi", "nvidia.com/gpu": "1"}
+      },
+      "statistics_seconds": {
+        "request_accept_to_initialized": {"n": 3, "min": 36.189687, "median": 44.044714, "max": 48.729011},
+        "pod_create_to_initialized": {"n": 3, "min": 36.027, "median": 43.872, "max": 48.187},
+        "container_start_to_initialized": {"n": 3, "min": 27.027, "median": 34.872, "max": 39.187},
+        "request_accept_to_complete_validated_public_result": {"n": 3, "min": 73.679104, "median": 79.866133, "max": 86.959066}
+      },
+      "trials": [
+        {
+          "repetition": 1,
+          "operation_id": "63134365-9620-42e6-bb0f-7284b95f1c33",
+          "pod_uid": "76556787-ce27-4fe0-90d4-d89aa0122373",
+          "request_accepted_at": "2026-09-07T05:50:55.457989Z",
+          "pod_created_at": "2026-09-07T05:50:56Z",
+          "container_started_at": "2026-09-07T05:51:05Z",
+          "initialized_at": "2026-09-07T05:51:44.187Z",
+          "public_result_completed_at": "2026-09-07T05:52:22.417055Z",
+          "container_start_to_initialized_seconds": 39.187,
+          "pod_create_to_initialized_seconds": 48.187,
+          "request_accept_to_initialized_seconds": 48.729011,
+          "request_accept_to_complete_validated_result_seconds": 86.959066,
+          "terminal_state": "passed",
+          "public_receipt_sha256": "ab1d2ab5dda1b4cd95ce9f557457e3885f3d80c5bf008cf3136a5f6c7c033cc6",
+          "native_log_sha256": "5c4f05134269ef1c0ff4a51f4dc88ad9917763e8196b9ecfc7b6f6888aa83600"
+        },
+        {
+          "repetition": 2,
+          "operation_id": "c08eefb2-eb27-4bf3-ad97-84ba23ab1243",
+          "pod_uid": "f66c4cdc-0ad9-4268-ae25-730471312237",
+          "request_accepted_at": "2026-09-07T06:07:20.837313Z",
+          "pod_created_at": "2026-09-07T06:07:21Z",
+          "container_started_at": "2026-09-07T06:07:30Z",
+          "initialized_at": "2026-09-07T06:07:57.027Z",
+          "public_result_completed_at": "2026-09-07T06:08:34.516417Z",
+          "container_start_to_initialized_seconds": 27.027,
+          "pod_create_to_initialized_seconds": 36.027,
+          "request_accept_to_initialized_seconds": 36.189687,
+          "request_accept_to_complete_validated_result_seconds": 73.679104,
+          "terminal_state": "passed",
+          "public_receipt_sha256": "5524cc8b8d05215df702380456445430e9ac445819c8a4ac7d7f33ee982e7428",
+          "native_log_sha256": "ac3b63e543115a290483c4a056fcb9ff9e5480147f75d409d089b9e3ea746bd7"
+        },
+        {
+          "repetition": 3,
+          "operation_id": "6af069ef-b88a-45a6-89ef-5c5988005448",
+          "pod_uid": "5ca467df-1dbe-41b0-a77d-e7f9d82402c4",
+          "request_accepted_at": "2026-09-07T06:09:10.827286Z",
+          "pod_created_at": "2026-09-07T06:09:11Z",
+          "container_started_at": "2026-09-07T06:09:20Z",
+          "initialized_at": "2026-09-07T06:09:54.872Z",
+          "public_result_completed_at": "2026-09-07T06:10:30.693419Z",
+          "container_start_to_initialized_seconds": 34.872,
+          "pod_create_to_initialized_seconds": 43.872,
+          "request_accept_to_initialized_seconds": 44.044714,
+          "request_accept_to_complete_validated_result_seconds": 79.866133,
+          "terminal_state": "passed",
+          "public_receipt_sha256": "fdcdea533df9b703cfc6f2df07c5487913516b38bbbf957aab3eb3061d501532",
+          "native_log_sha256": "e9a1968ec598cf11fe1ea1d4dadd9734d1ab7ead5c8680c8fc51f86ee6d29df6"
+        }
+      ]
+    },
+    {
+      "model_id": "mosaic",
+      "variant_id": "mosaic-boltz2-proteinmpnn-v1",
+      "method": "benchmark-only import hook in an exact-image clone of a successful public design Job",
+      "source_operation_id": "c17d3c3f-7212-4fb6-a279-fbbf9ac81fb4",
+      "source_public_control_receipt_sha256": "9386f14f57decf53d311fbd56140f568d6eceb8c74fa17a6ca526e2eeb42b739",
+      "source_execution_identity_sha256": "fb1064a4238bf4512f915dd9be35233564e56692147839279ebabb401b8b4240",
+      "boundary": "simplex_APGM entry after Boltz2 and ProteinMPNN checkpoint loads, feature/loss construction and initial JAX dispatch",
+      "boundary_caveat": "jax.effects_barrier does not prove block_until_ready for every pure parameter array; this is a native post-loader/pre-optimizer initialization boundary, not fully synchronized or shape-warmed GPU readiness",
+      "runtime_image_digest": "sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
+      "original_command_sha256": "ee57aa9dfea184cab01b59448b71f2562ee3bc93a9ae75704651a7164189fe26",
+      "input": {"bytes": 44, "sha256": "7ed5501be9de5478ba1e86ee23edb0f08bc650a10b83671e01f1b383ef51b1bc"},
+      "resource_envelope": {
+        "requests": {"cpu": "8", "memory": "64Gi", "ephemeral-storage": "32Gi", "nvidia.com/gpu": "1"},
+        "limits": {"cpu": "16", "memory": "128Gi", "ephemeral-storage": "128Gi", "nvidia.com/gpu": "1"}
+      },
+      "statistics_seconds": {
+        "pod_create_to_initialized": {"n": 3, "min": 62.169179, "median": 64.30827, "max": 64.549488},
+        "container_start_to_initialized": {"n": 3, "min": 51.169179, "median": 52.30827, "max": 53.549488},
+        "container_start_to_complete_validated_output": {"n": 3, "min": 76.556624, "median": 78.299264, "max": 80.144916},
+        "pod_create_to_complete_validated_output": {"n": 3, "min": 87.556624, "median": 90.299264, "max": 91.144916}
+      },
+      "trials": [
+        {"suffix": "a", "pod_created_at": "2026-09-07T06:14:34Z", "container_started_at": "2026-09-07T06:14:46Z", "initialized_at": "2026-09-07T06:15:38.308270Z", "validated_output_at": "2026-09-07T06:16:04.299264Z", "container_start_to_initialized_seconds": 52.30827, "pod_create_to_initialized_seconds": 64.30827, "container_start_to_validated_output_seconds": 78.299264, "pod_create_to_validated_output_seconds": 90.299264, "output_atoms": 200, "output_structure_sha256": "f8bef0508c14c839dadfcf388d34cf8b185b6c4fc44d8b25778c19137d1f0e56", "receipt_sha256": "54318b8033e63f33e701688bff76686a5070dbb50802a113ec50f3eda69fb48c"},
+        {"suffix": "b", "pod_created_at": "2026-09-07T06:16:36Z", "container_started_at": "2026-09-07T06:16:47Z", "initialized_at": "2026-09-07T06:17:40.549488Z", "validated_output_at": "2026-09-07T06:18:07.144916Z", "container_start_to_initialized_seconds": 53.549488, "pod_create_to_initialized_seconds": 64.549488, "container_start_to_validated_output_seconds": 80.144916, "pod_create_to_validated_output_seconds": 91.144916, "output_atoms": 200, "output_structure_sha256": "0e26e411b9d02a8bb0e698f5742c6d1b560f43df81784ea1ede71df99eba9497", "receipt_sha256": "12e47aa28fdaf5a6d21d8586d90abe943663c80803d6e2ded8fa16df86bc3544"},
+        {"suffix": "c", "pod_created_at": "2026-09-07T06:16:38Z", "container_started_at": "2026-09-07T06:16:49Z", "initialized_at": "2026-09-07T06:17:40.169179Z", "validated_output_at": "2026-09-07T06:18:05.556624Z", "container_start_to_initialized_seconds": 51.169179, "pod_create_to_initialized_seconds": 62.169179, "container_start_to_validated_output_seconds": 76.556624, "pod_create_to_validated_output_seconds": 87.556624, "output_atoms": 200, "output_structure_sha256": "45e02d30bf348e6ebf35e570ba97094856896d96579406f761ade6a75cc16ef2", "receipt_sha256": "ae43bcadce8ceb198413a1c1cb7ecade361f2d72756e93598b13b60569363d79"}
+      ]
+    },
+    {
+      "model_id": "bindcraft",
+      "variant_id": "v1-5-3-pyrosetta-academic",
+      "method": "benchmark-only import hook in an exact-image clone of a successful public design Job",
+      "source_operation_id": "3a42462b-bdfe-4507-918c-00bded6d01d8",
+      "source_public_control_receipt_sha256": "75ab3e660e19cf51ef44ab58cc3760013184d464967d25a649e80a359316e84d",
+      "source_execution_identity_sha256": "94aaf35aa0dd0487c80919984eb3a140801def21cc69602923f36f6b8565a8db",
+      "boundary": "first mk_afdesign_model return after PyRosetta initialization and AlphaFold parameter loading",
+      "boundary_caveat": "jax.effects_barrier does not prove block_until_ready for every pure parameter array; this is native initialization, not fully synchronized or shape-warmed GPU readiness",
+      "auxiliary_boundary": "first lazy mk_mpnn_model return after ProteinMPNN weight loading; it occurs after initial design computation and is not included in startup",
+      "runtime_image_digest": "sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
+      "original_command_sha256": "3ef7424aae0d1dbc0fc0c0bfa2a46284d7221eccbf53cba385bafa935730955a",
+      "input": {"bytes": 74614, "sha256": "5e949950d8255ec3bf390b8bf24f5c71c6ac8fc65bc553d7e477563c9599b93e"},
+      "resource_envelope": {
+        "requests": {"cpu": "16", "memory": "96Gi", "ephemeral-storage": "32Gi", "nvidia.com/gpu": "1"},
+        "limits": {"cpu": "24", "memory": "128Gi", "ephemeral-storage": "128Gi", "nvidia.com/gpu": "1"}
+      },
+      "statistics_seconds": {
+        "python_process_to_initialized": {"n": 3, "min": 23.359134, "median": 23.707982, "max": 23.985361},
+        "pod_create_to_initialized": {"n": 3, "min": 38.480943, "median": 38.60622, "max": 39.183738},
+        "container_start_to_initialized": {"n": 3, "min": 29.480943, "median": 29.60622, "max": 30.183738},
+        "container_start_to_lazy_auxiliary_initialized": {"n": 3, "min": 210.594206, "median": 212.698835, "max": 215.676836},
+        "container_start_to_complete_validated_output": {"n": 3, "min": 397.571468, "median": 398.672963, "max": 504.686329},
+        "pod_create_to_complete_validated_output": {"n": 3, "min": 406.571468, "median": 407.672963, "max": 513.686329}
+      },
+      "trials": [
+        {"suffix": "e", "pod_created_at": "2026-09-07T06:12:35Z", "container_started_at": "2026-09-07T06:12:44Z", "initialized_at": "2026-09-07T06:13:13.606220Z", "auxiliary_initialized_at": "2026-09-07T06:16:14.594206Z", "validated_output_at": "2026-09-07T06:19:22.672963Z", "container_start_to_initialized_seconds": 29.60622, "pod_create_to_initialized_seconds": 38.60622, "python_process_to_initialized_seconds": 23.707982, "container_start_to_validated_output_seconds": 398.672963, "pod_create_to_validated_output_seconds": 407.672963, "output_atoms": 1117, "output_structure_sha256": "86013295805f4415ce260b79bd9ab35bc6567e5b9167cb6c0f2615d91125ebf0", "receipt_sha256": "b3cb7d44aa064454bae3fcaed46f185adddbba0065534c224b0ef39d927529ad"},
+        {"suffix": "f", "pod_created_at": "2026-09-07T06:14:09Z", "container_started_at": "2026-09-07T06:14:18Z", "initialized_at": "2026-09-07T06:14:48.183738Z", "auxiliary_initialized_at": "2026-09-07T06:17:53.676836Z", "validated_output_at": "2026-09-07T06:22:42.686329Z", "container_start_to_initialized_seconds": 30.183738, "pod_create_to_initialized_seconds": 39.183738, "python_process_to_initialized_seconds": 23.985361, "container_start_to_validated_output_seconds": 504.686329, "pod_create_to_validated_output_seconds": 513.686329, "output_atoms": 1122, "output_structure_sha256": "f8c4b0937588aeba3493d11c3b7744b66136c804ec5aa87fbbf64da18c7b7b84", "receipt_sha256": "131bf7320bd1be6a2607542c63d4c767c70400a0492e761f858f81cd7a69dc37"},
+        {"suffix": "g", "pod_created_at": "2026-09-07T06:14:10Z", "container_started_at": "2026-09-07T06:14:19Z", "initialized_at": "2026-09-07T06:14:48.480943Z", "auxiliary_initialized_at": "2026-09-07T06:17:51.698835Z", "validated_output_at": "2026-09-07T06:20:56.571468Z", "container_start_to_initialized_seconds": 29.480943, "pod_create_to_initialized_seconds": 38.480943, "python_process_to_initialized_seconds": 23.359134, "container_start_to_validated_output_seconds": 397.571468, "pod_create_to_validated_output_seconds": 406.571468, "output_atoms": 1119, "output_structure_sha256": "9380aafd2ae2fff6d70478f36af57dabc17e07da6f0d2c3df22038b436cc307b", "receipt_sha256": "84a036e0c71ca656039a1087c005ab6f65f9f44a33068e19e043a6b7871a0ee4"}
+      ],
+      "excluded_harness_attempts": [
+        {"suffix": "a", "reason": "benchmark input materializer setup failed before model process start; init log was not yet captured"},
+        {"suffix": "b", "reason": "benchmark-local adapter did not convert the validated artifact UUID to a path string", "log_sha256": "84b21d8b8fcd5ed701db485fae62ae6e53732cb1cf6d1ab1a529de25db6cc05f"},
+        {"suffix": "c", "reason": "benchmark hook used datetime.UTC in the Python 3.10 runtime", "log_sha256": "0997e1e47c4209cb838e0708f3405cc592987c7851254933e31ea09b3acbf870"},
+        {"suffix": "d", "reason": "benchmark PYTHONPATH preceded the canonical tenant-private PyRosetta tree and the unchanged runtime gate rejected it", "log_sha256": "6f5b74b781da2f3b2efa7e18abe8330ea5f70c5ba4bcb4d3f2e7a3caf21fbfeb"}
+      ]
+    },
+    {
+      "model_id": "boltzgen",
+      "status": "passed",
+      "detail_report": "boltz-h100-20260907.json",
+      "container_start_to_initialized_seconds": {"n": 3, "min": 33.897238, "median": 36.051575, "max": 36.159712},
+      "pod_create_to_initialized_seconds": {"n": 3, "min": 42.897238, "median": 44.159712, "max": 45.051575},
+      "boundary": "post-restore prediction-loop start after device placement and CUDA synchronization",
+      "note": "LOCAL_RANK and generic weight-load log lines were not accepted as readiness"
+    }
+  ],
+  "raw_evidence": {
+    "private_root": "/home/tux/.local/state/fs2-startup-benchmark-r20260907/primary",
+    "shared_lifecycle": "/home/tux/.local/state/fs2-startup-benchmark-r20260907/container-capture/lifecycle.jsonl",
+    "shared_events": "/home/tux/.local/state/fs2-startup-benchmark-r20260907/models-events.watch.json",
+    "contains_private_workload_data": true
+  },
+  "cleanup": {
+    "verified_at": "2026-09-07T06:25:00Z",
+    "task_owned_jobs_pods_configmaps_remaining": 0,
+    "production_qwen_retained": true
+  }
+}
