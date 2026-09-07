@@ -115,6 +115,41 @@ class ServingSnapshotBundle(StrictModel):
         return self
 
 
+def _snapshot_probe_command(
+    runtime: dict[str, Any], probe: dict[str, Any], config: ServingSnapshotBundle
+) -> list[str]:
+    """Keep the native HTTP gate in addition to the immutable restore marker."""
+    default = [config.supervisor_python, "/snapshot-entrypoint/serving_entrypoint.py", "ready"]
+    http = probe.get("httpGet")
+    if not isinstance(http, dict):
+        return default
+    port = http["port"]
+    if isinstance(port, str):
+        port = next(
+            (item["containerPort"] for item in runtime.get("ports", []) if item.get("name") == port),
+            None,
+        )
+        if port is None:
+            raise ValueError("serving snapshot HTTP probe names an unknown container port")
+    host = http.get("host") or "127.0.0.1"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    scheme = http.get("scheme", "HTTP").lower()
+    path = http.get("path") or "/"
+    url = f"{scheme}://{host}:{port}{path}"
+    headers = {item["name"]: item["value"] for item in http.get("httpHeaders", [])}
+    if url == "http://127.0.0.1:8000/health" and not headers:
+        # Retain the exact already-qualified default Qwen/Cosmos/CXR command.
+        return default
+    code = (
+        "import os, sys; from pathlib import Path; from urllib.request import Request; "
+        "sys.path.insert(0, '/snapshot-entrypoint'); from serving_entrypoint import readiness; "
+        "raise SystemExit(0 if readiness(Path(os.environ['FS2_SNAPSHOT_READY_FILE']), "
+        f"Request({url!r}, headers={headers!r})) else 1)"
+    )
+    return [config.supervisor_python, "-c", code]
+
+
 def configure_serving_snapshot(
     pod_spec: dict[str, Any],
     *,
@@ -270,6 +305,7 @@ def configure_serving_snapshot(
         probe = runtime.get(name)
         if not isinstance(probe, dict):
             raise ValueError("serving snapshot requires the original startup and readiness probes")
+        command = _snapshot_probe_command(runtime, probe, config)
         for handler in ("httpGet", "tcpSocket", "grpc", "exec"):
             probe.pop(handler, None)
-        probe["exec"] = {"command": [config.supervisor_python, "/snapshot-entrypoint/serving_entrypoint.py", "ready"]}
+        probe["exec"] = {"command": command}

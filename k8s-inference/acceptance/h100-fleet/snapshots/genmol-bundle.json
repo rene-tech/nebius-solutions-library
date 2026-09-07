@@ -36,6 +36,7 @@
   "pvc": "fs2-fleet-snapshots-rwx-r20260907",
   "bundle_path": "genmol-r07",
   "captured_pod_ip": "10.6.122.44",
+  "supervisor_path": "/tools/usr/sbin:/opt/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
   "image_entrypoint": [
     "python",
     "-m",

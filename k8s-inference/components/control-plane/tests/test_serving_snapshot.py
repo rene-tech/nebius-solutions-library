@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib.util
 import json
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
+from types import SimpleNamespace
 
 import pytest
 from test_model_deployment import digest, envelope, model_spec, render_context, renderer
@@ -38,7 +43,6 @@ def direct_pod(config):
 @pytest.mark.parametrize("model,expected", [
     ("qwen3-8b", "aaf75536c3257fb41a30a5cfb97d2f11a918c0edfc945ef4ca45f12a3eef9525"),
     ("cosmos3-nano", "f97eed1b998575b8700f90e1f8e1a483a3fd898c02bb7370423cc80124c73522"),
-    ("genmol", "4dcd72d9d5bdefc91bb7b27cb718cef8185600467fe20dc61451bcc34ea1119f"),
 ])
 def test_published_bundles_keep_byte_identical_render_with_default_interpreters(model, expected):
     # These hashes were measured before adding interpreter/PATH configuration.
@@ -51,6 +55,114 @@ def test_published_bundles_keep_byte_identical_render_with_default_interpreters(
     configure_serving_snapshot(pod, config=config, runtime_container_name="model", fallback="normal-load")
     actual = hashlib.sha256(json.dumps(pod, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     assert actual == expected
+
+
+def load_frozen_readiness(monkeypatch):
+    specification = importlib.util.spec_from_file_location(
+        "serving_entrypoint", SOLUTION_ROOT / "models/scientific-snapshot/serving_entrypoint.py"
+    )
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    monkeypatch.setitem(sys.modules, "serving_entrypoint", module)
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    return module
+
+
+@pytest.mark.parametrize("named_port", [False, True])
+def test_snapshot_http_probe_requires_marker_and_original_endpoint(monkeypatch, tmp_path, named_port):
+    load_frozen_readiness(monkeypatch)
+    calls = []
+    response_status = [200]
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            calls.append((self.path, self.headers.get("X-Model-Probe")))
+            self.send_response(response_status[0])
+            self.end_headers()
+
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        config = fixture()[3]
+        pod = direct_pod(config)
+        runtime = pod["containers"][0]
+        port = server.server_port
+        runtime["ports"] = [{"name": "model-http", "containerPort": port}]
+        original = {
+            "httpGet": {"path": "/healthz?model=original", "port": "model-http" if named_port else port,
+                        "httpHeaders": [{"name": "X-Model-Probe", "value": "unchanged"}]},
+            "periodSeconds": 7, "timeoutSeconds": 2, "failureThreshold": 30, "initialDelaySeconds": 3,
+        }
+        runtime["readinessProbe"] = copy.deepcopy(original)
+        runtime.pop("startupProbe")
+        configure_serving_snapshot(pod, config=config, runtime_container_name="model", fallback="normal-load")
+        probe = runtime["readinessProbe"]
+        assert {key: value for key, value in probe.items() if key != "exec"} == {
+            key: value for key, value in original.items() if key != "httpGet"
+        }
+        assert runtime["startupProbe"] == probe
+        command = probe["exec"]["command"]
+        assert command[:2] == [config.supervisor_python, "-c"]
+        marker = tmp_path / "runtime-ready.json"
+        monkeypatch.setenv("FS2_SNAPSHOT_READY_FILE", str(marker))
+
+        def probe_exit_code():
+            with pytest.raises(SystemExit) as result:
+                exec(command[2], {})  # noqa: S102 - execute the generated probe under test
+            return result.value.code
+
+        assert probe_exit_code() == 1
+        assert calls == []  # Even healthy HTTP cannot bypass unfinished restore.
+        marker.write_text('{"event":"serving_snapshot_runtime","mechanism":"cuda-criu-restored"}')
+        assert probe_exit_code() == 0
+        assert calls == [("/healthz?model=original", "unchanged")]
+        response_status[0] = 503
+        assert probe_exit_code() == 1  # The marker alone is not readiness.
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_snapshot_http_probe_preserves_https_host_headers_and_distinct_startup(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setitem(sys.modules, "serving_entrypoint", SimpleNamespace(
+        readiness=lambda marker, request: calls.append((marker, request)) or True
+    ))
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    monkeypatch.setenv("FS2_SNAPSHOT_READY_FILE", str(tmp_path / "ready"))
+    config = fixture()[3]
+    pod = direct_pod(config)
+    runtime = pod["containers"][0]
+    runtime["ports"] = [{"name": "tls", "containerPort": 8443}]
+    runtime["readinessProbe"]["httpGet"] = {
+        "scheme": "HTTPS", "host": "::1", "port": "tls", "path": "/healthz",
+        "httpHeaders": [{"name": "Host", "value": "model.internal"},
+                        {"name": "X-Model-Probe", "value": "original-value"}],
+    }
+    configure_serving_snapshot(pod, config=config, runtime_container_name="model", fallback="normal-load")
+    assert runtime["startupProbe"]["exec"]["command"] == [
+        config.supervisor_python, "/snapshot-entrypoint/serving_entrypoint.py", "ready"
+    ]
+    with pytest.raises(SystemExit) as result:
+        exec(runtime["readinessProbe"]["exec"]["command"][2], {})  # noqa: S102 - generated probe under test
+    assert result.value.code == 0
+    marker, request = calls[0]
+    assert marker == tmp_path / "ready"
+    assert request.full_url == "https://[::1]:8443/healthz"
+    assert dict(request.header_items()) == {"Host": "model.internal", "X-model-probe": "original-value"}
+
+
+def test_snapshot_http_probe_rejects_unresolvable_named_port():
+    config = fixture()[3]
+    pod = direct_pod(config)
+    pod["containers"][0]["readinessProbe"]["httpGet"] = {"path": "/healthz", "port": "missing"}
+    with pytest.raises(ValueError, match="unknown container port"):
+        configure_serving_snapshot(pod, config=config, runtime_container_name="model", fallback="normal-load")
 
 
 def test_captured_interpreters_change_only_snapshot_wrapper_and_keep_native_argv():
@@ -415,6 +527,16 @@ def test_published_genmol_bundle_uses_the_qualified_working_directory_launcher()
     )
     config = ServingSnapshotBundle.model_validate(payload)
     assert config.model_ref == "genmol"
+    assert config.supervisor_path == (
+        "/tools/usr/sbin:/opt/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:"
+        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    )
+    pod = direct_pod(config)
+    configure_serving_snapshot(pod, config=config, runtime_container_name="model", fallback="normal-load")
+    runtime = pod["containers"][0]
+    assert next(item["value"] for item in runtime["env"] if item["name"] == "PATH") == config.supervisor_path
+    assert runtime["command"][-len(config.runtime_command):] == config.runtime_command
+    assert runtime["command"][0] == config.supervisor_python
     assert config.fallback_command_prefix == [
         "python3",
         "/snapshot-source/working_directory_launcher.py",

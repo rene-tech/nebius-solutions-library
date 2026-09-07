@@ -1,6 +1,6 @@
 # Current ESMFold2 and ESMFold2-Fast snapshots
 
-Corrected ESMFold2 r5 and ESMFold2-Fast r4 each passed three normal/restore pairs on H100 on 2026-09-07. Both original controller-issued requests passed in every trial, including the real production confidence collector: 24 validated outputs across twelve fresh trial Pods. Donors were deleted before restore, all trial Pods were deleted afterward, and every restore ran on a different node from its donor. Production option selection/public acceptance remains a separate release step; normal loading is unchanged.
+Corrected ESMFold2 r5 and ESMFold2-Fast r4 each passed three normal/restore pairs on H100 on 2026-09-07. Both original controller-issued requests passed in every trial, including the real production confidence collector: 24 validated outputs across twelve fresh trial Pods. Donors were deleted before restore, all trial Pods were deleted afterward, and every restore ran on a different node from its donor. Subsequent public production option checks also passed for both profiles, with their original normal-load policies restored afterward.
 
 | Profile | Normal container→ready median (range) | Restore container→ready median (range) | Normal / restore first valid output median |
 | --- | --- | --- | --- |
@@ -27,4 +27,10 @@ The subsequent Fast r3 restore failed because its root donor inherited capture-o
 
 ## Current evidence
 
-[ESMFold2 report](esmfold2-h100-20260907.json), [Fast report](esmfold2-fast-h100-20260907.json), [ESMFold2 r5 bundle](esmfold2-bundle.json), [Fast r4 bundle](esmfold2-fast-bundle.json). Reports bind their private receipt hashes and include the production confidence result for every output. Original argv, localized fixtures, full outputs, lifecycle logs, publication manifests and failed-attempt receipts remain under the private `fs2-h100-fleet-snapshots-r20260907/{esmfold2,esmfold2-fast}` evidence directories. Normal-load remains the default until the release owner separately proves production option selection and public outputs.
+[ESMFold2 report](esmfold2-h100-20260907.json), [Fast report](esmfold2-fast-h100-20260907.json), [ESMFold2 r5 bundle](esmfold2-bundle.json), [Fast r4 bundle](esmfold2-fast-bundle.json). Reports bind their private receipt hashes and include the production confidence result for every output. Original argv, localized fixtures, full outputs, lifecycle logs, publication manifests and failed-attempt receipts remain under the private `fs2-h100-fleet-snapshots-r20260907/{esmfold2,esmfold2-fast}` evidence directories.
+
+## Public production option proof
+
+The separate [public r02 proof](esmfold-production-options-20260907.json) records one unchanged original public scientific request per profile. Both public operations and their production semantic collectors succeeded. Exact operation/attempt/Pod correlation in Loki confirmed `scientific_snapshot_request` with `cuda-criu-restored`, matching each corrected weight revision, immutable image and frozen source hashes: ESMFold2 at 13:21:43.522805912 UTC and Fast at 13:25:55.863265997 UTC. These are actual restores, not policy-selection-only evidence or normal-load fallbacks.
+
+Both helpers restored the complete previous policy, including empty startup overrides, paused state and concurrency setting. Earlier public r01 failures remain private and are not overwritten. Fast's r02 request included a newly provisioned preemptible node and a 69.94s model image pull; full public elapsed time is not CUDA restore latency. The public proof preserves separate operation timestamps and CRIU/CUDA component timers without changing the isolated n3 statistics above. Normal loading remains the retained default; the corrected snapshot options can now be selected through the existing admin policy.

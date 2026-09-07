@@ -1,0 +1,287 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-snapshot-production-options/v1",
+  "date": "2026-09-07",
+  "status": "passed",
+  "models": [
+    {
+      "model_id": "esmfold2",
+      "status": "passed",
+      "public_requests": 1,
+      "bundle_id": "esmfold2-h100-cuda-criu-20260907-r5",
+      "bundle_file": "acceptance/h100-fleet/snapshots/esmfold2-bundle.json",
+      "bundle_file_sha256": "499c670d950fcd903fc94e7a8655fafeb0df0b7c99a4062596d1d88c32ddbff6",
+      "bundle_manifest_sha256": "3eea3fa1ebf5d6cbc955a84d6aaf5681a51dc2df774223ee1429c910b47911df",
+      "model_revision": "8fc3ff471022fdce52c77030685eb775de0c00a3",
+      "profile_model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
+      "operation_identity": {
+        "batch_id": "a2bce243-5270-5b2d-a450-3bf961bbed75",
+        "operation_id": "b95f2c69-2fcc-4aa0-b80d-5ffb560d2092",
+        "workload_id": "1c35da01-9a5c-5432-9223-db580dcde96e"
+      },
+      "terminal_state": {
+        "batch": "succeeded",
+        "operation": "succeeded",
+        "result": "succeeded",
+        "semantic_validation": "passed"
+      },
+      "endpoint": {
+        "host": "89.169.99.188",
+        "tls": true
+      },
+      "timestamps": {
+        "accepted_at": "2026-09-07T13:20:32.205344Z",
+        "activation_started_at": null,
+        "available_at": "2026-09-07T13:20:32.205344Z",
+        "completed_at": "2026-09-07T13:21:58.169449Z",
+        "ready_at": null,
+        "result_completed_at": "2026-09-07T13:21:58.168510Z",
+        "result_submitted_at": "2026-09-07T13:20:32.205344Z",
+        "started_at": "2026-09-07T13:20:32.302268Z"
+      },
+      "public_end_to_end_seconds": 85.964105,
+      "execution_identity": {
+        "execution_identity_sha256": "c6ed03bab0aaba62d555f60e294046267d02243cd3f933722012ac59b375aa63",
+        "model_artifact_manifest_digest": "ea6c0f0211aecb53c4fa9a3c4033de650ef13995cb41ed8f7c3c90f150b78a3a",
+        "model_id": "esmfold2",
+        "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+        "runtime_image_digest": "sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
+        "runtime_recipe_sha256": "d744a57b5df7be8ebe677d1a70b40435902fbcbeebdbcadbc85f528923de61fd",
+        "variant_id": "biohub-v3-4-0",
+        "workload_recipe_sha256": "d9122390e171ccc173acff9b77b48fbc49f138c6f321ffcb8131d71157b3b2ee"
+      },
+      "restore": {
+        "mechanism": "cuda-criu-restored",
+        "event": "scientific_snapshot_request",
+        "timestamp_unix_ns": "1788787303522805912",
+        "timestamp_utc": "2026-09-07T13:21:43.522806+00:00",
+        "pod_name": "fs2-fold-main-a1-f4cb2322acab-cjsjx",
+        "pod_uid": "deb17131-9dd5-4beb-98c4-c4ec583fbbec",
+        "node_name": "computeinstance-e00m0hsph76ajt9sdb",
+        "container": "scientific-stage",
+        "attempt_id": "764b0c5b-1b49-59f1-8dcf-de4f0aed44c5",
+        "components": [
+          {
+            "command": [
+              "/tools/lib/ld-linux-x86-64.so.2",
+              "--library-path",
+              "/tools/lib",
+              "/tools/criu",
+              "restore",
+              "--images-dir",
+              "/checkpoints/esmfold2-current-r20260907-r5/images",
+              "--work-dir",
+              "/tmp/fs2-checkpoint-work",
+              "--shell-job",
+              "--restore-detached",
+              "--log-file",
+              "restore.log",
+              "-v4",
+              "--file-locks",
+              "--tcp-established",
+              "--manage-cgroups=ignore",
+              "--libdir",
+              "/tmp/empty-criu-plugins"
+            ],
+            "seconds": 11.453227243968286,
+            "returncode": 0
+          },
+          {
+            "command": [
+              "/tools/cuda-checkpoint",
+              "--action",
+              "restore",
+              "--pid",
+              "173",
+              "--device-map",
+              "GPU-56941528-f485-5237-c98a-08e1f253a9c3=GPU-4dedaf2c-4b7c-78ed-4c19-93b138c7c06d"
+            ],
+            "seconds": 2.4691020069876686,
+            "returncode": 0
+          },
+          {
+            "command": [
+              "/tools/cuda-checkpoint",
+              "--action",
+              "unlock",
+              "--pid",
+              "173"
+            ],
+            "seconds": 0.022526849003043026,
+            "returncode": 0
+          }
+        ],
+        "source_sha256": {
+          "esmfold2_server.py": "c0c6648e0824030e950b3caa53f2b8123219afc99592d57cd393ab9c22c24993",
+          "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+          "run_esmfold2.py": "fea343d1e8d50bc453cd11610ae5d65dceb430c78c5374622b77030e86d787f8",
+          "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c"
+        }
+      },
+      "semantic_output": {
+        "status": "passed",
+        "runtime_id": "esmfold2",
+        "model_revision": "8fc3ff471022fdce52c77030685eb775de0c00a3",
+        "startup_mechanism": "restored-model-worker",
+        "output_bytes": 26292,
+        "plddt_mean": 0.5983438491821289,
+        "ptm": 0.23494181036949158,
+        "attention": "flash_attention_2",
+        "smoke_profile": false
+      },
+      "semantic_validation_receipt_sha256": "bc4616d5feb80ca43ee9d528b0198622132f36cb336fb0b75fef65602ddba202",
+      "original_policy_restored": true,
+      "original_startup_policies": {},
+      "restored_startup_policies": {},
+      "paused_and_max_active_runs_preserved": true,
+      "evidence_sha256": {
+        "public_receipt": "ae9b7d6a4cf820c87220af8026e098b058625e79ca83c12da38beabb0a273885",
+        "loki_response": "3dd8a07f3ebbd1f6587d77532166000b84db7ee99a0cd268764d76764e4958a3",
+        "original_policy": "706a64871ec34bbb6792884a40dc6650a6219fa70a85049c887e236afc46dbe9",
+        "selected_policy": "3d000582f7f6d011a5126a3594a84feea1b2103cf78aba7651af26c891f34fdd",
+        "restored_policy": "b7b182f6015bcfa467f01d822edd486325946c6657e4fcd7bc3548139cba5b21"
+      }
+    },
+    {
+      "model_id": "esmfold2-fast",
+      "status": "passed",
+      "public_requests": 1,
+      "bundle_id": "esmfold2-fast-h100-cuda-criu-20260907-r4",
+      "bundle_file": "acceptance/h100-fleet/snapshots/esmfold2-fast-bundle.json",
+      "bundle_file_sha256": "a3ff79a7ff5820b89d944c719cfca6eae4a3016b198b79f71e62a20b28cdb8d5",
+      "bundle_manifest_sha256": "060a9ae443bc5a2aff86349e4bf93d7594bf82f857721afaadd9b1e23447b495",
+      "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+      "profile_model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+      "operation_identity": {
+        "batch_id": "08dd35c7-6f66-53aa-8f20-0fbf7abdba4a",
+        "operation_id": "5b7d94ef-73b8-4aee-b6a7-6daf488d8cfa",
+        "workload_id": "b74935f4-925c-56b4-9e96-92fdb85e53e1"
+      },
+      "terminal_state": {
+        "batch": "succeeded",
+        "operation": "succeeded",
+        "result": "succeeded",
+        "semantic_validation": "passed"
+      },
+      "endpoint": {
+        "host": "89.169.99.188",
+        "tls": true
+      },
+      "timestamps": {
+        "accepted_at": "2026-09-07T13:20:32.615082Z",
+        "activation_started_at": null,
+        "available_at": "2026-09-07T13:20:32.615082Z",
+        "completed_at": "2026-09-07T13:26:41.065593Z",
+        "ready_at": null,
+        "result_completed_at": "2026-09-07T13:26:41.063571Z",
+        "result_submitted_at": "2026-09-07T13:20:32.615082Z",
+        "started_at": "2026-09-07T13:20:32.679206Z"
+      },
+      "public_end_to_end_seconds": 368.450511,
+      "execution_identity": {
+        "execution_identity_sha256": "39261b4c8341a04d24dd5a5bf778cfae59203da9fdb3f15debf65892558d3dde",
+        "model_artifact_manifest_digest": "5cbdf1f33aeaa1be79a678fdd3aa851ee6cbdd86dfc03c66b97ea8647b5d52c0",
+        "model_id": "esmfold2-fast",
+        "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+        "runtime_image_digest": "sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+        "runtime_recipe_sha256": "26e7ba5dcca5bfee6aaa96df5fbe61fbb253c31179d9aa8b34999f360244753a",
+        "variant_id": "biohub-v3-4-0",
+        "workload_recipe_sha256": "febe1c6511e2db35468cf46cf215bccb8c651df79d778c28a45afea9a56bf731"
+      },
+      "restore": {
+        "mechanism": "cuda-criu-restored",
+        "event": "scientific_snapshot_request",
+        "timestamp_unix_ns": "1788787555863265997",
+        "timestamp_utc": "2026-09-07T13:25:55.863266+00:00",
+        "pod_name": "fs2-fold-main-a1-c8f5df15cf34-g7kcp",
+        "pod_uid": "97284690-3247-4f63-8e42-6d3f1bb65ba5",
+        "node_name": "computeinstance-e00r7bj5qbknkk6wb8",
+        "container": "scientific-stage",
+        "attempt_id": "03261a80-cf70-50e5-8cab-a2049e58130d",
+        "components": [
+          {
+            "command": [
+              "/tools/lib/ld-linux-x86-64.so.2",
+              "--library-path",
+              "/tools/lib",
+              "/tools/criu",
+              "restore",
+              "--images-dir",
+              "/checkpoints/esmfold2-fast-current-r20260907-r4/images",
+              "--work-dir",
+              "/tmp/fs2-checkpoint-work",
+              "--shell-job",
+              "--restore-detached",
+              "--log-file",
+              "restore.log",
+              "-v4",
+              "--file-locks",
+              "--tcp-established",
+              "--manage-cgroups=ignore",
+              "--libdir",
+              "/tmp/empty-criu-plugins"
+            ],
+            "seconds": 11.27665607199998,
+            "returncode": 0
+          },
+          {
+            "command": [
+              "/tools/cuda-checkpoint",
+              "--action",
+              "restore",
+              "--pid",
+              "174",
+              "--device-map",
+              "GPU-644f23ac-4f00-aea9-7b7d-a57717848200=GPU-50d4fdc8-4221-dfa1-9099-314fc61a6f1d"
+            ],
+            "seconds": 2.2888416410000048,
+            "returncode": 0
+          },
+          {
+            "command": [
+              "/tools/cuda-checkpoint",
+              "--action",
+              "unlock",
+              "--pid",
+              "174"
+            ],
+            "seconds": 0.015377352000001565,
+            "returncode": 0
+          }
+        ],
+        "source_sha256": {
+          "esmfold2_server.py": "c0c6648e0824030e950b3caa53f2b8123219afc99592d57cd393ab9c22c24993",
+          "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+          "run_esmfold2.py": "fea343d1e8d50bc453cd11610ae5d65dceb430c78c5374622b77030e86d787f8",
+          "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c"
+        }
+      },
+      "semantic_output": {
+        "status": "passed",
+        "runtime_id": "esmfold2-fast",
+        "model_revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+        "startup_mechanism": "restored-model-worker",
+        "output_bytes": 26292,
+        "plddt_mean": 0.5975966453552246,
+        "ptm": 0.2577590346336365,
+        "attention": "flash_attention_2",
+        "smoke_profile": false
+      },
+      "semantic_validation_receipt_sha256": "b5599456e97ae97a6611e23194b3e4addceb5018fb1f12121cbbe8f16f7121ab",
+      "original_policy_restored": true,
+      "original_startup_policies": {},
+      "restored_startup_policies": {},
+      "paused_and_max_active_runs_preserved": true,
+      "evidence_sha256": {
+        "public_receipt": "420c2f19a71cf0345535fcca060d675322511c3747de8f90a44dce1f04a02dcd",
+        "loki_response": "758103e46cc1d66fb815ae2f072dca4cf35b78bfa4f0e2603358a78a85287458",
+        "original_policy": "dd2dd4bb89e64621d2db55505d776060664dfedf17b85b6e9730b0f07dffc22f",
+        "selected_policy": "2bc0485bd744675734c46b44667a311b9994777f9f8380908a59455b02fefd4d",
+        "restored_policy": "4f42ca61af64eed43f250322c154ae3960a919dea544baf7e0d1df0c390d22f1"
+      }
+    }
+  ],
+  "scope": "One unchanged original public scientific acceptance request per model; actual restore is correlated to the successful operation stage Pod, not inferred from policy selection.",
+  "timing_note": "Public end-to-end time includes queue, node/image acquisition, localization, restore, inference and collection. CUDA/CRIU component timers are not request-to-ready measurements. Isolated n3 clocks remain in their separate qualification reports."
+}

@@ -1,0 +1,189 @@
+{
+  "schema": "fs2-serve.nebius.ai/expanded-production-snapshot-option-proof/v1",
+  "observed_date": "2026-09-07",
+  "deployed_source_commit": "7d0bab4619dc5d39082655b4ddc628c5b4708240",
+  "cluster": "mk8scluster-e00j5z9te7x5dd9g6a",
+  "project": "project-e00rene",
+  "region": "eu-north1",
+  "prior_production_proof": "production-options-h100-20260907.json",
+  "preserved_prior_models": [
+    "qwen3-8b",
+    "cosmos3-nano",
+    "protenix-v2"
+  ],
+  "scope": "Only completed actual production CUDA restores with original valid outputs and restored policies/floors. Fresh-process cached startup trials remain separate; no disk-cold timing claim.",
+  "models": [
+    {
+      "model_id": "rfdiffusion",
+      "bundle_id": "rfdiffusion-h100-cuda-criu-20260907-r3",
+      "status": "passed",
+      "selection": "Existing public scientific-model policy API selected exact inference bundle; original effective model policy restored in finally.",
+      "public_requests": [
+        {
+          "operation_id": "0f8c2fbd-5528-46c4-9f84-cca04f083ad2",
+          "outcome": "passed",
+          "semantic": {
+            "residues": 76,
+            "seed": 8100,
+            "finite_atoms": 304,
+            "pdb_sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+            "actual_startup": {
+              "backend": "cuda-criu",
+              "bundle_id": "rfdiffusion-h100-cuda-criu-20260907-r3",
+              "manifest_sha256": "38230e1a6da7926330d59cc92c209f81db38b43d34f878c7a09928d3e880cd30"
+            },
+            "full_native_wrapper_seconds": 54.553
+          },
+          "execution_identity": {
+            "model_id": "rfdiffusion",
+            "variant_id": "rfdiffusion-v1-1-0",
+            "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+            "runtime_image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+            "runtime_recipe_sha256": "f099f92b47bd174715c40504d22d007780424d0256b9f134a4deb133725355fc",
+            "workload_recipe_sha256": "625ac765fe08415199b937a1ddb8b6289ed7924e0b88b9f5f342391076891bde",
+            "model_artifact_manifest_digest": "931ae8f26343abe60d3fd4efb71da9ca2822899bde61357044eea09ca85bfc2d",
+            "execution_identity_sha256": "5e819d407d360d7cdc08ce3b984bc948e37182ef87c627b93b4e893c4348a082"
+          },
+          "pod_log_links": [
+            {
+              "pod": "fs2-inference-design-000-a1-e129b8b244f1-5bnfl",
+              "pod_uid": "37185b9d-db89-46d9-98ab-281d013c3cd2",
+              "actual_restore_log_seen": true,
+              "loki_lines": 185,
+              "local_log_retained": true,
+              "actual_restore_timestamp": "2026-09-07T13:20:33.385559955Z",
+              "mechanism": "cuda-criu-restored",
+              "checkpoint_components_seconds": {
+                "criu": 0.6827553199836984,
+                "restore": 0.3196919000474736,
+                "unlock": 0.021117147989571095
+              },
+              "private_runtime_log_sha256": "fdea2fa45b3cdfcb7e3adda2f71856866c843bbec47f5084de62661bc46c5f6a",
+              "private_loki_response_sha256": "89c79481cc0aa5c9ee6a878ba8cd3137dcbfb79cea215ff0397fb0395a1a6ed2"
+            }
+          ],
+          "public_wall_seconds": 92.767,
+          "operation_timestamps": {
+            "accepted_at": "2026-09-07T13:20:20.839683Z",
+            "activation_started_at": null,
+            "available_at": "2026-09-07T13:20:20.839683Z",
+            "completed_at": "2026-09-07T13:21:46.484257Z",
+            "ready_at": null,
+            "result_completed_at": "2026-09-07T13:21:46.483231Z",
+            "result_submitted_at": "2026-09-07T13:20:20.839683Z",
+            "started_at": "2026-09-07T13:20:20.915041Z"
+          },
+          "terminal_state": {
+            "batch": "succeeded",
+            "operation": "succeeded",
+            "result": "succeeded",
+            "semantic_validation": "passed"
+          },
+          "private_public_receipt_sha256": "b79dace666a070cd5ca6730a3d4445a9a0b04bc5ac0d69486ebd17eb78c6a885"
+        },
+        {
+          "operation_id": "f38cd6d9-bb27-433d-a61e-d535fce8380f",
+          "outcome": "passed",
+          "semantic": {
+            "residues": 96,
+            "seed": 8200,
+            "finite_atoms": 384,
+            "pdb_sha256": "fb51ce833e136de1ac38a82296de467ac858fb8a7efff7303e7f2f2cddc4c58a",
+            "actual_startup": {
+              "backend": "cuda-criu",
+              "bundle_id": "rfdiffusion-h100-cuda-criu-20260907-r3",
+              "manifest_sha256": "38230e1a6da7926330d59cc92c209f81db38b43d34f878c7a09928d3e880cd30"
+            },
+            "full_native_wrapper_seconds": 54.539
+          },
+          "execution_identity": {
+            "execution_identity_sha256": "5e819d407d360d7cdc08ce3b984bc948e37182ef87c627b93b4e893c4348a082",
+            "model_artifact_manifest_digest": "931ae8f26343abe60d3fd4efb71da9ca2822899bde61357044eea09ca85bfc2d",
+            "model_id": "rfdiffusion",
+            "model_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+            "runtime_image_digest": "sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+            "runtime_recipe_sha256": "f099f92b47bd174715c40504d22d007780424d0256b9f134a4deb133725355fc",
+            "variant_id": "rfdiffusion-v1-1-0",
+            "workload_recipe_sha256": "625ac765fe08415199b937a1ddb8b6289ed7924e0b88b9f5f342391076891bde"
+          },
+          "pod_log_links": [
+            {
+              "pod": "fs2-inference-design-000-a1-beebd970b7d0-7lhvj",
+              "pod_uid": "cbd000dc-9296-4472-ac6a-a3fde151882b",
+              "actual_restore_log_seen": true,
+              "loki_lines": 185,
+              "local_log_retained": true,
+              "actual_restore_timestamp": "2026-09-07T13:22:14.107589898Z",
+              "mechanism": "cuda-criu-restored",
+              "checkpoint_components_seconds": {
+                "criu": 0.9979828199720941,
+                "restore": 0.3075982950394973,
+                "unlock": 0.02127409999957308
+              },
+              "private_runtime_log_sha256": "acae8e95ef5f4490f763d5e49f6c7eed889c8e02cbd445862d3041019fd61c2c",
+              "private_loki_response_sha256": "df8a6cfd83d091ef43b8cdcc84879515692c99013c2cd2b3c84ae88b02e481d5"
+            }
+          ],
+          "public_wall_seconds": 91.767,
+          "operation_timestamps": {
+            "accepted_at": "2026-09-07T13:22:01.852469Z",
+            "activation_started_at": null,
+            "available_at": "2026-09-07T13:22:01.852469Z",
+            "completed_at": "2026-09-07T13:23:27.743734Z",
+            "ready_at": null,
+            "result_completed_at": "2026-09-07T13:23:27.742705Z",
+            "result_submitted_at": "2026-09-07T13:22:01.852469Z",
+            "started_at": "2026-09-07T13:22:01.904592Z"
+          },
+          "terminal_state": {
+            "batch": "succeeded",
+            "operation": "succeeded",
+            "result": "succeeded",
+            "semantic_validation": "passed"
+          },
+          "private_public_receipt_sha256": "000643e2ac5cf15e4fe40d37d0f0875007883069b10662361fbbe8510463eff4"
+        }
+      ],
+      "original_policy_restored": true,
+      "original_policy": {
+        "paused": false,
+        "max_active_runs": null,
+        "reason": null,
+        "startup_policies": {}
+      },
+      "restored_policy": {
+        "paused": false,
+        "max_active_runs": null,
+        "reason": null,
+        "startup_policies": {}
+      },
+      "original_revision": 0,
+      "restored_revision": 2,
+      "private_actual_public_proof_sha256": "ca91a1328b28c3446082ef9e5bc62512f88782e45ba3df1ce1bcbfb9a1b35d9a",
+      "private_policy_restoration_sha256": "dfa259c43802f24c7b43cd96d1936d0b69c7f582acb3712ffcfca72d43d95fd1",
+      "comparison_correction": {
+        "initial_harness_result": "96 coordinate assertion failed against an unmatched second-after76 reference; original outputs and scenario receipts retained",
+        "matched_native_operation": "230b4647-0ee0-4fdc-bd70-f930422796a6",
+        "matched_native_completed_at": "2026-09-07T11:49:52.227997Z",
+        "matched_native_receipt_sha256": "d18a270f289eda16949ddaf1f1fbc46773188d00966f9553fd5dd6349ba1fc2b",
+        "matched_native_and_current_snapshot_pdb_sha256": "fb51ce833e136de1ac38a82296de467ac858fb8a7efff7303e7f2f2cddc4c58a",
+        "paired_second_after76_pdb_sha256": "42831fab4e9bda74659b943f700e57d666e50c74ec04c134ab6143280673b6e4",
+        "interpretation": "Exact coordinates match for matched first-on-fresh-worker public native versus snapshot. Reused-worker96-after76 differs in both normal and restored paired trials; no claim of request-order-independent byte determinism.",
+        "new_gpu_runs_for_correction": 0
+      },
+      "clock_note": "Public wall duration includes admission, artifact stages, full scientific inference and final collection; it is not model load time."
+    }
+  ],
+  "linked_completed_proofs": [
+    {
+      "path": "esmfold-production-options-20260907.json",
+      "sha256": "a57373496d9197850e416dbf3ac88aef63d0141b56526528970f6c709af5d9aa",
+      "models": [
+        "esmfold2",
+        "esmfold2-fast"
+      ],
+      "note": "Independent ESM public acceptance export; see linked operation/Pod/restore/collector and policy-restoration evidence."
+    }
+  ],
+  "exported_at": "2026-09-07T13:28:47.508801+00:00"
+}
