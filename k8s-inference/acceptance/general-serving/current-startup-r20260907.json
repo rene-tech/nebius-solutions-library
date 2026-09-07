@@ -1,0 +1,1052 @@
+{
+  "cosmos3-nano": {
+    "cached_image_fresh_process": {
+      "n": 3,
+      "statistics": {
+        "first_request_seconds": {
+          "maximum": 1.6230019936338067,
+          "median": 1.6171048618853092,
+          "minimum": 1.6135948011651635,
+          "n": 3
+        },
+        "pod_to_application_ready_seconds": {
+          "maximum": 61.171234,
+          "median": 59.40138,
+          "minimum": 59.162242,
+          "n": 3
+        },
+        "pod_to_first_valid_output_seconds": {
+          "maximum": 64.860826,
+          "median": 64.405171,
+          "minimum": 64.262772,
+          "n": 3
+        },
+        "pod_to_ready_seconds": {
+          "maximum": 61.0,
+          "median": 60.0,
+          "minimum": 60.0,
+          "n": 3
+        },
+        "process_to_kubernetes_ready_seconds": {
+          "maximum": 58.0,
+          "median": 58.0,
+          "minimum": 58.0,
+          "n": 3
+        },
+        "process_to_ready_seconds": {
+          "maximum": 58.171234,
+          "median": 57.40138,
+          "minimum": 57.162242,
+          "n": 3
+        }
+      },
+      "trials": [
+        {
+          "cache": {
+            "host_page_cache": "uncontrolled",
+            "image_already_present": true,
+            "localizer": {
+              "elapsed_seconds": 0.03412672400003203,
+              "outcome": "cache-hit"
+            },
+            "node_created_after_trial_start": false,
+            "runtime_cache": "fresh emptyDir"
+          },
+          "first_request_seconds": 1.6171048618853092,
+          "generation_timings_ms": {
+            "queue": 0.015590000032261742,
+            "total": 912.8180339999972,
+            "upstream": 912.5638890000118
+          },
+          "hardware": {
+            "capacity_type": "preemptible",
+            "compute_capability": "9.0",
+            "driver": "580.159.04",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "memory": "81559 MiB",
+            "pool": "h100-1x"
+          },
+          "passed": true,
+          "phases": {
+            "image_pull_seconds": null,
+            "init_completion_to_runtime_start_seconds": 1.0,
+            "init_container_seconds": 0.0,
+            "pod_to_scheduled_seconds": 0.0
+          },
+          "pod_to_application_ready_seconds": 59.40138,
+          "pod_to_first_valid_output_seconds": 64.262772,
+          "pod_to_ready_seconds": 60.0,
+          "process_to_kubernetes_ready_seconds": 58.0,
+          "process_to_ready_seconds": 57.40138,
+          "raw_artifact_sha256": {
+            "rep-2-bounded-json-adapter.log": "74cca9b07002ef2fd7043285e2a02b3228bf767ea3a96aefb5974d9544bffac9",
+            "rep-2-deployment.json": "ff971c53d639b7b3a0f8b677d336ad59d6ac1912300f536b23cefbadc195b59a",
+            "rep-2-events.json": "d99b774adbe578c4d499ec1a2a0dcdf3ceda92ca6bc93badcb41e103a47ef87d",
+            "rep-2-first-output.mp4": "30a661d31efd590f024b260001608b6bbed435853c364f5442fcce3ab35a3a18",
+            "rep-2-localize-model.log": "b14744cd4f685adaee410f9b4e180979fcc9b38a64049b3e0899d4042285477b",
+            "rep-2-node.json": "84771f4240a49536723c4ae4ee4af0b748432ea337ddcb554f1eacb225b44a8d",
+            "rep-2-pod-final.json": "b168d87318ff832fb7892f560fa6a0bf65c321927cea1b4984899066c4d48c66",
+            "rep-2-pod.json": "b168d87318ff832fb7892f560fa6a0bf65c321927cea1b4984899066c4d48c66",
+            "rep-2-port-forward.log": "866fc28a3d5658a8135de28bca8ef705bd427799df30dab2494ef9fb49d702c0",
+            "rep-2-vllm-omni.log": "d477a73dc7f8e3675111bc973138015667b30f9283f2a9c8f9879b0f55a7e76f"
+          },
+          "runtime": {
+            "reported_torch_compile_seconds": null,
+            "vllm_version": "0.25.0",
+            "weight_loading_seconds": 4.78
+          },
+          "runtime_image_digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+          "source_pod_spec_unchanged": true,
+          "timeline": {
+            "application_ready_at": "2026-09-07T06:00:52.401380109Z",
+            "cleanup_completed_at": "2026-09-07T06:01:12.455490+00:00",
+            "first_request_at": "2026-09-07T06:00:55.645668+00:00",
+            "first_response_at": "2026-09-07T06:00:57.262772+00:00",
+            "image_pull_finished_at": null,
+            "image_pull_started_at": null,
+            "launch_at": "2026-09-07T05:59:51.364649+00:00",
+            "localizer_finished_at": "2026-09-07T05:59:54Z",
+            "localizer_started_at": "2026-09-07T05:59:54Z",
+            "node_created_at": "2026-09-07T05:53:59Z",
+            "node_ready_at": "2026-09-07T05:54:19Z",
+            "pod_created_at": "2026-09-07T05:59:53Z",
+            "pod_scheduled_at": "2026-09-07T05:59:53Z",
+            "ready_at": "2026-09-07T06:00:53Z",
+            "runtime_started_at": "2026-09-07T05:59:55Z",
+            "scaleup_requested_at": null
+          },
+          "trial": 2,
+          "validation": {
+            "bytes": 142589,
+            "passed": true,
+            "sha256": "30a661d31efd590f024b260001608b6bbed435853c364f5442fcce3ab35a3a18"
+          }
+        },
+        {
+          "cache": {
+            "host_page_cache": "uncontrolled",
+            "image_already_present": true,
+            "localizer": {
+              "elapsed_seconds": 0.03172143699998742,
+              "outcome": "cache-hit"
+            },
+            "node_created_after_trial_start": false,
+            "runtime_cache": "fresh emptyDir"
+          },
+          "first_request_seconds": 1.6230019936338067,
+          "generation_timings_ms": {
+            "queue": 0.016820000041661842,
+            "total": 920.6242239999938,
+            "upstream": 920.3365519999807
+          },
+          "hardware": {
+            "capacity_type": "preemptible",
+            "compute_capability": "9.0",
+            "driver": "580.159.04",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "memory": "81559 MiB",
+            "pool": "h100-1x"
+          },
+          "passed": true,
+          "phases": {
+            "image_pull_seconds": null,
+            "init_completion_to_runtime_start_seconds": 0.0,
+            "init_container_seconds": 1.0,
+            "pod_to_scheduled_seconds": 0.0
+          },
+          "pod_to_application_ready_seconds": 59.162242,
+          "pod_to_first_valid_output_seconds": 64.405171,
+          "pod_to_ready_seconds": 60.0,
+          "process_to_kubernetes_ready_seconds": 58.0,
+          "process_to_ready_seconds": 57.162242,
+          "raw_artifact_sha256": {
+            "rep-3-bounded-json-adapter.log": "39c21e3b41d5c89b9b7826dd38a464d76646e40ac33d49c6d7e7963f7adb8a1b",
+            "rep-3-deployment.json": "699dc0e9cbc49fbf4595d2b8d8be463383f96454edfbdd2061b0d4ec20b62db3",
+            "rep-3-events.json": "cdd2b028e9cfff6cdb2d52a6dd0355aa5b5ac8e48a188d0915647b2448246d65",
+            "rep-3-first-output.mp4": "9f40b644602adf4e3d78e79db8ca4bfc1a11bb1698552e14b66e01c92ab81554",
+            "rep-3-localize-model.log": "5a7c50fabf176c2646a22bf845044bd504128db0f405c896aa6ff3f6d4fc7af3",
+            "rep-3-node.json": "f39dfbc2686121c83f99ac271ab5a2e162c7d447350c3eaaa50e62c1b0f7dd24",
+            "rep-3-pod-final.json": "b601313ac1b994f6043f1b029c0a7b8ddcb700db55329dd63386698a2674372f",
+            "rep-3-pod.json": "b601313ac1b994f6043f1b029c0a7b8ddcb700db55329dd63386698a2674372f",
+            "rep-3-port-forward.log": "866fc28a3d5658a8135de28bca8ef705bd427799df30dab2494ef9fb49d702c0",
+            "rep-3-vllm-omni.log": "2bd5e35fc20265fcd3f56daa6e6862687b9dae272d38301fba0abc016d22035c"
+          },
+          "runtime": {
+            "reported_torch_compile_seconds": null,
+            "vllm_version": "0.25.0",
+            "weight_loading_seconds": 4.78
+          },
+          "runtime_image_digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+          "source_pod_spec_unchanged": true,
+          "timeline": {
+            "application_ready_at": "2026-09-07T06:02:14.162242084Z",
+            "cleanup_completed_at": "2026-09-07T06:02:34.713549+00:00",
+            "first_request_at": "2026-09-07T06:02:17.782175+00:00",
+            "first_response_at": "2026-09-07T06:02:19.405171+00:00",
+            "image_pull_finished_at": null,
+            "image_pull_started_at": null,
+            "launch_at": "2026-09-07T06:01:13.570195+00:00",
+            "localizer_finished_at": "2026-09-07T06:01:17Z",
+            "localizer_started_at": "2026-09-07T06:01:16Z",
+            "node_created_at": "2026-09-07T05:53:59Z",
+            "node_ready_at": "2026-09-07T05:54:19Z",
+            "pod_created_at": "2026-09-07T06:01:15Z",
+            "pod_scheduled_at": "2026-09-07T06:01:15Z",
+            "ready_at": "2026-09-07T06:02:15Z",
+            "runtime_started_at": "2026-09-07T06:01:17Z",
+            "scaleup_requested_at": null
+          },
+          "trial": 3,
+          "validation": {
+            "bytes": 141144,
+            "passed": true,
+            "sha256": "9f40b644602adf4e3d78e79db8ca4bfc1a11bb1698552e14b66e01c92ab81554"
+          }
+        },
+        {
+          "cache": {
+            "host_page_cache": "uncontrolled",
+            "image_already_present": true,
+            "localizer": {
+              "elapsed_seconds": 0.03239721299996745,
+              "outcome": "cache-hit"
+            },
+            "node_created_after_trial_start": false,
+            "runtime_cache": "fresh emptyDir"
+          },
+          "first_request_seconds": 1.6135948011651635,
+          "generation_timings_ms": {
+            "queue": 0.01813300002595497,
+            "total": 908.1865910000033,
+            "upstream": 907.8881709999678
+          },
+          "hardware": {
+            "capacity_type": "preemptible",
+            "compute_capability": "9.0",
+            "driver": "580.159.04",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "memory": "81559 MiB",
+            "pool": "h100-1x"
+          },
+          "passed": true,
+          "phases": {
+            "image_pull_seconds": null,
+            "init_completion_to_runtime_start_seconds": 1.0,
+            "init_container_seconds": 1.0,
+            "pod_to_scheduled_seconds": 0.0
+          },
+          "pod_to_application_ready_seconds": 61.171234,
+          "pod_to_first_valid_output_seconds": 64.860826,
+          "pod_to_ready_seconds": 61.0,
+          "process_to_kubernetes_ready_seconds": 58.0,
+          "process_to_ready_seconds": 58.171234,
+          "raw_artifact_sha256": {
+            "rep-1-bounded-json-adapter.log": "64ae97c66b4f6fe6fa6667436bc8b699eeb41379772c62b1945c2bf3f40929bc",
+            "rep-1-deployment.json": "cc4e53545aad647f16a77fddcc241e5778fcf7a050deda590e2548747d7466c8",
+            "rep-1-events.json": "8a7a6943ab39e5214e4f8896383975fabc65b3cdf6c7d1145e9bc14013b04d31",
+            "rep-1-first-output.mp4": "155ecae81b5c0a29a71595331a56e2a486dd9025e08d6d75bebb90a44425c3b5",
+            "rep-1-localize-model.log": "8d3acd927b384042755d320f826bc2b65db7458e77613433a3f66e0bdc0261e4",
+            "rep-1-node.json": "3554098634e9d3db00ec921100fdf57ee12cef17a7f4806690fb394d66877493",
+            "rep-1-pod-final.json": "4a08f66be6d485b66d6f2011dea58a0fdbc81c99b2da35ed3c431fd14b9c3b14",
+            "rep-1-pod.json": "4a08f66be6d485b66d6f2011dea58a0fdbc81c99b2da35ed3c431fd14b9c3b14",
+            "rep-1-port-forward.log": "33e7d2614dcceaf22acd9d31f7e60c184aeb7018b2735d37ef5be4a2662d3ebe",
+            "rep-1-vllm-omni.log": "00c8f1e08fae0deb2e3e9ff784698e1c8bb8817caaf280edff00bcb1a587729a"
+          },
+          "runtime": {
+            "reported_torch_compile_seconds": null,
+            "vllm_version": "0.25.0",
+            "weight_loading_seconds": 4.83
+          },
+          "runtime_image_digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+          "source_pod_spec_unchanged": true,
+          "timeline": {
+            "application_ready_at": "2026-09-07T06:03:48.171234384Z",
+            "cleanup_completed_at": "2026-09-07T06:04:06.849564+00:00",
+            "first_request_at": "2026-09-07T06:03:50.247236+00:00",
+            "first_response_at": "2026-09-07T06:03:51.860826+00:00",
+            "image_pull_finished_at": null,
+            "image_pull_started_at": null,
+            "launch_at": "2026-09-07T06:02:45.959973+00:00",
+            "localizer_finished_at": "2026-09-07T06:02:49Z",
+            "localizer_started_at": "2026-09-07T06:02:48Z",
+            "node_created_at": "2026-09-07T05:53:59Z",
+            "node_ready_at": "2026-09-07T05:54:19Z",
+            "pod_created_at": "2026-09-07T06:02:47Z",
+            "pod_scheduled_at": "2026-09-07T06:02:47Z",
+            "ready_at": "2026-09-07T06:03:48Z",
+            "runtime_started_at": "2026-09-07T06:02:50Z",
+            "scaleup_requested_at": null
+          },
+          "trial": 4,
+          "validation": {
+            "bytes": 141224,
+            "passed": true,
+            "sha256": "155ecae81b5c0a29a71595331a56e2a486dd9025e08d6d75bebb90a44425c3b5"
+          }
+        }
+      ]
+    },
+    "contract": {
+      "fixture_case": {
+        "id": "cosmos3-t2v-robot-arm-seed-2407",
+        "oracle": {
+          "fps": 24,
+          "frames": 25,
+          "height": 256,
+          "maximum_decoded_bytes": 67108864,
+          "mime_type": "video/mp4",
+          "width": 448
+        },
+        "request": {
+          "fps": 24,
+          "guidance_scale": 6.0,
+          "mode": "text-to-video",
+          "negative_prompt": "blurry, distorted, low quality, jittery, deformed",
+          "num_frames": 25,
+          "num_inference_steps": 8,
+          "prompt": "A robot arm carefully places a red cube on a clean workbench, fixed camera, smooth natural motion.",
+          "seed": 2407,
+          "size": "448x256"
+        }
+      },
+      "fixture_file_sha256": "467bfa7484ec20dc1fc30a109b8e0e7e23d3b443061f1c0a9b659dfce30c82de",
+      "model_content_digest": "sha256:dfa7b03382ba78d7f80703652706c3cfa777cefac48634df49345c4302af2c95",
+      "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "runtime_containers": [
+        {
+          "args": [
+            "serve",
+            "/model-cache/cosmos3-nano/sha256/dfa7b03382ba78d7f80703652706c3cfa777cefac48634df49345c4302af2c95/payload",
+            "--omni",
+            "--served-model-name",
+            "nvidia/Cosmos3-Nano",
+            "--revision",
+            "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--init-timeout",
+            "1800",
+            "--no-guardrails",
+            "--model-class-name",
+            "Cosmos3OmniDiffusersPipeline"
+          ],
+          "env": [
+            {
+              "name": "FS2_MODEL_PRECISION",
+              "value": "bfloat16"
+            },
+            {
+              "name": "HF_HUB_DISABLE_TELEMETRY",
+              "value": "1"
+            },
+            {
+              "name": "HF_HUB_OFFLINE",
+              "value": "1"
+            },
+            {
+              "name": "HF_HOME",
+              "value": "/runtime-cache/huggingface"
+            },
+            {
+              "name": "HOME",
+              "value": "/runtime-cache/home"
+            },
+            {
+              "name": "VLLM_NO_USAGE_STATS",
+              "value": "1"
+            },
+            {
+              "name": "XDG_CACHE_HOME",
+              "value": "/runtime-cache/xdg"
+            },
+            {
+              "name": "TRANSFORMERS_OFFLINE",
+              "value": "1"
+            }
+          ],
+          "name": "vllm-omni",
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "32Gi",
+              "memory": "256Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "8Gi",
+              "memory": "128Gi",
+              "nvidia.com/gpu": "1"
+            }
+          }
+        },
+        {
+          "args": null,
+          "env": [
+            {
+              "name": "HOME",
+              "value": "/tmp/home"
+            },
+            {
+              "name": "POD_NAME",
+              "valueFrom": {
+                "fieldRef": {
+                  "apiVersion": "v1",
+                  "fieldPath": "metadata.name"
+                }
+              }
+            },
+            {
+              "name": "PYTHONDONTWRITEBYTECODE",
+              "value": "1"
+            }
+          ],
+          "name": "bounded-json-adapter",
+          "resources": {
+            "limits": {
+              "cpu": "2",
+              "ephemeral-storage": "1Gi",
+              "memory": "2Gi"
+            },
+            "requests": {
+              "cpu": "250m",
+              "ephemeral-storage": "128Mi",
+              "memory": "512Mi"
+            }
+          }
+        }
+      ],
+      "runtime_image_digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+      "source_template_sha256": "c051b75bbd0ef3d55d104a81232ec2986c5bf21d77c1f50160fd4c99ad32e2fb"
+    },
+    "new_node_image_pull": {
+      "n": 1,
+      "statistics": {
+        "first_request_seconds": {
+          "maximum": 1.6097721746191382,
+          "median": 1.6097721746191382,
+          "minimum": 1.6097721746191382,
+          "n": 1
+        },
+        "pod_to_application_ready_seconds": {
+          "maximum": 435.099484,
+          "median": 435.099484,
+          "minimum": 435.099484,
+          "n": 1
+        },
+        "pod_to_first_valid_output_seconds": {
+          "maximum": 449.546658,
+          "median": 449.546658,
+          "minimum": 449.546658,
+          "n": 1
+        },
+        "pod_to_ready_seconds": {
+          "maximum": 444.0,
+          "median": 444.0,
+          "minimum": 444.0,
+          "n": 1
+        },
+        "process_to_kubernetes_ready_seconds": {
+          "maximum": 75.0,
+          "median": 75.0,
+          "minimum": 75.0,
+          "n": 1
+        },
+        "process_to_ready_seconds": {
+          "maximum": 66.099484,
+          "median": 66.099484,
+          "minimum": 66.099484,
+          "n": 1
+        }
+      },
+      "trials": [
+        {
+          "cache": {
+            "host_page_cache": "uncontrolled",
+            "image_already_present": false,
+            "localizer": {
+              "elapsed_seconds": 0.03180225100001621,
+              "outcome": "cache-hit"
+            },
+            "node_created_after_trial_start": true,
+            "runtime_cache": "fresh emptyDir"
+          },
+          "first_request_seconds": 1.6097721746191382,
+          "generation_timings_ms": {
+            "queue": 0.014558999964719987,
+            "total": 905.7995379999966,
+            "upstream": 905.3538969999977
+          },
+          "hardware": {
+            "capacity_type": "preemptible",
+            "compute_capability": "9.0",
+            "driver": "580.159.04",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "memory": "81559 MiB",
+            "pool": "h100-1x"
+          },
+          "passed": true,
+          "phases": {
+            "image_pull_seconds": 142.693,
+            "init_completion_to_runtime_start_seconds": 59.0,
+            "init_container_seconds": 11.0,
+            "pod_to_scheduled_seconds": 154.0
+          },
+          "pod_to_application_ready_seconds": 435.099484,
+          "pod_to_first_valid_output_seconds": 449.546658,
+          "pod_to_ready_seconds": 444.0,
+          "process_to_kubernetes_ready_seconds": 75.0,
+          "process_to_ready_seconds": 66.099484,
+          "raw_artifact_sha256": {
+            "rep-1-bounded-json-adapter.log": "25a80a28f121a3995e27468de1a3ed87bb0c197c565a0cd98c0237941f84fa48",
+            "rep-1-deployment.json": "33a7337720af34efb9923fbd337b94a2e0d582d8e980daa9a800f73bd79fb051",
+            "rep-1-events.json": "86c1dcabbdca15ffafaf4fff04f2bbd735cab30f9a28795c758931726fee22c5",
+            "rep-1-first-output.mp4": "d4b056697f56ff90a07c2d91166d47c7bee1323aabdf12998a9608e49c300e5e",
+            "rep-1-localize-model.log": "f5c07c0e18c5d2c7a60b8889cac78a2e7220a9ec556542710c5821a7059e9cbd",
+            "rep-1-node.json": "1a5c12203e605e017d3cef3190cba128e9fa0bcadefcdab95417bca8444ab1d8",
+            "rep-1-pod-final.json": "72f61fe5e795bd95546ebf42cd4786fde936be58476a0bf407f6a888d6c574db",
+            "rep-1-pod.json": "72f61fe5e795bd95546ebf42cd4786fde936be58476a0bf407f6a888d6c574db",
+            "rep-1-port-forward.log": "866fc28a3d5658a8135de28bca8ef705bd427799df30dab2494ef9fb49d702c0",
+            "rep-1-vllm-omni.log": "b48610b4d2f7e64340a5d41b520e4e15bb7dbb46bff5992b85657d582bfca001"
+          },
+          "runtime": {
+            "reported_torch_compile_seconds": null,
+            "vllm_version": "0.25.0",
+            "weight_loading_seconds": 12.7
+          },
+          "runtime_image_digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+          "source_pod_spec_unchanged": true,
+          "timeline": {
+            "application_ready_at": "2026-09-07T05:59:21.099484903Z",
+            "cleanup_completed_at": "2026-09-07T05:59:50.251094+00:00",
+            "first_request_at": "2026-09-07T05:59:33.936880+00:00",
+            "first_response_at": "2026-09-07T05:59:35.546658+00:00",
+            "image_pull_finished_at": "2026-09-07T05:57:03Z",
+            "image_pull_started_at": "2026-09-07T05:54:40Z",
+            "launch_at": "2026-09-07T05:52:04.252729+00:00",
+            "localizer_finished_at": "2026-09-07T05:57:16Z",
+            "localizer_started_at": "2026-09-07T05:57:05Z",
+            "node_created_at": "2026-09-07T05:53:59Z",
+            "node_ready_at": "2026-09-07T05:54:19Z",
+            "pod_created_at": "2026-09-07T05:52:06Z",
+            "pod_scheduled_at": "2026-09-07T05:54:40Z",
+            "ready_at": "2026-09-07T05:59:30Z",
+            "runtime_started_at": "2026-09-07T05:58:15Z",
+            "scaleup_requested_at": "2026-09-07T05:52:36Z"
+          },
+          "trial": 1,
+          "validation": {
+            "bytes": 138668,
+            "passed": true,
+            "sha256": "d4b056697f56ff90a07c2d91166d47c7bee1323aabdf12998a9608e49c300e5e"
+          }
+        }
+      ]
+    }
+  },
+  "date": "2026-09-07",
+  "full_media_decode": {
+    "ffmpeg_libraries": {
+      "libavcodec": [
+        61,
+        19,
+        101
+      ],
+      "libavdevice": [
+        61,
+        3,
+        100
+      ],
+      "libavfilter": [
+        10,
+        4,
+        100
+      ],
+      "libavformat": [
+        61,
+        7,
+        100
+      ],
+      "libavutil": [
+        59,
+        39,
+        100
+      ],
+      "libswresample": [
+        5,
+        3,
+        100
+      ],
+      "libswscale": [
+        8,
+        3,
+        100
+      ]
+    },
+    "outputs": [
+      {
+        "bytes": 138668,
+        "codec": "h264",
+        "decoded_frames": 25,
+        "distinct_luma_frames": 25,
+        "file": "rep-1-first-output.mp4",
+        "fps": "24",
+        "passed": true,
+        "sha256": "d4b056697f56ff90a07c2d91166d47c7bee1323aabdf12998a9608e49c300e5e",
+        "shapes": [
+          [
+            448,
+            256
+          ]
+        ]
+      },
+      {
+        "bytes": 142589,
+        "codec": "h264",
+        "decoded_frames": 25,
+        "distinct_luma_frames": 25,
+        "file": "rep-2-first-output.mp4",
+        "fps": "24",
+        "passed": true,
+        "sha256": "30a661d31efd590f024b260001608b6bbed435853c364f5442fcce3ab35a3a18",
+        "shapes": [
+          [
+            448,
+            256
+          ]
+        ]
+      },
+      {
+        "bytes": 141144,
+        "codec": "h264",
+        "decoded_frames": 25,
+        "distinct_luma_frames": 25,
+        "file": "rep-3-first-output.mp4",
+        "fps": "24",
+        "passed": true,
+        "sha256": "9f40b644602adf4e3d78e79db8ca4bfc1a11bb1698552e14b66e01c92ab81554",
+        "shapes": [
+          [
+            448,
+            256
+          ]
+        ]
+      },
+      {
+        "bytes": 141224,
+        "codec": "h264",
+        "decoded_frames": 25,
+        "distinct_luma_frames": 25,
+        "file": "rep-1-first-output.mp4",
+        "fps": "24",
+        "passed": true,
+        "sha256": "155ecae81b5c0a29a71595331a56e2a486dd9025e08d6d75bebb90a44425c3b5",
+        "shapes": [
+          [
+            448,
+            256
+          ]
+        ]
+      }
+    ],
+    "pyav_version": "15.1.0",
+    "result": "PASS"
+  },
+  "limitations": [
+    "At least three trials per comparable cohort; no p95 estimate",
+    "New-node Cosmos sample has n=1 and is excluded from cached-image statistics",
+    "Shared model PVC cache is retained; host page-cache residency was not forced",
+    "Each runtime has a fresh emptyDir compile cache and fresh GPU process",
+    "Container/Kubernetes timestamps have one-second granularity",
+    "First-output clock includes readiness observation and port-forward setup",
+    "Dedicated GPU allocations share nodes with other authorized workloads"
+  ],
+  "private_artifact_roots": [
+    "/home/tux/.local/state/fs2-startup-benchmark-r20260907/general/qwen3-8b",
+    "/home/tux/.local/state/fs2-startup-benchmark-r20260907/general/cosmos3-nano",
+    "/home/tux/.local/state/fs2-startup-benchmark-r20260907/general/cosmos3-nano-supplement"
+  ],
+  "qwen3-8b": {
+    "cached_image_fresh_process": {
+      "n": 3,
+      "statistics": {
+        "first_request_seconds": {
+          "maximum": 0.4463610341772437,
+          "median": 0.43224038928747177,
+          "minimum": 0.4317327970638871,
+          "n": 3
+        },
+        "pod_to_application_ready_seconds": {
+          "maximum": 106.050283,
+          "median": 103.034718,
+          "minimum": 102.948326,
+          "n": 3
+        },
+        "pod_to_first_valid_output_seconds": {
+          "maximum": 114.68326,
+          "median": 114.455086,
+          "minimum": 113.807905,
+          "n": 3
+        },
+        "pod_to_ready_seconds": {
+          "maximum": 111.0,
+          "median": 110.0,
+          "minimum": 110.0,
+          "n": 3
+        },
+        "process_to_kubernetes_ready_seconds": {
+          "maximum": 107.0,
+          "median": 107.0,
+          "minimum": 106.0,
+          "n": 3
+        },
+        "process_to_ready_seconds": {
+          "maximum": 102.050283,
+          "median": 100.034718,
+          "minimum": 98.948326,
+          "n": 3
+        }
+      },
+      "trials": [
+        {
+          "cache": {
+            "host_page_cache": "uncontrolled",
+            "image_already_present": true,
+            "localizer": {
+              "elapsed_seconds": 0.00955676200101152,
+              "outcome": "cache-hit"
+            },
+            "node_created_after_trial_start": false,
+            "runtime_cache": "fresh emptyDir"
+          },
+          "first_request_seconds": 0.4463610341772437,
+          "hardware": {
+            "capacity_type": "regular",
+            "compute_capability": "9.0",
+            "driver": "580.159.04",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "memory": "81559 MiB",
+            "pool": "h100-reserved-8x"
+          },
+          "passed": true,
+          "phases": {
+            "image_pull_seconds": null,
+            "init_completion_to_runtime_start_seconds": 1.0,
+            "init_container_seconds": 1.0,
+            "pod_to_scheduled_seconds": 0.0
+          },
+          "pod_to_application_ready_seconds": 106.050283,
+          "pod_to_first_valid_output_seconds": 114.68326,
+          "pod_to_ready_seconds": 111.0,
+          "process_to_kubernetes_ready_seconds": 107.0,
+          "process_to_ready_seconds": 102.050283,
+          "raw_artifact_sha256": {
+            "rep-1-deployment.json": "63209bb2f43f16236b3c246cdc022e9db85ed460958cd9b4c3fb87fe942a6f49",
+            "rep-1-events.json": "d7e87ae5efc16684bc46b48719e5497f5a24a7a422e0bbeb7d04ba4cd7c39823",
+            "rep-1-localize-model.log": "6db254e95dbc53a902951062f849e47ac8a0e6dbb8d0d0eed1d2f3d49f18d84d",
+            "rep-1-node.json": "c992abd8ef17512c051fdc044a6469c3adbeaf4f9d49e5b5f2d3d5e89ca26eb1",
+            "rep-1-pod-final.json": "6bec5fb4774937f69dbbdc34e231b328a1207e45ae0fc270903b9e39f7a4dbf3",
+            "rep-1-pod.json": "6bec5fb4774937f69dbbdc34e231b328a1207e45ae0fc270903b9e39f7a4dbf3",
+            "rep-1-port-forward.log": "05bb5ccbf49663740a50aa35d5cc48714e23712ad77ef138e10631c828373f1d",
+            "rep-1-vllm.log": "c76fbce083b578aa9c9a5b0d273ab8995331366c88c4a6c1948d527c8b46e610"
+          },
+          "runtime": {
+            "reported_torch_compile_seconds": 29.01,
+            "vllm_version": "0.28.0",
+            "weight_loading_seconds": 4.21
+          },
+          "runtime_image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+          "source_pod_spec_unchanged": true,
+          "timeline": {
+            "application_ready_at": "2026-09-07T05:53:50.050283907Z",
+            "cleanup_completed_at": "2026-09-07T05:54:09.939730+00:00",
+            "first_request_at": "2026-09-07T05:53:58.236894+00:00",
+            "first_response_at": "2026-09-07T05:53:58.683260+00:00",
+            "image_pull_finished_at": null,
+            "image_pull_started_at": null,
+            "launch_at": "2026-09-07T05:52:02.743579+00:00",
+            "localizer_finished_at": "2026-09-07T05:52:07Z",
+            "localizer_started_at": "2026-09-07T05:52:06Z",
+            "node_created_at": "2026-09-02T21:55:00Z",
+            "node_ready_at": "2026-09-02T21:55:21Z",
+            "pod_created_at": "2026-09-07T05:52:04Z",
+            "pod_scheduled_at": "2026-09-07T05:52:04Z",
+            "ready_at": "2026-09-07T05:53:55Z",
+            "runtime_started_at": "2026-09-07T05:52:08Z",
+            "scaleup_requested_at": null
+          },
+          "trial": 1,
+          "validation": {
+            "output_sha256": "4da2c11f32f5160f3c595eff67445438fba683fb3cdccae1b416a4be6b72bd6b",
+            "passed": true,
+            "usage": {
+              "completion_tokens": 9,
+              "completion_tokens_details": null,
+              "prompt_tokens": 27,
+              "prompt_tokens_details": null,
+              "total_tokens": 36
+            }
+          }
+        },
+        {
+          "cache": {
+            "host_page_cache": "uncontrolled",
+            "image_already_present": true,
+            "localizer": {
+              "elapsed_seconds": 0.00906768802087754,
+              "outcome": "cache-hit"
+            },
+            "node_created_after_trial_start": false,
+            "runtime_cache": "fresh emptyDir"
+          },
+          "first_request_seconds": 0.4317327970638871,
+          "hardware": {
+            "capacity_type": "regular",
+            "compute_capability": "9.0",
+            "driver": "580.159.04",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "memory": "81559 MiB",
+            "pool": "h100-reserved-8x"
+          },
+          "passed": true,
+          "phases": {
+            "image_pull_seconds": null,
+            "init_completion_to_runtime_start_seconds": 1.0,
+            "init_container_seconds": 1.0,
+            "pod_to_scheduled_seconds": 0.0
+          },
+          "pod_to_application_ready_seconds": 103.034718,
+          "pod_to_first_valid_output_seconds": 114.455086,
+          "pod_to_ready_seconds": 110.0,
+          "process_to_kubernetes_ready_seconds": 107.0,
+          "process_to_ready_seconds": 100.034718,
+          "raw_artifact_sha256": {
+            "rep-2-deployment.json": "b1d9124793ecc8305775e1e652c75a0d2a540189ade1eb2ea9a0905486e70d88",
+            "rep-2-events.json": "ef229ba7a529d03a0d45059d8a71d6a6f28d38b11f5c235c97a207b4ae7a1f82",
+            "rep-2-localize-model.log": "d7c570cee759170f792687616df476ad33a943c7549c64de0ff053a201fd7934",
+            "rep-2-node.json": "d78d3dba9102f68ae2bf65d7cea4ba4f51a72ad6e76da9a667998a46629d8576",
+            "rep-2-pod-final.json": "d7d38140f0bec959552ad7cc7ea96229ce118c7c79770200393fbd238e76c190",
+            "rep-2-pod.json": "d7d38140f0bec959552ad7cc7ea96229ce118c7c79770200393fbd238e76c190",
+            "rep-2-port-forward.log": "05bb5ccbf49663740a50aa35d5cc48714e23712ad77ef138e10631c828373f1d",
+            "rep-2-vllm.log": "cd10b6a8811bfb06680c982ac3d810f4cfd0bad0696021d6b8f34ddff10a2f9b"
+          },
+          "runtime": {
+            "reported_torch_compile_seconds": 28.78,
+            "vllm_version": "0.28.0",
+            "weight_loading_seconds": 3.04
+          },
+          "runtime_image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+          "source_pod_spec_unchanged": true,
+          "timeline": {
+            "application_ready_at": "2026-09-07T05:55:56.034718032Z",
+            "cleanup_completed_at": "2026-09-07T05:56:18.259066+00:00",
+            "first_request_at": "2026-09-07T05:56:07.023357+00:00",
+            "first_response_at": "2026-09-07T05:56:07.455086+00:00",
+            "image_pull_finished_at": null,
+            "image_pull_started_at": null,
+            "launch_at": "2026-09-07T05:54:11.127487+00:00",
+            "localizer_finished_at": "2026-09-07T05:54:15Z",
+            "localizer_started_at": "2026-09-07T05:54:14Z",
+            "node_created_at": "2026-09-02T21:55:00Z",
+            "node_ready_at": "2026-09-02T21:55:21Z",
+            "pod_created_at": "2026-09-07T05:54:13Z",
+            "pod_scheduled_at": "2026-09-07T05:54:13Z",
+            "ready_at": "2026-09-07T05:56:03Z",
+            "runtime_started_at": "2026-09-07T05:54:16Z",
+            "scaleup_requested_at": null
+          },
+          "trial": 2,
+          "validation": {
+            "output_sha256": "4da2c11f32f5160f3c595eff67445438fba683fb3cdccae1b416a4be6b72bd6b",
+            "passed": true,
+            "usage": {
+              "completion_tokens": 9,
+              "completion_tokens_details": null,
+              "prompt_tokens": 27,
+              "prompt_tokens_details": null,
+              "total_tokens": 36
+            }
+          }
+        },
+        {
+          "cache": {
+            "host_page_cache": "uncontrolled",
+            "image_already_present": true,
+            "localizer": {
+              "elapsed_seconds": 0.008501430973410606,
+              "outcome": "cache-hit"
+            },
+            "node_created_after_trial_start": false,
+            "runtime_cache": "fresh emptyDir"
+          },
+          "first_request_seconds": 0.43224038928747177,
+          "hardware": {
+            "capacity_type": "regular",
+            "compute_capability": "9.0",
+            "driver": "580.159.04",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "memory": "81559 MiB",
+            "pool": "h100-reserved-8x"
+          },
+          "passed": true,
+          "phases": {
+            "image_pull_seconds": null,
+            "init_completion_to_runtime_start_seconds": 2.0,
+            "init_container_seconds": 0.0,
+            "pod_to_scheduled_seconds": 0.0
+          },
+          "pod_to_application_ready_seconds": 102.948326,
+          "pod_to_first_valid_output_seconds": 113.807905,
+          "pod_to_ready_seconds": 110.0,
+          "process_to_kubernetes_ready_seconds": 106.0,
+          "process_to_ready_seconds": 98.948326,
+          "raw_artifact_sha256": {
+            "rep-3-deployment.json": "d099815c73549e0df3c33bc0da8b44963d70c950e1b1f2716a09d545a6b91a88",
+            "rep-3-events.json": "687d486f1937c9aeda2132cbe18982cec0566544f86936939d4a2c7b3ed532d4",
+            "rep-3-localize-model.log": "1c4b12c67022d644238f9655e01ae2dc1ba2f20ba74a01ed999dd03300467fa6",
+            "rep-3-node.json": "3619d6dde05922e1fa1e9e10cd747514764245325e6c965e56d125e1757d8db8",
+            "rep-3-pod-final.json": "a644742cff19ec3bdf581934c96b33aeb3f524e646b15707979a94ee51af65fc",
+            "rep-3-pod.json": "a644742cff19ec3bdf581934c96b33aeb3f524e646b15707979a94ee51af65fc",
+            "rep-3-port-forward.log": "05bb5ccbf49663740a50aa35d5cc48714e23712ad77ef138e10631c828373f1d",
+            "rep-3-vllm.log": "49451517afb190acf3930beef92ed6948bbe05e4b9a5a6ff841dafa00d15a9d1"
+          },
+          "runtime": {
+            "reported_torch_compile_seconds": 28.11,
+            "vllm_version": "0.28.0",
+            "weight_loading_seconds": 2.93
+          },
+          "runtime_image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+          "source_pod_spec_unchanged": true,
+          "timeline": {
+            "application_ready_at": "2026-09-07T05:58:03.948326055Z",
+            "cleanup_completed_at": "2026-09-07T05:58:25.617088+00:00",
+            "first_request_at": "2026-09-07T05:58:14.375665+00:00",
+            "first_response_at": "2026-09-07T05:58:14.807905+00:00",
+            "image_pull_finished_at": null,
+            "image_pull_started_at": null,
+            "launch_at": "2026-09-07T05:56:19.363690+00:00",
+            "localizer_finished_at": "2026-09-07T05:56:23Z",
+            "localizer_started_at": "2026-09-07T05:56:23Z",
+            "node_created_at": "2026-09-02T21:55:00Z",
+            "node_ready_at": "2026-09-02T21:55:21Z",
+            "pod_created_at": "2026-09-07T05:56:21Z",
+            "pod_scheduled_at": "2026-09-07T05:56:21Z",
+            "ready_at": "2026-09-07T05:58:11Z",
+            "runtime_started_at": "2026-09-07T05:56:25Z",
+            "scaleup_requested_at": null
+          },
+          "trial": 3,
+          "validation": {
+            "output_sha256": "4da2c11f32f5160f3c595eff67445438fba683fb3cdccae1b416a4be6b72bd6b",
+            "passed": true,
+            "usage": {
+              "completion_tokens": 9,
+              "completion_tokens_details": null,
+              "prompt_tokens": 27,
+              "prompt_tokens_details": null,
+              "total_tokens": 36
+            }
+          }
+        }
+      ]
+    },
+    "contract": {
+      "fixture_case": {
+        "id": "qwen3-fs2-first-exact",
+        "oracle": {
+          "expected": "QWEN3_FS2_FIRST_OK",
+          "type": "exact-content"
+        },
+        "request": {
+          "chat_template_kwargs": {
+            "enable_thinking": false
+          },
+          "max_tokens": 32,
+          "messages": [
+            {
+              "content": "Return exactly QWEN3_FS2_FIRST_OK and no other text.",
+              "role": "user"
+            }
+          ],
+          "model": "qwen3-8b",
+          "stream": false,
+          "temperature": 0
+        }
+      },
+      "fixture_file_sha256": "90a9af8e20e4bf8c3a8a9478f74296d4a981398a7422b3871b0327fd9afdc8a2",
+      "model_content_digest": "sha256:5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d",
+      "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "runtime_containers": [
+        {
+          "args": [
+            "/models/qwen3-8b/sha256/5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d/payload",
+            "--served-model-name",
+            "qwen3-8b",
+            "Qwen/Qwen3-8B",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--dtype",
+            "bfloat16",
+            "--tensor-parallel-size",
+            "1",
+            "--max-model-len",
+            "32768",
+            "--gpu-memory-utilization",
+            "0.80",
+            "--generation-config",
+            "vllm",
+            "--enable-prefix-caching"
+          ],
+          "env": [
+            {
+              "name": "HF_HUB_OFFLINE",
+              "value": "1"
+            },
+            {
+              "name": "TRANSFORMERS_OFFLINE",
+              "value": "1"
+            },
+            {
+              "name": "VLLM_NO_USAGE_STATS",
+              "value": "1"
+            },
+            {
+              "name": "VLLM_CACHE_ROOT",
+              "value": "/runtime-cache/vllm"
+            },
+            {
+              "name": "TRITON_CACHE_DIR",
+              "value": "/runtime-cache/triton"
+            }
+          ],
+          "name": "vllm",
+          "resources": {
+            "limits": {
+              "cpu": "24",
+              "ephemeral-storage": "32Gi",
+              "memory": "160Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "4Gi",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            }
+          }
+        }
+      ],
+      "runtime_image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+      "source_template_sha256": "b62aa92f5e0e441de9893b26c0346f4da9fddd5484ac7c924fe83b0de721a050"
+    }
+  },
+  "request_to_ready_reason": "No public activation request was used",
+  "request_to_ready_seconds": null,
+  "result": "PASS",
+  "schema": "fs2-serve.nebius.ai/current-startup-report/v1",
+  "scope": "isolated replicas cloned from current live H100 serving templates"
+}
