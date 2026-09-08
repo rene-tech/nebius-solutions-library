@@ -359,6 +359,23 @@ describe("App settings runtime contract", () => {
     );
     expect(terraform).not.toHaveBeenCalled();
   });
+  it("allows explicit scale-to-zero while displaying missing benchmark evidence", async () => {
+    const settings = setup();
+    settings.serving!.spec.availability.minReplicas = 1;
+    const capabilities = structuredClone(modelDeploymentMutationCapabilitiesFixture);
+    const option = capabilities.configuration_options[0]!;
+    option.scale_to_zero_qualified = false;
+    option.scale_to_zero_warning = "Scale-to-zero is not yet benchmark-qualified.";
+    vi.mocked(adminApi.modelDeploymentCapabilities).mockResolvedValue(testEnvelope(capabilities));
+    const save = vi.spyOn(appsApi, "updateSettings").mockResolvedValue(testEnvelope(settings));
+    renderPage(<AppSettingsTab app={app} />);
+    const min = await screen.findByLabelText("Minimum ready workers");
+    expect(await screen.findByText(option.scale_to_zero_warning)).toBeInTheDocument();
+    fireEvent.change(min, { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save.mock.calls[0][1].serving_spec!.availability.minReplicas).toBe(0);
+  });
   it("keeps a rejected draft visible and does not retry a revision conflict", async () => {
     setup();
     const save = vi

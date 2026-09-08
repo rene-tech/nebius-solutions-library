@@ -17,10 +17,47 @@ export interface TimeSeriesChartProps {
 }
 
 const number = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+const byteUnits = ["bytes", "KiB", "MiB", "GiB", "TiB", "PiB"];
+function displayScale(unit: string, maximum: number) {
+  const exponent =
+    unit === "bytes"
+      ? Math.min(
+          byteUnits.length - 1,
+          Math.max(
+            0,
+            Math.floor(Math.log2(Math.max(1, Math.abs(maximum))) / 10),
+          ),
+        )
+      : 0;
+  return {
+    divisor: 1024 ** exponent,
+    unit: exponent ? byteUnits[exponent] : unit,
+  };
+}
 export function chartValue(value: number | null, unit: string) {
-  return value === null || !Number.isFinite(value)
-    ? "—"
-    : `${number.format(value)} ${unit}`.trim();
+  if (value === null || !Number.isFinite(value)) return "—";
+  const display = displayScale(unit, value);
+  return `${number.format(value / display.divisor)} ${display.unit}`.trim();
+}
+
+/** The console's time window is UTC, independent of the browser's timezone. */
+export function chartTimeLabel(at: number, start: number, end: number) {
+  if (![at, start, end].every(Number.isFinite)) return "—";
+  const multipleDays =
+    new Date(start).toISOString().slice(0, 10) !==
+    new Date(end).toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone: "UTC",
+    ...(multipleDays
+      ? { month: "short" as const, day: "numeric" as const }
+      : {}),
+    ...(new Date(start).getUTCFullYear() !== new Date(end).getUTCFullYear()
+      ? { year: "numeric" as const }
+      : {}),
+    hour: "numeric",
+    minute: "2-digit",
+    ...(end - start < 3_600_000 ? { second: "2-digit" as const } : {}),
+  }).format(at);
 }
 
 /** Null samples break the path: unknown intervals must never appear as zeros. */
@@ -59,6 +96,10 @@ export function TimeSeriesChart(props: TimeSeriesChartProps) {
     end = Math.max(...times);
   const floor = Math.min(0, ...values),
     ceiling = Math.max(1, ...values);
+  const display = displayScale(
+    props.unit,
+    Math.max(Math.abs(floor), Math.abs(ceiling)),
+  );
   const x = (time: number) =>
     48 + ((time - start) / Math.max(1, end - start)) * 568;
   const y = (value: number) =>
@@ -68,7 +109,7 @@ export function TimeSeriesChart(props: TimeSeriesChartProps) {
     <section className="panel time-chart" aria-labelledby={titleId}>
       <div className="section-heading">
         <h3 id={titleId}>{props.title}</h3>
-        <span className="eyebrow">{props.unit}</span>
+        <span className="eyebrow">{display.unit}</span>
       </div>
       <div className="chart-summary">
         <span>
@@ -98,7 +139,7 @@ export function TimeSeriesChart(props: TimeSeriesChartProps) {
                   className="chart-grid"
                 />
                 <text x="40" y={y(value) + 4} textAnchor="end">
-                  {number.format(value)}
+                  {number.format(value / display.divisor)}
                 </text>
               </g>
             );
@@ -134,10 +175,10 @@ export function TimeSeriesChart(props: TimeSeriesChartProps) {
             </g>
           ))}
           <text x="48" y="194">
-            {new Date(start).toLocaleTimeString()}
+            {chartTimeLabel(start, start, end)}
           </text>
           <text x="616" y="194" textAnchor="end">
-            {new Date(end).toLocaleTimeString()}
+            {chartTimeLabel(end, start, end)}
           </text>
         </svg>
       ) : (

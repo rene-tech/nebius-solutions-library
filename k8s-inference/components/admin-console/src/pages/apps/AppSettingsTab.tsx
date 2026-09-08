@@ -16,6 +16,7 @@ import {
   fastStartLevelLabel,
   modelDeploymentFastStartLevels,
   normalizedFastStartStatus,
+  scaleToZeroWarning,
 } from "../../lib/modelDeployment";
 import { formatTimestamp } from "../../lib/format";
 
@@ -280,6 +281,7 @@ function SettingsEditor({
                   Reusable serving workers kept ready. This is not batch
                   concurrency.
                 </small>
+                {scaleToZeroWarning(option) ? <small>{scaleToZeroWarning(option)}</small> : null}
               </label>
               <label>
                 Maximum workers

@@ -20,6 +20,7 @@ import {
   fastStartTarget,
   modelDeploymentFastStartLevels,
   normalizeFastStartPolicy,
+  scaleToZeroWarning,
   uniqueCsv,
 } from "../../lib/modelDeployment";
 
@@ -149,7 +150,7 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
         ) : (
           <TextField disabled={identityLocked} label="Tenant ID" onChange={(value) => update((next) => { next.tenantId = value; })} required value={spec.tenantId} />
         )}
-        <SelectField<ModelDeploymentDesiredState> label="Desired state" onChange={(value) => update((next) => { next.lifecycle.desiredState = value; if (value !== "Enabled") next.availability.minReplicas = 0; else if (configurationOption?.scale_to_zero_qualified === false) next.availability.minReplicas = Math.max(1, next.availability.minReplicas); })} value={spec.lifecycle.desiredState} values={["Enabled", "Draining", "Disabled"]} />
+        <SelectField<ModelDeploymentDesiredState> label="Desired state" onChange={(value) => update((next) => { next.lifecycle.desiredState = value; if (value !== "Enabled") next.availability.minReplicas = 0; })} value={spec.lifecycle.desiredState} values={["Enabled", "Draining", "Disabled"]} />
         {identityLocked ? <div className="inline-notice form-grid__wide" role="status">Deployment name, namespace, model reference, tenant and runtime profile are immutable for an existing deployment.</div> : null}
       </FormSection>
 
@@ -167,7 +168,7 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
       <FormSection disabled={disabled} title="Placement and elasticity" detail="Pool references remain accelerator-neutral. Select reserved pools for the hot floor and compatible preemptible pools for elastic burst; the server bounds their combined ceiling.">
         {configurationOption ? (
           <fieldset className="accelerator-pool-fieldset form-grid__wide">
-            <legend>Accelerator pools</legend>
+            <legend>Compute pools</legend>
             <div className="checkbox-stack">
               {configurationOption.pool_choices.map((choice) => (
                 <label className="checkbox-field" key={choice.pool_ref}>
@@ -196,7 +197,7 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
                     })}
                     type="checkbox"
                   />
-                  <span><code>{choice.pool_ref}</code> · {choice.accelerator_class} · {choice.capacity_type} · {choice.accelerators_per_node} GPUs/node · up to {choice.maximum_replicas} replicas</span>
+                  <span><code>{choice.pool_ref}</code> · {choice.accelerator_class} · {choice.capacity_type} · {choice.accelerators_per_node === 0 ? "CPU/RAM capacity" : `${choice.accelerators_per_node} GPUs/node`} · up to {choice.maximum_replicas} replicas</span>
                 </label>
               ))}
             </div>
@@ -205,9 +206,9 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
         ) : (
           <TextField hint="Comma-separated Terraform pool IDs." label="Accelerator pools" onChange={(value) => update((next) => { next.placement.poolRefs = uniqueCsv(value); })} required value={spec.placement.poolRefs.join(", ")} />
         )}
-        <NumberField disabled={presetLocked} label="Accelerators per replica" max={64} min={1} onChange={(value) => update((next) => { next.placement.acceleratorsPerReplica = value; })} value={spec.placement.acceleratorsPerReplica} />
+        {spec.placement.cpuResources ? <p className="supporting-copy">CPU-only runtime · {spec.placement.cpuResources.cpuMillis / 1000} CPU cores and {spec.placement.cpuResources.memoryBytes / 1048576} MiB requested per worker. No GPU is reserved.</p> : <NumberField disabled={presetLocked} label="Accelerators per replica" max={64} min={1} onChange={(value) => update((next) => { next.placement.acceleratorsPerReplica = value; })} value={spec.placement.acceleratorsPerReplica} />}
         <SelectField<ModelDeploymentTopologyPolicy> disabled={presetLocked} label="Topology policy" onChange={(value) => update((next) => { next.placement.topologyPolicy = value; })} value={spec.placement.topologyPolicy} values={["Any", "SingleNode", "HighBandwidthDomain"]} />
-        <NumberField hint={configurationOption ? configurationOption.scale_to_zero_qualified ? "This exact tuple is qualified for a zero hot floor." : "This tuple is not qualified for scale-to-zero while enabled; draining and disabled states use zero." : "Minimum replicas kept hot; zero enables cold-only operation."} label="Hot floor" max={10000} min={spec.lifecycle.desiredState === "Enabled" && configurationOption?.scale_to_zero_qualified === false ? 1 : 0} onChange={(value) => update((next) => { next.availability.minReplicas = value; })} value={spec.availability.minReplicas} />
+        <NumberField hint={scaleToZeroWarning(configurationOption) ?? "Minimum replicas kept hot; zero enables cold-only operation."} label="Hot floor" max={10000} min={0} onChange={(value) => update((next) => { next.availability.minReplicas = value; })} value={spec.availability.minReplicas} />
         <NumberField label="Replica ceiling" max={10000} onChange={(value) => update((next) => { next.availability.maxReplicas = value; })} value={spec.availability.maxReplicas} />
         <NumberField label="Idle before scale-to-zero (seconds)" max={604800} onChange={(value) => update((next) => { next.availability.idleSeconds = value; })} value={spec.availability.idleSeconds} />
         <NumberField label="Target queue depth" max={100000} min={1} onChange={(value) => update((next) => { next.availability.targetQueueDepth = value; })} value={spec.availability.targetQueueDepth} />

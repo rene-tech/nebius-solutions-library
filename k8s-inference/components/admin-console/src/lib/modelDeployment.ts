@@ -200,6 +200,12 @@ export function createEmptyModelDeploymentSpec(tenantId = ""): ModelDeploymentSp
   };
 }
 
+export function scaleToZeroWarning(option?: ModelDeploymentConfigurationOption | null): string | undefined {
+  return option?.scale_to_zero_qualified === false
+    ? option.scale_to_zero_warning ?? "Scale-to-zero can be configured, but this runtime has no measured scale-to-zero benchmark yet."
+    : undefined;
+}
+
 export function draftFromConfigurationOption(
   current: ModelDeploymentSpec,
   option: ModelDeploymentConfigurationOption,
@@ -215,10 +221,6 @@ export function draftFromConfigurationOption(
     : option.default_spec.tenantId;
   next.lifecycle = structuredClone(current.lifecycle);
   next.availability = structuredClone(current.availability);
-  if (next.lifecycle.desiredState === "Enabled" && !option.scale_to_zero_qualified) {
-    next.availability.minReplicas = Math.max(1, next.availability.minReplicas);
-    next.availability.maxReplicas = Math.max(next.availability.minReplicas, next.availability.maxReplicas);
-  }
   next.queue = {
     localQueue: option.local_queue_choices.includes(current.queue.localQueue)
       ? current.queue.localQueue
@@ -275,10 +277,12 @@ export function localModelDeploymentProblem(
   if (!imageDigest.test(spec.runtime.image)) return "Runtime image must be pinned as repository@sha256:digest.";
   if (!dnsSubdomain.test(spec.runtime.templateRef.name)) return "Runtime template name must be a Kubernetes DNS subdomain.";
   if (!sha256.test(spec.runtime.templateRef.digest)) return "Runtime template digest must be a complete sha256 digest.";
-  if (spec.placement.poolRefs.length === 0) return "At least one accelerator pool reference is required.";
-  if (spec.placement.poolRefs.some((pool) => !modelReference.test(pool))) return "Accelerator pool references contain unsupported characters.";
+  if (spec.placement.poolRefs.length === 0) return "At least one compute pool reference is required.";
+  if (spec.placement.poolRefs.some((pool) => !modelReference.test(pool))) return "Compute pool references contain unsupported characters.";
+  const cpuOnly = spec.placement.cpuResources != null;
+  if (cpuOnly !== (spec.placement.acceleratorsPerReplica === 0)) return "CPU resources require exactly zero accelerators per replica.";
   const numericFields: Array<[number, number, number, string]> = [
-    [spec.placement.acceleratorsPerReplica, 1, 64, "Accelerators per replica"],
+    [spec.placement.acceleratorsPerReplica, cpuOnly ? 0 : 1, cpuOnly ? 0 : 64, "Accelerators per replica"],
     [spec.availability.minReplicas, 0, 10000, "Hot floor"],
     [spec.availability.maxReplicas, 0, 10000, "Replica ceiling"],
     [spec.availability.idleSeconds, 0, 604800, "Idle duration"],
@@ -290,6 +294,12 @@ export function localModelDeploymentProblem(
     [spec.rollout.maxSurge, 0, 10000, "Maximum surge"],
     [spec.rollout.progressDeadlineSeconds, 60, 86400, "Progress deadline"],
   ];
+  if (spec.placement.cpuResources) {
+    numericFields.push(
+      [spec.placement.cpuResources.cpuMillis, 1, 64000000, "CPU request (millicores)"],
+      [spec.placement.cpuResources.memoryBytes, 1, 2 ** 50, "Memory request (bytes)"],
+    );
+  }
   if (spec.availability.startupTimeoutSeconds != null) {
     numericFields.push([spec.availability.startupTimeoutSeconds, 60, 7200, "Maximum startup retention"]);
   }

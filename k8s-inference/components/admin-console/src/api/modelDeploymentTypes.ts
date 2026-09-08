@@ -56,6 +56,8 @@ export interface ModelDeploymentSpec {
   placement: {
     poolRefs: string[];
     acceleratorsPerReplica: number;
+    /** Exact qualified whole-Pod requests for a zero-GPU runtime. */
+    cpuResources?: { cpuMillis: number; memoryBytes: number } | null;
     topologyPolicy: ModelDeploymentTopologyPolicy;
   };
   availability: {
@@ -647,6 +649,7 @@ export interface ModelDeploymentConfigurationOption {
   priority_class_choices: string[];
   tenant_choices: string[];
   scale_to_zero_qualified: boolean;
+  scale_to_zero_warning?: string | null;
   fast_start_mechanism_choices: ModelDeploymentFastStartMechanismChoice[];
   fast_start_qualified_level: ModelDeploymentFastStartLevel;
   gpu_snapshot_choices?: Array<{

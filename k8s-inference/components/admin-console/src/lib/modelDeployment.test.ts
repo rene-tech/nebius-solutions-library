@@ -13,6 +13,7 @@ import {
   localModelDeploymentProblem,
   normalizedFastStartStatus,
   observedValue,
+  scaleToZeroWarning,
   uniqueCsv,
 } from "./modelDeployment";
 
@@ -150,7 +151,7 @@ describe("ModelDeployment draft helpers", () => {
     });
   });
 
-  it("does not preserve an enabled zero hot floor across an unqualified switch", () => {
+  it("preserves an explicit zero floor while distinguishing unmeasured scaling from defaults", () => {
     const current = structuredClone(modelDeploymentSpecFixture);
     const option = structuredClone(modelDeploymentMutationCapabilitiesFixture.configuration_options[0]!);
     option.scale_to_zero_qualified = false;
@@ -159,8 +160,24 @@ describe("ModelDeployment draft helpers", () => {
     const switched = draftFromConfigurationOption(current, option);
 
     expect(switched.lifecycle.desiredState).toBe("Enabled");
-    expect(switched.availability.minReplicas).toBe(1);
-    expect(switched.availability.maxReplicas).toBeGreaterThanOrEqual(1);
+    expect(switched.availability.minReplicas).toBe(0);
+    expect(option.scale_to_zero_qualified).toBe(false);
+    expect(scaleToZeroWarning(option)).toMatch(/no measured scale-to-zero benchmark/);
+    expect(draftFromConfigurationOption({ ...current, modelRef: "" }, option).availability.minReplicas).toBe(1);
+  });
+
+  it("accepts exact CPU-only requests without inventing GPU capacity", () => {
+    const cpu = structuredClone(modelDeploymentSpecFixture);
+    cpu.placement.acceleratorsPerReplica = 0;
+    cpu.placement.cpuResources = { cpuMillis: 1000, memoryBytes: 268435456 };
+    cpu.cache = { tier: "Disabled", snapshotPreference: "Never", snapshotRef: null };
+    cpu.fastStart = { mode: "Fixed", level: "Off" };
+    expect(localModelDeploymentProblem("phenoage", "fs2-models", cpu)).toBeNull();
+    cpu.placement.acceleratorsPerReplica = 1;
+    expect(localModelDeploymentProblem("phenoage", "fs2-models", cpu)).toMatch(/exactly zero/);
+    cpu.placement.acceleratorsPerReplica = 0;
+    cpu.placement.cpuResources.cpuMillis = 0;
+    expect(localModelDeploymentProblem("phenoage", "fs2-models", cpu)).toMatch(/CPU request/);
   });
 
   it("keeps customer targets separate from observed qualification and derives Hot only from a ready replica", () => {
