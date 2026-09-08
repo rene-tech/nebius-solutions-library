@@ -1,7 +1,11 @@
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import asyncpg
+import pytest
+
 from fs2_serve.admin_adapters import KubernetesCapacityConfig
-from fs2_serve.capacity_summary import loaded_idle_gpu_count, project_pools
+from fs2_serve.capacity_summary import CapacitySummaryService, loaded_idle_gpu_count, project_pools
 
 
 def node(name, *, ready=True, cordoned=False, pool="h100", resource="nvidia.com/gpu", gpus=8):
@@ -91,3 +95,35 @@ def test_loaded_idle_requires_ready_serving_without_current_model_work():
     ]
     assert loaded_idle_gpu_count(pods, {"active"}) == 2
     assert loaded_idle_gpu_count(pods, {"active", "qwen"}) == 0
+
+
+@pytest.mark.asyncio
+async def test_logical_queue_qualifies_json_attempt_not_operation_integer_column():
+    now = datetime.now(UTC)
+
+    class Pool:
+        async def fetchrow(self, query):
+            # fs2_operations has an integer `attempt` column. Bare `attempt`
+            # resolved to that column in production, not the lateral JSON row.
+            assert "AS stage_entry(value)" in query
+            assert "AS attempt_entry(value)" in query
+            assert "attempt_entry.value->>'outcome'" in query
+            assert "stage_entry.value->'attempts'" in query
+            assert "AND attempt->>" not in query
+            return {"pending": 2, "oldest": now - timedelta(seconds=42)}
+
+    service = CapacitySummaryService(SimpleNamespace(capacity_adapter=None), SimpleNamespace(pool=Pool()))
+    pending, oldest = await service._queue(now)
+    assert pending.value == 2 and oldest.value == 42
+
+
+@pytest.mark.asyncio
+async def test_queue_database_failure_remains_explicitly_unavailable_not_zero_or_http_500():
+    class Pool:
+        async def fetchrow(self, query):
+            raise asyncpg.CannotConnectNowError("database temporarily unavailable")
+
+    service = CapacitySummaryService(SimpleNamespace(capacity_adapter=None), SimpleNamespace(pool=Pool()))
+    pending, oldest = await service._queue(datetime.now(UTC))
+    assert pending.value is None and oldest.value is None
+    assert str(pending.state) == "unavailable"

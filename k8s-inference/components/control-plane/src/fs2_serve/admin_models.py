@@ -363,6 +363,7 @@ class AdminOperationQuery(StrictModel):
     api_key_prefix: str | None = Field(default=None, min_length=1, max_length=64)
     status: OperationStatus | None = None
     error_code: str | None = Field(default=None, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    exclude_protocols: tuple[str, ...] = Field(default=(), max_length=16)
 
     @model_validator(mode="after")
     def validate_bounds(self) -> AdminOperationQuery:

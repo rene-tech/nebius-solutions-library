@@ -151,9 +151,12 @@ def pod_identity(pod: Mapping[str, Any]) -> AppPodIdentity:
         uuids = json.loads(annotations.get(GPU_UUIDS_ANNOTATION, "[]"))
     except (TypeError, ValueError):
         uuids = []
-    # A terminated container's end is a conservative end to its device use.
-    ends = [row.finished_at for row in container_rows(pod) if row.gpu_resources and row.finished_at]
-    finished = max(ends) if ends else None
+    # A completed GPU init container does not end a still-running model's
+    # allocation. Kubelet retains the assigned device while its worker runs.
+    containers = container_rows(pod)
+    active = any(row.gpu_resources and row.state == "running" for row in containers)
+    ends = [row.finished_at for row in containers if row.gpu_resources and row.finished_at]
+    finished = max(ends) if ends and not active else None
     if observed is not None and isinstance(uuids, list):
         for uuid in uuids:
             if isinstance(uuid, str) and re.fullmatch(r"(?:GPU|MIG)-[A-Za-z0-9_.:/-]{1,123}", uuid):
@@ -286,12 +289,22 @@ class AppObservabilityService:
                 pod = pod_identity(raw)
                 previous = identities.get((pod.namespace, pod.uid))
                 if previous:
+                    # Online lifecycle intervals end with each request, not
+                    # with the reusable worker's GPU reservation. A currently
+                    # running GPU container remains attributable during idle
+                    # time. Only that live evidence can extend closed history;
+                    # a terminated Pod's stale annotation must not reopen it.
+                    active_gpu = any(
+                        row.gpu_resources and row.state == "running" for row in container_rows(raw)
+                    )
                     pod = AppPodIdentity(
                         pod.namespace,
                         pod.name,
                         pod.uid,
                         pod.run_id or previous.run_id,
-                        {**pod.gpu_windows, **previous.gpu_windows},
+                        {**previous.gpu_windows, **pod.gpu_windows}
+                        if active_gpu
+                        else {**pod.gpu_windows, **previous.gpu_windows},
                     )
                 identities[(pod.namespace, pod.uid)] = pod
         except AdminAdapterUnavailableError as exc:

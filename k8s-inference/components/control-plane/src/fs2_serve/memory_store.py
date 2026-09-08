@@ -2736,6 +2736,8 @@ class MemoryStore:
                     continue
                 if query.model_id is not None and operation.model_id != query.model_id:
                     continue
+                if operation.protocol in query.exclude_protocols:
+                    continue
                 if query.principal_id is not None and operation.principal_id != query.principal_id:
                     continue
                 if query.api_key_prefix is not None and token.view.prefix != query.api_key_prefix:

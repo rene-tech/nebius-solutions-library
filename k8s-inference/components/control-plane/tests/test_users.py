@@ -157,7 +157,12 @@ async def test_usage_deduplicates_operations_across_keys_rotation_and_issuers(us
     first = await env.tokens.issue(key_request(), created_by="issuer-one")
     rotated = await env.tokens.rotate(first.id, actor="issuer-two", name=None, expires_at=None)
     now = datetime.now(UTC)
-    for token, protocol in ((first, "openai-chat"), (rotated, "scientific-batch-v1")):
+    for token, protocol in (
+        (first, "openai-chat"),
+        (rotated, "scientific-batch-v1"),
+        (first, "scientific-artifact-upload-v1"),
+        (rotated, "scientific-artifact-upload-v1"),
+    ):
         op = OperationView(
             id=uuid4(),
             tenant_id="tenant-a",
@@ -179,6 +184,8 @@ async def test_usage_deduplicates_operations_across_keys_rotation_and_issuers(us
     detail = await env.users.detail(env.operator, owner_id("tenant-a", "researcher"), env.context)
     assert detail.user.usage.requests == 2 and detail.user.usage.scientific_requests == 1
     assert detail.user.usage.input_tokens.value == 4 and detail.user.usage.output_tokens.value == 6
+    assert sum(point.requests for point in detail.user.usage.request_series) == 2
+    assert len(env.store.operations) == 4  # Upload history remains durable and accessible.
     assert detail.user.key_count == 2 and detail.user.active_key_count == 1
     assert detail.user.usage.scheduler_occupied_gpu_seconds.value is None
     later = env.context.model_copy(update={"from_at": now + timedelta(minutes=1)})

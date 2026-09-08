@@ -179,6 +179,7 @@ class PostgresUserRepository:
             WITH operations AS (
                 SELECT * FROM fs2_operations WHERE tenant_id=$1 AND principal_id=$2
                 AND accepted_at >= $3 AND accepted_at < $4
+                AND protocol <> 'scientific-artifact-upload-v1'
             ), attempts AS (
                 SELECT s.operation_id,r.* FROM fs2_telemetry_subjects s
                 JOIN operations o ON o.id=s.operation_id
@@ -219,7 +220,8 @@ class PostgresUserRepository:
             """
             SELECT floor(extract(epoch FROM (accepted_at-$3::timestamptz))/$5)::integer AS bucket,
                    count(*) AS requests FROM fs2_operations
-            WHERE tenant_id=$1 AND principal_id=$2 AND accepted_at >= $3 AND accepted_at < $4 GROUP BY bucket
+            WHERE tenant_id=$1 AND principal_id=$2 AND accepted_at >= $3 AND accepted_at < $4
+                AND protocol <> 'scientific-artifact-upload-v1' GROUP BY bucket
             """,
             tenant_id,
             principal_id,
@@ -295,6 +297,7 @@ class MemoryUserRepository:
             if value.view.tenant_id == tenant_id
             and value.view.principal_id == principal_id
             and context.from_at <= value.view.accepted_at < context.to_at
+            and value.view.protocol != "scientific-artifact-upload-v1"
         ]
         terminals = [op for op in values if op.status.terminal]
         usage = usage_from_counts(

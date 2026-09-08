@@ -56,6 +56,8 @@ from .request_telemetry import PostgresRequestTelemetryStore
 from .scientific_admin import ScientificAdminReadService
 from .scientific_admin_models import ScientificModelPolicyUpdate
 
+_UPLOAD_PROTOCOL = "scientific-artifact-upload-v1"
+
 
 def default_app_id(model_id: str) -> UUID:
     return uuid5(NAMESPACE_URL, f"fs2-serve/app/default/{model_id}")
@@ -428,7 +430,7 @@ class AppsService:
         return await self.settings(app_id, context, actor.tenant_id)
 
     async def _run(self, record: AppRecord, operation: AdminOperationItem, context: AdminContext) -> AppRun:
-        if operation.model_id != record.public_model_id:
+        if operation.model_id != record.public_model_id or operation.protocol == _UPLOAD_PROTOCOL:
             raise AdminProblemError(404, "app_run_not_found", "operation does not belong to this app")
         detail = None
         if record.execution_mode == "scientific" and self.scientific is not None:
@@ -462,6 +464,7 @@ class AppsService:
             api_key_prefix=None,
             status=status,
             error_code=None,
+            exclude_protocols=(_UPLOAD_PROTOCOL,),
         )
         # List rows stay cheap; full scientific DAG/artifacts are fetched only
         # on detail. The operation remains the unique durable list identity.
@@ -501,7 +504,7 @@ class AppsService:
                 request_bytes=transport.request_bytes if transport else None,
                 response_bytes=transport.response_bytes if transport else None,
                 notes=[
-                    "One durable operation is one logical run; polling and idempotent replays are excluded.",
+                    "One inference operation is one logical run; artifact uploads, polling and replays are excluded.",
                     "Estimated GPU time is not scheduler occupancy or device utilization.",
                     "Scientific GPU time sums exclusive complete attempt ledgers; shared serving idle is unallocated.",
                     "Historical request/response byte sizes were not recorded and are unknown.",
@@ -521,6 +524,7 @@ class AppsService:
                 api_key_prefix=None,
                 status=None,
                 error_code=None,
+                exclude_protocols=(_UPLOAD_PROTOCOL,),
             )
             operations.extend(page.data.items)
             cursor = page.data.next_cursor

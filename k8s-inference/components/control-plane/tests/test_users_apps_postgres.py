@@ -7,6 +7,7 @@ import json
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import asyncpg
@@ -14,7 +15,7 @@ import httpx
 import pytest
 import pytest_asyncio
 
-from fs2_serve.admin_models import AdminContext
+from fs2_serve.admin_models import AdminContext, AdminOperationQuery
 from fs2_serve.app_observability import AppObservationHistory
 from fs2_serve.apps_models import AppObservabilityTarget, AppRecord
 from fs2_serve.apps_repository import AppConflictError, PostgresAppsRepository
@@ -103,6 +104,8 @@ async def test_actual_user_discovery_settings_and_usage_across_key_rotation(data
     foreign = await token(database, tenant="tenant-b")
     await operation(database, key)
     await operation(database, second, protocol="scientific-batch-v1")
+    await operation(database, second, protocol="scientific-artifact-upload-v1")
+    await operation(database, second, protocol="scientific-artifact-upload-v1")
     await operation(database, key, at=NOW - timedelta(days=3))
     await operation(database, foreign)
     rows = await repository.list("tenant-a")
@@ -147,13 +150,15 @@ async def test_actual_apps_usage_is_independent_windowed_and_owner_attributed(da
     repository = PostgresAppsRepository(database.pool)
     key = await token(database)
     second = await token(database, principal="service-owner")
-    await operation(database, key)
-    await operation(database, second, http_status=503)
+    first_run = await operation(database, key)
+    second_run = await operation(database, second, http_status=503)
     await operation(database, key, at=NOW - timedelta(days=3))
     await operation(database, key, model="app-independent")
+    await operation(database, key, protocol="scientific-artifact-upload-v1", at=NOW + timedelta(minutes=1))
     usage = await repository.usage("qwen3-8b", CONTEXT, None)
     assert usage["logical_runs"] == 2 and usage["unique_users"] == 2
     assert usage["status_classes"] == {"2xx": 1, "5xx": 1}
+    assert usage["input_tokens"] == 6 and usage["output_tokens"] == 14
     assert {row["principal_id"] for row in usage["users"]} == {"researcher", "service-owner"}
     assert sum(row["logical_runs"] for row in usage["requests_over_time"]) == 2
     assert usage["scientific_gpu"] is None
@@ -161,6 +166,24 @@ async def test_actual_apps_usage_is_independent_windowed_and_owner_attributed(da
     empty = CONTEXT.model_copy(update={"from_at": NOW + timedelta(minutes=1)})
     assert (await repository.usage("qwen3-8b", empty, None))["logical_runs"] == 0
     assert await repository.last_used("qwen3-8b", None) == NOW
+    query = AdminOperationQuery(
+        from_at=CONTEXT.from_at,
+        to_at=CONTEXT.to_at,
+        model_id="qwen3-8b",
+        limit=1,
+        exclude_protocols=("scientific-artifact-upload-v1",),
+    )
+    first_page = await database.admin_list_operations(query)
+    assert len(first_page) == 1 and first_page[0].protocol == "openai-chat"
+    second_query = query.model_copy(update={"after_at": first_page[0].accepted_at, "after_id": first_page[0].id})
+    second_page = await database.admin_list_operations(second_query)
+    assert {first_page[0].id, second_page[0].id} == {first_run, second_run}
+    third = second_query.model_copy(update={"after_at": second_page[0].accepted_at, "after_id": second_page[0].id})
+    assert not await database.admin_list_operations(third)
+    original_history = await database.admin_list_operations(
+        query.model_copy(update={"exclude_protocols": (), "limit": 200})
+    )
+    assert len(original_history) == 3 and original_history[0].protocol == "scientific-artifact-upload-v1"
 
 
 async def test_actual_scientific_attempt_join_reports_missing_rollup_not_zero(database):
@@ -394,6 +417,24 @@ async def test_actual_independent_scientific_app_dispatch_limits_and_pause(datab
     assert (second.counts.running, second.counts.queued) == (0, 1)
     assert source.policy is None
     assert await database.pool.fetchval("SELECT count(*) FROM fs2_operations WHERE id=ANY($1::uuid[])", ids) == 3
+    from fs2_serve.capacity_summary import CapacitySummaryService
+
+    rows = await database.pool.fetch(
+        "SELECT o.status,b.state FROM fs2_operations o JOIN fs2_scientific_batches b ON b.operation_id=o.id"
+    )
+    expected = 0
+    for row in rows:
+        state = json.loads(row["state"]) if isinstance(row["state"], str) else row["state"]
+        waiting = any(
+            attempt["outcome"] == "active" and attempt.get("last_phase") in {"queued", "scheduling", "node_pending"}
+            for stage in state["stages"]
+            for attempt in stage["attempts"]
+        )
+        expected += row["status"] in {"queued", "activating"} or row["status"] == "running" and waiting
+    pending, _ = await CapacitySummaryService(SimpleNamespace(capacity_adapter=None), database)._queue(
+        datetime.now(UTC)
+    )
+    assert pending.value == expected  # Real SQL, including existing integer o.attempt and JSON attempts.
     # The separate paused row can resume without mutating the first app's limit.
     await policies.set(
         routes[1], tenant_id=None, expected_revision=1, paused=False, max_active_runs=2, reason=None, actor="test"
@@ -402,6 +443,22 @@ async def test_actual_independent_scientific_app_dispatch_limits_and_pause(datab
     await controller.reconcile_once()
     assert (await policies.get(routes[0], tenant_id=None)).policy.max_active_runs == 1
     assert (await policies.get(routes[1], tenant_id=None)).counts.running == 1
+
+
+async def test_actual_capacity_queue_excludes_upload_bookkeeping_without_deleting_history(database):
+    from fs2_serve.capacity_summary import CapacitySummaryService
+
+    key = await token(database)
+    run = await operation(database, key)
+    upload = await operation(database, key, protocol="scientific-artifact-upload-v1")
+    await database.pool.execute(
+        "UPDATE fs2_operations SET status='queued',completed_at=NULL WHERE id=ANY($1::uuid[])", [run, upload]
+    )
+    pending, oldest = await CapacitySummaryService(SimpleNamespace(capacity_adapter=None), database)._queue(
+        NOW + timedelta(seconds=30)
+    )
+    assert pending.value == 1 and oldest.value == 30
+    assert await database.pool.fetchval("SELECT count(*) FROM fs2_operations") == 2
 
 
 async def test_actual_serving_clone_admission_replay_payload_and_fences(database, registry):

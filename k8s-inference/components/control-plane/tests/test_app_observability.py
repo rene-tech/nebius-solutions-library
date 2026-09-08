@@ -294,5 +294,24 @@ async def test_malformed_source_response_is_explicitly_unavailable():
 async def test_closed_historical_allocations_are_not_reopened_by_stale_pod_annotation():
     history = AsyncMock()
     history.pods.return_value = [AppPodIdentity("models", "a", "uid-a", gpu_windows={"GPU-111": [(START, END)]})]
-    identities, _ = await service([pod()], history=history)._identities(target(), START, END)
+    terminated = pod(phase="Succeeded")
+    terminated["status"]["containerStatuses"][0]["state"] = {"terminated": {"finishedAt": END.isoformat()}}
+    identities, _ = await service([terminated], history=history)._identities(target(), START, END)
     assert identities[0].gpu_windows["GPU-111"] == [(START, END)]
+
+
+@pytest.mark.asyncio
+async def test_live_worker_keeps_gpu_attribution_after_request_interval_ends():
+    history = AsyncMock()
+    request_end = START + timedelta(seconds=1)
+    history.pods.return_value = [
+        AppPodIdentity("models", "a", "uid-a", gpu_windows={"GPU-111": [(START, request_end)]})
+    ]
+    identities, _ = await service([pod()], history=history)._identities(target(), START, END)
+    assert identities[0].gpu_windows["GPU-111"] == [(START, None)]
+
+
+def test_completed_gpu_init_does_not_close_live_worker_allocation():
+    value = pod()
+    value["spec"]["initContainers"][0]["resources"] = {"requests": {"nvidia.com/gpu": "1"}}
+    assert pod_identity(value).gpu_windows == {"GPU-111": [(START, None)]}

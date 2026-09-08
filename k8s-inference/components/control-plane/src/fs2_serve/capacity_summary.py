@@ -7,6 +7,7 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
+import asyncpg
 from pydantic import Field
 
 from .admin import AdminReadService
@@ -260,13 +261,14 @@ class CapacitySummaryService:
             if hasattr(self.store, "pool"):
                 row = await self.store.pool.fetchrow("""
                     SELECT count(*) AS pending,min(o.accepted_at) AS oldest FROM fs2_operations o
-                    WHERE o.status IN ('queued','activating') OR (o.status='running' AND EXISTS (
+                    WHERE o.protocol <> 'scientific-artifact-upload-v1'
+                      AND (o.status IN ('queued','activating') OR (o.status='running' AND EXISTS (
                         SELECT 1 FROM fs2_scientific_batches b,
-                            LATERAL jsonb_array_elements(b.state->'stages') stage,
-                            LATERAL jsonb_array_elements(stage->'attempts') attempt
-                        WHERE b.operation_id=o.id AND attempt->>'outcome'='active'
-                          AND attempt->>'last_phase' IN ('queued','scheduling','node_pending')
-                    ))
+                            LATERAL jsonb_array_elements(b.state->'stages') AS stage_entry(value),
+                            LATERAL jsonb_array_elements(stage_entry.value->'attempts') AS attempt_entry(value)
+                        WHERE b.operation_id=o.id AND attempt_entry.value->>'outcome'='active'
+                          AND attempt_entry.value->>'last_phase' IN ('queued','scheduling','node_pending')
+                    )))
                     """)
                 count, oldest = row["pending"], row["oldest"]
             else:
@@ -274,13 +276,14 @@ class CapacitySummaryService:
                     entry.view
                     for entry in self.store.operations.values()
                     if str(entry.view.status) in {"queued", "activating"}
+                    and entry.view.protocol != "scientific-artifact-upload-v1"
                 ]
                 count = len(operations)
                 oldest = min((op.accepted_at for op in operations), default=None)
             return value(float(count), "runs", "postgres"), value(
                 max(0, (now - oldest).total_seconds()) if oldest else 0, "seconds", "postgres"
             )
-        except (AttributeError, OSError, RuntimeError, ValueError):
+        except (AttributeError, OSError, RuntimeError, ValueError, asyncpg.PostgresError):
             return value(None, "runs", "postgres", "Logical operation queue is unavailable."), value(
                 None, "seconds", "postgres", "Logical operation queue is unavailable."
             )
@@ -319,7 +322,8 @@ class CapacitySummaryService:
                         if hasattr(self.store, "pool"):
                             rows = await self.store.pool.fetch(
                                 "SELECT DISTINCT model_id FROM fs2_operations "
-                                "WHERE status IN ('queued','activating','running')"
+                                "WHERE status IN ('queued','activating','running') "
+                                "AND protocol <> 'scientific-artifact-upload-v1'"
                             )
                             active_models = {row["model_id"] for row in rows}
                         else:
@@ -327,6 +331,7 @@ class CapacitySummaryService:
                                 entry.view.model_id
                                 for entry in self.store.operations.values()
                                 if str(entry.view.status) in {"queued", "activating", "running"}
+                                and entry.view.protocol != "scientific-artifact-upload-v1"
                             }
                         idle = value(
                             loaded_idle_gpu_count(pods, active_models),

@@ -15,6 +15,7 @@ from fs2_serve.apps_repository import MemoryAppsRepository
 from fs2_serve.apps_scientific import (
     AppScientificCluster,
     AppScientificExecution,
+    AppScientificModels,
     AppScientificProfile,
     AppScientificProfiles,
     AppScientificScheduling,
@@ -45,6 +46,38 @@ async def _inventory(model_ref="protein-design"):
     inventory = ScientificAppsInventory(repository)
     await inventory.refresh()
     return inventory, records
+
+
+@pytest.mark.asyncio
+async def test_admin_replica_refreshes_clone_inventory_before_policy_startup_projection(tmp_path):
+    from test_scientific_admin import _readiness
+
+    from fs2_serve.scientific_admin import ScientificModelSnapshot
+    from fs2_serve.scientific_admin_models import ScientificModelReadinessList
+
+    creator, records = await _inventory("protenix-v2")
+    # A different API replica has no PAT request and did not create the app.
+    # The durable policy row is already visible to its policy repository.
+    replica = ScientificAppsInventory(creator.repository)
+    source = runtime_execution_map(tmp_path)
+    execution = AppScientificExecution(source, replica)
+    assert not replica.records
+
+    class SourceModels:
+        async def list_models(self, *, tenant_id=None):
+            return ScientificModelSnapshot(
+                data=ScientificModelReadinessList(items=[_readiness("protenix-v2")]),
+                observed_at=datetime.now(UTC),
+            )
+
+    models = AppScientificModels(SourceModels(), replica)
+    snapshot = await models.list_models()
+    known = {item.model_id for item in snapshot.data.items}
+    assert known == {"protenix-v2", *(record.public_model_id for record in records)}
+    for record in records:
+        assert execution.startup_policy_options(record.public_model_id) == source.startup_policy_options("protenix-v2")
+    again = await models.list_models()
+    assert len(again.data.items) == len(known)  # Refresh cannot duplicate aliases.
 
 
 @pytest.mark.asyncio

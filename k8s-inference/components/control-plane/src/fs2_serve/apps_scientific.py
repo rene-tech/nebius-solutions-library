@@ -203,6 +203,10 @@ class AppScientificModels:
         self.inventory = inventory
 
     async def list_models(self, *, tenant_id: str | None = None) -> Any:
+        # Admin sessions do not pass through PAT authentication. A different
+        # replica can therefore see a new durable policy before its in-memory
+        # source mapping; refresh before catalog and startup-policy projection.
+        await self.inventory.refresh()
         snapshot = await self.source.list_models(tenant_id=tenant_id)
         by_source = {model.model_id: model for model in snapshot.data.items}
         aliases = [

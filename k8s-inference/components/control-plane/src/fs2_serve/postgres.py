@@ -4025,6 +4025,7 @@ class PostgresStore:
                   AND ($8::text IS NULL OR token.prefix=$8)
                   AND ($9::text IS NULL OR operation.status::text=$9)
                   AND ($10::text IS NULL OR operation.error_code=$10)
+                  AND NOT (operation.protocol=ANY($12::text[]))
                 ORDER BY operation.accepted_at DESC,operation.id DESC LIMIT $11
                 """,
                 query.from_at,
@@ -4038,6 +4039,7 @@ class PostgresStore:
                 str(query.status) if query.status is not None else None,
                 query.error_code,
                 query.limit,
+                list(query.exclude_protocols),
             )
         return [self._admin_operation(row) for row in rows]
 

@@ -289,6 +289,63 @@ async def test_app_drain_and_automatic_cache_history_use_its_own_public_route():
 
 
 @pytest.mark.asyncio
+async def test_app_run_pages_usage_and_last_use_exclude_upload_bookkeeping_but_global_history_keeps_it(
+    registry, cipher, hasher
+):
+    from test_admission_workers import setup_principal
+
+    from fs2_serve.admin_models import AdminOperationQuery
+    from fs2_serve.models import AdmissionRequest
+
+    store = MemoryStore(cipher, hasher)
+    principal = await setup_principal(store)
+    repository = MemoryAppsRepository()
+    record = _record(public_id="qwen3-8b", name=None)
+    await repository.seed(record)
+    rows = []
+    for ordinal, protocol in enumerate(
+        (
+            "scientific-batch-v1",
+            "scientific-artifact-upload-v1",
+            "scientific-batch-v1",
+            "scientific-artifact-upload-v1",
+        )
+    ):
+        admission = AdmissionRequest(
+            model_id=record.public_model_id,
+            protocol=protocol,
+            operation="test",
+            idempotency_key=f"app-logical-count-{ordinal}",
+            request_body=b"{}",
+        )
+        first = await store.append_operation(
+            principal=principal, admission=admission, model_revision="test", reserved_gpu_seconds=0, max_attempts=1
+        )
+        replay = await store.append_operation(
+            principal=principal, admission=admission, model_revision="test", reserved_gpu_seconds=0, max_attempts=1
+        )
+        assert replay.id == first.id and replay.reused
+        rows.append(first)
+    context = _context()
+    apps = AppsService(repository=repository, registry=registry, admin=AdminReadService(store=store, registry=registry))
+    first_page = (await apps.runs(record.app_id, context, limit=1)).data
+    assert [item.operation.id for item in first_page.items] == [rows[2].id]
+    assert first_page.next_cursor is not None
+    second_page = (await apps.runs(record.app_id, context, limit=1, cursor=first_page.next_cursor)).data
+    assert [item.operation.id for item in second_page.items] == [rows[0].id]
+    assert second_page.next_cursor is None
+    usage = await apps.usage(record.app_id, context)
+    assert usage.logical_runs == 2 and usage.last_used_at == rows[2].accepted_at
+    with pytest.raises(AdminProblemError) as error:
+        await apps.run_detail(record.app_id, rows[3].id, context)
+    assert error.value.status_code == 404
+    original = await store.admin_list_operations(
+        AdminOperationQuery(from_at=context.from_at, to_at=context.to_at, limit=10)
+    )
+    assert len(original) == 4  # No original history row is deleted or globally hidden.
+
+
+@pytest.mark.asyncio
 async def test_create_only_metadata_and_optimistic_independent_edits():
     repository = MemoryAppsRepository()
     original = _record()

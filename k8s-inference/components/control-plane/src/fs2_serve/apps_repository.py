@@ -88,6 +88,7 @@ class PostgresAppsRepository:
                 """WITH operations AS (
                     SELECT * FROM fs2_operations WHERE model_id=$1 AND accepted_at >= $2 AND accepted_at < $3
                         AND ($4::text IS NULL OR tenant_id=$4)
+                        AND protocol<>'scientific-artifact-upload-v1'
                 ), attempts AS (
                     SELECT s.operation_id,r.* FROM fs2_telemetry_subjects s JOIN operations o ON o.id=s.operation_id
                     LEFT JOIN fs2_reporting_lifecycle_latest r USING(subject_id)
@@ -145,7 +146,8 @@ class PostgresAppsRepository:
         async with self.pool.acquire() as connection:
             return await connection.fetchval(
                 """SELECT max(accepted_at) FROM fs2_operations
-                WHERE model_id=$1 AND ($2::text IS NULL OR tenant_id=$2)""",
+                WHERE model_id=$1 AND ($2::text IS NULL OR tenant_id=$2)
+                    AND protocol<>'scientific-artifact-upload-v1'""",
                 model_id,
                 tenant_id,
             )

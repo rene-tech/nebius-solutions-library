@@ -1467,6 +1467,7 @@ class AdminReadService:
         api_key_prefix: str | None,
         status: OperationStatus | None,
         error_code: str | None,
+        exclude_protocols: tuple[str, ...] = (),
     ) -> AdminEnvelope[AdminOperationList]:
         after_at: datetime | None = None
         after_id: UUID | None = None
@@ -1486,6 +1487,7 @@ class AdminReadService:
             api_key_prefix=api_key_prefix,
             status=status,
             error_code=error_code,
+            exclude_protocols=exclude_protocols,
         )
         try:
             records = await self.store.admin_list_operations(query)
