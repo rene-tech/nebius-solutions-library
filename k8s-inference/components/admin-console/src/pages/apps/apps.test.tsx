@@ -177,29 +177,27 @@ describe("Apps identity and tabs", () => {
   });
   it("embeds plaintext correlated logs rather than interpreting messages as HTML", async () => {
     vi.spyOn(appsApi, "detail").mockResolvedValue(testEnvelope(app));
-    const logs = vi
-      .spyOn(appsApi, "logs")
-      .mockResolvedValue(
-        testEnvelope({
-          app_id: app.app_id,
-          items: [
-            {
-              at: "2026-09-08T02:00:00Z",
-              message: "<b>model ready</b>",
-              namespace: "fs2-models",
-              pod: "pod-one",
-              container: "runtime",
-              level: "info",
-              run_id: null,
-            },
-          ],
-          next_cursor: null,
-          source: "loki",
-          state: "available",
-          reason: null,
-          truncated: false,
-        }),
-      );
+    const logs = vi.spyOn(appsApi, "logs").mockResolvedValue(
+      testEnvelope({
+        app_id: app.app_id,
+        items: [
+          {
+            at: "2026-09-08T02:00:00Z",
+            message: "<b>model ready</b>",
+            namespace: "fs2-models",
+            pod: "pod-one",
+            container: "runtime",
+            level: "info",
+            run_id: null,
+          },
+        ],
+        next_cursor: null,
+        source: "loki",
+        state: "available",
+        reason: null,
+        truncated: false,
+      }),
+    );
     renderPage(<AppDetailPage />, "/admin/apps/app-one/logs");
     expect(await screen.findByText("<b>model ready</b>")).toBeInTheDocument();
     expect(screen.queryByText("model ready")).not.toBeInTheDocument();
@@ -359,22 +357,110 @@ describe("App settings runtime contract", () => {
     );
     expect(terraform).not.toHaveBeenCalled();
   });
+  it("shows configured GPU counts and keeps GPU snapshot choices for GPU workers", async () => {
+    const settings = setup();
+    settings.serving!.spec.placement.acceleratorsPerReplica = 8;
+    const save = vi.spyOn(appsApi, "updateSettings");
+    renderPage(<AppSettingsTab app={app} />);
+    expect(
+      await screen.findByLabelText("Resources per worker"),
+    ).toHaveTextContent(
+      "8 GPUs requested per worker. This is the configured request, not current allocation or utilization.",
+    );
+    expect(screen.getByLabelText("GPU snapshot")).toBeInTheDocument();
+    expect(screen.queryByText(/No GPU is reserved/)).not.toBeInTheDocument();
+    expect(save).not.toHaveBeenCalled();
+  });
+  it("shows exact CPU/RAM requests without a GPU selector and preserves hidden settings", async () => {
+    const settings = setup();
+    settings.serving!.spec.placement.acceleratorsPerReplica = 0;
+    settings.serving!.spec.placement.cpuResources = {
+      cpuMillis: 1500,
+      memoryBytes: 268435456,
+    };
+    const original = structuredClone(settings.serving!.spec);
+    const save = vi
+      .spyOn(appsApi, "updateSettings")
+      .mockImplementation(async (_id, body) =>
+        testEnvelope({
+          ...settings,
+          app_revision: 4,
+          serving: { ...settings.serving!, spec: body.serving_spec! },
+        }),
+      );
+    renderPage(<AppSettingsTab app={app} />);
+    expect(
+      await screen.findByLabelText("Resources per worker"),
+    ).toHaveTextContent(
+      "CPU-only worker · 1.5 CPU cores and 256 MiB requested per worker. No GPU is reserved.",
+    );
+    expect(screen.queryByLabelText("GPU snapshot")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "GPU snapshotting is not applicable to this CPU-only app.",
+      ),
+    ).toBeInTheDocument();
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Minimum ready workers"), {
+      target: { value: "1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save.mock.calls[0][1].serving_spec).toEqual({
+      ...original,
+      availability: { ...original.availability, minReplicas: 1 },
+    });
+    expect(settings.serving!.spec).toEqual(original);
+  });
   it("allows explicit scale-to-zero while displaying missing benchmark evidence", async () => {
     const settings = setup();
     settings.serving!.spec.availability.minReplicas = 1;
-    const capabilities = structuredClone(modelDeploymentMutationCapabilitiesFixture);
+    const capabilities = structuredClone(
+      modelDeploymentMutationCapabilitiesFixture,
+    );
     const option = capabilities.configuration_options[0]!;
     option.scale_to_zero_qualified = false;
-    option.scale_to_zero_warning = "Scale-to-zero is not yet benchmark-qualified.";
-    vi.mocked(adminApi.modelDeploymentCapabilities).mockResolvedValue(testEnvelope(capabilities));
-    const save = vi.spyOn(appsApi, "updateSettings").mockResolvedValue(testEnvelope(settings));
+    option.scale_to_zero_warning =
+      "Scale-to-zero is not yet benchmark-qualified.";
+    vi.mocked(adminApi.modelDeploymentCapabilities).mockResolvedValue(
+      testEnvelope(capabilities),
+    );
+    const save = vi
+      .spyOn(appsApi, "updateSettings")
+      .mockResolvedValue(testEnvelope(settings));
     renderPage(<AppSettingsTab app={app} />);
     const min = await screen.findByLabelText("Minimum ready workers");
-    expect(await screen.findByText(option.scale_to_zero_warning)).toBeInTheDocument();
+    expect(
+      await screen.findByText(option.scale_to_zero_warning),
+    ).toBeInTheDocument();
     fireEvent.change(min, { target: { value: "0" } });
     fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
     await waitFor(() => expect(save).toHaveBeenCalledOnce());
-    expect(save.mock.calls[0][1].serving_spec!.availability.minReplicas).toBe(0);
+    expect(save.mock.calls[0][1].serving_spec!.availability.minReplicas).toBe(
+      0,
+    );
+  });
+  it("edits the existing autoscaler cooldown without changing idle, startup or resource settings", async () => {
+    const settings = setup();
+    const original = structuredClone(settings.serving!.spec);
+    const save = vi
+      .spyOn(appsApi, "updateSettings")
+      .mockResolvedValue(testEnvelope(settings));
+    renderPage(<AppSettingsTab app={app} />);
+    const cooldown = await screen.findByLabelText(
+      "Autoscaler cooldown (seconds)",
+    );
+    expect(cooldown).toHaveValue(original.availability.cooldownSeconds);
+    expect(cooldown).toHaveAttribute("min", "5");
+    expect(cooldown).toHaveAttribute("max", "86400");
+    fireEvent.change(cooldown, { target: { value: "120" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save.mock.calls[0][1].serving_spec).toEqual({
+      ...original,
+      availability: { ...original.availability, cooldownSeconds: 120 },
+    });
+    expect(settings.serving!.spec).toEqual(original);
   });
   it("keeps a rejected draft visible and does not retry a revision conflict", async () => {
     setup();

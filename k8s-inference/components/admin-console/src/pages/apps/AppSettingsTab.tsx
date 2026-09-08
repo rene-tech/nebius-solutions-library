@@ -11,6 +11,7 @@ import type { ScientificStageStartupPolicy } from "../../api/scientificTypes";
 import { useSession } from "../../auth/SessionContext";
 import { useAdminTimeWindow } from "../../components/AdminTimeWindow";
 import { DataBoundary } from "../../components/DataBoundary";
+import { chartValue } from "../../components/TimeSeriesChart";
 import { draftUpdate } from "../scientific/ScientificModelPolicyPanel";
 import {
   fastStartLevelLabel,
@@ -165,6 +166,8 @@ function SettingsEditor({
     spec?.cache.snapshotPreference === "Never"
       ? ""
       : (spec?.cache.snapshotRef?.name ?? "");
+  const cpuOnly = spec?.placement.acceleratorsPerReplica === 0;
+  const cpuResources = spec?.placement.cpuResources;
   const startupStages = [
     ...new Set([
       ...Object.keys(initial.scientific?.startup_options ?? {}),
@@ -243,6 +246,24 @@ function SettingsEditor({
         <>
           <fieldset disabled={!canEdit || busy}>
             <legend>Serving and scaling</legend>
+            <p className="supporting-copy" aria-label="Resources per worker">
+              {cpuOnly ? (
+                <>
+                  CPU-only worker ·{" "}
+                  {cpuResources
+                    ? `${cpuResources.cpuMillis / 1000} CPU cores and ${chartValue(cpuResources.memoryBytes, "bytes")} requested per worker.`
+                    : "CPU and memory requests are unavailable."}{" "}
+                  No GPU is reserved.
+                </>
+              ) : (
+                <>
+                  {spec.placement.acceleratorsPerReplica}{" "}
+                  {spec.placement.acceleratorsPerReplica === 1 ? "GPU" : "GPUs"}{" "}
+                  requested per worker. This is the configured request, not
+                  current allocation or utilization.
+                </>
+              )}
+            </p>
             <div className="form-grid">
               <label>
                 Desired state
@@ -281,7 +302,9 @@ function SettingsEditor({
                   Reusable serving workers kept ready. This is not batch
                   concurrency.
                 </small>
-                {scaleToZeroWarning(option) ? <small>{scaleToZeroWarning(option)}</small> : null}
+                {scaleToZeroWarning(option) ? (
+                  <small>{scaleToZeroWarning(option)}</small>
+                ) : null}
               </label>
               <label>
                 Maximum workers
@@ -317,6 +340,28 @@ function SettingsEditor({
                     })
                   }
                 />
+              </label>
+              <label>
+                Autoscaler cooldown (seconds)
+                <input
+                  aria-label="Autoscaler cooldown (seconds)"
+                  type="number"
+                  min={5}
+                  max={86400}
+                  required
+                  value={spec.availability.cooldownSeconds}
+                  onChange={(event) =>
+                    update((next) => {
+                      next.availability.cooldownSeconds = Number(
+                        event.target.value,
+                      );
+                    })
+                  }
+                />
+                <small>
+                  Autoscaler scale-down cooldown, separate from model idle and
+                  startup retention. Changing it does not change the hot floor.
+                </small>
               </label>
               <label>
                 Startup retention (seconds)
@@ -388,55 +433,61 @@ function SettingsEditor({
                   ))}
                 </select>
               </label>
-              <label>
-                GPU snapshot
-                <select
-                  aria-label="GPU snapshot"
-                  value={selectedSnapshot}
-                  onChange={(event) =>
-                    update((next) => {
-                      const choice = snapshotChoices.find(
-                        (item) => item.bundle_id === event.target.value,
-                      );
-                      next.cache.snapshotPreference = choice
-                        ? "Prefer"
-                        : "Never";
-                      next.cache.snapshotRef = choice
-                        ? {
-                            name: choice.bundle_id,
-                            digest: choice.digest,
-                            strategy: "CudaCheckpoint",
-                          }
-                        : null;
-                    })
-                  }
-                >
-                  <option value="">Normal loading</option>
-                  {selectedSnapshot &&
-                  !snapshotChoices.some(
-                    (choice) => choice.bundle_id === selectedSnapshot,
-                  ) ? (
-                    <option value={selectedSnapshot} disabled>
-                      {selectedSnapshot} · not currently selectable
-                    </option>
-                  ) : null}
-                  {snapshotChoices.map((choice) => (
-                    <option
-                      key={choice.bundle_id}
-                      value={choice.bundle_id}
-                      disabled={spec.placement.poolRefs.some(
-                        (pool) => !choice.pool_refs.includes(pool),
-                      )}
-                    >
-                      {choice.bundle_id}
-                    </option>
-                  ))}
-                </select>
-                <small>
-                  Only qualified bundles for compatible pools are offered.
-                  Selection is not proof of an observed restore.
-                </small>
-              </label>
+              {cpuOnly ? (
+                <p className="supporting-copy">
+                  GPU snapshotting is not applicable to this CPU-only app.
+                </p>
+              ) : (
+                <label>
+                  GPU snapshot
+                  <select
+                    aria-label="GPU snapshot"
+                    value={selectedSnapshot}
+                    onChange={(event) =>
+                      update((next) => {
+                        const choice = snapshotChoices.find(
+                          (item) => item.bundle_id === event.target.value,
+                        );
+                        next.cache.snapshotPreference = choice
+                          ? "Prefer"
+                          : "Never";
+                        next.cache.snapshotRef = choice
+                          ? {
+                              name: choice.bundle_id,
+                              digest: choice.digest,
+                              strategy: "CudaCheckpoint",
+                            }
+                          : null;
+                      })
+                    }
+                  >
+                    <option value="">Normal loading</option>
+                    {selectedSnapshot &&
+                    !snapshotChoices.some(
+                      (choice) => choice.bundle_id === selectedSnapshot,
+                    ) ? (
+                      <option value={selectedSnapshot} disabled>
+                        {selectedSnapshot} · not currently selectable
+                      </option>
+                    ) : null}
+                    {snapshotChoices.map((choice) => (
+                      <option
+                        key={choice.bundle_id}
+                        value={choice.bundle_id}
+                        disabled={spec.placement.poolRefs.some(
+                          (pool) => !choice.pool_refs.includes(pool),
+                        )}
+                      >
+                        {choice.bundle_id}
+                      </option>
+                    ))}
+                  </select>
+                  <small>
+                    Only qualified bundles for compatible pools are offered.
+                    Selection is not proof of an observed restore.
+                  </small>
+                </label>
+              )}
               <label>
                 Fast-start policy
                 <select
