@@ -30,6 +30,19 @@ function requireOwnedChange(current, original) {
     'configuration changed outside this check; do not overwrite another operator');
 }
 
+function podWatchPath(resourceVersion) {
+  assert(typeof resourceVersion === 'string' && resourceVersion.length > 0, 'exact initial list resourceVersion required');
+  const params = new URLSearchParams({watch: 'true', resourceVersion,
+    labelSelector: 'fs2-serve.nebius.ai/model-id=' + MODEL, timeoutSeconds: '600'});
+  return '/api/v1/namespaces/fs2-models/pods?' + params;
+}
+
+function podEventSummary(event) {
+  if (event.type === 'BOOKMARK') return null;
+  assert(['ADDED', 'MODIFIED', 'DELETED'].includes(event.type), 'Pod watch returned an error or unknown event');
+  return {type: event.type, name: event.object.metadata.name, uid: event.object.metadata.uid, phase: event.object.status?.phase ?? null};
+}
+
 async function main() {
   process.umask(0o077);
   const [credentialPath, output, sourceCommit, kubeconfig, contextName, execute] = process.argv.slice(2);
@@ -44,7 +57,7 @@ async function main() {
   const report = {schema: 'fs2-serve.nebius.ai/startup-retention-browser-acceptance/v1',
     source_commit: sourceCommit, source_identity_basis: 'Root separately confirms exact rollout before execution.',
     started_at: new Date().toISOString(), model: MODEL, status: 'running',
-    actions: [], status_samples: [], pod_events: [], errors: [], failed_requests: []};
+    actions: [], status_samples: [], pod_events: [], errors: [], failed_requests: [], expected_navigation_aborts: []};
   const clean = value => {
     let text = String(value);
     for (const secret of secrets) text = text.replaceAll(secret, '[redacted]');
@@ -59,11 +72,16 @@ async function main() {
   const browser = await chromium.launch({headless: true, executablePath: '/usr/bin/google-chrome'});
   const browserContext = await browser.newContext({viewport: {width: 1440, height: 1000}});
   const page = await browserContext.newPage();
+  let navigating = false;
   page.on('pageerror', error => report.errors.push({kind: 'pageerror', at: new Date().toISOString(), message: clean(error.message)}));
   page.on('console', item => {
     if (['error', 'warning'].includes(item.type())) report.errors.push({kind: 'console', type: item.type(), at: new Date().toISOString(), message: clean(item.text())});
   });
-  page.on('requestfailed', request => report.failed_requests.push({at: new Date().toISOString(), path: new URL(request.url()).pathname, error: clean(request.failure()?.errorText)}));
+  page.on('requestfailed', request => {
+    const record = {at: new Date().toISOString(), path: new URL(request.url()).pathname, error: clean(request.failure()?.errorText)};
+    if (navigating && record.error === 'net::ERR_ABORTED') report.expected_navigation_aborts.push(record);
+    else report.failed_requests.push(record);
+  });
   let original;
   let apiPath;
   let statusPath;
@@ -75,7 +93,11 @@ async function main() {
   const kubeArgs = ['--kubeconfig', kubeconfig, '--context', contextName, '-n', 'fs2-models'];
   const selector = 'fs2-serve.nebius.ai/model-id=' + MODEL;
   function listPods() {
-    const result = JSON.parse(execFileSync('kubectl', [...kubeArgs, 'get', 'pods', '-l', selector, '-o', 'json', '--request-timeout=20s'], {encoding: 'utf8', timeout: 25000, maxBuffer: 4 * 1024 * 1024}));
+    // The generic kubectl empty List can omit resourceVersion; preserve the
+    // server's original PodList metadata for the subsequent watch.
+    const listPath = '/api/v1/namespaces/fs2-models/pods?' + new URLSearchParams({labelSelector: selector});
+    const result = JSON.parse(execFileSync('kubectl', [...kubeArgs, 'get', '--raw', listPath, '--request-timeout=20s'], {encoding: 'utf8', timeout: 25000, maxBuffer: 4 * 1024 * 1024}));
+    assert.equal(result.kind, 'PodList', 'retain the original server list metadata');
     assert.equal(result.items.length, 0, 'Cosmos has Pods; stop without activating or deleting anything');
     return result.metadata.resourceVersion;
   }
@@ -90,6 +112,14 @@ async function main() {
     save(label + '-browser.json', {at: new Date().toISOString(), url: page.url(), snapshot: await page.locator('body').ariaSnapshot()});
     await page.screenshot({path: path.join(output, 'output/playwright', label + '.png'), fullPage: true});
   }
+  async function navigate(action) {
+    navigating = true;
+    try {
+      await action();
+      await page.getByLabel(LABEL, {exact: true}).waitFor();
+      await page.waitForLoadState('networkidle');
+    } finally { navigating = false; }
+  }
   async function waitObserved(revision, label) {
     for (let attempt = 0; attempt < 60; attempt++) {
       const view = await get(statusPath, `${label}-status-${attempt}`);
@@ -102,8 +132,7 @@ async function main() {
     throw new Error('The exact applied revision did not become observed Cold within120 seconds');
   }
   async function applyUi(label, reset) {
-    await page.goto(workspace);
-    await page.getByLabel(LABEL, {exact: true}).waitFor();
+    await navigate(() => page.goto(workspace));
     if (reset) await page.getByRole('button', {name: 'Use default startup retention', exact: true}).click();
     else await page.getByLabel(LABEL, {exact: true}).fill('1800');
     await snapshot(label + '-draft');
@@ -134,8 +163,7 @@ async function main() {
     await page.getByRole('textbox', {name: 'Bootstrap access token'}).fill(bundle.credentials.admin_bootstrap_token);
     await page.getByRole('button', {name: 'Sign in', exact: true}).click();
     const row = page.getByRole('row').filter({hasText: MODEL});
-    await row.getByRole('link').first().click();
-    await page.getByLabel(LABEL, {exact: true}).waitFor();
+    await navigate(() => row.getByRole('link').first().click());
     workspace = page.url();
     const url = new URL(workspace);
     const name = url.pathname.split('/').pop();
@@ -148,13 +176,19 @@ async function main() {
     const resourceVersion = listPods();
     await snapshot('original');
     report.pod_watch_started_at = new Date().toISOString();
-    watch = spawn('kubectl', [...kubeArgs, 'get', 'pods', '-l', selector, '--watch-only', '--output-watch-events', '--resource-version=' + resourceVersion,
-      '-o', 'jsonpath={.type}{"\\t"}{.object.metadata.name}{"\\t"}{.object.metadata.uid}{"\\t"}{.object.status.phase}{"\\n"}', '--request-timeout=600s'], {stdio: ['ignore', 'pipe', 'pipe']});
+    // kubectl get does not expose a --resource-version flag. The read-only API
+    // watch starts from the list version so no activation can hide in the gap.
+    watch = spawn('kubectl', [...kubeArgs, 'get', '--raw', podWatchPath(resourceVersion), '--request-timeout=600s'], {stdio: ['ignore', 'pipe', 'pipe']});
     let pending = '';
     watch.stdout.on('data', chunk => {
       pending += chunk.toString();
       const lines = pending.split('\n'); pending = lines.pop();
-      for (const line of lines.filter(Boolean)) report.pod_events.push({at: new Date().toISOString(), record: clean(line)});
+      for (const line of lines.filter(Boolean)) {
+        try {
+          const record = podEventSummary(JSON.parse(line));
+          if (record) report.pod_events.push({at: new Date().toISOString(), ...record});
+        } catch (error) { watchExited = {error: clean(error.message)}; }
+      }
     });
     watch.stderr.on('data', chunk => report.errors.push({kind: 'pod-watch', at: new Date().toISOString(), message: clean(chunk.toString())}));
     watch.on('error', error => { watchExited = {error: clean(error.message)}; });
@@ -201,4 +235,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch(error => { console.error(JSON.stringify({status: 'harness-failed', type: error.name})); process.exitCode = 1; });
-module.exports = {requireCold, withRetention, requireOwnedChange};
+module.exports = {requireCold, withRetention, requireOwnedChange, podWatchPath, podEventSummary};

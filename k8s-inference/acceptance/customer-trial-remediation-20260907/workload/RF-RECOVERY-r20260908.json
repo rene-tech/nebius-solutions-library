@@ -1,0 +1,75 @@
+{
+  "schema": "fs2-serve.nebius.ai/customer-trial-post-release-recovery/v1",
+  "original_run_id": "trial-customer-remediation-20260907-r02",
+  "operation_id": "daae227f-f7a0-4fe7-9912-1a95c675c3d9",
+  "deployed_source_commit": "bc264980f3fedc33c8fdc6d59c93096d8db9ccaf",
+  "namespace": "fs2-models",
+  "read_only_observation": true,
+  "cancellation_or_resubmission_performed": false,
+  "original_r02_outcome_unchanged": true,
+  "before": {
+    "observed_at": "2026-09-08T07:32:36.720969Z",
+    "http_status": 200,
+    "operation_status": "running",
+    "result_published": false,
+    "attempt_count": 4,
+    "released_attempt_count": 1,
+    "retained_jobs": [
+      {"name": "fs2-inference-design-000-a1-4641fe655497", "uid": "db3e0f0a-90e8-4dd5-9538-6e45c4d04826", "complete": true},
+      {"name": "fs2-inference-design-001-a1-fd9976d0a06b", "uid": "aa811ee6-c622-417f-93e9-efa6f74ad8b2", "complete": true},
+      {"name": "fs2-inference-design-003-a1-26c24363c065", "uid": "645a62da-cc78-4e7c-a8db-17367b6b214a", "complete": true}
+    ],
+    "retained_pod_count": 1,
+    "source_receipt": "sample-0000.json",
+    "source_sha256": "e598d8251547a5653de87307eae362c7fae3366ee59a452547b5770eda0f150d"
+  },
+  "recovery": {
+    "first_observed_fresh_attempts_at": "2026-09-08T07:33:30.494304Z",
+    "fresh_attempts_started_at": "2026-09-08T07:33:08.015020Z",
+    "restarted_shards": ["design-000", "design-002", "design-003"],
+    "fresh_attempt_number": 2,
+    "successful_original_shard": "design-001",
+    "first_observed_terminal_at": "2026-09-08T07:34:50.945516Z"
+  },
+  "after": {
+    "observed_at": "2026-09-08T07:35:17.561737Z",
+    "http_status": 200,
+    "operation_status": "succeeded",
+    "operation_completed_at": "2026-09-08T07:34:46.830146Z",
+    "result_published": true,
+    "attempt_count": 8,
+    "succeeded_attempt_count": 5,
+    "preempted_attempt_count": 3,
+    "released_attempt_count": 8,
+    "retained_job_count": 0,
+    "retained_pod_count": 0,
+    "source_receipt": "sample-0006.json",
+    "source_sha256": "1fba0c700ac488febedc19a027e7b79af5a1ea2d1bd34452c041938b0a0afe54"
+  },
+  "result_read": {
+    "observed_at": "2026-09-08T07:35:42.566821Z",
+    "http_status": 200,
+    "elapsed_seconds": 0.4430705374106765,
+    "terminal_status": "succeeded",
+    "result_completed_at": "2026-09-08T07:34:46.829119Z",
+    "semantic_validation_status": "passed",
+    "validator_id": "rfdiffusion-v1-1-0",
+    "validation_receipt_digest": "031ad9988ab7cdecc853b1e6e1f3b870141acbf93a4da587b8c24ecad854e45f",
+    "execution_identity_sha256": "5e819d407d360d7cdc08ce3b984bc948e37182ef87c627b93b4e893c4348a082",
+    "source_receipt": "public-result.json",
+    "source_sha256": "73969c12d92875cc1b978d648b5415fbd89c5c66b7bc5416cda9572f2bf9a92e"
+  },
+  "watcher": {
+    "sample_count": 7,
+    "all_status_reads_http_200": true,
+    "terminal_empty_resource_confirmations": 2,
+    "stopped_at": "2026-09-08T07:35:19.194885Z",
+    "wall_seconds": 162.47394247539341,
+    "exit_code": 0,
+    "owned_process_confirmed_absent": true,
+    "source_receipt": "outcome.json",
+    "source_sha256": "7c9ece4caaaba9626418e2baec3a19d95c26f41a66bb2fe1157ef800d6f1c43c"
+  },
+  "private_receipt_root": "releases/trial-customer-remediation-20260907/recovery-r02-r20260908/",
+  "interpretation": "Post-release recovery of the original failed-cohort operation, not a clean original customer request or a new cohort. The original r02 interrupted client was not restarted and no successful client receipt was manufactured."
+}

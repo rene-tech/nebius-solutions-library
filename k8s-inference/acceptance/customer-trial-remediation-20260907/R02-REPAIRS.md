@@ -3,8 +3,8 @@
 R02 remains failed: 12 customer passes, one submission returning HTTP 409 after
 durable acceptance, and one RF batch stalled during priority requeue. Original
 requests, runtime identities, observations, and failed outcomes are retained.
-Work resumed on 2026-09-08. This document records implementation evidence, not
-a claim of live acceptance; release identities and reruns will follow.
+Work resumed on 2026-09-08. This document records the deployed repairs and
+verification evidence; full customer acceptance still requires two clean reruns.
 
 ## RF requeue and Pod accounting
 
@@ -87,4 +87,27 @@ non-metadata content is unchanged. The CRD changes only its optional startup
 property. Helm value changes are the two image pins, matching admin provenance,
 and new immutable contract ConfigMap references. Bootstrap specs themselves are
 unchanged; their execution identity/runtime image changes with the release.
-Workloads apply is in progress; live acceptance is not yet complete.
+Workloads apply completed. The control-plane, admin and model-controller
+rollouts succeeded. Post-apply plans at 07:36 UTC show zero managed actions in
+all three stages. The pre-apply plans and exact applied workloads plan are
+retained privately; the post-apply plan SHA-256 digests are:
+
+- Infrastructure: `41e5bdf31f9f954fb8d8925f39e2887b4ff604567251eaf49395814d88b74309`
+- Foundation: `faec9439ab6783e13dca64775d39a2441f0696d46e92958faca31a0b69d754f0`
+- Workloads: `1953c80c0f4eca2e0bea10693b563cbb0a96fd84d8c812abc6d6233a1a037ae4`
+
+The retained RF batch recovered automatically, completed at 07:34:46 UTC, and
+published a semantically validated result. All eight attempts released their
+resources; two observations confirmed zero matching Jobs and Pods. No new
+submission, cancellation or manual recovery was used. This separate recovery
+does not change the original r02 failure. See [recovery receipts](workload/RF-RECOVERY-r20260908.md).
+
+The deployed real-browser preflight at 07:35 UTC displayed the retained
+Protenix phase duration as 3.95 seconds (API: 3.946846), reconciled occupied GPU
+time, and downloaded an artifact with a recorded digest. The real admin form
+then changed cold Cosmos startup retention to 1800 seconds and restored the exact
+original omitted setting. The restored revision was observed Cold, with zero
+replicas and no Pod activation throughout the scoped watch. Two earlier
+harness-only failures stopped before mutation and remain retained in the
+[preflight evidence](experience/admin-preflight-20260908.json).
+Dedicated burst and two full customer-cohort acceptance checks remain in progress.
