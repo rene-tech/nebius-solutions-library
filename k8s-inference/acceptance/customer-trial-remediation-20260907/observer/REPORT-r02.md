@@ -27,7 +27,7 @@ Exact incidents and raw receipt hashes are in [R02-INCIDENTS.md](R02-INCIDENTS.m
 
 The complete-window Loki query includes all CP replicas and has no failed/truncated chunk or parse error. At 20:39:26, Qwen was briefly Localizing while its original hot Pod remained Ready; the CP continued to **publish an activatable route**, then returned to Ready about ten seconds later. Another short NodePending publication transition is retained. Neither is misrepresented as a route withdrawal. All original hot-Pod identities remained stable. This is bounded evidence, not an uptime SLA or proof every possible transition was exercised.
 
-Natural Qwen burst creation, scheduling and image pulling occurred. One fresh-node burst pulled 8,634,306,308 bytes in 154.835 seconds before it was stopped by the existing lifecycle at 20:25:08Z. It did not reach a verified successful restore/Ready state; no new Qwen snapshot qualification is claimed. The sampler cadence was unchanged at 25 seconds, with no extra stress run.
+Natural Qwen burst creation, scheduling and image pulling occurred. One fresh-node burst's image pull took 154.835 seconds before the Pod was stopped by the existing lifecycle at 20:25:08Z. The event reported an image size of 8,634,306,308 bytes; this is not measured network transfer or snapshot size. It did not reach a verified successful restore/Ready state; the 154.835 seconds are not GPU restore time and no new Qwen snapshot qualification is claimed for this cohort. The sampler cadence was unchanged at 25 seconds, with no extra stress run.
 
 ## Queueing, elasticity and cold loading
 
