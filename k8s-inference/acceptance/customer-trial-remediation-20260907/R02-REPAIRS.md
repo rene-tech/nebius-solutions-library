@@ -61,7 +61,8 @@ external-service deselections and one obsolete compatibility-test expectation:
 its independently assembled legacy payload included the new optional null field.
 That expectation now omits the field while retaining the hard-coded released
 digest assertion. All 72 fast-start/render/startup tests then passed; a full
-rerun will overlap the exact-source image builds. No runtime recipe was changed.
+rerun overlapped the exact-source image builds and passed: 1,633 tests, four
+optional skips and 77 external-service deselections, in 237.50 seconds. No runtime recipe was changed.
 An independent bounded integration check passed all ten RF cases and the actual
 Terraform startup-timeout plans, with no blocking finding.
 
@@ -74,3 +75,16 @@ After the last deployed correction, repeat the unchanged 14-operation campaign
 twice with ordinary HTTP/MCP traffic and actual browser observation. A separate
 burst check must demonstrate Ready, actual restore and useful serving, not merely
 an allocated node or a Pod that is cancelled during image pulling.
+
+Release source `bc264980f3fedc33c8fdc6d59c93096d8db9ccaf`, tree
+`1beebf9a6c79fe8f8db43aab91e7a66a388833fe`, is pushed to main. Regional images:
+control-plane `sha256:762510cb5354dea8f9d32834259dd164d561137582f4dd04aca18af4263b57bc`;
+admin `sha256:fc7b0f2f8207eebc28576f55e9815de92a5c04bfb809beafb5c78ac5fae8b59c`.
+Terraform uses the full exact repository archive, not a component-only archive.
+The plan has zero infrastructure changes, the three expected foundation contract
+refreshes, and 25 workload changes. All queue/flavor/cohort/priority manifests'
+non-metadata content is unchanged. The CRD changes only its optional startup
+property. Helm value changes are the two image pins, matching admin provenance,
+and new immutable contract ConfigMap references. Bootstrap specs themselves are
+unchanged; their execution identity/runtime image changes with the release.
+Workloads apply is in progress; live acceptance is not yet complete.
