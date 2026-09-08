@@ -22,6 +22,7 @@ from fs2_serve.deployment_runtimes import SET_SCHEMA, DeploymentRuntimeError, bi
 from fs2_serve.dynamic_routes import DynamicRouteError, bind_dynamic_publication
 from fs2_serve.mcp_server import build_mcp_server
 from fs2_serve.model_deployment_publication import assess_model_publication
+from fs2_serve.native_catalog import augment_native_catalog
 from fs2_serve.registry import OperationalModel, Registry
 from fs2_serve.settings import Settings
 
@@ -63,11 +64,15 @@ def test_selected_runtime_set_supports_kubernetes_projected_configmap(inputs):
 
 
 def test_all_shipped_runtime_candidates_validate_without_granting_public_routes(inputs):
+    catalog, bindings, gateway, originals, path = inputs
+    catalog = augment_native_catalog(catalog, CATALOG_ROOT, repo_root=REPO_ROOT)
+    gateway = bind_gateway_catalog(catalog, bindings)
+    native_inputs = catalog, bindings, gateway, originals, path
     entries = {}
     for path in (CATALOG_ROOT / "deployment-runtimes").glob("*.json"):
         entry = json.loads(path.read_text())
         entries[entry["model_id"]] = entry
-    projected = project(inputs, entries)
+    projected = project(native_inputs, entries)
     for model_id, entry in entries.items():
         model = projected.model(model_id)
         assert model.runtime_image_digest == entry["record"]["runtime"]["image"]["digest"]
@@ -102,7 +107,7 @@ def test_cpu_reference_database_runtime_is_exact_and_reserves_no_gpu(inputs):
         (("resources", "gpu", "topology"), "single-gpu"),
         (("resources", "gpu", "b300_state"), "unverified"),
         (("cache", "owner"), "fs2-serve-localizer"),
-        (("cache", "artifact", "kind"), "weights"),
+        (("cache", "artifact", "kind"), "nim-cache"),
     ],
 )
 def test_cpu_runtime_resource_and_database_identity_fail_closed(inputs, path, value):

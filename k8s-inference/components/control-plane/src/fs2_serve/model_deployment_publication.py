@@ -76,7 +76,7 @@ class DynamicModelPublication(StrictModel):
     runtime_image: str
     artifact_revision: str
     artifact_manifest_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
-    accelerators_per_replica: int = Field(ge=1, le=64)
+    accelerators_per_replica: int = Field(ge=0, le=64)
     max_queue_seconds: int = Field(ge=1, le=604800)
     endpoint: ModelDeploymentEndpointStatus
     runtime_ready: bool

@@ -639,7 +639,10 @@ variable "enabled_model_ids" {
   validation {
     condition = var.enabled_model_ids == null || length(setsubtract(
       var.enabled_model_ids,
-      toset(try(jsondecode(file("${path.module}/../../catalog/profiles/model-profiles.json")).profiles[var.deployment_profile].canonical_routes, [])),
+      setunion(
+        toset(try(jsondecode(file("${path.module}/../../catalog/profiles/model-profiles.json")).profiles[var.deployment_profile].canonical_routes, [])),
+        toset(try(jsondecode(file("${path.module}/../../catalog/profiles/model-profiles.json")).managed_native_model_ids, [])),
+      ),
     )) == 0
     error_message = "enabled_model_ids must be null or a subset of the canonical routes in deployment_profile."
   }

@@ -567,8 +567,12 @@ async def build_runtime(settings: Settings) -> AppRuntime:
     configuration_service: ConfigurationService | None = None
     if initial_configuration is not None:
         from .deployment_runtimes import load_deployment_runtime_entries
+        from .native_catalog import augment_native_catalog
 
-        canonical_catalog = load_catalog(settings.catalog_dir, repo_root=settings.repo_root)
+        canonical_catalog = augment_native_catalog(
+            load_catalog(settings.catalog_dir, repo_root=settings.repo_root),
+            settings.catalog_dir, repo_root=settings.repo_root,
+        )
         configuration_repository = StoreConfigurationRepository(store)
         configuration_service = ConfigurationService(
             repository=configuration_repository,

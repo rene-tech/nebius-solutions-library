@@ -37,6 +37,7 @@ from .lean_routes import LeanRouteError, bind_lean_routes
 from .model_deployment import Visibility
 from .model_deployment_publication import DynamicPublicationSnapshot
 from .models import Principal
+from .native_catalog import augment_native_catalog
 
 
 class RegistryError(ValueError):
@@ -354,6 +355,11 @@ class Registry:
             variant_snapshot = cls._bind_variant_routes(gateway, variants)
             gateway = variant_snapshot.catalog
             variant_models = variant_snapshot.models
+        # Native records are additive only after all archival binding/variant
+        # receipts have validated against their original catalog digest.
+        catalog = augment_native_catalog(catalog, catalog_dir, repo_root=repo_root)
+        native_gateway = bind_gateway_catalog(catalog, bindings)
+        gateway = replace(gateway, models=MappingProxyType({**native_gateway.models, **gateway.models}))
         # Deployment selections replace archival runtime metadata but grant no
         # route authority. Bind them before Terraform's static-route overlay so
         # the route is checked against the selected image, source, interface,

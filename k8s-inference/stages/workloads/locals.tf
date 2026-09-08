@@ -140,6 +140,8 @@ locals {
   public_base_url     = local.public_edge_enabled ? var.public_edge_contract.public_origin : var.public_edge_contract.port_forward.application_origin
 
   catalog_profile_contract = jsondecode(file("${path.module}/../../catalog/profiles/model-profiles.json"))
+  # Native declarations are independent of the archived B300 qualification graph.
+  managed_native_model_ids = toset(try(local.catalog_profile_contract.managed_native_model_ids, []))
   # A model can need one large-memory accelerator or several smaller ones.
   # Keep placement, scaling, accounting and rendered requests on the same value.
   profile_contract = merge(local.catalog_profile_contract, {
@@ -185,11 +187,17 @@ locals {
         alternatives = []
       } &&
       candidate.record.cache.owner == "runtime-image" &&
-      candidate.record.cache.artifact.kind == "reference-database",
+      contains(["reference-database", "weights", "formula"], candidate.record.cache.artifact.kind),
       false,
     )
   }
   cpu_runtime_model_ids = toset(keys(local.cpu_deployment_runtime_records))
+  managed_cpu_model_ids = setintersection(local.managed_native_model_ids, local.cpu_runtime_model_ids)
+  static_cpu_runtime_records = {
+    for model_id, candidate in local.cpu_deployment_runtime_records : model_id => candidate
+    if !contains(local.managed_cpu_model_ids, model_id)
+  }
+  managed_model_candidate_ids = sort(tolist(setunion(toset(local.accelerator_model_ids), local.managed_cpu_model_ids)))
   # Kubernetes parses resource.Quantity values and returns their canonical
   # representation to the provider. Render that representation up front so a
   # successful apply cannot end in a false post-write diff (for example,
@@ -220,14 +228,21 @@ locals {
   inventory = merge(local.retained_inventory, {
     routes = merge(local.retained_inventory.routes, {
       for model_id, candidate in local.deployment_runtime_records : model_id => merge(
-        local.retained_inventory.routes[model_id], {
+        try(local.retained_inventory.routes[model_id], {
+          storage_mode = "ephemeral-emptydir"
+          mcp = {
+            enabled     = candidate.record.interface.mcp.discoverable
+            tool_name   = "infer_${replace(model_id, "-", "_")}"
+            description = "Run a non-clinical ${candidate.record.model.display_name} prediction with explicit model-specific inputs."
+          }
+          }), {
           variant_id           = candidate.variant_id
           model_revision       = candidate.record.model.source.revision
           runtime_image_digest = candidate.record.runtime.image.digest
           service              = candidate.qualification.active_runtime.service
           storage_mode = (
             contains(local.cpu_runtime_model_ids, model_id) ?
-            "ephemeral-emptydir" : local.retained_inventory.routes[model_id].storage_mode
+            "ephemeral-emptydir" : try(local.retained_inventory.routes[model_id].storage_mode, "ephemeral-emptydir")
           )
           protocols  = candidate.record.interface.endpoints
           operations = candidate.record.interface.policy.operations
@@ -269,7 +284,7 @@ locals {
   )
   dcgm_nvcr_credentials_required = var.deployment_profile == "full_catalog"
   cpu_runtime_manifest_paths = {
-    for model_id, candidate in local.cpu_deployment_runtime_records : model_id => one([
+    for model_id, candidate in local.static_cpu_runtime_records : model_id => one([
       for relative_path in local.profile_contract.model_artifacts[model_id].manifest_paths : relative_path
       if length([
         for raw in split("\n---\n", trimspace(file("${local.fs2_root}/${relative_path}"))) : raw
@@ -287,7 +302,7 @@ locals {
   }
   selected_manifest_paths = sort(distinct(concat(
     flatten([
-      for model_id in local.accelerator_model_ids : local.profile_contract.model_artifacts[model_id].manifest_paths
+      for model_id in local.managed_model_candidate_ids : local.profile_contract.model_artifacts[model_id].manifest_paths
     ]),
     values(local.cpu_runtime_manifest_paths),
   )))
@@ -314,7 +329,7 @@ locals {
   dcgm_campaign_metrics       = local.dcgm_cadence_contract.campaignMetrics
   dcgm_minimum_nominal_window = local.dcgm_cadence_profile.minimumNominalWindowSeconds
   selected_model_autoscaling_targets = var.model_scaling_mode == "keda" ? {
-    for model_id in local.accelerator_model_ids : model_id => merge(
+    for model_id in local.managed_model_candidate_ids : model_id => merge(
       local.profile_contract.model_autoscaling_targets[model_id],
       {
         model_id = model_id
@@ -499,7 +514,7 @@ locals {
                       jsonencode(merge(
                         container,
                         { image = var.model_image_overrides[document.model_id] },
-                        jsondecode(contains(local.cpu_runtime_model_ids, document.model_id) ? jsonencode({
+                        jsondecode(contains(keys(local.static_cpu_runtime_records), document.model_id) ? jsonencode({
                           command = local.cpu_deployment_runtime_records[document.model_id].record.runtime.command
                           resources = merge(container.resources, {
                             limits = merge(container.resources.limits, {
@@ -678,7 +693,7 @@ locals {
     }
   }
   cpu_runtime_manifest_validations = {
-    for model_id, candidate in local.cpu_deployment_runtime_records : model_id => try(
+    for model_id, candidate in local.static_cpu_runtime_records : model_id => try(
       local.general_cpu_enabled &&
       local.general_cpu_runtime_class != null &&
       candidate.qualification.active_runtime.service.namespace == local.general_cpu_runtime_class.namespace &&
@@ -887,10 +902,13 @@ locals {
   ]
   retained_qualification_projection = jsondecode(file("${local.fs2_root}/components/control-plane/contracts/model-qualification-projection.json"))
   qualification_projection = merge(local.retained_qualification_projection, {
-    rows = [
+    rows = concat([
       for row in local.retained_qualification_projection.rows :
       try(local.deployment_runtime_records[row.model_id].qualification, row)
-    ]
+      ], [
+      for model_id, candidate in local.deployment_runtime_records : candidate.qualification
+      if !contains([for row in local.retained_qualification_projection.rows : row.model_id], model_id)
+    ])
   })
   # Terraform routes carry the resolved deployment placement in v4. Reviewed
   # qualification evidence stays beside, but outside, the mounted route file.

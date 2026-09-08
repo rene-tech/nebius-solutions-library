@@ -32,6 +32,8 @@ COPY k8s-inference/catalog/runtime/pyproject.toml k8s-inference/catalog/runtime/
 COPY k8s-inference/catalog/runtime/contracts /workspace/runtime-catalog/contracts
 COPY k8s-inference/catalog/runtime/kubernetes /workspace/runtime-catalog/kubernetes
 COPY k8s-inference/catalog/runtime/models /workspace/runtime-catalog/models
+COPY k8s-inference/catalog/runtime/native /workspace/runtime-catalog/native
+COPY k8s-inference/catalog/runtime/deployment-runtimes /workspace/runtime-catalog/deployment-runtimes
 COPY k8s-inference/catalog/runtime/schema /workspace/runtime-catalog/schema
 COPY k8s-inference/catalog/runtime/sql /workspace/runtime-catalog/sql
 COPY k8s-inference/catalog/runtime/validators /workspace/runtime-catalog/validators
@@ -47,6 +49,7 @@ RUN uv sync --frozen --no-dev --no-install-project \
     && uv pip install --python .venv/bin/python --no-deps --no-index /tmp/dist/fs2_serve_control_plane-*.whl \
     && uv pip check --python .venv/bin/python \
     && .venv/bin/python -I -c "from pathlib import Path; import fs2_serve, fs2_serve_catalog; from fs2_serve.settings import Settings; from fs2_serve_catalog.loader import load_catalog; migration_dir=Settings.model_fields['migrations_dir'].default; assert isinstance(migration_dir, Path); assert migration_dir.parent == Path(fs2_serve.__file__).resolve().parent; assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 28; assert load_catalog(Path('/workspace/runtime-catalog'), repo_root=Path('/workspace/runtime-catalog/packaged-repository')).records['qwen3-8b'].model_id == 'qwen3-8b'" \
+    && .venv/bin/python -I -c "from pathlib import Path; from fs2_serve_catalog.loader import load_catalog; from fs2_serve.native_catalog import augment_native_catalog; root=Path('/workspace/runtime-catalog'); catalog=load_catalog(root, repo_root=root/'packaged-repository'); native=augment_native_catalog(catalog, root, repo_root=root/'packaged-repository'); assert {'phenoage','altumage'} <= native.records.keys(); assert native.digest == catalog.digest" \
     && .venv/bin/fs2-serve --help >/dev/null
 
 FROM python:3.13.15-alpine3.23@sha256:7ea3f82de8ea6d4fb7e5d2bbe3fe3c9d931700b7a529f1fe5769e42abe514ca1

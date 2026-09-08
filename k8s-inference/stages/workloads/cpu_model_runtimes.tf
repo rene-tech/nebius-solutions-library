@@ -1,8 +1,7 @@
-# CPU-only model services remain ordinary Terraform-owned Deployments. They do
-# not enter GPUModelDeployment, accelerator placement, or KEDA. This contract
-# makes the exact rendered service auditable before a Kubernetes write occurs.
+# Existing static CPU services (PDB70) retain their original ownership. Native
+# managed CPU Apps use the common controller/KEDA path instead.
 resource "terraform_data" "cpu_model_runtime_contract" {
-  for_each = local.cpu_deployment_runtime_records
+  for_each = local.static_cpu_runtime_records
 
   input = {
     model_id                 = each.key

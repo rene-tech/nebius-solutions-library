@@ -8,6 +8,7 @@
   "properties": {
     "schema_version": {"const": 2},
     "placement_authority": {"const": "checked-in-b300-fixture-only-not-runtime-support"},
+    "managed_native_model_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
     "workload_placements": {
       "type": "object",
       "minProperties": 1,
@@ -24,7 +25,7 @@
         "required": ["deployment", "gpu_count", "ephemeral_storage_request_gib"],
         "properties": {
           "deployment": {"$ref": "#/$defs/id"},
-          "gpu_count": {"type": "integer", "minimum": 1},
+          "gpu_count": {"type": "integer", "minimum": 0},
           "ephemeral_storage_request_gib": {"type": "number", "minimum": 0}
         }
       }

@@ -39,13 +39,15 @@ variable "admin_configuration" {
   type = object({
     schema_version = string
     pools = map(object({
-      resource_name         = string
-      accelerator_class     = string
-      capacity_type         = string
-      accelerators_per_node = number
-      min_nodes             = number
-      max_nodes             = number
-      node_selector         = map(string)
+      resource_name            = string
+      accelerator_class        = string
+      capacity_type            = string
+      accelerators_per_node    = number
+      min_nodes                = number
+      max_nodes                = number
+      allocatable_cpu_millis   = optional(number)
+      allocatable_memory_bytes = optional(number)
+      node_selector            = map(string)
       tolerations = list(object({
         key                = string
         operator           = string
@@ -61,6 +63,8 @@ variable "admin_configuration" {
         pool_ids        = list(string)
         accelerators    = number
         topology_policy = string
+        cpu_millis      = optional(number)
+        memory_bytes    = optional(number)
       })
       autoscaling = object({
         min_replicas             = number
@@ -128,6 +132,13 @@ variable "admin_configuration" {
           pool.resource_name == "cpu" && pool.accelerators_per_node == 0 :
           pool.resource_name != "cpu" && pool.accelerators_per_node >= 1
         ) &&
+        ((pool.allocatable_cpu_millis == null) == (pool.allocatable_memory_bytes == null)) &&
+        (pool.allocatable_cpu_millis == null ? true : (
+          pool.accelerator_class == "CPU" && pool.allocatable_cpu_millis > 0 &&
+          pool.allocatable_memory_bytes > 0 &&
+          floor(pool.allocatable_cpu_millis) == pool.allocatable_cpu_millis &&
+          floor(pool.allocatable_memory_bytes) == pool.allocatable_memory_bytes
+        )) &&
         floor(pool.min_nodes) == pool.min_nodes &&
         floor(pool.max_nodes) == pool.max_nodes &&
         pool.min_nodes >= 0 &&
@@ -153,10 +164,27 @@ variable "admin_configuration" {
             var.admin_configuration.pools[pool_id].accelerator_class != "CPU"
           ])
         ) &&
-        (
+        ((model.placement.cpu_millis == null) == (model.placement.memory_bytes == null)) &&
+        (model.placement.cpu_millis == null ? (
           model.placement.accelerators != 0 ||
           (model.autoscaling.min_replicas == 1 && model.autoscaling.max_replicas == 1)
-        ) &&
+          ) : (
+          model.placement.accelerators == 0 &&
+          model.placement.cpu_millis > 0 && model.placement.memory_bytes > 0 &&
+          floor(model.placement.cpu_millis) == model.placement.cpu_millis &&
+          floor(model.placement.memory_bytes) == model.placement.memory_bytes &&
+          alltrue([
+            for pool_id in model.placement.pool_ids :
+            var.admin_configuration.pools[pool_id].allocatable_cpu_millis >= model.placement.cpu_millis &&
+            var.admin_configuration.pools[pool_id].allocatable_memory_bytes >= model.placement.memory_bytes
+          ]) &&
+          model.autoscaling.max_replicas <= sum([
+            for pool_id in model.placement.pool_ids : min(
+              floor(var.admin_configuration.pools[pool_id].allocatable_cpu_millis / model.placement.cpu_millis),
+              floor(var.admin_configuration.pools[pool_id].allocatable_memory_bytes / model.placement.memory_bytes),
+            ) * var.admin_configuration.pools[pool_id].max_nodes
+          ])
+        )) &&
         model.autoscaling.min_replicas >= 0 &&
         model.autoscaling.max_replicas >= model.autoscaling.min_replicas &&
         (!model.enabled || model.autoscaling.max_replicas > 0) &&
@@ -306,8 +334,25 @@ variable "model_scaling_overrides" {
 }
 
 locals {
-  admin_configuration_enabled         = var.admin_configuration != null
-  admin_configuration_json            = local.admin_configuration_enabled ? jsonencode(var.admin_configuration) : null
+  admin_configuration_enabled = var.admin_configuration != null
+  # Terraform inserts null for optional object attributes. Strip only the new
+  # CPU metadata when unset, preserving every pre-existing GPU/MSA byte identity.
+  admin_configuration_json = local.admin_configuration_enabled ? jsonencode(merge(var.admin_configuration, {
+    pools = {
+      for pool_id, pool in var.admin_configuration.pools : pool_id => {
+        for key, value in pool : key => value
+        if !(contains(["allocatable_cpu_millis", "allocatable_memory_bytes"], key) && value == null)
+      }
+    }
+    models = {
+      for model_id, model in var.admin_configuration.models : model_id => merge(model, {
+        placement = {
+          for key, value in model.placement : key => value
+          if !(contains(["cpu_millis", "memory_bytes"], key) && value == null)
+        }
+      })
+    }
+  })) : null
   admin_configuration_computed_sha256 = local.admin_configuration_enabled ? sha256(local.admin_configuration_json) : null
   admin_configuration_receipt_values = [
     var.admin_configuration_plan_id,

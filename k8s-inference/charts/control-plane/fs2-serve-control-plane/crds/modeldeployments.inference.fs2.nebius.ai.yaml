@@ -187,6 +187,9 @@ spec:
                 placement:
                   type: object
                   required: [poolRefs, acceleratorsPerReplica, topologyPolicy]
+                  x-kubernetes-validations:
+                    - rule: '(self.acceleratorsPerReplica == 0) == has(self.cpuResources)'
+                      message: Zero accelerators require cpuResources; GPU placements omit cpuResources.
                   properties:
                     poolRefs:
                       type: array
@@ -201,8 +204,22 @@ spec:
                     acceleratorsPerReplica:
                       type: integer
                       format: int32
-                      minimum: 1
+                      minimum: 0
                       maximum: 64
+                    cpuResources:
+                      type: object
+                      required: [cpuMillis, memoryBytes]
+                      properties:
+                        cpuMillis:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 64000000
+                        memoryBytes:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1125899906842624
                     topologyPolicy:
                       type: string
                       enum: [Any, SingleNode, HighBandwidthDomain]

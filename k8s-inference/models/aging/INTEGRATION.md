@@ -5,14 +5,17 @@ route, preserving the platform's existing same-model duplication semantics.
 Native endpoint: `/v1/predict`; readiness: `/v1/health/ready`; no separate auth,
 MCP server, request database or queue implementation is needed.
 
-Root coordinates shared edits and the release. No catalog/shared controller or
-Terraform file was modified by the model-local implementation.
+Root coordinates shared edits and the release. The original model-local package
+did not modify the shared platform. The subsequent extension implements the
+CPU/catalog/controller interfaces described below; implementation and live
+acceptance are recorded separately in
+[CPU-MANAGED-APPS.md](../../acceptance/aging-20260908/CPU-MANAGED-APPS.md).
 
-## Current CPU limitation (confirmed in source)
+## Original CPU limitation (before this extension)
 
 The MSA PDB70 portable CPU runtime proves native zero-GPU serving can be bound,
-but it does not provide a dynamically managed ModelDeployment. Current source
-assumes GPU capacity throughout the App settings/controller path:
+but it did not provide a dynamically managed ModelDeployment. The original source
+assumed GPU capacity throughout the App settings/controller path:
 
 - `deployment_runtimes.py::_record` accepts CPU only with a `reference-database`
   artifact baked into the image. CPU weights and a formula need truthful artifact

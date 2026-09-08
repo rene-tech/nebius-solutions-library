@@ -99,7 +99,7 @@ def _record(value: Any, model_id: str, variant_id: str, catalog: Catalog, schema
         Draft202012Validator(schema).validate(value)
     except ValidationError as exc:
         raise DeploymentRuntimeError("deployment runtime record violates model/v1 structure") from exc
-    record = copy.deepcopy(value)
+    record: dict[str, Any] = copy.deepcopy(value)
     variant = catalog.model_variant(variant_id)
     subject = variant.to_dict()
     if (
@@ -124,12 +124,12 @@ def _record(value: Any, model_id: str, variant_id: str, catalog: Catalog, schema
     license_state = _validate_status_binding(source["license"], "deployment runtime license")
     entitlement_state = _validate_entitlement(source["entitlement"])
     artifact_state, _, artifact_kind = _validate_artifact(
-        record["cache"]["artifact"], additional_kinds=frozenset({"reference-database"})
+        record["cache"]["artifact"], additional_kinds=frozenset({"reference-database", "formula"})
     )
     gpu = record["resources"]["gpu"]
     cpu_runtime = gpu["class"] == "CPU"
     resource_artifact_valid = (
-        artifact_kind == "reference-database"
+        artifact_kind in {"reference-database", "weights", "formula"}
         and record["cache"]["owner"] == "runtime-image"
         and gpu
         == {
@@ -142,7 +142,7 @@ def _record(value: Any, model_id: str, variant_id: str, catalog: Catalog, schema
         }
         if cpu_runtime
         else artifact_kind == "weights"
-        and record["cache"]["owner"] == "fs2-serve-localizer"
+        and record["cache"]["owner"] in {"fs2-serve-localizer", "runtime-image"}
         and gpu["count"] >= 1
         and gpu["topology"] in {"single-gpu", "single-node-multi-gpu"}
         and gpu["b300_state"] != "not-applicable"
@@ -187,6 +187,22 @@ def _record(value: Any, model_id: str, variant_id: str, catalog: Catalog, schema
     return record
 
 
+def deployment_runtime_model_schema(catalog_dir: Path) -> dict[str, Any]:
+    """Adapt the archived shape for exact native runtime capabilities only."""
+    schema: dict[str, Any] = _load_json(catalog_dir / "schema/model.schema.json")
+    # Preserve the archived schema and its qualification receipts. Native
+    # records use the same structure, without its historical B300-only lane.
+    gpu_schema = schema["properties"]["resources"]["properties"]["gpu"]["properties"]
+    gpu_schema["class"] = {"type": "string", "minLength": 1}
+    gpu_schema["count"]["minimum"] = 0
+    gpu_schema["topology"]["enum"].append("cpu-only")
+    gpu_schema["b300_state"]["enum"].append("not-applicable")
+    schema["properties"]["cache"]["properties"]["owner"]["enum"].append("runtime-image")
+    schema["$defs"]["artifact"]["properties"]["kind"]["enum"].extend(["reference-database", "formula"])
+    schema["properties"]["model"]["properties"]["family"]["enum"].append("biological-age")
+    return schema
+
+
 def bind_deployment_runtimes(
     gateway: GatewayCatalog,
     catalog: Catalog,
@@ -200,20 +216,7 @@ def bind_deployment_runtimes(
         return gateway
     try:
         entries = load_deployment_runtime_entries(path)
-        schema = _load_json(catalog_dir / "schema/model.schema.json")
-        # The archived model/v1 shape is shared, but its B300-only admission
-        # assertion is not a deployment capability constraint. No other shape
-        # or field is relaxed, and the canonical schema file is never changed.
-        schema["properties"]["resources"]["properties"]["gpu"]["properties"]["class"] = {
-            "type": "string",
-            "minLength": 1,
-        }
-        gpu_schema = schema["properties"]["resources"]["properties"]["gpu"]["properties"]
-        gpu_schema["count"]["minimum"] = 0
-        gpu_schema["topology"]["enum"].append("cpu-only")
-        gpu_schema["b300_state"]["enum"].append("not-applicable")
-        schema["properties"]["cache"]["properties"]["owner"]["enum"].append("runtime-image")
-        schema["$defs"]["artifact"]["properties"]["kind"]["enum"].append("reference-database")
+        schema = deployment_runtime_model_schema(catalog_dir)
         records = dict(catalog.records)
         selected: dict[str, dict[str, Any]] = {}
         for model_id, raw in entries.items():

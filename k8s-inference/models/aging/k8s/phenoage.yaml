@@ -1,0 +1,116 @@
+# Immutable native worker qualified by acceptance/aging-20260908/phenoage-r01.json.
+# Terraform/controller own actual replica policy; no snapshot is enabled.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phenoage
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: phenoage
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/model-id: phenoage
+spec:
+  replicas: 0
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: phenoage
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: phenoage
+        fs2-serve.nebius.ai/model-id: phenoage
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        capacity.fs2.nebius/pool-id: batch-cpu
+        workload.fs2.nebius/general-cpu: "true"
+        kubernetes.io/arch: amd64
+      tolerations:
+        - key: workload.fs2.nebius/general-cpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: runtime
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/phenoage-cpu@sha256:b6c28820576b62972437787bd06fa37f8c10b6f51de31b0f4da3cc3873bb34f1
+          imagePullPolicy: IfNotPresent
+          workingDir: /opt/fs2
+          command: ["python", "-m", "uvicorn", "aging.server:app", "--host", "0.0.0.0", "--port", "8000"]
+          env:
+            - name: AGING_MODEL
+              value: phenoage
+            - name: AGING_DEVICE
+              value: cpu
+            - name: AGING_CPU_THREADS
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              cpu: "1"
+              memory: 256Mi
+              ephemeral-storage: 64Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+              ephemeral-storage: 1Gi
+          startupProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /v1/health/live
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: phenoage
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: phenoage
+    fs2-serve.nebius.ai/model-id: phenoage
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: phenoage
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

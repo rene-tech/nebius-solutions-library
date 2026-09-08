@@ -1,0 +1,194 @@
+{
+  "schema": "fs2-serve.nebius.ai/native-catalog-model/v1",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "phenoage",
+      "display_name": "Clinical PhenoAge",
+      "family": "biological-age",
+      "tested_lane": true,
+      "source": {
+        "kind": "git",
+        "repository": "github.com/rene-tech/nebius-solutions-library",
+        "revision": "3a3dbe0fdb258579f9d4eb1b35a2d1525f5fc0d3",
+        "license": {
+          "id": "Apache-2.0",
+          "state": "verified",
+          "notes": "Original implementation under the repository Apache-2.0 license, using the published Levine2018 supplement rounded coefficients; formula target and primary references are documented in models/aging/README.md."
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "No gated model access or NVIDIA registry entitlement is required."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "levine-2018-supplement-rounded-v1",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/phenoage-cpu@sha256:b6c28820576b62972437787bd06fa37f8c10b6f51de31b0f4da3cc3873bb34f1",
+        "digest": "sha256:b6c28820576b62972437787bd06fa37f8c10b6f51de31b0f4da3cc3873bb34f1",
+        "state": "resolved"
+      },
+      "command": [
+        "python",
+        "-m",
+        "uvicorn",
+        "aging.server:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 1000,
+      "memory_bytes": 268435456,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "CPU",
+        "count": 0,
+        "topology": "cpu-only",
+        "placement": null,
+        "b300_state": "not-applicable",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/v1/predict"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 60
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "predict-age"
+        ],
+        "license_enforced": true,
+        "non_clinical": true,
+        "commercial_use": "license-dependent"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "blocked",
+          "gate": null,
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "CPU formula has no GPU state to restore; no GPU snapshot is applicable."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "runtime-image",
+      "shared_path": "/mnt/fs2-serve-cache/models/phenoage",
+      "local_path": "/var/lib/fs2-serve/cache/models/phenoage",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "formula",
+        "manifest_digest": "103b58a2502f05c9d43618f8c3c6c67811f58a4ade52c62b27115bf3abebe3e1",
+        "expanded_bytes": 2298,
+        "minimum_bytes": 2298,
+        "capacity_bound_bytes": 2298,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "clinical-phenoage-rounded-formula-two-native-predictions/v1",
+      "source_path": "k8s-inference/acceptance/aging-20260908/in_pod.py",
+      "source_sha256": "361da1c1f52be58d06f56b5c59a28d650761c8cdfa76509044f05db1951abb75",
+      "fixture_path": "k8s-inference/models/aging/fixtures.py",
+      "fixture_sha256": "8f5288360503162132e790623b76e2d6058d39238ecc514b7192dbeceef877f8",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": true,
+      "limitations": [
+        "Clinical age plus nine blood biomarkers, not DNA-methylation PhenoAge; published rounded coefficients and gamma0.0076927, not pyaging0.5.2 mortality conversion.",
+        "Synthetic research/demo fixtures only. These outputs are not diagnoses, clinical recommendations, or a comparison of the two clocks' accuracy.",
+        "Qualified on the retained general CPU worker only; public App routing, request accounting and scale-to-zero remain separate acceptance gates.",
+        "Startup receipt distinguishes image pull, container initialization and loopback HTTP; no end-to-end public cold-start claim."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "Nebius general CPU node",
+        "outcome": "live-qualified",
+        "source_commit": "3a3dbe0fdb258579f9d4eb1b35a2d1525f5fc0d3",
+        "summary": "Two distinct native predictions and exact source/image identity passed. acceptance/aging-20260908/phenoage-r01.json SHA256 185dab2a859b41b3eff9d0cd81954d823db7f40c3e04b57967b55483ce8d690d. Public HTTP/MCP, dynamic replica changes and elasticity are not yet qualified."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "3a3dbe0fdb258579f9d4eb1b35a2d1525f5fc0d3",
+        "tree": "251dfea8fa86784997c8433b21c0a88117e9bee1",
+        "path": "k8s-inference/models/aging",
+        "classification": "measured-handoff"
+      },
+      {
+        "url": "https://github.com/rene-tech/nebius-solutions-library/tree/3a3dbe0fdb258579f9d4eb1b35a2d1525f5fc0d3",
+        "revision": "3a3dbe0fdb258579f9d4eb1b35a2d1525f5fc0d3",
+        "classification": "reviewed-input"
+      }
+    ]
+  },
+  "variant_id": "phenoage-clinical-cpu-v1",
+  "runtime_architecture": "cpu",
+  "semantic_requests": {
+    "state": "qualified",
+    "blocker": null,
+    "serialization": "sha256-json-compact-no-newline/v1",
+    "invocation": {
+      "operation": "predict-age",
+      "protocol": "native",
+      "method": "POST",
+      "endpoint": "/v1/predict"
+    },
+    "requests": [
+      {
+        "id": "phenoage-synthetic-0",
+        "payload_sha256": "b15ebdc61742dff7d3293e35a09b2a3207fd39d6e05ef7f881d900b4172b7842"
+      },
+      {
+        "id": "phenoage-synthetic-1",
+        "payload_sha256": "23dfed5a95602604b245e3406770a4832dc06e4ad6e6a67103e8850cec159d88"
+      }
+    ],
+    "assets": []
+  },
+  "artifact_manifest": {
+    "path": "../deployment-runtimes/artifacts/phenoage-103b58a2502f05c9d43618f8c3c6c67811f58a4ade52c62b27115bf3abebe3e1.json",
+    "sha256": "103b58a2502f05c9d43618f8c3c6c67811f58a4ade52c62b27115bf3abebe3e1"
+  }
+}

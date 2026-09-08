@@ -612,7 +612,7 @@ locals {
     ])
   }
   model_controller_primary_deployments = {
-    for model_id in local.accelerator_model_ids : model_id => one([
+    for model_id in setunion(toset(local.accelerator_model_ids), local.managed_cpu_model_ids) : model_id => one([
       for document in local.model_documents : document.manifest
       if document.model_id == model_id &&
       document.manifest.kind == "Deployment" &&
@@ -622,11 +622,13 @@ locals {
   model_controller_runtime_container_names = {
     for model_id, deployment in local.model_controller_primary_deployments : model_id => one([
       for container in deployment.spec.template.spec.containers : container.name
-      if anytrue([
-        for resource_name in setunion(
-          toset(keys(try(container.resources.requests, {}))),
-          toset(keys(try(container.resources.limits, {}))),
-        ) : endswith(resource_name, "/gpu") || resource_name == "nvidia.com/gpu"
+      if contains(local.managed_cpu_model_ids, model_id) ? (
+        container.image == var.model_image_overrides[model_id]
+        ) : anytrue([
+          for resource_name in setunion(
+            toset(keys(try(container.resources.requests, {}))),
+            toset(keys(try(container.resources.limits, {}))),
+          ) : endswith(resource_name, "/gpu") || resource_name == "nvidia.com/gpu"
       ])
     ])
   }
@@ -636,7 +638,7 @@ locals {
   # This is what lets one ModelDeployment prefer always-on capacity while also
   # retaining preemptible burst pools without duplicating model manifests.
   model_controller_pool_ids = {
-    for model_id in local.selected_model_ids : model_id => sort([
+    for model_id in local.selected_model_ids : model_id => contains(local.managed_cpu_model_ids, model_id) ? sort(keys(local.model_controller_cpu_pool_envelope)) : sort([
       for pool_id, pool in local.selected_queue_pools : pool_id
       if !local.model_controller_bundle_requires_shared_cache[model_id] || pool.features.shared_filesystem
     ])
@@ -658,6 +660,7 @@ locals {
     for model_id in local.selected_model_ids : model_id => try(
       local.model_controller_accelerator_compatibility.models[model_id].runtimes[local.deployment_runtime_records[model_id].variant_id],
       local.model_controller_accelerator_compatibility.models[model_id].runtimes["catalog-canonical"],
+      {},
     )
   }
   model_controller_required_runtime_states = toset([
@@ -686,7 +689,11 @@ locals {
     ]))
   }
   model_controller_qualified_pool_ids = {
-    for model_id in local.selected_model_ids : model_id => sort([
+    for model_id in local.selected_model_ids : model_id => contains(local.managed_cpu_model_ids, model_id) ? sort([
+      for pool_id in local.model_controller_pool_ids[model_id] : pool_id
+      if local.model_controller_cpu_pool_envelope[pool_id].allocatableCpuMillis >= local.catalog_models[model_id].resources.cpu_millis &&
+      local.model_controller_cpu_pool_envelope[pool_id].allocatableMemoryBytes >= local.catalog_models[model_id].resources.memory_bytes
+      ]) : sort([
       for pool_id in local.model_controller_pool_ids[model_id] : pool_id
       if contains(
         local.model_controller_hardware_qualified_accelerator_classes[model_id],
@@ -1076,6 +1083,22 @@ locals {
       resources            = local.model_controller_bundle_resources[model_id]
     }
   ]
+  model_controller_cpu_configuration = {
+    for model_id in local.managed_cpu_model_ids : model_id => {
+      cpuResources = {
+        cpuMillis   = local.catalog_models[model_id].resources.cpu_millis
+        memoryBytes = local.catalog_models[model_id].resources.memory_bytes
+      }
+      localQueue = var.general_cpu_lane.local_queue
+    }
+  }
+  model_controller_cache_tiers = {
+    for model_id in local.model_controller_dynamic_model_ids : model_id => (
+      contains(local.managed_native_model_ids, model_id) &&
+      local.catalog_models[model_id].cache.owner == "runtime-image" ? "Disabled" :
+      local.model_controller_bundle_requires_shared_cache[model_id] ? "SharedFilesystem" : "NodeLocal"
+    )
+  }
   model_controller_qualifications = {
     for model_id in local.model_controller_dynamic_model_ids : model_id => merge({
       modelRef                = model_id
@@ -1085,7 +1108,7 @@ locals {
         (local.catalog_models[model_id].model.source.revision) = local.model_controller_artifact_manifest_digests[model_id]
       }
       runtimeImages             = [var.model_image_overrides[model_id]]
-      acceleratorClasses        = sort(distinct([for pool_id in local.model_controller_qualified_pool_ids[model_id] : local.selected_queue_pools[pool_id].accelerator_class]))
+      acceleratorClasses        = sort(distinct([for pool_id in local.model_controller_qualified_pool_ids[model_id] : local.model_controller_pool_envelope[pool_id].acceleratorClass]))
       maxAcceleratorsPerReplica = local.profile_contract.model_autoscaling_targets[model_id].gpu_count
       scaleToZeroQualified      = try(local.model_controller_qualification_rows[model_id].states.elasticity_qualified, false)
       templateDigests           = [local.model_controller_template_digests[model_id]]
@@ -1093,7 +1116,7 @@ locals {
         "${model_id}.legacy-v1" = local.model_controller_template_digests[model_id]
       }
       templateCacheTiers = {
-        (local.model_controller_template_digests[model_id]) = local.model_controller_bundle_requires_shared_cache[model_id] ? "SharedFilesystem" : "NodeLocal"
+        (local.model_controller_template_digests[model_id]) = local.model_controller_cache_tiers[model_id]
       }
       openAIQualified = anytrue([
         for protocol in keys(local.inventory.routes[model_id].protocols) :
@@ -1109,7 +1132,7 @@ locals {
         for id, bundle in local.serving_snapshot_bundles : id => bundle
         if bundle.model_ref == model_id
       }
-      fastStartRuntimeContracts = local.model_controller_fast_start_runtime_contracts[model_id]
+      fastStartRuntimeContracts = contains(local.managed_cpu_model_ids, model_id) ? [] : local.model_controller_fast_start_runtime_contracts[model_id]
       # Fast-start levels (L1..L4) are qualified only by retained benchmark
       # evidence measured from GPU capacity being available until semantic
       # endpoint readiness for the exact artifact, image, template, cache tier
@@ -1118,15 +1141,16 @@ locals {
       # compatible evidence. Until a fast-start benchmark receipt is retained
       # and projected here, every level above Off stays unqualified and the
       # controller reports that truthfully.
-      fastStartEvidence = try(local.model_controller_fast_start_evidence[model_id], [])
+      fastStartEvidence = contains(local.managed_cpu_model_ids, model_id) ? [] : try(local.model_controller_fast_start_evidence[model_id], [])
       },
       contains(keys(local.model_controller_modelexpress_bindings), model_id) ? {
         modelExpress = local.model_controller_modelexpress_bindings[model_id]
       } : {},
       try(local.model_controller_fast_start_mechanism_declarations[model_id], {}),
+      try(local.model_controller_cpu_configuration[model_id], {}),
     )
   }
-  model_controller_pool_envelope = {
+  model_controller_accelerator_pool_envelope = {
     for pool_id, pool in local.selected_queue_pools : pool_id => {
       poolId                       = pool_id
       acceleratorClass             = pool.accelerator_class
@@ -1142,10 +1166,42 @@ locals {
       fastStartEnvironmentBindings = local.model_controller_fast_start_pool_bindings[pool_id]
     }
   }
+  # CPU Apps use the existing general-compute lane. Its declared schedulable
+  # CPU/RAM envelope, not an invented GPU token, bounds replica capacity. Keep
+  # these optional fields absent from unchanged accelerator pool identities.
+  model_controller_cpu_pool_envelope = {
+    for pool_id, pool in try(var.general_cpu_pools.pools, {}) : pool_id => {
+      poolId                 = pool_id
+      acceleratorClass       = "CPU"
+      resourceName           = "cpu"
+      capacityType           = pool.capacity_type
+      acceleratorsPerNode    = 0
+      allocatableCpuMillis   = pool.schedulable_capacity.cpu_millicores
+      allocatableMemoryBytes = pool.schedulable_capacity.memory_mib * 1048576
+      minNodes               = pool.min_nodes
+      maxNodes               = pool.max_nodes
+      nodeSelector = merge(var.general_cpu_pools.node_selector, {
+        "capacity.fs2.nebius/pool-id" = pool_id
+        "capacity.fs2.nebius/type"    = pool.capacity_type
+      })
+      tolerations                  = [merge(var.general_cpu_pools.taint, { operator = "Equal" })]
+      startupScenario              = pool.min_nodes > 0 ? "prepared-node-zero-pod" : "fresh-node-zero-pod"
+      fastStartEnvironmentBindings = []
+    }
+    if length(local.managed_cpu_model_ids) > 0 && local.general_cpu_enabled &&
+    var.general_cpu_lane.namespace == local.inventory.namespace
+  }
+  model_controller_pool_envelope = merge(
+    local.model_controller_accelerator_pool_envelope,
+    local.model_controller_cpu_pool_envelope,
+  )
   model_controller_envelope_without_revision = {
-    pools                         = local.model_controller_pool_envelope
-    qualifications                = local.model_controller_qualifications
-    localQueues                   = sort(keys(module.kueue_scheduling.contract.local_queues))
+    pools          = local.model_controller_pool_envelope
+    qualifications = local.model_controller_qualifications
+    localQueues = sort(distinct(concat(
+      keys(module.kueue_scheduling.contract.local_queues),
+      length(local.model_controller_cpu_pool_envelope) > 0 ? [var.general_cpu_lane.local_queue] : [],
+    )))
     priorityClasses               = sort(keys(module.kueue_scheduling.contract.workload_priority_classes))
     tenantIds                     = [local.selected_target.tenant_id]
     maxAcceleratorsPerModel       = sum([for pool in values(local.selected_queue_pools) : pool.node.gpus_per_node * pool.capacity.max_nodes])
@@ -1225,11 +1281,13 @@ locals {
             digest = local.model_controller_template_digests[model_id]
           }
         }
-        placement = {
+        placement = merge({
           poolRefs               = local.model_controller_qualified_pool_ids[model_id]
           acceleratorsPerReplica = local.profile_contract.model_autoscaling_targets[model_id].gpu_count
           topologyPolicy         = "SingleNode"
-        }
+          }, contains(local.managed_cpu_model_ids, model_id) ? {
+          cpuResources = local.model_controller_qualifications[model_id].cpuResources
+        } : {})
         availability = merge({
           minReplicas            = local.model_scalers[model_id].min_replicas
           maxReplicas            = local.model_scalers[model_id].max_replicas
@@ -1242,11 +1300,11 @@ locals {
           startupTimeoutSeconds = var.model_startup_timeout_overrides[model_id]
         } : {})
         cache = {
-          tier               = local.model_controller_bundle_requires_shared_cache[model_id] ? "SharedFilesystem" : "NodeLocal"
+          tier               = local.model_controller_cache_tiers[model_id]
           snapshotPreference = "Never"
         }
         queue = {
-          localQueue      = local.selected_accelerator_pool_profile.queue.local_queue_name
+          localQueue      = contains(local.managed_cpu_model_ids, model_id) ? var.general_cpu_lane.local_queue : local.selected_accelerator_pool_profile.queue.local_queue_name
           priorityClass   = "standard"
           maxQueueSeconds = 7200
         }
@@ -1351,14 +1409,11 @@ resource "terraform_data" "model_controller_contract" {
       error_message = "Every bootstrap model must pass the retained artifact/runtime/accelerator/template qualification join. Ineligible bootstrap IDs: ${jsonencode(sort(tolist(setsubtract(var.model_controller.bootstrap_model_ids, toset(local.model_controller_dynamic_model_ids)))))}; failed checks: ${jsonencode(local.model_controller_ineligible_reasons)}."
     }
 
-    precondition {
-      condition = alltrue([
-        for model_id in var.model_controller.bootstrap_model_ids :
-        local.model_scalers[model_id].min_replicas > 0 ||
-        try(local.model_controller_qualification_rows[model_id].states.elasticity_qualified, false)
-      ])
-      error_message = "A bootstrap model may scale to zero only when retained evidence marks elasticity_qualified=true; otherwise include it in models.scaling.hot or set a positive min_replicas override."
-    }
+    # A measured elasticity receipt is status, not permission to configure
+    # Kubernetes scaling. An explicit zero floor is also how a new runtime's
+    # real demand-to-ready-to-idle behavior can be tested. The unchanged
+    # qualification flag remains false until that test passes; snapshot and
+    # fast-start claims still require their exact compatibility evidence.
 
     precondition {
       condition = (

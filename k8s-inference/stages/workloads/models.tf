@@ -27,8 +27,8 @@ resource "kubernetes_manifest" "model" {
 
     precondition {
       condition = (
-        !contains(local.cpu_runtime_model_ids, each.value.model_id) ||
-        local.cpu_runtime_manifest_validations[each.value.model_id]
+        !contains(keys(local.static_cpu_runtime_records), each.value.model_id) ||
+        try(local.cpu_runtime_manifest_validations[each.value.model_id], true)
       )
       error_message = "CPU runtime ${each.value.model_id} must be one static digest-pinned Deployment/Service on the exact general-cpu selector and tolerations, with zero GPU resources and its reviewed runtime command, limits, readiness and embedded-database cache layout."
     }

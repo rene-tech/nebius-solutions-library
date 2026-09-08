@@ -4,6 +4,12 @@ locals {
   accelerator_contract     = jsondecode(file("${path.module}/catalog/profiles/accelerator-pools.json"))
   pool_profile_contract    = jsondecode(file("${path.module}/catalog/profiles/accelerator-pool-profiles.json"))
   model_profile_contract   = jsondecode(file("${path.module}/catalog/profiles/model-profiles.json"))
+  managed_native_model_ids = toset(try(local.model_profile_contract.managed_native_model_ids, []))
+  native_model_contracts = {
+    for model_id in local.managed_native_model_ids : model_id => jsondecode(
+      file("${path.module}/catalog/runtime/native/${model_id}.json")
+    ).record
+  }
 
   # Scientific execution is generated with the source catalog and checked in as
   # one reviewed object. A customer enabling the feature should not have to copy
@@ -233,6 +239,7 @@ locals {
   retained_runtime_model_contracts = {
     for model_id in local.selected_model_ids :
     model_id => jsondecode(file("${path.module}/catalog/runtime/models/${model_id}.json"))
+    if !contains(local.managed_native_model_ids, model_id)
   }
   # An explicit immutable image selects its tested runtime contract. Registry
   # mirrors retain the digest, so selection works in any deployment region.
@@ -243,13 +250,16 @@ locals {
   selected_deployment_runtimes = {
     for candidate in local.deployment_runtime_candidates : candidate.model_id => candidate
     if contains(local.selected_model_ids, candidate.model_id) && try(
-      split("@", var.deployment.models.image_overrides[candidate.model_id])[1] == candidate.record.runtime.image.digest,
+      split("@", try(
+        var.deployment.models.image_overrides[candidate.model_id],
+        local.native_model_contracts[candidate.model_id].runtime.image.reference,
+      ))[1] == candidate.record.runtime.image.digest,
       false,
     )
   }
   # A CPU-only deployment runtime is an explicit immutable alternative, not a
-  # zero-sized accelerator placement. Keep it out of GPU placement and KEDA;
-  # the workloads stage binds it to the existing general CPU pool.
+  # zero-sized accelerator placement. Native CPU Apps use the same managed
+  # serving controller; the earlier database alternative remains static.
   selected_cpu_deployment_runtimes = {
     for model_id, candidate in local.selected_deployment_runtimes : model_id => candidate
     if try(
@@ -262,16 +272,20 @@ locals {
         alternatives = []
       } &&
       candidate.record.cache.owner == "runtime-image" &&
-      candidate.record.cache.artifact.kind == "reference-database",
+      contains(["reference-database", "weights", "formula"], candidate.record.cache.artifact.kind),
       false,
     )
   }
   selected_cpu_runtime_model_ids = toset(keys(local.selected_cpu_deployment_runtimes))
+  selected_managed_cpu_model_ids = setintersection(local.managed_native_model_ids, local.selected_cpu_runtime_model_ids)
   selected_accelerator_model_ids = sort(tolist(setsubtract(
     toset(local.selected_model_ids),
     local.selected_cpu_runtime_model_ids,
   )))
   selected_runtime_model_contracts = merge(local.retained_runtime_model_contracts, {
+    for model_id, record in local.native_model_contracts : model_id => record
+    if contains(local.selected_model_ids, model_id)
+    }, {
     for model_id, candidate in local.selected_deployment_runtimes : model_id => candidate.record
   })
   effective_model_images = {
@@ -936,6 +950,14 @@ locals {
   selected_model_replica_ceilings = merge(
     local.selected_accelerator_model_replica_ceilings,
     { for model_id in local.selected_cpu_runtime_model_ids : model_id => 1 },
+    {
+      for model_id in local.selected_managed_cpu_model_ids : model_id => sum([
+        for pool_id, pool in var.deployment.cpu_pools : min(
+          floor(pool.schedulable_capacity.cpu_millicores / local.selected_runtime_model_contracts[model_id].resources.cpu_millis),
+          floor(pool.schedulable_capacity.memory_mib * 1048576 / local.selected_runtime_model_contracts[model_id].resources.memory_bytes),
+        ) * local.general_cpu_pool_bounds[pool_id].max_nodes
+      ])
+    },
   )
 
   grafana_external_enabled = var.deployment.observability.grafana.publish_external

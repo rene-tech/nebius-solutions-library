@@ -407,6 +407,12 @@ def _effective_pod_vector(pod_spec: Mapping[str, object], *, kind: str, label: s
     return effective
 
 
+def effective_pod_requests(pod_spec: Mapping[str, object]) -> ResourceVector:
+    """Shared scheduler-effective requests for batch or serving Pod templates."""
+
+    return _effective_pod_vector(pod_spec, kind="requests", label="Pod")
+
+
 def _pod_count(job_spec: Mapping[str, object], *, replicas: int, label: str) -> int:
     """Return the Pod count Kueue reserves for one Job template.
 

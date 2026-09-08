@@ -324,16 +324,22 @@ Missing NIM cache manifests and declaration-only GPU candidates are never
 replaced by synthetic digests. They remain on the static Terraform path and
 appear with explicit failed checks in `dynamic_model_contract.ineligible_models`.
 The envelope keeps the artifact revision and manifest digest as one immutable
-map entry and carries `scaleToZeroQualified` independently; runtime admission
-must reject a zero floor when retained elasticity evidence is false.
+map entry and carries `scaleToZeroQualified` independently as measured
+elasticity status, not permission to select a zero floor. An operator's explicit
+zero floor is accepted with a warning when this exact tuple is not yet
+benchmark-qualified. New unmeasured configurations still default to one hot
+replica; selecting zero does not change the qualification flag or relax
+artifact, runtime, snapshot, or infrastructure checks.
 
 Initial desired revisions are submitted by a bounded in-cluster bootstrap Job
 through the same authenticated `plan-preview` and `apply` endpoints as the
 admin console. The Job is create-only: if a model already has a durable desired
 revision with the same immutable model and tenant identity, it leaves that
-revision untouched. A bootstrap request with a zero hot floor is rejected until
-the retained projection explicitly qualifies elasticity; set the model hot or a
-positive `min_replicas` override when only runtime qualification exists.
+revision untouched. To qualify a newly added model, first verify its public
+native interface, then use an independent acceptance App with an explicit zero
+floor to measure real KEDA activation, useful results, and natural return to
+zero. Only the completed receipt qualifies elasticity; no existing customer
+App or qualification flag needs to be changed merely to run that test.
 
 The ownership modes are mutually exclusive:
 

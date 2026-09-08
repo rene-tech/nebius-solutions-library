@@ -10,6 +10,62 @@ mock_provider "kubernetes" {}
 mock_provider "helm" {}
 mock_provider "random" {}
 
+run "native_formula_is_a_managed_zero_gpu_app_with_full_resources" {
+  command = plan
+  variables {
+    enabled_model_ids = ["phenoage"]
+    hot_model_ids     = ["phenoage"]
+    model_image_overrides = {
+      phenoage = "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/phenoage-cpu@sha256:b6c28820576b62972437787bd06fa37f8c10b6f51de31b0f4da3cc3873bb34f1"
+    }
+    model_pool_overrides = {}
+    model_express = {
+      enabled          = false
+      deployment_mode  = "managed"
+      endpoint         = null
+      metadata_backend = "kubernetes"
+      namespace        = "fs2-modelexpress"
+      server_image     = null
+      cache            = { enabled = true, size_gib = 100 }
+      models           = {}
+    }
+    model_controller = {
+      enabled             = true
+      writes_enabled      = true
+      workload_owner      = "controller"
+      bootstrap_model_ids = ["phenoage"]
+      fresh_install       = true
+      priority_classes    = { interactive = 100, standard = 0, batch = -100 }
+    }
+  }
+  plan_options {
+    target = [terraform_data.model_controller_contract, kubernetes_config_map_v1.model_controller_bootstrap]
+  }
+  assert {
+    condition = (
+      contains(local.model_controller_dynamic_model_ids, "phenoage") &&
+      length(local.static_cpu_runtime_records) == 0 &&
+      local.model_controller_bootstrap_proposals.phenoage.spec.placement.acceleratorsPerReplica == 0 &&
+      local.model_controller_bootstrap_proposals.phenoage.spec.placement.cpuResources.cpuMillis == 1000 &&
+      local.model_controller_bootstrap_proposals.phenoage.spec.placement.cpuResources.memoryBytes == 268435456 &&
+      local.model_controller_bootstrap_proposals.phenoage.spec.availability.minReplicas == 1 &&
+      local.model_controller_bootstrap_proposals.phenoage.spec.cache.tier == "Disabled" &&
+      local.model_controller_bootstrap_proposals.phenoage.spec.queue.localQueue == "general-cpu"
+    )
+    error_message = "The native formula must bootstrap through the existing controller with exact CPU resources, no GPU, and normal-load-only cache."
+  }
+  assert {
+    condition = (
+      local.model_controller_pool_envelope["general-cpu-8x"].acceleratorsPerNode == 0 &&
+      local.model_controller_pool_envelope["general-cpu-8x"].allocatableCpuMillis == 7000 &&
+      local.model_controller_pool_envelope["general-cpu-8x"].allocatableMemoryBytes == 30064771072 &&
+      local.model_controller_qualifications.phenoage.scaleToZeroQualified == false &&
+      local.model_controller_qualifications.phenoage.maxAcceleratorsPerReplica == 0
+    )
+    error_message = "Declared CPU capacity must reach qualification without inventing scale-to-zero acceptance."
+  }
+}
+
 # Reuse the stage-wide inputs the existing stage tests already pin.
 variables {
   run_root        = "/tmp/fs2-modelexpress-test"

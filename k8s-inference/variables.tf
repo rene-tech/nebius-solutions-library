@@ -1525,7 +1525,10 @@ variable "deployment" {
       (var.deployment.models.selection == "profile" ? length(var.deployment.models.enabled) == 0 : true) &&
       length(setsubtract(
         var.deployment.models.enabled,
-        toset(jsondecode(file("${path.module}/catalog/profiles/model-profiles.json")).profiles[var.deployment.profiles.models].canonical_routes),
+        setunion(
+          toset(jsondecode(file("${path.module}/catalog/profiles/model-profiles.json")).profiles[var.deployment.profiles.models].canonical_routes),
+          toset(jsondecode(file("${path.module}/catalog/profiles/model-profiles.json")).managed_native_model_ids),
+        ),
       )) == 0 &&
       (
         var.deployment.dynamic_models.fast_start_evidence_file == null ? true :
@@ -1555,7 +1558,10 @@ variable "deployment" {
     condition = try(
       length(setsubtract(
         toset(keys(var.deployment.models.image_overrides)),
-        toset(jsondecode(file("${path.module}/catalog/profiles/model-profiles.json")).profiles[var.deployment.profiles.models].canonical_routes),
+        setunion(
+          toset(jsondecode(file("${path.module}/catalog/profiles/model-profiles.json")).profiles[var.deployment.profiles.models].canonical_routes),
+          toset(jsondecode(file("${path.module}/catalog/profiles/model-profiles.json")).managed_native_model_ids),
+        ),
       )) == 0 &&
       alltrue([
         for image in values(var.deployment.models.image_overrides) :
@@ -1570,7 +1576,10 @@ variable "deployment" {
     condition = try(
       length(setsubtract(
         toset(keys(var.deployment.models.pool_overrides)),
-        toset(jsondecode(file("${path.module}/catalog/profiles/model-profiles.json")).profiles[var.deployment.profiles.models].canonical_routes),
+        setunion(
+          toset(jsondecode(file("${path.module}/catalog/profiles/model-profiles.json")).profiles[var.deployment.profiles.models].canonical_routes),
+          toset(jsondecode(file("${path.module}/catalog/profiles/model-profiles.json")).managed_native_model_ids),
+        ),
       )) == 0 &&
       alltrue([
         for pool_id in values(var.deployment.models.pool_overrides) : contains(

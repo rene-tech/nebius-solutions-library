@@ -11,7 +11,7 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, Field, model_validator
+from pydantic import AwareDatetime, Field, SerializerFunctionWrapHandler, model_serializer, model_validator
 
 from .models import ModelId, StrictModel
 
@@ -84,10 +84,21 @@ class AcceleratorPoolConfiguration(StrictModel):
     accelerator_class: str = Field(min_length=1, max_length=128)
     capacity_type: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9._-]*$")
     accelerators_per_node: int = Field(ge=0, le=64)
+    allocatable_cpu_millis: int | None = Field(default=None, ge=1, le=64_000_000)
+    allocatable_memory_bytes: int | None = Field(default=None, ge=1, le=1 << 50)
     min_nodes: int = Field(ge=0, le=10000)
     max_nodes: int = Field(ge=0, le=10000)
     node_selector: dict[str, str] = Field(default_factory=dict, max_length=32)
     tolerations: list[TolerationConfiguration] = Field(default_factory=list, max_length=32)
+
+    @model_serializer(mode="wrap")
+    def omit_legacy_cpu_fields(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        payload: dict[str, Any] = handler(self)
+        if self.allocatable_cpu_millis is None:
+            payload.pop("allocatable_cpu_millis", None)
+        if self.allocatable_memory_bytes is None:
+            payload.pop("allocatable_memory_bytes", None)
+        return payload
 
     @model_validator(mode="after")
     def validate_bounds(self) -> AcceleratorPoolConfiguration:
@@ -96,6 +107,10 @@ class AcceleratorPoolConfiguration(StrictModel):
         if len(set(self.node_selector)) != len(self.node_selector):
             raise ValueError("accelerator pool node selectors must be unique")
         cpu_pool = self.accelerator_class == "CPU"
+        if (self.allocatable_cpu_millis is None) != (self.allocatable_memory_bytes is None):
+            raise ValueError("managed CPU pool capacity requires both allocatable CPU and memory")
+        if not cpu_pool and self.allocatable_cpu_millis is not None:
+            raise ValueError("managed CPU pool capacity is valid only for CPU pools")
         if (cpu_pool and (self.resource_name != "cpu" or self.accelerators_per_node != 0)) or (
             not cpu_pool and (self.resource_name == "cpu" or self.accelerators_per_node == 0)
         ):
@@ -109,10 +124,25 @@ class AcceleratorPoolConfiguration(StrictModel):
 class PlacementConfiguration(StrictModel):
     pool_ids: list[str] = Field(min_length=1, max_length=32)
     accelerators: int = Field(ge=0, le=64)
+    cpu_millis: int | None = Field(default=None, ge=1, le=64_000_000)
+    memory_bytes: int | None = Field(default=None, ge=1, le=1 << 50)
     topology_policy: Literal["any", "single-node", "nvlink-domain"] = "any"
+
+    @model_serializer(mode="wrap")
+    def omit_legacy_cpu_fields(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        payload: dict[str, Any] = handler(self)
+        if self.cpu_millis is None:
+            payload.pop("cpu_millis", None)
+        if self.memory_bytes is None:
+            payload.pop("memory_bytes", None)
+        return payload
 
     @model_validator(mode="after")
     def validate_pool_ids(self) -> PlacementConfiguration:
+        if (self.cpu_millis is None) != (self.memory_bytes is None):
+            raise ValueError("managed CPU placement requires both full-Pod CPU and memory")
+        if self.cpu_millis is not None and self.accelerators != 0:
+            raise ValueError("managed CPU placement must request zero accelerators")
         if len(self.pool_ids) != len(set(self.pool_ids)):
             raise ValueError("placement pool_ids must be unique")
         if any(not value or len(value) > 128 for value in self.pool_ids):
@@ -219,11 +249,32 @@ class PlatformConfiguration(StrictModel):
                     f"model {model_id} must use only CPU pools with zero accelerators "
                     "or only accelerator pools with a positive count"
                 )
-            if cpu_placement and (
-                model.autoscaling.min_replicas != 1
-                or model.autoscaling.max_replicas != 1
-            ):
-                raise ValueError(f"CPU model {model_id} must use one static replica")
+            if cpu_placement:
+                placement = model.placement
+                if placement.cpu_millis is None:
+                    # Existing portable CPU services (for example MSA search)
+                    # keep their static contract; new native Apps opt in with
+                    # their exact scheduler-effective full-Pod resources.
+                    if model.autoscaling.min_replicas != 1 or model.autoscaling.max_replicas != 1:
+                        raise ValueError(f"CPU model {model_id} must use one static replica")
+                else:
+                    assert placement.memory_bytes is not None
+                    capacity = 0
+                    for pool_id in placement.pool_ids:
+                        pool = self.pools[pool_id]
+                        if pool.allocatable_cpu_millis is None or pool.allocatable_memory_bytes is None:
+                            raise ValueError(
+                                f"managed CPU model {model_id} requires declared CPU and memory pool capacity"
+                            )
+                        per_node = min(
+                            pool.allocatable_cpu_millis // placement.cpu_millis,
+                            pool.allocatable_memory_bytes // placement.memory_bytes,
+                        )
+                        if per_node < 1:
+                            raise ValueError(f"managed CPU model {model_id} cannot fit in pool {pool_id}")
+                        capacity += per_node * pool.max_nodes
+                    if model.autoscaling.max_replicas > capacity:
+                        raise ValueError(f"managed CPU model {model_id} replica ceiling exceeds declared pool capacity")
             if model.enabled and model.autoscaling.max_replicas == 0:
                 raise ValueError(f"enabled model {model_id} must permit at least one replica")
         return self

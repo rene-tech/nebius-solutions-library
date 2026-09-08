@@ -1,0 +1,116 @@
+# Immutable native worker qualified by acceptance/aging-20260908/altumage-r01.json.
+# Terraform/controller own actual replica policy; no snapshot is enabled.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: altumage
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: altumage
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/model-id: altumage
+spec:
+  replicas: 0
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: altumage
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: altumage
+        fs2-serve.nebius.ai/model-id: altumage
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
+        kubernetes.io/arch: amd64
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: runtime
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/altumage-cuda@sha256:ca6352f79ecd78928e13ecda55afaf01a5df1923291b7a56a7ba9a9770c484e1
+          imagePullPolicy: IfNotPresent
+          workingDir: /opt/fs2
+          command: ["python", "-m", "uvicorn", "aging.server:app", "--host", "0.0.0.0", "--port", "8000"]
+          env:
+            - name: AGING_MODEL
+              value: altumage
+            - name: AGING_DEVICE
+              value: cuda
+            - name: AGING_CPU_THREADS
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4Gi
+              ephemeral-storage: 64Mi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "4"
+              memory: 8Gi
+              ephemeral-storage: 1Gi
+              nvidia.com/gpu: "1"
+          startupProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 90
+          readinessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /v1/health/live
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: altumage
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: altumage
+    fs2-serve.nebius.ai/model-id: altumage
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: altumage
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

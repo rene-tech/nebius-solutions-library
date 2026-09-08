@@ -5,6 +5,34 @@
   "binding_scope": "exact-runtime-variant-only",
   "gpu_count_semantics": "workload-consumed-not-host-pool-shape",
   "models": {
+    "altumage": {
+      "runtimes": {
+        "altumage-cuda-v1": {
+          "runtime_variant": "altumage-cuda-v1",
+          "runtime_ref": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/altumage-cuda@sha256:ca6352f79ecd78928e13ecda55afaf01a5df1923291b7a56a7ba9a9770c484e1",
+          "runtime_ref_kind": "container-image-digest",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-h100-sxm5-80gb",
+              "pool_template": "unbound-h100",
+              "state": "hardware-validated",
+              "enabled": true,
+              "gpu_count": 1,
+              "catalog_b300_state": null,
+              "evidence": "acceptance/aging-20260908/altumage-r01.json@sha256:939445a229f6355ec798a0c61d300070b0c1ef6197e9ec0ef045c21085caac36"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
     "boltz2": {
       "runtimes": {
         "catalog-canonical": {

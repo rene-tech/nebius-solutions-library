@@ -839,21 +839,23 @@ def canonical_sha256(value: object) -> str:
 def _admin_catalog() -> Any:
     """Load the validated packaged catalog without requiring an installed wheel."""
 
-    catalog_path = str(CATALOG_ROOT)
-    added = catalog_path not in sys.path
-    if added:
-        sys.path.insert(0, catalog_path)
+    paths = [str(CATALOG_ROOT), str(SOLUTION_ROOT / "components/control-plane/src")]
+    added = [path for path in paths if path not in sys.path]
+    sys.path[:0] = added
     try:
         from fs2_serve_catalog.loader import load_catalog
+        from fs2_serve.native_catalog import augment_native_catalog
 
-        return load_catalog(CATALOG_ROOT)
+        return augment_native_catalog(
+            load_catalog(CATALOG_ROOT), CATALOG_ROOT, repo_root=REPOSITORY_ROOT
+        )
     except (ImportError, OSError, ValueError) as exc:
         raise DeploymentError(
             "the canonical model catalog cannot derive the admin baseline"
         ) from exc
     finally:
-        if added:
-            sys.path.remove(catalog_path)
+        for path in added:
+            sys.path.remove(path)
 
 
 def selected_deployment_runtimes(model_images: Mapping[str, str]) -> dict[str, Any]:
@@ -1046,6 +1048,10 @@ def derived_admin_configuration(
             "alternatives": [],
         }
     }
+    native_ids = set(json.loads(
+        (SOLUTION_ROOT / "catalog/profiles/model-profiles.json").read_text(encoding="utf-8")
+    ).get("managed_native_model_ids", []))
+    managed_cpu_ids = cpu_runtime_model_ids & native_ids
     if cpu_runtime_model_ids:
         general_cpu_contract = dynamic.get("general_cpu_pool_contract")
         if not isinstance(general_cpu_contract, Mapping):
@@ -1095,6 +1101,12 @@ def derived_admin_configuration(
                     }
                 ],
             }
+            if managed_cpu_ids:
+                resources = raw_pool.get("schedulable_capacity", {})
+                pools[str(pool_id)].update({
+                    "allocatable_cpu_millis": int(resources.get("cpu_millicores", 0)),
+                    "allocatable_memory_bytes": int(resources.get("memory_mib", 0)) * 1048576,
+                })
             pool_features[str(pool_id)] = {}
     deployment_identities = deployment_runtime_configuration_identities(deployment_runtimes) if deployment_runtimes else {}
     scaling = {
@@ -1106,7 +1118,7 @@ def derived_admin_configuration(
                 "polling_interval_seconds": int(workloads["keda_polling_interval_seconds"]),
                 "cooldown_seconds": int(workloads["keda_cooldown_period_seconds"]),
             }
-            if model_id in cpu_runtime_model_ids
+            if model_id in cpu_runtime_model_ids and model_id not in managed_cpu_ids
             else _admin_scaling(workloads, model_id)
         )
         for model_id in selected_model_ids
@@ -1127,6 +1139,15 @@ def derived_admin_configuration(
             else catalog.records[model_id].to_dict()
         )
         route = routes.get(model_id)
+        if route is None and model_id in deployment_runtimes:
+            # New native models do not rewrite the archived 16-model route
+            # inventory. Their selected, validated record owns this metadata.
+            route = {
+                "mcp": {
+                    "enabled": value["interface"]["mcp"]["discoverable"],
+                    "tool_name": f"infer_{model_id.replace('-', '_')}",
+                }
+            }
         image_reference = model_images.get(model_id)
         if not isinstance(route, Mapping) or not isinstance(image_reference, str):
             raise DeploymentError(f"model {model_id!r} lacks a deployed route or image")
@@ -1211,6 +1232,11 @@ def derived_admin_configuration(
                 ].digest,
             },
         }
+        if model_id in managed_cpu_ids:
+            models[model_id]["placement"].update({
+                "cpu_millis": int(value["resources"]["cpu_millis"]),
+                "memory_bytes": int(value["resources"]["memory_bytes"]),
+            })
         if model_id in deployment_identities:
             identity = deployment_identities[model_id]
             models[model_id]["artifact"].update({

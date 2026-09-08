@@ -594,8 +594,11 @@ def test_validation_is_gpu_neutral_deterministic_and_fails_before_render() -> No
             }
         }
     )
-    elasticity_rejected = validate_model_deployment(model_spec(), no_scale_to_zero)
-    assert "scale_to_zero_unqualified" in {issue.code for issue in elasticity_rejected.issues}
+    elasticity_unmeasured = validate_model_deployment(model_spec(), no_scale_to_zero)
+    assert elasticity_unmeasured.disposition is ValidationDisposition.ACCEPTED
+    assert [(issue.code, issue.severity.value) for issue in elasticity_unmeasured.issues] == [
+        ("scale_to_zero_unqualified", "warning")
+    ]
 
     unsupported_policy = model_spec().model_copy(
         update={

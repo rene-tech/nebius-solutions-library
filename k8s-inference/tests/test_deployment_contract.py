@@ -2159,7 +2159,7 @@ class DeploymentContractTests(unittest.TestCase):
         # Fast-start levels need explicit benchmark evidence; the envelope must
         # never derive them from activation-based elasticity timings.
         self.assertIn(
-            "fastStartEvidence = try(local.model_controller_fast_start_evidence[model_id], [])",
+            "fastStartEvidence = contains(local.managed_cpu_model_ids, model_id) ? [] : try(local.model_controller_fast_start_evidence[model_id], [])",
             controller_source,
         )
         self.assertIn("model_controller_fast_start_evidence_valid", controller_source)
@@ -2758,13 +2758,16 @@ class DeploymentContractTests(unittest.TestCase):
         canonical = set(
             self.model_profiles["full_catalog"]["canonical_routes"]
         )
-        self.assertEqual(canonical, set(self.model_contract["model_artifacts"]))
+        native = set(self.model_contract.get("managed_native_model_ids", []))
+        all_declared = canonical | native
+        self.assertFalse(canonical & native)
+        self.assertEqual(all_declared, set(self.model_contract["model_artifacts"]))
         self.assertEqual(
-            canonical,
+            all_declared,
             set(self.model_contract["model_autoscaling_targets"]),
         )
         self.assertEqual(
-            canonical,
+            {model_id for model_id in all_declared if self.model_contract["model_autoscaling_targets"][model_id]["gpu_count"] > 0},
             {
                 placement["model_id"]
                 for placement in self.model_contract["workload_placements"].values()
@@ -2784,7 +2787,54 @@ class DeploymentContractTests(unittest.TestCase):
                 / "model-accelerator-compatibility.json"
             ).read_text(encoding="utf-8")
         )
-        self.assertEqual(canonical, set(accelerator_compatibility["models"]))
+        self.assertEqual(
+            {model_id for model_id in all_declared if self.model_contract["model_autoscaling_targets"][model_id]["gpu_count"] > 0},
+            set(accelerator_compatibility["models"]),
+        )
+
+    def test_native_aging_explicit_cpu_and_h100_plan_preserves_archived_defaults(self) -> None:
+        entries = {
+            model: json.loads((DEPLOY_ROOT / f"catalog/runtime/deployment-runtimes/{model}-{device}.json").read_text())
+            for model, device in [("phenoage", "cpu"), ("altumage", "cuda")]
+        }
+        pool_id = "h100-test"
+        deployment = {
+            "schema_version": 1, "name": "fs2-aging-native-plan",
+            "target": self.catalog_target(), "profiles": {"models": "full_catalog"},
+            "accelerator_pools": {pool_id: {
+                "platform": "gpu-h100-sxm", "preset": "1gpu-16vcpu-200gb",
+                "accelerator_class": "nvidia-h100-sxm5-80gb", "gpus_per_node": 1,
+                "gpu_memory_gb": 80, "capacity_type": "regular", "min_nodes": 1, "max_nodes": 2,
+                "driver": {"mode": "managed", "preset": "cuda12.4"},
+                "schedulable_capacity": {
+                    "cpu_millicores": 15000, "memory_mib": 180000,
+                    "evidence": {"pool_id": pool_id, "source": f"fixture:utf8:{pool_id}",
+                        "captured_at": "2026-09-08T00:00:00Z",
+                        "payload_sha256": hashlib.sha256(pool_id.encode()).hexdigest()},
+                },
+            }},
+            "cpu_pools": {"batch-cpu": {
+                "platform": "cpu-d3", "preset": "8vcpu-32gb", "capacity_type": "regular",
+                "autoscaling": {"min_nodes": 1, "max_nodes": 2},
+                "schedulable_capacity": {"cpu_millicores": 7000, "memory_mib": 28672, "ephemeral_storage_mib": 114688},
+            }},
+            "scheduling": {"budget_core_resources": True},
+            "models": {
+                "selection": "explicit", "enabled": ["altumage", "phenoage"],
+                "image_overrides": {model: entry["record"]["runtime"]["image"]["reference"] for model, entry in entries.items()},
+                "pool_overrides": {"altumage": pool_id},
+                "scaling": {"mode": "keda", "hot": ["altumage", "phenoage"],
+                    "overrides": {"phenoage": {"min_replicas": 1, "max_replicas": 14,
+                        "target_queue_depth": 1, "polling_interval_seconds": 5, "cooldown_seconds": 300}}},
+            },
+        }
+        variable_file = self._write_configuration("aging-native", deployment)
+        contract = self._planned_outputs(variable_file, "aging-native")["deployment_contract"]
+        self.assertEqual(contract["selected_model_ids"], ["altumage", "phenoage"])
+        self.assertEqual(set(contract["selected_model_placements"]), {"altumage"})
+        self.assertEqual(contract["selected_model_replica_ceilings"], {"altumage": 2, "phenoage": 14})
+        self.assertEqual(contract["stages"]["workloads"]["model_image_overrides"], deployment["models"]["image_overrides"])
+        self.assertNotIn("phenoage", self.model_profiles["full_catalog"]["canonical_routes"])
 
     def test_cosmos_manifest_is_gpu_agnostic_and_exact_image_rewrite_is_model_scoped(
         self,

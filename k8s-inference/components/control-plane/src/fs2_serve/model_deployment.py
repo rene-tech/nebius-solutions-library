@@ -24,7 +24,14 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import CroniterBadCronError, croniter
-from pydantic import AwareDatetime, Field, StringConstraints, model_validator
+from pydantic import (
+    AwareDatetime,
+    Field,
+    SerializerFunctionWrapHandler,
+    StringConstraints,
+    model_serializer,
+    model_validator,
+)
 
 from .fast_start import (
     FastStartAssessment,
@@ -58,6 +65,7 @@ from .fast_start_mechanisms import (
 )
 from .fast_start_policy import FastStartHistoryWindow
 from .models import KubernetesModel
+from .scientific_batch.podset_envelope import effective_pod_requests
 from .serving_snapshot import ServingSnapshotBundle, configure_serving_snapshot
 
 API_VERSION = "inference.fs2.nebius.ai/v1alpha1"
@@ -79,6 +87,7 @@ MODEL_EXPRESS_CONFIG_ANNOTATION = "fs2-serve.nebius.ai/modelexpress-config-diges
 MODEL_EXPRESS_TRANSFER_GROUP_LABEL = "fs2-serve.nebius.ai/modelexpress-transfer-group"
 WORKLOAD_ROLE_LABEL = "fs2-serve.nebius.ai/workload-role"
 POOL_ID_NODE_LABEL = "accelerator.fs2.nebius/pool-id"
+CPU_POOL_ID_NODE_LABEL = "capacity.fs2.nebius/pool-id"
 
 SHA256_DIGEST_PATTERN = r"^sha256:[a-f0-9]{64}$"
 DNS_LABEL_PATTERN = r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$"
@@ -190,13 +199,31 @@ class LifecycleSpec(KubernetesModel):
     desired_state: DesiredState
 
 
+class CpuResources(KubernetesModel):
+    """Exact scheduler-effective per-replica requests, not a fictitious GPU slot."""
+
+    cpu_millis: int = Field(ge=1, le=64_000_000)
+    memory_bytes: int = Field(ge=1, le=1 << 50)
+
+
 class PlacementSpec(KubernetesModel):
     pool_refs: list[PoolRef] = Field(min_length=1, max_length=32)
-    accelerators_per_replica: int = Field(ge=1, le=64)
+    accelerators_per_replica: int = Field(ge=0, le=64)
+    cpu_resources: CpuResources | None = None
     topology_policy: TopologyPolicy
+
+    @model_serializer(mode="wrap")
+    def omit_legacy_cpu_field(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        payload: dict[str, Any] = handler(self)
+        if self.cpu_resources is None:
+            payload.pop("cpuResources", None)
+            payload.pop("cpu_resources", None)
+        return payload
 
     @model_validator(mode="after")
     def unique_pools(self) -> PlacementSpec:
+        if (self.accelerators_per_replica == 0) != (self.cpu_resources is not None):
+            raise ValueError("zero-accelerator placement requires exact cpuResources; GPU placement must omit them")
         if len(self.pool_refs) != len(set(self.pool_refs)):
             raise ValueError("placement poolRefs must be unique")
         if any(len(value) > 128 or not value for value in self.pool_refs):
@@ -471,6 +498,11 @@ class ModelDeploymentSpec(KubernetesModel):
 
     @model_validator(mode="after")
     def valid_lifecycle(self) -> ModelDeploymentSpec:
+        if self.placement.cpu_resources is not None and (
+            self.cache.snapshot_preference is not SnapshotPreference.NEVER
+            or self.cache.mechanism not in (None, FastStartMechanism.CONVENTIONAL)
+        ):
+            raise ValueError("CPU Apps use conventional loading, without GPU snapshots or residency mechanisms")
         if self.lifecycle.desired_state is not DesiredState.ENABLED and self.availability.min_replicas != 0:
             raise ValueError("a disabled or draining model must have a zero hot floor")
         if self.lifecycle.desired_state is DesiredState.ENABLED and self.availability.max_replicas == 0:
@@ -523,6 +555,12 @@ class ValidationSeverity(StrEnum):
     WARNING = "warning"
 
 
+SCALE_TO_ZERO_UNQUALIFIED_MESSAGE = (
+    "Scale-to-zero has not yet been benchmark-qualified for this exact runtime and pool; "
+    "an explicit zero floor is allowed."
+)
+
+
 class ValidationIssue(KubernetesModel):
     severity: ValidationSeverity
     code: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
@@ -570,7 +608,8 @@ class PoolEnvelope(KubernetesModel):
     accelerator_class: str = Field(min_length=1, max_length=128)
     resource_name: str = Field(min_length=1, max_length=253)
     capacity_type: Literal["regular", "preemptible"]
-    accelerators_per_node: int = Field(ge=1, le=64)
+    accelerators_per_node: int = Field(ge=0, le=64)
+    allocatable_cpu_millis: int | None = Field(default=None, ge=1, le=64_000_000)
     allocatable_memory_bytes: int | None = Field(default=None, ge=1, le=1 << 50)
     min_nodes: int = Field(ge=0, le=10000)
     max_nodes: int = Field(ge=0, le=10000)
@@ -579,12 +618,36 @@ class PoolEnvelope(KubernetesModel):
     startup_scenario: StartupScenario | None = None
     fast_start_environment_bindings: list[FastStartEnvironmentBinding] = Field(default_factory=list, max_length=64)
 
+    @model_serializer(mode="wrap")
+    def omit_legacy_cpu_field(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        payload: dict[str, Any] = handler(self)
+        if self.allocatable_cpu_millis is None:
+            payload.pop("allocatableCpuMillis", None)
+            payload.pop("allocatable_cpu_millis", None)
+        return payload
+
     @model_validator(mode="after")
     def valid_capacity(self) -> PoolEnvelope:
         if self.max_nodes < self.min_nodes:
             raise ValueError("pool maxNodes must be greater than or equal to minNodes")
-        if self.node_selector.get(POOL_ID_NODE_LABEL) != self.pool_id:
-            raise ValueError("pool nodeSelector must contain its exact accelerator pool identity")
+        cpu_pool = self.accelerator_class == "CPU"
+        if cpu_pool:
+            if (
+                self.accelerators_per_node != 0
+                or self.resource_name != "cpu"
+                or self.allocatable_cpu_millis is None
+                or self.allocatable_memory_bytes is None
+            ):
+                raise ValueError("CPU pools require zero GPUs and declared allocatable CPU/memory")
+        elif self.accelerators_per_node == 0:
+            raise ValueError("GPU pools require a positive accelerator count")
+        identity_label = CPU_POOL_ID_NODE_LABEL if cpu_pool else POOL_ID_NODE_LABEL
+        if self.node_selector.get(identity_label) != self.pool_id:
+            raise ValueError(
+                "pool nodeSelector must contain its exact CPU pool identity"
+                if cpu_pool
+                else "pool nodeSelector must contain its exact accelerator pool identity"
+            )
         if any(
             not binding.includes(pool_ref=self.pool_id, capacity_type=self.capacity_type)
             for binding in self.fast_start_environment_bindings
@@ -675,7 +738,9 @@ class ModelQualification(KubernetesModel):
     artifact_manifest_digests: list[str] = Field(min_length=1, max_length=64)
     runtime_images: list[str] = Field(min_length=1, max_length=64)
     accelerator_classes: list[str] = Field(min_length=1, max_length=128)
-    max_accelerators_per_replica: int = Field(ge=1, le=64)
+    max_accelerators_per_replica: int = Field(ge=0, le=64)
+    cpu_resources: CpuResources | None = None
+    local_queue: str | None = Field(default=None, min_length=1, max_length=253, pattern=DNS_SUBDOMAIN_PATTERN)
     template_digests: list[str] = Field(min_length=1, max_length=64)
     template_refs: dict[str, str] = Field(min_length=1, max_length=64)
     template_cache_tiers: dict[str, CacheTier] = Field(min_length=1, max_length=64)
@@ -696,6 +761,17 @@ class ModelQualification(KubernetesModel):
     host_memory_residency: HostMemoryResidencyQualification | None = None
     gpu_resident: GpuResidentQualification | None = None
 
+    @model_serializer(mode="wrap")
+    def omit_legacy_cpu_field(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        payload: dict[str, Any] = handler(self)
+        if self.cpu_resources is None:
+            payload.pop("cpuResources", None)
+            payload.pop("cpu_resources", None)
+        if self.local_queue is None:
+            payload.pop("localQueue", None)
+            payload.pop("local_queue", None)
+        return payload
+
     def mechanism_declaration(
         self,
         mechanism: FastStartMechanism,
@@ -712,6 +788,24 @@ class ModelQualification(KubernetesModel):
 
     @model_validator(mode="after")
     def exact_mechanism_declarations(self) -> ModelQualification:
+        if self.max_accelerators_per_replica == 0:
+            if self.cpu_resources is None or self.accelerator_classes != ["CPU"] or self.local_queue is None:
+                raise ValueError(
+                    "CPU qualification requires exact cpuResources, localQueue and acceleratorClasses=[CPU]"
+                )
+            if (
+                self.snapshot_digests
+                or self.gpu_snapshot_bundles
+                or self.fast_start_evidence
+                or self.fast_start_runtime_contracts
+                or self.model_express is not None
+                or self.gpu_resident is not None
+                or self.regional_cache is not None
+                or self.host_memory_residency is not None
+            ):
+                raise ValueError("CPU qualification cannot advertise unimplemented GPU snapshot/residency mechanisms")
+        elif self.cpu_resources is not None or "CPU" in self.accelerator_classes:
+            raise ValueError("GPU qualification must not mix CPU-only placement")
         residency = self.host_memory_residency
         regional = self.regional_cache
         if residency is not None and regional is not None:
@@ -783,7 +877,7 @@ class InfrastructureEnvelope(KubernetesModel):
     local_queues: list[str] = Field(min_length=1, max_length=128)
     priority_classes: list[str] = Field(min_length=1, max_length=128)
     tenant_ids: list[str] = Field(min_length=1, max_length=1024)
-    max_accelerators_per_model: int = Field(default=1024, ge=1, le=640000)
+    max_accelerators_per_model: int = Field(default=1024, ge=0, le=640000)
     fast_start_wait_second_value: float = Field(default=0.01, ge=0, le=1000000)
     fast_start_mechanism_hourly_costs: dict[str, float] = Field(default_factory=dict, max_length=128)
     residency_holder_image: str | None = Field(
@@ -799,6 +893,11 @@ class InfrastructureEnvelope(KubernetesModel):
             raise ValueError("pool map key must match poolId")
         if any(key != item.model_ref for key, item in self.qualifications.items()):
             raise ValueError("qualification map key must match modelRef")
+        if any(
+            item.local_queue is not None and item.local_queue not in self.local_queues
+            for item in self.qualifications.values()
+        ):
+            raise ValueError("qualified localQueue must exist in the infrastructure envelope")
         if any(
             item.model_express is not None and not set(item.model_express.pool_refs).issubset(self.pools)
             for item in self.qualifications.values()
@@ -1044,9 +1143,10 @@ def _issue(
     message: str,
     *,
     owner: Literal["live-control-plane", "terraform"],
+    severity: ValidationSeverity = ValidationSeverity.ERROR,
 ) -> ValidationIssue:
     return ValidationIssue(
-        severity=ValidationSeverity.ERROR,
+        severity=severity,
         code=code,
         path=path,
         message=message,
@@ -1263,8 +1363,9 @@ def validate_model_deployment(
                 _issue(
                     "scale_to_zero_unqualified",
                     "$.spec.availability.minReplicas",
-                    "scale-to-zero is not qualified for this model/runtime tuple",
+                    SCALE_TO_ZERO_UNQUALIFIED_MESSAGE,
                     owner="live-control-plane",
+                    severity=ValidationSeverity.WARNING,
                 )
             )
         if spec.runtime.image not in qualification.runtime_images:
@@ -1323,6 +1424,24 @@ def validate_model_deployment(
                     owner="live-control-plane",
                 )
             )
+        if spec.placement.cpu_resources != qualification.cpu_resources:
+            issues.append(
+                _issue(
+                    "cpu_resources_unqualified",
+                    "$.spec.placement.cpuResources",
+                    "CPU requests must match the exact qualified Pod resource envelope",
+                    owner="live-control-plane",
+                )
+            )
+        if qualification.local_queue is not None and spec.queue.local_queue != qualification.local_queue:
+            issues.append(
+                _issue(
+                    "local_queue_unqualified",
+                    "$.spec.queue.localQueue",
+                    "the model must use its qualified compute queue",
+                    owner="live-control-plane",
+                )
+            )
         if spec.placement.accelerators_per_replica > qualification.max_accelerators_per_replica:
             issues.append(
                 _issue(
@@ -1358,10 +1477,11 @@ def validate_model_deployment(
                     owner="terraform",
                 )
             )
-            terraform_inputs.add(f"accelerator_pools.{pool_ref}")
+            input_path = "cpu_pools" if spec.placement.cpu_resources is not None else "accelerator_pools"
+            terraform_inputs.add(f"{input_path}.{pool_ref}")
             continue
         known_pools.append(pool)
-        if spec.placement.accelerators_per_replica > pool.accelerators_per_node:
+        if pool_replicas_per_node(pool, spec.placement.accelerators_per_replica, spec.placement.cpu_resources) < 1:
             issues.append(
                 _issue(
                     "accelerator_shape_incompatible",
@@ -1455,14 +1575,14 @@ def validate_model_deployment(
                         )
                     )
 
-    pool_replica_capacity = {
-        pool.pool_id: (pool.accelerators_per_node // spec.placement.accelerators_per_replica) * pool.max_nodes
+    pool_capacities = {
+        pool.pool_id: pool_replica_capacity(pool, spec.placement.accelerators_per_replica, spec.placement.cpu_resources)
         for pool in known_pools
     }
     # Every admitted pool becomes an independently bounded workload segment.
     # Summing is safe here: the renderer never asks two autoscalers to own the
     # same Deployment and each segment is pinned to exactly one pool.
-    possible_replicas = sum(pool_replica_capacity.values())
+    possible_replicas = sum(pool_capacities.values())
     if known_pools and spec.availability.max_replicas > possible_replicas:
         issues.append(
             _issue(
@@ -1472,7 +1592,10 @@ def validate_model_deployment(
                 owner="terraform",
             )
         )
-        terraform_inputs.update(f"accelerator_pools.{pool.pool_id}.max_nodes" for pool in known_pools)
+        terraform_inputs.update(
+            f"{'cpu_pools' if pool.accelerator_class == 'CPU' else 'accelerator_pools'}.{pool.pool_id}.max_nodes"
+            for pool in known_pools
+        )
 
     # If the policy selects durable and preemptible capacity together, every
     # configured hot floor (including a future warm window) must fit entirely
@@ -1482,7 +1605,7 @@ def validate_model_deployment(
     maximum_hot_floor = max(
         [spec.availability.min_replicas, *(window.min_replicas for window in spec.availability.warm_windows)]
     )
-    regular_replica_capacity = sum(pool_replica_capacity[pool.pool_id] for pool in regular_pools)
+    regular_replica_capacity = sum(pool_capacities[pool.pool_id] for pool in regular_pools)
     if regular_pools and maximum_hot_floor > regular_replica_capacity:
         issues.append(
             _issue(
@@ -1492,7 +1615,10 @@ def validate_model_deployment(
                 owner="terraform",
             )
         )
-        terraform_inputs.update(f"accelerator_pools.{pool.pool_id}.max_nodes" for pool in regular_pools)
+        terraform_inputs.update(
+            f"{'cpu_pools' if pool.accelerator_class == 'CPU' else 'accelerator_pools'}.{pool.pool_id}.max_nodes"
+            for pool in regular_pools
+        )
 
     requested_accelerators = spec.availability.max_replicas * spec.placement.accelerators_per_replica
     if requested_accelerators > envelope.max_accelerators_per_model:
@@ -1534,8 +1660,10 @@ def validate_model_deployment(
             )
         )
 
-    live_errors = any(issue.owner == "live-control-plane" for issue in issues)
-    infra_errors = any(issue.owner == "terraform" for issue in issues)
+    live_errors = any(
+        issue.owner == "live-control-plane" and issue.severity is ValidationSeverity.ERROR for issue in issues
+    )
+    infra_errors = any(issue.owner == "terraform" and issue.severity is ValidationSeverity.ERROR for issue in issues)
     disposition = (
         ValidationDisposition.REJECTED
         if live_errors
@@ -1558,7 +1686,7 @@ def validate_model_deployment(
                 else 0
                 if pool.capacity_type == "preemptible"
                 else 1,
-                -pool_replica_capacity[pool.pool_id],
+                -pool_capacities[pool.pool_id],
                 pool.pool_id,
             ),
         )[0].pool_id
@@ -1820,27 +1948,61 @@ class _WorkloadSegment:
         return self.fixed_replicas is None
 
 
-def _pool_replica_capacity(pool: PoolEnvelope, accelerators_per_replica: int) -> int:
-    return (pool.accelerators_per_node // accelerators_per_replica) * pool.max_nodes
+def pool_replicas_per_node(
+    pool: PoolEnvelope,
+    accelerators_per_replica: int,
+    cpu_resources: CpuResources | None = None,
+) -> int:
+    """Configured schedulable headroom, not a claim about current free capacity."""
+
+    if accelerators_per_replica > 0:
+        return 0 if pool.accelerator_class == "CPU" else pool.accelerators_per_node // accelerators_per_replica
+    if (
+        pool.accelerator_class != "CPU"
+        or cpu_resources is None
+        or pool.allocatable_cpu_millis is None
+        or pool.allocatable_memory_bytes is None
+    ):
+        return 0
+    return min(
+        pool.allocatable_cpu_millis // cpu_resources.cpu_millis,
+        pool.allocatable_memory_bytes // cpu_resources.memory_bytes,
+    )
 
 
-def _ordered_hot_pools(pools: Sequence[PoolEnvelope], accelerators_per_replica: int) -> list[PoolEnvelope]:
+def pool_replica_capacity(
+    pool: PoolEnvelope,
+    accelerators_per_replica: int,
+    cpu_resources: CpuResources | None = None,
+) -> int:
+    return pool_replicas_per_node(pool, accelerators_per_replica, cpu_resources) * pool.max_nodes
+
+
+def _ordered_hot_pools(
+    pools: Sequence[PoolEnvelope],
+    accelerators_per_replica: int,
+    cpu_resources: CpuResources | None = None,
+) -> list[PoolEnvelope]:
     return sorted(
         pools,
         key=lambda pool: (
             pool.capacity_type == "preemptible",
-            -_pool_replica_capacity(pool, accelerators_per_replica),
+            -pool_replica_capacity(pool, accelerators_per_replica, cpu_resources),
             pool.pool_id,
         ),
     )
 
 
-def _ordered_burst_pools(pools: Sequence[PoolEnvelope], accelerators_per_replica: int) -> list[PoolEnvelope]:
+def _ordered_burst_pools(
+    pools: Sequence[PoolEnvelope],
+    accelerators_per_replica: int,
+    cpu_resources: CpuResources | None = None,
+) -> list[PoolEnvelope]:
     return sorted(
         pools,
         key=lambda pool: (
             pool.capacity_type != "preemptible",
-            -_pool_replica_capacity(pool, accelerators_per_replica),
+            -pool_replica_capacity(pool, accelerators_per_replica, cpu_resources),
             pool.pool_id,
         ),
     )
@@ -1864,7 +2026,10 @@ def _workload_segments(
     by_id = {pool.pool_id: pool for pool in pools}
     if set(by_id) != set(spec.placement.pool_refs):
         raise ValueError("render context pools differ from the admitted placement")
-    if any(_pool_replica_capacity(pool, spec.placement.accelerators_per_replica) <= 0 for pool in pools):
+    if any(
+        pool_replica_capacity(pool, spec.placement.accelerators_per_replica, spec.placement.cpu_resources) <= 0
+        for pool in pools
+    ):
         raise ValueError("an admitted pool has no usable replica capacity")
 
     if spec.lifecycle.desired_state is not DesiredState.ENABLED:
@@ -1905,13 +2070,14 @@ def _workload_segments(
         ]
 
     pool_remaining = {
-        pool.pool_id: _pool_replica_capacity(pool, spec.placement.accelerators_per_replica) for pool in pools
+        pool.pool_id: pool_replica_capacity(pool, spec.placement.accelerators_per_replica, spec.placement.cpu_resources)
+        for pool in pools
     }
     segments: list[_WorkloadSegment] = []
     floor_remaining = hot_floor
     regular_pools = [pool for pool in pools if pool.capacity_type == "regular"]
     hot_pools = regular_pools or list(pools)
-    for pool in _ordered_hot_pools(hot_pools, spec.placement.accelerators_per_replica):
+    for pool in _ordered_hot_pools(hot_pools, spec.placement.accelerators_per_replica, spec.placement.cpu_resources):
         allocated = min(floor_remaining, pool_remaining[pool.pool_id])
         if allocated > 0:
             segments.append(
@@ -1935,7 +2101,7 @@ def _workload_segments(
     # entering the window scales an existing Deployment instead of replacing
     # the entire workload topology.
     if hot_floor == 0 and spec.availability.warm_windows:
-        anchor = _ordered_hot_pools(pools, spec.placement.accelerators_per_replica)[0]
+        anchor = _ordered_hot_pools(pools, spec.placement.accelerators_per_replica, spec.placement.cpu_resources)[0]
         segments.append(
             _WorkloadSegment(
                 pool=anchor,
@@ -1954,7 +2120,7 @@ def _workload_segments(
         requested_total_floor - hot_floor,
         burst_remaining,
     )
-    for pool in _ordered_burst_pools(pools, spec.placement.accelerators_per_replica):
+    for pool in _ordered_burst_pools(pools, spec.placement.accelerators_per_replica, spec.placement.cpu_resources):
         capacity = min(burst_remaining, pool_remaining[pool.pool_id])
         if capacity <= 0:
             continue
@@ -2486,7 +2652,9 @@ class LegacyManifestRenderer:
         if primary_template is None:
             raise ValueError("legacy template primary workload is missing")
 
-        known_gpu_resources = {pool.resource_name for pool in (context.eligible_pools or [context.pool])}
+        known_gpu_resources = {
+            pool.resource_name for pool in (context.eligible_pools or [context.pool]) if pool.accelerator_class != "CPU"
+        }
         residency_holders: dict[str, tuple[HostMemoryResidencyQualification, PoolEnvelope]] = {}
         residency_runtime_segments: dict[str, list[tuple[int, int]]] = {}
         mechanism = (
@@ -2645,6 +2813,13 @@ class LegacyManifestRenderer:
                         role="serving" if segment.role == "hot" else "standby",
                         runtime_container_name=bundle.runtime_container_name,
                     )
+            if spec.placement.cpu_resources is not None:
+                actual = effective_pod_requests(pod_spec)
+                if actual.accelerators:
+                    raise ValueError("CPU runtime template must not request accelerator resources")
+                expected = spec.placement.cpu_resources
+                if actual.cpu_millis != expected.cpu_millis or actual.memory_bytes != expected.memory_bytes:
+                    raise ValueError("CPU runtime full Pod requests differ from qualified cpuResources")
             resources = container.setdefault("resources", {})
             for field in ("requests", "limits"):
                 values = resources.setdefault(field, {})
@@ -2656,7 +2831,8 @@ class LegacyManifestRenderer:
                 ]
                 for stale in stale_gpu_names:
                     del values[stale]
-                values[segment.pool.resource_name] = str(spec.placement.accelerators_per_replica)
+                if spec.placement.accelerators_per_replica > 0:
+                    values[segment.pool.resource_name] = str(spec.placement.accelerators_per_replica)
             if segment.autoscaled:
                 # KEDA owns only this segment's scale subresource. The model
                 # controller owns every other field and never writes replicas

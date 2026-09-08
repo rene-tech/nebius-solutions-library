@@ -40,6 +40,7 @@ from .model_deployment import (
     DNS_LABEL_PATTERN,
     DNS_SUBDOMAIN_PATTERN,
     KIND,
+    SCALE_TO_ZERO_UNQUALIFIED_MESSAGE,
     CacheSpec,
     CacheTier,
     DesiredState,
@@ -53,6 +54,8 @@ from .model_deployment import (
     SnapshotRef,
     SnapshotStrategy,
     ValidationDisposition,
+    pool_replica_capacity,
+    pool_replicas_per_node,
     spec_digest,
     validate_model_deployment,
 )
@@ -336,7 +339,7 @@ class ModelDeploymentPoolChoice(StrictModel):
     pool_ref: str = Field(min_length=1, max_length=128)
     accelerator_class: str = Field(min_length=1, max_length=128)
     capacity_type: str = Field(min_length=1, max_length=64)
-    accelerators_per_node: int = Field(ge=1, le=64)
+    accelerators_per_node: int = Field(ge=0, le=64)
     maximum_replicas: int = Field(ge=1, le=10000)
 
 
@@ -375,6 +378,7 @@ class ModelDeploymentConfigurationOption(StrictModel):
     priority_class_choices: list[str] = Field(min_length=1, max_length=128)
     tenant_choices: list[str] = Field(min_length=1, max_length=1024)
     scale_to_zero_qualified: bool
+    scale_to_zero_warning: str | None = Field(default=None, min_length=1, max_length=240)
     fast_start_mechanism_choices: list[ModelDeploymentFastStartMechanismChoice] = Field(
         min_length=1,
         max_length=len(SELECTABLE_MECHANISMS),
@@ -575,7 +579,11 @@ class ModelDeploymentMutationService:
         """Additionally prove the worst schedulable host-memory Pod density."""
 
         pool = self.envelope.pools[pool_ref]
-        runtime_pods_per_node = pool.accelerators_per_node // default_spec.placement.accelerators_per_replica
+        runtime_pods_per_node = pool_replicas_per_node(
+            pool,
+            default_spec.placement.accelerators_per_replica,
+            default_spec.placement.cpu_resources,
+        )
         if runtime_pods_per_node < 1:
             return False
         return self._mechanism_choice_is_renderable(
@@ -591,6 +599,8 @@ class ModelDeploymentMutationService:
         """Offer only exact installed bundles that the normal preview can render."""
 
         choices: list[ModelDeploymentGpuSnapshotChoice] = []
+        if default_spec.placement.accelerators_per_replica == 0:
+            return choices
         qualification = self.envelope.qualifications[default_spec.model_ref]
         for bundle in sorted(qualification.gpu_snapshot_bundles.values(), key=lambda item: item.bundle_id):
             pools = [choice for choice in pool_choices if choice.accelerator_class in bundle.accelerator_classes]
@@ -646,18 +656,21 @@ class ModelDeploymentMutationService:
 
         for model_ref, qualification in sorted(self.envelope.qualifications.items()):
             accelerators = qualification.max_accelerators_per_replica
-            budget_replicas = min(10000, self.envelope.max_accelerators_per_model // accelerators)
+            budget_replicas = (
+                min(10000, self.envelope.max_accelerators_per_model // accelerators) if accelerators else 10000
+            )
+            qualified_queues = [qualification.local_queue] if qualification.local_queue else valid_queues
             pool_choices: list[ModelDeploymentPoolChoice] = []
             for pool_ref, pool in sorted(self.envelope.pools.items()):
                 if (
                     pool.accelerator_class not in qualification.accelerator_classes
-                    or pool.accelerators_per_node < accelerators
+                    or pool_replicas_per_node(pool, accelerators, qualification.cpu_resources) < 1
                 ):
                     continue
                 maximum_replicas = min(
                     10000,
                     budget_replicas,
-                    (pool.accelerators_per_node // accelerators) * pool.max_nodes,
+                    pool_replica_capacity(pool, accelerators, qualification.cpu_resources),
                 )
                 if maximum_replicas < 1:
                     continue
@@ -777,6 +790,11 @@ class ModelDeploymentMutationService:
                         "placement": {
                             "poolRefs": [choice.pool_ref for choice in pool_choices],
                             "acceleratorsPerReplica": accelerators,
+                            **(
+                                {"cpuResources": qualification.cpu_resources.model_dump(by_alias=True)}
+                                if qualification.cpu_resources is not None
+                                else {}
+                            ),
                             "topologyPolicy": "SingleNode",
                         },
                         "availability": {
@@ -798,7 +816,7 @@ class ModelDeploymentMutationService:
                             "mechanism": None,
                         },
                         "queue": {
-                            "localQueue": valid_queues[0],
+                            "localQueue": qualified_queues[0],
                             "priorityClass": valid_priorities[0],
                             "maxQueueSeconds": 900,
                         },
@@ -897,10 +915,13 @@ class ModelDeploymentMutationService:
                         namespace=self.namespace,
                         default_spec=default_spec,
                         pool_choices=pool_choices,
-                        local_queue_choices=valid_queues,
+                        local_queue_choices=qualified_queues,
                         priority_class_choices=valid_priorities,
                         tenant_choices=valid_tenants,
                         scale_to_zero_qualified=qualification.scale_to_zero_qualified,
+                        scale_to_zero_warning=(
+                            None if qualification.scale_to_zero_qualified else SCALE_TO_ZERO_UNQUALIFIED_MESSAGE
+                        ),
                         fast_start_mechanism_choices=renderable_mechanism_choices,
                         fast_start_qualified_level=decision.fast_start.qualified_level,
                         gpu_snapshot_choices=self._snapshot_choices(default_spec, pool_choices),

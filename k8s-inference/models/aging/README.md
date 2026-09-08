@@ -171,11 +171,42 @@ also require measured host RAM; do not infer memory requirements from weight
 size alone. The r01 `ru_maxrss` counter was found to inherit a pre-exec ancestor
 peak on this runner, so it is not model memory-demand evidence; r02 records
 process-local Linux `VmHWM`/`VmRSS` instead and retains the original counter's
-limitation. GPU and deployed cold-start comparisons remain pending.
+limitation. Real CPU/H100 worker qualification and its separate image-pull timing
+are in [the cluster acceptance report](../../acceptance/aging-20260908/README.md).
+Direct worker tests do not establish public App scale-from-zero latency.
 
-## Platform integration still required
+## Add the Apps to a cluster
 
-The model-local package is implemented and tested; it is not yet a deployed App.
-See `INTEGRATION.md` for the existing zero-GPU dynamic-control gap and exact shared
-integration boundaries. Until that extension is implemented, a static CPU route
-must not masquerade as fully working App replica/scaling controls.
+Select `altumage` and `phenoage` in `deployment.models.enabled` in
+`terraform.tfvars`, alongside existing model IDs. Native additions do not change
+the historical `full_catalog` profile's default model set. The optional `aging`
+profile selects just these two Apps. Use an existing qualified H100 pool for
+AltumAge and enable the general CPU pool/queue for PhenoAge; the CPU formula must
+not receive a GPU allocation. The selected immutable runtime images are declared
+in `catalog/runtime/deployment-runtimes/{altumage-cuda,phenoage-cpu}.json`.
+Regional mirroring can change the repository, but not the image digest.
+
+With dynamic models enabled and `workload_owner = "controller"`, include the two
+IDs in `deployment.dynamic_models.bootstrap_model_ids`. An initial hot worker is
+selected with `deployment.models.scaling.hot`; explicit scaling overrides can
+instead start at zero. After bootstrap, use **Apps → the App → Settings** for
+minimum/maximum ready workers and idle/cooldown periods. Terraform owns the
+infrastructure envelope and bootstrap, not subsequent App replica edits.
+
+Both use the existing native API, `POST /v1/models/{model_id}:invoke`, and MCP
+tools `infer_altumage` / `infer_phenoage`; these are not chat-completion models.
+The platform wraps the worker payload in its normal invocation contract and
+retains the operation ID, status and result. Generate the model payload using
+`aging.fixtures` above. Public App names/IDs can differ for user-created copies.
+
+An explicit zero floor is allowed before a measured elasticity receipt exists;
+the admin page shows that it is not yet benchmark-qualified. This permits the
+real zero-to-one-to-zero test without pretending it already passed. Snapshot
+and fast-start qualification remain separate. PhenoAge has no GPU state;
+AltumAge currently uses normal image-baked weight loading.
+
+See [the integration boundary](INTEGRATION.md) and
+[CPU-managed App implementation evidence](../../acceptance/aging-20260908/CPU-MANAGED-APPS.md).
+The acceptance directory distinguishes direct worker qualification from public
+HTTP/MCP and dynamic scaling results; only a retained successful live receipt
+establishes those latter claims.

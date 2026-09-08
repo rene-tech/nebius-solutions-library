@@ -1,0 +1,213 @@
+{
+  "schema": "fs2-serve.nebius.ai/deployment-runtime/v1",
+  "model_id": "altumage",
+  "variant_id": "altumage-cuda-v1",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "altumage",
+      "display_name": "AltumAge",
+      "family": "biological-age",
+      "tested_lane": true,
+      "source": {
+        "kind": "git",
+        "repository": "github.com/rsinghlab/AltumAge",
+        "revision": "696c477dac9b7641bf283c48af1cc9bb0a0803a3",
+        "license": {
+          "id": "MIT",
+          "state": "verified",
+          "notes": "Pinned original AltumAge and pyaging MIT notices retained in models/aging/UPSTREAM-LICENSES.txt; official tensors and preprocessing are checksummed."
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "No gated model access or NVIDIA registry entitlement is required."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "pyaging-0.5.2-altumage-cuda",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/altumage-cuda@sha256:ca6352f79ecd78928e13ecda55afaf01a5df1923291b7a56a7ba9a9770c484e1",
+        "digest": "sha256:ca6352f79ecd78928e13ecda55afaf01a5df1923291b7a56a7ba9a9770c484e1",
+        "state": "resolved"
+      },
+      "command": [
+        "python",
+        "-m",
+        "uvicorn",
+        "aging.server:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 2000,
+      "memory_bytes": 4294967296,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-H100-SXM5-80GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/v1/predict"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 180
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "predict-age"
+        ],
+        "license_enforced": true,
+        "non_clinical": true,
+        "commercial_use": "license-dependent"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "blocked",
+          "gate": null,
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "Snapshot correctness and benefit have not been qualified. The measured immutable-image normal load remains the only startup option."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "runtime-image",
+      "shared_path": "/mnt/fs2-serve-cache/models/altumage",
+      "local_path": "/var/lib/fs2-serve/cache/models/altumage",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "7145fde1f843b247c83435c1b6f2728df733b4b2b76e2dfa10cae610e491ce85",
+        "expanded_bytes": 3567654,
+        "minimum_bytes": 3567654,
+        "capacity_bound_bytes": 3567654,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "altumage-cuda-two-native-predictions-and-cpu-parity/v1",
+      "source_path": "k8s-inference/acceptance/aging-20260908/in_pod.py",
+      "source_sha256": "361da1c1f52be58d06f56b5c59a28d650761c8cdfa76509044f05db1951abb75",
+      "fixture_path": "k8s-inference/models/aging/fixtures.py",
+      "fixture_sha256": "8f5288360503162132e790623b76e2d6058d39238ecc514b7192dbeceef877f8",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": true,
+      "limitations": [
+        "20,318 named normalized CpGs plus pinned official preprocessing; no raw assay normalization or inferred missing measurements.",
+        "Synthetic research/demo fixtures only. These outputs are not diagnoses, clinical recommendations, or a comparison of the two clocks' accuracy.",
+        "Qualified on one H100SM90 using exact CUDA image; CPU comparison used CPU execution in that same image/host, not a separately qualified CPU-only image. B300 and other GPU architectures remain unmeasured.",
+        "Startup receipt distinguishes image pull, container initialization and loopback HTTP; no end-to-end public cold-start claim."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA H100 80GB HBM3 / SM90 / driver580.159.04",
+        "outcome": "live-qualified",
+        "source_commit": "3a3dbe0fdb258579f9d4eb1b35a2d1525f5fc0d3",
+        "summary": "Two distinct native predictions and exact source/image identity passed. acceptance/aging-20260908/altumage-r01.json SHA256 939445a229f6355ec798a0c61d300070b0c1ef6197e9ec0ef045c21085caac36. Public HTTP/MCP, dynamic replica changes and elasticity are not yet qualified."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "3a3dbe0fdb258579f9d4eb1b35a2d1525f5fc0d3",
+        "tree": "251dfea8fa86784997c8433b21c0a88117e9bee1",
+        "path": "k8s-inference/models/aging",
+        "classification": "measured-handoff"
+      },
+      {
+        "url": "https://github.com/rsinghlab/AltumAge/tree/696c477dac9b7641bf283c48af1cc9bb0a0803a3",
+        "revision": "696c477dac9b7641bf283c48af1cc9bb0a0803a3",
+        "classification": "reviewed-input"
+      }
+    ]
+  },
+  "qualification": {
+    "active_runtime": {
+      "model_revision": "696c477dac9b7641bf283c48af1cc9bb0a0803a3",
+      "runtime_image_digest": "sha256:ca6352f79ecd78928e13ecda55afaf01a5df1923291b7a56a7ba9a9770c484e1",
+      "service": {
+        "name": "altumage",
+        "namespace": "fs2-models",
+        "port": 8000
+      }
+    },
+    "evidence": {
+      "audited_catalog_sha256": "c77df36d784dd1cddbb8cb046f4aa403dd4d98bbbf1736538964abbe9a03a6ae",
+      "audited_live_routes_sha256": null,
+      "cold_start_acceptance_sha256": null,
+      "elasticity_acceptance_sha256": null,
+      "http_mcp_acceptance_sha256": null,
+      "mcp_discovery_sha256": null,
+      "model_discovery_sha256": null,
+      "retained_deployments_sha256": "939445a229f6355ec798a0c61d300070b0c1ef6197e9ec0ef045c21085caac36"
+    },
+    "model_id": "altumage",
+    "policy": {
+      "license_id": "MIT",
+      "non_clinical": true,
+      "commercial_use": "license-dependent"
+    },
+    "runtime_origin": {
+      "kind": "independent-runtime",
+      "variant_id": "altumage-cuda-v1",
+      "source_kind": "git",
+      "repository": "github.com/rsinghlab/AltumAge",
+      "relationship": "exact-model",
+      "nim_artifact_parity": "not-applicable"
+    },
+    "states": {
+      "registered": true,
+      "route_active": false,
+      "runtime_ready": true,
+      "semantic_qualified": true,
+      "http_mcp_qualified": false,
+      "cold_start_qualified": false,
+      "elasticity_qualified": false
+    },
+    "variant_id": "altumage-cuda-v1"
+  }
+}

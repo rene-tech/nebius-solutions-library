@@ -1,7 +1,9 @@
 {
   "schema_version": 2,
   "placement_authority": "checked-in-b300-fixture-only-not-runtime-support",
+  "managed_native_model_ids": ["altumage", "phenoage"],
   "workload_placements": {
+    "altumage": {"model_id": "altumage", "runtime_variant": "deployment/altumage", "state": "fixture-only", "gpu_request": 1, "workload_topology": "single-gpu", "host_architectures": ["amd64"], "selection_mode": "accelerator-class", "compatible_pool_ids": ["unbound-h100"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"}},
     "boltz2-b300": {"model_id": "boltz2", "runtime_variant": "deployment/boltz2-b300", "state": "fixture-only", "gpu_request": 1, "workload_topology": "single-gpu", "host_architectures": ["amd64"], "selection_mode": "accelerator-class", "compatible_pool_ids": ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-b300-sxm6-288gb"}},
     "cosmos3-nano": {"model_id": "cosmos3-nano", "runtime_variant": "deployment/cosmos3-nano", "state": "fixture-only", "gpu_request": 1, "workload_topology": "single-gpu", "host_architectures": ["amd64"], "selection_mode": "accelerator-class", "compatible_pool_ids": ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-b300-sxm6-288gb"}},
     "diffdock-b300": {"model_id": "diffdock", "runtime_variant": "deployment/diffdock-b300", "state": "fixture-only", "gpu_request": 1, "workload_topology": "single-gpu", "host_architectures": ["amd64"], "selection_mode": "accelerator-class", "compatible_pool_ids": ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-b300-sxm6-288gb"}},
@@ -20,6 +22,8 @@
     "sdxl": {"model_id": "sdxl", "runtime_variant": "deployment/sdxl", "state": "fixture-only", "gpu_request": 1, "workload_topology": "single-gpu", "host_architectures": ["amd64"], "selection_mode": "accelerator-class", "compatible_pool_ids": ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"], "required_node_labels": {"accelerator.fs2.nebius/class": "nvidia-b300-sxm6-288gb"}}
   },
   "model_autoscaling_targets": {
+    "altumage": {"deployment": "altumage", "gpu_count": 1, "ephemeral_storage_request_gib": 0.0625},
+    "phenoage": {"deployment": "phenoage", "gpu_count": 0, "ephemeral_storage_request_gib": 0.0625},
     "boltz2": {"deployment": "boltz2-b300", "gpu_count": 1, "ephemeral_storage_request_gib": 0.015625},
     "cosmos3-nano": {"deployment": "cosmos3-nano", "gpu_count": 1, "ephemeral_storage_request_gib": 8.125},
     "diffdock": {"deployment": "diffdock-b300", "gpu_count": 1, "ephemeral_storage_request_gib": 0},
@@ -39,6 +43,8 @@
   },
   "common_keeper_paths": ["models/cold-start/foundation.yaml"],
   "model_artifacts": {
+    "altumage": {"manifest_paths": ["models/aging/k8s/altumage.yaml"], "keeper_paths": [], "required_secrets": []},
+    "phenoage": {"manifest_paths": ["models/aging/k8s/phenoage.yaml"], "keeper_paths": [], "required_secrets": []},
     "boltz2": {
       "manifest_paths": ["models/bionemo/boltz2/kubernetes.yaml"],
       "keeper_paths": ["models/cold-start/keepers/boltz2-b300-1x.yaml"]
@@ -110,6 +116,11 @@
     }
   },
   "profiles": {
+    "aging": {
+      "canonical_routes": ["altumage", "phenoage"],
+      "manifest_paths": ["models/aging/k8s/altumage.yaml", "models/aging/k8s/phenoage.yaml"],
+      "keeper_paths": []
+    },
     "none": {
       "canonical_routes": [],
       "manifest_paths": [],
