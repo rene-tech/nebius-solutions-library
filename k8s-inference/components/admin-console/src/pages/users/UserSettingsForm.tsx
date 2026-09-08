@@ -116,14 +116,14 @@ export function UserSettingsForm({
           />
         </label>
         <label>
-          Academic eligibility
+          Academic affiliation (informational)
           <select
             value={academic}
             onChange={(event) => setAcademic(event.target.value)}
           >
-            <option value="inherit">Keep existing key eligibility</option>
-            <option value="true">Eligible</option>
-            <option value="false">Not eligible</option>
+            <option value="inherit">Not specified</option>
+            <option value="true">Academic</option>
+            <option value="false">Non-academic</option>
           </select>
         </label>
         <label>
@@ -173,7 +173,9 @@ export function UserSettingsForm({
         </fieldset>
         <p className="form-grid__wide">
           User settings restrict each key; they never add permissions missing
-          from the key. Disabling stops new work but preserves access to
+          from the key. All models, including academic models, use these same
+          app permissions; academic affiliation does not grant or deny access.
+          Disabling stops new work but preserves access to
           existing operation results.
         </p>
         {error && (

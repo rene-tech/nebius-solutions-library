@@ -25,13 +25,12 @@ export const SCOPE_OPTIONS = [
   "mcp.invoke",
   "operations.read",
   "operations.result",
+  "artifacts.write",
   "operations.cancel",
   "operations.acknowledge",
   "tokens.manage",
   "audit.read",
   "tenant.admin",
-  "use.nonclinical",
-  "use.noncommercial",
 ] as const;
 
 function FormError({ local, remote }: { local: string | null; remote: string | null }) {

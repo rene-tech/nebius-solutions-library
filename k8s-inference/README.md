@@ -306,11 +306,15 @@ the cluster lifecycle and protected Terraform/Kubernetes state boundary.
 Terraform creates a separate, scoped bootstrap PAT and a Helm post-install /
 post-upgrade job idempotently provisions its digest and policy in the durable
 control-plane token store. It has a wildcard model policy so later live-catalog
-additions work without credential rotation, but remains bounded to one tenant
-and the MCP, inference, catalog, operation-lifecycle, and declared-use scopes.
+additions work without credential rotation. Its tenant identifies the customer
+for request/result isolation and usage attribution, not ownership of deployed
+models. Functional MCP, inference, catalog and operation-lifecycle scopes still
+apply; the key's model list controls access to every model type uniformly.
 When academic assets are enabled, a second Terraform-owned Secret and hook job
 provision the distinct academic scientific PAT; its tenant and principal never
-replace the general serving credential.
+replace the general serving credential. This second credential is retained for
+compatibility, not required for scientific or academic access: an ordinary
+customer key can use those models when its model permissions include them.
 The admin token is deliberately not valid for `/mcp` or `/v1`.
 An intentionally revoked or expired Terraform bootstrap PAT stays inactive:
 the next Helm upgrade fails closed instead of silently reactivating it. Rotate
@@ -322,7 +326,16 @@ Rotate the optional academic credential independently with
 `-replace=random_id.scientific_access_token_id[0]` and
 `-replace=random_password.scientific_access_token_secret[0]`.
 
-For ongoing users, use the admin interface's **Access / API keys** area to issue
+The platform operator owns the Apps, model deployments, caches and shared
+capacity. Customers do not deploy or own a separate copy of a model. A customer
+tenant groups users and usage for reporting and later billing; its ID is never
+substituted with the deployment owner's ID. Requests, results and uploaded
+artifacts retain the authenticated customer identity. Platform academic assets
+are installed and validated once; their asset namespace is not a customer
+access boundary. Academic user classification is informational, not another
+permission gate.
+
+For ongoing users, use the admin interface's **Users / API keys** area to issue
 revocable PATs with only the required models, scopes, concurrency, request, and
 GPU-time budgets. UI-created and rotated key values retain one-time disclosure:
 store each in an owner-only (`0600`) file when shown. Clients send a PAT as

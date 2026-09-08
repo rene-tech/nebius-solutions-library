@@ -1677,7 +1677,6 @@ class DeploymentContractTests(unittest.TestCase):
             "var.academic_assets.execution.local_queue",
             "var.academic_assets.execution.cluster_queue",
             "var.academic_assets.namespace",
-            "var.academic_assets.tenant_id",
         ):
             with self.subTest(expression=expression):
                 self.assertIn(expression, root_locals)
@@ -1686,6 +1685,11 @@ class DeploymentContractTests(unittest.TestCase):
         # separately maintained copy.
         self.assertIn("for asset in values(var.academic_assets.assets) : asset.model_id", root_locals)
         self.assertIn("for asset in values(var.academic_assets.assets) : asset.model_id", queue_source)
+        # These operator-owned asset lanes serve any customer whose API key
+        # grants the model; no customer must inherit the asset owner's ID.
+        for source in (root_locals, queue_source):
+            self.assertIn("tenant_ids          = toset([])", source)
+            self.assertNotIn("tenant_ids          = toset([var.academic_assets.tenant_id])", source)
         # Both reject an operator lane that collides with the derived one.
         self.assertIn("root_academic_lane_queue_collisions", root_locals)
         self.assertIn("managed_lane_queue_collisions", queue_source)

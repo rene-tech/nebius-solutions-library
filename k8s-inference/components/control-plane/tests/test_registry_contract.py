@@ -134,7 +134,7 @@ def test_registry_propagates_canonical_runtime_policy_and_protocol(registry: Reg
     assert cxr.gateway.policy_operations == ("analyze-image",)
     assert cxr.gateway.non_clinical is True
     assert cxr.gateway.commercial_use == "prohibited"
-    assert cxr.required_scopes == frozenset({"use.nonclinical", "use.noncommercial"})
+    assert cxr.required_scopes == frozenset()
 
     public = json.dumps(registry.render_runtime_config())
     assert "service_origin" not in public and "activation_url" not in public

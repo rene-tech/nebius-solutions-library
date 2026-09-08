@@ -325,7 +325,7 @@ def test_activation_set_digest_binds_every_exact_contract_identity(registry) -> 
     [
         ("qwen3-8b", "chat", []),
         ("glm-5-2-fp8", "chat", []),
-        ("nv-reason-cxr-3b", "analyze-image", ["use.nonclinical", "use.noncommercial"]),
+        ("nv-reason-cxr-3b", "analyze-image", []),
     ],
 )
 def test_openai_chat_resolves_the_selected_models_exact_policy_operation(

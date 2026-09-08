@@ -123,19 +123,17 @@ class UserService:
         if not user.enabled:
             scopes = scopes - {Scope.INFERENCE_INVOKE, Scope.MCP_INVOKE}
         models = principal.models
-        if user.app_ids is not None or user.academic_eligible is False:
+        if user.app_ids is not None:
             apps = await self.apps()
-            if user.app_ids is not None:
-                allowed = {app.public_model_id for app in apps if app.app_id in user.app_ids}
-                models = frozenset(allowed if "*" in models else models & allowed)
-            if user.academic_eligible is False:
-                academic = {app.public_model_id for app in apps if app.academic_required}
-                models = frozenset(
-                    {app.public_model_id for app in apps} - academic if "*" in models else models - academic
-                )
+            allowed = {app.public_model_id for app in apps if app.app_id in user.app_ids}
+            models = frozenset(allowed if "*" in models else models & allowed)
         return principal.model_copy(update={"scopes": frozenset(scopes), "models": models})
 
     async def require_app(self, principal: Principal, app_id: UUID, academic_required: bool) -> None:
+        # Academic classification is informational. All Apps use the same
+        # model grants; licensed assets are validated at deployment, not by
+        # assigning customers to a separate academic authorization system.
+        del academic_required
         user = await self.repository.configured(principal.tenant_id, principal.principal_id)
         if user is None:
             return
@@ -143,5 +141,3 @@ class UserService:
             raise PermissionError("inference user is disabled")
         if user.app_ids is not None and app_id not in user.app_ids:
             raise PermissionError("app is outside inference user policy")
-        if academic_required and user.academic_eligible is False:
-            raise PermissionError("inference user is not academically eligible")

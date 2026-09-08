@@ -340,8 +340,8 @@ class MCPAuthorizationMiddleware:
 
 
 async def _metadata(runtime: AppRuntime, principal: Principal, operation_id: UUID) -> OperationView:
-    operation = await runtime.store.get_operation(operation_id, tenant_id=principal.tenant_id)
     try:
+        operation = await runtime.store.get_operation(operation_id, tenant_id=principal.tenant_id)
         require_operation_access(principal, operation)
     except NotFoundError:
         raise MCPError(code=INVALID_PARAMS, message="operation not found") from None

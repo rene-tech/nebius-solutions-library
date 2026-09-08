@@ -824,7 +824,12 @@ class FileScientificManifestRenderer:
         self.academic_authorization_receipt_sha256 = academic_authorization_receipt_sha256
 
     def access_context(self, profile: ScientificWorkloadProfile, *, tenant_id: str) -> ArtifactAccessContext:
-        """Resolve deployment-bound authorization independently of caller input."""
+        """Resolve platform asset authorization, retaining the caller's data owner.
+
+        Customer access is the same key model grant checked by the scientific
+        service for every model. The historical academic tenant identifies the
+        operator's asset handoff, not an additional customer authorization gate.
+        """
 
         access = _object(profile.value.get("access"), "profile access identity")
         if access.get("profile") != "academic":
@@ -835,7 +840,6 @@ class FileScientificManifestRenderer:
             raise ScientificExecutionMapError("academic deployment authorization is absent or revoked")
         if (
             self.access_profiles.get(profile.model_id) != "academic"
-            or self.academic_tenant_id != tenant_id
             or self.academic_authorization_receipt_sha256 is None
         ):
             raise ScientificExecutionMapError("academic deployment authorization handoff is absent or mismatched")

@@ -97,7 +97,7 @@ async def test_user_disable_applies_to_all_keys_but_not_existing_result_reads(us
 
 
 @pytest.mark.asyncio
-async def test_app_allowlist_is_independent_route_intersection_and_academic_is_setting(user_env):
+async def test_app_allowlist_is_independent_route_intersection_and_academic_is_metadata(user_env):
     env = user_env
     issued = await env.tokens.issue(key_request(), created_by="operator")
     uid = owner_id("tenant-a", "researcher")
@@ -108,10 +108,14 @@ async def test_app_allowlist_is_independent_route_intersection_and_academic_is_s
         await env.users.require_app(principal, env.apps[1].app_id, True)
     await env.users.update(env.operator, uid, UserPatch(app_ids=None, academic_eligible=False))
     principal = await env.tokens.verify(issued.token)
-    assert principal.models == frozenset({"qwen3-8b"})
+    assert principal.models == frozenset({"*"})
+    await env.users.require_app(principal, env.apps[1].app_id, True)
     await env.users.update(env.operator, uid, UserPatch(academic_eligible=True))
     assert (await env.tokens.verify(issued.token)).models == frozenset({"*"})
     restricted = await env.tokens.issue(key_request(models={"qwen3-8b"}), created_by="operator")
+    restricted_principal = await env.tokens.verify(restricted.token)
+    with pytest.raises(PermissionError):
+        restricted_principal.require(Scope.INFERENCE_INVOKE, env.apps[1].public_model_id)
     await env.users.update(env.operator, uid, UserPatch(app_ids=[env.apps[1].app_id]))
     assert not (await env.tokens.verify(restricted.token)).models
 

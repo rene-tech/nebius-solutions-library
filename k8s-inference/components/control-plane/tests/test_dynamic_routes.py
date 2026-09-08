@@ -178,7 +178,7 @@ def _principal(*, tenant: str = "tenant-a", principal_id: str = "event-user") ->
     )
 
 
-def test_registry_atomically_overlays_observed_route_alias_and_tenant_policy(registry: Registry) -> None:
+def test_registry_atomically_overlays_operator_route_accessible_to_granted_customers(registry: Registry) -> None:
     revision = _revision(registry)
     snapshot = project_dynamic_publications(
         [revision],
@@ -192,7 +192,9 @@ def test_registry_atomically_overlays_observed_route_alias_and_tenant_policy(reg
     assert routed.model_revision == f"dynamic:{revision.etag}"
     assert registry.get("event-qwen") is routed
     assert [item.id for item in registry.allowed_for_principal(_principal(), surface="openai")] == ["qwen3-8b"]
-    assert registry.allowed_for_principal(_principal(tenant="tenant-b"), surface="openai") == []
+    assert [item.id for item in registry.allowed_for_principal(_principal(tenant="tenant-b"), surface="openai")] == [
+        "qwen3-8b"
+    ]
 
 
 def test_private_dynamic_route_requires_exact_principal(registry: Registry) -> None:
@@ -206,7 +208,7 @@ def test_private_dynamic_route_requires_exact_principal(registry: Registry) -> N
     assert registry.allowed_for_principal(_principal(), surface="openai") == []
     permitted = _principal(principal_id="private-user")
     assert [item.id for item in registry.allowed_for_principal(permitted, surface="openai")] == ["qwen3-8b"]
-    with pytest.raises(PermissionError, match="dynamic tenant policy"):
+    with pytest.raises(PermissionError, match="dynamic route policy"):
         registry.authorize_principal(
             registry.get("qwen3-8b"),
             _principal(),
@@ -232,7 +234,7 @@ def test_protocol_exposure_is_enforced_per_authenticated_surface(registry: Regis
     principal = _principal()
     assert registry.allowed_for_principal(principal, surface="openai") == []
     assert [item.id for item in registry.allowed_for_principal(principal, surface="mcp")] == ["qwen3-8b"]
-    with pytest.raises(PermissionError, match="dynamic tenant policy"):
+    with pytest.raises(PermissionError, match="dynamic route policy"):
         registry.authorize_principal(
             registry.get("qwen3-8b"),
             principal,

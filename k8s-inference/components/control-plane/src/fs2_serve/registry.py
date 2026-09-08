@@ -148,12 +148,10 @@ class OperationalModel:
 
     @property
     def required_scopes(self) -> frozenset[str]:
-        scopes: set[str] = set()
-        if self.gateway.non_clinical:
-            scopes.add("use.nonclinical")
-        if self.gateway.commercial_use in {"prohibited", "blocked"}:
-            scopes.add("use.noncommercial")
-        return frozenset(scopes)
+        # License/research metadata remains visible in the catalog, but is not
+        # another customer authorization scheme. API-key model grants and the
+        # requested transport's functional scopes control invocation uniformly.
+        return frozenset()
 
     @property
     def gpu_seconds_reservation(self) -> float:
@@ -871,13 +869,17 @@ class Registry:
         policy = model.dynamic_policy
         if policy is None:
             return True
-        if policy.tenant_id != principal.tenant_id:
-            return False
-        explicitly_allowed = principal.principal_id in policy.allowed_principal_ids
-        if policy.visibility is Visibility.PRIVATE and not explicitly_allowed:
-            return False
-        if policy.allowed_principal_ids and not explicitly_allowed:
-            return False
+        # The deployment tenant identifies its operator, not the customer who
+        # may consume a shared platform App. Legacy Tenant visibility with no
+        # explicit allowlist therefore follows the API key's model grant.
+        # Preserve explicitly restricted Apps: legacy principal IDs are local
+        # to their deployment tenant, never globally unique user names.
+        if policy.visibility is Visibility.PRIVATE or policy.allowed_principal_ids:
+            if (
+                policy.tenant_id != principal.tenant_id
+                or principal.principal_id not in policy.allowed_principal_ids
+            ):
+                return False
         if surface == "openai" and not policy.open_ai:
             return False
         if surface == "mcp" and not policy.mcp:
@@ -912,7 +914,7 @@ class Registry:
         ):
             raise PermissionError("model is outside token policy")
         if not self._dynamic_permits(model, principal, surface=surface):
-            raise PermissionError("model is outside dynamic tenant policy")
+            raise PermissionError("model is outside dynamic route policy")
 
     def operation_for_protocol(self, model: OperationalModel, protocol: str) -> str:
         """Resolve the canonical protocol/operation relation without inventing policy."""

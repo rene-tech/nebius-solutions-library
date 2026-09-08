@@ -284,12 +284,13 @@ class ScientificBatchService:
         allowed_models: frozenset[str],
         surface: str,
     ) -> tuple[ScientificProfileDiscovery, ...]:
-        """Return only profiles with a complete tenant-specific admission path.
+        """Return key-selected profiles with a complete platform admission path.
 
         This is deliberately a fail-closed projection.  It performs no artifact
         read or durable admission, but it verifies the exact runtime binding and
         asks the authoritative scheduler to freeze every advertised service
-        class using the profile's minimum legal plan.
+        class using the profile's minimum legal plan. Caller tenant identity
+        remains the owner of the resulting work, not an academic access grant.
         """
 
         # ``http`` is the public REST twin of ``mcp``: HTTP submission never

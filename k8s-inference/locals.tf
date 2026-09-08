@@ -475,7 +475,9 @@ locals {
       cluster_queue       = local.root_academic_cluster_queue_name
       fair_sharing_weight = 1
       model_ids           = toset(local.root_academic_model_ids)
-      tenant_ids          = toset([var.academic_assets.tenant_id])
+      # Model grants authorize customers before scheduling. The licensed
+      # asset namespace belongs to the platform, not to a customer tenant.
+      tenant_ids = toset([])
       service_classes = toset([
         "platform-critical",
         "presentation",

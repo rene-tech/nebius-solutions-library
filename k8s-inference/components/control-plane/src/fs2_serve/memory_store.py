@@ -1450,7 +1450,6 @@ class MemoryStore:
                 if (
                     desired is None
                     or desired.etag != dynamic_fence.etag
-                    or desired.tenant_id != principal.tenant_id
                     or desired.spec.public_model_id != admission.model_id
                     or desired.spec.lifecycle.desired_state is not DesiredState.ENABLED
                 ):

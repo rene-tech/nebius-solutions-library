@@ -149,10 +149,10 @@ describe("Inference Users", () => {
       await screen.findByRole("button", { name: "User settings" }),
     );
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByLabelText("Academic eligibility")).toHaveValue(
+    expect(within(dialog).getByLabelText("Academic affiliation (informational)")).toHaveValue(
       "inherit",
     );
-    fireEvent.change(within(dialog).getByLabelText("Academic eligibility"), {
+    fireEvent.change(within(dialog).getByLabelText("Academic affiliation (informational)"), {
       target: { value: "false" },
     });
     fireEvent.click(

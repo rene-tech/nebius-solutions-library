@@ -436,13 +436,12 @@ run "licensed_lanes_and_cpu_class_are_rendered_by_the_stage" {
       "inference-accelerators" &&
       module.kueue_scheduling.contract.local_queue_routes["academic-scientific"].namespace ==
       "fs2-academic-poc" &&
-      join(",", module.kueue_scheduling.contract.local_queue_routes["academic-scientific"].tenant_ids) ==
-      "tenant-academic" &&
+      length(module.kueue_scheduling.contract.local_queue_routes["academic-scientific"].tenant_ids) == 0 &&
       join(",", module.kueue_scheduling.contract.local_queue_routes["academic-scientific"].model_ids) ==
       "alphafold3" &&
       length(module.kueue_scheduling.contract.local_queue_routes["academic-scientific"].service_classes) == 5
     )
-    error_message = "The licensed GPU lane must be an exact tenant/model route in the claim namespace, for every service class."
+    error_message = "The licensed GPU lane must route authorized customers by model into the claim namespace, for every service class."
   }
 
   assert {

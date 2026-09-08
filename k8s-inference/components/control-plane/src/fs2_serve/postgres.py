@@ -2536,7 +2536,6 @@ class PostgresStore:
                     desired_row is None
                     or desired_spec is None
                     or desired_row["current_etag"] != dynamic_fence.etag
-                    or desired_row["tenant_id"] != principal.tenant_id
                     or desired_spec.public_model_id != admission.model_id
                     or desired_spec.lifecycle.desired_state is not DesiredState.ENABLED
                 ):

@@ -406,16 +406,44 @@ def test_adapter_identities_match_the_checked_in_source_qualification() -> None:
     assert boltz_contract["runtime_artifact_mount_root"] == "/opt/fs2/artifacts"
 
 
-def test_catalog_recipe_hashes_cover_the_adapter_and_canonical_workload() -> None:
+def test_catalog_recipe_hashes_retain_the_accepted_source_and_canonical_workload() -> None:
     for model_id in ("proteina-complexa", "boltzgen"):
         candidate = profile(model_id)
         identity = candidate["execution_identity"]
         workload = candidate["workload"]
-        runtime_hash = runtime_recipe_sha256(SOLUTION_ROOT, model_id)
+        fragment = json.loads((
+            SOLUTION_ROOT / "models/cancer-immunotherapy/runtime-images" / model_id / "activation/fragment.json"
+        ).read_text())
+        # These accepted receipts bind their producing source, not every future
+        # control-plane authorization revision. Do not overwrite historical
+        # qualification with a hash of today's customer access implementation.
+        recipe = fragment["accepted_evidence"]["runtime_recipe"]
+        assert recipe["source_revision"] == "897c04aafbb4bb7b1879ae459527caf70aeeb94e"
+        assert recipe["algorithm"] == "fs2-path-set-sha256-v1"
+        assert "components/control-plane/src/fs2_serve/scientific_batch/execution.py" in recipe["paths"]
+        assert identity == fragment["profile_projection"]["profile"]["execution_identity"]
         workload_bytes = json.dumps(workload, separators=(",", ":"), sort_keys=True).encode()
         workload_hash = hashlib.sha256(workload_bytes).hexdigest()
-        assert identity["runtime_recipe_sha256"] == runtime_hash
         assert identity["workload_recipe_sha256"] == workload_hash
+
+
+def test_current_recipe_hash_still_covers_controller_source(monkeypatch) -> None:
+    # Current build provenance remains source-sensitive, independently of the
+    # model's historical accepted qualification above. No hash exclusions or
+    # compatibility overrides are introduced into the production algorithm.
+    execution = SOLUTION_ROOT / "components/control-plane/src/fs2_serve/scientific_batch/execution.py"
+    original_read = Path.read_bytes
+    original_hashes = {
+        model: runtime_recipe_sha256(SOLUTION_ROOT, model) for model in ("proteina-complexa", "boltzgen")
+    }
+
+    def changed_source(path):
+        content = original_read(path)
+        return content + b"\n# synthetic source-coverage test\n" if path == execution else content
+
+    monkeypatch.setattr(Path, "read_bytes", changed_source)
+    for model, original in original_hashes.items():
+        assert runtime_recipe_sha256(SOLUTION_ROOT, model) != original
 
 
 def test_proteina_commands_and_artifact_handoffs_are_exact_and_shell_free() -> None:

@@ -22,7 +22,8 @@ class UserSettings(StrictModel):
     kind: PrincipalKind | None = None
     team: str | None = Field(default=None, max_length=160)
     enabled: bool = True
-    # Null preserves the existing key policy; it is not an academic assertion.
+    # Descriptive customer classification, retained for API compatibility.
+    # It neither grants nor denies models; API keys and app_ids control access.
     academic_eligible: bool | None = None
     app_ids: list[UUID] | None = Field(default=None, max_length=1000)
 
@@ -103,5 +104,6 @@ class UserDetail(StrictModel):
     apps: list[UserAppChoice]
     policy_note: str = (
         "User settings restrict, never expand, each API key's policy. Existing key limits remain per key. "
+        "Academic classification is informational; every model uses the same app permissions. "
         "Disabling stops new invocation, while existing operations and results remain readable."
     )

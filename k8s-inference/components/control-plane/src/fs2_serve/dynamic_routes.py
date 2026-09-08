@@ -35,6 +35,8 @@ class DynamicRouteError(ValueError):
 
 @dataclass(frozen=True)
 class DynamicRoutePolicy:
+    """Operator ownership and explicit legacy restrictions, not a customer tenant grant."""
+
     tenant_id: str
     visibility: Visibility
     allowed_principal_ids: frozenset[str]

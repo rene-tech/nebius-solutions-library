@@ -86,12 +86,12 @@ export function UserDetailPage() {
                   {user.enabled
                     ? "New inference enabled"
                     : "New inference disabled"}{" "}
-                  · Academic eligibility:{" "}
+                  · Academic affiliation (informational):{" "}
                   {user.academic_eligible === null
-                    ? "Existing key policy"
+                    ? "Not specified"
                     : user.academic_eligible
-                      ? "Eligible"
-                      : "Not eligible"}
+                      ? "Academic"
+                      : "Non-academic"}
                 </p>
               </div>
               {canEdit && (
