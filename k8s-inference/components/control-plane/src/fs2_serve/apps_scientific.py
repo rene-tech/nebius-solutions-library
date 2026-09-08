@@ -8,6 +8,8 @@ GPU snapshot. Frozen stage bindings retain the exact source runtime commands.
 
 from __future__ import annotations
 
+import json
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -151,16 +153,32 @@ class AppScientificExecution(FileScientificManifestRenderer):
 
     def render(self, resource: Any) -> Any:
         source_id = self.inventory.source(resource.model_id)
-        # Keep the actual app identity in capabilities, runtime localization
-        # markers and collector receipts. Only the source-specific launcher
-        # choice may use its qualified canonical name.
+        # Capabilities and collector receipts bind the public app. The runtime
+        # marker instead describes the immutable, qualified image's model.
         if source_id != resource.model_id:
             # Run the canonical renderer's source-specific validation first
             # (notably AF3 whole-reference-root validation). Rendering is pure:
             # this creates no workload and its source-scoped credentials are
             # discarded. Only the second app-scoped manifest is submitted.
             self.source.render(replace(resource, model_id=source_id))
-        return self.source.render(resource)
+        manifest = self.source.render(resource)
+        if source_id == resource.model_id:
+            return manifest
+        manifest = deepcopy(manifest)
+        templates = (
+            [manifest["spec"]["template"]]
+            if manifest["kind"] == "Job"
+            else [job["template"]["spec"]["template"] for job in manifest["spec"]["replicatedJobs"]]
+        )
+        for template in templates:
+            pod = template["spec"]
+            for container in [*pod.get("initContainers", []), *pod["containers"]]:
+                for environment in container.get("env", []):
+                    if environment["name"] == "FS2_RUNTIME_ARTIFACTS_JSON":
+                        marker = json.loads(environment["value"])
+                        marker["model_id"] = source_id
+                        environment["value"] = json.dumps(marker, sort_keys=True, separators=(",", ":"))
+        return manifest
 
 
 class AppScientificScheduling(SchedulingContractResolver):

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import runpy
 from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+from conftest import SOLUTION_ROOT
 from test_scientific_batch_execution_handoff import runtime_execution_map, runtime_plan, runtime_profile
 from test_scientific_batch_execution_handoff import scheduling as runtime_scheduling
 from test_scientific_batch_production import principal, scientific_runtime
@@ -22,7 +24,13 @@ from fs2_serve.apps_scientific import (
     ScientificAppsInventory,
 )
 from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
-from fs2_serve.scientific_batch.models import ArtifactAccessContext, ServiceClass, WorkloadKind, WorkloadResource
+from fs2_serve.scientific_batch.models import (
+    ArtifactAccessContext,
+    ResolvedArtifactMaterialization,
+    ServiceClass,
+    WorkloadKind,
+    WorkloadResource,
+)
 
 
 async def _inventory(model_ref="protein-design"):
@@ -141,7 +149,8 @@ async def test_two_scientific_apps_keep_qualified_source_and_independent_frozen_
 
 
 @pytest.mark.asyncio
-async def test_real_scientific_renderer_preserves_source_bindings_but_signs_app_capability(tmp_path):
+@pytest.mark.parametrize("stage_id", ["prepare", "inference"])
+async def test_real_scientific_renderer_preserves_source_bindings_but_signs_app_capability(tmp_path, stage_id):
     inventory, records = await _inventory("protenix-v2")
     app = records[0]
     source = runtime_execution_map(tmp_path)
@@ -155,12 +164,13 @@ async def test_real_scientific_renderer_preserves_source_bindings_but_signs_app_
     canonical_bound = source.bind_runtime_artifacts(runtime_profile(), canonical_plan, access, localized)
     assert replace(bound, model_id=canonical_bound.model_id) == canonical_bound
     snapshot = runtime_scheduling(bound.controller_plan)
+    invocation = bound.invocation(stage_id, "main")
     resource = WorkloadResource(
         operation_id=uuid4(),
         batch_id=uuid4(),
         workload_id=uuid4(),
         attempt_id=uuid4(),
-        stage_id="prepare",
+        stage_id=stage_id,
         shard_id="main",
         attempt_number=1,
         tenant_id="tenant-a",
@@ -172,17 +182,65 @@ async def test_real_scientific_renderer_preserves_source_bindings_but_signs_app_
         namespace="fs2-models",
         name="app-prepare",
         kind=WorkloadKind.JOB,
-        scheduling=replace(snapshot.stage("prepare"), workload_namespace="fs2-models", route_namespace="fs2-models"),
-        invocation=bound.invocation("prepare", "main"),
+        scheduling=replace(snapshot.stage(stage_id), workload_namespace="fs2-models", route_namespace="fs2-models"),
+        invocation=invocation,
+        materializations=tuple(
+            ResolvedArtifactMaterialization.resolve(
+                item, artifact_id=uuid4(), digest="sha256:" + "e" * 64,
+                size_bytes=128, media_type="application/x-tar", compression=None,
+            )
+            for item in invocation.materializations
+        ),
         access_context=access,
         runtime_artifacts=localized,
         execution_map_sha256=bound.execution_map_sha256,
-        execution_binding=bound.execution_binding("prepare"),
+        execution_binding=bound.execution_binding(stage_id),
     )
     manifest = renderer.render(resource)
     pod = manifest["spec"]["template"]["spec"]
     env = {entry["name"]: entry["value"] for entry in pod["containers"][0]["env"]}
-    assert json.loads(env["FS2_RUNTIME_ARTIFACTS_JSON"])["model_id"] == app.public_model_id
+    marker = json.loads(env["FS2_RUNTIME_ARTIFACTS_JSON"])
+    assert marker["model_id"] == app.model_ref
+    assert marker["operation_id"] == str(resource.operation_id)
+    assert marker["attempt_id"] == str(resource.attempt_id)
+    assert marker["tenant_id"] == resource.tenant_id
+    # Preparation, verification and model processes see the same canonical
+    # marker. The signed access capability below remains app-scoped.
+    marker_values = [
+        json.loads(entry["value"])
+        for container in [*pod["initContainers"], *pod["containers"]]
+        for entry in container.get("env", [])
+        if entry["name"] == "FS2_RUNTIME_ARTIFACTS_JSON"
+    ]
+    assert len(marker_values) == 3
+    assert all(value == marker for value in marker_values)
+    # Run the actual unchanged image contract, not just an invented equality
+    # assertion: this rejected the first live clone before the correction.
+    image_contract = runpy.run_path(str(
+        SOLUTION_ROOT / "models/cancer-immunotherapy/images/structure-secondary/runtime_localization.py"
+    ))
+    marker_path = tmp_path / "actual-image-contract-marker.json"
+    marker_path.write_text(json.dumps(marker))
+    expectations = tuple(
+        image_contract["RuntimeArtifactExpectation"](
+            artifact_id=item["artifact_id"],
+            mount_path=item["mount_path"],
+            content_sha256=item["content_digest"].removeprefix("sha256:"),
+            expected_manifest_sha256=item["artifact_manifest_sha256"],
+            sub_path=item["sub_path"],
+        )
+        for item in marker["artifacts"]
+    )
+    assert image_contract["validate_runtime_localization"](
+        marker_path, model_id=app.model_ref, variant_id=resource.variant_id,
+        stage_id=stage_id, artifacts=expectations,
+    ) == marker
+    marker_path.write_text(json.dumps({**marker, "model_id": app.public_model_id}))
+    with pytest.raises(SystemExit, match="model_id differs from the image contract"):
+        image_contract["validate_runtime_localization"](
+            marker_path, model_id=app.model_ref, variant_id=resource.variant_id,
+            stage_id=stage_id, artifacts=expectations,
+        )
     capability = next(
         entry["value"]
         for container in pod["containers"]
@@ -193,6 +251,19 @@ async def test_real_scientific_renderer_preserves_source_bindings_but_signs_app_
     assert claims.model_id == app.public_model_id
     assert claims.operation_id == resource.operation_id
     assert bound.stage_bindings == canonical_bound.stage_bindings
+    # True-gang templates use the same marker boundary; do not accidentally
+    # patch only the top-level fanout Job layout.
+    gang = renderer.render(replace(
+        resource, kind=WorkloadKind.JOB_SET, shard_id=None, gang_size=2,
+        invocation=replace(invocation, shard_id="gang"),
+    ))
+    gang_pod = gang["spec"]["replicatedJobs"][0]["template"]["spec"]["template"]["spec"]
+    assert all(
+        json.loads(entry["value"])["model_id"] == app.model_ref
+        for container in [*gang_pod["initContainers"], *gang_pod["containers"]]
+        for entry in container.get("env", [])
+        if entry["name"] == "FS2_RUNTIME_ARTIFACTS_JSON"
+    )
 
 
 @pytest.mark.asyncio
