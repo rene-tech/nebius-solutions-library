@@ -262,7 +262,9 @@ class AdmissionService:
                 )
             ),
         )
-        trace_id, parent_span_id = trace_identity(canonical_admission.traceparent)
+        # A replay has a new request span, but its durable operation and
+        # lifecycle subject keep the trace accepted by the original request.
+        trace_id, parent_span_id = trace_identity(operation.traceparent)
         subject = LifecycleSubject(
             subject_id=operation.id,
             workload_kind=WorkloadTelemetryKind.ONLINE,

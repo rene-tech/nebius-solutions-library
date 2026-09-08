@@ -35,6 +35,7 @@ sys.path.insert(0, str(ROOT / "models"))
 
 from aging.contracts import AltumAgeRequest, ClinicalRequest  # noqa: E402
 from aging.fixtures import clinical_payload, methylation_payload  # noqa: E402
+
 from fs2_serve.auth import TokenService  # noqa: E402
 from fs2_serve.live_acceptance import MCP_PROTOCOL_VERSION, _mcp_result  # noqa: E402
 from fs2_serve.user_models import owner_id  # noqa: E402
@@ -120,7 +121,7 @@ def validate_result(model, index, request, result):
     )
     field = "phenotypic_age_years" if model == "phenoage" else "predicted_chronological_age_years"
     value = prediction[field]
-    check(isinstance(value, (int, float)) and math.isfinite(value), "response_nonfinite")
+    check(isinstance(value, int | float) and math.isfinite(value), "response_nonfinite")
     retained = json.loads((Path(__file__).parent / f"{model}-r01.json").read_bytes())
     expected = retained["native_http_predictions"][index]["body"]["predictions"][0][field]
     tolerance = 1e-10 if model == "phenoage" else 0.001
@@ -189,18 +190,26 @@ def exchange(
     }
     try:
         response = client.request(method, path, json=payload, headers=headers)
-        value = response.json() if response.content else None
-        recorded = copy.deepcopy(value)
-        if disclosure and isinstance(recorded, dict):
-            recorded.get("data", {}).pop("secret", None)
         row.update(
             status=response.status_code,
-            response=recorded,
+            response_content_type=response.headers.get("content-type"),
             response_bytes=len(response.content),
             response_sha256=hashlib.sha256(response.content).hexdigest(),
             operation_id=response.headers.get("x-fs2-operation-id"),
             replay=response.headers.get("x-fs2-idempotent-replay"),
         )
+        try:
+            value = response.json() if response.content else None
+        except ValueError:
+            # A proxy/server's plain-text error is evidence, not an absent
+            # HTTP exchange. Never retain a potentially malformed key secret.
+            row["non_json_body"] = None if disclosure else response.text[:65536]
+            row["non_json_body_truncated"] = not disclosure and len(response.text) > 65536
+            raise
+        recorded = copy.deepcopy(value)
+        if disclosure and isinstance(recorded, dict):
+            recorded.get("data", {}).pop("secret", None)
+        row["response"] = recorded
     except Exception as error:
         row["error_type"] = type(error).__name__
         raise
@@ -258,7 +267,8 @@ def wait_zero(admin, trace, app_path, deadline, phase):
     consecutive = 0
     while time.monotonic() < deadline:
         observation = app_observation(admin, trace, app_path)
-        consecutive = consecutive + 1 if observation["containers"]["total"] == 0 else 0
+        cold = observation["containers"]["total"] == 0 and observation["summary"]["status"] == "Cold"
+        consecutive = consecutive + 1 if cold else 0
         if consecutive == 2:
             emit("zero_workers", phase=phase, app_id=observation["summary"]["app_id"])
             return observation
@@ -325,24 +335,36 @@ def run_model(args, model, requests, origin, admin, admin_trace, source_key, app
             before["serving"] is not None and before["capabilities"]["live_settings"],
             "managed_app_settings_unavailable",
         )
+        # These native Apps belong to the normal inference tenant, not the
+        # separate academic scientific tenant. Check before any test mutation.
+        check(before["serving"]["tenant_id"] == source_key["tenant_id"], "source_key_tenant_mismatch")
         spec = zero_worker_spec(before["serving"]["spec"])
-        changed = admin_call(
-            admin,
-            admin_trace,
-            "PATCH",
-            app_path + "/settings",
-            payload={
-                "expected_app_revision": before["app_revision"],
-                "serving_base_etag": before["serving"]["etag"],
-                "serving_spec": spec,
-            },
-        )
+        settings_started_at, settings_started = now(), time.monotonic()
+        changed = before
+        if spec != before["serving"]["spec"]:
+            changed = admin_call(
+                admin,
+                admin_trace,
+                "PATCH",
+                app_path + "/settings",
+                payload={
+                    "expected_app_revision": before["app_revision"],
+                    "serving_base_etag": before["serving"]["etag"],
+                    "serving_spec": spec,
+                },
+            )
         evidence["test_settings"] = changed
         check(changed["serving"]["spec"] == spec, "live_settings_differ")
         limits = spec["availability"]
         timeout = limits.get("startupTimeoutSeconds") or 900
         quiet_timeout = limits["idleSeconds"] + limits["cooldownSeconds"] + 120
         evidence["zero_before"] = wait_zero(admin, admin_trace, app_path, time.monotonic() + quiet_timeout, "before")
+        evidence["settings_to_cold"] = {
+            "started_at": settings_started_at,
+            "observed_at": evidence["zero_before"]["at"],
+            "client_seconds": time.monotonic() - settings_started,
+            "settings_changed": spec != before["serving"]["spec"],
+        }
         owner = owner_id(source_key["tenant_id"], source_key["principal_id"])
         disclosure = admin_call(
             admin,
@@ -559,7 +581,7 @@ def main():
     trace = Trace(args.output)
     access = json.loads(args.access_bundle.read_bytes())
     origin = access["endpoints"]["inference_base_url"].removesuffix("/v1")
-    token_id, _ = TokenService._parse(access["credentials"]["scientific_access_token"])
+    token_id, _ = TokenService._parse(access["credentials"]["inference_access_token"])
     result = {"started_at": now(), "release": args.release, "outcome": "failed"}
     with httpx.Client(base_url=origin, timeout=60, trust_env=False, headers={"origin": origin}) as admin:
         try:
