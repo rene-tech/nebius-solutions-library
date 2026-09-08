@@ -1,13 +1,16 @@
 # Customer trial remediation and repeat acceptance
 
-Status at 2026-09-08 08:54 UTC: **overall acceptance is not yet clean**.
+Status at 2026-09-08 09:01 UTC: **overall acceptance is not yet clean**.
 R03 completed all 14 scientific operations and 67 ordinary HTTP/MCP requests,
 including automatic priority-preemption recovery and live admin result publication.
 It exposed an unscheduled Qwen startup-retention gap; two browser transport
 failures also remain recorded, with a correlated local test-host network cause.
 The final startup correction, source `c85aa26e46f84ca5ae0a85b2454e86522b65cead`,
-passed 1,633 backend tests and image builds and is entering Terraform deployment.
-Two fresh complete cohorts, r04 and r05, remain required after deployment.
+passed 1,633 backend tests and is deployed through Terraform. All application
+replicas are ready, all three post-apply plans have zero managed actions, and
+public discovery retains all 24 configured models. Fresh r04 started at
+09:01:13.093375 UTC; two clean complete cohorts, r04 and r05, remain required.
+See the [exact final release](FINAL-STARTUP-RELEASE-20260908.md).
 See [r03 workload results](workload/REPORT-r03.md),
 [r03 observation](observer/REPORT-r03.md),
 [browser evidence](experience/R03-EXPERIENCE.md),

@@ -4,8 +4,17 @@ Source: `c85aa26e46f84ca5ae0a85b2454e86522b65cead`, pushed to
 `rene-tech/nebius-solutions-library` main. Source tree:
 `5d3b4fa7ec4689b92e1f62b31ac9b9119c250bc6`.
 
-Status at 08:54 UTC: exact-image builds and regression tests passed. Staged
-Terraform deployment is in progress; no live acceptance is claimed yet.
+Status at 08:58:48 UTC: staged Terraform deployment completed. All three
+application Deployments have two updated/ready/available replicas, observed
+generations and zero terminating replicas, with the exact images below.
+Public discovery/admin inventory retains all 24 required configured models;
+see [the inventory receipt](final-startup-deployed-inventory.json).
+This checks configuration/discovery, not new inference proof for all 24 models.
+The generated Qwen ScaledObject is Ready and contains the final missing-Ready
+handling and `900s:1s` timestamp history. Post-apply infrastructure, foundation
+and workloads plans each have zero managed actions. Fresh r04 started at
+09:01:13.093375 UTC with all four live test lanes; no clean full-cohort
+acceptance is claimed yet.
 The previously built partial candidate `208a2e20` was not deployed.
 
 | Component | Published digest |
@@ -45,3 +54,20 @@ checks and complete-window serving publication logs. The browser uses a local
 isolated network namespace to avoid unrelated test-host virtual-interface
 notifications; no application behavior or browser network-error checking is
 disabled. Earlier failed cohorts remain preserved.
+
+The reviewed pre-apply plan had zero infrastructure actions, three expected
+foundation contract actions and 24 workload actions. Every queue, flavor,
+cohort and priority manifest's non-metadata content was unchanged. Helm values
+changed only application pins/provenance and generated contract names/hashes;
+existing immutable bootstrap ConfigMaps/Jobs were refreshed by the normal
+workflow. No customer result or persistent store was removed. Private original
+plans and the original plan log are retained under `releases/c85aa26e/preapply`.
+Rollback images remain documented in the preceding release evidence: control
+plane `sha256:762510cb5354dea8f9d32834259dd164d561137582f4dd04aca18af4263b57bc`
+and admin `sha256:fc7b0f2f8207eebc28576f55e9815de92a5c04bfb809beafb5c78ac5fae8b59c`.
+
+Post-apply private plan JSON SHA256s:
+
+- Infrastructure: `450e87a3c72ca85dae804b88e2822d7147e11575e13da03cbc3ef8fac9c412d3`.
+- Foundation: `598603a67a55302b1df313d883ccfc7e4f85ae30865bbd2c06c3c207cfe51aed`.
+- Workloads: `13954033f0479f889d97373a3c95bf4da30a771d0dd8a4ed5ae14032b4c217b5`.
