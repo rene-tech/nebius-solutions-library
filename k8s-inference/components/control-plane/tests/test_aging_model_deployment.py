@@ -46,6 +46,10 @@ def test_actual_aging_native_runtime_can_render_and_publish_without_inventing_el
     bindings = ServingBindings(archive.digest, MappingProxyType({}))
     gateway = bind_gateway_catalog(catalog, bindings)
     entry = json.loads((CATALOG_ROOT / "deployment-runtimes" / f"{model_id}-{variant}.json").read_text())
+    # This synthetic controller test intentionally remains unqualified; the
+    # actual selected entries now bind separate public r05 acceptance receipts.
+    for state in ("route_active", "http_mcp_qualified", "cold_start_qualified", "elasticity_qualified"):
+        entry["qualification"]["states"][state] = False
     selected_path = tmp_path / "selected.json"
     selected_path.write_text(json.dumps({"schema": SET_SCHEMA, "models": {model_id: entry}}))
     selected = bind_deployment_runtimes(gateway, catalog, bindings, selected_path, catalog_dir=CATALOG_ROOT)

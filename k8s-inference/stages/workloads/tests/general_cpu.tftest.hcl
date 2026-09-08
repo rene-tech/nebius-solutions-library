@@ -59,10 +59,10 @@ run "native_formula_is_a_managed_zero_gpu_app_with_full_resources" {
       local.model_controller_pool_envelope["general-cpu-8x"].acceleratorsPerNode == 0 &&
       local.model_controller_pool_envelope["general-cpu-8x"].allocatableCpuMillis == 7000 &&
       local.model_controller_pool_envelope["general-cpu-8x"].allocatableMemoryBytes == 30064771072 &&
-      local.model_controller_qualifications.phenoage.scaleToZeroQualified == false &&
+      local.model_controller_qualifications.phenoage.scaleToZeroQualified == true &&
       local.model_controller_qualifications.phenoage.maxAcceleratorsPerReplica == 0
     )
-    error_message = "Declared CPU capacity must reach qualification without inventing scale-to-zero acceptance."
+    error_message = "Declared CPU capacity and the retained public 0-to-1-to-0 acceptance must reach CPU qualification."
   }
 }
 

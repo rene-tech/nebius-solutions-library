@@ -10,6 +10,11 @@ did not modify the shared platform. The subsequent extension implements the
 CPU/catalog/controller interfaces described below; implementation and live
 acceptance are recorded separately in
 [CPU-MANAGED-APPS.md](../../acceptance/aging-20260908/CPU-MANAGED-APPS.md).
+The implemented extension passed its public CPU/H100 HTTP/MCP and natural
+zero-to-one-to-zero checks in
+[PUBLIC-R05.md](../../acceptance/aging-20260908/PUBLIC-R05.md).
+See [the release report](../../acceptance/aging-20260908/RELEASE.md) for exact
+images, measured startup boundaries and retained earlier failures.
 
 ## Original CPU limitation (before this extension)
 

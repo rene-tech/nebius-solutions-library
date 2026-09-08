@@ -44,6 +44,14 @@ points, complete measurements and the remaining qualification boundaries.
 [Optional scientific GPU snapshots](models/scientific-snapshot/ADMIN-STARTUP.md)
 explains Terraform bundle configuration, live admin startup selection, normal-load
 fallback, and the measured compatibility boundary for each qualified option.
+[Apps-first admin acceptance](acceptance/admin-apps-20260908/RELEASE.md)
+records the Nebius-styled Apps, Users and Capacity console, independent App
+deployments, real serving/scientific runs and live settings verification.
+[AltumAge and clinical PhenoAge](models/aging/README.md) documents the independent
+methylation/GPU and blood-biomarker/CPU Apps, input units, reference precision,
+Terraform bootstrap and normal HTTP/MCP access. Their
+[release and measurements](acceptance/aging-20260908/RELEASE.md) distinguish
+native inference, public cold starts, image transfer and autoscaled-node startup.
 
 ## Accelerator and qualification boundary
 

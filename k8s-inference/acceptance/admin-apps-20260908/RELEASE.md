@@ -2,8 +2,9 @@
 
 Status: the Apps-first release is deployed and its corrected serving/scientific
 clone workflows pass live acceptance. Initial failed attempts remain documented.
-The separate AltumAge/clinical PhenoAge and CPU-managed-App extension is still
-being integrated; it is not included in this release's acceptance claim.
+The subsequent AltumAge/clinical PhenoAge and CPU-managed-App extension has its
+own [release and live acceptance record](../aging-20260908/RELEASE.md); it is not
+retroactively included in this original release's acceptance claim.
 
 ## Exact source and artifacts
 

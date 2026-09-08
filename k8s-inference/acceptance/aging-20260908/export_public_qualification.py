@@ -14,6 +14,7 @@ import json
 import math
 import re
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -68,6 +69,43 @@ def mcp_body(row):
 
 def source_ref(path, root):
     return {"path": str(path.relative_to(root)), "sha256": sha(path)}
+
+
+def image_pull_boundary(witness, image):
+    """Field-select exact Pod/image events; reported image size is not wire bytes."""
+    events = []
+    for event in witness.get("events", {}).get("items", []):
+        message = event.get("message", "")
+        if (
+            event.get("involvedObject", {}).get("uid")
+            != witness["pod"]["metadata"]["uid"]
+            or event.get("reason") not in {"Pulling", "Pulled"}
+            or image not in message
+        ):
+            continue
+        duration = re.search(r" in (?:(\d+)m)?(\d+(?:\.\d+)?)s ", message)
+        events.append(
+            {
+                "reason": event["reason"],
+                "first_at": event.get("firstTimestamp") or event.get("eventTime"),
+                "last_at": event.get("lastTimestamp") or event.get("eventTime"),
+                "image_already_present": "already present on machine" in message,
+                "successful_image_pull": "Successfully pulled image" in message,
+                "reported_pull_seconds": None
+                if duration is None
+                else float(60 * Decimal(duration[1] or "0") + Decimal(duration[2])),
+            }
+        )
+    return {
+        "state": "image-already-present"
+        if any(row["image_already_present"] for row in events)
+        else "image-pulled"
+        if any(row["successful_image_pull"] for row in events)
+        else "unobserved",
+        "events": events,
+        "wire_bytes": None,
+        "note": "Kubelet event timestamps are coarse; pull duration is kubelet-reported, not pure registry transfer time. No empty registry/cache or wire-byte claim.",
+    }
 
 
 def export_model(campaign_root, model, witness_path, publication_path):
@@ -480,7 +518,7 @@ def export_model(campaign_root, model, witness_path, publication_path):
             "node_ready_transition_at": node_ready_at,
             "node_existed_before_first_admission": stamp(node_created_at)
             <= stamp(public_operations[0]["accepted_at"]),
-            "image_cache_state": "not independently qualified as empty",
+            "image_pull_boundary": image_pull_boundary(witness, image),
         },
         "zero_workers": {
             phase: outcome[phase]["at"] for phase in ("zero_before", "zero_after")
@@ -493,7 +531,10 @@ def export_model(campaign_root, model, witness_path, publication_path):
             "model_outcome": source_ref(outcome_path, campaign_root),
             "http_discovery": source_ref(http_discovery[0][0], campaign_root),
             "mcp_discovery": source_ref(mcp_discovery[0][0], campaign_root),
-            "model_trace": [source_ref(path, campaign_root) for path, _ in traces],
+            "model_trace_count": len(traces),
+            "model_trace_manifest_sha256": value_sha(
+                [source_ref(path, campaign_root) for path, _ in traces]
+            ),
             "runtime_witness_sha256": sha(witness_path),
             "release_publication_sha256": sha(publication_path),
             "direct_native_receipt": {

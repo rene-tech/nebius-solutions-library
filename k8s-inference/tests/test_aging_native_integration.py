@@ -48,13 +48,51 @@ def test_declaration_matches_exact_native_image_and_two_requests(model, device):
     )
     assert selected["qualification"]["states"] == {
         "registered": True,
-        "route_active": False,
+        "route_active": True,
         "runtime_ready": True,
         "semantic_qualified": True,
-        "http_mcp_qualified": False,
-        "cold_start_qualified": False,
-        "elasticity_qualified": False,
+        "http_mcp_qualified": True,
+        "cold_start_qualified": True,
+        "elasticity_qualified": True,
     }
+    public_path = ROOT / f"acceptance/aging-20260908/qualification-r05/{model}.json"
+    public = read(public_path)
+    evidence_hash = hashlib.sha256(public_path.read_bytes()).hexdigest()
+    for field in (
+        "audited_live_routes_sha256",
+        "model_discovery_sha256",
+        "mcp_discovery_sha256",
+        "http_mcp_acceptance_sha256",
+        "cold_start_acceptance_sha256",
+        "elasticity_acceptance_sha256",
+    ):
+        assert selected["qualification"]["evidence"][field] == evidence_hash
+    assert public["outcome"] == "passed" and public["logical_runs"] == 2
+    assert (
+        public["model_id"] == model and public["variant_id"] == selected["variant_id"]
+    )
+    assert public["runtime_image"] == record["runtime"]["image"]["reference"]
+    assert public["model_source"] == record["model"]["source"]["revision"]
+    assert (
+        public["artifact_manifest_sha256"]
+        == record["cache"]["artifact"]["manifest_digest"]
+    )
+    assert (
+        public["record_sha256_canonical_json"]
+        == hashlib.sha256(
+            json.dumps(
+                record, sort_keys=True, separators=(",", ":"), allow_nan=False
+            ).encode()
+        ).hexdigest()
+    )
+    assert public["scope"]["replica_transition"] == "0-to-1-to-0"
+    assert public["scope"]["maximum_configured_replicas"] == 1
+    assert not public["scope"]["multi_replica_scale_out_qualified"]
+    assert not public["scope"]["other_hardware_qualified"]
+    assert public["scope"]["gpu_snapshot"] == (
+        "not-applicable-cpu" if model == "phenoage" else "not-qualified"
+    )
+    assert public["temporary_key_revoked_and_denied"]
     for prefix in ("source", "fixture"):
         relative = record["semantic_validator"][f"{prefix}_path"]
         expected = record["semantic_validator"][f"{prefix}_sha256"]

@@ -432,6 +432,44 @@ def test_node_provisioning_is_derived_not_assumed(campaign):
     assert export(campaign)["worker"]["node_existed_before_first_admission"] is False
 
 
+@pytest.mark.parametrize("cached", [False, True])
+def test_image_boundary_uses_only_actual_uid_and_image_without_raw_messages(cached):
+    image = "example.invalid/image@sha256:" + "a" * 64
+    message = (
+        f'Container image "{image}" already present on machine'
+        if cached
+        else (
+            f'Successfully pulled image "{image}" in 1m36.335s (including waiting). Image size: 4167595352 bytes.'
+        )
+    )
+    event = {
+        "involvedObject": {"uid": "actual-public-pod"},
+        "reason": "Pulled",
+        "message": message,
+        "firstTimestamp": "2026-09-08T15:12:19Z",
+        "lastTimestamp": "2026-09-08T15:12:19Z",
+    }
+    witness = {
+        "pod": {"metadata": {"uid": "actual-public-pod"}},
+        "events": {
+            "items": [
+                event,
+                {**event, "involvedObject": {"uid": "old-direct-pod"}},
+                {**event, "message": SYNTHETIC_SECRET},
+            ]
+        },
+    }
+    boundary = exporter.image_pull_boundary(witness, image)
+    assert boundary["state"] == ("image-already-present" if cached else "image-pulled")
+    assert len(boundary["events"]) == 1
+    assert boundary["events"][0]["reported_pull_seconds"] == (
+        None if cached else 96.335
+    )
+    assert boundary["wire_bytes"] is None
+    assert SYNTHETIC_SECRET not in json.dumps(boundary)
+    assert "4167595352" not in json.dumps(boundary)
+
+
 def test_failure_in_either_model_produces_no_success_output_or_overlay_change(
     campaign, tmp_path, monkeypatch
 ):

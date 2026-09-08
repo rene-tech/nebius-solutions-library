@@ -147,8 +147,8 @@ def test_registry_selected_native_records_share_bootstrap_identity_but_do_not_gr
         assert model.gateway.qualification["runtime_origin"]["variant_id"] == entry["variant_id"]
         assert model.gateway.qualification["states"]["runtime_ready"]
         assert model.gateway.qualification["states"]["semantic_qualified"]
-        assert not model.gateway.qualification["states"]["elasticity_qualified"]
-        assert not model.gateway.qualification["states"]["http_mcp_qualified"]
+        assert model.gateway.qualification["states"]["elasticity_qualified"]
+        assert model.gateway.qualification["states"]["http_mcp_qualified"]
         assert contracts[model_id].runtime_image_digest == entry["record"]["runtime"]["image"]["digest"]
         assert model.readiness_probe.path == "/v1/health/ready"
 

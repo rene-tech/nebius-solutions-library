@@ -1,0 +1,147 @@
+{
+  "app_id": "197fa990-6f65-539d-a1d8-240877ce861b",
+  "artifact_manifest_sha256": "7145fde1f843b247c83435c1b6f2728df733b4b2b76e2dfa10cae610e491ce85",
+  "cohort": "public-apps-r05",
+  "final_test_spec_sha256": "cd9f0fc03a05f493fc6186d97f8596c69169011cd6884862e32478686f6ce024",
+  "harness_release_label": "c188ddaada3d433ecc6792a0fdadbd24b705408e",
+  "logical_runs": 2,
+  "model_id": "altumage",
+  "model_source": "696c477dac9b7641bf283c48af1cc9bb0a0803a3",
+  "operations": [
+    {
+      "absolute_tolerance": 0.001,
+      "accepted_at": "2026-09-08T15:06:49.716014Z",
+      "accepted_to_terminal_seconds": 343.755471,
+      "client_seconds": 348.7073532817885,
+      "completed_at": "2026-09-08T15:12:33.471485Z",
+      "http_response_sha256": "3a77c9de718f12128ce6cd2a5c9d58b4017aa6e1eb157838ff73b077a20a668c",
+      "operation_id": "0e20df81-c296-4a4c-8012-bd2e5771691d",
+      "prediction": 38.22121047973633,
+      "reference_prediction": 38.22121047973633,
+      "replay_reused_original_operation": true,
+      "request_sha256": "fd382869ed0bcebf0f58ed78335dcdac322ba6ce11e811cac46368b7ef6afb08",
+      "result_sha256_canonical_json": "1106ed1eb5674e9bd5df8f73630a7d119bc2a2d0934c84203272225640afbc86",
+      "submission": "HTTP"
+    },
+    {
+      "absolute_tolerance": 0.001,
+      "accepted_at": "2026-09-08T15:12:38.913589Z",
+      "accepted_to_terminal_seconds": 0.541401,
+      "client_seconds": 6.969313315115869,
+      "completed_at": "2026-09-08T15:12:39.454990Z",
+      "http_response_sha256": "d96733e1394ffe7bc0d8f145c3031d3b10c14f22286ec658a6bcc70dc7437f55",
+      "operation_id": "f3375439-b07c-4ebd-849c-3e1d1de92ba8",
+      "prediction": 40.12385559082031,
+      "reference_prediction": 40.12385559082031,
+      "replay_reused_original_operation": true,
+      "request_sha256": "18bfccfba6a6ea84b116244ac7e7c2a108dc4aaa0048d2440c1ac68317831f3a",
+      "result_sha256_canonical_json": "c10961094f69d9761d426f25b79f183b47d7c60f3c6bf7e10dd302cbab940bcf",
+      "submission": "MCP"
+    }
+  ],
+  "outcome": "passed",
+  "record_sha256_canonical_json": "a88f36740e563bdf9d9fd2bcc8df97518cf0d07bac0fa9310a0d913c764d35dc",
+  "release": {
+    "digest": "sha256:25c6b54cd803d4647f8909ed4f398d5326db8bcbf5cb696a354d167891f12c6c",
+    "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane",
+    "source_commit": "c188ddaada3d433ecc6792a0fdadbd24b705408e",
+    "source_tree": "2324d1716d26219ebc6295ceeb5b03f474163eee"
+  },
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/altumage-cuda@sha256:ca6352f79ecd78928e13ecda55afaf01a5df1923291b7a56a7ba9a9770c484e1",
+  "schema": "fs2-aging-public-qualification/v1",
+  "scope": {
+    "cold_boundary": "observed Cold and zero reusable workers; node lifetime is recorded below, image cache emptiness is not claimed",
+    "gpu_snapshot": "not-qualified",
+    "hardware": "NVIDIA-H100-SXM5-80GB",
+    "maximum_configured_replicas": 1,
+    "multi_replica_scale_out_qualified": false,
+    "other_hardware_qualified": false,
+    "replica_transition": "0-to-1-to-0"
+  },
+  "source_receipts": {
+    "campaign": {
+      "path": "outcome.json",
+      "sha256": "b8edf5d25ac99ce45f9321c4aee4ab200071b32cecc7c315b8bf6f16f47a7863"
+    },
+    "direct_native_receipt": {
+      "path": "altumage-r01.json",
+      "sha256": "939445a229f6355ec798a0c61d300070b0c1ef6197e9ec0ef045c21085caac36"
+    },
+    "http_discovery": {
+      "path": "altumage/00001-http.json",
+      "sha256": "fa1ef2fe26064bfce1cfeea44c845523903efed89d83f4e9906da78a6747db8c"
+    },
+    "mcp_discovery": {
+      "path": "altumage/00002-mcp.json",
+      "sha256": "95c87937c7e9b69490ce4a7da9b752836d4461e4d76bc7ce9d34c9a18418145b"
+    },
+    "model_outcome": {
+      "path": "altumage/outcome.json",
+      "sha256": "fa5cd5b3c94dfe5f56a5e8286d24894d8953b2c4fa514bdbd1056264610fee33"
+    },
+    "model_trace_count": 194,
+    "model_trace_manifest_sha256": "79073b8bb94dbf436f00a90f71b26881e18f0345b8e8c25daf689f60b35439c4",
+    "native_declaration_sha256": "b17bd5bdb1b4a04c614cd3e31b3cc1f79d36ee1c94ced6867b4c1d0fe1a7ae8e",
+    "release_publication_sha256": "b5a89a4a172baf4a2fb858a27d99410e8b21735169da8f33b6b40157e3b89f7a",
+    "runtime_witness_sha256": "9793f44384bec76ef7b2cb734b67113576936cf990ad6e020075355b44783e13"
+  },
+  "temporary_key_revoked_and_denied": true,
+  "variant_id": "altumage-cuda-v1",
+  "window": {
+    "completed_at": "2026-09-08T15:18:10.884238+00:00",
+    "started_at": "2026-09-08T15:06:40.551275+00:00"
+  },
+  "worker": {
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/altumage-cuda@sha256:ca6352f79ecd78928e13ecda55afaf01a5df1923291b7a56a7ba9a9770c484e1",
+    "image_pull_boundary": {
+      "events": [
+        {
+          "first_at": "2026-09-08T15:10:43Z",
+          "image_already_present": false,
+          "last_at": "2026-09-08T15:10:43Z",
+          "reason": "Pulling",
+          "reported_pull_seconds": null,
+          "successful_image_pull": false
+        },
+        {
+          "first_at": "2026-09-08T15:12:19Z",
+          "image_already_present": false,
+          "last_at": "2026-09-08T15:12:19Z",
+          "reason": "Pulled",
+          "reported_pull_seconds": 96.335,
+          "successful_image_pull": true
+        }
+      ],
+      "note": "Kubelet event timestamps are coarse; pull duration is kubelet-reported, not pure registry transfer time. No empty registry/cache or wire-byte claim.",
+      "state": "image-pulled",
+      "wire_bytes": null
+    },
+    "namespace": "fs2-models",
+    "node_created_at": "2026-09-08T15:10:02Z",
+    "node_existed_before_first_admission": false,
+    "node_name": "computeinstance-e00tdgtrwk53nd159k",
+    "node_ready_transition_at": "2026-09-08T15:10:21Z",
+    "pod_created_at": "2026-09-08T15:06:52Z",
+    "pod_name": "altumage-burst-h100-1x-68bb6667cb-6h5qr",
+    "pod_uid": "5f07f70a-c49a-41b2-ae40-9f0c9cd5738b",
+    "resources": {
+      "limits": {
+        "cpu": "4",
+        "ephemeral-storage": "1Gi",
+        "memory": "8Gi",
+        "nvidia.com/gpu": "1"
+      },
+      "requests": {
+        "cpu": "2",
+        "ephemeral-storage": "64Mi",
+        "memory": "4Gi",
+        "nvidia.com/gpu": "1"
+      }
+    },
+    "witness_at": "2026-09-08T15:13:07.465199+00:00"
+  },
+  "zero_workers": {
+    "zero_after": "2026-09-08T15:18:09.616458+00:00",
+    "zero_before": "2026-09-08T15:06:46.706610+00:00"
+  }
+}

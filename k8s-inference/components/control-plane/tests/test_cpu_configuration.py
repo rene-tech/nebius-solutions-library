@@ -154,6 +154,8 @@ def test_managed_cpu_metadata_cannot_change_a_gpu_resource_contract():
 async def test_actual_phenoage_bootstrap_contract_accepts_zero_with_exact_native_identity():
     catalog = augment_native_catalog(load_catalog(CATALOG_ROOT, repo_root=REPO_ROOT), CATALOG_ROOT, repo_root=REPO_ROOT)
     entry = json.loads((CATALOG_ROOT / "deployment-runtimes/phenoage-cpu.json").read_text())
+    # Keep explicit unqualified bootstrap coverage after measured promotion.
+    entry["qualification"]["states"]["elasticity_qualified"] = False
     contracts = catalog_configuration_contracts(catalog, deployment_runtime_entries={"phenoage": entry})
     contract = contracts["phenoage"]
     payload = managed_cpu_payload()

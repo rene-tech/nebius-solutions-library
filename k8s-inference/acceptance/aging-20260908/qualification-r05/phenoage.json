@@ -1,0 +1,137 @@
+{
+  "app_id": "38aad847-9010-51d0-bed7-bcb404bc755d",
+  "artifact_manifest_sha256": "103b58a2502f05c9d43618f8c3c6c67811f58a4ade52c62b27115bf3abebe3e1",
+  "cohort": "public-apps-r05",
+  "final_test_spec_sha256": "ee7833a144795fb8b41ddb2bc04dada5fff06adb1d7dd6ff29eeef41e835a793",
+  "harness_release_label": "c188ddaada3d433ecc6792a0fdadbd24b705408e",
+  "logical_runs": 2,
+  "model_id": "phenoage",
+  "model_source": "3a3dbe0fdb258579f9d4eb1b35a2d1525f5fc0d3",
+  "operations": [
+    {
+      "absolute_tolerance": 1e-10,
+      "accepted_at": "2026-09-08T15:06:48.573418Z",
+      "accepted_to_terminal_seconds": 8.994396,
+      "client_seconds": 14.125396341085434,
+      "completed_at": "2026-09-08T15:06:57.567814Z",
+      "http_response_sha256": "f76345fafaf20e87dc53a8c28e6a4ed99dcdf50b39bc3c7565e725862b2e9324",
+      "operation_id": "42a96c54-3592-4a44-a0ce-1d442466f4a6",
+      "prediction": 41.90792243377997,
+      "reference_prediction": 41.90792243377997,
+      "replay_reused_original_operation": true,
+      "request_sha256": "b15ebdc61742dff7d3293e35a09b2a3207fd39d6e05ef7f881d900b4172b7842",
+      "result_sha256_canonical_json": "659604787bc96284b0eaf7ee71762a570e79acb5626b0c204bfc1039c6008b40",
+      "submission": "HTTP"
+    },
+    {
+      "absolute_tolerance": 1e-10,
+      "accepted_at": "2026-09-08T15:07:03.219399Z",
+      "accepted_to_terminal_seconds": 0.50033,
+      "client_seconds": 4.70999975129962,
+      "completed_at": "2026-09-08T15:07:03.719729Z",
+      "http_response_sha256": "0549725d8c67ae6be229ef782b508f7887432d9ea34a3b88b521018cb5b325fa",
+      "operation_id": "d3a66635-e5a1-4569-8d2e-af500104a11d",
+      "prediction": 42.79962098643345,
+      "reference_prediction": 42.79962098643345,
+      "replay_reused_original_operation": true,
+      "request_sha256": "23dfed5a95602604b245e3406770a4832dc06e4ad6e6a67103e8850cec159d88",
+      "result_sha256_canonical_json": "04b54cac9a27334c7d4ee22fe5f8a9cac2504402d0d03ed6f1f90a1ab78d32a7",
+      "submission": "MCP"
+    }
+  ],
+  "outcome": "passed",
+  "record_sha256_canonical_json": "bae186ae0466bf0ed8775e090bab95dbe68737cb55262c190f57fdfd572dadfe",
+  "release": {
+    "digest": "sha256:25c6b54cd803d4647f8909ed4f398d5326db8bcbf5cb696a354d167891f12c6c",
+    "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane",
+    "source_commit": "c188ddaada3d433ecc6792a0fdadbd24b705408e",
+    "source_tree": "2324d1716d26219ebc6295ceeb5b03f474163eee"
+  },
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/phenoage-cpu@sha256:b6c28820576b62972437787bd06fa37f8c10b6f51de31b0f4da3cc3873bb34f1",
+  "schema": "fs2-aging-public-qualification/v1",
+  "scope": {
+    "cold_boundary": "observed Cold and zero reusable workers; node lifetime is recorded below, image cache emptiness is not claimed",
+    "gpu_snapshot": "not-applicable-cpu",
+    "hardware": "CPU",
+    "maximum_configured_replicas": 1,
+    "multi_replica_scale_out_qualified": false,
+    "other_hardware_qualified": false,
+    "replica_transition": "0-to-1-to-0"
+  },
+  "source_receipts": {
+    "campaign": {
+      "path": "outcome.json",
+      "sha256": "b8edf5d25ac99ce45f9321c4aee4ab200071b32cecc7c315b8bf6f16f47a7863"
+    },
+    "direct_native_receipt": {
+      "path": "phenoage-r01.json",
+      "sha256": "185dab2a859b41b3eff9d0cd81954d823db7f40c3e04b57967b55483ce8d690d"
+    },
+    "http_discovery": {
+      "path": "phenoage/00001-http.json",
+      "sha256": "58d670a7a2293c30a959146ff2fdc9aaaa1eea81a65ef90b6c881b694ad35f1a"
+    },
+    "mcp_discovery": {
+      "path": "phenoage/00002-mcp.json",
+      "sha256": "2d7d39255e8418d2971b77e96e1ca31f8ea26a7a8bc8f5d6d5ded87208a4f1d2"
+    },
+    "model_outcome": {
+      "path": "phenoage/outcome.json",
+      "sha256": "2e3fa088d3b0f96fa7a09fb233d0663d81996278835ffcdb5945800dec48cbdf"
+    },
+    "model_trace_count": 23,
+    "model_trace_manifest_sha256": "fecf455b137eb20fa13dfadbda217c8c977ef08d0592a7e0e39d2a06b2588e4d",
+    "native_declaration_sha256": "2c6752d7dead7e8f23dc8bc7129b9607c14f2cdc9705e3812c77a2dc3534e1a9",
+    "release_publication_sha256": "b5a89a4a172baf4a2fb858a27d99410e8b21735169da8f33b6b40157e3b89f7a",
+    "runtime_witness_sha256": "d909b2ab4676709254eee4ff5aefe27a80e1abd4fad699198b34b0ee72b642e1"
+  },
+  "temporary_key_revoked_and_denied": true,
+  "variant_id": "phenoage-clinical-cpu-v1",
+  "window": {
+    "completed_at": "2026-09-08T15:12:29.970663+00:00",
+    "started_at": "2026-09-08T15:06:40.550273+00:00"
+  },
+  "worker": {
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/phenoage-cpu@sha256:b6c28820576b62972437787bd06fa37f8c10b6f51de31b0f4da3cc3873bb34f1",
+    "image_pull_boundary": {
+      "events": [
+        {
+          "first_at": "2026-09-08T15:06:53Z",
+          "image_already_present": true,
+          "last_at": "2026-09-08T15:06:53Z",
+          "reason": "Pulled",
+          "reported_pull_seconds": null,
+          "successful_image_pull": false
+        }
+      ],
+      "note": "Kubelet event timestamps are coarse; pull duration is kubelet-reported, not pure registry transfer time. No empty registry/cache or wire-byte claim.",
+      "state": "image-already-present",
+      "wire_bytes": null
+    },
+    "namespace": "fs2-models",
+    "node_created_at": "2026-09-06T22:33:00Z",
+    "node_existed_before_first_admission": true,
+    "node_name": "computeinstance-e00tq9jk3nbvh4ceck",
+    "node_ready_transition_at": "2026-09-06T22:33:31Z",
+    "pod_created_at": "2026-09-08T15:06:52Z",
+    "pod_name": "phenoage-6b995b7d47-m5c6m",
+    "pod_uid": "c4fcbd56-1f4c-495a-ae8f-07e000ee59f1",
+    "resources": {
+      "limits": {
+        "cpu": "2",
+        "ephemeral-storage": "1Gi",
+        "memory": "1Gi"
+      },
+      "requests": {
+        "cpu": "1",
+        "ephemeral-storage": "64Mi",
+        "memory": "256Mi"
+      }
+    },
+    "witness_at": "2026-09-08T15:07:30.912367+00:00"
+  },
+  "zero_workers": {
+    "zero_after": "2026-09-08T15:12:28.848557+00:00",
+    "zero_before": "2026-09-08T15:06:46.250438+00:00"
+  }
+}

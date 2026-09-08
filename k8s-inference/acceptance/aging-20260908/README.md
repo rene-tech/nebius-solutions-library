@@ -111,7 +111,7 @@ for the new core and integration seams; scientific recipe identities remain
 unchanged. Public Apps/MCP and live zero-to-one-to-zero acceptance remain a
 separate next step; direct worker readiness does not qualify elasticity.
 
-## Prepared public Apps acceptance
+## Public Apps acceptance
 
 `public_apps.py` is a separate, explicitly authorized acceptance campaign, not
 part of the native image qualifier. It runs one client for each new aging App
@@ -126,8 +126,12 @@ The campaign saves only these two Apps' minimum/maximum workers as zero/one
 using the admin API. Existing idle, cooldown, startup budget, placement and
 cache settings are preserved. It observes a real zero-container baseline,
 durable accepted demand, Ready workers, published results, and automatic idle
-return to zero. Those are warm-node/cache cold starts, not new-node or
-empty-registry measurements. It also checks exactly two new logical Runs and
+return to zero. Pod and node UID/timestamps, image-pull events and actual device
+witnesses establish whether each cold start used an existing cached node or a
+new autoscaled node. Do not infer the cache boundary from cluster configuration:
+r04 actually provisioned a new preemptible H100 node. No test empties the
+regional registry or claims a GPU snapshot restore. The campaign also checks
+exactly two new logical Runs and
 Usage entries per App, scoped HTTP/MCP discovery, and revokes the two temporary
 model-scoped keys in `finally`, verifying HTTP 401 afterward.
 
@@ -141,6 +145,10 @@ Neither model is resubmitted after a real failure. Request, response and
 operation evidence is retained before assertions; only root may authorize a
 corrective release and fresh cohort.
 
-Eleven offline harness tests pass, including error preservation, no hidden
+Twelve offline harness tests pass, including error preservation, no hidden
 HTTP retry, secret redaction, thread-safe receipt creation, preservation of
 accepted IDs before replay checks, and key cleanup after a failed request.
+
+Live integration, retained failed attempts and final public acceptance are
+tracked in [RELEASE.md](RELEASE.md); direct-worker figures above have different
+measurement boundaries and must not replace public cold-start figures.

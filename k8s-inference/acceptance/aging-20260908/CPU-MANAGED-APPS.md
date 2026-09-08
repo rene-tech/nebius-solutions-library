@@ -1,6 +1,6 @@
 # CPU-managed Apps integration
 
-Implementation checkpoint: 2026-09-08 13:20 UTC, with the explicit scale-to-zero onboarding correction below added afterward. Source is prepared for the root-coordinated release; this is **not** a claim that a public CPU App has completed live scale-from-zero acceptance.
+This note preserves the implementation checkpoint from 2026-09-08 13:20 UTC and subsequent onboarding corrections. Final public CPU/H100 acceptance passed in [PUBLIC-R05.md](PUBLIC-R05.md); the exact release, earlier failures and qualification limits are in [RELEASE.md](RELEASE.md). The offline checks below are historical implementation evidence, not substitutes for that live test.
 
 ## Contract
 
@@ -72,6 +72,6 @@ Hard-coded legacy fixture identities retained:
 - GPU spec: `sha256:092bab27467b2a92ccfba642ba13cbd2896bdbde3e85080ebf687d105987f000`.
 - GPU envelope: `sha256:27e7554358ce022697f1b35df8c39a8e46586a9232f06bcfb2374067bb9e407d`.
 
-## Remaining release gate
+## Live release gate
 
-The root agent owns Terraform/catalog integration and deployment. Following that release, test distinct public Apps, CPU scale-from-zero, two useful requests, dynamic settings, owner history and cleanup. Direct runtime CPU/H100 qualification is recorded separately in [the aging acceptance report](README.md); it is not a substitute for public App cold-start or routing acceptance. No additional permissions were needed for the offline implementation.
+The root agent owns Terraform/catalog integration and deployment. Public r05 exercised both distinct Apps from Cold/zero workers, two useful HTTP/MCP requests per App with exact replay, owner-attributed Runs/Usage and natural return to zero. Temporary scoped keys were revoked and returned401. Existing min0/max1 and idle/cooldown policies were preserved. This proves the measured single-replica zero-to-one-to-zero path, not multi-replica throughput or snapshot restore. Direct runtime CPU/H100 qualification remains separately recorded in [the aging acceptance report](README.md). No additional permissions were needed for this extension.

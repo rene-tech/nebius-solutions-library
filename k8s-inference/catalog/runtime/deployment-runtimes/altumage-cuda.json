@@ -177,12 +177,12 @@
     },
     "evidence": {
       "audited_catalog_sha256": "c77df36d784dd1cddbb8cb046f4aa403dd4d98bbbf1736538964abbe9a03a6ae",
-      "audited_live_routes_sha256": null,
-      "cold_start_acceptance_sha256": null,
-      "elasticity_acceptance_sha256": null,
-      "http_mcp_acceptance_sha256": null,
-      "mcp_discovery_sha256": null,
-      "model_discovery_sha256": null,
+      "audited_live_routes_sha256": "d821b65ce070061ee26ddbfee84ba219538adb61eb1d38af8f9533402401b929",
+      "cold_start_acceptance_sha256": "d821b65ce070061ee26ddbfee84ba219538adb61eb1d38af8f9533402401b929",
+      "elasticity_acceptance_sha256": "d821b65ce070061ee26ddbfee84ba219538adb61eb1d38af8f9533402401b929",
+      "http_mcp_acceptance_sha256": "d821b65ce070061ee26ddbfee84ba219538adb61eb1d38af8f9533402401b929",
+      "mcp_discovery_sha256": "d821b65ce070061ee26ddbfee84ba219538adb61eb1d38af8f9533402401b929",
+      "model_discovery_sha256": "d821b65ce070061ee26ddbfee84ba219538adb61eb1d38af8f9533402401b929",
       "retained_deployments_sha256": "939445a229f6355ec798a0c61d300070b0c1ef6197e9ec0ef045c21085caac36"
     },
     "model_id": "altumage",
@@ -201,12 +201,12 @@
     },
     "states": {
       "registered": true,
-      "route_active": false,
+      "route_active": true,
       "runtime_ready": true,
       "semantic_qualified": true,
-      "http_mcp_qualified": false,
-      "cold_start_qualified": false,
-      "elasticity_qualified": false
+      "http_mcp_qualified": true,
+      "cold_start_qualified": true,
+      "elasticity_qualified": true
     },
     "variant_id": "altumage-cuda-v1"
   }

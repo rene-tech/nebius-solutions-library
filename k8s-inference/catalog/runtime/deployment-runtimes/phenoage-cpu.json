@@ -177,12 +177,12 @@
     },
     "evidence": {
       "audited_catalog_sha256": "c77df36d784dd1cddbb8cb046f4aa403dd4d98bbbf1736538964abbe9a03a6ae",
-      "audited_live_routes_sha256": null,
-      "cold_start_acceptance_sha256": null,
-      "elasticity_acceptance_sha256": null,
-      "http_mcp_acceptance_sha256": null,
-      "mcp_discovery_sha256": null,
-      "model_discovery_sha256": null,
+      "audited_live_routes_sha256": "f2c1ec765559c0c2f211bffc711a02ca81bb08b3316234c80260727272ff0eee",
+      "cold_start_acceptance_sha256": "f2c1ec765559c0c2f211bffc711a02ca81bb08b3316234c80260727272ff0eee",
+      "elasticity_acceptance_sha256": "f2c1ec765559c0c2f211bffc711a02ca81bb08b3316234c80260727272ff0eee",
+      "http_mcp_acceptance_sha256": "f2c1ec765559c0c2f211bffc711a02ca81bb08b3316234c80260727272ff0eee",
+      "mcp_discovery_sha256": "f2c1ec765559c0c2f211bffc711a02ca81bb08b3316234c80260727272ff0eee",
+      "model_discovery_sha256": "f2c1ec765559c0c2f211bffc711a02ca81bb08b3316234c80260727272ff0eee",
       "retained_deployments_sha256": "185dab2a859b41b3eff9d0cd81954d823db7f40c3e04b57967b55483ce8d690d"
     },
     "model_id": "phenoage",
@@ -201,12 +201,12 @@
     },
     "states": {
       "registered": true,
-      "route_active": false,
+      "route_active": true,
       "runtime_ready": true,
       "semantic_qualified": true,
-      "http_mcp_qualified": false,
-      "cold_start_qualified": false,
-      "elasticity_qualified": false
+      "http_mcp_qualified": true,
+      "cold_start_qualified": true,
+      "elasticity_qualified": true
     },
     "variant_id": "phenoage-clinical-cpu-v1"
   }
