@@ -136,6 +136,20 @@ def test_startup_retention_lifecycle_with_promtool(tmp_path: Path) -> None:
             for name, rows, at, expected in cases
         ],
     }
+    for interval, desired in (("10s", "0+0x4 1+0x400"), ("5s", "0+0x9 1+0x400")):
+        rows = fixture(desired=desired, ready=None)
+        rows = [{**row, "values": row["values"].replace("x104", "x400")} for row in rows]
+        tests["tests"].append(
+            {
+                "name": f"off-grid {interval} scrape edge persists without renewing its 50s timestamp",
+                "interval": interval,
+                "input_series": rows,
+                "promql_expr_test": [
+                    {"expr": expression, "eval_time": at, "exp_samples": [{"labels": "{}", "value": value}]}
+                    for at, value in (("55s", 2), ("65s", 2), ("3m", 2), ("15m49s", 2), ("15m50s", 0), ("17m", 0))
+                ],
+            }
+        )
     path = tmp_path / "startup-retention.test.yaml"
     path.write_text(yaml.safe_dump(tests, sort_keys=False))
     result = subprocess.run(  # noqa: S603 - installed binary and locally generated test fixture, no shell

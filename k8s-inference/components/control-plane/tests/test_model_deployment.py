@@ -556,7 +556,7 @@ def test_optional_startup_budget_preserves_existing_revision_and_configures_only
     scaler = next(
         item.manifest for item in renderer().render(explicit, render_context()).resources if item.kind == "ScaledObject"
     )
-    assert "[1800s:15s]" in scaler["spec"]["triggers"][1]["metadata"]["query"]
+    assert "[1800s:1s]" in scaler["spec"]["triggers"][1]["metadata"]["query"]
     assert scaler["spec"]["cooldownPeriod"] == max(spec.availability.cooldown_seconds, spec.availability.idle_seconds)
     assert scaler["spec"]["minReplicaCount"] == 0
     for bad in (59, 7201):
@@ -734,7 +734,7 @@ def test_renderer_uses_selected_pool_resource_and_safe_derived_metadata() -> Non
     assert startup["metadata"]["metricName"] == "fs2_operation_demand_qwen_3_8b_startup"
     assert startup["metadata"]["threshold"] == scaler["spec"]["triggers"][0]["metadata"]["threshold"]
     assert f'deployment="{deployment["metadata"]["name"]}"' in startup["metadata"]["query"]
-    assert "[900s:15s]" in startup["metadata"]["query"]
+    assert "[900s:1s]" in startup["metadata"]["query"]
     assert any(item.manifest["metadata"]["name"].startswith("fs2-model-publication-") for item in first.resources)
 
     disabled = spec.model_copy(

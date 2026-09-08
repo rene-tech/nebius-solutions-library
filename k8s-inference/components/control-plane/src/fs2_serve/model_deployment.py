@@ -1987,10 +1987,14 @@ def startup_retention_promql(*, namespace: str, deployment: str, timeout_seconds
     desired = f"kube_deployment_spec_replicas{{{target}}}"
     # idelta sees the last two scrapes; the subquery retains only the timestamp
     # of an actual scale-out. Pod churn and scale-in cannot reset this budget.
+    scale_out_edge = f"(timestamp({desired}) and (idelta({desired}[2m]) > 0))"
+    # Keep the newest edge before a history step, then retain it on a 1s grid
+    # so ordinary 5s/10s/15s+ scrape cadences cannot alias it away. Neither path
+    # replaces its actual scrape timestamp with evaluation time.
     scale_out = (
-        "max by (namespace, deployment) (max_over_time("
-        f"(timestamp({desired}) and (idelta({desired}[2m]) > 0))"
-        f"[{timeout_seconds}s:15s])) > (time() - {timeout_seconds})"
+        "max by (namespace, deployment) ("
+        f"{scale_out_edge} or max_over_time({scale_out_edge}[{timeout_seconds}s:1s])) "
+        f"> (time() - {timeout_seconds})"
     )
     created = f"max by (namespace, deployment) (kube_deployment_created{{{target}}}) > (time() - {timeout_seconds})"
     owners = (
