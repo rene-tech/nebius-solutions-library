@@ -534,6 +534,10 @@ class PostgresStore:
                 f"fs2_reporting_lifecycle_workloads TO {quoted_runtime}"
             )
             await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_model_deployments TO {quoted_runtime}")
+            await connection.execute(
+                f"GRANT SELECT,INSERT,UPDATE ON fs2_apps,fs2_inference_users TO {quoted_runtime}"
+            )
+            await connection.execute(f"GRANT SELECT,INSERT ON fs2_request_telemetry TO {quoted_runtime}")
             # Scientific artifact provenance. Rows are append-only for the
             # runtime role: the only permitted updates are the two documented
             # one-way transitions, and DELETE is additionally gated in SQL by
@@ -2533,7 +2537,7 @@ class PostgresStore:
                     or desired_spec is None
                     or desired_row["current_etag"] != dynamic_fence.etag
                     or desired_row["tenant_id"] != principal.tenant_id
-                    or desired_spec.model_ref != admission.model_id
+                    or desired_spec.public_model_id != admission.model_id
                     or desired_spec.lifecycle.desired_state is not DesiredState.ENABLED
                 ):
                     raise ConflictError("dynamic model no longer accepts admissions")

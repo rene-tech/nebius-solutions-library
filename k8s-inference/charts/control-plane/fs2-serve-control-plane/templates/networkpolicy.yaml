@@ -104,6 +104,18 @@ spec:
       ports:
         - port: {{ $network.prometheus.port }}
           protocol: TCP
+    {{- if .Values.adminReadAdapters.observability.lokiUrl }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.loki.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $network.loki.podLabels | nindent 14 }}
+      ports:
+        - port: {{ $network.loki.port }}
+          protocol: TCP
+    {{- end }}
     {{- end }}
     {{- if or .Values.adminReadAdapters.capacity.enabled .Values.scientificBatch.enabled }}
     - to:

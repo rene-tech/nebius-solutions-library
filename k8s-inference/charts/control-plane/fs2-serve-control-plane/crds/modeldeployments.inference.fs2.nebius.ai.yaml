@@ -101,6 +101,22 @@ spec:
                 - rule: '!has(oldSelf.adoption) || !has(oldSelf.adoption.receiptRef) || self.adoption.receiptRef.digest == oldSelf.adoption.receiptRef.digest'
                   message: an accepted adoption receipt digest is immutable
               properties:
+                app:
+                  type: object
+                  nullable: true
+                  required: [appId, publicModelId]
+                  x-kubernetes-validations:
+                    - rule: self == oldSelf
+                      message: app identity is immutable
+                  properties:
+                    appId:
+                      type: string
+                      format: uuid
+                    publicModelId:
+                      type: string
+                      minLength: 1
+                      maxLength: 128
+                      pattern: '^[a-z0-9][a-z0-9._/-]*$'
                 modelRef:
                   type: string
                   minLength: 1

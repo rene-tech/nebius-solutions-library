@@ -9,6 +9,7 @@ import {
 } from "react";
 import { adminApi, AdminApiError } from "../api/client";
 import type { OperatorSession, SessionEnvelope } from "../api/accessTypes";
+import nebiusLogo from "../assets/nebius-logo.svg";
 
 interface SessionContextValue {
   session: OperatorSession;
@@ -62,14 +63,15 @@ export function LoginPage({ busy, error, notice = null, onLogin }: LoginProps) {
     <main className="login-shell">
       <section className="login-card" aria-labelledby="login-title">
         <div className="login-wordmark">
-          <span className="wordmark__mark" aria-hidden="true">F2</span>
-          <span>FS2 Serve</span>
+          <img className="nebius-logo" src={nebiusLogo} alt="Nebius" />
+          <span>Apps</span>
         </div>
         <span className="eyebrow">Inference platform administration</span>
         <h1 id="login-title">Operator sign in</h1>
         <p>
-          Exchange a bootstrap credential for a short-lived, same-origin operator session.
-          The credential is cleared from this form immediately and is never saved by the console.
+          Exchange a bootstrap credential for a short-lived, same-origin
+          operator session. The credential is cleared from this form immediately
+          and is never saved by the console.
         </p>
         <form className="form-stack" onSubmit={(event) => void submit(event)}>
           <label>
@@ -102,19 +104,33 @@ export function LoginPage({ busy, error, notice = null, onLogin }: LoginProps) {
               />
             </label>
           </details>
-          {notice ? <div className="inline-notice inline-notice--warning" role="status">{notice}</div> : null}
+          {notice ? (
+            <div className="inline-notice inline-notice--warning" role="status">
+              {notice}
+            </div>
+          ) : null}
           {error ? (
             <div className="inline-notice inline-notice--error" role="alert">
               <strong>Sign in failed.</strong> {error.message}
               {error.requestId ? <span> Request {error.requestId}</span> : null}
-              {authenticationGuidance(error) ? <span className="login-error-guidance">{authenticationGuidance(error)}</span> : null}
+              {authenticationGuidance(error) ? (
+                <span className="login-error-guidance">
+                  {authenticationGuidance(error)}
+                </span>
+              ) : null}
             </div>
           ) : null}
-          <button className="button button--primary" disabled={busy} type="submit">
+          <button
+            className="button button--primary"
+            disabled={busy}
+            type="submit"
+          >
             {busy ? "Creating session…" : "Sign in"}
           </button>
         </form>
-        <p className="security-note">Session cookie: Secure · HttpOnly · SameSite=Strict</p>
+        <p className="security-note">
+          Session cookie: Secure · HttpOnly · SameSite=Strict
+        </p>
       </section>
     </main>
   );
@@ -123,19 +139,29 @@ export function LoginPage({ busy, error, notice = null, onLogin }: LoginProps) {
 function SessionLoading() {
   return (
     <main className="login-shell">
-      <div className="state-panel state-panel--loading" role="status">Checking operator session…</div>
+      <div className="state-panel state-panel--loading" role="status">
+        Checking operator session…
+      </div>
     </main>
   );
 }
 
-function SessionFailure({ error, retry }: { error: AdminApiError; retry: () => void }) {
+function SessionFailure({
+  error,
+  retry,
+}: {
+  error: AdminApiError;
+  retry: () => void;
+}) {
   return (
     <main className="login-shell">
       <div className="state-panel state-panel--error" role="alert">
         <strong>Session service is unavailable</strong>
         <span>{error.message}</span>
         {error.requestId ? <code>Request {error.requestId}</code> : null}
-        <button className="button" onClick={retry} type="button">Try again</button>
+        <button className="button" onClick={retry} type="button">
+          Try again
+        </button>
       </div>
     </main>
   );
@@ -143,7 +169,9 @@ function SessionFailure({ error, retry }: { error: AdminApiError; retry: () => v
 
 export function SessionBoundary({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
-  const [override, setOverride] = useState<SessionEnvelope | null | undefined>(undefined);
+  const [override, setOverride] = useState<SessionEnvelope | null | undefined>(
+    undefined,
+  );
   const [loginError, setLoginError] = useState<AdminApiError | null>(null);
   const [loginNotice, setLoginNotice] = useState<string | null>(null);
   const [authenticating, setAuthenticating] = useState(false);
@@ -152,18 +180,22 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
   const sessionQuery = useQuery({
     queryKey: ["admin-session"],
     queryFn: ({ signal }) => adminApi.session(signal),
-    retry: (count, error) => !(error instanceof AdminApiError && error.status === 401) && count < 1,
+    retry: (count, error) =>
+      !(error instanceof AdminApiError && error.status === 401) && count < 1,
     staleTime: 30_000,
   });
 
   useEffect(() => {
     function expire() {
       setOverride(null);
-      setLoginNotice("Your operator session expired. Sign in again to continue.");
+      setLoginNotice(
+        "Your operator session expired. Sign in again to continue.",
+      );
       queryClient.clear();
     }
     window.addEventListener("fs2:operator-session-expired", expire);
-    return () => window.removeEventListener("fs2:operator-session-expired", expire);
+    return () =>
+      window.removeEventListener("fs2:operator-session-expired", expire);
   }, [queryClient]);
 
   async function login(token: string, principalId?: string) {
@@ -179,7 +211,11 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
       setLoginError(
         caught instanceof AdminApiError
           ? caught
-          : new AdminApiError("Unable to create an operator session", 503, null),
+          : new AdminApiError(
+              "Unable to create an operator session",
+              503,
+              null,
+            ),
       );
       setOverride(null);
     } finally {
@@ -198,7 +234,11 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
       setLogoutError(
         caught instanceof AdminApiError
           ? caught
-          : new AdminApiError("Unable to close the operator session", 503, null),
+          : new AdminApiError(
+              "Unable to close the operator session",
+              503,
+              null,
+            ),
       );
     } finally {
       setLoggingOut(false);
@@ -208,22 +248,35 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
   const session = override === undefined ? sessionQuery.data : override;
   const unauthorized =
     override === null ||
-    (sessionQuery.error instanceof AdminApiError && sessionQuery.error.status === 401);
+    (sessionQuery.error instanceof AdminApiError &&
+      sessionQuery.error.status === 401);
 
-  if (sessionQuery.isPending && override === undefined) return <SessionLoading />;
+  if (sessionQuery.isPending && override === undefined)
+    return <SessionLoading />;
   if (unauthorized) {
-    return <LoginPage busy={authenticating} error={loginError} notice={loginNotice} onLogin={login} />;
+    return (
+      <LoginPage
+        busy={authenticating}
+        error={loginError}
+        notice={loginNotice}
+        onLogin={login}
+      />
+    );
   }
   if (!session) {
     const error =
       sessionQuery.error instanceof AdminApiError
         ? sessionQuery.error
         : new AdminApiError("Unable to read the operator session", 503, null);
-    return <SessionFailure error={error} retry={() => void sessionQuery.refetch()} />;
+    return (
+      <SessionFailure error={error} retry={() => void sessionQuery.refetch()} />
+    );
   }
 
   return (
-    <SessionContext.Provider value={{ session: session.data, logout, loggingOut, logoutError }}>
+    <SessionContext.Provider
+      value={{ session: session.data, logout, loggingOut, logoutError }}
+    >
       {children}
     </SessionContext.Provider>
   );

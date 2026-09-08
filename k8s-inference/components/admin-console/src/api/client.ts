@@ -196,7 +196,7 @@ interface EnvelopeRequest {
   notifySessionExpiry?: boolean;
 }
 
-async function envelopeRequest<T>(path: string, options: EnvelopeRequest = {}): Promise<AdminEnvelope<T>> {
+export async function envelopeRequest<T>(path: string, options: EnvelopeRequest = {}): Promise<AdminEnvelope<T>> {
   const query = options.query?.toString() ?? "";
   const headers: Record<string, string> = { Accept: "application/json" };
   if (options.body !== undefined) headers["Content-Type"] = "application/json";

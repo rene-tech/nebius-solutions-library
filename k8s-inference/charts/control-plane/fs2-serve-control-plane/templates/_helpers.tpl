@@ -319,6 +319,10 @@ app.kubernetes.io/component: model-controller
 {{- if .Values.adminReadAdapters.observability.enabled }}
 - name: FS2_ADMIN_PROMETHEUS_URL
   value: {{ .Values.adminReadAdapters.observability.prometheusUrl | quote }}
+{{- if .Values.adminReadAdapters.observability.lokiUrl }}
+- name: FS2_ADMIN_LOKI_URL
+  value: {{ .Values.adminReadAdapters.observability.lokiUrl | quote }}
+{{- end }}
 - name: FS2_ADMIN_OBSERVABILITY_CONFIG_FILE
   value: /etc/fs2-serve/admin-observability/config.json
 {{- end }}

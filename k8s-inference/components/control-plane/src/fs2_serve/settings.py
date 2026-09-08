@@ -155,6 +155,7 @@ class Settings(BaseSettings):
     gpu_allocation_observer_poll_seconds: float = Field(default=1, ge=0.1, le=30)
     admin_node_scaler_provider: Literal["nebius-managed-node-group-autoscaler"] | None = None
     admin_prometheus_url: str | None = Field(default=None, max_length=2048)
+    admin_loki_url: str | None = Field(default=None, max_length=2048)
     admin_observability_config_file: Path | None = None
     admin_adapter_timeout_seconds: float = Field(default=2.0, ge=0.1, le=10)
     admin_source_max_age_seconds: float = Field(default=90.0, ge=1, le=3600)

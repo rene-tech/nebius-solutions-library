@@ -946,8 +946,8 @@ async def test_scientific_grant_migrations_repair_drift_and_runtime_wait_checks_
         migrated = await asyncpg.connect(upgrade_url)
         try:
             assert (
-                await migrated.fetchval("SELECT version FROM fs2_schema_migrations ORDER BY applied_at DESC LIMIT 1")
-                == "0024_scientific_model_policies.sql"
+                await migrated.fetchval("SELECT version FROM fs2_schema_migrations ORDER BY version DESC LIMIT 1")
+                == EXPECTED_MIGRATIONS[-1][0]
             )
             for role in ("fs2_serve_runtime", runtime_login):
                 for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):

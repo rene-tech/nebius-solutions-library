@@ -20,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from ipaddress import ip_network
 from typing import Annotated, Any, Literal, Protocol
+from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import CroniterBadCronError, croniter
@@ -430,8 +431,22 @@ class AdoptionSpec(KubernetesModel):
         return self
 
 
+class AppDeploymentIdentity(KubernetesModel):
+    """Independent routing identity; modelRef remains the qualified source."""
+
+    app_id: UUID
+    public_model_id: str = Field(min_length=1, max_length=128, pattern=MODEL_REF_PATTERN)
+
+    @model_validator(mode="after")
+    def stable_route(self) -> AppDeploymentIdentity:
+        if self.public_model_id != f"app-{self.app_id.hex}":
+            raise ValueError("independent app route must match its immutable app ID")
+        return self
+
+
 class ModelDeploymentSpec(KubernetesModel):
     model_ref: str = Field(min_length=1, max_length=128, pattern=MODEL_REF_PATTERN)
+    app: AppDeploymentIdentity | None = None
     tenant_id: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9_.-]*[A-Za-z0-9])?$")
     lifecycle: LifecycleSpec
     artifact: ArtifactSpec
@@ -445,6 +460,10 @@ class ModelDeploymentSpec(KubernetesModel):
     policy: TenantPolicySpec
     adoption: AdoptionSpec = Field(default_factory=AdoptionSpec)
     fast_start: FastStartSpec = Field(default_factory=FastStartSpec)
+
+    @property
+    def public_model_id(self) -> str:
+        return self.app.public_model_id if self.app else self.model_ref
 
     @model_validator(mode="after")
     def valid_lifecycle(self) -> ModelDeploymentSpec:
@@ -465,6 +484,9 @@ def canonical_digest(value: object) -> str:
 
 def spec_digest(spec: ModelDeploymentSpec) -> str:
     payload = spec.model_dump(mode="json", by_alias=True)
+    if spec.app is None:
+        # Existing controller revisions and snapshot qualifications stay valid.
+        del payload["app"]
     payload["placement"]["poolRefs"] = sorted(payload["placement"]["poolRefs"])
     payload["availability"]["warmWindows"] = sorted(
         payload["availability"]["warmWindows"], key=lambda item: item["name"]
@@ -1106,6 +1128,7 @@ def validate_model_deployment(
     if current is not None:
         immutable = (
             ("modelRef", current.model_ref, spec.model_ref),
+            ("app", current.app, spec.app),
             ("tenantId", current.tenant_id, spec.tenant_id),
             ("runtime.profile", current.runtime.profile, spec.runtime.profile),
         )
@@ -1267,7 +1290,9 @@ def validate_model_deployment(
                     owner="live-control-plane",
                 )
             )
-        elif spec.exposure.mcp and spec.exposure.mcp_tool_name != qualification.mcp_tool_name:
+        elif spec.exposure.mcp and spec.exposure.mcp_tool_name != (
+            f"app_{spec.app.app_id.hex}" if spec.app else qualification.mcp_tool_name
+        ):
             issues.append(
                 _issue(
                     "mcp_tool_name_unqualified",
@@ -2287,6 +2312,11 @@ class LegacyManifestRenderer:
         ):
             raise ValueError("legacy template identity differs from desired state")
 
+        if spec.app is not None:
+            from .apps_templates import instantiate_app_template
+
+            bundle = instantiate_app_template(bundle, context.name, identity=spec.app)
+
         selected_snapshot = None
         if spec.cache.snapshot_preference is not SnapshotPreference.NEVER:
             reference = spec.cache.snapshot_ref
@@ -2310,8 +2340,10 @@ class LegacyManifestRenderer:
             # including templates that never declared application labels.
             "app.kubernetes.io/component": "model-runtime",
             MODEL_DEPLOYMENT_LABEL: bounded_label_value(context.name),
-            MODEL_ID_LABEL: bounded_label_value(spec.model_ref),
+            MODEL_ID_LABEL: bounded_label_value(spec.public_model_id),
         }
+        if spec.app is not None:
+            labels["fs2-serve.nebius.ai/app-id"] = str(spec.app.app_id)
         hot_floor = effective_hot_floor(spec.availability, at=context.evaluation_time)
         if context.hot_floor_override is not None:
             hot_floor = min(
@@ -2326,7 +2358,7 @@ class LegacyManifestRenderer:
             labels[MODEL_EXPRESS_LABEL] = "enabled"
             annotations[MODEL_EXPRESS_CONFIG_ANNOTATION] = context.model_express.config_digest
         segments = _workload_segments(spec, context, hot_floor=hot_floor)
-        multi_pool_layout = len(context.eligible_pools or [context.pool]) > 1
+        multi_pool_layout = spec.app is not None or len(context.eligible_pools or [context.pool]) > 1
         owner_references: list[dict[str, Any]] = []
         if context.uid is not None:
             owner_references = [
@@ -2686,9 +2718,9 @@ class LegacyManifestRenderer:
                             "metricType": "AverageValue",
                             "metadata": {
                                 "serverAddress": context.prometheus_server_address,
-                                "metricName": _metric_name(spec.model_ref),
+                                "metricName": _metric_name(spec.public_model_id),
                                 "query": _segmented_operation_demand_promql(
-                                    spec.model_ref,
+                                    spec.public_model_id,
                                     offset_replicas=segment.demand_offset,
                                     capacity_replicas=segment.maximum_replicas,
                                     target_queue_depth=spec.availability.target_queue_depth,
@@ -2703,7 +2735,7 @@ class LegacyManifestRenderer:
                             "metricType": "AverageValue",
                             "metadata": {
                                 "serverAddress": context.prometheus_server_address,
-                                "metricName": _metric_name(spec.model_ref) + "_startup",
+                                "metricName": _metric_name(spec.public_model_id) + "_startup",
                                 "query": startup_retention_promql(
                                     namespace=context.namespace,
                                     deployment=workload_name,
@@ -2779,7 +2811,7 @@ class LegacyManifestRenderer:
                     },
                     "data": {
                         "schema": "fs2-serve.nebius.ai/model-publication-intent/v1",
-                        "model_id": spec.model_ref,
+                        "model_id": spec.public_model_id,
                         "tenant_id": spec.tenant_id,
                         "openai": str(spec.exposure.open_ai).lower(),
                         "openai_aliases_json": json.dumps(sorted(spec.exposure.open_ai_aliases), separators=(",", ":")),

@@ -37,9 +37,9 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0025_scientific_startup_policies.sql",
-        "migration_count": 25,
-        "migration_set_sha256": "3c82ca62fb3d177f4a0f070c15ff87ae73c7c3e1cee179d67f1dcd6868af3d82",
+        "last_migration_version": "0028_request_telemetry.sql",
+        "migration_count": 28,
+        "migration_set_sha256": "1e8fb1205d0cf08ef9e177c4a6fc874f3924c2121024762cf7dc6d32c3d5c89a",
         "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
     }
     migrations = committed["migration_set"]["ordered_migrations"]

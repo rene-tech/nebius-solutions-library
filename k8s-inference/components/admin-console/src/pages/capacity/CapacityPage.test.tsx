@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { adminApi } from "../../api/client";
 import { capacityFixture } from "../../test/capacityObservabilityFixtures";
 import { testEnvelope } from "../../test/accessFixtures";
-import { CapacityPage } from "./CapacityPage";
+import { CapacityDiagnosticsPage as CapacityPage } from "./CapacityPage";
 
 afterEach(() => vi.restoreAllMocks());
 

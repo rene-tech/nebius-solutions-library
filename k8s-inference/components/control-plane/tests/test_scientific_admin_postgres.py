@@ -309,7 +309,7 @@ async def test_postgres_run_list_projects_real_controller_rows_without_guessing_
     )
 
     assert result.observed_at == NOW
-    assert result.data.items[0].attribution.user_id == "researcher-ada"
+    assert result.data.items[0].attribution.user_id == "svc-cd8-design"
     assert result.data.items[0].service_class.effective == "customer-batch"
     assert result.data.items[0].gpu_accounting.active.evidence == "unavailable"
     assert result.data.items[0].gpu_accounting.active.value is None
@@ -729,7 +729,7 @@ async def test_real_postgres_admin_projection_reads_durable_controller_and_key_a
     assert len(snapshot.data.items) == 1
     item = snapshot.data.items[0]
     assert item.id == str(operation.id)
-    assert item.attribution.user_id == "researcher-ada"
+    assert item.attribution.user_id == "scientist-ada"
     assert item.attribution.api_key_prefix == token_prefix
     assert item.queue.cluster_queue == "inference-accelerators"
     assert item.gpu_accounting.gpu_count is None

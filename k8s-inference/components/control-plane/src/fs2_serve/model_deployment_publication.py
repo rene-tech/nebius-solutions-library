@@ -67,6 +67,7 @@ class DynamicModelPublication(StrictModel):
     name: str
     tenant_id: str
     model_ref: str
+    canonical_model_ref: str | None = None
     revision: int = Field(ge=1)
     etag: str = Field(pattern=SHA256_DIGEST_PATTERN)
     observed_generation: int = Field(ge=1)
@@ -86,6 +87,10 @@ class DynamicModelPublication(StrictModel):
     visibility: Visibility
     policy_ref: str
     allowed_principal_ids: list[PrincipalId] = Field(default_factory=list, max_length=256)
+
+    @property
+    def source_model_ref(self) -> str:
+        return self.canonical_model_ref or self.model_ref
 
     @model_validator(mode="after")
     def valid_exposure(self) -> DynamicModelPublication:
@@ -139,7 +144,7 @@ def _withdraw(revision: ModelDeploymentRevision, reason: PublicationReason) -> M
         namespace=revision.namespace,
         name=revision.name,
         tenant_id=revision.tenant_id,
-        model_ref=revision.spec.model_ref,
+        model_ref=revision.spec.public_model_id,
         revision=revision.revision,
         disposition=PublicationDisposition.WITHDRAW,
         reason=reason,
@@ -222,7 +227,8 @@ def assess_model_publication(
         namespace=revision.namespace,
         name=revision.name,
         tenant_id=revision.tenant_id,
-        model_ref=spec.model_ref,
+        model_ref=spec.public_model_id,
+        canonical_model_ref=spec.model_ref if spec.app else None,
         revision=revision.revision,
         etag=revision.etag,
         observed_generation=observed.observed_generation,
@@ -247,7 +253,7 @@ def assess_model_publication(
         namespace=revision.namespace,
         name=revision.name,
         tenant_id=revision.tenant_id,
-        model_ref=spec.model_ref,
+        model_ref=spec.public_model_id,
         revision=revision.revision,
         disposition=PublicationDisposition.PUBLISH,
         reason=(

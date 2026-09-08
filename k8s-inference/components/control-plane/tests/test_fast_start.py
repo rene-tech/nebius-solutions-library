@@ -338,7 +338,8 @@ def test_default_fast_start_keeps_every_existing_spec_digest_stable() -> None:
         "fallbackPolicy": "AllowLowerLevel",
     }
     assert wire["cache"]["mechanism"] is None
-    legacy = {key: value for key, value in wire.items() if key != "fastStart"}
+    assert wire["app"] is None
+    legacy = {key: value for key, value in wire.items() if key not in {"fastStart", "app"}}
     legacy["cache"] = {key: value for key, value in legacy["cache"].items() if key != "mechanism"}
     assert wire["availability"]["startupTimeoutSeconds"] is None
     legacy["availability"] = {

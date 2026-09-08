@@ -10,33 +10,63 @@ import { SessionBoundary } from "../auth/SessionContext";
 import { AcademicAssetsPage } from "../pages/academic/AcademicAssetsPage";
 import { AccessPage } from "../pages/access/AccessPage";
 import { AuditPage } from "../pages/audit/AuditPage";
-import { CapacityPage } from "../pages/capacity/CapacityPage";
+import {
+  CapacityPage,
+  CapacityDiagnosticsPage,
+} from "../pages/capacity/CapacityPage";
 import { ObservabilityPage } from "../pages/observability/ObservabilityPage";
 import { ConfigurationPage } from "../pages/configuration/ConfigurationPage";
 import { ModelDeploymentsPage } from "../pages/modelDeployments/ModelDeploymentsPage";
 import { ModelDeploymentWorkspacePage } from "../pages/modelDeployments/ModelDeploymentWorkspacePage";
 import { ScientificRunDetailPage } from "../pages/scientific/ScientificRunDetailPage";
 import { ScientificRunsPage } from "../pages/scientific/ScientificRunsPage";
+import { AppsPage } from "../pages/apps/AppsPage";
+import { AppDetailPage } from "../pages/apps/AppDetailPage";
+import { UsersPage } from "../pages/users/UsersPage";
+import { UserDetailPage } from "../pages/users/UserDetailPage";
 
 export function App() {
   return (
     <SessionBoundary>
       <Routes>
         <Route path="/admin" element={<AppShell />}>
-          <Route index element={<OverviewPage />} />
+          <Route index element={<AppsPage />} />
+          <Route path="apps" element={<AppsPage />} />
+          <Route path="apps/:appId" element={<AppDetailPage />} />
+          <Route path="apps/:appId/runs/:runId" element={<AppDetailPage />} />
+          <Route path="apps/:appId/:tab" element={<AppDetailPage />} />
+          <Route path="users" element={<UsersPage />} />
+          <Route path="users/:userId" element={<UserDetailPage />} />
+          <Route path="overview" element={<OverviewPage />} />
           <Route path="models" element={<ModelsPage />} />
           <Route path="model-inventory" element={<ModelInventoryPage />} />
           <Route path="models/:modelId" element={<ModelDetailPage />} />
           <Route path="model-deployments" element={<ModelDeploymentsPage />} />
-          <Route path="model-deployments/new" element={<ModelDeploymentWorkspacePage create />} />
-          <Route path="model-deployments/:deploymentName" element={<ModelDeploymentWorkspacePage />} />
+          <Route
+            path="model-deployments/new"
+            element={<ModelDeploymentWorkspacePage create />}
+          />
+          <Route
+            path="model-deployments/:deploymentName"
+            element={<ModelDeploymentWorkspacePage />}
+          />
           <Route path="operations" element={<OperationsPage />} />
-          <Route path="operations/:operationId" element={<OperationDetailPage />} />
+          <Route
+            path="operations/:operationId"
+            element={<OperationDetailPage />}
+          />
           <Route path="scientific-runs" element={<ScientificRunsPage />} />
-          <Route path="scientific-runs/:runId" element={<ScientificRunDetailPage />} />
+          <Route
+            path="scientific-runs/:runId"
+            element={<ScientificRunDetailPage />}
+          />
           <Route path="academic-assets" element={<AcademicAssetsPage />} />
           <Route path="access" element={<AccessPage />} />
           <Route path="capacity" element={<CapacityPage />} />
+          <Route
+            path="advanced/capacity"
+            element={<CapacityDiagnosticsPage />}
+          />
           <Route path="observability" element={<ObservabilityPage />} />
           <Route path="configuration" element={<ConfigurationPage />} />
           <Route path="audit" element={<AuditPage />} />

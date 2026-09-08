@@ -1451,7 +1451,7 @@ class MemoryStore:
                     desired is None
                     or desired.etag != dynamic_fence.etag
                     or desired.tenant_id != principal.tenant_id
-                    or desired.spec.model_ref != admission.model_id
+                    or desired.spec.public_model_id != admission.model_id
                     or desired.spec.lifecycle.desired_state is not DesiredState.ENABLED
                 ):
                     raise ConflictError("dynamic model no longer accepts admissions")

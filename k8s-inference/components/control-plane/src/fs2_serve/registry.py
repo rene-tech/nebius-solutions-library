@@ -451,7 +451,8 @@ class Registry:
     def _snapshot_from_bound(self, base: _Snapshot, bound: BoundDynamicRoutes) -> _Snapshot:
         models: dict[str, OperationalModel] = {}
         for model_id, gateway_model in bound.catalog.models.items():
-            original = base.models[model_id]
+            policy = bound.policies.get(model_id)
+            original = base.models[policy.publication.source_model_ref if policy else model_id]
             models[model_id] = replace(
                 original,
                 gateway=gateway_model,
@@ -826,7 +827,7 @@ class Registry:
         if publication.model_ref != model_id or f"dynamic:{publication.etag}" != revision:
             raise RegistryError("stored dynamic dispatch snapshot identity is invalid")
         with self._lock:
-            base = self._base_snapshot.models.get(model_id)
+            base = self._base_snapshot.models.get(publication.source_model_ref)
         if base is None:
             raise RegistryError("stored dynamic dispatch snapshot has no canonical model")
         try:

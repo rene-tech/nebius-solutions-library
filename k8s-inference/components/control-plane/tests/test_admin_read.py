@@ -5,7 +5,7 @@ import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 from typing import Any, cast
 from uuid import UUID
 
@@ -782,7 +782,7 @@ def test_openapi_matches_typed_versioned_admin_contract(registry: Any, cipher: A
     # OpenAPI is generated from endpoint annotations; concrete services are not
     # invoked here. Enable every feature-gated admin router so this assertion
     # seals the complete production contract instead of only the base routes.
-    runtime.model_deployment_preview = cast(Any, object())
+    runtime.model_deployment_preview = cast(Any, SimpleNamespace(envelope=SimpleNamespace(pools={})))
     runtime.model_deployment_read = cast(Any, object())
     runtime.model_deployment_mutation = cast(Any, object())
     runtime.scientific_admin = ScientificAdminReadService(

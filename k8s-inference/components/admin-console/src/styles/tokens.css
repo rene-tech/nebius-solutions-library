@@ -1,16 +1,19 @@
 :root {
-  --fs2-surface-canvas: #eef1f3;
+  --fs2-surface-canvas: #f6f8fa;
   --fs2-surface-default: #ffffff;
-  --fs2-surface-raised: #f7f9f9;
-  --fs2-surface-inverse: #151b18;
-  --fs2-surface-inverse-hover: #26312b;
-  --fs2-text-primary: #17201c;
-  --fs2-text-muted: #5c6862;
-  --fs2-text-inverse: #f5faf6;
-  --fs2-border: #d8dedb;
-  --fs2-border-strong: #abb6b0;
-  --fs2-accent: #267a49;
-  --fs2-accent-soft: #dff3e6;
+  --fs2-surface-raised: #f0f8ff;
+  --fs2-surface-inverse: #052b42;
+  --fs2-surface-inverse-hover: #163d52;
+  --fs2-text-primary: #052b42;
+  --fs2-text-muted: #526570;
+  --fs2-text-inverse: #ffffff;
+  --fs2-border: #dce2e6;
+  --fs2-border-strong: #9cabb5;
+  --fs2-accent: #052b42;
+  --fs2-accent-soft: #f0f8ff;
+  --nebius-lime: #daff33;
+  --nebius-violet: #5d52f6;
+  --nebius-lavender: #c1c1ff;
   --fs2-focus: #1766cf;
   --fs2-danger: #a02a33;
   --fs2-danger-soft: #fbe5e7;
@@ -24,6 +27,8 @@
   --fs2-radius-sm: 6px;
   --fs2-radius-md: 10px;
   --fs2-radius-lg: 14px;
-  --fs2-font: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --fs2-font:
+    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
   --fs2-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }

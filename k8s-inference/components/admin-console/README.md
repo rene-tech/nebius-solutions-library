@@ -1,9 +1,10 @@
-# FS2 Serve admin console
+# Nebius Apps admin console
 
-This directory contains the React/TypeScript operator console and its sealed
-design inputs. The console implements Overview, Models, Model detail,
-Operations, Operation detail, Users and API keys, Capacity and queues,
-Observability, Configuration, and Audit against the versioned same-origin BFF.
+This directory contains the React/TypeScript operator console. The primary
+navigation is Apps, Users and Capacity. Each independently identified app has
+Runs, Metrics, App Logs, Containers, Usage and Settings. Existing operations,
+scientific run IDs, model views and low-level diagnostics remain accessible
+through their original routes and Advanced navigation.
 It exchanges the cluster's admin bootstrap credential for a Secure, HttpOnly,
 SameSite operator session and applies the server-published viewer, operator, and
 administrator roles.
@@ -36,24 +37,26 @@ into a healthy or zero value.
 
 ## Visual and brand basis
 
-No Nebius visual asset exists in the repository. The official
-[Nebius trademark guidelines](https://nebius.com/brand-assets/trademark-usage-guidelines)
-require permission for brand-asset use and prohibit modification or implied
-endorsement. Therefore this contract uses a neutral `FS2 Serve` wordmark and
-does not copy the public logo. A licensed, repository-owned asset may replace
-the wordmark only after its approval and provenance are recorded.
+The user-approved source is [Nebius communication design](https://nebius.atlassian.net/wiki/spaces/NEBIUSMARKETING/pages/643170998/Nebius+communication+design),
+page version 52 (retrieved 2026-09-08), and its linked official Marketing Library
+brand assets. The verified palette is deep blue `#052B42`, lime `#DAFF33`, violet
+`#5D52F6`, lavender `#C1C1FF`, light blue `#F0F8FF`, and white. The official
+[RGB logo](src/assets/nebius-logo.svg) is retained unmodified, including its own
+background color; it is not a recreation. Internal guide PDFs are not bundled.
 
-The information architecture uses verifiable console vocabulary, not a claimed
-Nebius design system. Official Nebius documentation places metrics behind
-Observability, provides time filters and resource Metrics tabs, and documents
-Administration/IAM roles:
+The guide uses Gramatika headings and Inter body text. No Gramatika font is
+distributed here: headings/body use the existing Inter/system sans-serif stack.
+The layout, charts and status presentation are application choices informed by
+that reference, not a claim to ship an official Nebius component library.
+
+Related official documentation:
 
 - [Service dashboards](https://docs.nebius.com/observability/dashboards)
 - [IAM roles](https://docs.nebius.com/iam/authorization/roles)
 
-The rail, dense resource tables, status chips, and responsive measurements in
-this directory are FS2 product choices. They are not represented as official
-Nebius UI tokens.
+See [the approved Apps contract](../../docs/ADMIN_APPS_REDESIGN.md) for identity,
+time-window, accounting and settings semantics. The Apps runtime API uses the
+existing admin session; no infrastructure credentials enter the browser.
 
 ## Develop and verify
 
@@ -90,8 +93,8 @@ build. It must never be used as a deployment image.
 3. Confirm login with the admin bootstrap token, cookie renewal/expiry, role
    boundaries, logout, and correlated error messages. An inference or MCP API
    key is intentionally not an admin login credential.
-4. Supply a licensed Nebius asset package or explicitly approve the neutral FS2
-   wordmark. Do not scrape visual tokens or copy public assets into source.
+4. Verify the approved unmodified logo, palette, readable charts/tables and
+   responsive navigation in the integrated production build.
 
 The unit route matrix uses backend-shaped envelopes and covers all
 backend-integrated console routes, but it is not evidence of a live rollout.

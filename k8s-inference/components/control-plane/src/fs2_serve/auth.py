@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import secrets
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -90,9 +91,16 @@ class PepperRing:
 class TokenService:
     """Hash opaque PATs with a keyed prehash and memory-hard Argon2id."""
 
-    def __init__(self, store: Store, peppers: PepperRing) -> None:
+    def __init__(
+        self,
+        store: Store,
+        peppers: PepperRing,
+        *,
+        principal_policy: Callable[[Principal], Awaitable[Principal]] | None = None,
+    ) -> None:
         self.store = store
         self._peppers = peppers
+        self.principal_policy = principal_policy
         self._hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2, hash_len=32, salt_len=16)
 
     def _prehash(self, token: str, key_id: str) -> str:
@@ -245,7 +253,7 @@ class TokenService:
             active_id = self._peppers.active_key_id
             replacement = self._hasher.hash(self._prehash(token, active_id))
             await self.store.rehash_token(view.id, pepper_key_id=active_id, digest=replacement)
-        return Principal(
+        principal = Principal(
             token_id=view.id,
             token_prefix=view.prefix,
             principal_id=view.principal_id,
@@ -257,6 +265,7 @@ class TokenService:
             gpu_seconds_budget=view.gpu_seconds_budget,
             max_concurrency=view.max_concurrency,
         )
+        return await self.principal_policy(principal) if self.principal_policy else principal
 
     async def list(self, *, tenant_id: str | None = None, limit: int = 200) -> list[TokenView]:
         return await self.store.list_tokens(tenant_id=tenant_id, limit=limit)

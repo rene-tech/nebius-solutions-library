@@ -62,6 +62,12 @@ from .admin_models import (
     AdminSourceState,
 )
 from .admission import AdmissionService
+from .app_observability import AppObservabilityService, AppObservationHistory
+from .app_observability_routes import app_observability_router
+from .apps import AppsService
+from .apps_repository import MemoryAppsRepository, PostgresAppsRepository
+from .apps_router import apps_router
+from .apps_scientific import AppScientificCluster, ScientificAppsInventory
 from .auth import (
     MAX_PAT_LENGTH,
     AuthenticationError,
@@ -69,6 +75,8 @@ from .auth import (
     TokenService,
     require_operation_access,
 )
+from .capacity_summary import CapacitySummaryService
+from .capacity_summary_routes import capacity_summary_router
 from .configuration import ConfigurationService
 from .configuration_routes import configuration_router
 from .lifecycle import (
@@ -97,6 +105,7 @@ from .models import (
     TokenView,
 )
 from .registry import OperationalModel, Registry, RegistryError
+from .request_telemetry import InMemoryRequestTelemetryStore, PostgresRequestTelemetryStore, RequestTelemetryMiddleware
 from .route_revalidation import RouteRevalidator
 from .scientific_admin import ScientificAdminReadService, ScientificRunQuery
 from .scientific_admin_models import (
@@ -148,6 +157,10 @@ from .store import (
     Store,
 )
 from .telemetry import Metrics
+from .user_models import UserAppChoice
+from .user_repository import MemoryUserRepository, PostgresUserRepository
+from .user_routes import user_router
+from .users import UserService
 
 LOGGER = logging.getLogger("fs2_serve.access")
 SCIENTIFIC_LOGGER = logging.getLogger("fs2_serve.scientific_batch")
@@ -228,7 +241,8 @@ class AppRuntime:
     scientific_admin: ScientificAdminReadService | None = None
     scientific_batches: ScientificBatchService | None = None
     scientific_batch_worker: ScientificBatchWorker | None = None
-    scientific_batch_cluster: HttpScientificBatchCluster | None = None
+    scientific_batch_cluster: HttpScientificBatchCluster | AppScientificCluster | None = None
+    scientific_apps: ScientificAppsInventory | None = None
     artifact_service: ScientificArtifactControllerPort | None = None
     scientific_workload_capabilities: ScientificWorkloadCapabilityAuthority | None = None
     scientific_workload_batches: WorkloadBatchRepository | None = None
@@ -490,6 +504,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             await runtime.route_revalidator.start()
         if runtime.model_deployment_bridge is not None:
             await runtime.model_deployment_bridge.start()
+        await apps_service.seed_defaults()
         if runtime.scientific_batch_worker is not None:
             await runtime.scientific_batch_worker.start()
         if runtime.settings.run_workers:
@@ -522,6 +537,44 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     app.state.runtime = runtime
     admin_read = runtime.admin_read or AdminReadService(registry=runtime.registry, store=runtime.store)
     admin_access = AdminAccessService(runtime.store, runtime.tokens)
+    pool = getattr(runtime.store, "pool", None)
+    apps_service = AppsService(
+        repository=PostgresAppsRepository(pool) if pool is not None else MemoryAppsRepository(),
+        registry=runtime.registry,
+        admin=admin_read,
+        deployments=runtime.model_deployment_mutation,
+        scientific=runtime.scientific_admin,
+        namespace=runtime.settings.admin_kubernetes_model_namespace,
+        scientific_apps=runtime.scientific_apps,
+        scientific_profiles=getattr(runtime.scientific_batches, "profiles", None),
+        scientific_namespace=getattr(
+            getattr(runtime.scientific_batches, "execution_binding", None),
+            "workload_namespace",
+            None,
+        ),
+    )
+
+    async def user_app_catalog() -> list[UserAppChoice]:
+        return [UserAppChoice.model_validate(choice.model_dump()) for choice in await apps_service.choices()]
+
+    users_service = UserService(
+        PostgresUserRepository(pool) if pool is not None else MemoryUserRepository(runtime.store),
+        admin_access,
+        app_catalog=user_app_catalog,
+    )
+    runtime.tokens.principal_policy = users_service.constrain_principal
+    observations = AppObservabilityService(
+        kubernetes=getattr(admin_read.capacity_adapter, "reader", None),
+        prometheus_url=runtime.settings.admin_prometheus_url,
+        loki_url=runtime.settings.admin_loki_url,
+        history=AppObservationHistory(pool) if pool is not None else None,
+    )
+    app.state.apps = apps_service
+    app.state.users = users_service
+    app.state.app_observability = observations
+    transport_store = PostgresRequestTelemetryStore(pool) if pool is not None else InMemoryRequestTelemetryStore()
+    app.state.request_telemetry = transport_store
+    app.add_middleware(RequestTelemetryMiddleware, store=transport_store)
     allowed_hosts, allowed_origins = runtime.settings.public_transport_allowlists()
     app.add_middleware(
         TrustedEdgeMiddleware,
@@ -551,6 +604,8 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         return response
 
     async def principal(request: Request, authorization: Annotated[str | None, Header()] = None) -> Principal:
+        if runtime.scientific_apps is not None:
+            await runtime.scientific_apps.refresh()
         try:
             value = await runtime.tokens.verify(_bearer(authorization))
         except AuthenticationError:
@@ -941,6 +996,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         wait_seconds: str | None,
     ) -> Response:
         model_id = _validate_model_id(model_id)
+        request.state.model_id = model_id
         if idempotency_key is None:
             idempotency_key = f"generated-{uuid4()}"
         if not MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH:
@@ -974,6 +1030,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 deadline_at=deadline_at,
             ),
         )
+        request.state.operation_id = admitted.id
         span = trace.get_current_span()
         span.set_attribute("fs2.operation.id", str(admitted.id))
         span.set_attribute("fs2.request.id", str(admitted.id))
@@ -1007,6 +1064,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         if payload.get("stream") is True:
             raise HTTPException(status_code=400, detail="streaming is not enabled in phase 1; use an async operation")
         model_id = _validate_model_id(payload["model"])
+        request.state.model_id = model_id
         model = runtime.registry.get(model_id)
         resolved_operation = runtime.registry.operation_for_protocol(model, protocol)
         return await invoke(
@@ -1090,6 +1148,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         if runtime.scientific_batches is None:
             return _error(503, "scientific_batch_unavailable", "scientific batch submission is disabled")
         model_id = _validate_model_id(model_id)
+        request.state.model_id = model_id
         if idempotency_key is None:
             raise HTTPException(status_code=400, detail="Idempotency-Key is required")
         if not MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH:
@@ -1106,6 +1165,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             traceparent=request.headers.get("traceparent"),
         )
         operation = result["operation"]
+        request.state.operation_id = operation["id"]
         return JSONResponse(
             result,
             status_code=202,
@@ -1877,10 +1937,15 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             @app.get(
                 "/admin/api/v1/scientific-runs/{run_id}/artifacts/{artifact_id}/content",
                 response_class=StreamingResponse,
-                responses={**admin_problem_responses, 200: {
-                    "description": "Exact stored artifact bytes; media type is the artifact's declared content type.",
-                    "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
-                }},
+                responses={
+                    **admin_problem_responses,
+                    200: {
+                        "description": (
+                            "Exact stored artifact bytes; media type is the artifact's declared content type."
+                        ),
+                        "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+                    },
+                },
             )
             async def admin_scientific_artifact_content(
                 run_id: UUID,
@@ -1899,9 +1964,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 detail = await scientific_admin.run_detail(
                     selected_context(params), run_id, tenant_id=authorized_tenant
                 )
-                selected = next(
-                    (item for item in detail.data.artifacts if item.artifact_id == str(artifact_id)), None
-                )
+                selected = next((item for item in detail.data.artifacts if item.artifact_id == str(artifact_id)), None)
                 if selected is None or selected.state != "available" or runtime.artifact_service is None:
                     raise AdminProblemError(404, "artifact_not_found", "scientific artifact was not found")
                 stream = await runtime.artifact_service.open_content(
@@ -2097,6 +2160,65 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 problem_responses=admin_problem_responses,
             )
         )
+
+    def app_context(params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)]) -> AdminContext:
+        return selected_context(params)
+
+    def app_envelope(data: Any, context: AdminContext) -> AdminEnvelope[Any]:
+        result = access_envelope(data)
+        result.meta.context = context
+        return result
+
+    app.include_router(
+        apps_router(
+            apps_service,
+            access=admin_access,
+            operator_dependency=operator,
+            context_dependency=app_context,
+            envelope=app_envelope,
+            problem_responses=admin_problem_responses,
+        )
+    )
+    app.include_router(
+        app_observability_router(
+            apps=apps_service,
+            service=observations,
+            access=admin_access,
+            operator_dependency=operator,
+            context_dependency=app_context,
+            envelope=app_envelope,
+            problem_responses=admin_problem_responses,
+        )
+    )
+    app.include_router(
+        user_router(
+            service=users_service,
+            operator_dependency=operator,
+            context_dependency=_admin_context_parameters,
+            selected_context=selected_context,
+            envelope=lambda context, data: app_envelope(data, context),
+            problem_responses=admin_problem_responses,
+        )
+    )
+    app.include_router(
+        capacity_summary_router(
+            service=CapacitySummaryService(
+                admin_read,
+                runtime.store,
+                prometheus=getattr(admin_read.prometheus, "reader", None),
+                pools=(
+                    tuple(runtime.model_deployment_preview.envelope.pools.values())
+                    if runtime.model_deployment_preview is not None
+                    else None
+                ),
+            ),
+            access=admin_access,
+            operator_dependency=operator,
+            context_dependency=_admin_context_parameters,
+            selected_context=selected_context,
+            problem_responses=admin_problem_responses,
+        )
+    )
 
     if runtime.model_deployment_preview is not None:
         app.include_router(

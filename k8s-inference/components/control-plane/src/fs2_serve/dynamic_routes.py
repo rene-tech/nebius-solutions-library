@@ -193,6 +193,8 @@ def bind_dynamic_publication(
     """Bind one complete publication to its retained canonical model."""
     if base.execution_mode != "http":
         raise DynamicRouteError("dynamic publication requires a canonical HTTP model")
+    if base.model_id != publication.source_model_ref:
+        raise DynamicRouteError("dynamic publication source differs from the canonical model")
     if base.support_state != "qualified":
         raise DynamicRouteError("dynamic publication requires canonical model qualification")
     if base.license_state != "verified" or base.entitlement_state not in {"verified", "not-required"}:
@@ -313,6 +315,7 @@ def bind_dynamic_publication(
     )
     return replace(
         base,
+        model_id=publication.model_ref,
         # Bind admitted operations to the complete desired-state revision, not
         # only to the underlying model artifact revision.  A policy, endpoint,
         # runtime, or scaling update therefore invalidates stale queue claims.
@@ -342,13 +345,16 @@ def bind_dynamic_publications(
     models = dict(base.models)
     managed_claims = frozenset(item.model_ref for item in snapshot.assessments)
     unknown = sorted(
-        publication.model_ref for publication in snapshot.publications if publication.model_ref not in models
+        publication.source_model_ref
+        for publication in snapshot.publications
+        if publication.source_model_ref not in models
     )
     if unknown:
         raise DynamicRouteError("dynamic snapshot contains an unknown canonical model")
-    managed = frozenset(model_id for model_id in managed_claims if model_id in models)
+    managed = managed_claims
     for model_id in managed:
-        models[model_id] = replace(models[model_id], routable=False, mcp_invocable=False, binding=None)
+        if model_id in models:
+            models[model_id] = replace(models[model_id], routable=False, mcp_invocable=False, binding=None)
 
     policies: dict[str, DynamicRoutePolicy] = {}
     aliases: dict[str, str] = {}
@@ -368,12 +374,14 @@ def bind_dynamic_publications(
         if model_id in policies:
             raise DynamicRouteError("dynamic snapshot binds one canonical model more than once")
         if publication.mcp and publication.mcp_tool_name is not None:
-            for protocol in base.models[model_id].protocols:
+            for protocol in base.models[publication.source_model_ref].protocols:
                 tool_name = f"{publication.mcp_tool_name}_{protocol.replace('-', '_')}"
                 if tool_name in mcp_tool_owners:
                     raise DynamicRouteError("dynamic MCP tool collides with another active model")
                 mcp_tool_owners[tool_name] = model_id
-        models[model_id] = bind_dynamic_publication(base.models[model_id], publication, valid_until=valid_until)
+        models[model_id] = bind_dynamic_publication(
+            base.models[publication.source_model_ref], publication, valid_until=valid_until
+        )
         policies[model_id] = dynamic_route_policy(publication, valid_until=valid_until)
         for alias in publication.open_ai_aliases:
             if alias in models or alias in aliases:
@@ -462,7 +470,10 @@ def bind_dynamic_publications_isolated(
         key=lambda item: (item.namespace, item.name, item.model_ref),
     )
     for publication in ordered:
-        base_model = base.models.get(publication.model_ref)
+        base_model = base.models.get(publication.source_model_ref)
+        if publication.model_ref in base.models and publication.model_ref != publication.source_model_ref:
+            reject(publication, "canonical-identity-conflict")
+            continue
         if base_model is None:
             reject(publication, "canonical-binding-invalid")
             continue
@@ -502,7 +513,7 @@ def bind_dynamic_publications_isolated(
         if (publication.namespace, publication.name) in invalid or not publication.mcp:
             continue
         assert publication.mcp_tool_name is not None
-        base_model = base.models[publication.model_ref]
+        base_model = base.models[publication.source_model_ref]
         for protocol in base_model.protocols:
             tool_name = f"{publication.mcp_tool_name}_{protocol.replace('-', '_')}"
             if tool_name in mcp_tool_owners:

@@ -38,6 +38,7 @@ from .models import (
     Scope,
 )
 from .registry import ModelRouteUnavailableError, OperationalModel
+from .request_telemetry import observe_mcp_result, observe_request_metadata, request_telemetry_context
 from .scientific_artifacts import ArtifactNotFoundError
 from .scientific_batch.service import ScientificProfileDiscovery
 from .scientific_input_uploads import ScientificInputUploadRequest
@@ -294,8 +295,19 @@ class MCPAuthorizationMiddleware:
         self._sync_tools = callback
 
     async def __call__(self, ctx: ServerRequestContext[Any, Any], call_next: CallNext) -> HandlerResult:
+        # MCP handlers may execute in SDK-owned tasks. Bind the actual HTTP
+        # request's shared state rather than relying on inherited task context.
+        with request_telemetry_context(getattr(ctx, "request", None)):
+            return await self._authorized_call(ctx, call_next)
+
+    async def _authorized_call(self, ctx: ServerRequestContext[Any, Any], call_next: CallNext) -> HandlerResult:
         try:
             principal = _principal() if ctx.method not in {"initialize", "notifications/initialized"} else None
+            observe_request_metadata(principal=principal)
+            if ctx.method == "tools/call":
+                observe_request_metadata(mcp_tool=str((ctx.params or {}).get("name", "")))
+            if principal is not None and self.runtime.scientific_apps is not None:
+                await self.runtime.scientific_apps.refresh()
             if ctx.method in {"tools/list", "tools/call"}:
                 await self.runtime.revalidate_routes()
                 if self._sync_tools is not None:
@@ -305,6 +317,8 @@ class MCPAuthorizationMiddleware:
                 if name not in CORE_TOOLS and name not in _model_tool_names(self.runtime, principal):
                     raise MCPError(code=INVALID_PARAMS, message="tool is outside token policy")
             result = await call_next(ctx)
+            if ctx.method == "tools/call":
+                observe_mcp_result(result)
             if ctx.method == "tools/list" and principal is not None:
                 try:
                     listing = result if isinstance(result, ListToolsResult) else ListToolsResult.model_validate(result)
@@ -314,8 +328,12 @@ class MCPAuthorizationMiddleware:
                 return listing.model_copy(update={"tools": [tool for tool in listing.tools if tool.name in allowed]})
             return result
         except MCPError:
+            if ctx.method == "tools/call":
+                observe_request_metadata(mcp_is_error=True)
             raise
         except Exception:
+            if ctx.method == "tools/call":
+                observe_request_metadata(mcp_is_error=True)
             # SDK validation/dispatch exceptions may embed the rejected payload.
             # Collapse every non-protocol failure before it can reach logs/traces.
             raise MCPError(code=INVALID_PARAMS, message="request validation failed") from None
@@ -327,6 +345,7 @@ async def _metadata(runtime: AppRuntime, principal: Principal, operation_id: UUI
         require_operation_access(principal, operation)
     except NotFoundError:
         raise MCPError(code=INVALID_PARAMS, message="operation not found") from None
+    observe_request_metadata(principal=principal, model_id=operation.model_id, operation_id=operation.id)
     return operation
 
 
@@ -342,6 +361,7 @@ async def _admit(
     traceparent: str | None,
 ) -> dict[str, Any]:
     principal = _principal()
+    observe_request_metadata(principal=principal, model_id=model_id)
     if not math.isfinite(wait_seconds) or wait_seconds < 0 or wait_seconds > runtime.settings.max_sync_wait_seconds:
         raise MCPError(code=INVALID_PARAMS, message="wait_seconds is outside the configured bound")
     if idempotency_key is not None and not (
@@ -368,6 +388,7 @@ async def _admit(
         if wait_seconds
         else admitted
     )
+    observe_request_metadata(operation_id=admitted.id)
     return current.model_dump(mode="json")
 
 
@@ -432,6 +453,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         """
 
         principal = _principal()
+        observe_request_metadata(principal=principal, model_id=model_id)
         await runtime.revalidate_routes()
         try:
             model = runtime.registry.get(model_id, require_enabled=False)
@@ -503,6 +525,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         if runtime.scientific_batches is None:
             raise MCPError(code=INVALID_PARAMS, message="scientific batch submission is unavailable")
         principal = _principal()
+        observe_request_metadata(principal=principal, model_id=model_id)
         if idempotency_key is not None and not (
             MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH
         ):
@@ -511,7 +534,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
             traceparent = (ctx.headers or {}).get("traceparent")
         except ValueError:
             traceparent = None
-        return await runtime.scientific_batches.submit(
+        result = await runtime.scientific_batches.submit(
             principal=principal,
             model_id=model_id,
             request=request,
@@ -519,6 +542,8 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
             traceparent=traceparent,
             require_mcp_invocable=True,
         )
+        observe_mcp_result(result)
+        return result
 
     async def get_scientific_status(operation_id: UUID) -> dict[str, Any]:
         if runtime.scientific_batches is None:
@@ -548,7 +573,10 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
     async def get_scientific_result(operation_id: UUID) -> dict[str, Any]:
         if runtime.scientific_batches is None:
             raise MCPError(code=INVALID_PARAMS, message="scientific result service is unavailable")
-        return dict(await runtime.scientific_batches.result(operation_id, principal=_principal()))
+        result = dict(await runtime.scientific_batches.result(operation_id, principal=_principal()))
+        # The service has authorized the operation before the ID is attributed.
+        observe_request_metadata(operation_id=operation_id)
+        return result
 
     async def begin_scientific_artifact_upload(
         model_id: str,

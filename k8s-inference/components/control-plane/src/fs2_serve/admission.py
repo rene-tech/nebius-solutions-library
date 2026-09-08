@@ -218,7 +218,12 @@ class AdmissionService:
                 payload = json.loads(request_body)
                 if not isinstance(payload, dict):
                     raise ValueError
-                payload["model"] = model.id
+                # Public app routes are independent, while an unchanged
+                # qualified runtime (including a restored GPU process) still
+                # serves its original model name.
+                payload["model"] = (
+                    model.dynamic_policy.publication.source_model_ref if model.dynamic_policy is not None else model.id
+                )
                 request_body = json.dumps(
                     payload,
                     sort_keys=True,

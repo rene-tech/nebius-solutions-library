@@ -2338,7 +2338,7 @@ class ModelDeploymentController:
         return DrainObservation(
             publication_withdrawn=not publication_present,
             active_operations=await self.active_operations.active_operations(
-                tenant_id=spec.tenant_id, model_ref=spec.model_ref
+                tenant_id=spec.tenant_id, model_ref=spec.public_model_id
             ),
             observed_replicas=_known_total([item.replicas for item in deployments]),
             ready_replicas=_known_total([item.ready_replicas for item in deployments]),
@@ -2357,7 +2357,7 @@ class ModelDeploymentController:
         spec = ModelDeploymentSpec.model_validate(raw.get("spec"))
         fast_start_history = (
             await self.active_operations.fast_start_history(
-                model_ref=spec.model_ref,
+                model_ref=spec.public_model_id,
                 idle_seconds=spec.availability.idle_seconds,
                 now=_utc_now(),
             )

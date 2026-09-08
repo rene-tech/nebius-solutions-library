@@ -116,6 +116,7 @@ locals {
       observability = {
         enabled       = true
         prometheusUrl = local.prometheus_server_address
+        lokiUrl       = local.grafana_loki_datasource_url
         installed = {
           alertmanager = local.observability_operator.alertmanager.enabled
           tempo        = local.observability_operator.tempo.enabled

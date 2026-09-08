@@ -54,6 +54,7 @@ from fs2_serve.mcp_server import (
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.models import ActivationLeaderIdentity, AdmissionRequest, ClaimedOperation, Scope, TokenCreate
 from fs2_serve.registry import Registry
+from fs2_serve.request_telemetry import InMemoryRequestTelemetryStore, RequestTelemetryMiddleware
 from fs2_serve.runtime import StubRuntimeClient
 from fs2_serve.settings import Settings
 from fs2_serve.telemetry import Metrics
@@ -1140,7 +1141,7 @@ def test_mcp_discovery_is_protocol_specific_and_includes_async_lifecycle_tools(r
         max_request_body_size=1024,
     )
     assert app is not None
-    assert any(route.path == MCP_HTTP_PATH for route in app.routes)
+    assert any(getattr(route, "path", None) == MCP_HTTP_PATH for route in app.routes)
     assert server.session_manager.stateless is True
 
 
@@ -1194,6 +1195,7 @@ async def test_real_streamable_http_client_uses_parent_lifespan_and_full_async_l
     registry, cipher, hasher
 ) -> None:
     runtime = build_runtime(registry, cipher, hasher, run_workers=True)
+    observations = InMemoryRequestTelemetryStore()
     app = create_app(runtime)
     server = mount_mcp(app, runtime)
     issued = await runtime.tokens.issue(
@@ -1208,8 +1210,11 @@ async def test_real_streamable_http_client_uses_parent_lifespan_and_full_async_l
     )
     assert MCP_HTTP_PATH == MCP_STREAMABLE_HTTP_PATH == "/mcp"
     assert MCP_CHILD_MOUNT_PATH == "/"
-    assert any(route.path == "" and route.app is app.state.mcp_child for route in app.routes)
-    assert any(route.path == MCP_HTTP_PATH for route in app.state.mcp_child.routes)
+    assert any(
+        getattr(route, "path", None) == "" and getattr(route, "app", None) is app.state.mcp_child
+        for route in app.routes
+    )
+    assert any(getattr(route, "path", None) == MCP_HTTP_PATH for route in app.state.mcp_child.routes)
     advertised_url = f"{runtime.settings.public_origin()}{MCP_HTTP_PATH}"
     resource_url = f"{runtime.settings.public_origin()}{MCP_HTTP_PATH}"
     assert str(server.settings.auth.resource_server_url) == resource_url
@@ -1224,7 +1229,7 @@ async def test_real_streamable_http_client_uses_parent_lifespan_and_full_async_l
         "https://inference.test.invalid:443",
     ]
 
-    transport = httpx2.ASGITransport(app=app)
+    transport = httpx2.ASGITransport(app=RequestTelemetryMiddleware(app, store=observations))
     client = httpx2.AsyncClient(
         transport=transport,
         headers={
@@ -1310,6 +1315,16 @@ async def test_real_streamable_http_client_uses_parent_lifespan_and_full_async_l
         assert server.session_manager._task_group is not None  # type: ignore[attr-defined]
     assert server.session_manager._task_group is None  # type: ignore[attr-defined]
     assert not server.session_manager._server_instances  # type: ignore[attr-defined]
+
+    invoked = [row for row in observations.observations if row.mcp_tool == "qwen3_8b_openai_chat"]
+    assert len(invoked) == 1
+    assert invoked[0].model_id == "qwen3-8b" and str(invoked[0].operation_id) == operation_id
+    assert invoked[0].principal_id == "mcp-http-owner" and invoked[0].tenant_id == "tenant-a"
+    assert invoked[0].http_status == 200 and invoked[0].response_complete
+    assert invoked[0].request_bytes > 0 and invoked[0].response_bytes > 0
+    polled = [row for row in observations.observations if row.mcp_tool == "get_operation"]
+    assert polled and all(str(row.operation_id) == operation_id and row.model_id == "qwen3-8b" for row in polled)
+    assert len({row.request_id for row in invoked + polled}) == 1 + len(polled)
 
 
 @pytest.mark.asyncio
@@ -1504,9 +1519,9 @@ async def test_cli_composed_app_serves_stateless_mcp_over_real_uvicorn(
     assert mcp_server.session_manager.stateless is True
     root_mount = app.routes[-1]
     assert root_mount.path == "" and root_mount.app is app.state.mcp_child
-    assert any(route.path == "/livez" for route in app.routes[:-1])
-    assert any(route.path == "/v1/models" for route in app.routes[:-1])
-    assert any(route.path == "/.well-known/oauth-protected-resource" for route in app.routes[:-1])
+    assert any(getattr(route, "path", None) == "/livez" for route in app.routes[:-1])
+    assert any(getattr(route, "path", None) == "/v1/models" for route in app.routes[:-1])
+    assert any(getattr(route, "path", None) == "/.well-known/oauth-protected-resource" for route in app.routes[:-1])
 
     issued = await runtime.tokens.issue(
         TokenCreate(

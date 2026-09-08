@@ -362,11 +362,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: 681e687e9ef7d831d2213dc44ae22b93155020a3611b466b7d0fe6d3bbdb28ec
-    migrationSetSha256: 3c82ca62fb3d177f4a0f070c15ff87ae73c7c3e1cee179d67f1dcd6868af3d82
-    migrationCount: 25
+    contractPayloadSha256: 724abd1a44de2b80b8abf7dec65e683c5b69031b7f2ea4a1829d5bdb232a306a
+    migrationSetSha256: 1e8fb1205d0cf08ef9e177c4a6fc874f3924c2121024762cf7dc6d32c3d5c89a
+    migrationCount: 28
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0025_scientific_startup_policies.sql
+    lastMigrationVersion: 0028_request_telemetry.sql
     namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
   resources:
     requests:
@@ -446,6 +446,12 @@ networkPolicy:
     podLabels:
       app.kubernetes.io/name: prometheus
     port: 9090
+  loki:
+    namespaceLabels:
+      kubernetes.io/metadata.name: fs2-observability
+    podLabels:
+      app.kubernetes.io/name: loki
+    port: 3100
   database:
     namespaceLabels:
       kubernetes.io/metadata.name: fs2-data
@@ -516,6 +522,7 @@ adminReadAdapters:
   observability:
     enabled: false
     prometheusUrl: http://fs2-monitoring-prometheus.fs2-observability.svc:9090
+    lokiUrl: http://fs2-loki.fs2-observability.svc:3100
     # Only explicit absences are configured. Installed/health/data for active
     # components still require successful bounded Prometheus probes.
     installed:

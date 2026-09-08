@@ -39,6 +39,14 @@ from .admin_adapters import (
 from .admin_models import AdminContextOption
 from .admission import AdmissionService
 from .api import AppRuntime, create_app
+from .apps_repository import PostgresAppsRepository
+from .apps_scientific import (
+    AppScientificCluster,
+    AppScientificExecution,
+    AppScientificProfiles,
+    AppScientificScheduling,
+    ScientificAppsInventory,
+)
 from .auth import OperatorSessionService, PepperRing, TokenService
 from .configuration import (
     TERRAFORM_BASELINE_ACTOR,
@@ -163,6 +171,7 @@ def _admin_read_dependencies(
             config=KubernetesCapacityConfig(
                 model_namespace=settings.admin_kubernetes_model_namespace,
                 system_namespace=settings.admin_kubernetes_system_namespace,
+                queue_namespaces=settings.admin_kueue_extra_namespaces,
                 kueue_api_version=settings.admin_kueue_api_version,
                 node_scaler_provider=settings.admin_node_scaler_provider,
                 node_scaler_pools=tuple(
@@ -314,7 +323,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
     serving_snapshot_bundles: dict[str, dict[str, Any]] = {}
     scientific_batches: ScientificBatchService | None = None
     scientific_batch_worker: ScientificBatchWorker | None = None
-    scientific_batch_cluster: HttpScientificBatchCluster | None = None
+    scientific_batch_cluster: HttpScientificBatchCluster | AppScientificCluster | None = None
+    scientific_apps: ScientificAppsInventory | None = None
     scientific_repository: PostgresScientificBatchRepository | None = None
     scientific_capabilities: ScientificWorkloadCapabilityAuthority | None = None
     artifact_content_reader: SignedArtifactContentReader | None = None
@@ -365,7 +375,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
                 namespace=settings.model_controller_namespace,
                 close_source=kubernetes_models.close,
             )
-    scientific_profiles: ScientificProfileCatalog | None = None
+    scientific_profiles: ScientificProfileCatalog | AppScientificProfiles | None = None
     if artifact_service is not None:
         # Customer input staging depends on the artifact plane and the declared
         # profile set only. Requiring the batch controller here would leave the
@@ -406,16 +416,26 @@ async def build_runtime(settings: Settings) -> AppRuntime:
                 for identity, execution in scientific_renderer.executions.items()
             },
         )
-        scientific_batch_cluster = HttpScientificBatchCluster(
-            base_url=settings.scientific_batch_kubernetes_api_url,
-            token_file=settings.scientific_batch_kubernetes_token_file,
-            ca_file=settings.scientific_batch_kubernetes_ca_file,
-            renderer=scientific_renderer,
-            fence=scientific_repository,
-            controller_id=settings.scientific_batch_controller_id or "scientific-batch-controller",
-            writes_enabled=settings.scientific_batch_writes_enabled,
-            pod_placement=scientific_scheduling.pod_placement,
-            timeout_seconds=settings.scientific_batch_api_timeout_seconds,
+        scientific_apps = ScientificAppsInventory(PostgresAppsRepository(store.pool))
+        await scientific_apps.refresh()
+        scientific_profiles = AppScientificProfiles(scientific_profiles, scientific_apps)
+        scientific_renderer = AppScientificExecution(scientific_renderer, scientific_apps)
+        scientific_scheduling = AppScientificScheduling(scientific_scheduling, scientific_apps)
+        if scientific_input_uploads is not None:
+            scientific_input_uploads.profiles = scientific_profiles
+        scientific_batch_cluster = AppScientificCluster(
+            HttpScientificBatchCluster(
+                base_url=settings.scientific_batch_kubernetes_api_url,
+                token_file=settings.scientific_batch_kubernetes_token_file,
+                ca_file=settings.scientific_batch_kubernetes_ca_file,
+                renderer=scientific_renderer,
+                fence=scientific_repository,
+                controller_id=settings.scientific_batch_controller_id or "scientific-batch-controller",
+                writes_enabled=settings.scientific_batch_writes_enabled,
+                pod_placement=scientific_scheduling.pod_placement,
+                timeout_seconds=settings.scientific_batch_api_timeout_seconds,
+            ),
+            scientific_apps,
         )
         scientific_artifact_bridge = ArtifactServiceBridge(
             artifacts=artifact_repository,
@@ -539,6 +559,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         catalog_dir=settings.catalog_dir,
         artifact_service=artifact_service,
         scientific_batches=scientific_batches,
+        scientific_apps=scientific_apps,
         source_max_age_seconds=settings.admin_source_max_age_seconds,
         adapter_timeout_seconds=settings.admin_adapter_timeout_seconds,
     )
@@ -593,6 +614,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         model_deployment_mutation=model_deployment_mutation,
         model_deployment_bridge=model_deployment_bridge,
         scientific_batches=scientific_batches,
+        scientific_apps=scientific_apps,
         scientific_batch_worker=scientific_batch_worker,
         scientific_batch_cluster=scientific_batch_cluster,
         artifact_service=artifact_service,

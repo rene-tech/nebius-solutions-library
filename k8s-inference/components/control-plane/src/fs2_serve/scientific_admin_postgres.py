@@ -17,6 +17,7 @@ from uuid import UUID
 
 import asyncpg
 
+from .apps_scientific import AppScientificModels, ScientificAppsInventory
 from .lifecycle import _signal_from_row
 from .registry import Registry
 from .scientific_admin import (
@@ -300,7 +301,7 @@ def _summary(
         completed_at=record.get("completed_at"),
         attribution=ScientificAttribution(
             tenant_id=_bounded(record["tenant_id"], 120, "unknown"),
-            user_id=_bounded(record.get("created_by"), 200, "unknown"),
+            user_id=_bounded(record["principal_id"], 200, "unknown"),
             principal_id=_bounded(record["principal_id"], 200, "unknown"),
             api_key_prefix=_bounded(record["token_prefix"], 64, "unknown"),
         ),
@@ -491,7 +492,8 @@ class PostgresScientificRunAdminAdapter:
         for row in rows:
             grouped[row["operation_id"]].append(row)
         return {
-            state.operation_id: accounting for state in states
+            state.operation_id: accounting
+            for state in states
             if (accounting := project_gpu_accounting(state, grouped[state.operation_id])) is not None
         }
 
@@ -508,7 +510,8 @@ class PostgresScientificRunAdminAdapter:
                      AND subject.workload_kind='scientific_batch'
                      AND signal.clock IN ('phase','lifecycle')
                    ORDER BY signal.id LIMIT 100001""",
-                state.operation_id, state.tenant_id,
+                state.operation_id,
+                state.tenant_id,
             )
         # Match the existing lifecycle detail's bounded signal projection.
         if len(rows) > 100000:
@@ -1057,17 +1060,22 @@ def postgres_scientific_admin_read_service(
     scientific_batches: ScientificBatchService | None,
     source_max_age_seconds: float,
     adapter_timeout_seconds: float,
+    scientific_apps: ScientificAppsInventory | None = None,
 ) -> ScientificAdminReadService:
     """Build the production admin service over canonical durable sources."""
 
-    run_models = ScientificCatalogFileAdapter(
+    run_models: ScientificModelAdminAdapter = ScientificCatalogFileAdapter(
         registry=registry,
         receipts_file=scientific_receipts_file(catalog_dir),
     )
-    models = ScientificProfileDiscoveryAdapter(
+    if scientific_apps is not None:
+        run_models = AppScientificModels(run_models, scientific_apps)
+    models: ScientificModelAdminAdapter = ScientificProfileDiscoveryAdapter(
         scientific_batches=scientific_batches,
         global_catalog=run_models,
     )
+    if scientific_apps is not None:
+        models = AppScientificModels(models, scientific_apps)
     batches = PostgresScientificBatchRepository(pool)
     renderer = getattr(scientific_batches, "execution_binding", None)
     return ScientificAdminReadService(

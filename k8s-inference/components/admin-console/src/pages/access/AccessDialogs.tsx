@@ -207,7 +207,7 @@ function policyPayload(fields: {
 }
 
 interface CreateKeyProps {
-  principals: OperatorPrincipal[];
+  principals: Pick<OperatorPrincipal, "id" | "subject" | "display_name" | "enabled" | "tenant_id">[];
   tenant: string;
   fixedTenant: boolean;
   busy: boolean;
