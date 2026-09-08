@@ -1,5 +1,9 @@
 # Aging Apps and CPU-managed deployments — 2026-09-08
 
+Status: deployed and verified. Public HTTP/MCP, natural scale-to-zero, final
+API/browser checks and the post-apply no-drift Terraform plan passed. Exact
+scope, retained failures and performance limits are recorded below.
+
 This extends the [Apps-first admin release](../admin-apps-20260908/RELEASE.md).
 Clinical PhenoAge and AltumAge are independent Apps. The
 [supplied Slack message](https://nebius.slack.com/archives/C0B0MSHSU8M/p1787878309466189?thread_ts=1787794882.336889&cid=C0B0MSHSU8M)
@@ -72,6 +76,11 @@ it cannot rebind another deployment or a user-created copy.
   observed revision's Cold → Desired → Ready → Desired → Cold transitions.
   Desired remains activatable, not Ready; all 21 negative observation/policy
   checks still withdraw invalid routes. Ruff and diff checks passed.
+- Measured qualification projection: 108 focused Python checks and all 11
+  general-CPU Terraform mock tests passed. Terraform validation/formatting,
+  Ruff and diff checks passed. Tests bind all six proof references to the actual
+  compact r05 file and preserve image, source, variant, artifact and record
+  identities; explicitly unqualified fixtures remain unqualified.
 
 Counts overlap and are not an additive total. Optional skipped suites are not
 represented as exercised. Direct CPU/H100 runtime and image-pull measurements
@@ -196,8 +205,51 @@ not proven. This is not a blanket zero-error browser or availability claim.
 
 These receipts establish exact CPU/H100 HTTP/MCP and single-replica0→1→0
 behavior, not multi-replica throughput, p95 guarantees, other GPUs or snapshots.
-Publishing the corresponding selected-runtime qualification metadata and the
-final post-Terraform settings-preservation check remain the release steps.
+The corresponding selected-runtime qualification metadata was subsequently
+published through Terraform without rebuilding any runtime image.
+
+Qualification metadata source is `0b15272a63b52406dfd4cf3735b0f805c12d9a01`.
+The normal staged Terraform plan has zero managed infrastructure changes;
+workloads change only the two qualification records, scale-to-zero flags and
+generated contract references/annotations. GPU/queue/priority specifications,
+model templates and all image digests are unchanged. The existing 16 archived
+records and their identities are not rewritten. Compact proof files:
+
+- [Clinical PhenoAge](qualification-r05/phenoage.json), SHA-256
+  `f2c1ec765559c0c2f211bffc711a02ca81bb08b3316234c80260727272ff0eee`.
+- [AltumAge](qualification-r05/altumage.json), SHA-256
+  `d821b65ce070061ee26ddbfee84ba219538adb61eb1d38af8f9533402401b929`.
+
+The metadata apply completed at approximately15:30 UTC. API, model controller
+and admin each had two updated Ready replicas on the exact unchanged images.
+The [read-only post-apply check](postqualification-r01.json) passed at15:35:49:
+HTTP and MCP discovery expose the four newly measured qualification flags;
+both configuration options report scale-to-zero qualified with no stale warning.
+Both App UUIDs, App revision3, deployment revision2, complete saved specs and
+ETags match r05 exactly. Each App was again observed Cold/zero twice. This
+verification created no keys, submitted no inference and saved no settings;
+its admin session logged out. The reusable verifier and existing harness pass
+25 combined tests, including13 new post-apply cases.
+
+The final loaded browser confirmed those same saved settings and removed
+warnings, CPU resources/snapshot N/A and AltumAge normal-load-only choices.
+Both loaded screenshots were independently viewed by the release owner.
+It signed out and closed normally; the exact owned temporary local network
+holder was removed and absence verified at 15:37:41 UTC. Evidence remains
+preserved. See [the final browser report](POST-QUALIFICATION-BROWSER.md).
+
+The same-source post-apply Terraform plan completed successfully with **zero
+managed changes in infrastructure, foundation and workloads**. Exact private
+plan hashes and the public settings-preservation receipt are bound in
+[terraform-postapply.json](terraform-postapply.json). Pre-apply plans/logs were
+retained separately. This was an existing-cluster configuration rollout, not a
+claim of another full cluster create/destroy acceptance. The cluster remains
+running; both model Apps remain enabled at their saved min0/max1 policy.
+
+No test client, scoped test key, disposable database or temporary browser holder
+remains active from these acceptance lanes. Existing customer resources and
+unrelated processes were not removed. The node autoscaler retains responsibility
+for the preemptible nodes it provisioned within the unchanged capacity envelope.
 
 The three completed bounded public samplers recorded 224, 278 and 278
 admin/discovery samples, each with zero failures. The third spans
@@ -220,3 +272,22 @@ transfer even though the model's weights are only about 3 MB. Warm operation
 completion was about 0.54s, not the multi-second verification-client clock.
 GPU snapshot restore is neither qualified nor presumed beneficial for this
 small network; it would not remove node provisioning or the container image.
+
+## Task-deck handoff
+
+The managed work items are `fs2-apps-admin-redesign-r20260908`,
+`fs2-apps-backend-r20260908`, `fs2-apps-ui-r20260908`,
+`fs2-users-capacity-r20260908`, `fs2-altumage-catalog-r20260908`,
+`fs2-phenoage-catalog-r20260908` and
+`fs2-cpu-apps-aging-integration-r20260908`. The separate direct-runtime and
+clinical-reference verification subtasks retain their original completed
+evidence. Source and reports are in `rene-tech/nebius-solutions-library/main`;
+the three collaboration workers have completed their assigned work.
+
+Remaining boundaries are explicit, not hidden unfinished deployment work:
+AltumAge snapshots and other GPU families are unqualified, new-node startup
+depends on provider provisioning/image transfer, this two-request-per-model
+cohort is not a multi-replica load test, and one automatically recovered admin
+connection reset is retained. Existing scientific/serving App acceptance is
+linked at the top; this release does not claim a new benchmark of every prior
+model or authorize unrelated event infrastructure/Token Factory work.

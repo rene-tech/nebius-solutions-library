@@ -1,0 +1,296 @@
+{
+  "admin_session_logged_out": true,
+  "completed_at": "2026-09-08T15:35:49.633562+00:00",
+  "inference_submissions": 0,
+  "keys_created": 0,
+  "models": {
+    "altumage": {
+      "app_id": "197fa990-6f65-539d-a1d8-240877ce861b",
+      "app_revision": 3,
+      "availability": {
+        "cooldownSeconds": 300,
+        "idleSeconds": 300,
+        "maxReplicas": 1,
+        "minReplicas": 0,
+        "pollingIntervalSeconds": 5,
+        "startupTimeoutSeconds": null,
+        "targetQueueDepth": 1,
+        "warmWindows": []
+      },
+      "cold_zero_confirmed_twice": {
+        "at": "2026-09-08T15:35:49.518914+00:00",
+        "containers": 0,
+        "status": "Cold"
+      },
+      "configuration": {
+        "fast_start_qualified_level": "Off",
+        "gpu_snapshot_choices": [],
+        "model_ref": "altumage",
+        "scale_to_zero_qualified": true,
+        "scale_to_zero_warning": null
+      },
+      "deployment_name": "altumage",
+      "deployment_revision": 2,
+      "etag": "sha256:9830f9bf89627e1af22716729d680ebf3d08db7f00f594a84fe20e1b593d000f",
+      "http_discovery": {
+        "activation": "replica-scale",
+        "active_runtime": {
+          "kind": "independent-runtime",
+          "nim_artifact_parity": "not-applicable",
+          "relationship": "exact-model",
+          "repository": "github.com/rsinghlab/AltumAge",
+          "source_kind": "git",
+          "variant_id": "altumage-cuda-v1"
+        },
+        "capabilities": [
+          "native"
+        ],
+        "created": 0,
+        "display_name": "AltumAge",
+        "enabled": true,
+        "execution_mode": "http",
+        "gpu_class": "nvidia-h100-sxm5-80gb",
+        "gpu_count": 1,
+        "id": "altumage",
+        "object": "model",
+        "operations": [
+          "predict-age"
+        ],
+        "owned_by": "fs2-serve",
+        "policy": {
+          "commercial_use": "license-dependent",
+          "license_id": "MIT",
+          "non_clinical": true
+        },
+        "qualification": {
+          "authority": "explicit-deployment-runtime-record",
+          "kind": "selected-deployment-runtime",
+          "observed_at": null,
+          "states": {
+            "cold_start_qualified": true,
+            "elasticity_qualified": true,
+            "http_mcp_qualified": true,
+            "registered": true,
+            "route_active": true,
+            "runtime_ready": true,
+            "semantic_qualified": true
+          }
+        },
+        "revision": "dynamic:sha256:9830f9bf89627e1af22716729d680ebf3d08db7f00f594a84fe20e1b593d000f"
+      },
+      "mcp_discovery": {
+        "activation": "replica-scale",
+        "active_runtime": {
+          "kind": "independent-runtime",
+          "nim_artifact_parity": "not-applicable",
+          "relationship": "exact-model",
+          "repository": "github.com/rsinghlab/AltumAge",
+          "source_kind": "git",
+          "variant_id": "altumage-cuda-v1"
+        },
+        "capabilities": [
+          "native"
+        ],
+        "created": 0,
+        "display_name": "AltumAge",
+        "enabled": true,
+        "execution_mode": "http",
+        "gpu_class": "nvidia-h100-sxm5-80gb",
+        "gpu_count": 1,
+        "id": "altumage",
+        "object": "model",
+        "operations": [
+          "predict-age"
+        ],
+        "owned_by": "fs2-serve",
+        "policy": {
+          "commercial_use": "license-dependent",
+          "license_id": "MIT",
+          "non_clinical": true
+        },
+        "qualification": {
+          "authority": "explicit-deployment-runtime-record",
+          "kind": "selected-deployment-runtime",
+          "observed_at": null,
+          "states": {
+            "cold_start_qualified": true,
+            "elasticity_qualified": true,
+            "http_mcp_qualified": true,
+            "registered": true,
+            "route_active": true,
+            "runtime_ready": true,
+            "semantic_qualified": true
+          }
+        },
+        "revision": "dynamic:sha256:9830f9bf89627e1af22716729d680ebf3d08db7f00f594a84fe20e1b593d000f"
+      },
+      "placement": {
+        "acceleratorsPerReplica": 1,
+        "poolRefs": [
+          "h100-1x",
+          "h100-reserved-8x"
+        ],
+        "topologyPolicy": "SingleNode"
+      },
+      "qualified_variant_id": "altumage-cuda-v1",
+      "runtime": {
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/altumage-cuda@sha256:ca6352f79ecd78928e13ecda55afaf01a5df1923291b7a56a7ba9a9770c484e1",
+        "profile": "custom",
+        "templateRef": {
+          "digest": "sha256:78fd9ad6f824b558da9af0ad3b4efadfb326f3bd4f3dea387b80b954e5600d86",
+          "name": "altumage.legacy-v1"
+        }
+      },
+      "saved_policy_identity_and_revisions_unchanged": true,
+      "saved_spec_sha256": "9fb2a0742d5d07b136e8c15da2c0dbc190abc76751ff2f19d5ec84697bc3a2eb"
+    },
+    "phenoage": {
+      "app_id": "38aad847-9010-51d0-bed7-bcb404bc755d",
+      "app_revision": 3,
+      "availability": {
+        "cooldownSeconds": 300,
+        "idleSeconds": 300,
+        "maxReplicas": 1,
+        "minReplicas": 0,
+        "pollingIntervalSeconds": 5,
+        "startupTimeoutSeconds": null,
+        "targetQueueDepth": 1,
+        "warmWindows": []
+      },
+      "cold_zero_confirmed_twice": {
+        "at": "2026-09-08T15:35:49.367390+00:00",
+        "containers": 0,
+        "status": "Cold"
+      },
+      "configuration": {
+        "fast_start_qualified_level": "Off",
+        "gpu_snapshot_choices": [],
+        "model_ref": "phenoage",
+        "scale_to_zero_qualified": true,
+        "scale_to_zero_warning": null
+      },
+      "deployment_name": "phenoage",
+      "deployment_revision": 2,
+      "etag": "sha256:c0328b4f6ebfd972f7697f71fc28e2472ce237380460cbf9dc901cf8db1c21c4",
+      "http_discovery": {
+        "activation": "replica-scale",
+        "active_runtime": {
+          "kind": "independent-runtime",
+          "nim_artifact_parity": "not-applicable",
+          "relationship": "exact-model",
+          "repository": "github.com/rene-tech/nebius-solutions-library",
+          "source_kind": "git",
+          "variant_id": "phenoage-clinical-cpu-v1"
+        },
+        "capabilities": [
+          "native"
+        ],
+        "created": 0,
+        "display_name": "Clinical PhenoAge",
+        "enabled": true,
+        "execution_mode": "http",
+        "gpu_class": "CPU",
+        "gpu_count": 0,
+        "id": "phenoage",
+        "object": "model",
+        "operations": [
+          "predict-age"
+        ],
+        "owned_by": "fs2-serve",
+        "policy": {
+          "commercial_use": "license-dependent",
+          "license_id": "Apache-2.0",
+          "non_clinical": true
+        },
+        "qualification": {
+          "authority": "explicit-deployment-runtime-record",
+          "kind": "selected-deployment-runtime",
+          "observed_at": null,
+          "states": {
+            "cold_start_qualified": true,
+            "elasticity_qualified": true,
+            "http_mcp_qualified": true,
+            "registered": true,
+            "route_active": true,
+            "runtime_ready": true,
+            "semantic_qualified": true
+          }
+        },
+        "revision": "dynamic:sha256:c0328b4f6ebfd972f7697f71fc28e2472ce237380460cbf9dc901cf8db1c21c4"
+      },
+      "mcp_discovery": {
+        "activation": "replica-scale",
+        "active_runtime": {
+          "kind": "independent-runtime",
+          "nim_artifact_parity": "not-applicable",
+          "relationship": "exact-model",
+          "repository": "github.com/rene-tech/nebius-solutions-library",
+          "source_kind": "git",
+          "variant_id": "phenoage-clinical-cpu-v1"
+        },
+        "capabilities": [
+          "native"
+        ],
+        "created": 0,
+        "display_name": "Clinical PhenoAge",
+        "enabled": true,
+        "execution_mode": "http",
+        "gpu_class": "CPU",
+        "gpu_count": 0,
+        "id": "phenoage",
+        "object": "model",
+        "operations": [
+          "predict-age"
+        ],
+        "owned_by": "fs2-serve",
+        "policy": {
+          "commercial_use": "license-dependent",
+          "license_id": "Apache-2.0",
+          "non_clinical": true
+        },
+        "qualification": {
+          "authority": "explicit-deployment-runtime-record",
+          "kind": "selected-deployment-runtime",
+          "observed_at": null,
+          "states": {
+            "cold_start_qualified": true,
+            "elasticity_qualified": true,
+            "http_mcp_qualified": true,
+            "registered": true,
+            "route_active": true,
+            "runtime_ready": true,
+            "semantic_qualified": true
+          }
+        },
+        "revision": "dynamic:sha256:c0328b4f6ebfd972f7697f71fc28e2472ce237380460cbf9dc901cf8db1c21c4"
+      },
+      "placement": {
+        "acceleratorsPerReplica": 0,
+        "cpuResources": {
+          "cpuMillis": 1000,
+          "memoryBytes": 268435456
+        },
+        "poolRefs": [
+          "batch-cpu"
+        ],
+        "topologyPolicy": "SingleNode"
+      },
+      "qualified_variant_id": "phenoage-clinical-cpu-v1",
+      "runtime": {
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/phenoage-cpu@sha256:b6c28820576b62972437787bd06fa37f8c10b6f51de31b0f4da3cc3873bb34f1",
+        "profile": "custom",
+        "templateRef": {
+          "digest": "sha256:89d6c154e3d9d547e8f3c148c9808b8a3c26e170e2e895d0908a47a762bf24b2",
+          "name": "phenoage.legacy-v1"
+        }
+      },
+      "saved_policy_identity_and_revisions_unchanged": true,
+      "saved_spec_sha256": "5839c99f474635113514eec577218935d25b86930e6d684c09d610b8c4f194c6"
+    }
+  },
+  "outcome": "passed",
+  "release": "0b15272a63b52406dfd4cf3735b0f805c12d9a01",
+  "schema": "fs2-aging-postqualification-readonly/v1",
+  "settings_writes": 0,
+  "started_at": "2026-09-08T15:35:30.043364+00:00"
+}

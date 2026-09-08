@@ -1,0 +1,25 @@
+{
+  "source_commit": "0b15272a63b52406dfd4cf3735b0f805c12d9a01",
+  "observed_at": "2026-09-08T15:39:32Z",
+  "project_id": "project-e00rene",
+  "region": "eu-north1",
+  "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+  "context": "k8s-inference-h100",
+  "outcome": "passed",
+  "apply_exit_code": 0,
+  "postapply_plan_exit_code": 0,
+  "managed_resource_changes": {
+    "infrastructure": 0,
+    "foundation": 0,
+    "workloads": 0
+  },
+  "private_evidence_sha256": {
+    "infrastructure-plan.plan.json": "b2014e32f88974958d9a9e3dd8155ca4d25c37322494c058efbfcc988aee5b3f",
+    "foundation-plan.plan.json": "ded84c9fdb82a89f788c3405635e934180b90549ec61c7ddceb7f35b5cb9960d",
+    "workloads-plan.plan.json": "ed4b88b4154ed2a24155a4f919c079058bd8eeb7faaadaf072a9625d9246da54",
+    "postapply-cohort-plan.log": "f451f98845912cea50e405554675e4d18370d4bcdc50c303cb2b33df359e2a24"
+  },
+  "saved_app_settings_receipt": "postqualification-r01.json",
+  "saved_app_settings_receipt_sha256": "9cede8ca964393ecd62f65a6acb606708338dc7fa7265e84038805c584d1c8e1",
+  "scope": "Existing H100 cluster; configuration-only qualification promotion. No new infrastructure, quota, GPU/queue/priority specification or image-digest change. This is not a new-cluster create/destroy campaign."
+}
