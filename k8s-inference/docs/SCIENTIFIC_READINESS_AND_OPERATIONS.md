@@ -1,5 +1,14 @@
 # Scientific cluster: readiness and operator guide
 
+Current customer-serving release: `c85aa26e`, deployed through Terraform on
+8 September 2026. Two consecutive customer cohorts passed across all nine
+trial variants, including ordinary HTTP/MCP traffic, real admin workflows,
+automatic priority recovery and complete route-log checks. The
+[final customer handoff](../acceptance/customer-trial-remediation-20260907/FINAL-ACCEPTANCE.md)
+records the current endpoints, exact identities, measurements and limits.
+The earlier fleet qualification below remains dated evidence for all ten
+scientific profiles; it is not the current control-plane release identity.
+
 All ten scientific profiles passed the
 [final public fleet acceptance](../acceptance/scientific-fleet/evidence/final-fleet-acceptance-h100-20260906.md)
 on runtime source `8bb53aab`, on 6 September 2026. Real-browser
@@ -8,9 +17,10 @@ also passed, including revoked-key rejection, pause/resume, cap-one dispatch,
 artifact downloads and restoration of the original settings. Use the Terraform
 outputs for the final deployment identity and access bundle. Measurements below
 retain their original sources and clocks; snapshots remain experimental.
-The [final deployed release](../acceptance/scientific-fleet/evidence/final-h100-release-20260906.md)
-is `adf1d842`, including the qualified catalog and MCP/admin fixes; its
-three-stage Terraform post-apply plan has no remaining changes.
+The [September 6 deployed release](../acceptance/scientific-fleet/evidence/final-h100-release-20260906.md)
+was `adf1d842`, including the qualified catalog and MCP/admin fixes. It has been
+superseded by the customer-trial fixes above. The current release also passed
+zero-change three-stage Terraform post-apply plans.
 
 ## Start using the cluster
 

@@ -1,20 +1,20 @@
 # Customer trial remediation and repeat acceptance
 
-Status at 2026-09-08 09:37 UTC: **one of two required clean cohorts passed**.
-R04 completed all 14 scientific operations, 963 scientific HTTP calls and 73
-ordinary HTTP/MCP requests without customer-request failures. Seven real browser
-publication/download workflows passed without unexpected errors. All 46
-scientific lifecycle subjects reconciled and released; complete contiguous logs
-showed no serving-route withdrawals. See the [cross-lane gate](R04-ACCEPTANCE.md).
+Status on 2026-09-08: **ready for the bounded customer evaluation**.
+R04 and r05 passed consecutively on unchanged deployed source
+`c85aa26e46f84ca5ae0a85b2454e86522b65cead`: 28/28 scientific operations,
+1,857 successful scientific HTTP calls, 137/137 ordinary HTTP/MCP requests,
+560/560 sampled admin API reads and 14 real browser publication/download gates
+without unexpected browser failures. All 92 lifecycle subjects reconciled and
+released; complete contiguous logs showed zero serving-route withdrawals.
+Test helpers are stopped, evidence is preserved and the cluster remains running.
 
-R05 started at 09:34:48.229446 UTC on the same final source
-`c85aa26e46f84ca5ae0a85b2454e86522b65cead`, with unchanged inputs, settings and
-concurrency. It must finish cleanly before final handoff. Existing caches and
-autoscaled capacity are inherited naturally; this is not a second forced
-fresh-node cold benchmark. The [exact Terraform release](FINAL-STARTUP-RELEASE-20260908.md)
-passed 1,633 backend tests and all three zero-change post-plans; public discovery
-retains all 24 configured models, a discovery check rather than 24 new inference
-qualifications.
+Start with the [final acceptance and customer handoff](FINAL-ACCEPTANCE.md) for
+entry points, fixes, measurements, dated access/configuration tests and precise
+limitations. The [exact Terraform release](FINAL-STARTUP-RELEASE-20260908.md)
+passed 1,633 backend tests and all three zero-change post-plans. Final discovery
+retains all 24 configured models; the new repeated workload qualified the nine
+trial variants, not 24 new inference benchmarks or every possible GPU/input.
 
 R03 remains a failed strict qualification despite its scientific successes:
 the [unscheduled startup gap](observer/QWEN-UNSCHEDULED-STARTUP-20260908.md) and

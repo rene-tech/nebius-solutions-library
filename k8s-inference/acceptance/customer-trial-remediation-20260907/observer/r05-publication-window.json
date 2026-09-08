@@ -1,0 +1,159 @@
+{
+  "schema": "fs2.customer-trial-publication-window/v1",
+  "query": "{k8s_namespace_name=\"fs2-system\",k8s_container_name=\"control-plane\"} |= \"model_publication_changed\" |= \"qwen3-8b\"",
+  "chunks": [
+    {
+      "start": "2026-09-08T09:32:20.748152+00:00",
+      "end": "2026-09-08T09:37:20.748152+00:00",
+      "returncode": 0,
+      "line_count": 0,
+      "query_succeeded": true,
+      "limit_reached": false,
+      "sha256": "b71fc8d9de26e8cfe9982cd165dea22bbf0fb654b8d4e3faaa5780fb20662628"
+    },
+    {
+      "start": "2026-09-08T09:37:20.748152+00:00",
+      "end": "2026-09-08T09:42:20.748152+00:00",
+      "returncode": 0,
+      "line_count": 6,
+      "query_succeeded": true,
+      "limit_reached": false,
+      "sha256": "279f99b9e79db4914c62d3f16875a6b98c17c12a88e44b3ab33a74fe513134c5"
+    },
+    {
+      "start": "2026-09-08T09:42:20.748152+00:00",
+      "end": "2026-09-08T09:47:20.748152+00:00",
+      "returncode": 0,
+      "line_count": 0,
+      "query_succeeded": true,
+      "limit_reached": false,
+      "sha256": "434ddd3aaee37ef7727ac4e9a51b2b47f3eda548bbe7eab51a3a86602407f672"
+    },
+    {
+      "start": "2026-09-08T09:47:20.748152+00:00",
+      "end": "2026-09-08T09:52:20.748152+00:00",
+      "returncode": 0,
+      "line_count": 0,
+      "query_succeeded": true,
+      "limit_reached": false,
+      "sha256": "d5ee3a4d3714f50afd702c5abb820c70145cd601abae28ca9ff1815fa7dfc17f"
+    },
+    {
+      "start": "2026-09-08T09:52:20.748152+00:00",
+      "end": "2026-09-08T09:57:20.748152+00:00",
+      "returncode": 0,
+      "line_count": 0,
+      "query_succeeded": true,
+      "limit_reached": false,
+      "sha256": "cbc1c8b6325600779032c4af5b916759727a166aad10eb8e86aa10eab434c16c"
+    },
+    {
+      "start": "2026-09-08T09:57:20.748152+00:00",
+      "end": "2026-09-08T09:59:03.993337+00:00",
+      "returncode": 0,
+      "line_count": 0,
+      "query_succeeded": true,
+      "limit_reached": false,
+      "sha256": "7ca56d44851357f3ec340fd15f38e26420a7731ff01c4aa67f49c2f95deb1ca3"
+    }
+  ],
+  "query_windows_contiguous": true,
+  "query_evidence_complete": true,
+  "parse_errors": 0,
+  "events": [
+    {
+      "timestamp_ns": 1788860309322875767,
+      "pod": "fs2-serve-control-plane-69c88b4f5c-4cmjz",
+      "pod_uid": "2b4d2fc3-b803-4114-9c40-0726e86197d8",
+      "namespace": "fs2-models",
+      "name": "qwen3-8b",
+      "model_ref": "qwen3-8b",
+      "revision": 6,
+      "disposition": "publish",
+      "reason": "activatable",
+      "phase": "Localizing",
+      "source_resource_version": "15564066",
+      "registry_projection_valid": true
+    },
+    {
+      "timestamp_ns": 1788860309325318967,
+      "pod": "fs2-serve-control-plane-69c88b4f5c-pbtnf",
+      "pod_uid": "3695344b-9310-4b6e-a8f5-0473bf9bc9a0",
+      "namespace": "fs2-models",
+      "name": "qwen3-8b",
+      "model_ref": "qwen3-8b",
+      "revision": 6,
+      "disposition": "publish",
+      "reason": "activatable",
+      "phase": "Localizing",
+      "source_resource_version": "15564066",
+      "registry_projection_valid": true
+    },
+    {
+      "timestamp_ns": 1788860309335949092,
+      "pod": "fs2-serve-control-plane-69c88b4f5c-prswj",
+      "pod_uid": "18a5cf13-8d73-4ee0-8984-e1dbfdb11db1",
+      "namespace": "fs2-models",
+      "name": "qwen3-8b",
+      "model_ref": "qwen3-8b",
+      "revision": 6,
+      "disposition": "publish",
+      "reason": "activatable",
+      "phase": "Localizing",
+      "source_resource_version": "15564066",
+      "registry_projection_valid": true
+    },
+    {
+      "timestamp_ns": 1788860319768240446,
+      "pod": "fs2-serve-control-plane-69c88b4f5c-4cmjz",
+      "pod_uid": "2b4d2fc3-b803-4114-9c40-0726e86197d8",
+      "namespace": "fs2-models",
+      "name": "qwen3-8b",
+      "model_ref": "qwen3-8b",
+      "revision": 6,
+      "disposition": "publish",
+      "reason": "ready",
+      "phase": "Ready",
+      "source_resource_version": "15564528",
+      "registry_projection_valid": true
+    },
+    {
+      "timestamp_ns": 1788860319771573111,
+      "pod": "fs2-serve-control-plane-69c88b4f5c-pbtnf",
+      "pod_uid": "3695344b-9310-4b6e-a8f5-0473bf9bc9a0",
+      "namespace": "fs2-models",
+      "name": "qwen3-8b",
+      "model_ref": "qwen3-8b",
+      "revision": 6,
+      "disposition": "publish",
+      "reason": "ready",
+      "phase": "Ready",
+      "source_resource_version": "15564528",
+      "registry_projection_valid": true
+    },
+    {
+      "timestamp_ns": 1788860319776438889,
+      "pod": "fs2-serve-control-plane-69c88b4f5c-prswj",
+      "pod_uid": "18a5cf13-8d73-4ee0-8984-e1dbfdb11db1",
+      "namespace": "fs2-models",
+      "name": "qwen3-8b",
+      "model_ref": "qwen3-8b",
+      "revision": 6,
+      "disposition": "publish",
+      "reason": "ready",
+      "phase": "Ready",
+      "source_resource_version": "15564528",
+      "registry_projection_valid": true
+    }
+  ],
+  "withdrawals": [],
+  "verdict": "no-withdrawal-recorded",
+  "limitations": [
+    "Completeness covers the requested successful, untruncated Loki query windows, not logs lost before ingestion.",
+    "Adjacent inclusive query boundaries are deduplicated by exact event and Pod identity.",
+    "No-withdrawal-recorded does not prove uninterrupted network availability or replace client and readiness checks.",
+    "Durations use retained Loki entry timestamps; an unmatched withdrawal remains open, never zero seconds."
+  ],
+  "requested_start": "2026-09-08T09:32:20.748152Z",
+  "requested_end": "2026-09-08T09:59:03.993337Z"
+}

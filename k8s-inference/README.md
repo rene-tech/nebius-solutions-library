@@ -38,6 +38,9 @@ following, and downloading a scientific run over HTTPS or MCP.
 [Scientific readiness and operations](docs/SCIENTIFIC_READINESS_AND_OPERATIONS.md)
 summarizes all ten scientific profiles, Qwen/Cosmos, measured batch scaling,
 tested operator controls, final fleet acceptance, and startup/snapshot limits.
+[Customer trial acceptance and handoff](acceptance/customer-trial-remediation-20260907/FINAL-ACCEPTANCE.md)
+records two clean September 8 H100 customer cohorts, deployed fixes, live entry
+points, complete measurements and the remaining qualification boundaries.
 [Optional scientific GPU snapshots](models/scientific-snapshot/ADMIN-STARTUP.md)
 explains Terraform bundle configuration, live admin startup selection, normal-load
 fallback, and the measured compatibility boundary for each qualified option.

@@ -1,0 +1,3006 @@
+{
+  "schema": "fs2.customer-trial-remediation-experience/v1",
+  "scientific_started_at": "2026-09-08T09:34:48.229446Z",
+  "scientific_completed_at": "2026-09-08T09:56:40.942742Z",
+  "scientific_client_stopped_at": null,
+  "scientific_completion_confirmed": true,
+  "clock": "Public non-streaming request through complete validated output; includes session/network/admission/polling. Not TTFT or GPU decode time.",
+  "total": {
+    "samples": 64,
+    "passed": 64,
+    "failed": 0,
+    "median_seconds": 2.627994,
+    "min_seconds": 1.367927,
+    "max_seconds": 4.412536,
+    "p95_seconds": 3.9614673,
+    "p95_note": "Linear empirical percentile, descriptive only."
+  },
+  "by_surface": {
+    "http": {
+      "samples": 32,
+      "passed": 32,
+      "failed": 0,
+      "median_seconds": 1.9624345,
+      "min_seconds": 1.367927,
+      "max_seconds": 2.605967,
+      "p95_seconds": 2.48973195,
+      "p95_note": "Linear empirical percentile, descriptive only."
+    },
+    "mcp": {
+      "samples": 32,
+      "passed": 32,
+      "failed": 0,
+      "median_seconds": 3.3493484999999996,
+      "min_seconds": 2.650021,
+      "max_seconds": 4.412536,
+      "p95_seconds": 4.036406,
+      "p95_note": "Linear empirical percentile, descriptive only."
+    }
+  },
+  "successful_response_latency": {
+    "samples": 64,
+    "passed": 64,
+    "failed": 0,
+    "median_seconds": 2.627994,
+    "min_seconds": 1.367927,
+    "max_seconds": 4.412536,
+    "p95_seconds": 3.9614673,
+    "p95_note": "Linear empirical percentile, descriptive only."
+  },
+  "by_actual_phase": {
+    "baseline": {
+      "samples": 6,
+      "passed": 6,
+      "failed": 0,
+      "median_seconds": 2.271068,
+      "min_seconds": 1.367927,
+      "max_seconds": 3.086717,
+      "p95_seconds": null,
+      "p95_note": "Not reported with fewer than20 observations."
+    },
+    "during": {
+      "samples": 52,
+      "passed": 52,
+      "failed": 0,
+      "median_seconds": 2.7251995,
+      "min_seconds": 1.581622,
+      "max_seconds": 4.412536,
+      "p95_seconds": 3.9895117499999997,
+      "p95_note": "Linear empirical percentile, descriptive only."
+    },
+    "after": {
+      "samples": 6,
+      "passed": 6,
+      "failed": 0,
+      "median_seconds": 2.4308769999999997,
+      "min_seconds": 1.842052,
+      "max_seconds": 3.104193,
+      "p95_seconds": null,
+      "p95_note": "Not reported with fewer than20 observations."
+    }
+  },
+  "discovery": [
+    {
+      "started_at": "2026-09-08T09:32:24.229246+00:00",
+      "phase": "baseline",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.374258
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.513637
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.247475
+        }
+      ],
+      "completed_at": "2026-09-08T09:32:25.369252+00:00"
+    },
+    {
+      "started_at": "2026-09-08T09:33:41.604777+00:00",
+      "phase": "baseline",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.286553
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.490453
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.25517
+        }
+      ],
+      "completed_at": "2026-09-08T09:33:42.641324+00:00"
+    },
+    {
+      "started_at": "2026-09-08T09:35:22.330744+00:00",
+      "phase": "during",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.27831
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.456781
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.222846
+        }
+      ],
+      "completed_at": "2026-09-08T09:35:23.293048+00:00"
+    },
+    {
+      "started_at": "2026-09-08T09:37:03.767659+00:00",
+      "phase": "during",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.280725
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.463386
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.239337
+        }
+      ],
+      "completed_at": "2026-09-08T09:37:04.755493+00:00"
+    },
+    {
+      "started_at": "2026-09-08T09:38:44.614432+00:00",
+      "phase": "during",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.359286
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.376095
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.241208
+        }
+      ],
+      "completed_at": "2026-09-08T09:38:45.595371+00:00"
+    },
+    {
+      "started_at": "2026-09-08T09:40:27.107061+00:00",
+      "phase": "during",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.283257
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.59537
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.244069
+        }
+      ],
+      "completed_at": "2026-09-08T09:40:28.234116+00:00"
+    },
+    {
+      "started_at": "2026-09-08T09:42:08.138384+00:00",
+      "phase": "during",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.350037
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.367722
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.226154
+        }
+      ],
+      "completed_at": "2026-09-08T09:42:09.086726+00:00"
+    },
+    {
+      "started_at": "2026-09-08T09:43:48.607298+00:00",
+      "phase": "during",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.288637
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.384894
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.248261
+        }
+      ],
+      "completed_at": "2026-09-08T09:43:49.533432+00:00"
+    },
+    {
+      "started_at": "2026-09-08T09:45:29.114136+00:00",
+      "phase": "during",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.312044
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.586905
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.460415
+        }
+      ],
+      "completed_at": "2026-09-08T09:45:30.477928+00:00"
+    },
+    {
+      "started_at": "2026-09-08T09:47:09.646905+00:00",
+      "phase": "during",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.288657
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.422658
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.249066
+        }
+      ],
+      "completed_at": "2026-09-08T09:47:10.611725+00:00"
+    },
+    {
+      "started_at": "2026-09-08T09:48:50.838891+00:00",
+      "phase": "during",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.287985
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.510188
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.256637
+        }
+      ],
+      "completed_at": "2026-09-08T09:48:51.898104+00:00"
+    },
+    {
+      "started_at": "2026-09-08T09:50:31.536490+00:00",
+      "phase": "during",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.289345
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.497369
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.263246
+        }
+      ],
+      "completed_at": "2026-09-08T09:50:32.590801+00:00"
+    },
+    {
+      "started_at": "2026-09-08T09:52:11.821296+00:00",
+      "phase": "during",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.302601
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.547184
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.246665
+        }
+      ],
+      "completed_at": "2026-09-08T09:52:12.922123+00:00"
+    },
+    {
+      "started_at": "2026-09-08T09:53:53.142314+00:00",
+      "phase": "during",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.287995
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.485702
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.241493
+        }
+      ],
+      "completed_at": "2026-09-08T09:53:54.162026+00:00"
+    },
+    {
+      "started_at": "2026-09-08T09:55:33.870515+00:00",
+      "phase": "during",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.276764
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.454633
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.220476
+        }
+      ],
+      "completed_at": "2026-09-08T09:55:34.826732+00:00"
+    },
+    {
+      "started_at": "2026-09-08T09:57:14.215295+00:00",
+      "phase": "after",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.29459
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.414817
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.236173
+        }
+      ],
+      "completed_at": "2026-09-08T09:57:15.165259+00:00"
+    },
+    {
+      "started_at": "2026-09-08T09:58:55.639636+00:00",
+      "phase": "after",
+      "checks": [
+        {
+          "path": "/readyz",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "client_seconds": 0.260832
+        },
+        {
+          "path": "/v1/models",
+          "credential_role": "inference_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "boltz2",
+            "cosmos3-nano",
+            "diffdock",
+            "evo2-40b",
+            "genmol",
+            "molmim",
+            "msa-search-pdb70",
+            "nv-reason-cxr-3b",
+            "nv-segment-ct",
+            "openfold2",
+            "openfold3",
+            "proteinmpnn",
+            "qwen3-8b",
+            "sdxl"
+          ],
+          "client_seconds": 0.418657
+        },
+        {
+          "path": "/v1/scientific-models",
+          "credential_role": "scientific_access_token",
+          "http_status": 200,
+          "passed": true,
+          "model_ids": [
+            "alphafold3",
+            "bindcraft",
+            "boltzgen",
+            "esmfold2",
+            "esmfold2-fast",
+            "mosaic",
+            "openfold3-openbind",
+            "proteina-complexa",
+            "protenix-v2",
+            "rfdiffusion"
+          ],
+          "client_seconds": 0.223735
+        }
+      ],
+      "completed_at": "2026-09-08T09:58:56.547225+00:00"
+    }
+  ],
+  "requests": [
+    {
+      "ordinal": 1,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "baseline",
+      "started_at": "2026-09-08T09:32:22.489421+00:00",
+      "completed_at": "2026-09-08T09:32:24.229127+00:00",
+      "client_seconds": 1.739711,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "daf9cf780af67d1f95f1cea711149a79bfac296445a518af937dc16c60b41443",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "cf0f216c-6737-4058-ac84-dd469014297c",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "baseline",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 2,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "baseline",
+      "started_at": "2026-09-08T09:32:47.905392+00:00",
+      "completed_at": "2026-09-08T09:32:50.555419+00:00",
+      "client_seconds": 2.650021,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "bd7772976719a215512767e15bf65c4804467da3f9b691bbd80b6c01bc621c28",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "bbef9aef-f686-479c-bfae-549430d59e0f",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "baseline",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 3,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "baseline",
+      "started_at": "2026-09-08T09:33:13.090997+00:00",
+      "completed_at": "2026-09-08T09:33:14.983117+00:00",
+      "client_seconds": 1.892115,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "1a3029dbb76d32aaff23772ef922a2ffd5ef568b1bb5fb0290dacf219ab177b4",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "37ef25d6-4076-428b-a400-552f017c4ae2",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "baseline",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 4,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "baseline",
+      "started_at": "2026-09-08T09:33:38.517888+00:00",
+      "completed_at": "2026-09-08T09:33:41.604610+00:00",
+      "client_seconds": 3.086717,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "5944b69d38e07afe5e3bbd71103494dfe83e8f75bae18f41957d421bc6acc462",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "8ab7fb40-2f50-4375-8911-36f2efdc744c",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "baseline",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 5,
+      "surface": "http",
+      "case": "translation",
+      "phase": "baseline",
+      "started_at": "2026-09-08T09:34:03.673827+00:00",
+      "completed_at": "2026-09-08T09:34:05.041758+00:00",
+      "client_seconds": 1.367927,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "812e8d70f1506d653ac9a5c25a34a0e33bf01f177fb871b4e24171eafc2d08ee",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "0d5a8227-62ed-4cdb-b1b8-f08c03b67c2d",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "baseline",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 6,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "baseline",
+      "started_at": "2026-09-08T09:34:29.078985+00:00",
+      "completed_at": "2026-09-08T09:34:31.830976+00:00",
+      "client_seconds": 2.751987,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "7b5e80f5e3fb532e9771793c9ba07b741ed469525ea7e1ca3cc6e277c859cec9",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "a40a1dd0-270d-453c-bc95-f2dd7e53ceba",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "baseline",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 7,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "baseline",
+      "started_at": "2026-09-08T09:34:54.367027+00:00",
+      "completed_at": "2026-09-08T09:34:55.948658+00:00",
+      "client_seconds": 1.581622,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "84304ad16bce45f725ca538e32fb61a007c7143cd13ca27931e4678a2d554510",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "9f2970ea-cdfc-431d-aed1-b8f271c4af92",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 8,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:35:19.486123+00:00",
+      "completed_at": "2026-09-08T09:35:22.330559+00:00",
+      "client_seconds": 2.844432,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "ea243511b2b846d06d17cabf01fe5cfae63718d3c2ea14fed2cce492de9435b5",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "424d5be0-c05b-4eb0-9f1d-cf5857ab2b74",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 9,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:35:44.826162+00:00",
+      "completed_at": "2026-09-08T09:35:46.642598+00:00",
+      "client_seconds": 1.816429,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "e8c372d090b8f2da975ca53486478b6ef2d0c3db0b213fad8c57855b7c6425f8",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "7ee49a57-aff4-4284-8491-7327e9bdb6c6",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 10,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:36:10.179496+00:00",
+      "completed_at": "2026-09-08T09:36:13.182414+00:00",
+      "client_seconds": 3.002917,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "59dc1f5213097ebd4d485c32606355f2ddec28d57a561dc20ebebb8d3e8234f4",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "2d64887f-7692-45fb-a72c-3db452cc20b8",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 11,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:36:35.217127+00:00",
+      "completed_at": "2026-09-08T09:36:37.022657+00:00",
+      "client_seconds": 1.805525,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "e5c91443fe636a47ae8a3e72385347044bd4628cd3b3728af4f30613812fc761",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "5ff230f9-51a9-40f8-b9a9-780bcf9d85ab",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 12,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:37:00.559512+00:00",
+      "completed_at": "2026-09-08T09:37:03.767475+00:00",
+      "client_seconds": 3.20796,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "e7f502dab97ffd34a09c7ec18d664d1446fb254b64989a0a33c8f817a2285c38",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "cbbe2e82-30ad-4627-b3d0-09575ac1716d",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 13,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:37:25.786669+00:00",
+      "completed_at": "2026-09-08T09:37:27.719836+00:00",
+      "client_seconds": 1.93317,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "fac968c2fc6ad81ab64edfff1c3095d03ce5f98bf985bcacaea733fde7d70a07",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "3cb6fa7d-ff86-4c27-9caa-2ccb8d1d9304",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 14,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:37:51.256711+00:00",
+      "completed_at": "2026-09-08T09:37:54.271803+00:00",
+      "client_seconds": 3.015086,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "4a9785765fcd63e0ecded020a9cce40f642b230adcaf943f7668441f4719e572",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "b973d31d-ff08-4f14-850f-a6c7edda868b",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 15,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:38:16.304342+00:00",
+      "completed_at": "2026-09-08T09:38:18.224883+00:00",
+      "client_seconds": 1.920537,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "d446b66767f0e630f64d7c9124262940c033a5e75310aab3e6eed37d78d1e392",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "666aac52-df96-47e1-b4b0-603785180c01",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 16,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:38:41.762311+00:00",
+      "completed_at": "2026-09-08T09:38:44.614264+00:00",
+      "client_seconds": 2.851948,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "49f0bc9ddd6211538e6137f085cda7cd2022a56bc6f12d840aa25d163da2eb24",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "1933a7d3-5e20-467f-81c0-d287b0d4e830",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 17,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:39:07.128784+00:00",
+      "completed_at": "2026-09-08T09:39:09.050968+00:00",
+      "client_seconds": 1.922178,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "07e6a655eb391ca50de2c1c5db5429319d09f823c8e39e89803ef1fed2f44372",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "d6e7cd1d-bb9a-4d8e-9f4f-3d828de31dbe",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 18,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:39:32.586197+00:00",
+      "completed_at": "2026-09-08T09:39:36.322074+00:00",
+      "client_seconds": 3.735874,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "16b0118710c719418108ed25c13b851195031b0262bc351bba603ac754a195ba",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "112a94dd-ee9e-4472-9a64-938ed9af528a",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 19,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:39:57.855249+00:00",
+      "completed_at": "2026-09-08T09:39:59.717044+00:00",
+      "client_seconds": 1.861789,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "5c166f5bc18e0c5cb87cb16507fc7c98bf308d649b451802ebab235c2edc9e43",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "126197de-1dff-4280-a42f-040ba191db82",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 20,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:40:23.255211+00:00",
+      "completed_at": "2026-09-08T09:40:27.106871+00:00",
+      "client_seconds": 3.851655,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "05630e9fb65b80c539e01e1f65acf7bd9880ffad31c980cc034118aca504ec76",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "4f1dd920-6fa0-41bf-9850-2d1338513697",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 21,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:40:48.266474+00:00",
+      "completed_at": "2026-09-08T09:40:50.190857+00:00",
+      "client_seconds": 1.924385,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "fe72caccce6aad6d8a97bed1a72664e07508a757429f794717fc7d110a9abdbd",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "bea48279-163a-46e4-8088-dd59b98eab06",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 22,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:41:13.726834+00:00",
+      "completed_at": "2026-09-08T09:41:18.139375+00:00",
+      "client_seconds": 4.412536,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "b5e986b75b73ce096fcdf68005d80ed614992932b0bc4a09d348b4402853defc",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "b179b4b2-b03f-43c8-b2f5-d1966a26c1c1",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 23,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:41:39.172791+00:00",
+      "completed_at": "2026-09-08T09:41:41.191194+00:00",
+      "client_seconds": 2.018398,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "b60d63f9fa14f10a4d8dbe5bad6356d4f0cc32aa91a72a6e3a854570f6e66db6",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "0b950014-9e8e-41ed-8e67-d34df28b5b54",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 24,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:42:04.225074+00:00",
+      "completed_at": "2026-09-08T09:42:08.138180+00:00",
+      "client_seconds": 3.913101,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "df2f209d1914b3d6d1cd236b70592583d399a18b13af3386d83b4f37fdbcbf32",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "2c710b32-cb2b-4c8e-a509-444c47c8dc85",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 25,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:42:29.618391+00:00",
+      "completed_at": "2026-09-08T09:42:31.876831+00:00",
+      "client_seconds": 2.258436,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "88ae158d981ac83511fd557d847725b1cc61834ab703710fa5f9809baaa54521",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "c699c55d-6a5c-47c0-ac8e-7d779fc083ca",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 26,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:42:54.912990+00:00",
+      "completed_at": "2026-09-08T09:42:58.572234+00:00",
+      "client_seconds": 3.659241,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "8fa0b737dbc6f7236a15ad8b8babd0c6faf4f4e9c000548552cab1d8ed5a45b2",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "9a21550a-c31d-454a-8067-ecc41288fe5f",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 27,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:43:20.107241+00:00",
+      "completed_at": "2026-09-08T09:43:22.126587+00:00",
+      "client_seconds": 2.019341,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "63803771efd7b1e818de55af7262db4254daa07234822cf3b14031bdb0edabba",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "6eb766bf-8ed6-4471-9082-bbd70fcec5cd",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 28,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:43:45.163786+00:00",
+      "completed_at": "2026-09-08T09:43:48.607127+00:00",
+      "client_seconds": 3.443335,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "a56c78a38ee8dbb5394c6c2adf85b03d0b4ec4ef8b50c14b20a0a46789018f56",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "0e901ce4-c192-49e0-8980-38949a926a4c",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 29,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:44:10.566820+00:00",
+      "completed_at": "2026-09-08T09:44:12.604478+00:00",
+      "client_seconds": 2.037652,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "d1fce2b9bcbdfab581d2913e1bd107bd6e22029b873dea1c980cfeaee42b3a2c",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "8aab1f78-8aea-4049-ae8a-5bf1e295efc6",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 30,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:44:35.639131+00:00",
+      "completed_at": "2026-09-08T09:44:39.654563+00:00",
+      "client_seconds": 4.015436,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "67ec716ca30096cadfe6e714e1670df7314abd3f78eaad8c9372c5a667e0e0a2",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "4f5ec546-1ba8-4cf1-9a1f-d49b2e1921a8",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 31,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:45:00.687506+00:00",
+      "completed_at": "2026-09-08T09:45:02.823414+00:00",
+      "client_seconds": 2.135909,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "83b9f99cdf0329122fa4d167eb7f64c53c38b34396460362bb6564d2dec718dd",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "89a89ace-2a84-40fa-bc11-0505cb00062f",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 32,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:45:25.858609+00:00",
+      "completed_at": "2026-09-08T09:45:29.113972+00:00",
+      "client_seconds": 3.255362,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "84f6eee25150893bba9f1dc666734982ca4d9e334619d7510d245861045badad",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "407cb823-4f8a-4243-a651-357ae5fbeb89",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 33,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:45:51.010459+00:00",
+      "completed_at": "2026-09-08T09:45:53.001471+00:00",
+      "client_seconds": 1.991007,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "6c36f753aea16a15315581086ee4a8900b12511433680d53a492d78a2fefcb6c",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "92a49868-fccd-4917-a56c-821e172d5a0a",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 34,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:46:16.036614+00:00",
+      "completed_at": "2026-09-08T09:46:19.548110+00:00",
+      "client_seconds": 3.511491,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "bfc08a6e55dccc31b5e94b3ecb7d7074f4025e656f885bf3989d937bc4861d9c",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "8ac801ba-8673-4dbd-95d2-e19541d44eb7",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 35,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:46:41.082079+00:00",
+      "completed_at": "2026-09-08T09:46:43.071367+00:00",
+      "client_seconds": 1.989283,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "d8e794331c00440abbb98ac746c96fb7481f54191faabfff3f9155ee3920dec8",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "87710ef3-0aa0-4263-89da-09fa89571970",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 36,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:47:06.105906+00:00",
+      "completed_at": "2026-09-08T09:47:09.646729+00:00",
+      "client_seconds": 3.54082,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "a10caa7b3ae4fdb34ec924bbf5e2c205f332a40d841fbe230e52e904e41afb27",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "db64dd33-c382-4515-987c-cb62c8cf1943",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 37,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:47:31.142008+00:00",
+      "completed_at": "2026-09-08T09:47:33.473373+00:00",
+      "client_seconds": 2.331357,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "f3372d5307885d98ba6124fed7e69f973cd0451523b24c1b72d053dd1efc0610",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "098a501f-b904-4270-9144-4cc3ce26db86",
+      "submission_attempts": 1,
+      "status_polls": 3,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 38,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:47:56.508509+00:00",
+      "completed_at": "2026-09-08T09:48:00.114333+00:00",
+      "client_seconds": 3.605817,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "62bf7dfd4e0e6e8cf89d127cf9f8a0397c4ed23aad1e1672e09f5b5c3d8e0ebb",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "790b6616-9f31-4945-847f-9e9e61f2e3b9",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 39,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:48:21.649393+00:00",
+      "completed_at": "2026-09-08T09:48:24.242031+00:00",
+      "client_seconds": 2.592632,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "79b1f189de4af66e56cf8c76744660baeeaf89161f24391c3d300098400ffbc3",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "a5329cd2-ea13-4c83-b8bf-ca798f7b9a94",
+      "submission_attempts": 1,
+      "status_polls": 3,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 40,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:48:46.776692+00:00",
+      "completed_at": "2026-09-08T09:48:50.838734+00:00",
+      "client_seconds": 4.062036,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "438093c92dbab202441acb55052c6c714c738bc19c162737932ca39e4225cc81",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "61c43731-f404-48e6-b57e-cc13baad2f7d",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 41,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:49:11.930652+00:00",
+      "completed_at": "2026-09-08T09:49:14.044620+00:00",
+      "client_seconds": 2.113961,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "8380cd1645788b417c46bf082710d64f43146cc1d4a5306d451ef5ba8ae47486",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "5e4af2ec-4d05-4d03-b83b-5e8e06b77450",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 42,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:49:37.081755+00:00",
+      "completed_at": "2026-09-08T09:49:40.592606+00:00",
+      "client_seconds": 3.510845,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "fc09ac0cbf9cc289ae13da09319bc01ba1c24c87913c2e0c0971f1178981a116",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "e2b08e16-3a07-448a-87aa-a80f12b16a70",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 43,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:50:02.126304+00:00",
+      "completed_at": "2026-09-08T09:50:04.531851+00:00",
+      "client_seconds": 2.405541,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "4a0a4eebcc2d6c5ecd0e7789bf49361ebcb5cac2bee69794a1eaae08dd69a1dd",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "e3951f5a-2400-4a8b-93fc-295e87eafcc1",
+      "submission_attempts": 1,
+      "status_polls": 3,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 44,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:50:27.568010+00:00",
+      "completed_at": "2026-09-08T09:50:31.536317+00:00",
+      "client_seconds": 3.968301,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "8dbb5f33e3bec03390181315a88c4a4047dcdf7656863f4c8447ae8e4268fb62",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "5225627b-caad-4e77-b447-ded3897357d2",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 45,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:50:52.621606+00:00",
+      "completed_at": "2026-09-08T09:50:55.227570+00:00",
+      "client_seconds": 2.605967,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "a96dfeedd64554fb551e41021444756fe63fc4f82c6e59570f91399633b69d3a",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "84e21156-98f4-417c-8fa3-09063b7cd032",
+      "submission_attempts": 1,
+      "status_polls": 3,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 46,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:51:17.763009+00:00",
+      "completed_at": "2026-09-08T09:51:21.685757+00:00",
+      "client_seconds": 3.922743,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "be2673caf6dede0386740e505a86073f64f062cc5c243ba87fc75de3e164beca",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "365ae1fd-19b1-472f-8741-b87fc34a716d",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 47,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:51:43.217644+00:00",
+      "completed_at": "2026-09-08T09:51:45.144671+00:00",
+      "client_seconds": 1.927022,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "6423c1c226bd390738087c29d5ec83a962a379e624c4748100eec24869e82026",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "d1935b44-442c-4235-a9e5-501985c27c4a",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 48,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:52:08.681143+00:00",
+      "completed_at": "2026-09-08T09:52:11.821123+00:00",
+      "client_seconds": 3.139974,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "f386ab80323587037c83aca4da33f343ed2a2d7fb9ac247cc28798ed9c68ced8",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "045b3fcd-7951-4bfd-82a7-3f1741ed047f",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 49,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:52:33.955835+00:00",
+      "completed_at": "2026-09-08T09:52:35.951725+00:00",
+      "client_seconds": 1.995883,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "4abe66531f812f353dd9a84346ea9079b303b629b67b8637417259a3a168cac3",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "9a396964-0315-446d-869d-38cdbb2473a1",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 50,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:52:58.988183+00:00",
+      "completed_at": "2026-09-08T09:53:02.856845+00:00",
+      "client_seconds": 3.868662,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "67a4151705c1dc8d34a47e3b81784670a88ff0270673a023f1cb94dd0e126a21",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "4c9a9718-dc92-43b3-98aa-7e0ae2e35c94",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 51,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:53:24.391040+00:00",
+      "completed_at": "2026-09-08T09:53:26.533035+00:00",
+      "client_seconds": 2.141996,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "9ece30ace23d4f68bc1689290f0438c154df7b244cfd60b5f8749eca60b90259",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "2b61506d-343e-47e9-92e6-8f192928e7a0",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 52,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:53:49.568860+00:00",
+      "completed_at": "2026-09-08T09:53:53.142117+00:00",
+      "client_seconds": 3.573254,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "4e3bdaf93d9b6e33c0994239846824e9321348fd34bf3a01f7e76d155b4eaa2d",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "041d543a-8975-4af8-8445-8a6d90df0808",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 53,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:54:14.693230+00:00",
+      "completed_at": "2026-09-08T09:54:16.899382+00:00",
+      "client_seconds": 2.206151,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "06014c48bb03ed95fe360ece1482f238b90a7084a99cc68ed4043a01ac0dff4a",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "48ec63b6-cf1f-4908-a7d0-5a48c577d9b9",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 54,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:54:39.934528+00:00",
+      "completed_at": "2026-09-08T09:54:43.150553+00:00",
+      "client_seconds": 3.216022,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "66b7e24e606af70189c9c63921b6c0f4370fd499b7a4d4dd1492b1bf6b138813",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "7087571a-aff3-447d-bc3f-5de68b82f579",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 55,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:55:05.183688+00:00",
+      "completed_at": "2026-09-08T09:55:07.119279+00:00",
+      "client_seconds": 1.935586,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "4fe03b11d6f6634aaefb946fb0e01d58b47fda0d3de5f082de4f1daf7a40166f",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "084ff258-c7d2-4ff8-a260-833e05750fe4",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 56,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:55:30.657101+00:00",
+      "completed_at": "2026-09-08T09:55:33.870340+00:00",
+      "client_seconds": 3.213234,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "0fb1ec3eaa3e35786724903eca3cbf2dd2c7d4afaaf71fe8d34507cde546c109",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "62486423-9759-463d-baf6-2d81f2b599f1",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 57,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "during",
+      "started_at": "2026-09-08T09:55:55.861060+00:00",
+      "completed_at": "2026-09-08T09:55:57.771884+00:00",
+      "client_seconds": 1.910817,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "bdf51e6af425104d1e7d64db4d4a25e654ee9479c35826f9858a484b16fe53fb",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "a762d05a-cdd7-4ffa-84c7-032fede668b7",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 58,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "during",
+      "started_at": "2026-09-08T09:56:21.307007+00:00",
+      "completed_at": "2026-09-08T09:56:24.282242+00:00",
+      "client_seconds": 2.975229,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "c018d5a3ddcc44c0d9846fcb24c2639d4e61d96695b5899cbf2444adddc8604c",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "28a2627e-ef34-475b-80fb-4d6c88ee209d",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "during",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 59,
+      "surface": "http",
+      "case": "translation",
+      "phase": "during",
+      "started_at": "2026-09-08T09:56:46.316782+00:00",
+      "completed_at": "2026-09-08T09:56:48.410750+00:00",
+      "client_seconds": 2.093962,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "b9ad1245283b7f398507480b70c81747f82c2a4035106672913284efb0d07c20",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "1912494d-98f8-489f-84bc-c32f583f8990",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "after",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 60,
+      "surface": "mcp",
+      "case": "sorting",
+      "phase": "after",
+      "started_at": "2026-09-08T09:57:11.447311+00:00",
+      "completed_at": "2026-09-08T09:57:14.215110+00:00",
+      "client_seconds": 2.767792,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "dfa53f229ac4d41aad52fd4a13cfb5f505e072b1acc5912a6d283db3ef3596c9",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "67077bee-e1ab-4589-a089-5a8d1afcff72",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "after",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 61,
+      "surface": "http",
+      "case": "arithmetic",
+      "phase": "after",
+      "started_at": "2026-09-08T09:57:36.697398+00:00",
+      "completed_at": "2026-09-08T09:57:38.539447+00:00",
+      "client_seconds": 1.842052,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "f4af0b3367c4fc8bac756954aee8918a6bbfb5dff4971e338c8e9657356ee239",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "020b066c-dd23-4e63-ab0b-aea687e5df37",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "after",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 62,
+      "surface": "mcp",
+      "case": "translation",
+      "phase": "after",
+      "started_at": "2026-09-08T09:58:02.076194+00:00",
+      "completed_at": "2026-09-08T09:58:05.092853+00:00",
+      "client_seconds": 3.016652,
+      "request_sha256": "cb5128fed6c944584c88f168338345edd51d403e789490e176e68e2fe29f6814",
+      "response_sha256": "88e589509391158308e649f97fba5cdb6083c23395be5ba50fea454ea7e34c51",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "b3b39c90-bac3-4042-8210-8e49d487b738",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "after",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 63,
+      "surface": "http",
+      "case": "sorting",
+      "phase": "after",
+      "started_at": "2026-09-08T09:58:27.128131+00:00",
+      "completed_at": "2026-09-08T09:58:28.998375+00:00",
+      "client_seconds": 1.870246,
+      "request_sha256": "02f0219de71809e95730f819a57123cda2f9483a9dab53611c2632c1bfff33ab",
+      "response_sha256": "f22446f21fc1972fadb4bfac5faa61f93dca9747973e8802caa3a4b3baf37342",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "b142e5db-925f-49a7-8174-84257abef0d8",
+      "submission_attempts": 1,
+      "status_polls": 2,
+      "mcp_calls": [],
+      "phase_by_start_timestamp": "after",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    },
+    {
+      "ordinal": 64,
+      "surface": "mcp",
+      "case": "arithmetic",
+      "phase": "after",
+      "started_at": "2026-09-08T09:58:52.535253+00:00",
+      "completed_at": "2026-09-08T09:58:55.639450+00:00",
+      "client_seconds": 3.104193,
+      "request_sha256": "8cea17f905d42da7ab11641c75a818ee1b1c34c528b6238b895196ea9f8985f5",
+      "response_sha256": "c9f258c249d8bc742ea1b5c535d428f9351310e2a1706e749b598d7b642bedda",
+      "status": "passed",
+      "failure": null,
+      "correctness_passed": true,
+      "operation_id": "798bf3e3-821b-4e4d-8700-50d7ccb752b3",
+      "submission_attempts": 1,
+      "status_polls": 1,
+      "mcp_calls": [
+        {
+          "tool": "invoke_model",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation",
+          "is_error": false
+        },
+        {
+          "tool": "get_operation_result",
+          "is_error": false
+        }
+      ],
+      "mcp_http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "phase_by_start_timestamp": "after",
+      "operation_status": "succeeded",
+      "server_attempt": 1
+    }
+  ],
+  "limitations": [
+    "All attempts and failure latencies are retained. Success-only latency is explicitly separate; no client submission retries.",
+    "Original phase labels are preserved; actual phase uses scientific start/end timestamps because file-based phase changes can lag.",
+    "When scientific_client_stopped_at is set, after means after the bounded local-client stop; scientific server completion and clean resource recovery are not implied.",
+    "No scientific correctness, production SLA or unseen burst coverage is inferred from this bounded synthetic workload."
+  ]
+}
