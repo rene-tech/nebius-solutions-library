@@ -566,7 +566,7 @@ def main():
         "parallel_clients": 2,
         "maximum_new_gpu_workers": 1,
         "models": {model: [digest(request) for request in items] for model, items in requests.items()},
-        "public_cold_boundary": "zero reusable workers with existing nodes/cache, not a new node or empty registry",
+        "public_cold_boundary": "zero reusable workers; actual node provisioning and image/cache state must be reported from observation, not assumed",
         "native_worker_qualification": "retained direct receipts; public acceptance does not infer GPU snapshots",
     }
     if args.prepare_only:

@@ -158,6 +158,7 @@ def _phase_condition(status: ModelDeploymentStatusView) -> bool:
     generation = observation.status.observed_generation
     phase = observation.status.phase
     expected = {
+        ModelDeploymentRuntimePhase.DESIRED: ModelDeploymentConditionType.PROGRESSING,
         ModelDeploymentRuntimePhase.READY: ModelDeploymentConditionType.READY,
         ModelDeploymentRuntimePhase.COLD: ModelDeploymentConditionType.COLD,
         ModelDeploymentRuntimePhase.RUNTIME_STARTING: ModelDeploymentConditionType.LOADING,
@@ -207,7 +208,6 @@ def assess_model_publication(
     ):
         return _withdraw(revision, PublicationReason.SPEC_NOT_OBSERVED)
     if observed.phase in {
-        ModelDeploymentRuntimePhase.DESIRED,
         ModelDeploymentRuntimePhase.DRAINING,
         ModelDeploymentRuntimePhase.FAILED,
         ModelDeploymentRuntimePhase.INFRASTRUCTURE_REQUIRED,
@@ -222,6 +222,9 @@ def assess_model_publication(
     if observed.admitted_pool_ref is None:
         return _withdraw(revision, PublicationReason.NOT_READY)
 
+    # A current, validated revision with an observed owned Service may accept
+    # durable demand while its runtime/scaler is converging. Desired with its
+    # matching Progressing condition is activatable, never an observed Ready.
     spec = revision.spec
     publication = DynamicModelPublication(
         namespace=revision.namespace,
