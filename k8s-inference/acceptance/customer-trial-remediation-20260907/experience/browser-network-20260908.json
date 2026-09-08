@@ -1,0 +1,34 @@
+{
+  "schema": "fs2-serve.nebius.ai/browser-network-correlation/v1",
+  "browser_version": "Google Chrome 149.0.7827.114",
+  "timezone": "UTC",
+  "journal_service": "systemd-networkd",
+  "journal_location": "local acceptance/browser host, not the customer cluster",
+  "read_only": true,
+  "configuration_changes_performed": false,
+  "journal_command_template": "sudo -n journalctl --since '<start> UTC' --until '<end> UTC' -u systemd-networkd --no-pager -o json | jq -c '{timestamp_microseconds:.__REALTIME_TIMESTAMP,message:.MESSAGE}'",
+  "queried_windows": [
+    {"start": "2026-09-07 20:11:53", "end": "2026-09-07 20:11:56"},
+    {"start": "2026-09-07 20:13:04", "end": "2026-09-07 20:13:08"},
+    {"start": "2026-09-08 08:01:38", "end": "2026-09-08 08:01:43"}
+  ],
+  "correlations": [
+    {"cohort": "r02", "browser_error_at": "2026-09-07T20:11:54.990Z", "journal_timestamp_microseconds": "1788811914985379", "journal_at": "2026-09-07T20:11:54.985379Z", "journal_message": "vethba44c07: Gained IPv6LL", "delta_milliseconds": 4.621},
+    {"cohort": "r02", "browser_error_at": "2026-09-07T20:13:05.773Z", "journal_timestamp_microseconds": "1788811985769340", "journal_at": "2026-09-07T20:13:05.769340Z", "journal_message": "br-e0dd06d940a4: Gained IPv6LL", "delta_milliseconds": 3.660},
+    {"cohort": "r02", "browser_error_at": "2026-09-07T20:13:06.859Z", "journal_timestamp_microseconds": "1788811986857438", "journal_at": "2026-09-07T20:13:06.857438Z", "journal_message": "veth7548c14: Gained IPv6LL", "delta_milliseconds": 1.562},
+    {"cohort": "r03", "browser_error_at": "2026-09-08T08:01:40.717Z", "journal_timestamp_microseconds": "1788854500713372", "journal_at": "2026-09-08T08:01:40.713372Z", "journal_message": "veth6ff58d7: Gained IPv6LL", "delta_milliseconds": 3.628}
+  ],
+  "current_ui": {
+    "operation_id": "1001f32b-4ebf-4f1f-98bb-137a3ed30041",
+    "error": "net::ERR_NETWORK_CHANGED",
+    "failed_at": "2026-09-08T08:01:40.717Z",
+    "snapshot_at": "2026-09-08T08:01:41.218Z",
+    "snapshot_state": "application shell and loading scientific run detail; no visible alert or blank body at this instant",
+    "automatic_successful_read_at": "2026-09-08T08:01:42.121Z",
+    "automatic_recovery_seconds": 1.404,
+    "manual_reload_or_restart": false,
+    "automatic_publication_and_artifact_download": "passed",
+    "private_receipt_root": "experience/cohort-r03/"
+  },
+  "interpretation": "Strong evidence-backed inference of client-host network-change notification, not a Chromium NetLog or packet-level causal trace. Original failed reads remain failed; no zero-browser-error claim."
+}
