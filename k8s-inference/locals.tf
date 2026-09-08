@@ -1239,7 +1239,7 @@ locals {
       workload_owner = var.deployment.dynamic_models.workload_owner
       bootstrap_model_ids = sort(tolist(setsubtract(
         var.deployment.dynamic_models.bootstrap_model_ids,
-        local.selected_cpu_runtime_model_ids,
+        setsubtract(local.selected_cpu_runtime_model_ids, local.selected_managed_cpu_model_ids),
       )))
       fresh_install                              = var.deployment.dynamic_models.fresh_install
       handoff_receipt                            = var.deployment.dynamic_models.handoff_receipt

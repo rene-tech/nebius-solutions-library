@@ -2827,6 +2827,10 @@ class DeploymentContractTests(unittest.TestCase):
                     "overrides": {"phenoage": {"min_replicas": 1, "max_replicas": 14,
                         "target_queue_depth": 1, "polling_interval_seconds": 5, "cooldown_seconds": 300}}},
             },
+            "dynamic_models": {
+                "enabled": True, "writes_enabled": True, "workload_owner": "controller",
+                "bootstrap_model_ids": ["altumage", "phenoage"], "fresh_install": True,
+            },
         }
         variable_file = self._write_configuration("aging-native", deployment)
         contract = self._planned_outputs(variable_file, "aging-native")["deployment_contract"]
@@ -2835,6 +2839,21 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertEqual(contract["selected_model_replica_ceilings"], {"altumage": 2, "phenoage": 14})
         self.assertEqual(contract["stages"]["workloads"]["model_image_overrides"], deployment["models"]["image_overrides"])
         self.assertNotIn("phenoage", self.model_profiles["full_catalog"]["canonical_routes"])
+        workloads = contract["stages"]["workloads"]
+        self.assertEqual(workloads["model_controller"]["bootstrap_model_ids"], ["altumage", "phenoage"])
+        self.assertEqual(workloads["hot_model_ids"], ["altumage", "phenoage"])
+        self.assertEqual(workloads["model_scaling_overrides"], deployment["models"]["scaling"]["overrides"])
+
+        # The older database CPU runtime remains static and must not become a
+        # controller bootstrap simply because managed CPU Apps now exist.
+        msa = json.loads((DEPLOY_ROOT / "catalog/runtime/deployment-runtimes/msa-search-pdb70-portable-cpu.json").read_text())
+        deployment["models"]["enabled"].append("msa-search-pdb70")
+        deployment["models"]["image_overrides"]["msa-search-pdb70"] = msa["record"]["runtime"]["image"]["reference"]
+        deployment["dynamic_models"]["bootstrap_model_ids"].append("msa-search-pdb70")
+        variable_file = self._write_configuration("aging-native-and-static-cpu", deployment)
+        combined = self._planned_outputs(variable_file, "aging-native-and-static-cpu")["deployment_contract"]
+        self.assertEqual(combined["stages"]["workloads"]["model_controller"]["bootstrap_model_ids"], ["altumage", "phenoage"])
+        self.assertEqual(combined["selected_model_replica_ceilings"]["msa-search-pdb70"], 1)
 
     def test_cosmos_manifest_is_gpu_agnostic_and_exact_image_rewrite_is_model_scoped(
         self,
