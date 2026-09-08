@@ -1,0 +1,5062 @@
+{
+  "schema": "fs2-serve.nebius.ai/admin-cohort-observation/v1",
+  "source_commit": "5f5061b28ee71a59432492a1bdf6106428a85367",
+  "scope": "Existing bootstrap operator browser; no customer onboarding or policy/workload mutations.",
+  "started_at": "2026-09-07T20:11:34.036Z",
+  "signed_in_at": "2026-09-07T20:11:35.651Z",
+  "browser_closed_at": "2026-09-07T20:42:15.747Z",
+  "observed_query_count": 316,
+  "runs": [
+    {
+      "operation_id": "2155828e-7471-4631-976d-14f1f31b6a97",
+      "model_id": "rfdiffusion",
+      "first_observed_at": "2026-09-07T20:11:39.643Z",
+      "query_count": 9,
+      "transitions": [
+        {
+          "at": "2026-09-07T20:11:39.643Z",
+          "run_observed_at": "2026-09-07T20:11:39.561937Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "inference",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "8fa5b84a-dfe4-5249-932a-26aa5af0b6e6",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "active_compute",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "collect",
+              "status": "pending",
+              "attempts": []
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:12:06.984Z",
+          "run_observed_at": "2026-09-07T20:12:06.883396Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "inference",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "8fa5b84a-dfe4-5249-932a-26aa5af0b6e6",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "collect",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "0c8c01de-2131-5ab3-a12f-fcc269ec3ab6",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "image_loading",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:12:12.124Z",
+          "run_observed_at": "2026-09-07T20:12:12.048484Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "inference",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "8fa5b84a-dfe4-5249-932a-26aa5af0b6e6",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "collect",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "0c8c01de-2131-5ab3-a12f-fcc269ec3ab6",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "artifact_loading",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:12:17.259Z",
+          "run_observed_at": "2026-09-07T20:12:17.176913Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "inference",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "8fa5b84a-dfe4-5249-932a-26aa5af0b6e6",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "collect",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "0c8c01de-2131-5ab3-a12f-fcc269ec3ab6",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "allocated_idle",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:12:22.487Z",
+          "run_observed_at": "2026-09-07T20:12:22.310909Z",
+          "status": "succeeded",
+          "artifact_count": 8,
+          "semantic_validation": "passed",
+          "shard_counts": {
+            "succeeded": 1
+          },
+          "stages": [
+            {
+              "id": "inference",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "8fa5b84a-dfe4-5249-932a-26aa5af0b6e6",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "collect",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "0c8c01de-2131-5ab3-a12f-fcc269ec3ab6",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": null
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        }
+      ],
+      "last_observed_at": "2026-09-07T20:12:22.487Z",
+      "final_observed_accounting": {
+        "gpu_count": 1,
+        "capacity_type": "unknown",
+        "allocated": {
+          "value": 72,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "active": {
+          "value": 62,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_total": {
+          "value": 10,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_by_cause": [
+          {
+            "cause": "image-pull",
+            "duration": {
+              "value": 4,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          },
+          {
+            "cause": "artifact-load",
+            "duration": {
+              "value": 5,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          },
+          {
+            "cause": "between-stages",
+            "duration": {
+              "value": 1,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          }
+        ],
+        "grace_drain": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "reconciliation_delta": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        }
+      },
+      "final_observed_phases": [
+        {
+          "phase": "queue",
+          "duration": {
+            "value": 0,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "admission",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "image-pull",
+          "duration": {
+            "value": 9,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "artifact-load",
+          "duration": {
+            "value": 9,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "restore",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "semantic-warmup",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "active-compute",
+          "duration": {
+            "value": 62,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "allocated-idle",
+          "duration": {
+            "value": 3,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "grace-drain",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "teardown",
+          "duration": {
+            "value": 0.993006,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        }
+      ]
+    },
+    {
+      "operation_id": "4a4a2555-3901-4193-8a65-78ff01737af3",
+      "model_id": "protenix-v2",
+      "first_observed_at": "2026-09-07T20:12:50.394Z",
+      "query_count": 9,
+      "transitions": [
+        {
+          "at": "2026-09-07T20:12:50.394Z",
+          "run_observed_at": "2026-09-07T20:12:50.320973Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "prepare-data",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "ebae3c82-f309-5c74-8870-29c13c98740f",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "allocated_idle",
+                  "phase_reason": null,
+                  "resolved_pool_id": "mk8snodegroup-e00ha8zfdnxn12qmbj"
+                }
+              ]
+            },
+            {
+              "id": "sample-structure",
+              "status": "pending",
+              "attempts": []
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:12:55.524Z",
+          "run_observed_at": "2026-09-07T20:12:55.446775Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "prepare-data",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "ebae3c82-f309-5c74-8870-29c13c98740f",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "mk8snodegroup-e00ha8zfdnxn12qmbj"
+                }
+              ]
+            },
+            {
+              "id": "sample-structure",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "1a9f311d-54d6-5d58-9e59-b58410752873",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "image_loading",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:13:00.660Z",
+          "run_observed_at": "2026-09-07T20:13:00.575513Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "prepare-data",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "ebae3c82-f309-5c74-8870-29c13c98740f",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "mk8snodegroup-e00ha8zfdnxn12qmbj"
+                }
+              ]
+            },
+            {
+              "id": "sample-structure",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "1a9f311d-54d6-5d58-9e59-b58410752873",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "artifact_loading",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:13:12.173Z",
+          "run_observed_at": "2026-09-07T20:13:12.099046Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "prepare-data",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "ebae3c82-f309-5c74-8870-29c13c98740f",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "mk8snodegroup-e00ha8zfdnxn12qmbj"
+                }
+              ]
+            },
+            {
+              "id": "sample-structure",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "1a9f311d-54d6-5d58-9e59-b58410752873",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "active_compute",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": 4.196746,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "at": "2026-09-07T20:13:27.956Z",
+          "run_observed_at": "2026-09-07T20:13:27.868032Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "prepare-data",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "ebae3c82-f309-5c74-8870-29c13c98740f",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "mk8snodegroup-e00ha8zfdnxn12qmbj"
+                }
+              ]
+            },
+            {
+              "id": "sample-structure",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "1a9f311d-54d6-5d58-9e59-b58410752873",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "allocated_idle",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": 4.196746,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "at": "2026-09-07T20:13:33.083Z",
+          "run_observed_at": "2026-09-07T20:13:33.009008Z",
+          "status": "succeeded",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "succeeded": 1
+          },
+          "stages": [
+            {
+              "id": "prepare-data",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "ebae3c82-f309-5c74-8870-29c13c98740f",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "mk8snodegroup-e00ha8zfdnxn12qmbj"
+                }
+              ]
+            },
+            {
+              "id": "sample-structure",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "1a9f311d-54d6-5d58-9e59-b58410752873",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": 4.196746,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "at": "2026-09-07T20:14:14.282Z",
+          "run_observed_at": "2026-09-07T20:14:14.111714Z",
+          "status": "succeeded",
+          "artifact_count": 9,
+          "semantic_validation": "passed",
+          "shard_counts": {
+            "succeeded": 1
+          },
+          "stages": [
+            {
+              "id": "prepare-data",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "ebae3c82-f309-5c74-8870-29c13c98740f",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": null
+                }
+              ]
+            },
+            {
+              "id": "sample-structure",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "1a9f311d-54d6-5d58-9e59-b58410752873",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": 4.196746,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        }
+      ],
+      "last_observed_at": "2026-09-07T20:14:14.282Z",
+      "final_observed_accounting": {
+        "gpu_count": 1,
+        "capacity_type": "unknown",
+        "allocated": {
+          "value": 35,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "active": {
+          "value": 16.803254,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_total": {
+          "value": 18.196746,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_by_cause": [
+          {
+            "cause": "image-pull",
+            "duration": {
+              "value": 4,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          },
+          {
+            "cause": "artifact-load",
+            "duration": {
+              "value": 9,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          },
+          {
+            "cause": "restore",
+            "duration": {
+              "value": 4.196746,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          },
+          {
+            "cause": "between-stages",
+            "duration": {
+              "value": 1,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          }
+        ],
+        "grace_drain": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "reconciliation_delta": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        }
+      },
+      "final_observed_phases": [
+        {
+          "phase": "queue",
+          "duration": {
+            "value": 0,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "admission",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "image-pull",
+          "duration": {
+            "value": 9,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "artifact-load",
+          "duration": {
+            "value": 18,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "restore",
+          "duration": {
+            "value": 4.196746,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "semantic-warmup",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "active-compute",
+          "duration": {
+            "value": 19.803254,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "allocated-idle",
+          "duration": {
+            "value": 4,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "grace-drain",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "teardown",
+          "duration": {
+            "value": 0.8282830000000001,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        }
+      ]
+    },
+    {
+      "operation_id": "efab8c22-82ac-4830-9baf-db8055288e15",
+      "model_id": "mosaic",
+      "first_observed_at": "2026-09-07T20:15:00.005Z",
+      "query_count": 7,
+      "transitions": [
+        {
+          "at": "2026-09-07T20:15:00.005Z",
+          "run_observed_at": "2026-09-07T20:14:59.920285Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "design",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "467fb803-f73e-5d27-b1ea-1f64f7128c78",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "active_compute",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "aggregate",
+              "status": "pending",
+              "attempts": []
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:15:15.378Z",
+          "run_observed_at": "2026-09-07T20:15:15.307396Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "design",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "467fb803-f73e-5d27-b1ea-1f64f7128c78",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "aggregate",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "37f4acb6-1fb3-5d74-bace-840846bfca9f",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "image_loading",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:15:20.504Z",
+          "run_observed_at": "2026-09-07T20:15:20.432263Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "design",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "467fb803-f73e-5d27-b1ea-1f64f7128c78",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "aggregate",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "37f4acb6-1fb3-5d74-bace-840846bfca9f",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "artifact_loading",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:15:25.639Z",
+          "run_observed_at": "2026-09-07T20:15:25.558247Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "design",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "467fb803-f73e-5d27-b1ea-1f64f7128c78",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "aggregate",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "37f4acb6-1fb3-5d74-bace-840846bfca9f",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "allocated_idle",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:15:30.762Z",
+          "run_observed_at": "2026-09-07T20:15:30.692189Z",
+          "status": "succeeded",
+          "artifact_count": 9,
+          "semantic_validation": "passed",
+          "shard_counts": {
+            "succeeded": 1
+          },
+          "stages": [
+            {
+              "id": "design",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "467fb803-f73e-5d27-b1ea-1f64f7128c78",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "aggregate",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "37f4acb6-1fb3-5d74-bace-840846bfca9f",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": null
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        }
+      ],
+      "last_observed_at": "2026-09-07T20:15:30.762Z",
+      "final_observed_accounting": {
+        "gpu_count": 1,
+        "capacity_type": "unknown",
+        "allocated": {
+          "value": 90,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "active": {
+          "value": 77,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_total": {
+          "value": 13,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_by_cause": [
+          {
+            "cause": "image-pull",
+            "duration": {
+              "value": 4,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          },
+          {
+            "cause": "artifact-load",
+            "duration": {
+              "value": 8,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          },
+          {
+            "cause": "between-stages",
+            "duration": {
+              "value": 1,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          }
+        ],
+        "grace_drain": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "reconciliation_delta": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        }
+      },
+      "final_observed_phases": [
+        {
+          "phase": "queue",
+          "duration": {
+            "value": 0,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "admission",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "image-pull",
+          "duration": {
+            "value": 5,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "artifact-load",
+          "duration": {
+            "value": 13,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "restore",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "semantic-warmup",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "active-compute",
+          "duration": {
+            "value": 78,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "allocated-idle",
+          "duration": {
+            "value": 2,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "grace-drain",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "teardown",
+          "duration": {
+            "value": 0.827233,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        }
+      ]
+    },
+    {
+      "operation_id": "91adf335-010e-4b32-aa25-ebf6193f6311",
+      "model_id": "bindcraft",
+      "first_observed_at": "2026-09-07T20:16:31.020Z",
+      "query_count": 16,
+      "transitions": [
+        {
+          "at": "2026-09-07T20:16:31.020Z",
+          "run_observed_at": "2026-09-07T20:16:30.947143Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "design",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "4b937d64-0bec-51a8-b4c3-5300e76894a4",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "active_compute",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "aggregate",
+              "status": "pending",
+              "attempts": []
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        }
+      ],
+      "last_observed_at": "2026-09-07T20:17:48.131Z",
+      "final_observed_accounting": {
+        "gpu_count": 1,
+        "capacity_type": "unknown",
+        "allocated": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "active": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_total": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_by_cause": [],
+        "grace_drain": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "reconciliation_delta": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        }
+      },
+      "final_observed_phases": [
+        {
+          "phase": "queue",
+          "duration": {
+            "value": 0,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "admission",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "image-pull",
+          "duration": {
+            "value": 4,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "artifact-load",
+          "duration": {
+            "value": 4,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "restore",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "semantic-warmup",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "active-compute",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "allocated-idle",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "grace-drain",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "teardown",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        }
+      ]
+    },
+    {
+      "operation_id": "952f054c-41a9-479d-a9fa-e915511c98b3",
+      "model_id": "esmfold2",
+      "first_observed_at": "2026-09-07T20:17:50.943Z",
+      "query_count": 44,
+      "transitions": [
+        {
+          "at": "2026-09-07T20:17:50.943Z",
+          "run_observed_at": "2026-09-07T20:17:50.837929Z",
+          "status": "admitted",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "admitted": 1
+          },
+          "stages": [
+            {
+              "id": "prepare-input",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "7472c61d-2487-5309-b6c2-0db5cfdbe150",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            },
+            {
+              "id": "fold",
+              "status": "admitted",
+              "attempts": [
+                {
+                  "id": "d01c04ee-b537-5d2b-bd93-c79d6c7d1ea9",
+                  "number": 1,
+                  "status": "queued",
+                  "phase": "node_pending",
+                  "phase_reason": "Waiting for a matching node: the Pod's placement or affinity requirements are not satisfied.",
+                  "resolved_pool_id": "h100-1x"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:18:11.528Z",
+          "run_observed_at": "2026-09-07T20:18:11.439247Z",
+          "status": "admitted",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "admitted": 1
+          },
+          "stages": [
+            {
+              "id": "prepare-input",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "7472c61d-2487-5309-b6c2-0db5cfdbe150",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            },
+            {
+              "id": "fold",
+              "status": "admitted",
+              "attempts": [
+                {
+                  "id": "d01c04ee-b537-5d2b-bd93-c79d6c7d1ea9",
+                  "number": 1,
+                  "status": "queued",
+                  "phase": "node_pending",
+                  "phase_reason": "Waiting for a node: the requested GPUs are not currently available in the selected pool.",
+                  "resolved_pool_id": "h100-1x"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:18:32.182Z",
+          "run_observed_at": "2026-09-07T20:18:32.074403Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "prepare-input",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "7472c61d-2487-5309-b6c2-0db5cfdbe150",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            },
+            {
+              "id": "fold",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "d01c04ee-b537-5d2b-bd93-c79d6c7d1ea9",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "artifact_loading",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-1x"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:20:36.225Z",
+          "run_observed_at": "2026-09-07T20:20:36.129791Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "prepare-input",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "7472c61d-2487-5309-b6c2-0db5cfdbe150",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            },
+            {
+              "id": "fold",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "d01c04ee-b537-5d2b-bd93-c79d6c7d1ea9",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "active_compute",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-1x"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:21:32.903Z",
+          "run_observed_at": "2026-09-07T20:21:32.722983Z",
+          "status": "succeeded",
+          "artifact_count": 8,
+          "semantic_validation": "passed",
+          "shard_counts": {
+            "succeeded": 1
+          },
+          "stages": [
+            {
+              "id": "prepare-input",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "7472c61d-2487-5309-b6c2-0db5cfdbe150",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": null
+                }
+              ]
+            },
+            {
+              "id": "fold",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "d01c04ee-b537-5d2b-bd93-c79d6c7d1ea9",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-1x"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        }
+      ],
+      "last_observed_at": "2026-09-07T20:21:32.903Z",
+      "final_observed_accounting": {
+        "gpu_count": 1,
+        "capacity_type": "unknown",
+        "allocated": {
+          "value": 162,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "active": {
+          "value": 37,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_total": {
+          "value": 125,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_by_cause": [
+          {
+            "cause": "image-pull",
+            "duration": {
+              "value": 81,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          },
+          {
+            "cause": "artifact-load",
+            "duration": {
+              "value": 44,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          }
+        ],
+        "grace_drain": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "reconciliation_delta": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        }
+      },
+      "final_observed_phases": [
+        {
+          "phase": "queue",
+          "duration": {
+            "value": 0,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "admission",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "image-pull",
+          "duration": {
+            "value": 82,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "artifact-load",
+          "duration": {
+            "value": 49,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "restore",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "semantic-warmup",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "active-compute",
+          "duration": {
+            "value": 41,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "allocated-idle",
+          "duration": {
+            "value": 0,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "grace-drain",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "teardown",
+          "duration": {
+            "value": 1.545607,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        }
+      ]
+    },
+    {
+      "operation_id": "4a17632e-9585-465d-8327-245cf7b0d276",
+      "model_id": "bindcraft",
+      "first_observed_at": "2026-09-07T20:22:34.651Z",
+      "query_count": 58,
+      "transitions": [
+        {
+          "at": "2026-09-07T20:22:34.651Z",
+          "run_observed_at": "2026-09-07T20:22:34.566506Z",
+          "status": "queued",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "pending": 1
+          },
+          "stages": [
+            {
+              "id": "design",
+              "status": "queued",
+              "attempts": [
+                {
+                  "id": "98b53895-3afe-5ab3-b8a7-e097825d8584",
+                  "number": 1,
+                  "status": "queued",
+                  "phase": "scheduling",
+                  "phase_reason": null,
+                  "resolved_pool_id": null
+                }
+              ]
+            },
+            {
+              "id": "aggregate",
+              "status": "pending",
+              "attempts": []
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:24:58.852Z",
+          "run_observed_at": "2026-09-07T20:24:58.738705Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "design",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "98b53895-3afe-5ab3-b8a7-e097825d8584",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "artifact_loading",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "aggregate",
+              "status": "pending",
+              "attempts": []
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:25:09.203Z",
+          "run_observed_at": "2026-09-07T20:25:09.115741Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "design",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "98b53895-3afe-5ab3-b8a7-e097825d8584",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "active_compute",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "aggregate",
+              "status": "pending",
+              "attempts": []
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        }
+      ],
+      "last_observed_at": "2026-09-07T20:27:28.405Z",
+      "final_observed_accounting": {
+        "gpu_count": 1,
+        "capacity_type": "unknown",
+        "allocated": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "active": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_total": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_by_cause": [],
+        "grace_drain": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "reconciliation_delta": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        }
+      },
+      "final_observed_phases": [
+        {
+          "phase": "queue",
+          "duration": {
+            "value": 195.291663,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "admission",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "image-pull",
+          "duration": {
+            "value": 4,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "artifact-load",
+          "duration": {
+            "value": 5,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "restore",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "semantic-warmup",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "active-compute",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "allocated-idle",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "grace-drain",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "teardown",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        }
+      ]
+    },
+    {
+      "operation_id": "05e3da32-8763-4560-a81c-bfb7f8cae5c9",
+      "model_id": "mosaic",
+      "first_observed_at": "2026-09-07T20:27:30.189Z",
+      "query_count": 10,
+      "transitions": [
+        {
+          "at": "2026-09-07T20:27:30.189Z",
+          "run_observed_at": "2026-09-07T20:27:30.106078Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "design",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "4cd81862-890b-5380-93a5-fda1098e1bcd",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "artifact_loading",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-1x"
+                }
+              ]
+            },
+            {
+              "id": "aggregate",
+              "status": "pending",
+              "attempts": []
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        }
+      ],
+      "last_observed_at": "2026-09-07T20:28:16.525Z",
+      "final_observed_accounting": {
+        "gpu_count": 1,
+        "capacity_type": "unknown",
+        "allocated": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "active": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_total": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_by_cause": [],
+        "grace_drain": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "reconciliation_delta": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        }
+      },
+      "final_observed_phases": [
+        {
+          "phase": "queue",
+          "duration": {
+            "value": 11.765678,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "admission",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "image-pull",
+          "duration": {
+            "value": 13,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "artifact-load",
+          "duration": {
+            "value": 8,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "restore",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "semantic-warmup",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "active-compute",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "allocated-idle",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "grace-drain",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "teardown",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        }
+      ]
+    },
+    {
+      "operation_id": "d6ddbe20-6c2b-4c2e-ab65-03442c9c1b82",
+      "model_id": "proteina-complexa",
+      "first_observed_at": "2026-09-07T20:28:18.217Z",
+      "query_count": 18,
+      "transitions": [
+        {
+          "at": "2026-09-07T20:28:18.217Z",
+          "run_observed_at": "2026-09-07T20:28:18.085590Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "generate",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "cd2fe265-0f01-5c12-b00c-3e6811dc9517",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "filter",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "1fe472e1-6f8e-510f-bdc0-6af2e51e4ee7",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            },
+            {
+              "id": "evaluate",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "9347a217-c745-5750-a3f3-0a043ba0414c",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "active_compute",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "analyze",
+              "status": "pending",
+              "attempts": []
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:29:04.628Z",
+          "run_observed_at": "2026-09-07T20:29:04.528651Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "generate",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "cd2fe265-0f01-5c12-b00c-3e6811dc9517",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "filter",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "1fe472e1-6f8e-510f-bdc0-6af2e51e4ee7",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            },
+            {
+              "id": "evaluate",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "9347a217-c745-5750-a3f3-0a043ba0414c",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "allocated_idle",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "analyze",
+              "status": "pending",
+              "attempts": []
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:29:09.817Z",
+          "run_observed_at": "2026-09-07T20:29:09.695736Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "generate",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "cd2fe265-0f01-5c12-b00c-3e6811dc9517",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "filter",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "1fe472e1-6f8e-510f-bdc0-6af2e51e4ee7",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            },
+            {
+              "id": "evaluate",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "9347a217-c745-5750-a3f3-0a043ba0414c",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "analyze",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "b5d24e86-7078-5eaf-bca0-4558f5b73e4e",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "artifact_loading",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:29:20.196Z",
+          "run_observed_at": "2026-09-07T20:29:20.051388Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "generate",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "cd2fe265-0f01-5c12-b00c-3e6811dc9517",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "filter",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "1fe472e1-6f8e-510f-bdc0-6af2e51e4ee7",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            },
+            {
+              "id": "evaluate",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "9347a217-c745-5750-a3f3-0a043ba0414c",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "analyze",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "b5d24e86-7078-5eaf-bca0-4558f5b73e4e",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "active_compute",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:29:40.914Z",
+          "run_observed_at": "2026-09-07T20:29:40.803779Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 1
+          },
+          "stages": [
+            {
+              "id": "generate",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "cd2fe265-0f01-5c12-b00c-3e6811dc9517",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "filter",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "1fe472e1-6f8e-510f-bdc0-6af2e51e4ee7",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            },
+            {
+              "id": "evaluate",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "9347a217-c745-5750-a3f3-0a043ba0414c",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "analyze",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "b5d24e86-7078-5eaf-bca0-4558f5b73e4e",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "allocated_idle",
+                  "phase_reason": null,
+                  "resolved_pool_id": "batch-cpu"
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:29:46.087Z",
+          "run_observed_at": "2026-09-07T20:29:45.976490Z",
+          "status": "succeeded",
+          "artifact_count": 17,
+          "semantic_validation": "passed",
+          "shard_counts": {
+            "succeeded": 1
+          },
+          "stages": [
+            {
+              "id": "generate",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "cd2fe265-0f01-5c12-b00c-3e6811dc9517",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "filter",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "1fe472e1-6f8e-510f-bdc0-6af2e51e4ee7",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": null
+                }
+              ]
+            },
+            {
+              "id": "evaluate",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "9347a217-c745-5750-a3f3-0a043ba0414c",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "analyze",
+              "status": "succeeded",
+              "attempts": [
+                {
+                  "id": "b5d24e86-7078-5eaf-bca0-4558f5b73e4e",
+                  "number": 1,
+                  "status": "succeeded",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": null
+                }
+              ]
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        }
+      ],
+      "last_observed_at": "2026-09-07T20:29:46.087Z",
+      "final_observed_accounting": {
+        "gpu_count": 1,
+        "capacity_type": "unknown",
+        "allocated": {
+          "value": 164,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "active": {
+          "value": 146,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_total": {
+          "value": 18,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_by_cause": [
+          {
+            "cause": "image-pull",
+            "duration": {
+              "value": 7,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          },
+          {
+            "cause": "artifact-load",
+            "duration": {
+              "value": 10,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          },
+          {
+            "cause": "between-stages",
+            "duration": {
+              "value": 1,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          }
+        ],
+        "grace_drain": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "reconciliation_delta": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        }
+      },
+      "final_observed_phases": [
+        {
+          "phase": "queue",
+          "duration": {
+            "value": 0.115248,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "admission",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "image-pull",
+          "duration": {
+            "value": 12,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "artifact-load",
+          "duration": {
+            "value": 19,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "restore",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "semantic-warmup",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "active-compute",
+          "duration": {
+            "value": 189,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "allocated-idle",
+          "duration": {
+            "value": 4,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "grace-drain",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "teardown",
+          "duration": {
+            "value": 3.9080660000000003,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        }
+      ]
+    },
+    {
+      "operation_id": "daae227f-f7a0-4fe7-9912-1a95c675c3d9",
+      "model_id": "rfdiffusion",
+      "first_observed_at": "2026-09-07T20:31:40.087Z",
+      "query_count": 124,
+      "transitions": [
+        {
+          "at": "2026-09-07T20:31:40.087Z",
+          "run_observed_at": "2026-09-07T20:31:39.993555Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 4
+          },
+          "stages": [
+            {
+              "id": "inference",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "b9aa4f40-c2af-5f1c-82e8-485a90d8b912",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "active_compute",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                },
+                {
+                  "id": "d9288309-dfcc-5388-8a92-6822bc0f47e4",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "artifact_loading",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-1x"
+                },
+                {
+                  "id": "2b71861c-2ab8-5b78-9511-33ff4c6f21ae",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "artifact_loading",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-1x"
+                },
+                {
+                  "id": "4abc65ed-00ba-5504-98f8-311de5779653",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "active_compute",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "collect",
+              "status": "pending",
+              "attempts": []
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:31:50.423Z",
+          "run_observed_at": "2026-09-07T20:31:50.325537Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 3,
+            "preempted": 1
+          },
+          "stages": [
+            {
+              "id": "inference",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "b9aa4f40-c2af-5f1c-82e8-485a90d8b912",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "active_compute",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                },
+                {
+                  "id": "d9288309-dfcc-5388-8a92-6822bc0f47e4",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "artifact_loading",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-1x"
+                },
+                {
+                  "id": "2b71861c-2ab8-5b78-9511-33ff4c6f21ae",
+                  "number": 1,
+                  "status": "preempted",
+                  "phase": "preempted",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-1x"
+                },
+                {
+                  "id": "4abc65ed-00ba-5504-98f8-311de5779653",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "active_compute",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "collect",
+              "status": "pending",
+              "attempts": []
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "at": "2026-09-07T20:34:40.805Z",
+          "run_observed_at": "2026-09-07T20:34:40.717177Z",
+          "status": "running",
+          "artifact_count": 0,
+          "semantic_validation": "not-run",
+          "shard_counts": {
+            "running": 3,
+            "preempted": 1
+          },
+          "stages": [
+            {
+              "id": "inference",
+              "status": "running",
+              "attempts": [
+                {
+                  "id": "b9aa4f40-c2af-5f1c-82e8-485a90d8b912",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "active_compute",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                },
+                {
+                  "id": "d9288309-dfcc-5388-8a92-6822bc0f47e4",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "artifact_loading",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-1x"
+                },
+                {
+                  "id": "2b71861c-2ab8-5b78-9511-33ff4c6f21ae",
+                  "number": 1,
+                  "status": "preempted",
+                  "phase": "teardown",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-1x"
+                },
+                {
+                  "id": "4abc65ed-00ba-5504-98f8-311de5779653",
+                  "number": 1,
+                  "status": "running",
+                  "phase": "active_compute",
+                  "phase_reason": null,
+                  "resolved_pool_id": "h100-reserved-8x"
+                }
+              ]
+            },
+            {
+              "id": "collect",
+              "status": "pending",
+              "attempts": []
+            }
+          ],
+          "restore": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        }
+      ],
+      "last_observed_at": "2026-09-07T20:42:13.951Z",
+      "final_observed_accounting": {
+        "gpu_count": 1,
+        "capacity_type": "unknown",
+        "allocated": {
+          "value": 219.040227,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "active": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_total": {
+          "value": 219.040227,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_by_cause": [
+          {
+            "cause": "image-pull",
+            "duration": {
+              "value": 214.040227,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          },
+          {
+            "cause": "artifact-load",
+            "duration": {
+              "value": 5,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          }
+        ],
+        "grace_drain": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "reconciliation_delta": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        }
+      },
+      "final_observed_phases": [
+        {
+          "phase": "queue",
+          "duration": {
+            "value": 5.864124,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "admission",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "image-pull",
+          "duration": {
+            "value": 216.040227,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "artifact-load",
+          "duration": {
+            "value": 12,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        },
+        {
+          "phase": "restore",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "semantic-warmup",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "active-compute",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "allocated-idle",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "grace-drain",
+          "duration": {
+            "value": null,
+            "unit": "seconds",
+            "evidence": "unavailable",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "No complete observed start/end interval is available for this phase."
+          }
+        },
+        {
+          "phase": "teardown",
+          "duration": {
+            "value": 171.933609,
+            "unit": "seconds",
+            "evidence": "estimated",
+            "source": "lifecycle-signal-boundaries",
+            "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+          }
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "at": "2026-09-07T20:11:40.144Z",
+      "command": {
+        "action": "navigate",
+        "path": "/admin/scientific-runs/2155828e-7471-4631-976d-14f1f31b6a97",
+        "label": "r02-rf-initial"
+      },
+      "status": "passed",
+      "observed_queries": 6
+    },
+    {
+      "at": "2026-09-07T20:12:27.248Z",
+      "command": {
+        "action": "snapshot",
+        "label": "r02-rf-auto-progress"
+      },
+      "status": "passed",
+      "observed_queries": 14
+    },
+    {
+      "at": "2026-09-07T20:12:32.677Z",
+      "command": {
+        "action": "download",
+        "label": "r02-rf-download"
+      },
+      "status": "passed",
+      "observed_queries": 14
+    },
+    {
+      "at": "2026-09-07T20:12:50.895Z",
+      "command": {
+        "action": "navigate",
+        "path": "/admin/scientific-runs/4a4a2555-3901-4193-8a65-78ff01737af3",
+        "label": "r02-protenix-initial"
+      },
+      "status": "passed",
+      "observed_queries": 16
+    },
+    {
+      "at": "2026-09-07T20:13:46.711Z",
+      "command": {
+        "action": "snapshot",
+        "label": "r02-protenix-auto-progress"
+      },
+      "status": "passed",
+      "observed_queries": 23
+    },
+    {
+      "at": "2026-09-07T20:14:14.784Z",
+      "command": {
+        "action": "navigate",
+        "path": "/admin/scientific-runs/4a4a2555-3901-4193-8a65-78ff01737af3",
+        "label": "r02-protenix-completion-once-read"
+      },
+      "status": "passed",
+      "observed_queries": 25
+    },
+    {
+      "at": "2026-09-07T20:14:31.805Z",
+      "command": {
+        "action": "download",
+        "label": "r02-protenix-download-after-one-read"
+      },
+      "status": "passed",
+      "observed_queries": 25
+    },
+    {
+      "at": "2026-09-07T20:15:00.507Z",
+      "command": {
+        "action": "navigate",
+        "path": "/admin/scientific-runs/efab8c22-82ac-4830-9baf-db8055288e15",
+        "label": "r02-mosaic-initial"
+      },
+      "status": "passed",
+      "observed_queries": 27
+    },
+    {
+      "at": "2026-09-07T20:15:55.944Z",
+      "command": {
+        "action": "snapshot",
+        "label": "r02-mosaic-auto-progress"
+      },
+      "status": "passed",
+      "observed_queries": 33
+    },
+    {
+      "at": "2026-09-07T20:16:10.240Z",
+      "command": {
+        "action": "navigate",
+        "path": "/admin/scientific-runs",
+        "label": "r02-mixed-runs-overview"
+      },
+      "status": "passed",
+      "observed_queries": 37
+    },
+    {
+      "at": "2026-09-07T20:16:31.522Z",
+      "command": {
+        "action": "navigate",
+        "path": "/admin/scientific-runs/91adf335-010e-4b32-aa25-ebf6193f6311",
+        "label": "r02-bindcraft-initial"
+      },
+      "status": "passed",
+      "observed_queries": 42
+    },
+    {
+      "at": "2026-09-07T20:17:51.445Z",
+      "command": {
+        "action": "navigate",
+        "path": "/admin/scientific-runs/952f054c-41a9-479d-a9fa-e915511c98b3",
+        "label": "r02-esmfold2-placement"
+      },
+      "status": "passed",
+      "observed_queries": 59
+    },
+    {
+      "at": "2026-09-07T20:20:09.951Z",
+      "command": {
+        "action": "snapshot",
+        "label": "r02-esmfold2-auto-progress"
+      },
+      "status": "passed",
+      "observed_queries": 85
+    },
+    {
+      "at": "2026-09-07T20:21:23.859Z",
+      "command": {
+        "action": "snapshot",
+        "label": "r02-esmfold2-compute-progress"
+      },
+      "status": "passed",
+      "observed_queries": 100
+    },
+    {
+      "at": "2026-09-07T20:22:26.814Z",
+      "command": {
+        "action": "snapshot",
+        "label": "r02-esmfold2-completion"
+      },
+      "status": "passed",
+      "observed_queries": 102
+    },
+    {
+      "at": "2026-09-07T20:22:33.897Z",
+      "command": {
+        "action": "download",
+        "label": "r02-esmfold2-download"
+      },
+      "status": "passed",
+      "observed_queries": 102
+    },
+    {
+      "at": "2026-09-07T20:22:35.153Z",
+      "command": {
+        "action": "navigate",
+        "path": "/admin/scientific-runs/4a17632e-9585-465d-8327-245cf7b0d276",
+        "label": "r02-bindcraft-second-placement"
+      },
+      "status": "passed",
+      "observed_queries": 104
+    },
+    {
+      "at": "2026-09-07T20:24:13.328Z",
+      "command": {
+        "action": "snapshot",
+        "label": "r02-bindcraft-second-queue-progress"
+      },
+      "status": "passed",
+      "observed_queries": 123
+    },
+    {
+      "at": "2026-09-07T20:25:44.807Z",
+      "command": {
+        "action": "snapshot",
+        "label": "r02-bindcraft-second-auto-admitted"
+      },
+      "status": "passed",
+      "observed_queries": 140
+    },
+    {
+      "at": "2026-09-07T20:27:30.691Z",
+      "command": {
+        "action": "navigate",
+        "path": "/admin/scientific-runs/05e3da32-8763-4560-a81c-bfb7f8cae5c9",
+        "label": "r02-mosaic-second-initial"
+      },
+      "status": "passed",
+      "observed_queries": 163
+    },
+    {
+      "at": "2026-09-07T20:28:17.441Z",
+      "command": {
+        "action": "snapshot",
+        "label": "r02-mosaic-second-before-correlation"
+      },
+      "status": "passed",
+      "observed_queries": 172
+    },
+    {
+      "at": "2026-09-07T20:28:18.718Z",
+      "command": {
+        "action": "navigate",
+        "path": "/admin/scientific-runs/d6ddbe20-6c2b-4c2e-ab65-03442c9c1b82",
+        "label": "r02-proteina-rejected-submit-server-run"
+      },
+      "status": "passed",
+      "observed_queries": 174
+    },
+    {
+      "at": "2026-09-07T20:31:08.757Z",
+      "command": {
+        "action": "snapshot",
+        "label": "r02-proteina-candidate-auto-progress"
+      },
+      "status": "passed",
+      "observed_queries": 191
+    },
+    {
+      "at": "2026-09-07T20:31:40.588Z",
+      "command": {
+        "action": "navigate",
+        "path": "/admin/scientific-runs/daae227f-f7a0-4fe7-9912-1a95c675c3d9",
+        "label": "r02-rf-bulk-initial"
+      },
+      "status": "passed",
+      "observed_queries": 193
+    },
+    {
+      "at": "2026-09-07T20:34:18.631Z",
+      "command": {
+        "action": "snapshot",
+        "label": "r02-rf-bulk-auto-progress"
+      },
+      "status": "passed",
+      "observed_queries": 223
+    },
+    {
+      "at": "2026-09-07T20:40:23.571Z",
+      "command": {
+        "action": "snapshot",
+        "label": "r02-rf-bulk-controller-stall-boundary"
+      },
+      "status": "passed",
+      "observed_queries": 294
+    },
+    {
+      "at": "2026-09-07T20:42:15.439Z",
+      "command": {
+        "action": "snapshot",
+        "label": "r02-rf-bulk-final-stalled-state"
+      },
+      "status": "passed",
+      "observed_queries": 316
+    }
+  ],
+  "downloads": [
+    {
+      "operation_id": "2155828e-7471-4631-976d-14f1f31b6a97",
+      "artifact_id": "c9b16c8b-9b73-4317-8a76-25b66cccde3f",
+      "bytes": 20368,
+      "sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806",
+      "seconds": 0.26255623300000297,
+      "at": "2026-09-07T20:12:32.677Z",
+      "status": "passed"
+    },
+    {
+      "operation_id": "4a4a2555-3901-4193-8a65-78ff01737af3",
+      "artifact_id": "f66c73bf-ae3a-44ff-9f1f-0d03fc89f6b9",
+      "bytes": 32475,
+      "sha256": "42429e931def8218853e78179d34cb4b22c7fe0d9b6d0d4c3fda775e009cdaa3",
+      "seconds": 0.2613856429999869,
+      "at": "2026-09-07T20:14:31.804Z",
+      "status": "passed"
+    },
+    {
+      "operation_id": "952f054c-41a9-479d-a9fa-e915511c98b3",
+      "artifact_id": "5a560626-ced1-4fa7-88b6-0c56a8b08e90",
+      "bytes": 26292,
+      "sha256": "195dd5223b9a708fc08feed2b9ace110631cbdc42b302fe73afa514c0bfc005e",
+      "seconds": 0.2846790439999895,
+      "at": "2026-09-07T20:22:33.897Z",
+      "status": "passed"
+    }
+  ],
+  "errors": [
+    {
+      "at": "2026-09-07T20:11:35.331Z",
+      "status": 401,
+      "path": "/admin/api/v1/session"
+    }
+  ],
+  "failed_requests": [
+    {
+      "at": "2026-09-07T20:11:54.990Z",
+      "path": "/admin/api/v1/scientific-runs/2155828e-7471-4631-976d-14f1f31b6a97",
+      "failure": {
+        "errorText": "net::ERR_NETWORK_CHANGED"
+      }
+    },
+    {
+      "at": "2026-09-07T20:13:05.773Z",
+      "path": "/admin/api/v1/scientific-runs/4a4a2555-3901-4193-8a65-78ff01737af3",
+      "failure": {
+        "errorText": "net::ERR_NETWORK_CHANGED"
+      }
+    },
+    {
+      "at": "2026-09-07T20:13:06.859Z",
+      "path": "/admin/api/v1/scientific-runs/4a4a2555-3901-4193-8a65-78ff01737af3",
+      "failure": {
+        "errorText": "net::ERR_NETWORK_CHANGED"
+      }
+    }
+  ],
+  "source_receipts": [
+    {
+      "file": "session-report.json",
+      "sha256": "7c4430c73ee1fa0b562af110620a972b1e7e4b65f5038743e330170b039f1de0"
+    },
+    {
+      "file": "query-0001.json",
+      "sha256": "2e6dfd5465cc180633e402d327bd3c305c9b9780a1ab7af255feaddd174c3f28"
+    },
+    {
+      "file": "query-0002.json",
+      "sha256": "f8ded31f4f8d6dea11421107eb21ffa9ae7f707ecef735c7f3a516f5819aec62"
+    },
+    {
+      "file": "query-0003.json",
+      "sha256": "232bc3f32554875fc5b4c4fc24d1aae50161856718aae4eeb0aa929917971fa0"
+    },
+    {
+      "file": "query-0004.json",
+      "sha256": "e54f3376acd9f934e1d1a5e023e5beaf8f541f80467ac5fef7798fc57646e8fe"
+    },
+    {
+      "file": "query-0005.json",
+      "sha256": "30063bf6ef042a0baf9181f91fd97ac68c70a0fe8b6c1dd73e8c79844c495d0a"
+    },
+    {
+      "file": "query-0006.json",
+      "sha256": "d099f59e1b9723972e6f2b7bc379bb3a49bda2b201f2cf6c5e850c3c00d0955c"
+    },
+    {
+      "file": "query-0007.json",
+      "sha256": "fc6177a0f762dae716b6faac8fa013474bd9c5e5a3b4494e1021eb053fc79455"
+    },
+    {
+      "file": "query-0008.json",
+      "sha256": "e0147875a9932d4fa74cde775423d0b58020a8acb0b63d898eac984e55fd1e38"
+    },
+    {
+      "file": "query-0009.json",
+      "sha256": "24981554d79b90ded319a4132087393a086e8f5ce532c7ea883e3819277ac7c4"
+    },
+    {
+      "file": "query-0010.json",
+      "sha256": "4d9bda3e8efecd1ee30c0443c02034493fd864d7617dc46285d38bd1b36f9c92"
+    },
+    {
+      "file": "query-0011.json",
+      "sha256": "73aaa269b8768071751bb11bc198f720d50a9f569f87c2ba3cbf7294b5cbcfad"
+    },
+    {
+      "file": "query-0012.json",
+      "sha256": "989131898d52e17adcf34a9ba95f9d43278320de25490e88bc3bfe6327519e4b"
+    },
+    {
+      "file": "query-0013.json",
+      "sha256": "cd85be1ad162861add0c2fb57e0a5510e1d103a07c51640c118b3c5f5f52b57d"
+    },
+    {
+      "file": "query-0014.json",
+      "sha256": "975e96613ee5d255385bec810fea2a081e421b6aecec3d343f0ecbf7b7c8773b"
+    },
+    {
+      "file": "query-0015.json",
+      "sha256": "d40e16871dcd4d6c896faf7719a4f811aaf11e8294a4eab28653fdb912d4af81"
+    },
+    {
+      "file": "query-0016.json",
+      "sha256": "155c1fb7dc32753eba61ff971d9a36658a5752c8d8cda6345981c55ed7347b50"
+    },
+    {
+      "file": "query-0017.json",
+      "sha256": "5e3af83a8c2225cb0ab8cc85260c042e275ba46c6d7133e32be0a4cb872aa9ca"
+    },
+    {
+      "file": "query-0018.json",
+      "sha256": "9ac5e1cbeaafd94a747c40293ba234f34d3091affea16999abcb15360fdc5ec2"
+    },
+    {
+      "file": "query-0019.json",
+      "sha256": "6c7ded37713b8b381ab0f6ae2f84a68a9886fd137bfbbcb5c648ebbf0b0dd325"
+    },
+    {
+      "file": "query-0020.json",
+      "sha256": "aea260373e95a87573448eedc1f9f1d56fdf79da05cb18c7c0b44aa421d38e30"
+    },
+    {
+      "file": "query-0021.json",
+      "sha256": "601484de5b5061364ef86604515b1e5947d61497de90327a60b74015122a7916"
+    },
+    {
+      "file": "query-0022.json",
+      "sha256": "7ed78a2c9b2c8c39f53bb50fcd0ff7da59e20a0be8017c48fe086147a5f62ab5"
+    },
+    {
+      "file": "query-0023.json",
+      "sha256": "65ea5275bf9350a45f5657f0192f0a2d49c1f433c895eef0a99d4133337577e1"
+    },
+    {
+      "file": "query-0024.json",
+      "sha256": "79406e5d19f9a844a81b1c03df887007fca46c8f762322559ad95f43e01a6e2a"
+    },
+    {
+      "file": "query-0025.json",
+      "sha256": "19929a6f07c1064278501950a4b24131428e2a5af6d8ebea057da0f8e6243d43"
+    },
+    {
+      "file": "query-0026.json",
+      "sha256": "fff2ed76d61439bda5702d0ba1ecf495bf87adb8216ed916c340b1afb9b58d33"
+    },
+    {
+      "file": "query-0027.json",
+      "sha256": "aa3fffb75674d2d35678d545f61e024c9e13678b0dd4e947093b08ee07c1583f"
+    },
+    {
+      "file": "query-0028.json",
+      "sha256": "e4be3a064b74ee927fa7c322d05270fbc2bfcd4f4209702d5bc7e11b177aceaa"
+    },
+    {
+      "file": "query-0029.json",
+      "sha256": "1e2eacac4b06f3c79fa8c17df36ff17c790b2f79bea5162d8ccb712f2c537553"
+    },
+    {
+      "file": "query-0030.json",
+      "sha256": "979bcb50c4d1b32da8bfd46413c874ce35e23e470b6b72fc8c786ad0c1d4506a"
+    },
+    {
+      "file": "query-0031.json",
+      "sha256": "311476c5db952c9904cd243fd720004bcea669b9b297551115c9b772d0f3e895"
+    },
+    {
+      "file": "query-0032.json",
+      "sha256": "eeccb3e4f48d9d92a6ed70b8308a6d862a662cdf44c7d83347571e22651b370a"
+    },
+    {
+      "file": "query-0033.json",
+      "sha256": "ae65609e20868731308214942bb219c008fd2b6c655dc818981f9835b7d90edf"
+    },
+    {
+      "file": "query-0034.json",
+      "sha256": "7616dc31fe3eaeb2d3a1db8b951e91e432e6399c59c159371f21e29ade6286f9"
+    },
+    {
+      "file": "query-0035.json",
+      "sha256": "2a76a5c18e4c79898dca4e611e31419bb915b0a39db8bf99cb80d9b719b4e1cb"
+    },
+    {
+      "file": "query-0036.json",
+      "sha256": "973518217d4e7638e3bdcd8758433ffc8f4367063814d9bdc17d6db69482a446"
+    },
+    {
+      "file": "query-0037.json",
+      "sha256": "8d01731535ecae7144d8012b7feb277252c3face27806cd318cf25ffb027b757"
+    },
+    {
+      "file": "query-0038.json",
+      "sha256": "3fe7e2058c1ce554e539d415064d71153d8b3573f61172c2b76a13a97fc813fc"
+    },
+    {
+      "file": "query-0039.json",
+      "sha256": "f5e12fe9cded2a739d1948f3a0522b14306577a1c5bb0864548bd7b9a5b7abd3"
+    },
+    {
+      "file": "query-0040.json",
+      "sha256": "d1082d2871e44d8dbe15e405a4efd4699cf37eb913a9ae4a579bcff11e37aab8"
+    },
+    {
+      "file": "query-0041.json",
+      "sha256": "4c1b9be404718965547107c048a075b525dc17f95cb97c9204777cd1bcba9338"
+    },
+    {
+      "file": "query-0042.json",
+      "sha256": "063b9b63e88c37b2d62991c309ab2a336382a80c136851bd8c7799a023008a9b"
+    },
+    {
+      "file": "query-0043.json",
+      "sha256": "fd0909e5251ffdaa00226f193c5b40cf5647d7e5a143a80e3bbf3da08af7850f"
+    },
+    {
+      "file": "query-0044.json",
+      "sha256": "d2f880f99ffefe6ebeb356ae8b097d5c701d38e97ca75bce8bdb6f0b6aeedb1a"
+    },
+    {
+      "file": "query-0045.json",
+      "sha256": "a74a6daca031da001e89878e0a888f100a2d55dfce33a98ffa920830b9608e61"
+    },
+    {
+      "file": "query-0046.json",
+      "sha256": "a73d174786e18c82c4e93bbd5e8314983e7bacb1bf707ff45174f5a28ecf60bb"
+    },
+    {
+      "file": "query-0047.json",
+      "sha256": "4bebf9ac3abd2125f3b47966ebbd0b699733e69a8eb90ba088628f56f216722e"
+    },
+    {
+      "file": "query-0048.json",
+      "sha256": "64bd4afa21ce9266782a40b3bb4d6309e3ef79856875ffd21e7ff40148fb0716"
+    },
+    {
+      "file": "query-0049.json",
+      "sha256": "0b9d255e785d07944e5b7d7cd9f20f67d2b23385a1985d93acd7e5ce60cf20d1"
+    },
+    {
+      "file": "query-0050.json",
+      "sha256": "459fc3608d0c863df0ae75acae07d06c2c59f6b1ef85851ef4c407f828d99e49"
+    },
+    {
+      "file": "query-0051.json",
+      "sha256": "ba481e55a833cb71b37d339ef3b062a5b05235a4decdc778df8af45f3c84f0f3"
+    },
+    {
+      "file": "query-0052.json",
+      "sha256": "eca98fc389406d458336daf1f5dd94ecfdd568001a5144ec9afe2e8abafb07bc"
+    },
+    {
+      "file": "query-0053.json",
+      "sha256": "417233bc94ab69a121ae2f02ff516b6256105b48f9caee6c7afb26c23fc069ba"
+    },
+    {
+      "file": "query-0054.json",
+      "sha256": "9d929a191527fde8403a9f36791a7e0af993c554f2c96e2e2f76a31f3e2cc3f3"
+    },
+    {
+      "file": "query-0055.json",
+      "sha256": "ba5ba3af20feb86fd3f658ac0921794f95b78c090ee3d22c8b39d05bb33f5889"
+    },
+    {
+      "file": "query-0056.json",
+      "sha256": "ab9b82dbd1967b2e068f9cffbb8852808b747f0a2dac91a55b7891672d966f41"
+    },
+    {
+      "file": "query-0057.json",
+      "sha256": "8bde7e8591f59ce899d6b1b03f11edee21028b789d47a4a554adab97d268f6b0"
+    },
+    {
+      "file": "query-0058.json",
+      "sha256": "068772652591f0d7c99518ee1e33d965dc6bbc1fb6104edce246f7ad3c7cafb1"
+    },
+    {
+      "file": "query-0059.json",
+      "sha256": "ad3a308331bf4e391a8fd4efe12d19fe7c843c390748dfeafed21bc34f4ffed2"
+    },
+    {
+      "file": "query-0060.json",
+      "sha256": "26c861af9555fa0253b26fc8a91ef8d47ce76f4138597e8f2d821228a648b5df"
+    },
+    {
+      "file": "query-0061.json",
+      "sha256": "a79bda0c38a1e24ec2971b9c70c8242234b2a4f7c94346c6287743e9d9534255"
+    },
+    {
+      "file": "query-0062.json",
+      "sha256": "389fc4e57b829cc29db143d810d6bb73f2f2acc3057988901561e4874eefe542"
+    },
+    {
+      "file": "query-0063.json",
+      "sha256": "ff78d0f823d494c8c9c81a92eba220bf88eb38ecadffcd0a6352120afce78fcd"
+    },
+    {
+      "file": "query-0064.json",
+      "sha256": "146e7ecad3124ff359cf8ee83a9ae543638af10d805342b40dd912fe574b494f"
+    },
+    {
+      "file": "query-0065.json",
+      "sha256": "a332ca7d26f63854dd8c52c62ddbc2b7df0bc981b3397b15f2cca92d06af4415"
+    },
+    {
+      "file": "query-0066.json",
+      "sha256": "ec06dd3c8d66ed3a5dadacc36100f7fae78d20a32a1e406fb6099b4804c2c6e1"
+    },
+    {
+      "file": "query-0067.json",
+      "sha256": "154547fe24992aafcbbd6337455f68cd513b69437cc4035410d3aac10505152a"
+    },
+    {
+      "file": "query-0068.json",
+      "sha256": "ec2de339cbb31681fcffaa498bf336635d65c6fd8631d3eaa968380d50e91786"
+    },
+    {
+      "file": "query-0069.json",
+      "sha256": "842613c70c91cb7a3984b7288bd0a91700e4ddaf6e691c351c02e1e8b72ff854"
+    },
+    {
+      "file": "query-0070.json",
+      "sha256": "198bba24a900931429bde7da4191001ac1cd9b33a647e22e31d1e833c7a8ac3d"
+    },
+    {
+      "file": "query-0071.json",
+      "sha256": "c6b97f3db6d2f1026ccde97b1ef4027721c5f66070f139ad22b1f0d5b3954a29"
+    },
+    {
+      "file": "query-0072.json",
+      "sha256": "a615bfbec3e3decd37e8b95e0bf73915c822e7f27ae0b71ddab359706505de0e"
+    },
+    {
+      "file": "query-0073.json",
+      "sha256": "bbe49c1660e3db047488bb7bad84a562a6a07928583afde76161f962fd177d8e"
+    },
+    {
+      "file": "query-0074.json",
+      "sha256": "cfbbe0dc2cd2c33ed19333dd2846710efca1eccae48bd4572f6b4deba50eae5c"
+    },
+    {
+      "file": "query-0075.json",
+      "sha256": "6bcadf4cc83725e2ee041097b7b5dcd29391fac00cb6c1fb3b0ac8e8887b1580"
+    },
+    {
+      "file": "query-0076.json",
+      "sha256": "011a975ec33cf9c31195cfe8d176375a3826a97ef853244d4f201f2f66cf5986"
+    },
+    {
+      "file": "query-0077.json",
+      "sha256": "5fa9698df3b3c52aafda1f4b5793c324c244015dee150036d9167f609ddbff27"
+    },
+    {
+      "file": "query-0078.json",
+      "sha256": "b35a1b425c1d634188d03c237942639eadb27676358bf8b1cabd3d1db47e1a00"
+    },
+    {
+      "file": "query-0079.json",
+      "sha256": "2dfa77e139565812292eb2f4a8db27dcb634b45d1c4182c8c78b417830a2ce75"
+    },
+    {
+      "file": "query-0080.json",
+      "sha256": "1a1dfd3fa5005e63c5a9ee6646422291c75e29343a86bcae49fb062b5566d3cb"
+    },
+    {
+      "file": "query-0081.json",
+      "sha256": "ffaf1569771b7c74bd8c3deedb6df3454358499920af42644a7593ce8f5e7104"
+    },
+    {
+      "file": "query-0082.json",
+      "sha256": "97f0d7a947d2bdba002c50e10d6d2d22721ad0603850497094204e0c8cad8613"
+    },
+    {
+      "file": "query-0083.json",
+      "sha256": "7fff15e4b9e9127fbf65f33743078d8c98e1830bc047259546a7b78f795419ed"
+    },
+    {
+      "file": "query-0084.json",
+      "sha256": "529037cda43f7712fe854261002ed0c8bbdcd35df907c8b24e2768fea466b50f"
+    },
+    {
+      "file": "query-0085.json",
+      "sha256": "8528815fa4a5254670c527d0a7de72cf07bcf8b9e6ebec184c15204f00ccf38a"
+    },
+    {
+      "file": "query-0086.json",
+      "sha256": "7903eccb503d61af5345776d9ae19835192b2a48c673e0c92046b7bc56770288"
+    },
+    {
+      "file": "query-0087.json",
+      "sha256": "ddae3c124f4ae9bf8fc42f6ac0b5db62ca533dd2836e79703a7c8bfda43d40f0"
+    },
+    {
+      "file": "query-0088.json",
+      "sha256": "14700e6205008f0991030a24534b5ae95ccdb979c7192e3489f8263f4808c72c"
+    },
+    {
+      "file": "query-0089.json",
+      "sha256": "7150b9c1bfafbb2fef6571ffce0222239a1878488e6ec13461e71fc82a380f14"
+    },
+    {
+      "file": "query-0090.json",
+      "sha256": "456696f9d09527f71cffa90707363e85acf412600c20d390aa588ad14ab31211"
+    },
+    {
+      "file": "query-0091.json",
+      "sha256": "52be9db47fb919ebd375e3d0f0cfda62cc778b32f8cb8e19ff39e16f28ec4872"
+    },
+    {
+      "file": "query-0092.json",
+      "sha256": "a19e3f4f34d75f27e89c60b309a6eefffc9d8b863deca7ebce130116879fc7bd"
+    },
+    {
+      "file": "query-0093.json",
+      "sha256": "3548dc280eed3a1b7caee9b0368ffe8a21cafb1f40e50e4c450e16833949ccfe"
+    },
+    {
+      "file": "query-0094.json",
+      "sha256": "29902413460bd6d54cd6f11ec5de8062f61b30add1c87eb01d01c79811e7f46a"
+    },
+    {
+      "file": "query-0095.json",
+      "sha256": "e7537015a28aa11c3ec3551827f2f6402be47a3eb6ee09212044a9cf74a3a2a8"
+    },
+    {
+      "file": "query-0096.json",
+      "sha256": "212c0a80705208667a1997ba7d6526b3ece8218af983d4ec53fc330162785f5e"
+    },
+    {
+      "file": "query-0097.json",
+      "sha256": "87e59432ce479c77228e4ba23c8cd60685d88c9325a39422dbc174c5e2036ff7"
+    },
+    {
+      "file": "query-0098.json",
+      "sha256": "8b4f815c84571408f9760d979c40b523462d3240bd6e2ec7d732a6d029924505"
+    },
+    {
+      "file": "query-0099.json",
+      "sha256": "d7c6fc148661b9011d1d44e53d2c4a55ad8884d687eba4024f06ef63fe5915f1"
+    },
+    {
+      "file": "query-0100.json",
+      "sha256": "74a2fda55f5c3c1ecdc757d3222f1a59772f6e403d2bf76656267d96ea42553e"
+    },
+    {
+      "file": "query-0101.json",
+      "sha256": "27b81912428500cfd4e9eac136137b5ad253a122f41c582ff8d0568b63768fc8"
+    },
+    {
+      "file": "query-0102.json",
+      "sha256": "dbba5056ee9f497e9b9fbf98957604d9ed57d74ccd6ec793dcf715316de815ee"
+    },
+    {
+      "file": "query-0103.json",
+      "sha256": "2170888e9cd5740bd6012daf1cba8f4321c726b5c5f1257f6f2cde9be9142cec"
+    },
+    {
+      "file": "query-0104.json",
+      "sha256": "37cd11e712349373e76b5f251a1083eee58ea00052fdc13ed2498adf5eaf73ee"
+    },
+    {
+      "file": "query-0105.json",
+      "sha256": "775ec28c34c6aff9ddada8757835d29ff35f8172fdb64f9b7b9502b1aa68898e"
+    },
+    {
+      "file": "query-0106.json",
+      "sha256": "d15e173193969223031a62315e1415ac61207c4a9d1a58dfc4ace112eaa87350"
+    },
+    {
+      "file": "query-0107.json",
+      "sha256": "79fcdecd90f4584b88862fe9ec4890007928078fa236635ac781be5945db902d"
+    },
+    {
+      "file": "query-0108.json",
+      "sha256": "0b793e79f737417a11258b50031a82a38cf055ac7f4ff3507d7213a8759ac0b4"
+    },
+    {
+      "file": "query-0109.json",
+      "sha256": "9c4eec2015933b5128b69e9e2a26d146ed9ac2dcddcbe69caef41f3eed998b94"
+    },
+    {
+      "file": "query-0110.json",
+      "sha256": "75f735f742e7b38b7fa0d44adef43931eb9e67bceacbbaf9f1a7bfb2b4f23f42"
+    },
+    {
+      "file": "query-0111.json",
+      "sha256": "3e6b272049a957201f31eec621fc66419faf16dd1508406357c49f25750cc893"
+    },
+    {
+      "file": "query-0112.json",
+      "sha256": "5f2099434add31c46f2597cbcd73363e6271f0eaa70373cf0c2ecca6d901521f"
+    },
+    {
+      "file": "query-0113.json",
+      "sha256": "2a837ea3ede11d2d0084f9a1dabdde14af6687557526cb85f73282acb53e8c2d"
+    },
+    {
+      "file": "query-0114.json",
+      "sha256": "c96c801ce4930ff87e47655822778f2eb2f3fdc20c97d7edebab1f383bfd020c"
+    },
+    {
+      "file": "query-0115.json",
+      "sha256": "622a546efbc53ae85e4723fa3d9efbd915d61ef10cd82cbcb2b873795448b031"
+    },
+    {
+      "file": "query-0116.json",
+      "sha256": "9540d6cfcec71b3a5d74d23ba70c4560cfd8f0f472ff85b3666350d2edae5b42"
+    },
+    {
+      "file": "query-0117.json",
+      "sha256": "41e66b72638ad4a5135f8a5aa58fd50b302a482d020efe89cf9c1e0150ccd673"
+    },
+    {
+      "file": "query-0118.json",
+      "sha256": "d597dfe22be75d271f6e47248f61c33ab701484dbe1a693e3656d31d25bd0832"
+    },
+    {
+      "file": "query-0119.json",
+      "sha256": "cf42f678ac3b618660c8486337e9e4feff7ca7e7711500b585edd877564bb2f2"
+    },
+    {
+      "file": "query-0120.json",
+      "sha256": "20f722151c88193cf7f8602def63a7732b44824abcdf7aa1a9d7d96ca45a1f75"
+    },
+    {
+      "file": "query-0121.json",
+      "sha256": "f83e743c5938728252acdcbb034d810f8fce9c6a757719deb2232d88f5cf6891"
+    },
+    {
+      "file": "query-0122.json",
+      "sha256": "3dd4f10d3f74ea2ff9b60282e7fb6b822a0cad3031485fa95c9a49cce1a8e621"
+    },
+    {
+      "file": "query-0123.json",
+      "sha256": "3447ddce2d3df41af62bbc3b694c296ffe9cbe743544e1b7ba4dd598c626b0a3"
+    },
+    {
+      "file": "query-0124.json",
+      "sha256": "edf76be5858c8c0b42c9a74d3ccbb3e0b83daa9381c83b9654ea1faedc0541d6"
+    },
+    {
+      "file": "query-0125.json",
+      "sha256": "620012bdc37ead0b78d3d6f134eeb7620f8b3682fe1766e8fe6a2dd48d87bb6a"
+    },
+    {
+      "file": "query-0126.json",
+      "sha256": "963267b13052caadb09c36af1fb9b14ab325942f8098760b390835b7f2ed4725"
+    },
+    {
+      "file": "query-0127.json",
+      "sha256": "5cd3a664bd15c616a9cafe6831d35f435de514cb87f4e72c8b69bae14c908058"
+    },
+    {
+      "file": "query-0128.json",
+      "sha256": "f2a972c34f609748ae052acaf5eedcec529f1283f63fa40089e7236776d76b25"
+    },
+    {
+      "file": "query-0129.json",
+      "sha256": "2fe742dccceb484127dea0643120d9a719fe1f3a01577e881c6ac0cc28808f43"
+    },
+    {
+      "file": "query-0130.json",
+      "sha256": "a957195529a58d5c88d050baa087a5a4586af6153f48cc0673cf1fb41e3b8b90"
+    },
+    {
+      "file": "query-0131.json",
+      "sha256": "4f8e8401e48e6a5bd8b8cd9ed78cd29c3f159dc1bfbf7f1ee4e158f30a7c5939"
+    },
+    {
+      "file": "query-0132.json",
+      "sha256": "44298fbb5324aa0e910077ddcff7f9e3cdc072fe5447f8f7e750cc1bc4cfeb8b"
+    },
+    {
+      "file": "query-0133.json",
+      "sha256": "71c576932932b0a9e920a606b3211030e9a400377d6915a6e8fecc191d204ee4"
+    },
+    {
+      "file": "query-0134.json",
+      "sha256": "8b1a74d7ec5a4dbf29d37c383ec232052c62e937fdc4431bd37e1b52877e486a"
+    },
+    {
+      "file": "query-0135.json",
+      "sha256": "bc1ee63b1fdbcc572d9635d508bd8841325610e76a653e8ee854c7e017189cb0"
+    },
+    {
+      "file": "query-0136.json",
+      "sha256": "192e0bdb26dbe18cddb2a1bfdfba259a3a9688a590544e46413dc2000be869e9"
+    },
+    {
+      "file": "query-0137.json",
+      "sha256": "546b694807cb97c6fbecedd1d9dac05b77b6f07e4f7479c1c3c425808bcbda40"
+    },
+    {
+      "file": "query-0138.json",
+      "sha256": "03899f299ddbb0e220cd9aef3021fe2f826fa16a2165e51839a61323ff0a29a6"
+    },
+    {
+      "file": "query-0139.json",
+      "sha256": "2b7ee908a40ac09307ff22c0f73528bb749375c8c69285e5f3c14d4cb0a536e0"
+    },
+    {
+      "file": "query-0140.json",
+      "sha256": "ac14cdeaab7d8ea6d42c179e5a800e51de3e27a13dab1a36493989e8a54cb9a7"
+    },
+    {
+      "file": "query-0141.json",
+      "sha256": "576bd0ce7389347756a688ea0bed27460be361c5596ae2de20d597d0fe13ef8a"
+    },
+    {
+      "file": "query-0142.json",
+      "sha256": "105dca3dbe0a8d37a44f518860e571fa3752c35308ae33b5ddd21b2d6c3df77f"
+    },
+    {
+      "file": "query-0143.json",
+      "sha256": "ef47938e19d4f8336ea89055fa547af633177fcc2335a2c6589e2cad0672ced9"
+    },
+    {
+      "file": "query-0144.json",
+      "sha256": "55f2be7ded0d04fa11309719f93c2ab61cb4a4565a9eca532c58dc212c611870"
+    },
+    {
+      "file": "query-0145.json",
+      "sha256": "ad1b2bae1bdf01ca581ff605bedb670e9d98a389bd80025d9d8cd41bd119d99c"
+    },
+    {
+      "file": "query-0146.json",
+      "sha256": "b928ac7f3e565f9f1eb50b757544b11e977cf7fc033746cc61ccc89a93ef20fe"
+    },
+    {
+      "file": "query-0147.json",
+      "sha256": "faa2a03999a338a81e294bb0269f14c1ca45cbbf124dcfdd01d473d0681d5027"
+    },
+    {
+      "file": "query-0148.json",
+      "sha256": "076837e47bf53b159a456298699a534c16b7c979d8ba0dd4f2d9ccaf0a8055bc"
+    },
+    {
+      "file": "query-0149.json",
+      "sha256": "8ced0661872af141fffc59cabc74a21cb30086120e9cb510912bfb69c6f9317b"
+    },
+    {
+      "file": "query-0150.json",
+      "sha256": "7853af7ffbb6ecc4fadac4080aa31f4996a77a385ed21429cd97801016c21cfd"
+    },
+    {
+      "file": "query-0151.json",
+      "sha256": "d72525cf858630f4805640b8fff8784ee5baa8a12cfb8fc4e120d7f01949e40c"
+    },
+    {
+      "file": "query-0152.json",
+      "sha256": "5c4d2ef11defbbfb82e50311df992d3e2b473c4f56dfd86ba7491d750d461af6"
+    },
+    {
+      "file": "query-0153.json",
+      "sha256": "29bd4739936125df44e63cb6fe3298f4b9dc4575159e31cc14fa29a449d1731e"
+    },
+    {
+      "file": "query-0154.json",
+      "sha256": "f70a4d1a80e23dc959e9510a8ca1ba0b1d4c52150704a3549117c78921b64e3d"
+    },
+    {
+      "file": "query-0155.json",
+      "sha256": "3a86e4b65ac8ec09ea86ad378124b578be4eeb5ce7733f2aa500689c25782de8"
+    },
+    {
+      "file": "query-0156.json",
+      "sha256": "c07a08a33ee4c948bf12e5ef3455b4888520cf73287bb146fec5a988cbbe045c"
+    },
+    {
+      "file": "query-0157.json",
+      "sha256": "eabacd12e071adba2755777f78b7eda2469e0ce3c6368a10c3a3ab33984c9cc8"
+    },
+    {
+      "file": "query-0158.json",
+      "sha256": "ea7c63ee6d869583263a5452a91846f99d8092e37e1db66407de81c4207f0232"
+    },
+    {
+      "file": "query-0159.json",
+      "sha256": "c86a593a3e4a112f5deb81c8266073249633e34867bc02553b68296cac3c086f"
+    },
+    {
+      "file": "query-0160.json",
+      "sha256": "fa6eb50f87c6cf3b5263a30a9c45fd0d399ccbb00067e8944de98ca93f5a3af0"
+    },
+    {
+      "file": "query-0161.json",
+      "sha256": "bc37f77bbed76afe098b30a80798e456e8e3ad0777acf86f719c204b9ff0c3bd"
+    },
+    {
+      "file": "query-0162.json",
+      "sha256": "300890f0364a18022850356590bec4e069feb26c147dafc09fedf22372d433cc"
+    },
+    {
+      "file": "query-0163.json",
+      "sha256": "9aadec4b188e335c5fc385355b082a7d0fa5637dc5335337e0c4f89a9cebb123"
+    },
+    {
+      "file": "query-0164.json",
+      "sha256": "6318c2a7d414f539395db377e94f7ec6e1da3932e228cb2e8e5f58a14ff6b269"
+    },
+    {
+      "file": "query-0165.json",
+      "sha256": "c7c0fe447bd8315266c1ef2ab7455b80270d7f1ca29131f5b15258e4bd3ba305"
+    },
+    {
+      "file": "query-0166.json",
+      "sha256": "b6c39bc9d23d909c831cae8f186a76f01aa01a4f68f30a8352802b3c507f457c"
+    },
+    {
+      "file": "query-0167.json",
+      "sha256": "f40c9617d1a8c9768f521dd506e4e421d99e454acc766a2c8b24d6645bd85e43"
+    },
+    {
+      "file": "query-0168.json",
+      "sha256": "a3840dcd6e1724370068df868aca86ca30491c5682c2ea1b24fdc4ce1053a5a1"
+    },
+    {
+      "file": "query-0169.json",
+      "sha256": "14d4ca17cbbed0b2d458332c43ba37fc3872e7fe2e4e64e8c8279eea2366e662"
+    },
+    {
+      "file": "query-0170.json",
+      "sha256": "f2b85323e10001cd31917a0b13ae95ac997d04fc01f08d043d64677e09594766"
+    },
+    {
+      "file": "query-0171.json",
+      "sha256": "ac239788cd1b8fb75a922f2d2fb24c3218fde75290dd50727fc935151b85b6da"
+    },
+    {
+      "file": "query-0172.json",
+      "sha256": "75f203e03f5c84692f4679aeb8fd925465be60406c32e990e62929d7864562b6"
+    },
+    {
+      "file": "query-0173.json",
+      "sha256": "395d49bbede084a68e1b9d53f705d656ca21591a56b73549020d1df84c538ffe"
+    },
+    {
+      "file": "query-0174.json",
+      "sha256": "ad82bee68df565fe9f0ffea81ad48b5ee49f9d6191277ebca843b3f30add0e60"
+    },
+    {
+      "file": "query-0175.json",
+      "sha256": "21df9e64aba19f0162e3b919679f2043ba1a6c21d0f322b62318936c5ae1ee70"
+    },
+    {
+      "file": "query-0176.json",
+      "sha256": "bc123a9959ae554a16c239a6c6ea0c43fb5ba55b9d3002f2652fb68f5a61a346"
+    },
+    {
+      "file": "query-0177.json",
+      "sha256": "10c8f3f3ab4216f8b4f1ecb423ac25ab633a59ea08221baece4d1ed3d40793cc"
+    },
+    {
+      "file": "query-0178.json",
+      "sha256": "a3702c65025cef53bf4b82ea84474e7d7e9c6f6c3c40119cd706507cfed0d65f"
+    },
+    {
+      "file": "query-0179.json",
+      "sha256": "7d27ed58878e30040eaa0742b0c0731896f556d361f4ed39e02662ee177ea00e"
+    },
+    {
+      "file": "query-0180.json",
+      "sha256": "871e18fbe3cbadfa4812b1f5d2599570e7d2f42fca16dff7d479f04336fff591"
+    },
+    {
+      "file": "query-0181.json",
+      "sha256": "1f7437c8b1426b791bbf45943e480b6da1c2a72435275ce942db06568606327d"
+    },
+    {
+      "file": "query-0182.json",
+      "sha256": "02abda187c160ee982be0963f4d9a14ac7703df1a0f6b6acb1d11c5adedccc66"
+    },
+    {
+      "file": "query-0183.json",
+      "sha256": "28135f3d06b81a7aba329c11fedf38fef4cd524c99e85c3737d82fec9fe1a1a9"
+    },
+    {
+      "file": "query-0184.json",
+      "sha256": "f69574572f4e97cea027d81350d754206632b81569b9a0701360dd978a3d162a"
+    },
+    {
+      "file": "query-0185.json",
+      "sha256": "b54926cadef9bbca5616e82e0099021f4f317b1c37cf5d1e16b6fcd34aab84f5"
+    },
+    {
+      "file": "query-0186.json",
+      "sha256": "a12101b60d16f61ab75d360b589e6db1874778200a6b5c6f22465e20f0e9a8ca"
+    },
+    {
+      "file": "query-0187.json",
+      "sha256": "43bc6cb239eb8fa8b1404a9be2e3c23b15650c3ec751279fc261e29e3b6eecae"
+    },
+    {
+      "file": "query-0188.json",
+      "sha256": "2b2c125742a4c66e03d8ef22bd6e892ceaa2d80f18f3ce8c8fed2f3d476ad432"
+    },
+    {
+      "file": "query-0189.json",
+      "sha256": "c1f1cae8fb3148bfe4609b56feef4c9fd5a9f0661646d2ced596e8ddf9a87cbc"
+    },
+    {
+      "file": "query-0190.json",
+      "sha256": "daf48cac4b20d95ac0a792e0c2959886362a64927a7f712f9ea9237ae1d82cc3"
+    },
+    {
+      "file": "query-0191.json",
+      "sha256": "1f33291d2a6e06793392230037b180a7887acbf0befb1cd4d7c4f419752107dc"
+    },
+    {
+      "file": "query-0192.json",
+      "sha256": "1f77b13b4d152dfe9b717bd8c5fc5a9ee7747bdd96c6025c85c40f6b9ea98b25"
+    },
+    {
+      "file": "query-0193.json",
+      "sha256": "265f8bfa72a57f2610619f54c2bcaaeba83af8d48b03fd93850e65afc3716173"
+    },
+    {
+      "file": "query-0194.json",
+      "sha256": "465c6a491be73cbdac1c97868e59e3ee234a46306897699af58ed7b1e8a90785"
+    },
+    {
+      "file": "query-0195.json",
+      "sha256": "db322ec03855d76ff27a0bd062e32bfad6489e97c61fe461f7d394b1785e0b14"
+    },
+    {
+      "file": "query-0196.json",
+      "sha256": "f901ae9288878a650fdacd3f35d7f6e5c85cd6688a33dfaa604d9f6bbdfbfbaf"
+    },
+    {
+      "file": "query-0197.json",
+      "sha256": "45b80ffa3edb3eb34e4f7978a2e358350f5c2bb154f06f0d258d34d9307bfefa"
+    },
+    {
+      "file": "query-0198.json",
+      "sha256": "f94caae042cf6828caf2335b3c964b9194e9b03ba4e103cb35f520c4dfa06021"
+    },
+    {
+      "file": "query-0199.json",
+      "sha256": "099b14b747eee691a1d69cad48f91f1ac847af3f7f3340e8253ae44bf005153f"
+    },
+    {
+      "file": "query-0200.json",
+      "sha256": "71dd74fd1a8d3bfa0deefa779db9b75515ae36fb01da74c15667f28263dd35a2"
+    },
+    {
+      "file": "query-0201.json",
+      "sha256": "0ecd64e32ea18eb63a9baf4f67e59786ec9a55bd7e4539fd24f7e689d2b96cf3"
+    },
+    {
+      "file": "query-0202.json",
+      "sha256": "baa499ba164db5b66b9f750043d3bfe372d7a2726a4c65eda2dec3c7caeec90e"
+    },
+    {
+      "file": "query-0203.json",
+      "sha256": "f5d9ce8bae6d883b8f0cd9347eb81a46aa7cc4e5a311ff6427e3bce118e46106"
+    },
+    {
+      "file": "query-0204.json",
+      "sha256": "e5dbec6e63b76e932ee8a8741fa14ea5e7b22a359f0dbdd340f8e678d61c6025"
+    },
+    {
+      "file": "query-0205.json",
+      "sha256": "314e081ffaf636545135fb18df9d3afe01fa8fc65ff21217f80b47aa0d8cf7f2"
+    },
+    {
+      "file": "query-0206.json",
+      "sha256": "c41d165d9b26c6047ab6529598e157dae1ad4f9b4781d5307e159a2db649584d"
+    },
+    {
+      "file": "query-0207.json",
+      "sha256": "cde02a677224012d7aa7f8c26673e97591d37707faf31e9255fe857aa1377666"
+    },
+    {
+      "file": "query-0208.json",
+      "sha256": "828a91d273657fc5acd3efdc139c8533b0c190315163a1e3223663b2a3c1f348"
+    },
+    {
+      "file": "query-0209.json",
+      "sha256": "986f6d1e862c5067628575d19d98357f76985e020a9ec2c9e666ef79b7db4b47"
+    },
+    {
+      "file": "query-0210.json",
+      "sha256": "99ad324870eec285b05bc680da05e2d07c5bc22d7cfca7308470bdbf71aa2e01"
+    },
+    {
+      "file": "query-0211.json",
+      "sha256": "7bd555515e1883f7c8e20082590bd4bd4683dc4f5afbc9c7ac6402ec0843b337"
+    },
+    {
+      "file": "query-0212.json",
+      "sha256": "23ae50bdba8ded8a653b249807efa0d205d996057b799f4a0e431836ecb71bff"
+    },
+    {
+      "file": "query-0213.json",
+      "sha256": "23d65df1dec5ae101c4de6bcbdfe285509e143684be25667df9d5ddce1037a03"
+    },
+    {
+      "file": "query-0214.json",
+      "sha256": "da3cc8c37b7caa7e30d6dd9866c8d4930d4c9d8d350b00b89d5c85ff1adf853a"
+    },
+    {
+      "file": "query-0215.json",
+      "sha256": "3a2425187d997a5a8e166aecdeb2e22b756fd63e86d70dee1e592ea60bcdda9f"
+    },
+    {
+      "file": "query-0216.json",
+      "sha256": "904895155d2cc3524e4734c7ef5bbd55fa16a0733df2b01e8d1e8988f397b0a8"
+    },
+    {
+      "file": "query-0217.json",
+      "sha256": "7c4fb219222fdcf0ed7b0a8f4e464214b0c1418d99efd439cf3282598283b579"
+    },
+    {
+      "file": "query-0218.json",
+      "sha256": "af729ef97c07548bab0ee53cfe152b94b2253342761571f69402855ab11fec70"
+    },
+    {
+      "file": "query-0219.json",
+      "sha256": "7dfaa35a213cb2ac7250d7b6dc90165c13c89431e50f49a40b517be60995c887"
+    },
+    {
+      "file": "query-0220.json",
+      "sha256": "56fdb83110b7ae08f746d313f025935fdc10d8650d548c19e594225424b245f7"
+    },
+    {
+      "file": "query-0221.json",
+      "sha256": "8d4e5fb66fcbce0eaaf1038661d2b2464596f5529dafaf724b8f89cdaad4c58b"
+    },
+    {
+      "file": "query-0222.json",
+      "sha256": "b857f6631a71dc8e34872699448811cab0154fdbc8eedf78cf1fafad95415d2c"
+    },
+    {
+      "file": "query-0223.json",
+      "sha256": "ed23d68f43cfd3d17ac79ce7b8b62471ca9d46b2d1e7bbe4e9d0e69d4ac9c9a3"
+    },
+    {
+      "file": "query-0224.json",
+      "sha256": "14450891b26f0db7ad182dc97aa7dafe1d89d2e48ad02c3bd33d6b472ecb6b51"
+    },
+    {
+      "file": "query-0225.json",
+      "sha256": "83bf98f7bcbfe9f5c5416a96023fa36d6de870be5d95156f295a4730199fb795"
+    },
+    {
+      "file": "query-0226.json",
+      "sha256": "1b1d3b9d130a771a02f8d232e155d7e4699ed487429450c177a6f128509d1249"
+    },
+    {
+      "file": "query-0227.json",
+      "sha256": "b66d82741e98ec363a79a8430ae434b6ac6b0560301c80935fa1ae7d483e1671"
+    },
+    {
+      "file": "query-0228.json",
+      "sha256": "349a536489d4b39a0891b4ba0e80f676b62a943d02af4a0c321f51144cc9cf5c"
+    },
+    {
+      "file": "query-0229.json",
+      "sha256": "0bbec847e6ae9566cac50ede02e3aaa3a16cbf652417efc2696e2f3ef601e131"
+    },
+    {
+      "file": "query-0230.json",
+      "sha256": "074795e984aa6d97ced7c088e975eccc50b73a5a5021a21fdcd53febfa6bc653"
+    },
+    {
+      "file": "query-0231.json",
+      "sha256": "6542ad67f2c9cef0ec055dbe4d82ac495a87764839cefe12f5ea2116471ae6f4"
+    },
+    {
+      "file": "query-0232.json",
+      "sha256": "42896bdc1973aa6520fc29448840686c82f26abd1a96d00bf6f4ab5d862cf63f"
+    },
+    {
+      "file": "query-0233.json",
+      "sha256": "1e221e2039cc1b63ee4f63ca3f91a53e276ef2f17e9122f1a34ce2390b913da5"
+    },
+    {
+      "file": "query-0234.json",
+      "sha256": "43850382ea31904d9b053514e0e285a41647b06bfca88ab621c8c034d4b9aaff"
+    },
+    {
+      "file": "query-0235.json",
+      "sha256": "8c0ade81f92829cc94aeaa245414195b14439dbd0ca8f2d6961917e74dc0348a"
+    },
+    {
+      "file": "query-0236.json",
+      "sha256": "72aa7e50ad4f07605aeec25c683f804cb44fdfbc8d0ead042214e0a13b96b728"
+    },
+    {
+      "file": "query-0237.json",
+      "sha256": "ab5583661cc4efabdda17c750e33773a2f213ab95907db15fc8d4462ba28e988"
+    },
+    {
+      "file": "query-0238.json",
+      "sha256": "f6adb038b163e94bcae579b895ae0449a75bfb5c1b53dc1419275fd08aa8b625"
+    },
+    {
+      "file": "query-0239.json",
+      "sha256": "b11cbd6661b4610be01909833c65d5544b6447f227a3fe744f537e475cf2fb1f"
+    },
+    {
+      "file": "query-0240.json",
+      "sha256": "549101688f8d5dbe54d8707236c51c06a142c73e820d6d8f6f60380f5341f8f2"
+    },
+    {
+      "file": "query-0241.json",
+      "sha256": "b7d25d3421e42e151fa1de302dbf9677c4e0c99ffde5ae6e6af1d9189276be9f"
+    },
+    {
+      "file": "query-0242.json",
+      "sha256": "ff9c5fd6da97d9302cc58240076ecb3c82e7f7000803e3a0a6fab0895f590db9"
+    },
+    {
+      "file": "query-0243.json",
+      "sha256": "dff480bcd87b3f6107c1a662f2aa0919a5150c7dfe6c21064b886c510d7d453c"
+    },
+    {
+      "file": "query-0244.json",
+      "sha256": "ca2f01bc0ecabc75fc983141cee014dfeedbcadfc9a000c41c8b88ced740740d"
+    },
+    {
+      "file": "query-0245.json",
+      "sha256": "e69c694b35f1215fe334b1d68ca7c63183062c5c716984ef24e69273bdc4c888"
+    },
+    {
+      "file": "query-0246.json",
+      "sha256": "43debfd3a55ae24198579b6f16980512b842e95c86c4984f239575d2479324be"
+    },
+    {
+      "file": "query-0247.json",
+      "sha256": "0696b4938574b7aa30816a74900efe522e95c02a879ca7afc28fc21ae0f6ca5d"
+    },
+    {
+      "file": "query-0248.json",
+      "sha256": "67bfb8a03538db92fa14506af4671c927028b3d0ddcc831487ba72f50e7080d4"
+    },
+    {
+      "file": "query-0249.json",
+      "sha256": "45bcb754b7d10f455db803a1eae562481f0851dbcff9ce8caeecaa4b82d04439"
+    },
+    {
+      "file": "query-0250.json",
+      "sha256": "2f28da23181bc89ae4093530d69ec305112a1b3835b17a4e8614351746928549"
+    },
+    {
+      "file": "query-0251.json",
+      "sha256": "303035cb7a4dfdb1f21533a37ba4d62bd1a0cf62c554f8d00791f6f3007778d0"
+    },
+    {
+      "file": "query-0252.json",
+      "sha256": "8edb14ab74190f18d350bb3f51ba4fb3558f2e1cb6da893f212f497c37fc23b4"
+    },
+    {
+      "file": "query-0253.json",
+      "sha256": "1ca8eabe026c4755993ac40a0d5f1f2d344650aefcb27dda67ad8e7bff99527b"
+    },
+    {
+      "file": "query-0254.json",
+      "sha256": "772ea9d039553854e417e76e02f5cafb83cb9a15688117b34843c95d52eb1c78"
+    },
+    {
+      "file": "query-0255.json",
+      "sha256": "01866beeb62071d40fb7ff81ecb661eab82b68f455f742e982fa06f5493aa60a"
+    },
+    {
+      "file": "query-0256.json",
+      "sha256": "49f1158be33c07487c99a5ece6484fa218c75ba63c26dbdeccd9458daa69732b"
+    },
+    {
+      "file": "query-0257.json",
+      "sha256": "87cf7e02a7d31758529ed6f95494f73766cacdc0c651b041d2f50d4ee97805a2"
+    },
+    {
+      "file": "query-0258.json",
+      "sha256": "158aae286a4784ddbf4a39e28bb1afbddbbee2920e8fb81e89322d59ae7996aa"
+    },
+    {
+      "file": "query-0259.json",
+      "sha256": "66fab80834e3ab04f924941a215bd02a72e20ddebd2222a2b7df436b05eded5f"
+    },
+    {
+      "file": "query-0260.json",
+      "sha256": "a77628bbd3d48488f230758eb5ea359affbbd15c8335c2b0324a191bb2171232"
+    },
+    {
+      "file": "query-0261.json",
+      "sha256": "dfb21845068b16025f446f4d76072e41f56d422e545ba2704d9f0cd2b70d2c41"
+    },
+    {
+      "file": "query-0262.json",
+      "sha256": "f9c3933f6a6c1f8eae45997923e9b3f5f7c0a3007e67581b38f474ee75e7fefa"
+    },
+    {
+      "file": "query-0263.json",
+      "sha256": "1bee933d0f24523893177c7057a34b0c63eff6e959e6818ad649dc902a2f174d"
+    },
+    {
+      "file": "query-0264.json",
+      "sha256": "f6a836cdc96948e4581d90b9d9cde2b65d3da095f4d7a8fb52fe39eefcb6e564"
+    },
+    {
+      "file": "query-0265.json",
+      "sha256": "c8800080965234f2f55d8360ac64006890a0bea8e8033d54ef2a6eb79f706700"
+    },
+    {
+      "file": "query-0266.json",
+      "sha256": "be2a79bebab15c13575656adef7c8b2228121fb86a40770f925d78e38ee37647"
+    },
+    {
+      "file": "query-0267.json",
+      "sha256": "73a840826c20b8c6c82ecb3d78fefd2379fba873b40ba6aa840d599dc1bd445a"
+    },
+    {
+      "file": "query-0268.json",
+      "sha256": "c519123c354d3f6c81387988a07a29d377d6335dc67442b881c463231f77a7ca"
+    },
+    {
+      "file": "query-0269.json",
+      "sha256": "4ac383d5664b18124466f2063c0cb8dfa9c02886b0b9feb3c5141085a9f85b9e"
+    },
+    {
+      "file": "query-0270.json",
+      "sha256": "10f9ca6f3723f5cdf5032dbcb20d8c95805eb64c69d8403784fa49e1b51f5a4f"
+    },
+    {
+      "file": "query-0271.json",
+      "sha256": "84500bdba50bc717729eb33ad117c1667bd79c681dede052a0f42cbd91fca774"
+    },
+    {
+      "file": "query-0272.json",
+      "sha256": "77cb2f54ec94c6940279ef1b3cc5f6a2d5078bc7d01530a859ff72da7742ae66"
+    },
+    {
+      "file": "query-0273.json",
+      "sha256": "52171b449c8b7650d77014aed9b1073c0ffa5192dc2bc597c4a5a24d1e608b7e"
+    },
+    {
+      "file": "query-0274.json",
+      "sha256": "892534fb9984ead0ac90228939167e54c629c7d5a6dde73b8734d9fcbed342a2"
+    },
+    {
+      "file": "query-0275.json",
+      "sha256": "a6a5d6f7351f8b47fd1c64bdd9fc3e28ee634d1f39a4ca595f9d884a9dbda174"
+    },
+    {
+      "file": "query-0276.json",
+      "sha256": "1afc3f19bc71acf757bca510a53e5d510df3bcd62875d41164ab0e212de777da"
+    },
+    {
+      "file": "query-0277.json",
+      "sha256": "7081333dd2a8b11f072cecca37611d212dca12cf37e7a1ffeb832e97c635d7d9"
+    },
+    {
+      "file": "query-0278.json",
+      "sha256": "e0964e03002a61918bf9cd4ad5d629b6bac809942e3c1674c20c4796bed48acb"
+    },
+    {
+      "file": "query-0279.json",
+      "sha256": "03f085f73e22d8dce2eb7bc816ff75e04bd4b95f26284c8102f04a8956a0f7eb"
+    },
+    {
+      "file": "query-0280.json",
+      "sha256": "3657f215f1f4a89b0e2d58297c6652e4fa8e477666cf153c9b4974dc4e4c1b04"
+    },
+    {
+      "file": "query-0281.json",
+      "sha256": "c2d4367ee720de14d8369fbd8ab0073372a0cafb20a2d8a8ee05f9cfd66dfafd"
+    },
+    {
+      "file": "query-0282.json",
+      "sha256": "144628e6f7694af6b296b9ae1fdf0efa6e4a76fd30ef9cf3cf69bb7483979f61"
+    },
+    {
+      "file": "query-0283.json",
+      "sha256": "ea35c8bb41e3410db7c4ba3c5084a977451661c28765f3c6b6055a096c7889e8"
+    },
+    {
+      "file": "query-0284.json",
+      "sha256": "b4d45b445e5b9b8c63c3571e9b111a313de43a1e55db8620ea6b9a036da4304c"
+    },
+    {
+      "file": "query-0285.json",
+      "sha256": "90fc0385543238f4de69835d608e08bfb63158a853913e127b7605f23ae346c7"
+    },
+    {
+      "file": "query-0286.json",
+      "sha256": "07baa5674ae471307593a22912ee521a4aac3e6376c1f8a987736c9dfb8f965b"
+    },
+    {
+      "file": "query-0287.json",
+      "sha256": "c1aaa62b97dfc7eb9b833b21351f7d1c283d27c0ae3e0f014bc37f0642e76317"
+    },
+    {
+      "file": "query-0288.json",
+      "sha256": "6f378163a9313b49cf7c62b4d7b6c82738c8453ebf4a2e7a445ff6bc5c02d921"
+    },
+    {
+      "file": "query-0289.json",
+      "sha256": "51811fcd7715c549bee7846b65f9fe37429eb6f9caaef5563e0eb60bf1555b14"
+    },
+    {
+      "file": "query-0290.json",
+      "sha256": "1115a60ca9312362c9d0d7d2a5b6263b19f9501617b0e46df4ff02610ab84b72"
+    },
+    {
+      "file": "query-0291.json",
+      "sha256": "365757578280342b360c4f2484687829783cdd28518c4e481b336395aa30c112"
+    },
+    {
+      "file": "query-0292.json",
+      "sha256": "0576b5f119055492be02712cc5b563d362cb49ef5d0d9afbccae34b57bf3bdce"
+    },
+    {
+      "file": "query-0293.json",
+      "sha256": "2607a187fb2de42f36cdcac227658bf510d42b9832f68e552deb0e1d835e1e28"
+    },
+    {
+      "file": "query-0294.json",
+      "sha256": "a766d357dc98f3cf092010df123b94ceac9e3fde9d0146716c299ed917420c28"
+    },
+    {
+      "file": "query-0295.json",
+      "sha256": "8d5dadd3e04e13e7aa254f4b2e3e8abcb92908140b42c27bafa1ec8a9f1cf81d"
+    },
+    {
+      "file": "query-0296.json",
+      "sha256": "c0fa6d5b506da9a404d8fd1d0e49bdde1a3bc7055aeda955bf4f8e2aab4eac46"
+    },
+    {
+      "file": "query-0297.json",
+      "sha256": "134ed9bbcab75605ab030ef1ede3e3102b982bd6135c2c59cce173f38a4a62f7"
+    },
+    {
+      "file": "query-0298.json",
+      "sha256": "2ff6ce66dcaf86b33c499ad89d48588bbe8948805b044e96f7bb9138bc47841e"
+    },
+    {
+      "file": "query-0299.json",
+      "sha256": "7ebee399ec4347d48c5a9db4ea16d0f8ef8ab1edd208a1c018c02a21d87bf2fd"
+    },
+    {
+      "file": "query-0300.json",
+      "sha256": "adf95e99cca0107be1bfd0f308bbfcaf00d0f0d7c4941bcc6dedec084f7e8dee"
+    },
+    {
+      "file": "query-0301.json",
+      "sha256": "b5b7968910d58da2ce5b80090492de003896f17ebfd5ddefb3d6a857fe9511b3"
+    },
+    {
+      "file": "query-0302.json",
+      "sha256": "b003e79818f4cc6cfb57e977ffa92e4eb8abafc7dbb4e7c6b9a8d6c15bcf097d"
+    },
+    {
+      "file": "query-0303.json",
+      "sha256": "2b2ba425d0b9b35add582e6ac8ac9b69ec63684d91e2e9da00b164e22479f7cf"
+    },
+    {
+      "file": "query-0304.json",
+      "sha256": "e4e4c7b5bb0d88e254a10fa8549c03c239c59eb261e93a6ce15f6a7fc80b581b"
+    },
+    {
+      "file": "query-0305.json",
+      "sha256": "54f784ceb1adb1cd4ced62776f698c4321bca195b67550984e32144eedaeb38f"
+    },
+    {
+      "file": "query-0306.json",
+      "sha256": "df5db778d36494677b2f214c8c73f9b52accb9c5fa8254ca2c528080e9718121"
+    },
+    {
+      "file": "query-0307.json",
+      "sha256": "6fc83fce36ac44ba83782d9f4b91be91a355dabbe6e5d2584c81e01b820dfd58"
+    },
+    {
+      "file": "query-0308.json",
+      "sha256": "f1c158497b6de231fa9e2288b155d650acd23775886fad5109d7c0d54b6cfba2"
+    },
+    {
+      "file": "query-0309.json",
+      "sha256": "7ad600f6faca5fd1639d6f7af9dc801cbd54dac6a2ea476d6467598fcf92e5d6"
+    },
+    {
+      "file": "query-0310.json",
+      "sha256": "2a1948a5610231c3246e09263003f21b5d82e265226de52cbc789e0a14e5ecb7"
+    },
+    {
+      "file": "query-0311.json",
+      "sha256": "3a33f65d613270aa0eb284cc5ff1ce1a13ffe08a783825614e9c2c944059c448"
+    },
+    {
+      "file": "query-0312.json",
+      "sha256": "8f6717340760375cae5a3c92a99d399d4f5438751ad12250902e74b722e6fa79"
+    },
+    {
+      "file": "query-0313.json",
+      "sha256": "d40aff4ebaba8f7ee1cb2bab10d2f5b02b331a6437058385e686c059455e9596"
+    },
+    {
+      "file": "query-0314.json",
+      "sha256": "6393c44e8ab957c80166765899ae9a3a914c4deab32a6539a71600953e34730f"
+    },
+    {
+      "file": "query-0315.json",
+      "sha256": "e5a2c6fca267c23f8e295616f4c2d0be60e955fdc3c37b8854baafc590577fd7"
+    },
+    {
+      "file": "query-0316.json",
+      "sha256": "cbec9668329ab1de4970bd87675bbfe8a9cb8594bdbcc8be956708022741b379"
+    },
+    {
+      "file": "r02-rf-initial.json",
+      "sha256": "6b70a9eaff63362ca196f672fcf9ebf3fad8d089e82079bbd09161b6c34226c2"
+    },
+    {
+      "file": "r02-rf-auto-progress.json",
+      "sha256": "28f1360ff3b572321fc7cec32a12a0b6160e4ed47f40250163540b0a9ddaf12e"
+    },
+    {
+      "file": "r02-rf-download.json",
+      "sha256": "7650b904ada3e575e44b5e128374254f0bd64108b9bb00750025cc86a0916c80"
+    },
+    {
+      "file": "r02-protenix-initial.json",
+      "sha256": "4cbb21c79c2a9b0eb3fd9b1581a806b754b7e73d94998efdc67a905f9244e2d6"
+    },
+    {
+      "file": "r02-protenix-auto-progress.json",
+      "sha256": "dceb03cdb61a457bece2ecf9b2cb0191938a6ef805de6a5ac4f9b8119f06ee87"
+    },
+    {
+      "file": "r02-protenix-completion-once-read.json",
+      "sha256": "f3f951e6d051df524388c361bf441207cea375537b36802744514ed5d754e7a1"
+    },
+    {
+      "file": "r02-protenix-download-after-one-read.json",
+      "sha256": "7ff568ee9b5333cafc24b0d98232369cb719e223ddd7ffd3f5b747b1b211d1dd"
+    },
+    {
+      "file": "r02-mosaic-initial.json",
+      "sha256": "c01e6249d33b98d9c3d27dee9d564304ea6e5028a0fb015e8cb1b420a1962549"
+    },
+    {
+      "file": "r02-mosaic-auto-progress.json",
+      "sha256": "d527865a9f88e32a5b8fc918ba7c9a93581784aa4f363b61d1188556bad18bdf"
+    },
+    {
+      "file": "r02-mixed-runs-overview.json",
+      "sha256": "6c2f4069da617bfb55167cedcfba7279354b8105217108e435f46f8bb033fd0d"
+    },
+    {
+      "file": "r02-bindcraft-initial.json",
+      "sha256": "ef45bd7b9e4f3c86b42dd589181d7b6b210dab606c43314436346bd87a87ba3b"
+    },
+    {
+      "file": "r02-esmfold2-placement.json",
+      "sha256": "8bf96e12e59ca5b2c06b4713ca4442cb1037554543bb3f56c1443ce92fcb93b4"
+    },
+    {
+      "file": "r02-esmfold2-auto-progress.json",
+      "sha256": "19ae5821cb845adac04a241080dfe406025fc1a45027e3dcd6e1f0dc467dbde4"
+    },
+    {
+      "file": "r02-esmfold2-compute-progress.json",
+      "sha256": "53ce7e2390dbc4e673dfc0b96e0fbf31ec808db33b1f826d4d34d8b4f0afbcd9"
+    },
+    {
+      "file": "r02-esmfold2-completion.json",
+      "sha256": "13149d3b2e91ca92407525135bd623a27e754f63159f47052d1fae1e5eda8180"
+    },
+    {
+      "file": "r02-esmfold2-download.json",
+      "sha256": "a9b43d20df68b42919a37a5612ad9e4d1523b158ed06922ab93c0ea852b3328b"
+    },
+    {
+      "file": "r02-bindcraft-second-placement.json",
+      "sha256": "a406329e8a8bc19f65b8e82cceb53b1a1dbbe935cf10169f31b9fc8587d5a16a"
+    },
+    {
+      "file": "r02-bindcraft-second-queue-progress.json",
+      "sha256": "f9d3d870d632b22d40ad5b768563b15a29e79ee5a89ce9c10c190a5ee4a1246b"
+    },
+    {
+      "file": "r02-bindcraft-second-auto-admitted.json",
+      "sha256": "203ba828068baa2cb954f62440892806f4ef2394337341238e6bf65a805a7b23"
+    },
+    {
+      "file": "r02-mosaic-second-initial.json",
+      "sha256": "7ae569efbdf38c49bfdf973a12050adc6436b8f463d643575315bdba1554ee08"
+    },
+    {
+      "file": "r02-mosaic-second-before-correlation.json",
+      "sha256": "cb93bf155f7d396c03a8d2c9a6df26b01e509a412fe2c5024175e125a35fe5f1"
+    },
+    {
+      "file": "r02-proteina-rejected-submit-server-run.json",
+      "sha256": "6764f5b73e69ec13f1cea9d01b4c3f0ad9a1a89fab177bbc35c77b5282d554a2"
+    },
+    {
+      "file": "r02-proteina-candidate-auto-progress.json",
+      "sha256": "0c4215971f19b00d8558e17f73017d8c3fea48d639338be4443d97d51c1d7b85"
+    },
+    {
+      "file": "r02-rf-bulk-initial.json",
+      "sha256": "5b3d55bbf7cd15dbaac15a6019325cf6ad6d920300d6459e8b86ffe1d3283d0b"
+    },
+    {
+      "file": "r02-rf-bulk-auto-progress.json",
+      "sha256": "da5520a68ad61f9a46b09e773ed553e66973e72f29bb8398075fc9a176e7dd85"
+    },
+    {
+      "file": "r02-rf-bulk-controller-stall-boundary.json",
+      "sha256": "9c88ab1e820e28f8ecec50a9802a825e49d9b9dc81cac6a00257359834df0e6d"
+    },
+    {
+      "file": "r02-rf-bulk-final-stalled-state.json",
+      "sha256": "b7d49940ae854773113add31d96823cd4669b7278d4b73096e093d2ed933c8b8"
+    }
+  ],
+  "limitations": [
+    "Automatic queries are produced by the UI itself; this helper does not poll the scientific API separately.",
+    "Navigation and snapshots remain explicit in the action log; a manual navigation must not be counted as automatic recovery.",
+    "Phase values are observed wall-time unions; GPU accounting is a separate ledger, not device utilization.",
+    "This export preserves observations and does not automatically declare the customer cohort clean."
+  ]
+}

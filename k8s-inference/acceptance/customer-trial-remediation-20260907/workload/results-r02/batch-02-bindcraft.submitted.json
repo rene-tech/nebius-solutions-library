@@ -1,0 +1,26 @@
+{
+  "id": "batch-02-bindcraft",
+  "input_sha256": "9b652d670a286044c42556183906be45ca2fb1ee5af36919f724d642b7e22e00",
+  "model_id": "bindcraft",
+  "operation_id": "91adf335-010e-4b32-aa25-ebf6193f6311",
+  "parameters": {
+    "binder_length": {
+      "maximum": 67,
+      "minimum": 67
+    },
+    "designs": 1,
+    "mpnn_lane": "soluble",
+    "seed": 912083,
+    "target": {
+      "chain": "A",
+      "hotspot_residues": [
+        37,
+        39,
+        98,
+        104,
+        106
+      ]
+    }
+  },
+  "service_class": "customer-batch"
+}

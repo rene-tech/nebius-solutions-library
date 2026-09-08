@@ -1,0 +1,18 @@
+{
+  "id": "switch-03-mosaic",
+  "input_sha256": "23d109248070644bbe72f68a9d82ed7e8b4ff763913030ea6206366947795ca7",
+  "model_id": "mosaic",
+  "operation_id": "efab8c22-82ac-4830-9baf-db8055288e15",
+  "parameters": {
+    "base_seed": 7300,
+    "binder_length": 40,
+    "hotspots": [
+      3,
+      7
+    ],
+    "optimizer_steps": 20,
+    "schema": "fs2-serve.nebius.ai/mosaic-boltz2-proteinmpnn-parameters/v1",
+    "shard_count": 1
+  },
+  "service_class": "customer-batch"
+}

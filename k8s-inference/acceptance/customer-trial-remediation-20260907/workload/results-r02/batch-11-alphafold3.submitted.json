@@ -1,0 +1,10 @@
+{
+  "id": "batch-11-alphafold3",
+  "input_sha256": "b95539e48b80b8f919b378c4cbc07e8383bd82b19edb143ea131cef9e62d7823",
+  "model_id": "alphafold3",
+  "operation_id": "c893cd30-eb41-4117-be92-f9e9d8472b91",
+  "parameters": {
+    "input_mode": "raw"
+  },
+  "service_class": "customer-batch"
+}

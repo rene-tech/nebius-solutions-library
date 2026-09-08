@@ -1,0 +1,89 @@
+{
+  "at": "2026-09-07T20:31:25.551253Z",
+  "elapsed_seconds": 0.44477816950529814,
+  "method": "GET",
+  "path": "/v1/operations/4a17632e-9585-465d-8327-245cf7b0d276",
+  "state": {
+    "batch": {
+      "batch_id": "30f4976c-c54a-59d2-8a5c-e79a9a6b3aa1",
+      "failure_code": null,
+      "result_published": true,
+      "status": "succeeded"
+    },
+    "operation": {
+      "accepted_at": "2026-09-07T20:21:40.591694Z",
+      "completed_at": "2026-09-07T20:31:24.932206Z",
+      "failure_code": null,
+      "id": "4a17632e-9585-465d-8327-245cf7b0d276",
+      "model_id": "bindcraft",
+      "reused": false,
+      "runtime": {
+        "gpu_count": 0,
+        "gpu_uuids": [],
+        "node_uid": null,
+        "pod_uid": null,
+        "preemptible": null
+      },
+      "semantic_outcome": "passed",
+      "started_at": "2026-09-07T20:21:40.710891Z",
+      "status": "succeeded"
+    },
+    "stages": [
+      {
+        "attempts": [
+          {
+            "attempt_id": "98b53895-3afe-5ab3-b8a7-e097825d8584",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "teardown",
+            "outcome": "succeeded",
+            "resource_released": true,
+            "scheduling_admission": {
+              "accelerator_count": 1,
+              "accelerator_resource_name": "nvidia.com/gpu",
+              "admitted_at": "2026-09-07T20:24:56Z",
+              "admitted_resource_flavor": "inference-h100-reserved-8x",
+              "resolved_pool_id": "h100-reserved-8x"
+            },
+            "shard_id": "design-000",
+            "workload_name": "fs2-design-design-000-a1-17365cd22b5e",
+            "workload_namespace": "fs2-academic-poc",
+            "workload_uid": "01ad9851-ca56-4746-9032-988ac913e029"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "design",
+        "status": "succeeded"
+      },
+      {
+        "attempts": [
+          {
+            "attempt_id": "7b62078a-f52e-503c-9d80-a0676959abd4",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "teardown",
+            "outcome": "succeeded",
+            "resource_released": true,
+            "scheduling_admission": {
+              "accelerator_count": 0,
+              "accelerator_resource_name": null,
+              "admitted_at": "2026-09-07T20:31:05Z",
+              "admitted_resource_flavor": null,
+              "resolved_pool_id": null
+            },
+            "shard_id": "main",
+            "workload_name": "fs2-aggregate-main-a1-51ecfdd67827",
+            "workload_namespace": "fs2-academic-poc",
+            "workload_uid": "91ebad71-2eae-4bcc-aa2e-4b9e42e4462d"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "aggregate",
+        "status": "succeeded"
+      }
+    ]
+  },
+  "status": 200
+}

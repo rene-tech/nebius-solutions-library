@@ -1,0 +1,128 @@
+{
+  "at": "2026-09-07T20:40:09.473651Z",
+  "elapsed_seconds": 0.4514991044998169,
+  "method": "GET",
+  "path": "/v1/operations/daae227f-f7a0-4fe7-9912-1a95c675c3d9",
+  "state": {
+    "batch": {
+      "batch_id": "8572e7f1-79d7-55f5-9f62-d0c7f05dc62f",
+      "failure_code": null,
+      "result_published": false,
+      "status": "running"
+    },
+    "operation": {
+      "accepted_at": "2026-09-07T20:30:59.018864Z",
+      "completed_at": null,
+      "failure_code": null,
+      "id": "daae227f-f7a0-4fe7-9912-1a95c675c3d9",
+      "model_id": "rfdiffusion",
+      "reused": false,
+      "runtime": {
+        "gpu_count": 0,
+        "gpu_uuids": [],
+        "node_uid": null,
+        "pod_uid": null,
+        "preemptible": null
+      },
+      "semantic_outcome": null,
+      "started_at": "2026-09-07T20:30:59.137270Z",
+      "status": "running"
+    },
+    "stages": [
+      {
+        "attempts": [
+          {
+            "attempt_id": "b9aa4f40-c2af-5f1c-82e8-485a90d8b912",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "active_compute",
+            "outcome": "active",
+            "resource_released": false,
+            "scheduling_admission": {
+              "accelerator_count": 1,
+              "accelerator_resource_name": "nvidia.com/gpu",
+              "admitted_at": "2026-09-07T20:30:59Z",
+              "admitted_resource_flavor": "inference-h100-reserved-8x",
+              "resolved_pool_id": "h100-reserved-8x"
+            },
+            "shard_id": "design-000",
+            "workload_name": "fs2-inference-design-000-a1-4641fe655497",
+            "workload_namespace": "fs2-models",
+            "workload_uid": "db3e0f0a-90e8-4dd5-9538-6e45c4d04826"
+          },
+          {
+            "attempt_id": "d9288309-dfcc-5388-8a92-6822bc0f47e4",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "artifact_loading",
+            "outcome": "active",
+            "resource_released": false,
+            "scheduling_admission": {
+              "accelerator_count": 1,
+              "accelerator_resource_name": "nvidia.com/gpu",
+              "admitted_at": "2026-09-07T20:30:59Z",
+              "admitted_resource_flavor": "inference-h100-1x",
+              "resolved_pool_id": "h100-1x"
+            },
+            "shard_id": "design-001",
+            "workload_name": "fs2-inference-design-001-a1-fd9976d0a06b",
+            "workload_namespace": "fs2-models",
+            "workload_uid": "aa811ee6-c622-417f-93e9-efa6f74ad8b2"
+          },
+          {
+            "attempt_id": "2b71861c-2ab8-5b78-9511-33ff4c6f21ae",
+            "attempt_number": 1,
+            "failure_code": "Preempted",
+            "failure_kind": "preemption",
+            "last_phase": "teardown",
+            "outcome": "preempted",
+            "resource_released": true,
+            "scheduling_admission": {
+              "accelerator_count": 1,
+              "accelerator_resource_name": "nvidia.com/gpu",
+              "admitted_at": "2026-09-07T20:30:59Z",
+              "admitted_resource_flavor": "inference-h100-1x",
+              "resolved_pool_id": "h100-1x"
+            },
+            "shard_id": "design-002",
+            "workload_name": "fs2-inference-design-002-a1-9f9d05031e41",
+            "workload_namespace": "fs2-models",
+            "workload_uid": "f550ea67-2679-4168-82b7-df82e2cef9dc"
+          },
+          {
+            "attempt_id": "4abc65ed-00ba-5504-98f8-311de5779653",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "active_compute",
+            "outcome": "active",
+            "resource_released": false,
+            "scheduling_admission": {
+              "accelerator_count": 1,
+              "accelerator_resource_name": "nvidia.com/gpu",
+              "admitted_at": "2026-09-07T20:31:05Z",
+              "admitted_resource_flavor": "inference-h100-reserved-8x",
+              "resolved_pool_id": "h100-reserved-8x"
+            },
+            "shard_id": "design-003",
+            "workload_name": "fs2-inference-design-003-a1-26c24363c065",
+            "workload_namespace": "fs2-models",
+            "workload_uid": "645a62da-cc78-4e7c-a8db-17367b6b214a"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "inference",
+        "status": "active"
+      },
+      {
+        "attempts": [],
+        "failure_code": null,
+        "stage_id": "collect",
+        "status": "pending"
+      }
+    ]
+  },
+  "status": 200
+}

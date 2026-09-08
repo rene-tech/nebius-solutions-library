@@ -1,0 +1,18 @@
+{
+  "id": "batch-05-boltzgen",
+  "input_sha256": "d3fc05a26579932874e3f4ffb9babe63468bc85d6c475d172e7fa2b68370253a",
+  "model_id": "boltzgen",
+  "operation_id": "b67e64eb-3f3e-42c1-87ab-ac566783b4cf",
+  "parameters": {
+    "batches": [
+      {
+        "budget": 1,
+        "num_designs": 20,
+        "reuse_completed": false,
+        "shard_id": "pdl1-face"
+      }
+    ],
+    "protocol": "protein-anything"
+  },
+  "service_class": "customer-batch"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "batch-10-esmfold2-fast",
+  "input_sha256": "d3041fb80a0f2aef8ef453c5f43771b215d9e3dbf91a4587666898ff846e42b6",
+  "model_id": "esmfold2-fast",
+  "operation_id": "4c507026-1311-445e-933a-9fabd1ffc8b7",
+  "parameters": {
+    "mode": "single-sequence",
+    "seed": 101,
+    "sequence": "MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFP"
+  },
+  "service_class": "customer-batch"
+}

@@ -10,7 +10,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--raw", type=Path, required=True)
     parser.add_argument("--scientific-start", required=True)
-    parser.add_argument("--scientific-end", required=True)
+    boundary = parser.add_mutually_exclusive_group(required=True)
+    boundary.add_argument("--scientific-end")
+    boundary.add_argument("--scientific-client-stopped-at")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if not (args.raw / "sampler-completed.json").exists():
@@ -28,7 +30,7 @@ def main():
         raise ValueError("unexpected client submission retry")
     start, end = (
         previous.timestamp(args.scientific_start),
-        previous.timestamp(args.scientific_end),
+        previous.timestamp(args.scientific_end or args.scientific_client_stopped_at),
     )
     fields = (
         "ordinal",
@@ -70,6 +72,8 @@ def main():
         "schema": "fs2.customer-trial-remediation-experience/v1",
         "scientific_started_at": args.scientific_start,
         "scientific_completed_at": args.scientific_end,
+        "scientific_client_stopped_at": args.scientific_client_stopped_at,
+        "scientific_completion_confirmed": args.scientific_end is not None,
         "clock": "Public non-streaming request through complete validated output; "
         "includes session/network/admission/polling. Not TTFT or GPU decode time.",
         "total": previous.statistics_for(rows),
@@ -95,6 +99,8 @@ def main():
             "no client submission retries.",
             "Original phase labels are preserved; actual phase uses scientific start/end timestamps "
             "because file-based phase changes can lag.",
+            "When scientific_client_stopped_at is set, after means after the bounded local-client stop; "
+            "scientific server completion and clean resource recovery are not implied.",
             "No scientific correctness, production SLA or unseen burst coverage is inferred "
             "from this bounded synthetic workload.",
         ],

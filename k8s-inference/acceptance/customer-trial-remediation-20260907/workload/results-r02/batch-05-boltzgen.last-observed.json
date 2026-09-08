@@ -1,0 +1,224 @@
+{
+  "at": "2026-09-07T20:33:41.302823Z",
+  "elapsed_seconds": 0.420910875312984,
+  "method": "GET",
+  "path": "/v1/operations/b67e64eb-3f3e-42c1-87ab-ac566783b4cf",
+  "state": {
+    "batch": {
+      "batch_id": "c68a220a-b575-55e1-b382-87076c8d0459",
+      "failure_code": null,
+      "result_published": true,
+      "status": "succeeded"
+    },
+    "operation": {
+      "accepted_at": "2026-09-07T20:19:56.525190Z",
+      "completed_at": "2026-09-07T20:33:38.521149Z",
+      "failure_code": null,
+      "id": "b67e64eb-3f3e-42c1-87ab-ac566783b4cf",
+      "model_id": "boltzgen",
+      "reused": false,
+      "runtime": {
+        "gpu_count": 0,
+        "gpu_uuids": [],
+        "node_uid": null,
+        "pod_uid": null,
+        "preemptible": null
+      },
+      "semantic_outcome": "passed",
+      "started_at": "2026-09-07T20:19:56.860989Z",
+      "status": "succeeded"
+    },
+    "stages": [
+      {
+        "attempts": [
+          {
+            "attempt_id": "f3d0cb14-4267-598c-b44e-711fe2a4890d",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "teardown",
+            "outcome": "succeeded",
+            "resource_released": true,
+            "scheduling_admission": {
+              "accelerator_count": 1,
+              "accelerator_resource_name": "nvidia.com/gpu",
+              "admitted_at": "2026-09-07T20:19:56Z",
+              "admitted_resource_flavor": "inference-h100-reserved-8x",
+              "resolved_pool_id": "h100-reserved-8x"
+            },
+            "shard_id": "pdl1-face",
+            "workload_name": "fs2-configure-pdl1-face-a1-2b44f1d9de18",
+            "workload_namespace": "fs2-models",
+            "workload_uid": "b05d120e-a45b-4172-89b9-24f3e1d758f0"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "configure",
+        "status": "succeeded"
+      },
+      {
+        "attempts": [
+          {
+            "attempt_id": "50ceff84-44c5-566d-a460-07c8b8061e27",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "teardown",
+            "outcome": "succeeded",
+            "resource_released": true,
+            "scheduling_admission": {
+              "accelerator_count": 1,
+              "accelerator_resource_name": "nvidia.com/gpu",
+              "admitted_at": "2026-09-07T20:20:15Z",
+              "admitted_resource_flavor": "inference-h100-reserved-8x",
+              "resolved_pool_id": "h100-reserved-8x"
+            },
+            "shard_id": "pdl1-face",
+            "workload_name": "fs2-design-pdl1-face-a1-6e9d0dcf45ce",
+            "workload_namespace": "fs2-models",
+            "workload_uid": "62dd7f4d-d3f0-4490-9a38-ed97856f40a8"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "design",
+        "status": "succeeded"
+      },
+      {
+        "attempts": [
+          {
+            "attempt_id": "a2bb7488-db6b-587a-a8fe-21690a935b26",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "teardown",
+            "outcome": "succeeded",
+            "resource_released": true,
+            "scheduling_admission": {
+              "accelerator_count": 1,
+              "accelerator_resource_name": "nvidia.com/gpu",
+              "admitted_at": "2026-09-07T20:25:21Z",
+              "admitted_resource_flavor": "inference-h100-reserved-8x",
+              "resolved_pool_id": "h100-reserved-8x"
+            },
+            "shard_id": "pdl1-face",
+            "workload_name": "fs2-inverse-folding-pdl1-face-a1-5cf35c473d8d",
+            "workload_namespace": "fs2-models",
+            "workload_uid": "54093d43-da92-4bbf-b7cf-f3e8fb57ecbe"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "inverse-folding",
+        "status": "succeeded"
+      },
+      {
+        "attempts": [
+          {
+            "attempt_id": "93356f75-074a-56f2-8e17-39c71b8c1c22",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "teardown",
+            "outcome": "succeeded",
+            "resource_released": true,
+            "scheduling_admission": {
+              "accelerator_count": 1,
+              "accelerator_resource_name": "nvidia.com/gpu",
+              "admitted_at": "2026-09-07T20:25:58Z",
+              "admitted_resource_flavor": "inference-h100-reserved-8x",
+              "resolved_pool_id": "h100-reserved-8x"
+            },
+            "shard_id": "pdl1-face",
+            "workload_name": "fs2-folding-pdl1-face-a1-e26923e6edec",
+            "workload_namespace": "fs2-models",
+            "workload_uid": "84d0524e-1073-41cc-8ced-fa8c2867dd02"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "folding",
+        "status": "succeeded"
+      },
+      {
+        "attempts": [
+          {
+            "attempt_id": "7fc6556f-c139-5500-8299-fdd0a38a391a",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "teardown",
+            "outcome": "succeeded",
+            "resource_released": true,
+            "scheduling_admission": {
+              "accelerator_count": 1,
+              "accelerator_resource_name": "nvidia.com/gpu",
+              "admitted_at": "2026-09-07T20:29:35Z",
+              "admitted_resource_flavor": "inference-h100-reserved-8x",
+              "resolved_pool_id": "h100-reserved-8x"
+            },
+            "shard_id": "pdl1-face",
+            "workload_name": "fs2-design-folding-pdl1-face-a1-3716bea22e56",
+            "workload_namespace": "fs2-models",
+            "workload_uid": "1321ff2e-4efa-4004-bf1f-7bb9a21bc70a"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "design-folding",
+        "status": "succeeded"
+      },
+      {
+        "attempts": [
+          {
+            "attempt_id": "be636eec-b335-52df-a541-e42c2377d0fe",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "teardown",
+            "outcome": "succeeded",
+            "resource_released": true,
+            "scheduling_admission": {
+              "accelerator_count": 0,
+              "accelerator_resource_name": null,
+              "admitted_at": "2026-09-07T20:32:21Z",
+              "admitted_resource_flavor": null,
+              "resolved_pool_id": null
+            },
+            "shard_id": "pdl1-face",
+            "workload_name": "fs2-analysis-pdl1-face-a1-d8e2969fa9bc",
+            "workload_namespace": "fs2-models",
+            "workload_uid": "f79beb65-209b-4f69-a7aa-e539ee6812e2"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "analysis",
+        "status": "succeeded"
+      },
+      {
+        "attempts": [
+          {
+            "attempt_id": "f5bb2535-daf6-5b80-a6ec-11b92a9c963f",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "teardown",
+            "outcome": "succeeded",
+            "resource_released": true,
+            "scheduling_admission": {
+              "accelerator_count": 0,
+              "accelerator_resource_name": null,
+              "admitted_at": "2026-09-07T20:33:03Z",
+              "admitted_resource_flavor": null,
+              "resolved_pool_id": null
+            },
+            "shard_id": "pdl1-face",
+            "workload_name": "fs2-filtering-pdl1-face-a1-8e9cb2f96584",
+            "workload_namespace": "fs2-models",
+            "workload_uid": "3f2a89a6-afbb-44ac-8a23-ab2057999929"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "filtering",
+        "status": "succeeded"
+      }
+    ]
+  },
+  "status": 200
+}

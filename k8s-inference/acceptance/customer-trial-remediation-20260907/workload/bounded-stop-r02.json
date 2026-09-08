@@ -1,0 +1,26 @@
+{
+  "schema": "fs2-serve.nebius.ai/customer-trial-bounded-stop/v1",
+  "run_id": "trial-customer-remediation-20260907-r02",
+  "stopped_at": "2026-09-07T20:40:14Z",
+  "reason": "Permanent server reconciliation validation failure after RF priority requeue; manager is inactive and the unchanged client would otherwise poll until approximately 22:31 UTC.",
+  "deployed_source_commit": "5f5061b28ee71a59432492a1bdf6106428a85367",
+  "stop_action": "SIGTERM to exact task-owned local scientific child process 4059233; wrapper 4059208 then exited. Both PIDs verified absent.",
+  "wrapper_exit_code": 241,
+  "runner_complete_aggregate_exists": false,
+  "public_cancellation_performed": false,
+  "client_retry_performed": false,
+  "production_changes_performed": false,
+  "server_cleanup_complete": false,
+  "blocked_cases": {
+    "batch-09-rfdiffusion-bulk": {
+      "client_started_at": "2026-09-07T20:30:55.694572Z",
+      "operation_id": "daae227f-f7a0-4fe7-9912-1a95c675c3d9",
+      "last_public_observation_at": "2026-09-07T20:40:09.473651Z",
+      "last_public_status": "running",
+      "server_result_published": false,
+      "error": "Pod lifecycle evidence must uniquely bind an observed Pod UID",
+      "affected_function": "ScientificBatchController._fence_same_workload_requeue",
+      "remaining_action": "Root must fix/deploy or authorize exact task-owned operation cleanup. Do not call this operation successful or fully released."
+    }
+  }
+}

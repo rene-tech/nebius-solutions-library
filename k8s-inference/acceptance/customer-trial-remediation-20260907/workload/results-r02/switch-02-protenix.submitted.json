@@ -1,0 +1,15 @@
+{
+  "id": "switch-02-protenix",
+  "input_sha256": "0ceb0f6fb5589d0ef97e95da4d0026047fbcd39ad877dd88aceb654a92bbdb6c",
+  "model_id": "protenix-v2",
+  "operation_id": "4a4a2555-3901-4193-8a65-78ff01737af3",
+  "parameters": {
+    "checkpoint": "protenix-v2",
+    "model_seeds": [
+      101
+    ],
+    "msa_mode": "none",
+    "sample_count": 1
+  },
+  "service_class": "customer-batch"
+}

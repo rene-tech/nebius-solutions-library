@@ -1,0 +1,44 @@
+{
+  "schema": "fs2-serve.nebius.ai/customer-trial-submit-response-conflict/v1",
+  "run_id": "trial-customer-remediation-20260907-r02",
+  "case_id": "batch-07-proteina",
+  "client_outcome": "failed",
+  "error_code": "http_submit_409",
+  "submit_started_at": "2026-09-07T20:25:39.342432Z",
+  "submit_elapsed_seconds": 0.49946223944425583,
+  "operation_id_returned_to_client": null,
+  "client_retry_performed": false,
+  "server_operation_committed": true,
+  "server_operation_id": "d6ddbe20-6c2b-4c2e-ab65-03442c9c1b82",
+  "server_batch_id": "9322eaea-9ba9-5999-9787-6fa08408599b",
+  "server_accepted_at": "2026-09-07T20:25:39.761496Z",
+  "server_http_log_at": "2026-09-07T20:25:39.796Z",
+  "server_terminal_status": "succeeded",
+  "server_completed_at": "2026-09-07T20:29:43.523512Z",
+  "server_result_published": true,
+  "all_four_server_attempts_released": true,
+  "client_result_download_or_replay_performed": false,
+  "identity_proof": {
+    "method": "Offline reconstruction through the unchanged original scenario preparation and idempotency-key function, replacing only the input pointer with observed finalized upload metadata.",
+    "client_run_id": "trial-customer-remediation-20260907-r02.batch-07-proteina",
+    "request_sha256_after_upload": "5f5578796247d0789b9cc5a8a7cfe458875a666ffed9e9f66abc6770885ad101",
+    "expected_and_observed_idempotency_key": "fs2-scientific-acceptance-ab1378f4a4549cc855c55d2e9afec0693d558a9171a00e9faf80ce17ac5fadb6",
+    "exact_match": true,
+    "new_submission_or_retry_used": false,
+    "input_manifest": {
+      "artifact_id": "fe78d94a-fa08-4dd0-b505-ed8c4d0995b3",
+      "sha256": "f798341121835a041a7fc54ea10f5c26f2066ae7fd3f163d647001e0797de7c7",
+      "size_bytes": 421,
+      "media_type": "application/vnd.fs2.scientific-manifest+json",
+      "compression": "none"
+    },
+    "client_manifest_upload_id": "9a51fa5b-a271-5ab3-abff-c6a626ec915f"
+  },
+  "original_failure_preserved": true,
+  "accounting_note": "Track the committed server operation through terminal/resource release in addition to submitted-receipt operation IDs. It remains a failed customer submission even if server execution later succeeds. The active client-slot limit does not imply no more than four server operations after an accepted-but-error response.",
+  "private_observer_evidence": [
+    "r02/observer/proteina2-possible-operation-r01.json",
+    "r02/observer/proteina2-input-artifact-metadata.json",
+    "r02/observer/proteina2-associated-operation-terminal.json"
+  ]
+}

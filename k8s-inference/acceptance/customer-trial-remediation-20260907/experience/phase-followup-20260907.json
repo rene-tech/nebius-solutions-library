@@ -1,0 +1,292 @@
+{
+  "schema": "fs2-serve.nebius.ai/admin-phase-followup/v1",
+  "source_commit": "5f5061b28ee71a59432492a1bdf6106428a85367",
+  "status": "passed-after-unexplained-blank-first-attempt",
+  "scope": "Read-only retained Protenix browser/API/download preflight; no model submissions or policy changes.",
+  "rollout_gate": {
+    "status": "passed",
+    "observed_at": "2026-09-07T20:05:55Z",
+    "deployments": [
+      {
+        "name": "fs2-serve-control-plane",
+        "generation": 174,
+        "observed_generation": 174,
+        "desired": 2,
+        "updated": 2,
+        "ready": 2,
+        "available": 2,
+        "total": 2,
+        "terminating": 0,
+        "images": [
+          "sha256:8090641d0cfe8c22411c1e72df125ca3c488c5b69087d0a2c7887d87fd55b23f"
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-admin-console",
+        "generation": 24,
+        "observed_generation": 24,
+        "desired": 2,
+        "updated": 2,
+        "ready": 2,
+        "available": 2,
+        "total": 2,
+        "terminating": 0,
+        "images": [
+          "sha256:400b6775d3dd98ac5163e3ec658aea1cca5f5c8802ff73a38dbac34966c36605"
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-model-controller",
+        "generation": 67,
+        "observed_generation": 67,
+        "desired": 2,
+        "updated": 2,
+        "ready": 2,
+        "available": 2,
+        "total": 2,
+        "terminating": 0,
+        "images": [
+          "sha256:8090641d0cfe8c22411c1e72df125ca3c488c5b69087d0a2c7887d87fd55b23f"
+        ]
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "attempt": "phase-followup-r01",
+      "started_at": "2026-09-07T20:06:05.243Z",
+      "completed_at": "2026-09-07T20:06:36.128Z",
+      "browser_closed_at": "2026-09-07T20:06:36.181Z",
+      "status": "failed",
+      "page": "/admin/scientific-runs",
+      "observations": [
+        "Initial and final body accessibility snapshots empty.",
+        "Bootstrap access token textbox did not appear within 30 seconds.",
+        "No pageerror or HTTP status>=400 captured.",
+        "Credentials were not submitted; phase/API/download assertions were not reached."
+      ],
+      "failure": {
+        "type": "TimeoutError",
+        "stage": "Sign-in textbox wait"
+      },
+      "cause": "Unknown; this bounded check did not diagnose or retry.",
+      "receipt_sha256": "5596e1ab41a932972c8b0d62942faf3aee2cb09625a8495a6e9bcce6ffb84b20",
+      "initial_snapshot_sha256": "c9c48151149d8798109b4bdbe62ce32b2d1e9a4069ceb613dc2d153f1a53b6f9",
+      "final_snapshot_sha256": "e0914fb8704f089ed7b2b567288979913cc55799f0d38729910e54a40ee9bb98"
+    },
+    {
+      "attempt": "phase-followup-r02",
+      "started_at": "2026-09-07T20:09:14.558Z",
+      "completed_at": "2026-09-07T20:09:18.356Z",
+      "browser_closed_at": "2026-09-07T20:09:18.412Z",
+      "status": "passed",
+      "authorization": "Release owner explicitly authorized a new attempt after the separate unauthenticated diagnostic.",
+      "receipt_sha256": "87e3463c9c5a2edf97cb9ca97f22ea74a22ef558f5e4decc8adf648ba2d7e54d",
+      "phase_regression": {
+        "operation_id": "18efdb3c-fa99-42a7-9a39-876d22a2021b",
+        "status": "passed",
+        "expected_seconds": 3.946846,
+        "actual_duration": {
+          "value": 3.946846,
+          "unit": "seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-signal-boundaries",
+          "reason": "Union of closed observed intervals; application-observed or incomplete boundaries. Open/missing intervals are not estimated from ingestion time."
+        },
+        "browser_restore_card": "RESTORE\n3.95s estimated\nlifecycle-signal-boundaries",
+        "context_label": "Cluster context checked 9/7/2026, 8:09:16 PM",
+        "run_label": "Run data observed 9/7/2026, 8:09:16 PM. Active runs update every 5 seconds.",
+        "api_observed_at": "2026-09-07T20:09:17.461068Z",
+        "clock": "Union of actual paired lifecycle signal occurred_at boundaries; independent of GPU count."
+      },
+      "downloads": [
+        {
+          "model": "protenix-v2",
+          "operation_id": "18efdb3c-fa99-42a7-9a39-876d22a2021b",
+          "artifact_id": "1a67f5a3-c43a-49db-aebb-b4d37b60bf4d",
+          "media_type": "chemical/x-mmcif",
+          "suggested_filename": "sample-structure-output-1a67f5a3.cif",
+          "bytes": 32796,
+          "sha256": "55d5f96024aafba3d0be88fd02fabf272f5fee7209b453fd0a7bf8e941c37e24",
+          "browser_download_seconds": 0.40537097500000024,
+          "status": "passed"
+        }
+      ],
+      "accounting": {
+        "gpu_count": 1,
+        "capacity_type": "unknown",
+        "allocated": {
+          "value": 33,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "active": {
+          "value": 16.053154,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_total": {
+          "value": 16.946846,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "idle_by_cause": [
+          {
+            "cause": "image-pull",
+            "duration": {
+              "value": 6,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          },
+          {
+            "cause": "artifact-load",
+            "duration": {
+              "value": 7,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          },
+          {
+            "cause": "restore",
+            "duration": {
+              "value": 3.946846,
+              "unit": "gpu-seconds",
+              "evidence": "estimated",
+              "source": "lifecycle-ledger",
+              "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+            }
+          }
+        ],
+        "grace_drain": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        },
+        "reconciliation_delta": {
+          "value": 0,
+          "unit": "gpu-seconds",
+          "evidence": "estimated",
+          "source": "lifecycle-ledger",
+          "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+        }
+      },
+      "partition_delta_gpu_seconds": 0,
+      "artifact_source": {
+        "id": "scientific-artifacts",
+        "state": "available",
+        "observed_at": "2026-09-07T20:09:17.505967Z",
+        "age_seconds": 0,
+        "reason": null
+      },
+      "errors": [
+        {
+          "at": "2026-09-07T20:09:15.868Z",
+          "kind": "http",
+          "status": 401,
+          "path": "/admin/api/v1/session"
+        }
+      ],
+      "failed_requests": [],
+      "page_resources": [
+        {
+          "at": "2026-09-07T20:09:15.130Z",
+          "path": "/admin/scientific-runs",
+          "status": 200,
+          "type": "document",
+          "content_type": "text/html; charset=utf-8",
+          "content_length": "747"
+        },
+        {
+          "at": "2026-09-07T20:09:15.317Z",
+          "path": "/admin/assets/index-itQ7AUDH.css",
+          "status": 200,
+          "type": "stylesheet",
+          "content_type": "text/css",
+          "content_length": "44362"
+        },
+        {
+          "at": "2026-09-07T20:09:15.683Z",
+          "path": "/admin/assets/index-D5sHoEJH.js",
+          "status": 200,
+          "type": "script",
+          "content_type": "application/javascript; charset=utf-8",
+          "content_length": "549778"
+        },
+        {
+          "at": "2026-09-07T20:09:16.188Z",
+          "path": "/admin/scientific-runs/18efdb3c-fa99-42a7-9a39-876d22a2021b",
+          "status": 200,
+          "type": "document",
+          "content_type": "text/html; charset=utf-8",
+          "content_length": "747"
+        },
+        {
+          "at": "2026-09-07T20:09:16.197Z",
+          "path": "/admin/assets/index-D5sHoEJH.js",
+          "status": 200,
+          "type": "script",
+          "content_type": "application/javascript; charset=utf-8",
+          "content_length": "549778"
+        },
+        {
+          "at": "2026-09-07T20:09:16.198Z",
+          "path": "/admin/assets/index-itQ7AUDH.css",
+          "status": 200,
+          "type": "stylesheet",
+          "content_type": "text/css",
+          "content_length": "44362"
+        }
+      ]
+    }
+  ],
+  "checks": {
+    "retained_operation_id": "18efdb3c-fa99-42a7-9a39-876d22a2021b",
+    "expected_restore_seconds": 3.946846,
+    "phase_duration": "passed-r02",
+    "timestamp_labels": "passed-r02",
+    "artifact_download": "passed-r02"
+  },
+  "limitations": [
+    "The first blank-page attempt remains an unexplained transient, not reclassified as a harness-only failure.",
+    "The original helper did not capture console/requestfailed events; the additive diagnostic instrumentation is present for the subsequent attempt.",
+    "Application-observed phase time is estimated wall-time union, not GPU utilization or device instrumentation.",
+    "This targeted retained-operation gate does not replace a complete live customer cohort."
+  ],
+  "production_mutations": [],
+  "retries": 1,
+  "boot_diagnostic": {
+    "started_at": "2026-09-07T20:08:11.265Z",
+    "browser_closed_at": "2026-09-07T20:08:12.797Z",
+    "status": "sign-in-rendered",
+    "scope": "Fresh unauthenticated page initialization only; no credential submission or scientific API calls.",
+    "receipt_sha256": "1c1315903a0ef5c5375c3e26587a7cf54efa12e145766efc546e9b0ceacba031",
+    "script": {
+      "path": "/admin/assets/index-D5sHoEJH.js",
+      "status": 200,
+      "bytes": 549778,
+      "content_type": "application/javascript; charset=utf-8"
+    },
+    "stylesheet": {
+      "path": "/admin/assets/index-itQ7AUDH.css",
+      "status": 200,
+      "bytes": 44362
+    },
+    "session_status": 401,
+    "failed_requests": 0,
+    "page_errors": 0,
+    "interpretation": "The unchanged release subsequently initialized correctly; this does not identify or erase the original transient blank-page cause."
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "id": "batch-09-rfdiffusion-bulk",
+  "input_sha256": "3be62b4a3cf10dfa0567f96e8cbae36b0ef4dfb600d994f114238dfd9020c532",
+  "model_id": "rfdiffusion",
+  "operation_id": "daae227f-f7a0-4fe7-9912-1a95c675c3d9",
+  "parameters": {
+    "contigs": [
+      "96-96"
+    ],
+    "diffuser_T": 50,
+    "num_designs": 4,
+    "operation": "design-backbone",
+    "schema": "fs2-serve.nebius.ai/rfdiffusion-parameters/v1",
+    "seed": 8200
+  },
+  "service_class": "bulk-backfill"
+}

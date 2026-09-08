@@ -77,7 +77,15 @@ async function main() {
     source_commit: checks.sourceCommit,
     source_identity_basis: 'Caller-supplied release identity; deployment is verified separately by the release owner.',
     scope: 'Existing bootstrap operator; browser, authorized reads and downloads only.',
-    expected_initial_session_401: true, errors: [], runs: [], downloads: []};
+    expected_initial_session_401: true, errors: [], browser_console: [], failed_requests: [],
+    page_resources: [], runs: [], downloads: []};
+  function diagnosticText(value) {
+    let text = String(value);
+    for (const secret of Object.values(credentials)) {
+      if (typeof secret === 'string' && secret.length > 12) text = text.replaceAll(secret, '[redacted]');
+    }
+    return text.slice(0, 4096);
+  }
   function save(name, value) {
     const text = JSON.stringify(value, null, 2) + '\n';
     for (const secret of Object.values(credentials)) {
@@ -89,8 +97,22 @@ async function main() {
   const context = await browser.newContext({viewport: {width: 1440, height: 1000}, acceptDownloads: true,
     locale: 'en-US', timezoneId: 'UTC'});
   const page = await context.newPage();
-  page.on('pageerror', error => report.errors.push({at: new Date().toISOString(), kind: 'pageerror', name: error.name}));
+  page.on('pageerror', error => report.errors.push({at: new Date().toISOString(), kind: 'pageerror',
+    name: error.name, message: diagnosticText(error.message)}));
+  page.on('console', item => {
+    if (['error', 'warning'].includes(item.type())) report.browser_console.push({at: new Date().toISOString(),
+      type: item.type(), text: diagnosticText(item.text())});
+  });
+  page.on('requestfailed', request => report.failed_requests.push({at: new Date().toISOString(),
+    path: new URL(request.url()).pathname, type: request.resourceType(),
+    failure: diagnosticText(request.failure()?.errorText ?? 'unknown')}));
   page.on('response', response => {
+    if (['document', 'script', 'stylesheet'].includes(response.request().resourceType())) {
+      const headers = response.headers();
+      report.page_resources.push({at: new Date().toISOString(), path: new URL(response.url()).pathname,
+        status: response.status(), type: response.request().resourceType(),
+        content_type: headers['content-type'] ?? null, content_length: headers['content-length'] ?? null});
+    }
     if (response.status() >= 400) report.errors.push({at: new Date().toISOString(), kind: 'http',
       status: response.status(), path: new URL(response.url()).pathname});
   });
@@ -199,6 +221,7 @@ async function main() {
     }
     const unexpected = report.errors.filter(item => !(item.status === 401 && item.path === '/admin/api/v1/session'));
     assert.deepEqual(unexpected, [], 'no unexpected browser/server errors');
+    assert.deepEqual(report.failed_requests, [], 'no failed browser requests');
     report.status = 'passed';
   } catch (error) {
     report.status = 'failed';

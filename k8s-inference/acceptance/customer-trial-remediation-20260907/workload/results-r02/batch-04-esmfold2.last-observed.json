@@ -1,0 +1,89 @@
+{
+  "at": "2026-09-07T20:21:35.316195Z",
+  "elapsed_seconds": 0.43282446824014187,
+  "method": "GET",
+  "path": "/v1/operations/952f054c-41a9-479d-a9fa-e915511c98b3",
+  "state": {
+    "batch": {
+      "batch_id": "6e718631-1030-5a9e-a85a-004a0e2900d4",
+      "failure_code": null,
+      "result_published": true,
+      "status": "succeeded"
+    },
+    "operation": {
+      "accepted_at": "2026-09-07T20:15:34.422242Z",
+      "completed_at": "2026-09-07T20:21:31.667732Z",
+      "failure_code": null,
+      "id": "952f054c-41a9-479d-a9fa-e915511c98b3",
+      "model_id": "esmfold2",
+      "reused": false,
+      "runtime": {
+        "gpu_count": 0,
+        "gpu_uuids": [],
+        "node_uid": null,
+        "pod_uid": null,
+        "preemptible": null
+      },
+      "semantic_outcome": "passed",
+      "started_at": "2026-09-07T20:15:34.662372Z",
+      "status": "succeeded"
+    },
+    "stages": [
+      {
+        "attempts": [
+          {
+            "attempt_id": "7472c61d-2487-5309-b6c2-0db5cfdbe150",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "teardown",
+            "outcome": "succeeded",
+            "resource_released": true,
+            "scheduling_admission": {
+              "accelerator_count": 0,
+              "accelerator_resource_name": null,
+              "admitted_at": "2026-09-07T20:15:34Z",
+              "admitted_resource_flavor": null,
+              "resolved_pool_id": null
+            },
+            "shard_id": "main",
+            "workload_name": "fs2-prepare-input-main-a1-d385b61a55b9",
+            "workload_namespace": "fs2-models",
+            "workload_uid": "89ee2ec0-396a-45f8-a2f0-8315838f8c6d"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "prepare-input",
+        "status": "succeeded"
+      },
+      {
+        "attempts": [
+          {
+            "attempt_id": "d01c04ee-b537-5d2b-bd93-c79d6c7d1ea9",
+            "attempt_number": 1,
+            "failure_code": null,
+            "failure_kind": null,
+            "last_phase": "teardown",
+            "outcome": "succeeded",
+            "resource_released": true,
+            "scheduling_admission": {
+              "accelerator_count": 1,
+              "accelerator_resource_name": "nvidia.com/gpu",
+              "admitted_at": "2026-09-07T20:15:49Z",
+              "admitted_resource_flavor": "inference-h100-1x",
+              "resolved_pool_id": "h100-1x"
+            },
+            "shard_id": "main",
+            "workload_name": "fs2-fold-main-a1-0abafb7934c6",
+            "workload_namespace": "fs2-models",
+            "workload_uid": "f024515c-516b-4949-8f24-116f785a7be9"
+          }
+        ],
+        "failure_code": null,
+        "stage_id": "fold",
+        "status": "succeeded"
+      }
+    ]
+  },
+  "status": 200
+}

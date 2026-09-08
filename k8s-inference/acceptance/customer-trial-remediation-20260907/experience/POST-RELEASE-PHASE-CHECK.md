@@ -1,6 +1,11 @@
 # Bounded phase-duration regression check
 
-Prepared, not executed. Run only after the release owner confirms the exact deployed commit.
+Executed on `5f5061b28ee71a59432492a1bdf6106428a85367`: the first attempt was
+blank before sign-in; a separately authorized second attempt passed. Both attempts and
+the intervening unauthenticated diagnostic are preserved in
+[phase-followup-20260907.json](phase-followup-20260907.json). The original blank-page
+cause remains unknown. For later releases, run only after the release owner confirms
+the exact deployed commit.
 This reuses the real-browser preflight and existing operator sign-in; it submits no model
 requests, changes no policies, and does not save credentials or browser storage state.
 
