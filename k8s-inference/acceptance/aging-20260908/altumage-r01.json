@@ -1,0 +1,581 @@
+{
+  "cleanup": {
+    "confirmed_absent_at": "2026-09-08T13:19:00.433865+00:00",
+    "uid_verified": true
+  },
+  "cluster": {
+    "context": "k8s-inference-h100",
+    "project": "project-e00rene",
+    "region": "eu-north1"
+  },
+  "cpu_cuda_parity": [
+    {
+      "cpu": [
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 38.22121047973633,
+          "sample_id": "synthetic-dnam-0"
+        }
+      ],
+      "cuda": [
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 38.22121047973633,
+          "sample_id": "synthetic-dnam-0"
+        }
+      ],
+      "max_absolute_age_difference": 0.0,
+      "samples": 1,
+      "tolerance": 0.001
+    },
+    {
+      "cpu": [
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 38.22121047973633,
+          "sample_id": "synthetic-dnam-0"
+        },
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 40.12385559082031,
+          "sample_id": "synthetic-dnam-1"
+        }
+      ],
+      "cuda": [
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 38.22121047973633,
+          "sample_id": "synthetic-dnam-0"
+        },
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 40.12385177612305,
+          "sample_id": "synthetic-dnam-1"
+        }
+      ],
+      "max_absolute_age_difference": 3.814697265625e-06,
+      "samples": 2,
+      "tolerance": 0.001
+    },
+    {
+      "cpu": [
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 38.22121047973633,
+          "sample_id": "synthetic-dnam-0"
+        },
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 40.12385559082031,
+          "sample_id": "synthetic-dnam-1"
+        },
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 41.74526596069336,
+          "sample_id": "synthetic-dnam-2"
+        },
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 42.77678680419922,
+          "sample_id": "synthetic-dnam-3"
+        },
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 43.593849182128906,
+          "sample_id": "synthetic-dnam-4"
+        },
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 38.22121047973633,
+          "sample_id": "synthetic-dnam-5"
+        },
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 40.12385559082031,
+          "sample_id": "synthetic-dnam-6"
+        },
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 41.74526596069336,
+          "sample_id": "synthetic-dnam-7"
+        }
+      ],
+      "cuda": [
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 38.22121047973633,
+          "sample_id": "synthetic-dnam-0"
+        },
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 40.12385177612305,
+          "sample_id": "synthetic-dnam-1"
+        },
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 41.74526596069336,
+          "sample_id": "synthetic-dnam-2"
+        },
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 42.776790618896484,
+          "sample_id": "synthetic-dnam-3"
+        },
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 43.59384536743164,
+          "sample_id": "synthetic-dnam-4"
+        },
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 38.22121047973633,
+          "sample_id": "synthetic-dnam-5"
+        },
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 40.12385177612305,
+          "sample_id": "synthetic-dnam-6"
+        },
+        {
+          "imputed_cpg_count": 0,
+          "predicted_chronological_age_years": 41.74526596069336,
+          "sample_id": "synthetic-dnam-7"
+        }
+      ],
+      "max_absolute_age_difference": 3.814697265625e-06,
+      "samples": 8,
+      "tolerance": 0.001
+    }
+  ],
+  "environment": {
+    "host": {
+      "hostname": "fs2-aging-20260908-altumage-r01",
+      "kernel": "6.11.0-1016-nvidia",
+      "machine": "x86_64",
+      "platform": "Linux-6.11.0-1016-nvidia-x86_64-with-glibc2.36",
+      "python": "3.12.14"
+    },
+    "nvidia_gpu_query": {
+      "available": true,
+      "command": [
+        "nvidia-smi",
+        "--query-gpu=index,name,uuid,pci.bus_id,compute_cap,driver_version,memory.total,power.limit",
+        "--format=csv,noheader,nounits"
+      ],
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "0, NVIDIA H100 80GB HBM3, GPU-facf5f91-1954-6615-4fbf-418efd69bd0c, 00000000:B3:00.0, 9.0, 580.159.04, 81559, 700.00"
+    },
+    "python_stack": {
+      "packages": {
+        "torch": "2.8.0+cu128",
+        "triton": "3.4.0"
+      },
+      "torch_cuda": {
+        "build_cuda": "12.8",
+        "cuda_available": true,
+        "cudnn": 91002,
+        "devices": [
+          {
+            "capability": [
+              9,
+              0
+            ],
+            "index": 0,
+            "name": "NVIDIA H100 80GB HBM3"
+          }
+        ]
+      }
+    }
+  },
+  "gpu": {
+    "compute_capability": [
+      9,
+      0
+    ],
+    "cuda_build": "12.8",
+    "model_parameter_device": "cuda:0",
+    "name": "NVIDIA H100 80GB HBM3",
+    "torch": "2.8.0+cu128",
+    "weights_sha256": "648f9d8cf8fb809e0ce9f1d46b652a936b2bb056b6d028c369ea5e2ed4a05e87"
+  },
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/altumage-cuda@sha256:ca6352f79ecd78928e13ecda55afaf01a5df1923291b7a56a7ba9a9770c484e1",
+  "limitations": [
+    "Isolated temporary native worker; not public App, MCP, durable queue or scale-to-zero qualification.",
+    "No new node provisioning; coarse Kubernetes timestamps are not high-resolution request timings.",
+    "Image pull duration is the kubelet observation; reported image size is not wire bytes.",
+    "Module imports/constructor timing excludes image pull, scheduling, public admission and network.",
+    "Synthetic fixtures demonstrate computational correctness, not clinical prediction accuracy.",
+    "No GPU snapshot restore was performed or qualified."
+  ],
+  "model": {
+    "device": "cuda",
+    "feature_count": 20318,
+    "gpu_snapshot": "not-qualified",
+    "input_modality": "normalized-dna-methylation-beta-values",
+    "model_id": "altumage",
+    "model_version": "696c477dac9b7641bf283c48af1cc9bb0a0803a3",
+    "preprocessing": "official-robust-scaler",
+    "status": "ready",
+    "weights_sha256": "648f9d8cf8fb809e0ce9f1d46b652a936b2bb056b6d028c369ea5e2ed4a05e87"
+  },
+  "module_benchmarks": [
+    {
+      "batches": [
+        {
+          "json_validate_and_predict_seconds": {
+            "max": 0.01157613901887089,
+            "median": 0.009234869998181239,
+            "min": 0.008667660993523896
+          },
+          "predict_including_scaling_and_device_transfers_seconds": {
+            "max": 0.0057268349919468164,
+            "median": 0.0052000229770783335,
+            "min": 0.004905593988951296
+          },
+          "repeats": 20,
+          "request_bytes": 665938,
+          "samples": 1,
+          "samples_per_second_at_median": 108.28522764228896
+        },
+        {
+          "json_validate_and_predict_seconds": {
+            "max": 0.028155264037195593,
+            "median": 0.025433614500798285,
+            "min": 0.023206812038552016
+          },
+          "predict_including_scaling_and_device_transfers_seconds": {
+            "max": 0.01066184398951009,
+            "median": 0.009916292008711025,
+            "min": 0.009222280990798026
+          },
+          "repeats": 20,
+          "request_bytes": 3469275,
+          "samples": 8,
+          "samples_per_second_at_median": 314.54436017141427
+        }
+      ],
+      "boundary": "local process imports + model constructor; warm JSON decode + validation + inference",
+      "cache_state": "artifact files already present; filesystem/page-cache state uncontrolled",
+      "excluded": [
+        "container pull",
+        "node provisioning",
+        "Kubernetes scheduling",
+        "public admission",
+        "network transfer",
+        "JSON response encoding"
+      ],
+      "imports_and_model_load_seconds": 2.6389087719726376,
+      "linux_process_memory_bytes": {
+        "VmHWM": 727474176,
+        "VmRSS": 725934080
+      },
+      "machine": {
+        "architecture": "x86_64",
+        "configured_torch_threads": 1,
+        "logical_cpus": 128,
+        "python": "3.12.14"
+      },
+      "measured_at": "2026-09-08T13:18:48.313588+00:00",
+      "model": {
+        "device": "cpu",
+        "feature_count": 20318,
+        "gpu_snapshot": "not-qualified",
+        "input_modality": "normalized-dna-methylation-beta-values",
+        "model_id": "altumage",
+        "model_version": "696c477dac9b7641bf283c48af1cc9bb0a0803a3",
+        "preprocessing": "official-robust-scaler",
+        "weights_sha256": "648f9d8cf8fb809e0ce9f1d46b652a936b2bb056b6d028c369ea5e2ed4a05e87"
+      },
+      "schema": "fs2-aging-local-runtime-benchmark/v1",
+      "source_sha256": {
+        "__init__.py": "85bfd84b4ca162bfddcc4e467375ffc0826c3f39cea872d00632a47a47391ea2",
+        "altumage/__init__.py": "35d6b6f4c2db41e4e228a9e6af1137a6c518dc215336bf94455c05b25a0510b9",
+        "altumage/materialize.py": "06daae108333ed250a2aec04cec53b779107f09fd9cd6e737705c335d02cb842",
+        "altumage/runtime.py": "24a130f1ab788d0926a86c71b48569175280859a66ae6c155e4889990f6a1a8d",
+        "benchmark_runtime.py": "6f6bdca0dc9fd9c59bb92c3084194f5f1c7a4fe0a6c9ec86e4b440045d77bb26",
+        "build_image.py": "fc93cdf847f07cad820433147ef296a66e207cebf7eb3e4d7d0a9a34bf81f002",
+        "contracts.py": "1bd95979ac81f13e55569de1160b6e4c5831a71ba811003f46edec169463f12e",
+        "fixtures.py": "8f5288360503162132e790623b76e2d6058d39238ecc514b7192dbeceef877f8",
+        "phenoage/__init__.py": "afc4711b933ebefe88d1116c97b745ee85bad85ebb4d37e2797ff57a32344011",
+        "phenoage/runtime.py": "f30bf3dc5acdea8c1f6f7cc96be7c94da01262d5c1362d352c0bcbcddb495ba7",
+        "server.py": "1f2ca3b191eedf74bae56a7b6a17f84acbc369607a893ec881c06068a9f3e2c8"
+      }
+    },
+    {
+      "batches": [
+        {
+          "json_validate_and_predict_seconds": {
+            "max": 0.012292953033465892,
+            "median": 0.009205257025314495,
+            "min": 0.008836613036692142
+          },
+          "predict_including_scaling_and_device_transfers_seconds": {
+            "max": 0.006316883023828268,
+            "median": 0.005230403505265713,
+            "min": 0.005004933977033943
+          },
+          "repeats": 20,
+          "request_bytes": 665938,
+          "samples": 1,
+          "samples_per_second_at_median": 108.63357723200947
+        },
+        {
+          "json_validate_and_predict_seconds": {
+            "max": 0.03786138101713732,
+            "median": 0.023567984986584634,
+            "min": 0.022546624997630715
+          },
+          "predict_including_scaling_and_device_transfers_seconds": {
+            "max": 0.02024468401214108,
+            "median": 0.009376639500260353,
+            "min": 0.008914388017728925
+          },
+          "repeats": 20,
+          "request_bytes": 3469275,
+          "samples": 8,
+          "samples_per_second_at_median": 339.44352920089517
+        }
+      ],
+      "boundary": "local process imports + model constructor; warm JSON decode + validation + inference",
+      "cache_state": "artifact files already present; filesystem/page-cache state uncontrolled",
+      "excluded": [
+        "container pull",
+        "node provisioning",
+        "Kubernetes scheduling",
+        "public admission",
+        "network transfer",
+        "JSON response encoding"
+      ],
+      "gpu": {
+        "cuda_version": "12.8",
+        "name": "NVIDIA H100 80GB HBM3",
+        "peak_allocated_bytes": 38864384,
+        "peak_reserved_bytes": 58720256,
+        "torch_version": "2.8.0+cu128"
+      },
+      "imports_and_model_load_seconds": 2.8873577369959094,
+      "linux_process_memory_bytes": {
+        "VmHWM": 1017237504,
+        "VmRSS": 1011859456
+      },
+      "machine": {
+        "architecture": "x86_64",
+        "configured_torch_threads": 1,
+        "logical_cpus": 128,
+        "python": "3.12.14"
+      },
+      "measured_at": "2026-09-08T13:18:52.452706+00:00",
+      "model": {
+        "device": "cuda",
+        "feature_count": 20318,
+        "gpu_snapshot": "not-qualified",
+        "input_modality": "normalized-dna-methylation-beta-values",
+        "model_id": "altumage",
+        "model_version": "696c477dac9b7641bf283c48af1cc9bb0a0803a3",
+        "preprocessing": "official-robust-scaler",
+        "weights_sha256": "648f9d8cf8fb809e0ce9f1d46b652a936b2bb056b6d028c369ea5e2ed4a05e87"
+      },
+      "schema": "fs2-aging-local-runtime-benchmark/v1",
+      "source_sha256": {
+        "__init__.py": "85bfd84b4ca162bfddcc4e467375ffc0826c3f39cea872d00632a47a47391ea2",
+        "altumage/__init__.py": "35d6b6f4c2db41e4e228a9e6af1137a6c518dc215336bf94455c05b25a0510b9",
+        "altumage/materialize.py": "06daae108333ed250a2aec04cec53b779107f09fd9cd6e737705c335d02cb842",
+        "altumage/runtime.py": "24a130f1ab788d0926a86c71b48569175280859a66ae6c155e4889990f6a1a8d",
+        "benchmark_runtime.py": "6f6bdca0dc9fd9c59bb92c3084194f5f1c7a4fe0a6c9ec86e4b440045d77bb26",
+        "build_image.py": "fc93cdf847f07cad820433147ef296a66e207cebf7eb3e4d7d0a9a34bf81f002",
+        "contracts.py": "1bd95979ac81f13e55569de1160b6e4c5831a71ba811003f46edec169463f12e",
+        "fixtures.py": "8f5288360503162132e790623b76e2d6058d39238ecc514b7192dbeceef877f8",
+        "phenoage/__init__.py": "afc4711b933ebefe88d1116c97b745ee85bad85ebb4d37e2797ff57a32344011",
+        "phenoage/runtime.py": "f30bf3dc5acdea8c1f6f7cc96be7c94da01262d5c1362d352c0bcbcddb495ba7",
+        "server.py": "1f2ca3b191eedf74bae56a7b6a17f84acbc369607a893ec881c06068a9f3e2c8"
+      }
+    }
+  ],
+  "native_http_predictions": [
+    {
+      "body": {
+        "device": "cuda",
+        "execution_seconds": 0.00896727602230385,
+        "feature_count": 20318,
+        "gpu_snapshot": "not-qualified",
+        "input_modality": "normalized-dna-methylation-beta-values",
+        "model_id": "altumage",
+        "model_version": "696c477dac9b7641bf283c48af1cc9bb0a0803a3",
+        "predictions": [
+          {
+            "imputed_cpg_count": 0,
+            "predicted_chronological_age_years": 38.22121047973633,
+            "sample_id": "synthetic-dnam-0"
+          }
+        ],
+        "preprocessing": "official-robust-scaler",
+        "sample_count": 1,
+        "weights_sha256": "648f9d8cf8fb809e0ce9f1d46b652a936b2bb056b6d028c369ea5e2ed4a05e87"
+      },
+      "elapsed_seconds": 0.022399757988750935,
+      "path": "/v1/predict",
+      "request_bytes": 665938,
+      "request_sha256": "fd382869ed0bcebf0f58ed78335dcdac322ba6ce11e811cac46368b7ef6afb08",
+      "response_bytes": 516,
+      "response_sha256": "70a444ea90589ba2da8e655ce31f13896c59aa34d949028526cc07d316f673bc",
+      "status": 200
+    },
+    {
+      "body": {
+        "device": "cuda",
+        "execution_seconds": 0.006118585995864123,
+        "feature_count": 20318,
+        "gpu_snapshot": "not-qualified",
+        "input_modality": "normalized-dna-methylation-beta-values",
+        "model_id": "altumage",
+        "model_version": "696c477dac9b7641bf283c48af1cc9bb0a0803a3",
+        "predictions": [
+          {
+            "imputed_cpg_count": 0,
+            "predicted_chronological_age_years": 40.12385559082031,
+            "sample_id": "synthetic-dnam-1"
+          }
+        ],
+        "preprocessing": "official-robust-scaler",
+        "sample_count": 1,
+        "weights_sha256": "648f9d8cf8fb809e0ce9f1d46b652a936b2bb056b6d028c369ea5e2ed4a05e87"
+      },
+      "elapsed_seconds": 0.0160995019832626,
+      "path": "/v1/predict",
+      "request_bytes": 665032,
+      "request_sha256": "18bfccfba6a6ea84b116244ac7e7c2a108dc4aaa0048d2440c1ac68317831f3a",
+      "response_bytes": 517,
+      "response_sha256": "59ada2478c7fe2dbe7024ab617b8d547ce3b25406d89a59e937fcd7e9b2d5ec0",
+      "status": 200
+    }
+  ],
+  "outcome": "passed",
+  "pod": {
+    "name": "fs2-aging-20260908-altumage-r01",
+    "namespace": "fs2-models",
+    "node": "computeinstance-e00p3acr87k9k4mckj",
+    "resources": {
+      "limits": {
+        "cpu": "4",
+        "memory": "8Gi",
+        "nvidia.com/gpu": "1"
+      },
+      "requests": {
+        "cpu": "2",
+        "memory": "4Gi",
+        "nvidia.com/gpu": "1"
+      }
+    },
+    "restart_count": 0,
+    "uid": "d9bc8eeb-31ce-4d0f-b540-a7e74093cddf"
+  },
+  "raw_receipt_sha256": {
+    "001-dry-run.json": "c10ade9724a8a15bf1fe59c3762b592fb18f2d5bd456a77121c1ce8f37a7a913",
+    "002-created.json": "d64417ad3bcef2570af9e9c871ec02f32b39ef4d6215a3105a631acaef7897fe",
+    "003-pod.json": "84cbd0396a6677b9050728195463f83c46cfe2d8775d581c064b44f132a2531b",
+    "004-pod.json": "00f510104ceb02cf069ca1f968d835ff30b7a039c83fdc977473e3420c0a1268",
+    "005-pod.json": "b303e500dd2a3f166c08d01eb5b619bd8e8a605ec2afb5324e9b809d6fd2572c",
+    "006-pod.json": "d13e310a3758375e288c9941c6916c57118bcd793a45bde9f95a1c3454bf6bd0",
+    "007-pod.json": "7213f3cfb4ede69e1ce44859a4a5847cc479c57a4e5c3ca5b9998f8c3d9e6508",
+    "008-pod.json": "efa65190c3ccc55e18e7e4da6fd0d87102a885463de0f9521f769335a47af773",
+    "009-pod.json": "e305f22adaae945598282b8060fc1a9898af3d691533c95415337ae812a95639",
+    "010-pod.json": "3988a3acfdb28dfae075183480aa2fe5635aac39558b1b703a9e28c5a3a6ed6d",
+    "011-pod.json": "2e53c9a696f60651bfff68473c449ea7e656df947eb966a5fd28a514e8e4d613",
+    "012-pod.json": "2d5da7e908f2775aaabd71e7986976015744bc8d5ee5aa58e0be785471d9e6a6",
+    "013-pod.json": "d68e40f55a3c89272b81e7623851217338e586c6449cfcd09ce6c73f2b5b6033",
+    "014-pod.json": "c974e80a90a376b48d350151842904028702e916de475f18761790948a587ead",
+    "015-pod.json": "091dcdab9cefe22f0ce2f6855c23968621c688e6e7f90f2747ded072495aa76b",
+    "016-pod.json": "a0cbf8a126101678f4950012fea109d6c08aa497e6640bdf430534e0f04eb33a",
+    "017-pod.json": "60b7890ce9c0421764a11d7c259260872df8d194dce3494ac4fbff8071012df6",
+    "018-pod.json": "ce7032bbf3bd96c58112c234eb9a867f31ab0d0f97ee07616b10b267d26cd3e9",
+    "019-pod.json": "4af7788651a72e1840348d95ade705c909ff1488d8e425510afa89c98d26849f",
+    "020-pod.json": "4e1637d5ef426e5686dcd6e008f34f8af096a9ac6d89559bed382ab2da56da95",
+    "021-pod.json": "a55dc7165accfffa7f8e3d2cd7639c1ec024de10676a48e106652242e8a5fe2e",
+    "022-pod.json": "f33930f6b3a57b6ef153a61219c807e16b1bcdec835dcfbe45f52f42e9e505ff",
+    "023-pod.json": "849b84b9d965a8cf9978ac3c72fe15f88437daff184a8a3687e1f52674f5e42c",
+    "024-pod.json": "bb3949980d62b0a7e092e019bd845a4d09962d9758a367fe77b40b7f8ecbb17c",
+    "025-pod.json": "889868eeeed07d71d880d5836fe5b6973ed4a5acd9b87de015d3f7331d217570",
+    "026-pod.json": "598498cb74ce9bbab5b83c518a8574e4330db7c117fd0dd40bd5fea5e7f8bcd7",
+    "027-pod.json": "cce38523b81634d07c790a02769385000a5ef70ca83f769067f5c2b441244d64",
+    "028-pod.json": "0cc9ddd96879ec2d7cc020f942184ddb54137e866a26e657f00df0ca6e262fe4",
+    "029-pod.json": "b3e2e5dab12c54c12e895d36fe15f8baa11a48dd8ca65ab67b82d17981f0f8bd",
+    "030-pod.json": "926165649cb3c6e59b3c5c24b14b836d7b30ff28415b1bf93ae8b4251183591e",
+    "031-pod.json": "e8e42ec8207da0b4a36a4ba08e5e2afa9cc00d3349225ba9f92216e837e03794",
+    "032-pod.json": "0b7d7b009013a4c45daa959f43391b3731ed733cf982c9ce745971fd14d79d60",
+    "033-pod.json": "7c4ec9c6e926006dd2bd83ec23ee4d0ea172cff3fec619a0bbbf6e6caef69d56",
+    "034-pod.json": "cd83b76f3be762cb3f4ac0075ddf75889454f3deb0f15c79931b5a12be05cb66",
+    "035-pod.json": "e392a2aae85953b1c931644648a695d4ea8a015ca374420bdc8d2e253021f382",
+    "036-pod.json": "bea3868ebaf3c8ecf0160a62c5c23a70acf0de9e8b9cc383c15b4d4ee298ed97",
+    "037-pod.json": "61a7286b36fc7fc678b008369537a43560ec7aea7f99633187ac8a70989f3a6f",
+    "038-pod.json": "6f4ce4fd4f47859d2de972f6e6678cfa7f31d1b1dc2369d32c270e2ed2e4d28e",
+    "039-events.json": "d61d4e53f86c83a7cbf21ffd087f237aeee7436bd1894d17fc23bfc71dfe11e8",
+    "040-startup-logs.json": "123ada2b088c7e7f3cc93160eb799414cba3890c9304f3b564965116ee3f1195",
+    "041-environment.json": "f686c6c4f43cb64f1dea0e6f09dcb812d76cb9a80446dc2623d9848d438dc299",
+    "042-qualification.json": "4ed3250cfd3f63cd7e88773b5aadf6e8cee3aa4cb69e75ac8f0e5bd425f38918",
+    "043-terminal-logs.json": "d9645a85ad0adda097b9d21500b7723f1c286413db1d483cbe645c5160ff2d2e",
+    "044-pre-cleanup.json": "003eabe99cac1127f59cbd6c49a79ee428b8a94b6dbff50dd6e6d1172efd66da",
+    "045-delete-owned-pod.json": "c5f22429e57fa6ca4e71324fe62cd8ea68764fab0ad95129b0f98b977d7c1574",
+    "046-cleanup.json": "647dd74385dce9ce17bb5e59632980c039de8e397e9a90f86f1ba52f35bfdc00"
+  },
+  "schema": "fs2-aging-runtime-image-qualification/v1",
+  "source_revision": "3a3dbe0fdb258579f9d4eb1b35a2d1525f5fc0d3",
+  "source_sha256": {
+    "__init__.py": "85bfd84b4ca162bfddcc4e467375ffc0826c3f39cea872d00632a47a47391ea2",
+    "altumage/__init__.py": "35d6b6f4c2db41e4e228a9e6af1137a6c518dc215336bf94455c05b25a0510b9",
+    "altumage/materialize.py": "06daae108333ed250a2aec04cec53b779107f09fd9cd6e737705c335d02cb842",
+    "altumage/runtime.py": "24a130f1ab788d0926a86c71b48569175280859a66ae6c155e4889990f6a1a8d",
+    "benchmark_runtime.py": "6f6bdca0dc9fd9c59bb92c3084194f5f1c7a4fe0a6c9ec86e4b440045d77bb26",
+    "build_image.py": "fc93cdf847f07cad820433147ef296a66e207cebf7eb3e4d7d0a9a34bf81f002",
+    "contracts.py": "1bd95979ac81f13e55569de1160b6e4c5831a71ba811003f46edec169463f12e",
+    "fixtures.py": "8f5288360503162132e790623b76e2d6058d39238ecc514b7192dbeceef877f8",
+    "phenoage/__init__.py": "afc4711b933ebefe88d1116c97b745ee85bad85ebb4d37e2797ff57a32344011",
+    "phenoage/runtime.py": "f30bf3dc5acdea8c1f6f7cc96be7c94da01262d5c1362d352c0bcbcddb495ba7",
+    "server.py": "1f2ca3b191eedf74bae56a7b6a17f84acbc369607a893ec881c06068a9f3e2c8"
+  },
+  "startup": {
+    "conditions": {
+      "ContainersReady": "2026-09-08T13:18:33Z",
+      "Initialized": "2026-09-08T13:16:46Z",
+      "PodReadyToStartContainers": "2026-09-08T13:18:28Z",
+      "PodScheduled": "2026-09-08T13:16:46Z",
+      "Ready": "2026-09-08T13:18:33Z"
+    },
+    "container_started": "2026-09-08T13:18:27Z",
+    "created_to_ready_seconds_coarse": 107.0,
+    "creation": "2026-09-08T13:16:46Z",
+    "events": [
+      {
+        "at": "2026-09-08T13:16:46Z",
+        "message": "Successfully assigned fs2-models/fs2-aging-20260908-altumage-r01 to computeinstance-e00p3acr87k9k4mckj",
+        "reason": "Scheduled"
+      },
+      {
+        "at": "2026-09-08T13:16:47Z",
+        "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/altumage-cuda@sha256:ca6352f79ecd78928e13ecda55afaf01a5df1923291b7a56a7ba9a9770c484e1\"",
+        "reason": "Pulling"
+      },
+      {
+        "at": "2026-09-08T13:18:22Z",
+        "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/altumage-cuda@sha256:ca6352f79ecd78928e13ecda55afaf01a5df1923291b7a56a7ba9a9770c484e1\" in 1m35.529s (1m35.529s including waiting). Image size: 4167595352 bytes.",
+        "reason": "Pulled"
+      },
+      {
+        "at": "2026-09-08T13:18:26Z",
+        "message": "Container created",
+        "reason": "Created"
+      },
+      {
+        "at": "2026-09-08T13:18:27Z",
+        "message": "Container started",
+        "reason": "Started"
+      },
+      {
+        "at": "2026-09-08T13:18:28Z",
+        "message": "Readiness probe failed: Get \"http://10.6.122.159:8000/v1/health/ready\": dial tcp 10.6.122.159:8000: connect: connection refused",
+        "reason": "Unhealthy"
+      }
+    ],
+    "runtime_log": "2026-09-08T13:18:28.030765110Z INFO:     Started server process [1]\n2026-09-08T13:18:28.030807302Z INFO:     Waiting for application startup.\n2026-09-08T13:18:31.786503720Z INFO:fs2.aging:{\"event\": \"model_ready\", \"model_id\": \"altumage\", \"model_load_seconds\": 3.7555506069911644, \"model_version\": \"696c477dac9b7641bf283c48af1cc9bb0a0803a3\", \"device\": \"cuda\", \"input_modality\": \"normalized-dna-methylation-beta-values\", \"weights_sha256\": \"648f9d8cf8fb809e0ce9f1d46b652a936b2bb056b6d028c369ea5e2ed4a05e87\", \"feature_count\": 20318, \"preprocessing\": \"official-robust-scaler\", \"gpu_snapshot\": \"not-qualified\"}\n2026-09-08T13:18:31.786528661Z INFO:     Application startup complete.\n2026-09-08T13:18:31.786648106Z INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)\n2026-09-08T13:18:33.105784554Z INFO:     10.0.0.31:54934 - \"GET /v1/health/ready HTTP/1.1\" 200 OK\n2026-09-08T13:18:35.094418494Z INFO:     10.0.0.31:54950 - \"GET /v1/health/ready HTTP/1.1\" 200 OK\n2026-09-08T13:18:37.093963864Z INFO:     10.0.0.31:54966 - \"GET /v1/health/ready HTTP/1.1\" 200 OK\n"
+  }
+}

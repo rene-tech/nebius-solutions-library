@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fs2-aging-20260908-phenoage-r01
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: fs2-aging-runtime-qualification
+    acceptance.fs2.nebius/task: aging-20260908
+    acceptance.fs2.nebius/model: phenoage
+  annotations:
+    acceptance.fs2.nebius/source: 3a3dbe0fdb258579f9d4eb1b35a2d1525f5fc0d3
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: 1800
+  terminationGracePeriodSeconds: 30
+  automountServiceAccountToken: false
+  nodeSelector:
+    capacity.fs2.nebius/pool-id: batch-cpu
+  tolerations:
+    - key: workload.fs2.nebius/general-cpu
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+  containers:
+    - name: runtime
+      image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/phenoage-cpu@sha256:b6c28820576b62972437787bd06fa37f8c10b6f51de31b0f4da3cc3873bb34f1
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: AGING_MODEL
+          value: phenoage
+        - name: AGING_DEVICE
+          value: cpu
+      ports:
+        - name: http
+          containerPort: 8000
+      readinessProbe:
+        httpGet:
+          path: /v1/health/ready
+          port: http
+        periodSeconds: 2
+        timeoutSeconds: 2
+      resources:
+        requests:
+          cpu: "1"
+          memory: 256Mi
+        limits:
+          cpu: "2"
+          memory: 1Gi

@@ -1,7 +1,7 @@
 # Users and Capacity implementation
 
-Status: local implementation, focused checks and real PostgreSQL migration/role
-checks complete; integrated release and live acceptance remain with root.
+Status: implementation, real PostgreSQL checks and corrected live acceptance
+complete. The root release report records the integrated image history.
 No production resources, permissions, limits or policies were changed by this
 lane. The owner directory is not a console-role directory.
 
@@ -91,11 +91,68 @@ Endpoints: `GET/POST /admin/api/v1/users`,
   existing Starlette deprecation warning.
 
 Disposable test PostgreSQL only: `fs2-users-capacity-pg-20260908`, PostgreSQL 17,
-loopback `127.0.0.1:33370`, database `fs2_test`. This lane owns cleanup after the
-combined SQL/grant tests. No live database schema has been touched by these tests.
-The container remains running temporarily for root's final integration suite.
+loopback `127.0.0.1:33370`, database `fs2_test`. After root's final **73 passing**
+PostgreSQL checks, the exact owned container
+`c007efbd3239bba1f60d37703e4b95b701325eb487fa541f0238c5c12399f2e1`
+was stopped and removed at `2026-09-08T12:27:21Z`. Only disposable test data was
+removed; test code and results remain. No other container or production database
+was changed. Container absence was verified after cleanup.
 
-## Post-release read-only gate (prepared, not executed)
+## First live gate and repaired regression
+
+Source `d21439d025c806f6a3bcb4167c57b95d84ff923f` was sampled from
+12:31:35.157637–12:31:38.725430 UTC. Apps, Users and the other read endpoints
+returned 200, but Capacity summary returned **500**. The gateway traceback proved
+that `_queue` resolved `attempt` to the operation's integer column rather than
+the lateral JSON value (`operator does not exist: integer ->> unknown`). Explicit
+`stage_entry(value)` / `attempt_entry(value)` aliases repair the actual query.
+Transient database exceptions now yield unavailable data, never invented zeros.
+
+The same historical interval exposed scientific bookkeeping counted as requests:
+28 real scientific operations plus 56 artifact-upload operations appeared as 84.
+Users logical usage, request series, pending counts and loaded-idle detection now
+exclude `scientific-artifact-upload-v1`; raw operation history is preserved.
+Sibling Apps history filters run before pagination and preserve the same boundary.
+Qwen's 137 logical operations were already correct.
+
+The combined actual PostgreSQL, Users/API and Capacity regression run passed
+**27 tests in 8.95 s**, with Ruff, two-module mypy and diff checks clean. It covers
+partially waiting real batches, the integer/JSON column collision, uploaded-input
+exclusion, Apps last-used and cursor pagination, and unchanged raw history. Root's
+broader actual PostgreSQL run subsequently passed **74 tests in 38.03 s**.
+The recreated, exclusively owned test container
+`6ca11bc506c063ceae2fd2b12bed90b693ec9d6a1916692748a53509d2cbfcdc`
+on loopback port 33370 was then stopped and automatically removed; exact-name
+absence was verified. Only disposable test data was removed; evidence remains.
+
+Private baseline: `releases/admin-apps-20260908/observer/baseline-r01.json` under
+the existing H100 acceptance state directory. It retains failed and successful
+receipts without exposing credentials. This failed first gate is not relabelled
+as a pass; the corrected exact release was captured separately below.
+
+## Corrected live results
+
+Root's read-only capture at 12:55:33.503084–12:55:36.916745 UTC on
+`2d170292037386f339fdc96fcf115a07adcf6932` returned 200 for all inspected
+Apps, Users, Capacity, usage and observability endpoints. Over the retained
+08:59–10:00 UTC interval, Apps and owner usage agree on **137 Qwen requests and
+28 scientific runs**, excluding 56 artifact-upload bookkeeping operations.
+Raw global history remains intact; unobserved historical transport bytes are
+unknown, not zero. Private receipt: `observer/baseline-r02.json`.
+
+The adjacent Capacity snapshot reports two Ready reserved H100 nodes, 16 GPUs,
+14 requested, 2 estimated free and no queued customer runs. Current DCGM
+utilization was 0%, distinct from reserved capacity. The unchanged preemptible
+pool has zero current nodes and a configured ceiling of two. These are timestamped
+observations, not permanent capacity promises.
+
+Real browser follow-up verifies the loaded Capacity view, a newly created user's
+single successful App request, exact-scope key creation and revoke-to-401. Both
+test keys are revoked, that user disabled and the owned serving clone reduced
+to zero actual containers. Source App settings are unchanged. See
+`BROWSER-R02.md` for exact identities, timestamps and retained harness failures.
+
+## Post-release read-only gate
 
 Root must provide the exact release-ready signal. This lane performs no model
 calls or settings/key writes; the browser and scientific lanes own those actions.

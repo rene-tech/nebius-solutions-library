@@ -1,0 +1,252 @@
+{
+  "cleanup": {
+    "confirmed_absent_at": "2026-09-08T13:12:51.054539+00:00",
+    "uid_verified": true
+  },
+  "cluster": {
+    "context": "k8s-inference-h100",
+    "project": "project-e00rene",
+    "region": "eu-north1"
+  },
+  "cpu_cuda_parity": null,
+  "gpu": null,
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/phenoage-cpu@sha256:b6c28820576b62972437787bd06fa37f8c10b6f51de31b0f4da3cc3873bb34f1",
+  "limitations": [
+    "Isolated temporary native worker; not public App, MCP, durable queue or scale-to-zero qualification.",
+    "No new node provisioning; coarse Kubernetes timestamps are not high-resolution request timings.",
+    "Image pull duration is the kubelet observation; reported image size is not wire bytes.",
+    "Module imports/constructor timing excludes image pull, scheduling, public admission and network.",
+    "Synthetic fixtures demonstrate computational correctness, not clinical prediction accuracy.",
+    "No GPU snapshot restore was performed or qualified."
+  ],
+  "model": {
+    "device": "cpu",
+    "gpu_snapshot": "not-applicable-cpu",
+    "input_modality": "age-and-nine-blood-biomarkers",
+    "model_id": "phenoage",
+    "model_version": "levine-2018-supplement-rounded-v1",
+    "status": "ready",
+    "weight_loading": "not-applicable-closed-form-formula"
+  },
+  "module_benchmarks": [
+    {
+      "batches": [
+        {
+          "json_validate_and_predict_seconds": {
+            "max": 0.0001686659816186875,
+            "median": 6.935501005500555e-06,
+            "min": 6.499991286545992e-06
+          },
+          "predict_including_scaling_and_device_transfers_seconds": {
+            "max": 2.237397711724043e-05,
+            "median": 3.4149998100474477e-06,
+            "min": 3.2040115911513567e-06
+          },
+          "repeats": 20,
+          "request_bytes": 314,
+          "samples": 1,
+          "samples_per_second_at_median": 144185.6902921503
+        },
+        {
+          "json_validate_and_predict_seconds": {
+            "max": 9.602599311619997e-05,
+            "median": 3.979999746661633e-05,
+            "min": 3.877899143844843e-05
+          },
+          "predict_including_scaling_and_device_transfers_seconds": {
+            "max": 5.360099021345377e-05,
+            "median": 2.4237000616267323e-05,
+            "min": 2.360600046813488e-05
+          },
+          "repeats": 20,
+          "request_bytes": 2421,
+          "samples": 8,
+          "samples_per_second_at_median": 201005.03792017288
+        }
+      ],
+      "boundary": "local process imports + model constructor; warm JSON decode + validation + inference",
+      "cache_state": "artifact files already present; filesystem/page-cache state uncontrolled",
+      "excluded": [
+        "container pull",
+        "node provisioning",
+        "Kubernetes scheduling",
+        "public admission",
+        "network transfer",
+        "JSON response encoding"
+      ],
+      "imports_and_model_load_seconds": 0.08496150499559008,
+      "linux_process_memory_bytes": {
+        "VmHWM": 31469568,
+        "VmRSS": 31469568
+      },
+      "machine": {
+        "architecture": "x86_64",
+        "configured_torch_threads": 1,
+        "logical_cpus": 8,
+        "python": "3.12.14"
+      },
+      "measured_at": "2026-09-08T13:12:45.657669+00:00",
+      "model": {
+        "device": "cpu",
+        "gpu_snapshot": "not-applicable-cpu",
+        "input_modality": "age-and-nine-blood-biomarkers",
+        "model_id": "phenoage",
+        "model_version": "levine-2018-supplement-rounded-v1",
+        "weight_loading": "not-applicable-closed-form-formula"
+      },
+      "schema": "fs2-aging-local-runtime-benchmark/v1",
+      "source_sha256": {
+        "__init__.py": "85bfd84b4ca162bfddcc4e467375ffc0826c3f39cea872d00632a47a47391ea2",
+        "altumage/__init__.py": "35d6b6f4c2db41e4e228a9e6af1137a6c518dc215336bf94455c05b25a0510b9",
+        "altumage/materialize.py": "06daae108333ed250a2aec04cec53b779107f09fd9cd6e737705c335d02cb842",
+        "altumage/runtime.py": "24a130f1ab788d0926a86c71b48569175280859a66ae6c155e4889990f6a1a8d",
+        "benchmark_runtime.py": "6f6bdca0dc9fd9c59bb92c3084194f5f1c7a4fe0a6c9ec86e4b440045d77bb26",
+        "build_image.py": "fc93cdf847f07cad820433147ef296a66e207cebf7eb3e4d7d0a9a34bf81f002",
+        "contracts.py": "1bd95979ac81f13e55569de1160b6e4c5831a71ba811003f46edec169463f12e",
+        "fixtures.py": "8f5288360503162132e790623b76e2d6058d39238ecc514b7192dbeceef877f8",
+        "phenoage/__init__.py": "afc4711b933ebefe88d1116c97b745ee85bad85ebb4d37e2797ff57a32344011",
+        "phenoage/runtime.py": "f30bf3dc5acdea8c1f6f7cc96be7c94da01262d5c1362d352c0bcbcddb495ba7",
+        "server.py": "1f2ca3b191eedf74bae56a7b6a17f84acbc369607a893ec881c06068a9f3e2c8"
+      }
+    }
+  ],
+  "native_http_predictions": [
+    {
+      "body": {
+        "device": "cpu",
+        "execution_seconds": 4.63909818790853e-05,
+        "gpu_snapshot": "not-applicable-cpu",
+        "input_modality": "age-and-nine-blood-biomarkers",
+        "model_id": "phenoage",
+        "model_version": "levine-2018-supplement-rounded-v1",
+        "predictions": [
+          {
+            "phenotypic_age_years": 41.90792243377997,
+            "sample_id": "synthetic-clinical-0"
+          }
+        ],
+        "sample_count": 1,
+        "weight_loading": "not-applicable-closed-form-formula"
+      },
+      "elapsed_seconds": 0.0015133619890548289,
+      "path": "/v1/predict",
+      "request_bytes": 314,
+      "request_sha256": "b15ebdc61742dff7d3293e35a09b2a3207fd39d6e05ef7f881d900b4172b7842",
+      "response_bytes": 381,
+      "response_sha256": "df54d176e395c25d4a63b943578298332213f6dfd8dbd20c33943ee22dfbb913",
+      "status": 200
+    },
+    {
+      "body": {
+        "device": "cpu",
+        "execution_seconds": 1.7176003893837333e-05,
+        "gpu_snapshot": "not-applicable-cpu",
+        "input_modality": "age-and-nine-blood-biomarkers",
+        "model_id": "phenoage",
+        "model_version": "levine-2018-supplement-rounded-v1",
+        "predictions": [
+          {
+            "phenotypic_age_years": 42.79962098643345,
+            "sample_id": "synthetic-clinical-1"
+          }
+        ],
+        "sample_count": 1,
+        "weight_loading": "not-applicable-closed-form-formula"
+      },
+      "elapsed_seconds": 0.001222409016918391,
+      "path": "/v1/predict",
+      "request_bytes": 314,
+      "request_sha256": "23dfed5a95602604b245e3406770a4832dc06e4ad6e6a67103e8850cec159d88",
+      "response_bytes": 383,
+      "response_sha256": "e74426f76ddc174abb11fe57998a0f4864379ebcc23cd038c859b26fd5a8958d",
+      "status": 200
+    }
+  ],
+  "outcome": "passed",
+  "pod": {
+    "name": "fs2-aging-20260908-phenoage-r01",
+    "namespace": "fs2-models",
+    "node": "computeinstance-e00tq9jk3nbvh4ceck",
+    "resources": {
+      "limits": {
+        "cpu": "2",
+        "memory": "1Gi"
+      },
+      "requests": {
+        "cpu": "1",
+        "memory": "256Mi"
+      }
+    },
+    "restart_count": 0,
+    "uid": "ee9f7119-899f-4fb7-a864-54191622b091"
+  },
+  "raw_receipt_sha256": {
+    "001-dry-run.json": "3bb4b283933716c993fe04b03c5935a4e1ba409b858c9e8b432657d3f51d78cd",
+    "002-created.json": "69cc5ec80ea4ffaba32721450a54368061d18fc3667149c390f77c3928cee6ef",
+    "003-pod.json": "1029cc74222c88c1c144b5e7de6fd80c88043bf85e5804695480a9f1c1a2059a",
+    "004-pod.json": "f97e81bc83d890ff1d0811ccdccae90196dab80aa4d5a2a400c8b31ecc829442",
+    "005-events.json": "a28f52edf9846b8a864042eb9b2f2b973d9b42c451fe2bbe4009fa64f133886d",
+    "006-startup-logs.json": "9bdc0a2150ce73d699c2fdebef7764011e6c28b25c341bf7b6adf48e35c8ffe5",
+    "007-environment.json": "567c59abdd9650e2d6a7f344b97ed74da363ac86c0cba212256d6cd10478ad10",
+    "008-qualification.json": "eb98d014daf3409c03fed30a96abe44349a5d256ba777a11ce50578eb27f9043",
+    "009-terminal-logs.json": "afc45fea6d87b0182b00172a309672d5db40cfee54b006f63740096a6a1fe5d4",
+    "010-pre-cleanup.json": "655cf8dbd363bec178334bba2f0fe333aedbe089995a0b0cfe494d0f0c0b0e9c",
+    "011-delete-owned-pod.json": "5a502827939cb1960a3174e2de737fb4163389c892cfde9d77c4c81cedd1815e",
+    "012-cleanup.json": "deb39cf52127807542f097919ab0e67add9836662951f164e9d00b4a204f7bdd"
+  },
+  "schema": "fs2-aging-runtime-image-qualification/v1",
+  "source_revision": "3a3dbe0fdb258579f9d4eb1b35a2d1525f5fc0d3",
+  "source_sha256": {
+    "__init__.py": "85bfd84b4ca162bfddcc4e467375ffc0826c3f39cea872d00632a47a47391ea2",
+    "altumage/__init__.py": "35d6b6f4c2db41e4e228a9e6af1137a6c518dc215336bf94455c05b25a0510b9",
+    "altumage/materialize.py": "06daae108333ed250a2aec04cec53b779107f09fd9cd6e737705c335d02cb842",
+    "altumage/runtime.py": "24a130f1ab788d0926a86c71b48569175280859a66ae6c155e4889990f6a1a8d",
+    "benchmark_runtime.py": "6f6bdca0dc9fd9c59bb92c3084194f5f1c7a4fe0a6c9ec86e4b440045d77bb26",
+    "build_image.py": "fc93cdf847f07cad820433147ef296a66e207cebf7eb3e4d7d0a9a34bf81f002",
+    "contracts.py": "1bd95979ac81f13e55569de1160b6e4c5831a71ba811003f46edec169463f12e",
+    "fixtures.py": "8f5288360503162132e790623b76e2d6058d39238ecc514b7192dbeceef877f8",
+    "phenoage/__init__.py": "afc4711b933ebefe88d1116c97b745ee85bad85ebb4d37e2797ff57a32344011",
+    "phenoage/runtime.py": "f30bf3dc5acdea8c1f6f7cc96be7c94da01262d5c1362d352c0bcbcddb495ba7",
+    "server.py": "1f2ca3b191eedf74bae56a7b6a17f84acbc369607a893ec881c06068a9f3e2c8"
+  },
+  "startup": {
+    "conditions": {
+      "ContainersReady": "2026-09-08T13:12:37Z",
+      "Initialized": "2026-09-08T13:12:36Z",
+      "PodReadyToStartContainers": "2026-09-08T13:12:37Z",
+      "PodScheduled": "2026-09-08T13:12:36Z",
+      "Ready": "2026-09-08T13:12:37Z"
+    },
+    "container_started": "2026-09-08T13:12:37Z",
+    "created_to_ready_seconds_coarse": 1.0,
+    "creation": "2026-09-08T13:12:36Z",
+    "events": [
+      {
+        "at": "2026-09-08T13:12:36Z",
+        "message": "Successfully assigned fs2-models/fs2-aging-20260908-phenoage-r01 to computeinstance-e00tq9jk3nbvh4ceck",
+        "reason": "Scheduled"
+      },
+      {
+        "at": "2026-09-08T13:12:36Z",
+        "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/phenoage-cpu@sha256:b6c28820576b62972437787bd06fa37f8c10b6f51de31b0f4da3cc3873bb34f1\"",
+        "reason": "Pulling"
+      },
+      {
+        "at": "2026-09-08T13:12:36Z",
+        "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/phenoage-cpu@sha256:b6c28820576b62972437787bd06fa37f8c10b6f51de31b0f4da3cc3873bb34f1\" in 512ms (512ms including waiting). Image size: 53985973 bytes.",
+        "reason": "Pulled"
+      },
+      {
+        "at": "2026-09-08T13:12:36Z",
+        "message": "Container created",
+        "reason": "Created"
+      },
+      {
+        "at": "2026-09-08T13:12:37Z",
+        "message": "Container started",
+        "reason": "Started"
+      }
+    ],
+    "runtime_log": "2026-09-08T13:12:37.414435981Z INFO:     Started server process [1]\n2026-09-08T13:12:37.414477193Z INFO:     Waiting for application startup.\n2026-09-08T13:12:37.415405185Z INFO:fs2.aging:{\"event\": \"model_ready\", \"model_id\": \"phenoage\", \"model_load_seconds\": 0.0008027200237847865, \"model_version\": \"levine-2018-supplement-rounded-v1\", \"device\": \"cpu\", \"input_modality\": \"age-and-nine-blood-biomarkers\", \"weight_loading\": \"not-applicable-closed-form-formula\", \"gpu_snapshot\": \"not-applicable-cpu\"}\n2026-09-08T13:12:37.415456853Z INFO:     Application startup complete.\n2026-09-08T13:12:37.415753184Z INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)\n2026-09-08T13:12:37.780312648Z INFO:     10.6.123.2:44150 - \"GET /v1/health/ready HTTP/1.1\" 200 OK\n2026-09-08T13:12:39.770445640Z INFO:     10.6.123.2:44160 - \"GET /v1/health/ready HTTP/1.1\" 200 OK\n2026-09-08T13:12:41.769380920Z INFO:     10.6.123.2:44170 - \"GET /v1/health/ready HTTP/1.1\" 200 OK\n"
+  }
+}

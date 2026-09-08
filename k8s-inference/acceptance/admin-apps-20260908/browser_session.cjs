@@ -9,7 +9,9 @@ const {
   verifyAppIdentity,
   verifyMetrics,
   verifyRunPublication,
+  disabledCloneSpec,
 } = require("./browser_checks.cjs");
+const { runKeyInference } = require("./key_inference.cjs");
 
 const ORIGIN = "https://89.169.99.188";
 const PREFIX = "/admin/api/v1";
@@ -62,6 +64,12 @@ function adminPath(value) {
   return url.href;
 }
 
+function rangeOption(value) {
+  const options = { "1h": "1", "6h": "6", "24h": "24", "7d": "168" };
+  assert(Object.hasOwn(options, value), "supported time-range label required");
+  return options[value];
+}
+
 async function main() {
   process.umask(0o077);
   const [credentialPath, output, sourceCommit, ...flags] =
@@ -90,6 +98,20 @@ async function main() {
   });
   const report = {
     source_commit: sourceCommit,
+    harness_sha256: crypto
+      .createHash("sha256")
+      .update(fs.readFileSync(__filename))
+      .digest("hex"),
+    key_inference_helper_sha256: crypto
+      .createHash("sha256")
+      .update(fs.readFileSync(path.join(__dirname, "key_inference.cjs")))
+      .digest("hex"),
+    launch_network_namespace: fs.readlinkSync("/proc/self/ns/net"),
+    launch_mount_namespace: fs.readlinkSync("/proc/self/ns/mnt"),
+    launch_resolver_sha256: crypto
+      .createHash("sha256")
+      .update(fs.readFileSync("/etc/resolv.conf"))
+      .digest("hex"),
     origin: ORIGIN,
     allow_mutations: allowMutations,
     started_at: new Date().toISOString(),
@@ -111,6 +133,7 @@ async function main() {
   const keys = new Map();
   const keyOwners = new Map();
   const revokedKeys = new Set();
+  const keyInferenceAttempted = new Set();
   function save(name, value) {
     fs.writeFileSync(
       path.join(output, name),
@@ -326,10 +349,9 @@ async function main() {
             .getByRole("link", { name: command.name, exact: true })
             .click();
         } else if (command.action === "range") {
-          assert(["1h", "6h", "24h", "7d"].includes(command.value));
           await page
             .getByLabel("Time range", { exact: true })
-            .selectOption(command.value);
+            .selectOption(rangeOption(command.value));
         } else if (command.action === "filter") {
           assert(
             [
@@ -558,6 +580,7 @@ async function main() {
           keyOwners.set(disclosure.key.id, {
             user_id: command.user_id,
             name: command.name,
+            model_id: command.model_id,
           });
           secrets.add(disclosure.secret);
           await page
@@ -569,6 +592,37 @@ async function main() {
             user_id: command.user_id,
             model_id: command.model_id,
           });
+        } else if (command.action === "use-key-inference") {
+          assert(
+            allowMutations &&
+              keys.has(command.key_id) &&
+              keyOwners.has(command.key_id) &&
+              !revokedKeys.has(command.key_id) &&
+              !keyInferenceAttempted.has(command.key_id),
+          );
+          const owner = keyOwners.get(command.key_id);
+          const clone = await api("GET", `/apps/${command.app_id}`);
+          assert(
+            clones.has(command.app_id) &&
+              clone.execution_mode === "serving" &&
+              /qwen/i.test(clone.model_ref) &&
+              owner.model_id === clone.public_model_id,
+            "one task-owned Qwen clone with an exact scoped key is required",
+          );
+          keyInferenceAttempted.add(command.key_id);
+          const receipt = await runKeyInference(context.request, {
+            origin: ORIGIN,
+            secret: keys.get(command.key_id),
+            keyId: command.key_id,
+            modelId: clone.public_model_id,
+          });
+          save(command.label + "-inference.json", receipt);
+          report.checks.push({ kind: "key-owned-inference", ...receipt });
+          assert.equal(
+            receipt.status,
+            "passed",
+            "single key-owned inference failed; receipt retained without retry",
+          );
         } else if (command.action === "use-key-discovery") {
           assert(allowMutations && keys.has(command.key_id));
           const response = await context.request.get(ORIGIN + "/v1/models", {
@@ -688,8 +742,7 @@ async function main() {
             "concurrent desired spec requires root coordination",
           );
         }
-        const spec = structuredClone(current.serving.spec);
-        spec.lifecycle.desiredState = "Disabled";
+        const spec = disabledCloneSpec(current.serving.spec);
         const updated = await api("PATCH", `/apps/${appId}/settings`, {
           expected_app_revision: current.app_revision,
           serving_base_etag: current.serving.etag,
@@ -751,4 +804,4 @@ if (require.main === module)
     );
     process.exitCode = 1;
   });
-module.exports = { sanitize, adminPath };
+module.exports = { sanitize, adminPath, rangeOption };

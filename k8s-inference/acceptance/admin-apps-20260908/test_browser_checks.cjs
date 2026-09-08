@@ -5,8 +5,38 @@ const {
   verifyMetrics,
   verifyRunPublication,
   verifySettingsRestoration,
+  disabledCloneSpec,
 } = require("./browser_checks.cjs");
-const { sanitize, adminPath } = require("./browser_session.cjs");
+const { sanitize, adminPath, rangeOption } = require("./browser_session.cjs");
+
+test("owned clone cleanup clears its hot floor and warm windows without changing source settings", () => {
+  const original = {
+    lifecycle: { desiredState: "Enabled" },
+    availability: {
+      minReplicas: 1,
+      maxReplicas: 2,
+      warmWindows: [{ minReplicas: 1 }],
+    },
+    artifact: { revision: "unchanged" },
+  };
+  const before = structuredClone(original);
+  assert.deepEqual(disabledCloneSpec(original), {
+    ...before,
+    lifecycle: { desiredState: "Disabled" },
+    availability: { minReplicas: 0, maxReplicas: 2, warmWindows: [] },
+  });
+  assert.deepEqual(original, before);
+});
+
+test("time-range commands select the actual numeric-hour UI options", () => {
+  assert.deepEqual(["1h", "6h", "24h", "7d"].map(rangeOption), [
+    "1",
+    "6",
+    "24",
+    "168",
+  ]);
+  assert.throws(() => rangeOption("unknown"));
+});
 
 test("same model is not enough to prove independent apps", () => {
   const source = {

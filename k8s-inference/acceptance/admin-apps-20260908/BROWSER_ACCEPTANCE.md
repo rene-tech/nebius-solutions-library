@@ -1,7 +1,9 @@
 # Apps console integrated browser acceptance
 
-Prepared 2026-09-08. **Not executed; no live acceptance claim.** Root supplies the
-exact deployed source/image identities and start signal before any live calls.
+Prepared 2026-09-08. The first deployed attempt is recorded in
+[BROWSER-R01.md](BROWSER-R01.md), including the failed clone request and pending
+correction; it is **not** a completed acceptance claim. Root supplies exact
+deployed source/image identities and the start signal before each new attempt.
 Use the existing authenticated browser workflow and approved private credential
 bundle; never place credentials or issued key values in arguments, screenshots,
 console output, committed files or browser snapshots. Retain every failed attempt.
@@ -17,9 +19,13 @@ JSON-lines commands on stdin: `navigate`, `tab`, `range`, `filter`, `snapshot`,
 Only root-authorized mutation acceptance uses the additional `--allow-mutations`
 flag. Its bounded `create-app`/`set-workers` actions target only clones created by
 this session; `create-user`/`create-key`/`revoke-key` manage only task-prefixed,
-session-owned identities. `use-key-discovery` verifies the issued key and later
-401 denial without inference. Real key-owned inference/usage remains a separate
-explicitly coordinated workload check, not implied by discovery. One-time
+session-owned identities. `use-key-inference` submits exactly one retained Qwen
+arithmetic fixture to the session-owned clone using the newly issued key, then
+records separate bounded status polls and validates the exact answer `42`.
+There is no submission retry. It requires the exact clone public route in the
+key policy; new-owner Apps/Users usage attribution is verified afterward.
+`use-key-discovery` verifies the issued key and later 401 denial without adding
+another inference. One-time
 credentials stay in memory; structural secret fields and secret dialogs are
 removed or masked from evidence. Every run closes Chrome in `finally`, revokes
 its keys, disables its new users/clones, and compares source settings exactly.

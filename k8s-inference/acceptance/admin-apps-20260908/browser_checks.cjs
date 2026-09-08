@@ -127,9 +127,18 @@ function verifySettingsRestoration(before, after) {
   };
 }
 
+function disabledCloneSpec(current) {
+  const spec = structuredClone(current);
+  spec.lifecycle.desiredState = "Disabled";
+  spec.availability.minReplicas = 0;
+  spec.availability.warmWindows = [];
+  return spec;
+}
+
 module.exports = {
   verifyAppIdentity,
   verifyMetrics,
   verifyRunPublication,
   verifySettingsRestoration,
+  disabledCloneSpec,
 };

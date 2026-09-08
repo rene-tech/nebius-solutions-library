@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fs2-aging-20260908-altumage-r01
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: fs2-aging-runtime-qualification
+    acceptance.fs2.nebius/task: aging-20260908
+    acceptance.fs2.nebius/model: altumage
+  annotations:
+    acceptance.fs2.nebius/source: 3a3dbe0fdb258579f9d4eb1b35a2d1525f5fc0d3
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: 1800
+  terminationGracePeriodSeconds: 30
+  automountServiceAccountToken: false
+  nodeSelector:
+    accelerator.fs2.nebius/pool-id: h100-reserved-8x
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: fs2-inference
+      effect: NoSchedule
+  containers:
+    - name: runtime
+      image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/altumage-cuda@sha256:ca6352f79ecd78928e13ecda55afaf01a5df1923291b7a56a7ba9a9770c484e1
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: AGING_MODEL
+          value: altumage
+        - name: AGING_DEVICE
+          value: cuda
+        - name: AGING_CPU_THREADS
+          value: "1"
+      ports:
+        - name: http
+          containerPort: 8000
+      readinessProbe:
+        httpGet:
+          path: /v1/health/ready
+          port: http
+        periodSeconds: 2
+        timeoutSeconds: 2
+      resources:
+        requests:
+          cpu: "2"
+          memory: 4Gi
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "4"
+          memory: 8Gi
+          nvidia.com/gpu: "1"
