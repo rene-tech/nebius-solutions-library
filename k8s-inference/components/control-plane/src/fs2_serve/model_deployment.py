@@ -86,6 +86,10 @@ DNS_SUBDOMAIN_PATTERN = (
     r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?"
     r"(?:\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$"
 )
+# Kubernetes object-name validation bounds the complete subdomain at 253
+# characters; unlike real DNS hostnames it does not bound each label at 63.
+# Keep DNS_SUBDOMAIN_PATTERN for the existing hostname/qualification contracts.
+KUBERNETES_OBJECT_NAME_PATTERN = r"^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\.[a-z0-9](?:[-a-z0-9]*[a-z0-9])?)*$"
 MODEL_REF_PATTERN = r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$"
 SUPPORTED_DYNAMIC_POLICY_REF = "tenant-default.v1"
 IMAGE_DIGEST_PATTERN = r"^[^\s@]+@sha256:[a-f0-9]{64}$"
@@ -2003,7 +2007,11 @@ def startup_retention_promql(*, namespace: str, deployment: str, timeout_seconds
     missing scrape from renewing that clock. Readiness, terminal/deleting Pods,
     and expiry end the hold. A later real scale-out gets a fresh budget.
     """
-    if re.fullmatch(DNS_LABEL_PATTERN, namespace) is None or re.fullmatch(DNS_SUBDOMAIN_PATTERN, deployment) is None:
+    if (
+        re.fullmatch(DNS_LABEL_PATTERN, namespace) is None
+        or len(deployment) > 253
+        or re.fullmatch(KUBERNETES_OBJECT_NAME_PATTERN, deployment) is None
+    ):
         raise ValueError("workload identity cannot be embedded in PromQL")
     if not 60 <= timeout_seconds <= 7200 or target_queue_depth < 1:
         raise ValueError("startup retention requires a bounded budget and positive target")

@@ -18,6 +18,7 @@ from .fast_start import FastStartStatus
 from .model_deployment import (
     DNS_LABEL_PATTERN,
     DNS_SUBDOMAIN_PATTERN,
+    KUBERNETES_OBJECT_NAME_PATTERN,
     SHA256_DIGEST_PATTERN,
     ModelDeploymentSpec,
     canonical_digest,
@@ -132,14 +133,14 @@ class ModelDeploymentResourceStatus(StrictModel):
     api_version: str = Field(min_length=1, max_length=128)
     kind: str = Field(min_length=1, max_length=128)
     namespace: str = Field(min_length=1, max_length=63, pattern=DNS_LABEL_PATTERN)
-    name: str = Field(min_length=1, max_length=253, pattern=DNS_SUBDOMAIN_PATTERN)
+    name: str = Field(min_length=1, max_length=253, pattern=KUBERNETES_OBJECT_NAME_PATTERN)
     uid: str = Field(min_length=1, max_length=128)
     generation: int = Field(ge=0)
     digest: str | None = Field(default=None, pattern=SHA256_DIGEST_PATTERN)
 
 
 class ModelDeploymentPlacementStatus(StrictModel):
-    deployment_name: str = Field(min_length=1, max_length=253, pattern=DNS_SUBDOMAIN_PATTERN)
+    deployment_name: str = Field(min_length=1, max_length=253, pattern=KUBERNETES_OBJECT_NAME_PATTERN)
     pool_ref: str = Field(min_length=1, max_length=128)
     role: Literal["hot", "burst"]
     desired: int | None = Field(default=None, ge=0)
