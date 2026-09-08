@@ -1,0 +1,95 @@
+{
+  "schema": "fs2-aging-local-runtime-benchmark/v1",
+  "measurement_limitations": ["The retained ru_maxrss field can inherit a pre-exec ancestor high-water mark on this runner; do not use it as model memory demand. r02 uses process-local /proc/self/status VmHWM/VmRSS. Timing observations are unchanged."],
+  "measured_at": "2026-09-08T12:56:48.140358+00:00",
+  "model": {
+    "model_id": "altumage",
+    "model_version": "696c477dac9b7641bf283c48af1cc9bb0a0803a3",
+    "device": "cpu",
+    "input_modality": "normalized-dna-methylation-beta-values",
+    "weights_sha256": "648f9d8cf8fb809e0ce9f1d46b652a936b2bb056b6d028c369ea5e2ed4a05e87",
+    "feature_count": 20318,
+    "preprocessing": "official-robust-scaler",
+    "gpu_snapshot": "not-qualified"
+  },
+  "machine": {
+    "architecture": "x86_64",
+    "logical_cpus": 128,
+    "python": "3.12.3",
+    "configured_torch_threads": 1
+  },
+  "boundary": "local process imports + model constructor; warm JSON decode + validation + inference",
+  "excluded": [
+    "container pull",
+    "node provisioning",
+    "Kubernetes scheduling",
+    "public admission",
+    "network transfer",
+    "JSON response encoding"
+  ],
+  "cache_state": "artifact files already present; filesystem/page-cache state uncontrolled",
+  "imports_and_model_load_seconds": 2.124717424623668,
+  "source_sha256": {
+    "__init__.py": "85bfd84b4ca162bfddcc4e467375ffc0826c3f39cea872d00632a47a47391ea2",
+    "altumage/__init__.py": "35d6b6f4c2db41e4e228a9e6af1137a6c518dc215336bf94455c05b25a0510b9",
+    "altumage/materialize.py": "06daae108333ed250a2aec04cec53b779107f09fd9cd6e737705c335d02cb842",
+    "altumage/runtime.py": "24a130f1ab788d0926a86c71b48569175280859a66ae6c155e4889990f6a1a8d",
+    "benchmark_runtime.py": "df57de779ad38bcffa53c706d4cf2b27c4e129b480da7173cec6a57b7553bc0e",
+    "contracts.py": "1bd95979ac81f13e55569de1160b6e4c5831a71ba811003f46edec169463f12e",
+    "fixtures.py": "8f5288360503162132e790623b76e2d6058d39238ecc514b7192dbeceef877f8",
+    "phenoage/__init__.py": "afc4711b933ebefe88d1116c97b745ee85bad85ebb4d37e2797ff57a32344011",
+    "phenoage/runtime.py": "f30bf3dc5acdea8c1f6f7cc96be7c94da01262d5c1362d352c0bcbcddb495ba7",
+    "server.py": "1f2ca3b191eedf74bae56a7b6a17f84acbc369607a893ec881c06068a9f3e2c8"
+  },
+  "batches": [
+    {
+      "samples": 1,
+      "repeats": 20,
+      "request_bytes": 665938,
+      "json_validate_and_predict_seconds": {
+        "median": 0.008133165072649717,
+        "min": 0.008048014715313911,
+        "max": 0.011491524055600166
+      },
+      "predict_including_scaling_and_device_transfers_seconds": {
+        "median": 0.004756066016852856,
+        "min": 0.0047078123316168785,
+        "max": 0.005680202506482601
+      },
+      "samples_per_second_at_median": 122.95336330536426
+    },
+    {
+      "samples": 8,
+      "repeats": 20,
+      "request_bytes": 3469275,
+      "json_validate_and_predict_seconds": {
+        "median": 0.023843181785196066,
+        "min": 0.02314914111047983,
+        "max": 0.029433482326567173
+      },
+      "predict_including_scaling_and_device_transfers_seconds": {
+        "median": 0.01076034689322114,
+        "min": 0.010559966787695885,
+        "max": 0.011284058913588524
+      },
+      "samples_per_second_at_median": 335.52568914972164
+    },
+    {
+      "samples": 64,
+      "repeats": 20,
+      "request_bytes": 25891032,
+      "json_validate_and_predict_seconds": {
+        "median": 0.15634560026228428,
+        "min": 0.15126850083470345,
+        "max": 0.18625683430582285
+      },
+      "predict_including_scaling_and_device_transfers_seconds": {
+        "median": 0.05114883650094271,
+        "min": 0.050501096062362194,
+        "max": 0.05816000793129206
+      },
+      "samples_per_second_at_median": 409.349542888537
+    }
+  ],
+  "peak_process_rss_bytes": 7094104064
+}

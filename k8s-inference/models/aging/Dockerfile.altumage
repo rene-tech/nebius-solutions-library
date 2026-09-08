@@ -1,0 +1,15 @@
+# One runtime source, with CPU and CUDA images built from different wheel indices.
+FROM python@sha256:0f5b26b9518d002b6173fd61daad821fa340635ebfec5bba471013f9ca114579
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+RUN python -m pip install --no-cache-dir torch==2.8.0 --index-url "${TORCH_INDEX_URL}"
+COPY k8s-inference/models/aging/requirements-http.txt /tmp/requirements-http.txt
+COPY k8s-inference/models/aging/requirements-altumage.txt /tmp/requirements-altumage.txt
+RUN python -m pip install --no-cache-dir -r /tmp/requirements-http.txt -r /tmp/requirements-altumage.txt
+COPY k8s-inference/models/aging /opt/fs2/aging
+RUN python /opt/fs2/aging/altumage/materialize.py /opt/altumage
+WORKDIR /opt/fs2
+ENV AGING_MODEL=altumage AGING_DEVICE=cpu AGING_CPU_THREADS=1 \
+    AGING_ARTIFACT_ROOT=/opt/altumage PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+USER 65532:65532
+EXPOSE 8000
+ENTRYPOINT ["python", "-m", "uvicorn", "aging.server:app", "--host", "0.0.0.0", "--port", "8000"]

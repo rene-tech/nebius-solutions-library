@@ -1,0 +1,8 @@
+# Torch is installed separately from the selected CPU/CUDA wheel index.
+pyaging @ https://github.com/rsinghlab/pyaging/archive/edb1b37dc8a14a2ceed4f20a7d6fa05b8c3dabb9.tar.gz
+numpy==2.2.6
+pandas==2.3.3
+scikit-learn==1.7.2
+anndata==0.13.3.post0
+huggingface-hub==1.30.0
+rich==15.0.0

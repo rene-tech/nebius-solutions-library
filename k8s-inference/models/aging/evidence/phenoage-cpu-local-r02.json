@@ -1,0 +1,95 @@
+{
+  "schema": "fs2-aging-local-runtime-benchmark/v1",
+  "measured_at": "2026-09-08T13:00:47.087523+00:00",
+  "model": {
+    "model_id": "phenoage",
+    "model_version": "levine-2018-supplement-rounded-v1",
+    "device": "cpu",
+    "input_modality": "age-and-nine-blood-biomarkers",
+    "weight_loading": "not-applicable-closed-form-formula",
+    "gpu_snapshot": "not-applicable-cpu"
+  },
+  "machine": {
+    "architecture": "x86_64",
+    "logical_cpus": 128,
+    "python": "3.12.3",
+    "configured_torch_threads": 1
+  },
+  "boundary": "local process imports + model constructor; warm JSON decode + validation + inference",
+  "excluded": [
+    "container pull",
+    "node provisioning",
+    "Kubernetes scheduling",
+    "public admission",
+    "network transfer",
+    "JSON response encoding"
+  ],
+  "cache_state": "artifact files already present; filesystem/page-cache state uncontrolled",
+  "imports_and_model_load_seconds": 0.07472375966608524,
+  "source_sha256": {
+    "__init__.py": "85bfd84b4ca162bfddcc4e467375ffc0826c3f39cea872d00632a47a47391ea2",
+    "altumage/__init__.py": "35d6b6f4c2db41e4e228a9e6af1137a6c518dc215336bf94455c05b25a0510b9",
+    "altumage/materialize.py": "06daae108333ed250a2aec04cec53b779107f09fd9cd6e737705c335d02cb842",
+    "altumage/runtime.py": "24a130f1ab788d0926a86c71b48569175280859a66ae6c155e4889990f6a1a8d",
+    "benchmark_runtime.py": "6f6bdca0dc9fd9c59bb92c3084194f5f1c7a4fe0a6c9ec86e4b440045d77bb26",
+    "contracts.py": "1bd95979ac81f13e55569de1160b6e4c5831a71ba811003f46edec169463f12e",
+    "fixtures.py": "8f5288360503162132e790623b76e2d6058d39238ecc514b7192dbeceef877f8",
+    "phenoage/__init__.py": "afc4711b933ebefe88d1116c97b745ee85bad85ebb4d37e2797ff57a32344011",
+    "phenoage/runtime.py": "f30bf3dc5acdea8c1f6f7cc96be7c94da01262d5c1362d352c0bcbcddb495ba7",
+    "server.py": "1f2ca3b191eedf74bae56a7b6a17f84acbc369607a893ec881c06068a9f3e2c8"
+  },
+  "batches": [
+    {
+      "samples": 1,
+      "repeats": 20,
+      "request_bytes": 314,
+      "json_validate_and_predict_seconds": {
+        "median": 6.0889869928359985e-06,
+        "min": 5.768612027168274e-06,
+        "max": 0.00019356515258550644
+      },
+      "predict_including_scaling_and_device_transfers_seconds": {
+        "median": 3.050081431865692e-06,
+        "min": 2.7837231755256653e-06,
+        "max": 2.014078199863434e-05
+      },
+      "samples_per_second_at_median": 164230.93055980423
+    },
+    {
+      "samples": 8,
+      "repeats": 20,
+      "request_bytes": 2421,
+      "json_validate_and_predict_seconds": {
+        "median": 3.521796315908432e-05,
+        "min": 3.4673139452934265e-05,
+        "max": 4.774145781993866e-05
+      },
+      "predict_including_scaling_and_device_transfers_seconds": {
+        "median": 2.1337997168302536e-05,
+        "min": 2.0942650735378265e-05,
+        "max": 3.37306410074234e-05
+      },
+      "samples_per_second_at_median": 227156.80528890653
+    },
+    {
+      "samples": 64,
+      "repeats": 20,
+      "request_bytes": 19331,
+      "json_validate_and_predict_seconds": {
+        "median": 0.00027708709239959717,
+        "min": 0.00026434287428855896,
+        "max": 0.00036756880581378937
+      },
+      "predict_including_scaling_and_device_transfers_seconds": {
+        "median": 0.0001666732132434845,
+        "min": 0.00016369856894016266,
+        "max": 0.00018391013145446777
+      },
+      "samples_per_second_at_median": 230974.31008335575
+    }
+  ],
+  "linux_process_memory_bytes": {
+    "VmHWM": 29659136,
+    "VmRSS": 29659136
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "schema": "fs2-aging-local-runtime-benchmark/v1",
+  "measurement_limitations": ["The retained ru_maxrss field can inherit a pre-exec ancestor high-water mark on this runner; do not use it as model memory demand. r02 uses process-local /proc/self/status VmHWM/VmRSS. Timing observations are unchanged."],
+  "measured_at": "2026-09-08T12:56:45.958614+00:00",
+  "model": {
+    "model_id": "phenoage",
+    "model_version": "levine-2018-supplement-rounded-v1",
+    "device": "cpu",
+    "input_modality": "age-and-nine-blood-biomarkers",
+    "weight_loading": "not-applicable-closed-form-formula",
+    "gpu_snapshot": "not-applicable-cpu"
+  },
+  "machine": {
+    "architecture": "x86_64",
+    "logical_cpus": 128,
+    "python": "3.12.3",
+    "configured_torch_threads": 1
+  },
+  "boundary": "local process imports + model constructor; warm JSON decode + validation + inference",
+  "excluded": [
+    "container pull",
+    "node provisioning",
+    "Kubernetes scheduling",
+    "public admission",
+    "network transfer",
+    "JSON response encoding"
+  ],
+  "cache_state": "artifact files already present; filesystem/page-cache state uncontrolled",
+  "imports_and_model_load_seconds": 0.07735662627965212,
+  "source_sha256": {
+    "__init__.py": "85bfd84b4ca162bfddcc4e467375ffc0826c3f39cea872d00632a47a47391ea2",
+    "altumage/__init__.py": "35d6b6f4c2db41e4e228a9e6af1137a6c518dc215336bf94455c05b25a0510b9",
+    "altumage/materialize.py": "06daae108333ed250a2aec04cec53b779107f09fd9cd6e737705c335d02cb842",
+    "altumage/runtime.py": "24a130f1ab788d0926a86c71b48569175280859a66ae6c155e4889990f6a1a8d",
+    "benchmark_runtime.py": "df57de779ad38bcffa53c706d4cf2b27c4e129b480da7173cec6a57b7553bc0e",
+    "contracts.py": "1bd95979ac81f13e55569de1160b6e4c5831a71ba811003f46edec169463f12e",
+    "fixtures.py": "8f5288360503162132e790623b76e2d6058d39238ecc514b7192dbeceef877f8",
+    "phenoage/__init__.py": "afc4711b933ebefe88d1116c97b745ee85bad85ebb4d37e2797ff57a32344011",
+    "phenoage/runtime.py": "f30bf3dc5acdea8c1f6f7cc96be7c94da01262d5c1362d352c0bcbcddb495ba7",
+    "server.py": "1f2ca3b191eedf74bae56a7b6a17f84acbc369607a893ec881c06068a9f3e2c8"
+  },
+  "batches": [
+    {
+      "samples": 1,
+      "repeats": 20,
+      "request_bytes": 314,
+      "json_validate_and_predict_seconds": {
+        "median": 6.213784217834473e-06,
+        "min": 5.809590220451355e-06,
+        "max": 0.00021093059331178665
+      },
+      "predict_including_scaling_and_device_transfers_seconds": {
+        "median": 3.078952431678772e-06,
+        "min": 2.834014594554901e-06,
+        "max": 3.688596189022064e-05
+      },
+      "samples_per_second_at_median": 160932.52757793764
+    },
+    {
+      "samples": 8,
+      "repeats": 20,
+      "request_bytes": 2421,
+      "json_validate_and_predict_seconds": {
+        "median": 3.471784293651581e-05,
+        "min": 3.378093242645264e-05,
+        "max": 5.7015568017959595e-05
+      },
+      "predict_including_scaling_and_device_transfers_seconds": {
+        "median": 2.118712291121483e-05,
+        "min": 2.0500272512435913e-05,
+        "max": 2.427678555250168e-05
+      },
+      "samples_per_second_at_median": 230429.0625033532
+    },
+    {
+      "samples": 64,
+      "repeats": 20,
+      "request_bytes": 19331,
+      "json_validate_and_predict_seconds": {
+        "median": 0.00027177389711141586,
+        "min": 0.00026013609021902084,
+        "max": 0.00032599642872810364
+      },
+      "predict_including_scaling_and_device_transfers_seconds": {
+        "median": 0.00016540708020329475,
+        "min": 0.00016233697533607483,
+        "max": 0.00017951242625713348
+      },
+      "samples_per_second_at_median": 235489.87110326748
+    }
+  ],
+  "peak_process_rss_bytes": 30756864
+}

@@ -1,0 +1,97 @@
+{
+  "schema": "fs2-aging-local-runtime-benchmark/v1",
+  "measured_at": "2026-09-08T13:00:49.269422+00:00",
+  "model": {
+    "model_id": "altumage",
+    "model_version": "696c477dac9b7641bf283c48af1cc9bb0a0803a3",
+    "device": "cpu",
+    "input_modality": "normalized-dna-methylation-beta-values",
+    "weights_sha256": "648f9d8cf8fb809e0ce9f1d46b652a936b2bb056b6d028c369ea5e2ed4a05e87",
+    "feature_count": 20318,
+    "preprocessing": "official-robust-scaler",
+    "gpu_snapshot": "not-qualified"
+  },
+  "machine": {
+    "architecture": "x86_64",
+    "logical_cpus": 128,
+    "python": "3.12.3",
+    "configured_torch_threads": 1
+  },
+  "boundary": "local process imports + model constructor; warm JSON decode + validation + inference",
+  "excluded": [
+    "container pull",
+    "node provisioning",
+    "Kubernetes scheduling",
+    "public admission",
+    "network transfer",
+    "JSON response encoding"
+  ],
+  "cache_state": "artifact files already present; filesystem/page-cache state uncontrolled",
+  "imports_and_model_load_seconds": 2.1239822674542665,
+  "source_sha256": {
+    "__init__.py": "85bfd84b4ca162bfddcc4e467375ffc0826c3f39cea872d00632a47a47391ea2",
+    "altumage/__init__.py": "35d6b6f4c2db41e4e228a9e6af1137a6c518dc215336bf94455c05b25a0510b9",
+    "altumage/materialize.py": "06daae108333ed250a2aec04cec53b779107f09fd9cd6e737705c335d02cb842",
+    "altumage/runtime.py": "24a130f1ab788d0926a86c71b48569175280859a66ae6c155e4889990f6a1a8d",
+    "benchmark_runtime.py": "6f6bdca0dc9fd9c59bb92c3084194f5f1c7a4fe0a6c9ec86e4b440045d77bb26",
+    "contracts.py": "1bd95979ac81f13e55569de1160b6e4c5831a71ba811003f46edec169463f12e",
+    "fixtures.py": "8f5288360503162132e790623b76e2d6058d39238ecc514b7192dbeceef877f8",
+    "phenoage/__init__.py": "afc4711b933ebefe88d1116c97b745ee85bad85ebb4d37e2797ff57a32344011",
+    "phenoage/runtime.py": "f30bf3dc5acdea8c1f6f7cc96be7c94da01262d5c1362d352c0bcbcddb495ba7",
+    "server.py": "1f2ca3b191eedf74bae56a7b6a17f84acbc369607a893ec881c06068a9f3e2c8"
+  },
+  "batches": [
+    {
+      "samples": 1,
+      "repeats": 20,
+      "request_bytes": 665938,
+      "json_validate_and_predict_seconds": {
+        "median": 0.008161382284015417,
+        "min": 0.00804353877902031,
+        "max": 0.011577144265174866
+      },
+      "predict_including_scaling_and_device_transfers_seconds": {
+        "median": 0.0047644395381212234,
+        "min": 0.004696795716881752,
+        "max": 0.005735617130994797
+      },
+      "samples_per_second_at_median": 122.52826362006877
+    },
+    {
+      "samples": 8,
+      "repeats": 20,
+      "request_bytes": 3469275,
+      "json_validate_and_predict_seconds": {
+        "median": 0.023400277830660343,
+        "min": 0.023055948317050934,
+        "max": 0.02815778274089098
+      },
+      "predict_including_scaling_and_device_transfers_seconds": {
+        "median": 0.010493315756320953,
+        "min": 0.010413354262709618,
+        "max": 0.010986356064677238
+      },
+      "samples_per_second_at_median": 341.876282747291
+    },
+    {
+      "samples": 64,
+      "repeats": 20,
+      "request_bytes": 25891032,
+      "json_validate_and_predict_seconds": {
+        "median": 0.15798628656193614,
+        "min": 0.15235636569559574,
+        "max": 0.18597490526735783
+      },
+      "predict_including_scaling_and_device_transfers_seconds": {
+        "median": 0.05121113173663616,
+        "min": 0.04963395744562149,
+        "max": 0.06401851214468479
+      },
+      "samples_per_second_at_median": 405.0984512184845
+    }
+  ],
+  "linux_process_memory_bytes": {
+    "VmHWM": 644444160,
+    "VmRSS": 610750464
+  }
+}
