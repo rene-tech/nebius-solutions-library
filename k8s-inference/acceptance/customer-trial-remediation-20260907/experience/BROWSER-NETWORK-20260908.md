@@ -1,6 +1,6 @@
 # Browser transport event: test-host network changes
 
-The r03 browser's `ERR_NETWORK_CHANGED` is strongly associated with a network
+The r03 browser's two `ERR_NETWORK_CHANGED` reads are strongly associated with network
 interface address notification on the machine running Chrome, not an observed
 platform HTTP error. The same association holds for all three retained r02
 browser errors. These errors remain in the original receipts; this diagnosis
@@ -19,6 +19,7 @@ was changed. Chrome reports version `149.0.7827.114`.
 | Sep 7 20:13:05.773 | Sep 7 20:13:05.769340 | `br-e0dd06d940a4` | 3.660 ms |
 | Sep 7 20:13:06.859 | Sep 7 20:13:06.857438 | `veth7548c14` | 1.562 ms |
 | Sep 8 08:01:40.717 | Sep 8 08:01:40.713372 | `veth6ff58d7` | 3.628 ms |
+| Sep 8 08:10:34.348 | Sep 8 08:10:34.345244 | `veth64556cf` | 2.756 ms |
 
 All timestamps use UTC in 2026. The [selected journal receipt](browser-network-20260908.json)
 records exact microsecond values, read-only command scopes and browser bindings.
@@ -38,6 +39,12 @@ For current Protenix operation `1001f32b-4ebf-4f1f-98bb-137a3ed30041`:
   and no traceback, but did not provide a causal request-ID match. It is not
   represented as proof that the aborted read reached the application.
 
+The second event affected the BindCraft detail read for operation
+`65fe6dbd-3982-48cc-9454-bf7174292272`. Its next automatic read succeeded at
+08:10:35.756, recovering in 1.408 seconds without reload or intervention.
+There is no during-retry screenshot for this second event; do not extend the
+first event's single-frame UI proof to every frame of the second.
+
 ## Source-grounded interpretation
 
 Tavily located Chromium's primary source. The exact installed-version source
@@ -53,7 +60,7 @@ is specifically for randomized temporary IPv6 addresses, not a blanket exemption
 for virtual interfaces. See the
 [version-pinned connection handling](https://chromium.googlesource.com/chromium/src/+/refs/tags/149.0.7827.114/net/socket/transport_client_socket_pool.cc#1140).
 
-Four independently timed interface notifications immediately preceding the four
+Five independently timed interface notifications immediately preceding the five
 browser errors, together with this implementation path, strongly support a
 client-host network-change cause. This is an evidence-backed inference, not a
 captured Chromium NetLog or packet-level causal trace. The owner or purpose of
@@ -68,4 +75,9 @@ still depends on all scientific results, ordinary requests, resource release
 and whole-window route evidence. No speculative production workaround or global
 network/IPv6 setting change is warranted by this client-host evidence. A future
 dedicated browser runner can isolate its network namespace from unrelated host
-interface churn; that change was not introduced mid-cohort.
+interface churn; that change was not introduced mid-cohort. After r03 closed,
+the [isolated-network preflight](isolated-network-preflight-20260908.json) passed
+with the same Chrome and browser script. It used a root-owned, inert network
+namespace holder and a DNS bind only inside a private mount namespace; host DNS
+was independently confirmed unchanged. This short preflight is not a substitute
+for the next full-cohort browser runs.

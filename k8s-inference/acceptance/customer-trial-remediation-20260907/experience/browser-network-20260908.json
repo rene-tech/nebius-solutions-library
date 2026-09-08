@@ -10,13 +10,15 @@
   "queried_windows": [
     {"start": "2026-09-07 20:11:53", "end": "2026-09-07 20:11:56"},
     {"start": "2026-09-07 20:13:04", "end": "2026-09-07 20:13:08"},
-    {"start": "2026-09-08 08:01:38", "end": "2026-09-08 08:01:43"}
+    {"start": "2026-09-08 08:01:38", "end": "2026-09-08 08:01:43"},
+    {"start": "2026-09-08 08:10:33", "end": "2026-09-08 08:10:36"}
   ],
   "correlations": [
     {"cohort": "r02", "browser_error_at": "2026-09-07T20:11:54.990Z", "journal_timestamp_microseconds": "1788811914985379", "journal_at": "2026-09-07T20:11:54.985379Z", "journal_message": "vethba44c07: Gained IPv6LL", "delta_milliseconds": 4.621},
     {"cohort": "r02", "browser_error_at": "2026-09-07T20:13:05.773Z", "journal_timestamp_microseconds": "1788811985769340", "journal_at": "2026-09-07T20:13:05.769340Z", "journal_message": "br-e0dd06d940a4: Gained IPv6LL", "delta_milliseconds": 3.660},
     {"cohort": "r02", "browser_error_at": "2026-09-07T20:13:06.859Z", "journal_timestamp_microseconds": "1788811986857438", "journal_at": "2026-09-07T20:13:06.857438Z", "journal_message": "veth7548c14: Gained IPv6LL", "delta_milliseconds": 1.562},
-    {"cohort": "r03", "browser_error_at": "2026-09-08T08:01:40.717Z", "journal_timestamp_microseconds": "1788854500713372", "journal_at": "2026-09-08T08:01:40.713372Z", "journal_message": "veth6ff58d7: Gained IPv6LL", "delta_milliseconds": 3.628}
+    {"cohort": "r03", "browser_error_at": "2026-09-08T08:01:40.717Z", "journal_timestamp_microseconds": "1788854500713372", "journal_at": "2026-09-08T08:01:40.713372Z", "journal_message": "veth6ff58d7: Gained IPv6LL", "delta_milliseconds": 3.628},
+    {"cohort": "r03", "browser_error_at": "2026-09-08T08:10:34.348Z", "journal_timestamp_microseconds": "1788855034345244", "journal_at": "2026-09-08T08:10:34.345244Z", "journal_message": "veth64556cf: Gained IPv6LL", "delta_milliseconds": 2.756}
   ],
   "current_ui": {
     "operation_id": "1001f32b-4ebf-4f1f-98bb-137a3ed30041",
@@ -29,6 +31,14 @@
     "manual_reload_or_restart": false,
     "automatic_publication_and_artifact_download": "passed",
     "private_receipt_root": "experience/cohort-r03/"
+  },
+  "second_ui": {
+    "operation_id": "65fe6dbd-3982-48cc-9454-bf7174292272",
+    "failed_at": "2026-09-08T08:10:34.348Z",
+    "automatic_successful_read_at": "2026-09-08T08:10:35.756Z",
+    "automatic_recovery_seconds": 1.408,
+    "manual_reload_or_restart": false,
+    "during_retry_screenshot": false
   },
   "interpretation": "Strong evidence-backed inference of client-host network-change notification, not a Chromium NetLog or packet-level causal trace. Original failed reads remain failed; no zero-browser-error claim."
 }

@@ -16,6 +16,8 @@ def main():
     parser.add_argument("--kubeconfig", required=True)
     parser.add_argument("--context", required=True)
     parser.add_argument("--pod-uid", required=True)
+    parser.add_argument("--at", help="Optional historical Prometheus evaluation time (RFC3339)")
+    parser.add_argument("--diagnostic-query", action="append", default=[], help="Additional explicit read-only PromQL query")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     os.umask(0o077)
@@ -49,6 +51,17 @@ def main():
     result["events"] = get(
         "events", "--field-selector", "involvedObject.uid=" + args.pod_uid
     )
+    scaled_object = result["scaled_object"].get("data", {})
+    scale_target = scaled_object.get("spec", {}).get("scaleTargetRef", {}).get("name")
+    if scale_target:
+        result["deployment_events"] = get(
+            "events", "--field-selector", "involvedObject.name=" + scale_target
+        )
+    scaler_name = scaled_object.get("metadata", {}).get("name")
+    if scaler_name:
+        result["scaler_events"] = get(
+            "events", "--field-selector", "involvedObject.name=" + scaler_name
+        )
     access = json.loads(args.credentials.read_bytes())
     grafana = access["endpoints"]["grafana_url"].rstrip("/")
     credentials = access["credentials"]["grafana"]
@@ -62,19 +75,29 @@ def main():
         endpoint = (
             grafana + "/api/datasources/proxy/uid/" + source["uid"] + "/api/v1/query"
         )
-        for trigger in (
-            result["scaled_object"].get("data", {}).get("spec", {}).get("triggers", [])
-        ):
+        triggers = [
+            *scaled_object.get("spec", {}).get("triggers", []),
+            *[
+                {"type": "prometheus", "metadata": {"metricName": f"diagnostic_{index}", "query": query}}
+                for index, query in enumerate(args.diagnostic_query)
+            ],
+        ]
+        for trigger in triggers:
             metadata = trigger.get("metadata", {})
             query = metadata.get("query")
             if trigger.get("type") != "prometheus" or not query:
                 continue
-            response = client.get(endpoint, params={"query": query})
+            params = {"query": query}
+            if args.at:
+                params["time"] = args.at
+            response = client.get(endpoint, params=params)
             result["queries"].append(
                 {
                     "metric_name": metadata["metricName"],
                     "query": query,
+                    "evaluation_time": args.at,
                     "http_status": response.status_code,
+                    "http_elapsed_seconds": response.elapsed.total_seconds(),
                     "response": response.json(),
                 }
             )
@@ -90,6 +113,7 @@ def main():
                     {
                         "metric_name": row["metric_name"],
                         "http_status": row["http_status"],
+                        "http_elapsed_seconds": row["http_elapsed_seconds"],
                         "results": row["response"].get("data", {}).get("result", []),
                     }
                     for row in result["queries"]

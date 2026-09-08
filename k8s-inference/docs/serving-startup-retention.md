@@ -39,6 +39,17 @@ foreign and retired-ReplicaSet Pods do not retain capacity. Duplicate scrape
 replicas are deduplicated. Missing series do not invent replica demand; the
 monitoring stack must supply these standard metrics for retention to work.
 
+An unscheduled Pod can legitimately have no Ready condition yet. Retention
+therefore begins with the observed, owned Pending/Running set and excludes
+only explicitly Ready Pods; it does not require a `ready=0` metric to exist.
+The actual positive-replica-change scrape timestamp is retained on a one-second
+history grid, including a fresh edge before the next grid step. This supports
+ordinary scrape intervals of one second or slower without losing a short edge.
+It does not increase the monitoring scrape frequency or renew the timestamp on
+equal replica samples. Before the first positive desired/Pod telemetry appears,
+the query cannot claim a hold or invent demand. The existing bounded startup
+budget remains necessary; telemetry visibility is not instantaneous.
+
 KEDA's `initialCooldownPeriod` alone would not solve repeated activation:
 it runs from ScaledObject creation, whereas these ScaledObjects persist across
 many cold starts. KEDA's ordinary cooldown controls the last replica to zero;
@@ -93,3 +104,9 @@ qualification. Acceptance still requires a new burst Pod to become Ready,
 actual restore evidence for that same Pod, and useful public requests served
 by it. Regional image presence is not a node-local image-cache hit, and all
 fresh-node image, localization and restore costs remain inside measured T0.
+
+Subsequent live qualification and the r03 unscheduled-Pod/clock correction are
+documented separately in [the startup qualification](../acceptance/customer-trial-remediation-20260907/observer/QWEN-STARTUP-20260908.md)
+and [the retained repair evidence](../acceptance/customer-trial-remediation-20260907/observer/QWEN-UNSCHEDULED-STARTUP-20260908.md).
+The earlier test counts and counterfactual results above describe the initial
+implementation, not a claim that its later-discovered gap was already fixed.

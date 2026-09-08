@@ -1,6 +1,6 @@
-# Observation protocol for r02 and r03
+# Observation protocol for the next authorized cohorts
 
-Prepared only. **Do not start traffic or deploy from this document without root's explicit cohort START.** Root integrates the Qwen idle-acknowledgement and admin phase-duration fixes, builds and deploys first. The first successful scientific cohort r01 is preserved but does not count as clean overall acceptance.
+Prepared only. **Do not start traffic or deploy from this document without root's explicit cohort START.** Root integrates, tests and deploys the final repair first. The previous r01–r03 evidence is preserved; none counts as strict clean overall acceptance. The next planned pair is r04/r05 after the Qwen missing-Ready and off-grid activation-clock correction. Do not reuse the undeployed partial candidate's build or test receipts as evidence for the final release.
 
 ## Fixed scope
 
@@ -9,7 +9,8 @@ Prepared only. **Do not start traffic or deploy from this document without root'
 - Same ordinary Qwen sampler: one client, one request every 25 seconds, alternating HTTP/MCP, unchanged semantic checks and no submission retries. Do not mix standalone burst-regression traffic into these measurements.
 - Same 25-second cluster sampler and existing resource ceilings. Only the two existing per-Pod CPU/RAM queries now include `fs2-academic-poc`; r01's missing academic Pod metric scope is explicitly documented, not retrofilled.
 - No live policy, minimum-hot count, image, quota, driver, scheduler, node limit or capacity-reservation changes during either cohort. Normal existing autoscaling and Kueue preemption remain enabled. No forced node scale-down on completion.
-- Do r02, finalize its evidence, and receive root's r03 START before running r03. If a repair/deployment becomes necessary, preserve the failed cohort and restart the two-consecutive-clean count after the final deployed fix.
+- Complete the first authorized cohort, finalize its evidence, and receive root's separate START before running the next. If a repair/deployment becomes necessary, preserve the failed cohort and restart the two-consecutive-clean count after the final deployed fix.
+- The browser lane uses root's separately prepared isolated client network namespace for the next pair. This does not change the observer cadence, scientific fixtures, platform configuration or browser behavior under test; retain earlier host-network read failures in their original cohorts.
 
 ## Paths and startup
 
@@ -22,7 +23,7 @@ TRIAL_ACCEPTANCE=$TRIAL_CODE/acceptance/customer-trial-remediation-20260907
 TRIAL_CREDENTIALS=/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/final-stack-output.json
 TRIAL_KUBECONFIG=/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig
 TRIAL_RELEASE=/home/tux/.local/state/k8s-inference-dual-acceptance/h100/releases/trial-customer-remediation-20260907
-TRIAL_COHORT=r02
+TRIAL_COHORT=r04
 ```
 
 After root confirms the deployed source/image identities and authorizes observation, launch these as two separately tracked sessions (not an untracked shell background job):
@@ -64,7 +65,7 @@ Retain only meaningful milestones/incidents while the samplers run:
 - Actual node scale-up, image pulling/loading phases and absolute disk headroom per node, excluding old failed Pods from new failures.
 - RF bulk shard preemptor identities, priorities, released attempts and automatic retries. Kueue priority preemption is not a cloud spot-interruption test.
 - Every Qwen HTTP/MCP failure, including structured `isError`, request correlation and nested SDK errors. No hidden retry, cancellation or resubmission. If a real failure occurs, inform root promptly and preserve it.
-- Qwen hot readiness and any natural burst lifecycle. An unobserved burst remains a coverage limitation; no new stress or policy changes to force one.
+- Qwen hot readiness and any natural burst lifecycle, including unscheduled owned Pending Pods with no Ready metric yet. Retain actual observed desired/Pod telemetry, startup-retention metric, activation deadline and replica events; do not infer protection before Prometheus has observed the Pod and positive desired count. An unobserved burst remains a coverage limitation; no new stress or policy changes to force one.
 
 The browser/admin lane separately verifies downloads, policy controls and the repaired restore-duration card. Root owns any live intervention; expected capacity queues are not automatically defects.
 
@@ -111,4 +112,4 @@ Export only after both samplers have stopped, using the actual scientific start/
 
 Root's bounded clean-cohort decision requires all 14 unchanged scientific operations/results/downloads complete without manual recovery; normal HTTP/MCP successful; no recorded route withdrawal; accurate repaired admin restore duration and controls; released resources and reconciled attempt accounting; no unexplained recovery, permission or availability defect. Missing hardware/transition coverage is stated explicitly, not replaced with zeroes or an exaggerated claim.
 
-Only after r02 is fully assessed does root authorize r03 on the same final deployed revision. Two clean consecutive complete cohorts are required. Root alone owns commits, deployment and final Slack; no secrets or raw signed URLs go into repository reports.
+Only after the first cohort is fully assessed does root authorize the next on the same final deployed revision. Two clean consecutive complete cohorts are required. Root alone owns commits, deployment and final Slack; no secrets or raw signed URLs go into repository reports.

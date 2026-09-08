@@ -1,11 +1,17 @@
 # Customer trial remediation and repeat acceptance
 
-Status: r01 completed **14/14 scientific operations**, but **overall acceptance
-is not yet clean**. Both follow-up fixes are deployed from `5f5061b28`, and the
-focused live admin phase/download check passed. Full r02 started20:10:47UTC;
-two clean complete cohorts remain required. See the [follow-up release](FOLLOWUP-RELEASE.md),
-[r01 workload results](workload/REPORT-r01.md)
-and [whole-window observation](observer/REPORT-r01.md).
+Status at 2026-09-08 08:54 UTC: **overall acceptance is not yet clean**.
+R03 completed all 14 scientific operations and 67 ordinary HTTP/MCP requests,
+including automatic priority-preemption recovery and live admin result publication.
+It exposed an unscheduled Qwen startup-retention gap; two browser transport
+failures also remain recorded, with a correlated local test-host network cause.
+The final startup correction, source `c85aa26e46f84ca5ae0a85b2454e86522b65cead`,
+passed 1,633 backend tests and image builds and is entering Terraform deployment.
+Two fresh complete cohorts, r04 and r05, remain required after deployment.
+See [r03 workload results](workload/REPORT-r03.md),
+[r03 observation](observer/REPORT-r03.md),
+[browser evidence](experience/R03-EXPERIENCE.md),
+and the [startup correction](observer/QWEN-UNSCHEDULED-STARTUP-20260908.md).
 The original failed cohort is preserved unchanged in `../customer-trial-20260907`.
 
 The customer scenario uses the nine already qualified scientific profiles,
