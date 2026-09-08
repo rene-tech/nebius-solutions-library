@@ -1,0 +1,388 @@
+{
+  "created_at": "2026-09-08T09:01:13.086017Z",
+  "max_parallel_clients": 4,
+  "model_counts": {
+    "alphafold3": 1,
+    "bindcraft": 2,
+    "boltzgen": 2,
+    "esmfold2": 1,
+    "esmfold2-fast": 1,
+    "mosaic": 2,
+    "proteina-complexa": 2,
+    "protenix-v2": 1,
+    "rfdiffusion": 2
+  },
+  "mutations": "Public input uploads and scientific submissions only; no administrative or infrastructure changes.",
+  "operation_count": 14,
+  "run_id": "trial-customer-remediation-20260907-r04",
+  "runner_sha256": "357eb524a66a2cc066799c71e45ca2b2848bbfd87d5b517c65d8195da3dda120",
+  "scenarios": [
+    {
+      "client_context": {
+        "batch_id": "trial-customer-remediation-20260907-r04.sequential-switch",
+        "correlation_id": "trial-customer-remediation-20260907-r04.switch-01-rfdiffusion",
+        "display_name": "Trial customer | sequential-switch | switch-01-rfdiffusion"
+      },
+      "declared_inputs": 2,
+      "fixture": "models/cancer-immunotherapy/runtime-images/rfdiffusion/activation/fragment.json",
+      "fixture_sha256": "f1b4624332c94a27555576116eaf0bf521c4f08add9b55690cc7fcd5fde693ac",
+      "id": "switch-01-rfdiffusion",
+      "input_sha256": "3be62b4a3cf10dfa0567f96e8cbae36b0ef4dfb600d994f114238dfd9020c532",
+      "model_id": "rfdiffusion",
+      "parameters": {
+        "contigs": [
+          "76-76"
+        ],
+        "diffuser_T": 50,
+        "num_designs": 1,
+        "operation": "design-backbone",
+        "schema": "fs2-serve.nebius.ai/rfdiffusion-parameters/v1",
+        "seed": 8100
+      },
+      "phase": "sequential-switch",
+      "request_sha256": "7d37e024cc2a7e5d165262e700b10f164f736cf6f3ed7d0ba362f4729bfb1c77",
+      "service_class": "customer-batch"
+    },
+    {
+      "client_context": {
+        "batch_id": "trial-customer-remediation-20260907-r04.sequential-switch",
+        "correlation_id": "trial-customer-remediation-20260907-r04.switch-02-protenix",
+        "display_name": "Trial customer | sequential-switch | switch-02-protenix"
+      },
+      "declared_inputs": 2,
+      "fixture": "models/structure/batch-adapters/protenix-v2/activation/public-acceptance.json",
+      "fixture_sha256": "0f1358c242cb762855143b289353fa3fbc85f72bbf5d5e027f7aa4333c49bcf7",
+      "id": "switch-02-protenix",
+      "input_sha256": "0ceb0f6fb5589d0ef97e95da4d0026047fbcd39ad877dd88aceb654a92bbdb6c",
+      "model_id": "protenix-v2",
+      "parameters": {
+        "checkpoint": "protenix-v2",
+        "model_seeds": [
+          101
+        ],
+        "msa_mode": "none",
+        "sample_count": 1
+      },
+      "phase": "sequential-switch",
+      "request_sha256": "3bb96f27bb01a35f74a8bdd4d3752df1f26d35e7bb46096716f56d73821546a3",
+      "service_class": "customer-batch"
+    },
+    {
+      "client_context": {
+        "batch_id": "trial-customer-remediation-20260907-r04.sequential-switch",
+        "correlation_id": "trial-customer-remediation-20260907-r04.switch-03-mosaic",
+        "display_name": "Trial customer | sequential-switch | switch-03-mosaic"
+      },
+      "declared_inputs": 2,
+      "fixture": "models/cancer-immunotherapy/runtime-images/mosaic/activation/fragment.json",
+      "fixture_sha256": "a15ff1a967ca683784db2ee2d378857f2bb952e8e1c07194d4bec6188387d7ba",
+      "id": "switch-03-mosaic",
+      "input_sha256": "23d109248070644bbe72f68a9d82ed7e8b4ff763913030ea6206366947795ca7",
+      "model_id": "mosaic",
+      "parameters": {
+        "base_seed": 7300,
+        "binder_length": 40,
+        "hotspots": [
+          3,
+          7
+        ],
+        "optimizer_steps": 20,
+        "schema": "fs2-serve.nebius.ai/mosaic-boltz2-proteinmpnn-parameters/v1",
+        "shard_count": 1
+      },
+      "phase": "sequential-switch",
+      "request_sha256": "41e05aad5ef87f60a10d7aed9db5e93ed5188d133fd291b2c33ad17af911a81f",
+      "service_class": "customer-batch"
+    },
+    {
+      "client_context": {
+        "batch_id": "trial-customer-remediation-20260907-r04.mixed-batch",
+        "correlation_id": "trial-customer-remediation-20260907-r04.batch-01-boltzgen",
+        "display_name": "Trial customer | mixed-batch | batch-01-boltzgen"
+      },
+      "declared_inputs": 2,
+      "fixture": "models/cancer-immunotherapy/runtime-images/boltzgen/activation/fragment.json",
+      "fixture_sha256": "7f64733bba570421f2e97eee7eb14fb0898fcfc57fbc275174d59b9fd4b74bcb",
+      "id": "batch-01-boltzgen",
+      "input_sha256": "d3fc05a26579932874e3f4ffb9babe63468bc85d6c475d172e7fa2b68370253a",
+      "model_id": "boltzgen",
+      "parameters": {
+        "batches": [
+          {
+            "budget": 1,
+            "num_designs": 20,
+            "reuse_completed": false,
+            "shard_id": "pdl1-face"
+          }
+        ],
+        "protocol": "protein-anything"
+      },
+      "phase": "mixed-batch",
+      "request_sha256": "337f957666b132aff74bce2bbfb13dbbe419c12dbff92c53d63451b1d502808b",
+      "service_class": "customer-batch"
+    },
+    {
+      "client_context": {
+        "batch_id": "trial-customer-remediation-20260907-r04.mixed-batch",
+        "correlation_id": "trial-customer-remediation-20260907-r04.batch-02-bindcraft",
+        "display_name": "Trial customer | mixed-batch | batch-02-bindcraft"
+      },
+      "declared_inputs": 2,
+      "fixture": "models/cancer-immunotherapy/images/bindcraft-native/activation/fragment.json",
+      "fixture_sha256": "218b0b0fb7f974509c571101f44da1deb28953330e517e43bbe2237e2f0853bd",
+      "id": "batch-02-bindcraft",
+      "input_sha256": "9b652d670a286044c42556183906be45ca2fb1ee5af36919f724d642b7e22e00",
+      "model_id": "bindcraft",
+      "parameters": {
+        "binder_length": {
+          "maximum": 67,
+          "minimum": 67
+        },
+        "designs": 1,
+        "mpnn_lane": "soluble",
+        "seed": 912083,
+        "target": {
+          "chain": "A",
+          "hotspot_residues": [
+            37,
+            39,
+            98,
+            104,
+            106
+          ]
+        }
+      },
+      "phase": "mixed-batch",
+      "request_sha256": "a7ef8df905ab1168c3e91873a84d90ea7336cbb58ceab00eed70eb8093523cf4",
+      "service_class": "customer-batch"
+    },
+    {
+      "client_context": {
+        "batch_id": "trial-customer-remediation-20260907-r04.mixed-batch",
+        "correlation_id": "trial-customer-remediation-20260907-r04.batch-03-proteina",
+        "display_name": "Trial customer | mixed-batch | batch-03-proteina"
+      },
+      "declared_inputs": 2,
+      "fixture": "models/cancer-immunotherapy/runtime-images/proteina-complexa/activation/fragment.json",
+      "fixture_sha256": "783d6b20ba0ca4b0dc449b787e7ad77e56a4593b87327d248c1b2b195a06a470",
+      "id": "batch-03-proteina",
+      "input_sha256": "9e918d1d57d8e0d35ed078fdbd2e22b18ecd58e61b1c7a9ab773d671a5b8d218",
+      "model_id": "proteina-complexa",
+      "parameters": {
+        "diffusion_steps": 25,
+        "num_samples": 2,
+        "run_name": "pdl1-primary-activation",
+        "seed": 3,
+        "target_id": "02_PDL1",
+        "variant": "protein-target"
+      },
+      "phase": "mixed-batch",
+      "request_sha256": "0f7136febb08f3f961ffb54d2d6b8c38ac763108d61b4b1fd7a7ba85cace323c",
+      "service_class": "customer-batch"
+    },
+    {
+      "client_context": {
+        "batch_id": "trial-customer-remediation-20260907-r04.mixed-batch",
+        "correlation_id": "trial-customer-remediation-20260907-r04.batch-04-esmfold2",
+        "display_name": "Trial customer | mixed-batch | batch-04-esmfold2"
+      },
+      "declared_inputs": 2,
+      "fixture": "models/structure/batch-adapters/esmfold2/activation/public-acceptance.json",
+      "fixture_sha256": "b9befca6982db4c0797b954ad1262638f3d9d2b2e8828d16dbb7f33f6cad7239",
+      "id": "batch-04-esmfold2",
+      "input_sha256": "2670f4d5dd888e92e24feaad4f0663f9ffdbf2b12aa8d0e4c4e25e24c3efe260",
+      "model_id": "esmfold2",
+      "parameters": {
+        "mode": "single-sequence",
+        "seed": 101,
+        "sequence": "MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFP"
+      },
+      "phase": "mixed-batch",
+      "request_sha256": "a71f006ff7d3e8a8380c8013838fad6978c9444a5217c8703c5365a7f760930f",
+      "service_class": "customer-batch"
+    },
+    {
+      "client_context": {
+        "batch_id": "trial-customer-remediation-20260907-r04.mixed-batch",
+        "correlation_id": "trial-customer-remediation-20260907-r04.batch-05-boltzgen",
+        "display_name": "Trial customer | mixed-batch | batch-05-boltzgen"
+      },
+      "declared_inputs": 2,
+      "fixture": "models/cancer-immunotherapy/runtime-images/boltzgen/activation/fragment.json",
+      "fixture_sha256": "7f64733bba570421f2e97eee7eb14fb0898fcfc57fbc275174d59b9fd4b74bcb",
+      "id": "batch-05-boltzgen",
+      "input_sha256": "d3fc05a26579932874e3f4ffb9babe63468bc85d6c475d172e7fa2b68370253a",
+      "model_id": "boltzgen",
+      "parameters": {
+        "batches": [
+          {
+            "budget": 1,
+            "num_designs": 20,
+            "reuse_completed": false,
+            "shard_id": "pdl1-face"
+          }
+        ],
+        "protocol": "protein-anything"
+      },
+      "phase": "mixed-batch",
+      "request_sha256": "4e9bf21878994cbc0a7ecfdd1928654b65c6af1b8e2c020dc56f3447436db88a",
+      "service_class": "customer-batch"
+    },
+    {
+      "client_context": {
+        "batch_id": "trial-customer-remediation-20260907-r04.mixed-batch",
+        "correlation_id": "trial-customer-remediation-20260907-r04.batch-06-bindcraft",
+        "display_name": "Trial customer | mixed-batch | batch-06-bindcraft"
+      },
+      "declared_inputs": 2,
+      "fixture": "models/cancer-immunotherapy/images/bindcraft-native/activation/fragment.json",
+      "fixture_sha256": "218b0b0fb7f974509c571101f44da1deb28953330e517e43bbe2237e2f0853bd",
+      "id": "batch-06-bindcraft",
+      "input_sha256": "9b652d670a286044c42556183906be45ca2fb1ee5af36919f724d642b7e22e00",
+      "model_id": "bindcraft",
+      "parameters": {
+        "binder_length": {
+          "maximum": 67,
+          "minimum": 67
+        },
+        "designs": 1,
+        "mpnn_lane": "soluble",
+        "seed": 912083,
+        "target": {
+          "chain": "A",
+          "hotspot_residues": [
+            37,
+            39,
+            98,
+            104,
+            106
+          ]
+        }
+      },
+      "phase": "mixed-batch",
+      "request_sha256": "3373e26c7469532db8fc1e2e84c08e4cdffccd2152e77a705bd20d95b27756d4",
+      "service_class": "customer-batch"
+    },
+    {
+      "client_context": {
+        "batch_id": "trial-customer-remediation-20260907-r04.mixed-batch",
+        "correlation_id": "trial-customer-remediation-20260907-r04.batch-07-proteina",
+        "display_name": "Trial customer | mixed-batch | batch-07-proteina"
+      },
+      "declared_inputs": 2,
+      "fixture": "models/cancer-immunotherapy/runtime-images/proteina-complexa/activation/fragment.json",
+      "fixture_sha256": "783d6b20ba0ca4b0dc449b787e7ad77e56a4593b87327d248c1b2b195a06a470",
+      "id": "batch-07-proteina",
+      "input_sha256": "9e918d1d57d8e0d35ed078fdbd2e22b18ecd58e61b1c7a9ab773d671a5b8d218",
+      "model_id": "proteina-complexa",
+      "parameters": {
+        "diffusion_steps": 25,
+        "num_samples": 2,
+        "run_name": "pdl1-primary-activation",
+        "seed": 3,
+        "target_id": "02_PDL1",
+        "variant": "protein-target"
+      },
+      "phase": "mixed-batch",
+      "request_sha256": "ba9834f681d6d5701ec6e91dc066220ecee5ece8a7fefb48279535bf396b3cd7",
+      "service_class": "customer-batch"
+    },
+    {
+      "client_context": {
+        "batch_id": "trial-customer-remediation-20260907-r04.mixed-batch",
+        "correlation_id": "trial-customer-remediation-20260907-r04.batch-08-mosaic",
+        "display_name": "Trial customer | mixed-batch | batch-08-mosaic"
+      },
+      "declared_inputs": 2,
+      "fixture": "models/cancer-immunotherapy/runtime-images/mosaic/activation/fragment.json",
+      "fixture_sha256": "a15ff1a967ca683784db2ee2d378857f2bb952e8e1c07194d4bec6188387d7ba",
+      "id": "batch-08-mosaic",
+      "input_sha256": "23d109248070644bbe72f68a9d82ed7e8b4ff763913030ea6206366947795ca7",
+      "model_id": "mosaic",
+      "parameters": {
+        "base_seed": 7300,
+        "binder_length": 40,
+        "hotspots": [
+          3,
+          7
+        ],
+        "optimizer_steps": 20,
+        "schema": "fs2-serve.nebius.ai/mosaic-boltz2-proteinmpnn-parameters/v1",
+        "shard_count": 1
+      },
+      "phase": "mixed-batch",
+      "request_sha256": "bf7cc7e6da1e9c5632689993e0de3e5845d87820149836535a3b395a5845ae09",
+      "service_class": "customer-batch"
+    },
+    {
+      "client_context": {
+        "batch_id": "trial-customer-remediation-20260907-r04.mixed-batch",
+        "correlation_id": "trial-customer-remediation-20260907-r04.batch-09-rfdiffusion-bulk",
+        "display_name": "Trial customer | mixed-batch | batch-09-rfdiffusion-bulk"
+      },
+      "declared_inputs": 2,
+      "fixture": "models/cancer-immunotherapy/runtime-images/rfdiffusion/activation/fragment.json",
+      "fixture_sha256": "f1b4624332c94a27555576116eaf0bf521c4f08add9b55690cc7fcd5fde693ac",
+      "id": "batch-09-rfdiffusion-bulk",
+      "input_sha256": "3be62b4a3cf10dfa0567f96e8cbae36b0ef4dfb600d994f114238dfd9020c532",
+      "model_id": "rfdiffusion",
+      "parameters": {
+        "contigs": [
+          "96-96"
+        ],
+        "diffuser_T": 50,
+        "num_designs": 4,
+        "operation": "design-backbone",
+        "schema": "fs2-serve.nebius.ai/rfdiffusion-parameters/v1",
+        "seed": 8200
+      },
+      "phase": "mixed-batch",
+      "request_sha256": "1509cd361e4200a29b4fc8b357905e123759cec36d9461b5f0b80101f31e12e8",
+      "service_class": "bulk-backfill"
+    },
+    {
+      "client_context": {
+        "batch_id": "trial-customer-remediation-20260907-r04.mixed-batch",
+        "correlation_id": "trial-customer-remediation-20260907-r04.batch-10-esmfold2-fast",
+        "display_name": "Trial customer | mixed-batch | batch-10-esmfold2-fast"
+      },
+      "declared_inputs": 2,
+      "fixture": "models/structure/batch-adapters/esmfold2-fast/activation/public-acceptance.json",
+      "fixture_sha256": "31bfa5b970ddc1f5d555a8b483b5e940ce77b7dd0ee573188d1fda0ada45e0c1",
+      "id": "batch-10-esmfold2-fast",
+      "input_sha256": "d3041fb80a0f2aef8ef453c5f43771b215d9e3dbf91a4587666898ff846e42b6",
+      "model_id": "esmfold2-fast",
+      "parameters": {
+        "mode": "single-sequence",
+        "seed": 101,
+        "sequence": "MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFP"
+      },
+      "phase": "mixed-batch",
+      "request_sha256": "64db733d1ca47e6e3891eb592d0d6c584bfa085c440771ab77a222380eed8f6b",
+      "service_class": "customer-batch"
+    },
+    {
+      "client_context": {
+        "batch_id": "trial-customer-remediation-20260907-r04.mixed-batch",
+        "correlation_id": "trial-customer-remediation-20260907-r04.batch-11-alphafold3",
+        "display_name": "Trial customer | mixed-batch | batch-11-alphafold3"
+      },
+      "declared_inputs": 2,
+      "fixture": "models/structure/batch-adapters/alphafold3/activation/public-acceptance.json",
+      "fixture_sha256": "0ff70dea0b79c398b0106a50b4776373ef4d90eebcb9adc65ed46fb1164db938",
+      "id": "batch-11-alphafold3",
+      "input_sha256": "b95539e48b80b8f919b378c4cbc07e8383bd82b19edb143ea131cef9e62d7823",
+      "model_id": "alphafold3",
+      "parameters": {
+        "input_mode": "raw"
+      },
+      "phase": "mixed-batch",
+      "request_sha256": "bf223a2a6cfed2afbc1a69c9b2ef7fc9af70648115c5bf81e3caffdd3eacddd3",
+      "service_class": "customer-batch"
+    }
+  ],
+  "scenarios_sha256": "6eb30dbbcf9dbb4dafa58b2b016c1376eead67182203c1781a1058f1328b100f",
+  "schema": "fs2-serve.nebius.ai/customer-trial-plan/v1",
+  "scope": "Synthetic platform acceptance; no scientific or clinical validity claim, no cold-node or load-capacity benchmark.",
+  "source_commit": "ba94d71bc1dafc84870be760959abcecd18a3c84"
+}

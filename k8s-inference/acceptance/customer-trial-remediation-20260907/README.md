@@ -1,20 +1,24 @@
 # Customer trial remediation and repeat acceptance
 
-Status at 2026-09-08 09:01 UTC: **overall acceptance is not yet clean**.
-R03 completed all 14 scientific operations and 67 ordinary HTTP/MCP requests,
-including automatic priority-preemption recovery and live admin result publication.
-It exposed an unscheduled Qwen startup-retention gap; two browser transport
-failures also remain recorded, with a correlated local test-host network cause.
-The final startup correction, source `c85aa26e46f84ca5ae0a85b2454e86522b65cead`,
-passed 1,633 backend tests and is deployed through Terraform. All application
-replicas are ready, all three post-apply plans have zero managed actions, and
-public discovery retains all 24 configured models. Fresh r04 started at
-09:01:13.093375 UTC; two clean complete cohorts, r04 and r05, remain required.
-See the [exact final release](FINAL-STARTUP-RELEASE-20260908.md).
-See [r03 workload results](workload/REPORT-r03.md),
-[r03 observation](observer/REPORT-r03.md),
-[browser evidence](experience/R03-EXPERIENCE.md),
-and the [startup correction](observer/QWEN-UNSCHEDULED-STARTUP-20260908.md).
+Status at 2026-09-08 09:37 UTC: **one of two required clean cohorts passed**.
+R04 completed all 14 scientific operations, 963 scientific HTTP calls and 73
+ordinary HTTP/MCP requests without customer-request failures. Seven real browser
+publication/download workflows passed without unexpected errors. All 46
+scientific lifecycle subjects reconciled and released; complete contiguous logs
+showed no serving-route withdrawals. See the [cross-lane gate](R04-ACCEPTANCE.md).
+
+R05 started at 09:34:48.229446 UTC on the same final source
+`c85aa26e46f84ca5ae0a85b2454e86522b65cead`, with unchanged inputs, settings and
+concurrency. It must finish cleanly before final handoff. Existing caches and
+autoscaled capacity are inherited naturally; this is not a second forced
+fresh-node cold benchmark. The [exact Terraform release](FINAL-STARTUP-RELEASE-20260908.md)
+passed 1,633 backend tests and all three zero-change post-plans; public discovery
+retains all 24 configured models, a discovery check rather than 24 new inference
+qualifications.
+
+R03 remains a failed strict qualification despite its scientific successes:
+the [unscheduled startup gap](observer/QWEN-UNSCHEDULED-STARTUP-20260908.md) and
+[browser transport failures](experience/R03-EXPERIENCE.md) remain preserved.
 The original failed cohort is preserved unchanged in `../customer-trial-20260907`.
 
 The customer scenario uses the nine already qualified scientific profiles,
