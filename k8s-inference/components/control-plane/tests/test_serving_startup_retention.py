@@ -23,7 +23,7 @@ def fixture(
     desired: str = "0+0x3 1+0x100",
     created: str = "-3600+0x104",
     phase: str = "Pending",
-    ready: str = "0+0x104",
+    ready: str | None = "0+0x104",
     owner: str = "model-burst",
     rs_desired: str = "1+0x104",
     deleting: bool = False,
@@ -34,7 +34,6 @@ def fixture(
     rows = [
         series("kube_deployment_spec_replicas", desired, **target),
         series("kube_deployment_created", created, **target),
-        series("kube_pod_status_ready", ready, **pod, condition="true"),
         series("kube_pod_status_phase", "1+0x104", **pod, phase=phase),
         series(
             "kube_pod_owner",
@@ -54,6 +53,8 @@ def fixture(
         ),
         series("kube_replicaset_spec_replicas", rs_desired, **rs),
     ]
+    if ready is not None:
+        rows.append(series("kube_pod_status_ready", ready, **pod, condition="true"))
     if deleting:
         rows.append(series("kube_pod_deletion_timestamp", "90+0x104", **pod))
     return rows
@@ -69,6 +70,16 @@ def test_startup_retention_lifecycle_with_promtool(tmp_path: Path) -> None:
     cases = [
         ("scale from zero holds during a 155-second pull", fixture(), "3m", 2),
         ("unready Running also holds", fixture(phase="Running"), "3m", 2),
+        ("unscheduled Pending has no Ready condition yet", fixture(ready=None), "3m", 2),
+        ("missing Ready still holds the full desired count", fixture(ready=None, desired="0+0x3 3+0x100"), "3m", 6),
+        ("missing Ready cannot activate zero replicas", fixture(ready=None, desired="0+0x104"), "3m", 0),
+        ("missing Ready cannot extend the startup deadline", fixture(ready=None), "17m", 0),
+        ("missing Ready cannot include a foreign Deployment", fixture(ready=None, owner="other-model"), "3m", 0),
+        ("missing Ready cannot include a retired ReplicaSet", fixture(ready=None, rs_desired="0+0x104"), "3m", 0),
+        ("missing Ready cannot include a deleting Pod", fixture(ready=None, deleting=True), "3m", 0),
+        ("missing Ready cannot include a Succeeded Pod", fixture(ready=None, phase="Succeeded"), "3m", 0),
+        ("missing Ready cannot include a Failed Pod", fixture(ready=None, phase="Failed"), "3m", 0),
+        ("absent Ready followed by true ends retention", fixture(ready="_ _ _ _ _ _ _ _ 1+0x96"), "3m", 0),
         ("Ready releases startup hold immediately", fixture(ready="0+0x5 1+0x98"), "3m", 0),
         ("budget expires despite repeated container restarts", fixture(), "17m", 0),
         ("already requested count, not unready count", fixture(desired="0+0x3 3+0x100"), "3m", 6),

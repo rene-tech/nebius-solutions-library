@@ -2004,13 +2004,16 @@ def startup_retention_promql(*, namespace: str, deployment: str, timeout_seconds
         "and on (namespace, replicaset) "
         f"max by (namespace, replicaset) (kube_replicaset_spec_replicas{{{scope}}} > 0))"
     )
+    # An unscheduled Pod can have no Ready condition (and therefore no KSM
+    # readiness series) yet. Start with its observed eligible phase and exclude
+    # proven Ready, rather than requiring a readiness==0 series to exist.
     starting = (
-        "max by (namespace, pod, uid) "
-        f'(kube_pod_status_ready{{{scope},condition="true"}} == 0) '
-        "and on (namespace, pod, uid) "
         "max by (namespace, pod, uid) "
         f'(kube_pod_status_phase{{{scope},phase=~"Pending|Running"}} == 1) '
         f"and on (namespace, pod, uid) ({owners}) "
+        "unless on (namespace, pod, uid) "
+        "max by (namespace, pod, uid) "
+        f'(kube_pod_status_ready{{{scope},condition="true"}} == 1) '
         "unless on (namespace, pod, uid) "
         f"max by (namespace, pod, uid) (kube_pod_deletion_timestamp{{{scope}}})"
     )
