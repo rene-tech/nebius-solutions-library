@@ -65,6 +65,8 @@ export interface ModelDeploymentSpec {
     targetQueueDepth: number;
     pollingIntervalSeconds: number;
     cooldownSeconds: number;
+    /** Optional startup-capacity retention; unset uses 900 seconds without changing the stored spec. */
+    startupTimeoutSeconds?: number | null;
     warmWindows: Array<{
       name: string;
       schedule: string;

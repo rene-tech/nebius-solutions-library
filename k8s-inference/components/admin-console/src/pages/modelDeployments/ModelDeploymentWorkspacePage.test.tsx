@@ -63,6 +63,49 @@ function mockReadSurface() {
 }
 
 describe("ModelDeployment workspace", () => {
+  it.each([undefined, null])("displays the effective startup default without storing an unset field: %s", async (seconds) => {
+    mockReadSurface();
+    const revision = structuredClone(modelDeploymentRevisionFixture);
+    if (seconds !== undefined) revision.spec.availability.startupTimeoutSeconds = seconds;
+    vi.mocked(adminApi.modelDeployment).mockResolvedValue(testEnvelope(revision));
+    const plan = vi.spyOn(adminApi, "planModelDeployment").mockResolvedValue(testEnvelope(modelDeploymentPlanFixture));
+    renderPage();
+
+    await waitFor(() => expect(screen.getByLabelText("Maximum startup retention (seconds)")).toHaveValue(900));
+    expect(screen.getByText(/Separate from idle and cooldown timers; the hot floor is unchanged/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Preview render plan" }));
+    await waitFor(() => expect(plan).toHaveBeenCalledOnce());
+    expect(plan.mock.calls[0]![0].spec.availability).toEqual(revision.spec.availability);
+    expect(plan.mock.calls[0]![0].spec.runtime).toEqual(revision.spec.runtime);
+  });
+
+  it("validates, sends and explicitly unsets startup retention without changing replica or runtime policy", async () => {
+    mockReadSurface();
+    const plan = vi.spyOn(adminApi, "planModelDeployment").mockResolvedValue(testEnvelope(modelDeploymentPlanFixture));
+    renderPage();
+    await waitFor(() => expect(screen.getByLabelText("Maximum startup retention (seconds)")).toHaveValue(900));
+    const input = screen.getByLabelText("Maximum startup retention (seconds)");
+    expect(input).toHaveAttribute("min", "60");
+    expect(input).toHaveAttribute("max", "7200");
+
+    fireEvent.change(input, { target: { value: "59" } });
+    fireEvent.click(screen.getByRole("button", { name: "Preview render plan" }));
+    expect(await screen.findByText(/Maximum startup retention must be a whole number/)).toHaveAttribute("role", "alert");
+    expect(plan).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: "1800" } });
+    fireEvent.click(screen.getByRole("button", { name: "Preview render plan" }));
+    await waitFor(() => expect(plan).toHaveBeenCalledOnce());
+    expect(plan.mock.calls[0]![0].spec.availability).toEqual({ ...modelDeploymentRevisionFixture.spec.availability, startupTimeoutSeconds: 1800 });
+    expect(plan.mock.calls[0]![0].spec.runtime).toEqual(modelDeploymentRevisionFixture.spec.runtime);
+
+    fireEvent.click(screen.getByRole("button", { name: "Use default startup retention" }));
+    expect(input).toHaveValue(900);
+    fireEvent.click(screen.getByRole("button", { name: "Preview render plan" }));
+    await waitFor(() => expect(plan).toHaveBeenCalledTimes(2));
+    expect(plan.mock.calls[1]![0].spec.availability).toEqual(modelDeploymentRevisionFixture.spec.availability);
+  });
+
   it.each(["qwen3-8b", "cosmos3-nano", "genmol", "diffdock"])("selects a qualified %s snapshot and normal loading through existing preview fields", async (modelRef) => {
     const capabilities = structuredClone(modelDeploymentMutationCapabilitiesFixture);
     const option = capabilities.configuration_options[0]!;

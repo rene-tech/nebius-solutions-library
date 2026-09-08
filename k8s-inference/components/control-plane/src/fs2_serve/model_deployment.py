@@ -226,6 +226,9 @@ class AvailabilitySpec(KubernetesModel):
     target_queue_depth: int = Field(ge=1, le=100000)
     polling_interval_seconds: int = Field(ge=1, le=60)
     cooldown_seconds: int = Field(ge=5, le=86400)
+    # None preserves existing persisted revision digests. The renderer uses
+    # 900 seconds unless this per-model startup budget is explicitly supplied.
+    startup_timeout_seconds: int | None = Field(default=None, ge=60, le=7200)
     warm_windows: list[WarmWindowSpec] = Field(default_factory=list, max_length=64)
 
     @model_validator(mode="after")
@@ -466,6 +469,8 @@ def spec_digest(spec: ModelDeploymentSpec) -> str:
     payload["availability"]["warmWindows"] = sorted(
         payload["availability"]["warmWindows"], key=lambda item: item["name"]
     )
+    if spec.availability.startup_timeout_seconds is None:
+        del payload["availability"]["startupTimeoutSeconds"]
     payload["exposure"]["openAIAliases"] = sorted(payload["exposure"]["openAIAliases"])
     payload["policy"]["allowedPrincipalIds"] = sorted(payload["policy"]["allowedPrincipalIds"])
     if spec.fast_start == FastStartSpec():
@@ -1960,6 +1965,62 @@ def _segmented_operation_demand_promql(
     return f"clamp_max(clamp_min(({base}) - {lower}, 0), {upper})"
 
 
+def startup_retention_promql(*, namespace: str, deployment: str, timeout_seconds: int, target_queue_depth: int) -> str:
+    """Retain already-requested capacity during a bounded startup, never activate it.
+
+    KEDA's normal idle cooldown is shorter than a fresh-node image pull. A
+    second demand metric holds the current desired count, rather than just
+    counting unready Pods (which could otherwise let HPA delete those Pods).
+    KEDA/HPA still own replicas and apply their existing maximum and cooldown.
+
+    The clock starts at Deployment creation or a *positive desired-replica
+    change*, not a Pod restart/replacement. Real scrape timestamps prevent a
+    missing scrape from renewing that clock. Readiness, terminal/deleting Pods,
+    and expiry end the hold. A later real scale-out gets a fresh budget.
+    """
+    if re.fullmatch(DNS_LABEL_PATTERN, namespace) is None or re.fullmatch(DNS_SUBDOMAIN_PATTERN, deployment) is None:
+        raise ValueError("workload identity cannot be embedded in PromQL")
+    if not 60 <= timeout_seconds <= 7200 or target_queue_depth < 1:
+        raise ValueError("startup retention requires a bounded budget and positive target")
+    scope = f'namespace="{namespace}"'
+    target = f'{scope},deployment="{deployment}"'
+    desired = f"kube_deployment_spec_replicas{{{target}}}"
+    # idelta sees the last two scrapes; the subquery retains only the timestamp
+    # of an actual scale-out. Pod churn and scale-in cannot reset this budget.
+    scale_out = (
+        "max by (namespace, deployment) (max_over_time("
+        f"(timestamp({desired}) and (idelta({desired}[2m]) > 0))"
+        f"[{timeout_seconds}s:15s])) > (time() - {timeout_seconds})"
+    )
+    created = f"max by (namespace, deployment) (kube_deployment_created{{{target}}}) > (time() - {timeout_seconds})"
+    owners = (
+        "label_replace(max by (namespace, pod, uid, owner_name) "
+        f'(kube_pod_owner{{{scope},owner_kind="ReplicaSet",owner_is_controller="true"}} == 1), '
+        '"replicaset", "$1", "owner_name", "(.+)") '
+        "and on (namespace, replicaset) ("
+        "max by (namespace, replicaset) "
+        f'(kube_replicaset_owner{{{scope},owner_kind="Deployment",'
+        f'owner_is_controller="true",owner_name="{deployment}"}} == 1) '
+        "and on (namespace, replicaset) "
+        f"max by (namespace, replicaset) (kube_replicaset_spec_replicas{{{scope}}} > 0))"
+    )
+    starting = (
+        "max by (namespace, pod, uid) "
+        f'(kube_pod_status_ready{{{scope},condition="true"}} == 0) '
+        "and on (namespace, pod, uid) "
+        "max by (namespace, pod, uid) "
+        f'(kube_pod_status_phase{{{scope},phase=~"Pending|Running"}} == 1) '
+        f"and on (namespace, pod, uid) ({owners}) "
+        "unless on (namespace, pod, uid) "
+        f"max by (namespace, pod, uid) (kube_pod_deletion_timestamp{{{scope}}})"
+    )
+    return (
+        f"(sum((max by (namespace, deployment) ({desired}) > 0) "
+        f"and on (namespace, deployment) (({scale_out}) or ({created})) "
+        f"and on () (count({starting}) > 0)) * {target_queue_depth}) OR vector(0)"
+    )
+
+
 def _configure_modelexpress_container(
     container: dict[str, Any],
     qualification: ModelExpressQualification,
@@ -2629,7 +2690,24 @@ class LegacyManifestRenderer:
                                 "activationThreshold": "0",
                                 "ignoreNullValues": "false",
                             },
-                        }
+                        },
+                        {
+                            "type": "prometheus",
+                            "metricType": "AverageValue",
+                            "metadata": {
+                                "serverAddress": context.prometheus_server_address,
+                                "metricName": _metric_name(spec.model_ref) + "_startup",
+                                "query": startup_retention_promql(
+                                    namespace=context.namespace,
+                                    deployment=workload_name,
+                                    timeout_seconds=spec.availability.startup_timeout_seconds or 900,
+                                    target_queue_depth=spec.availability.target_queue_depth,
+                                ),
+                                "threshold": str(spec.availability.target_queue_depth),
+                                "activationThreshold": "0",
+                                "ignoreNullValues": "false",
+                            },
+                        },
                     ],
                 },
             }

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import axe from "axe-core";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,7 +10,7 @@ import type { AdminEnvelope } from "../../api/types";
 import { SessionContext } from "../../auth/SessionContext";
 import { tenantPrincipal, testSession } from "../../test/accessFixtures";
 import { browserFixture } from "../../test/browserFixtures";
-import { ScientificRunDetailPage } from "./ScientificRunDetailPage";
+import { ScientificRunDetailPage, scientificRunNeedsRefresh } from "./ScientificRunDetailPage";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -57,6 +57,56 @@ function renderPage(
 }
 
 describe("scientific run detail", () => {
+  it("waits for successful result publication without polling failed or cancelled runs forever", () => {
+    const detail = detailFixture().data;
+    expect(scientificRunNeedsRefresh(undefined)).toBe(true);
+    detail.run.status = "succeeded";
+    detail.semantic_validation.status = "not-run";
+    detail.artifacts = [];
+    expect(scientificRunNeedsRefresh(detail)).toBe(true);
+    detail.semantic_validation.status = "passed";
+    expect(scientificRunNeedsRefresh(detail)).toBe(false);
+    // A published empty result is not mistaken for pending solely because artifact_count is zero.
+    detail.semantic_validation.status = "failed";
+    expect(scientificRunNeedsRefresh(detail)).toBe(false);
+    detail.semantic_validation.status = "not-run";
+    for (const status of ["failed", "cancelled"] as const) {
+      detail.run.status = status;
+      expect(scientificRunNeedsRefresh(detail)).toBe(false);
+    }
+  });
+
+  it("automatically publishes results and stops polling without navigation or refresh", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const active = cancellableDetail();
+    const unpublished = detailFixture();
+    unpublished.data.run.status = "succeeded";
+    unpublished.data.artifacts = [];
+    unpublished.data.semantic_validation = {validator_id: "unavailable", status: "not-run", receipt_digest: null};
+    const published = detailFixture();
+    published.data.run.status = "succeeded";
+    published.data.semantic_validation.status = "passed";
+    const view = renderPage(() => Promise.resolve([active, unpublished, published][Math.min(calls++, 2)]));
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(screen.getByRole("button", { name: "Request cancellation" })).toBeInTheDocument();
+      await act(async () => { await vi.advanceTimersByTimeAsync(5001); });
+      expect(screen.getByText("Finalizing results")).toBeInTheDocument();
+      expect(screen.getByRole("status", { name: "Result publication" })).toHaveTextContent("update automatically");
+      expect(adminApi.scientificRun).toHaveBeenCalledTimes(2);
+      await act(async () => { await vi.advanceTimersByTimeAsync(5001); });
+      expect(screen.getByRole("row", { name: /candidate-backbones.tar.zst.*output.*available/ })).toBeInTheDocument();
+      expect(screen.queryByText("Finalizing results")).not.toBeInTheDocument();
+      expect(adminApi.scientificRun).toHaveBeenCalledTimes(3);
+      await act(async () => { await vi.advanceTimersByTimeAsync(20000); });
+      expect(adminApi.scientificRun).toHaveBeenCalledTimes(3);
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it("offers the authorized binary artifact download without exposing storage handles", async () => {
     const detail = detailFixture();
     const artifact = detail.data.artifacts.find((item) => item.role === "output");

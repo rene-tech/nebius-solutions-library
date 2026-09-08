@@ -656,6 +656,11 @@ class ScientificBatchService:
                 state = await self._materialize_admission(operation.id)
             except BatchRepositoryConflictError as error:
                 raise ConflictError("scientific batch admission conflicts with its durable Operation") from error
+        if operation.status.value != state.status.value:
+            # A recovery worker may have dispatched or completed the batch
+            # while this original submit was materializing its outbox row.
+            current = await self.store.get_operation(operation.id, tenant_id=principal.tenant_id)
+            operation = current.model_copy(update={"reused": operation.reused})
         return self._state_view(operation, state)
 
     async def _materialize_pending(self, pending: PendingScientificAdmission) -> ScientificBatchState:
@@ -668,19 +673,37 @@ class ScientificBatchService:
             or operation.accepted_at != state.scheduling.captured_at
         ):
             raise BatchRepositoryConflictError("scientific admission outbox differs from its durable Operation")
-        admitted = await self.controller.admit(
-            operation_id=state.operation_id,
-            tenant_id=state.tenant_id,
-            model_id=state.model_id,
-            variant_id=state.variant_id,
-            input_artifact_id=state.input_artifact_id,
-            plan=state.plan,
-            scheduling=state.scheduling,
-            execution_plan=state.execution_plan,
-            access_context=state.access_context,
-            input_manifest=state.input_manifest,
-            runtime_artifacts=state.runtime_artifacts,
-        )
+        try:
+            admitted = await self.controller.admit(
+                operation_id=state.operation_id,
+                tenant_id=state.tenant_id,
+                model_id=state.model_id,
+                variant_id=state.variant_id,
+                input_artifact_id=state.input_artifact_id,
+                plan=state.plan,
+                scheduling=state.scheduling,
+                execution_plan=state.execution_plan,
+                access_context=state.access_context,
+                input_manifest=state.input_manifest,
+                runtime_artifacts=state.runtime_artifacts,
+            )
+        except BatchRepositoryConflictError as conflict:
+            # API submission and outbox recovery can materialize concurrently.
+            # The winner can even finish before the original creator resumes.
+            # Reuse only the exact durable admission, never any row that merely
+            # shares an Operation ID, and leave unrelated conflicts unchanged.
+            try:
+                admitted = await self.repository.get(state.operation_id, tenant_id=state.tenant_id)
+            except ScientificBatchNotFoundError:
+                raise conflict from None
+            frozen_fields = (
+                "operation_id", "batch_id", "workload_id", "tenant_id", "model_id",
+                "variant_id", "input_artifact_id", "plan", "scheduling",
+                "execution_plan", "access_context", "input_manifest",
+                "runtime_artifacts", "stored_schema",
+            )
+            if any(getattr(admitted, name) != getattr(state, name) for name in frozen_fields):
+                raise
         await self.store.complete_scientific_admission(state.operation_id)
         return admitted
 

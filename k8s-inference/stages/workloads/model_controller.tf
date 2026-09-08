@@ -1230,7 +1230,7 @@ locals {
           acceleratorsPerReplica = local.profile_contract.model_autoscaling_targets[model_id].gpu_count
           topologyPolicy         = "SingleNode"
         }
-        availability = {
+        availability = merge({
           minReplicas            = local.model_scalers[model_id].min_replicas
           maxReplicas            = local.model_scalers[model_id].max_replicas
           idleSeconds            = local.model_scalers[model_id].cooldown_seconds
@@ -1238,7 +1238,9 @@ locals {
           pollingIntervalSeconds = local.model_scalers[model_id].polling_interval_seconds
           cooldownSeconds        = local.model_scalers[model_id].cooldown_seconds
           warmWindows            = []
-        }
+          }, contains(keys(var.model_startup_timeout_overrides), model_id) ? {
+          startupTimeoutSeconds = var.model_startup_timeout_overrides[model_id]
+        } : {})
         cache = {
           tier               = local.model_controller_bundle_requires_shared_cache[model_id] ? "SharedFilesystem" : "NodeLocal"
           snapshotPreference = "Never"

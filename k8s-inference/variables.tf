@@ -163,6 +163,8 @@ variable "deployment" {
       enabled         = optional(set(string), [])
       image_overrides = optional(map(string), {})
       pool_overrides  = optional(map(string), {})
+      # Initial controller-managed model setting; also editable in the admin UI.
+      startup_timeout_overrides = optional(map(number), {})
       runtime_overrides = optional(map(object({
         gpu_count         = optional(number)
         compile_cache_abi = optional(string)
@@ -1637,6 +1639,23 @@ variable "deployment" {
       false,
     )
     error_message = "models.scaling.overrides must target enabled models and use bounded KEDA settings; the deployment contract further limits replicas to compatible accelerator capacity."
+  }
+
+  validation {
+    condition = try(
+      length(var.deployment.models.startup_timeout_overrides) == 0 || (
+        var.deployment.dynamic_models.workload_owner == "controller" &&
+        alltrue([
+          for model_id, seconds in var.deployment.models.startup_timeout_overrides :
+          contains(
+            var.deployment.models.selection == "profile" ?
+            jsondecode(file("${path.module}/catalog/profiles/model-profiles.json")).profiles[var.deployment.profiles.models].canonical_routes :
+            tolist(var.deployment.models.enabled), model_id,
+          ) && floor(seconds) == seconds && seconds >= 60 && seconds <= 7200
+        ])
+      ), false,
+    )
+    error_message = "models.startup_timeout_overrides requires controller-owned enabled models and integer startup budgets from 60 through 7200 seconds."
   }
 
   validation {

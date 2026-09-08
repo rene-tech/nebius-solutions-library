@@ -1820,6 +1820,42 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertNotIn("infrastructure_envelope_json", dynamic)
         self.assertNotIn("renderer_bundles_json", dynamic)
 
+    def test_controller_startup_timeout_is_optional_and_bounded(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-startup-budget-test",
+            "target": self.catalog_target(),
+            "profiles": {"models": "full_catalog"},
+            "models": {"selection": "explicit", "enabled": ["qwen3-8b"]},
+            "dynamic_models": {
+                "enabled": True, "writes_enabled": True, "workload_owner": "controller",
+                "bootstrap_model_ids": ["qwen3-8b"], "fresh_install": True,
+            },
+        }
+        path = self._write_configuration("startup-default", deployment)
+        defaults = self._planned_outputs(path, "startup-default")["deployment_contract"]["stages"]["workloads"]
+        self.assertEqual(defaults["model_startup_timeout_overrides"], {})
+        deployment["models"]["startup_timeout_overrides"] = {"qwen3-8b": 1200}
+        path = self._write_configuration("startup-explicit", deployment)
+        configured = self._planned_outputs(path, "startup-explicit")["deployment_contract"]["stages"]["workloads"]
+        self.assertEqual(configured["model_startup_timeout_overrides"], {"qwen3-8b": 1200})
+        for index, invalid in enumerate((59, 7201, 1200.5)):
+            deployment["models"]["startup_timeout_overrides"] = {"qwen3-8b": invalid}
+            path = self._write_configuration(f"startup-invalid-{index}", deployment)
+            result, _ = self._plan_file(path, f"startup-invalid-{index}")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("models.startup_timeout_overrides", result.stderr + result.stdout)
+        deployment["models"]["startup_timeout_overrides"] = {"not-selected": 900}
+        path = self._write_configuration("startup-unknown", deployment)
+        result, _ = self._plan_file(path, "startup-unknown")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("models.startup_timeout_overrides", result.stderr + result.stdout)
+        # The bootstrap omits this optional field entirely for existing models;
+        # adding the feature must not change their persisted revision digest.
+        source = (DEPLOY_ROOT / "stages/workloads/model_controller.tf").read_text()
+        self.assertIn("availability = merge({", source)
+        self.assertIn("startupTimeoutSeconds = var.model_startup_timeout_overrides[model_id]", source)
+
     def test_modelexpress_tfvars_resolve_managed_service_and_exact_model_clients(self) -> None:
         deployment = {
             "schema_version": 1,

@@ -230,6 +230,12 @@ spec:
                       format: int32
                       minimum: 5
                       maximum: 86400
+                    startupTimeoutSeconds:
+                      description: Maximum startup retention after a replica increase; defaults to 900 seconds when omitted. Does not raise replica limits or replace the idle cooldown after readiness.
+                      type: integer
+                      format: int32
+                      minimum: 60
+                      maximum: 7200
                     warmWindows:
                       type: array
                       maxItems: 64

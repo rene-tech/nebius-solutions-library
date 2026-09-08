@@ -213,6 +213,17 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
         <NumberField label="Target queue depth" max={100000} min={1} onChange={(value) => update((next) => { next.availability.targetQueueDepth = value; })} value={spec.availability.targetQueueDepth} />
         <NumberField label="Polling interval (seconds)" max={60} min={1} onChange={(value) => update((next) => { next.availability.pollingIntervalSeconds = value; })} value={spec.availability.pollingIntervalSeconds} />
         <NumberField label="Cooldown (seconds)" max={86400} min={5} onChange={(value) => update((next) => { next.availability.cooldownSeconds = value; })} value={spec.availability.cooldownSeconds} />
+        <div>
+          <NumberField
+            hint="Retains newly requested startup capacity before idle scale-down is allowed. Separate from idle and cooldown timers; the hot floor is unchanged. Unset uses 900 seconds (15 minutes)."
+            label="Maximum startup retention (seconds)"
+            max={7200}
+            min={60}
+            onChange={(value) => update((next) => { next.availability.startupTimeoutSeconds = value; })}
+            value={spec.availability.startupTimeoutSeconds ?? 900}
+          />
+          {spec.availability.startupTimeoutSeconds != null ? <button className="button" onClick={() => update((next) => { delete next.availability.startupTimeoutSeconds; })} type="button">Use default startup retention</button> : null}
+        </div>
       </FormSection>
 
       <fieldset className="model-deployment-form-section" disabled={disabled}>

@@ -71,6 +71,20 @@ describe("ModelDeployment draft helpers", () => {
     expect(observedValue(0)).toBe("0");
   });
 
+  it.each([undefined, null, 60, 900, 7200])("accepts optional startup retention %s without normalizing the draft", (seconds) => {
+    const draft = structuredClone(modelDeploymentSpecFixture);
+    if (seconds !== undefined) draft.availability.startupTimeoutSeconds = seconds;
+    const original = structuredClone(draft);
+    expect(localModelDeploymentProblem("qwen-live", "fs2-models", draft)).toBeNull();
+    expect(draft).toEqual(original);
+  });
+
+  it.each([59, 7201, 60.5, Number.NaN, Number.POSITIVE_INFINITY])("rejects startup retention outside the integer contract: %s", (seconds) => {
+    const draft = structuredClone(modelDeploymentSpecFixture);
+    draft.availability.startupTimeoutSeconds = seconds;
+    expect(localModelDeploymentProblem("qwen-live", "fs2-models", draft)).toMatch(/Maximum startup retention/);
+  });
+
   it("seeds a first qualified model from the exact server default", () => {
     const option = modelDeploymentMutationCapabilitiesFixture.configuration_options[0]!;
     const empty = createEmptyModelDeploymentSpec("tenant-fixture");

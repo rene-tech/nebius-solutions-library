@@ -1104,6 +1104,7 @@ locals {
     model_scaling_mode              = var.deployment.models.scaling.mode
     hot_model_ids                   = sort(tolist(var.deployment.models.scaling.hot))
     model_scaling_overrides         = var.deployment.models.scaling.overrides
+    model_startup_timeout_overrides = var.deployment.models.startup_timeout_overrides
     keda_polling_interval_seconds   = var.deployment.models.scaling.polling_interval_seconds
     keda_cooldown_period_seconds    = var.deployment.models.scaling.cooldown_period_seconds
     enable_cold_start_keepers       = var.deployment.models.cold_start_keepers

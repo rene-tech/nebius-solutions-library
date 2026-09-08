@@ -290,6 +290,9 @@ export function localModelDeploymentProblem(
     [spec.rollout.maxSurge, 0, 10000, "Maximum surge"],
     [spec.rollout.progressDeadlineSeconds, 60, 86400, "Progress deadline"],
   ];
+  if (spec.availability.startupTimeoutSeconds != null) {
+    numericFields.push([spec.availability.startupTimeoutSeconds, 60, 7200, "Maximum startup retention"]);
+  }
   for (const [value, minimum, maximum, label] of numericFields) {
     const problem = integerProblem(value, minimum, maximum, label);
     if (problem) return problem;

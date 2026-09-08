@@ -5,6 +5,7 @@ import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -33,6 +34,7 @@ from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
 from fs2_serve.scientific_batch.models import (
     LEGACY_ADMISSION_FAILURE_CODE,
     BatchEventKind,
+    PodLifecycleObservation,
     ScientificIdentityError,
 )
 from fs2_serve.scientific_batch.observation import DiagnosedWorkloadObservation
@@ -717,6 +719,110 @@ async def test_same_workload_rereservation_is_deleted_and_retry_gets_fresh_queue
     assert LifecyclePhase.PREEMPTED in [
         event.draft.phase for event in repository.events[operation_id] if event.draft.attempt_id == first.attempt_id
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("boundary", "observed_state"), [
+    ("reservation_lost", WorkloadState.PENDING),
+    ("same_workload_rereserved", WorkloadState.PENDING),
+    ("workload_recreated", WorkloadState.PENDING),
+    ("same_workload_rereserved", WorkloadState.SUCCEEDED),
+    ("workload_recreated", WorkloadState.SUCCEEDED),
+])
+@pytest.mark.parametrize("diagnosed", [False, True])
+async def test_production_requeue_preserves_old_pod_evidence_and_completes_retry(
+    boundary: str, observed_state: WorkloadState, diagnosed: bool,
+) -> None:
+    repository = FakeScientificBatchRepository()
+    cluster = FakeScientificBatchCluster()
+    lifecycle = AsyncMock()
+    current_time = [NOW]
+    reconciler = PolicyAwareScientificBatchController(
+        repository=repository, cluster=cluster, lifecycle=lifecycle,
+        controller_id="controller-pod:uid-1", namespace="fs2-scientific", clock=lambda: current_time[0],
+    )
+    operation_id = uuid4()
+    batch_plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="fold", max_attempts=3),))
+    await reconciler.admit(
+        operation_id=operation_id, tenant_id="tenant-a", model_id="protein-design",
+        plan=batch_plan, scheduling=snapshot(batch_plan),
+    )
+    await reconciler.reconcile_once()
+    first = repository.records[operation_id].stage("fold").attempts[0]
+    admission = SchedulingAdmission(
+        resolved_pool_id="h100-preemptible", admitted_resource_flavor="inference-h100-1x",
+        accelerator_resource_name="nvidia.com/gpu", accelerator_count=1, admitted_at=NOW,
+    )
+    old_pod = PodLifecycleObservation(
+        pod_uid="old-pod", pod_name="fold-a1", node_name="node-1", node_uid="node-uid-1",
+        created_at=NOW, observed_at=NOW, scheduled_at=NOW, gpu_count=1,
+    )
+    initial = WorkloadObservation(
+        ref=first.workload, attempt_id=first.attempt_id, state=WorkloadState.RUNNING,
+        phases=(LifecyclePhase.ADMITTED, LifecyclePhase.NODE_PENDING), scheduling_admission=admission,
+        kueue_workload_uid="original-workload", pod_uids=(old_pod.pod_uid,), pod_lifecycle=(old_pod,),
+    )
+    cluster.set_observation(first.workload, initial)
+    await reconciler.reconcile_once()
+    admitted_attempt = repository.records[operation_id].stage("fold").attempts[0]
+    assert reconciler._fence_same_workload_requeue(admitted_attempt, initial) is initial
+    pending = DiagnosedWorkloadObservation(
+        **{name: getattr(initial, name) for name in initial.__dataclass_fields__},
+        pending_code="NodeProvisioning",
+    )
+    assert reconciler._fence_same_workload_requeue(admitted_attempt, pending) is pending
+    # The next observation spans Kueue evicting and reusing the same Job. The
+    # original Pod's terminal tail is valid; the replacement Pod is not part
+    # of this immutable attempt's admission and must not acquire its ledger.
+    current_time[0] = NOW + timedelta(seconds=20)
+    old_tail = replace(old_pod, observed_at=current_time[0], completed_at=current_time[0])
+    new_pod = replace(old_pod, pod_uid="replacement-pod", pod_name="fold-replacement")
+    observed_admission = admission
+    workload_uid = "original-workload"
+    if boundary == "reservation_lost":
+        observed_admission = None
+    elif boundary == "same_workload_rereserved":
+        observed_admission = replace(admission, quota_reserved_at=current_time[0], admitted_at=current_time[0])
+    else:
+        workload_uid = "replacement-workload"
+    observation_class = DiagnosedWorkloadObservation if diagnosed else WorkloadObservation
+    observation = observation_class(
+        ref=first.workload, attempt_id=first.attempt_id, state=observed_state,
+        phases=(LifecyclePhase.NODE_PENDING,), scheduling_admission=observed_admission,
+        kueue_workload_uid=workload_uid, pod_uids=(old_pod.pod_uid, new_pod.pod_uid),
+        pod_lifecycle=(old_tail, new_pod), **({"pending_code": "NodeProvisioning"} if diagnosed else {}),
+    )
+    cluster.set_observation(first.workload, observation)
+    await reconciler.reconcile_once()
+    fenced = repository.records[operation_id].stage("fold").attempts[0]
+    assert fenced.outcome is AttemptOutcome.PREEMPTED
+    assert fenced.failure_code == f"kueue_{boundary}"
+    assert fenced.scheduling_admission == admission
+    assert fenced.kueue_workload_uid == "original-workload"
+    assert fenced.pod_uids == (old_pod.pod_uid,)
+    ledger_observation = lifecycle.observe.await_args.args[2]
+    assert ledger_observation.pod_uids == (old_pod.pod_uid,)
+    assert ledger_observation.pod_lifecycle == (old_tail,)
+    assert not getattr(ledger_observation, "pending_code", None)
+    # Foreground deletion must finish before a new attempt starts.
+    cluster.deletion_polls_before_absent[cluster.key(first.workload)] = 1
+    for seconds in range(21, 29):
+        current_time[0] = NOW + timedelta(seconds=seconds)
+        await reconciler.reconcile_once()
+    stage = repository.records[operation_id].stage("fold")
+    second = stage.latest_attempt("main")
+    assert second is not None and second.attempt_number == 2
+    assert stage.attempts[0].resource_released
+    assert second.started_at > first.started_at
+    assert second.pod_uids == ()
+    assert cluster.delete_history == [first.workload]
+    observe_success(cluster, second)
+    repository.put_commit(commit(operation_id, "fold", second.attempt_id))
+    for _ in range(6):
+        await reconciler.reconcile_once()
+    final = repository.records[operation_id]
+    assert final.status is BatchStatus.SUCCEEDED
+    assert all(attempt.resource_released for attempt in final.stage("fold").attempts)
 
 
 @pytest.mark.asyncio

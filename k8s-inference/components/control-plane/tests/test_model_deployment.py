@@ -542,6 +542,30 @@ def test_spec_digest_normalizes_kubernetes_set_and_map_list_semantics() -> None:
     assert spec_digest(first) == spec_digest(second)
 
 
+def test_optional_startup_budget_preserves_existing_revision_and_configures_only_when_set() -> None:
+    spec = model_spec()
+    # Retained main 984cf72f renderer, before the optional field existed.
+    assert spec_digest(spec) == "sha256:092bab27467b2a92ccfba642ba13cbd2896bdbde3e85080ebf687d105987f000"
+    wire = spec.model_dump(mode="json", by_alias=True)
+    del wire["availability"]["startupTimeoutSeconds"]
+    assert spec_digest(ModelDeploymentSpec.model_validate(wire)) == spec_digest(spec)
+    explicit = spec.model_copy(
+        update={"availability": spec.availability.model_copy(update={"startup_timeout_seconds": 1800})}
+    )
+    assert spec_digest(explicit) != spec_digest(spec)
+    scaler = next(
+        item.manifest for item in renderer().render(explicit, render_context()).resources if item.kind == "ScaledObject"
+    )
+    assert "[1800s:15s]" in scaler["spec"]["triggers"][1]["metadata"]["query"]
+    assert scaler["spec"]["cooldownPeriod"] == max(spec.availability.cooldown_seconds, spec.availability.idle_seconds)
+    assert scaler["spec"]["minReplicaCount"] == 0
+    for bad in (59, 7201):
+        invalid = spec.availability.model_dump(mode="json", by_alias=True)
+        invalid["startupTimeoutSeconds"] = bad
+        with pytest.raises(ValidationError):
+            AvailabilitySpec.model_validate(invalid)
+
+
 def test_validation_is_gpu_neutral_deterministic_and_fails_before_render() -> None:
     accepted = validate_model_deployment(model_spec(), envelope())
     assert accepted.disposition is ValidationDisposition.ACCEPTED
@@ -705,6 +729,12 @@ def test_renderer_uses_selected_pool_resource_and_safe_derived_metadata() -> Non
         'state=~"queued|activating|running"})) OR vector(0)'
     )
     assert "fallback" not in scaler["spec"]
+    startup = scaler["spec"]["triggers"][1]
+    assert startup["metricType"] == "AverageValue"
+    assert startup["metadata"]["metricName"] == "fs2_operation_demand_qwen_3_8b_startup"
+    assert startup["metadata"]["threshold"] == scaler["spec"]["triggers"][0]["metadata"]["threshold"]
+    assert f'deployment="{deployment["metadata"]["name"]}"' in startup["metadata"]["query"]
+    assert "[900s:15s]" in startup["metadata"]["query"]
     assert any(item.manifest["metadata"]["name"].startswith("fs2-model-publication-") for item in first.resources)
 
     disabled = spec.model_copy(

@@ -349,7 +349,7 @@ The top-level variable is `deployment`:
 | `profiles.models` | Model catalog: `minimal` or `full_catalog`. |
 | `cluster` | Kubernetes version, API CIDR allowlist, and optional regular CPU system-pool shape and inotify ceiling. |
 | `accelerator_pools` | Open map of GPU platform/preset, capacity, optional capacity-block reservation, topology, driver, local-storage, and node-floor/ceiling settings. |
-| `models` | Profile or explicit selection, KEDA/static scaling, hot-model floor, and per-model scaling overrides. |
+| `models` | Profile or explicit selection, KEDA/static scaling, hot-model floor, per-model scaling overrides, and optional `startup_timeout_overrides` for controller-owned models. |
 | `dynamic_models` | Optional live controller gate, exclusive workload owner, and initial model IDs. Internal envelope and renderer JSON is derived, not customer-authored. |
 | `scheduling` | Optional GPU-neutral Kueue Cohort, queue floors, borrowing/preemption, fair-sharing weights, model lanes, and five customer service classes. |
 | `scientific_batch` | Optional staged scientific controller plus a content-addressed execution map; enabling it also installs and qualifies pinned JobSet 0.12.0 for true-gang work. |
@@ -481,6 +481,8 @@ models = {
   selection = "explicit"
   enabled   = ["cosmos3-nano", "qwen3-8b"]
   scaling   = { mode = "keda", hot = ["qwen3-8b"] }
+  # Optional initial startup budget; each omitted model uses 900 seconds.
+  startup_timeout_overrides = { "cosmos3-nano" = 1200 }
   pool_overrides = {
     "cosmos3-nano" = "h100-reserved-8x"
     "qwen3-8b"     = "h100-reserved-8x"
@@ -495,6 +497,13 @@ dynamic_models = {
   fresh_install       = true
 }
 ```
+
+Startup retention prevents already-requested capacity from being removed during
+initialization when a short request queue drains. It does not raise replica/node
+limits, keep a ready model hot, or guarantee a startup latency. Integer budgets
+from 60 through 7,200 seconds are supported for controller-owned models; edit
+**Maximum startup retention** in the admin model settings for subsequent live
+changes. Image pulling, model loading and GPU restore remain separately measured.
 
 The checked-in H100 qualification for this example is
 [`h100-qwen-cosmos-elasticity-qualification-20260902.json`](catalog/profiles/evidence/h100-qwen-cosmos-elasticity-qualification-20260902.json).

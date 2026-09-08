@@ -19,6 +19,13 @@ import {
 } from "./ScientificPresentation";
 import { useScientificCapabilities } from "./useScientificCapabilities";
 
+/** Controller completion can precede publication of the durable validated result. */
+export function scientificRunNeedsRefresh(detail: ScientificRunDetail | undefined): boolean {
+  if (!detail) return true;
+  if (detail.run.status === "succeeded") return detail.semantic_validation.status === "not-run";
+  return !["failed", "cancelled"].includes(detail.run.status);
+}
+
 function safeHref(link: ScientificObservabilityLink): string | null {
   if (!link.available || !link.href) return null;
   if (link.href.startsWith("/admin/")) return link.href;
@@ -121,10 +128,7 @@ export function ScientificRunDetailPage() {
     queryKey,
     queryFn: ({ signal }) => adminApi.scientificRun(runId, context, signal),
     enabled: Boolean(runId) && runsAvailable,
-    refetchInterval: (current) => {
-      const status = current.state.data?.data.run.status;
-      return status && ["succeeded", "failed", "cancelled"].includes(status) ? false : 5000;
-    },
+    refetchInterval: (current) => scientificRunNeedsRefresh(current.state.data?.data) ? 5000 : false,
   });
 
   async function requestCancellation() {
@@ -158,12 +162,19 @@ export function ScientificRunDetailPage() {
             <div className="configuration-actions">
               <Link className="back-link" to={{ pathname: "/admin/scientific-runs", search: backParams.toString() }}>← All scientific runs</Link>
               <button className="button" disabled={query.isFetching} onClick={() => void query.refetch()} type="button">Refresh run</button>
-              <span className="supporting-copy">Run data observed {formatTimestamp(query.data?.meta.generated_at ?? null)}. Active runs update every 5 seconds.</span>
+              <span className="supporting-copy">Run data observed {formatTimestamp(query.data?.meta.generated_at ?? null)}. Active runs and pending results update every 5 seconds.</span>
             </div>
             <section className="identity-panel scientific-run-identity">
               <div><span className="eyebrow">{run.model.display_name} · {run.operation}</span><h2>{run.display_name}</h2><code>{run.id}</code></div>
               <ScientificStatusChip state={run.status} reason={run.error?.message ?? `Run is ${run.status}.`} />
             </section>
+
+            {run.status === "succeeded" && data.semantic_validation.status === "not-run" ? (
+              <section className="inline-notice" aria-label="Result publication" role="status">
+                <strong>Finalizing results</strong>
+                <span>Computation has finished. Validated artifacts are still being published; this page will update automatically when they are available.</span>
+              </section>
+            ) : null}
 
             {waitingReasons.length ? <section className="inline-notice inline-notice--warning" aria-label="Placement progress"><strong>Waiting for placement</strong>{waitingReasons.map((reason) => <p key={reason}>{reason}</p>)}<span>See each attempt's selected pool below. Admission does not mean GPU computation has started.</span></section> : null}
 

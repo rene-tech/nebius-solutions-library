@@ -1295,6 +1295,20 @@ variable "hot_model_ids" {
   }
 }
 
+variable "model_startup_timeout_overrides" {
+  description = "Optional initial controller-managed model startup budgets in seconds. Unset models use the controller default; the admin UI can change this live."
+  type        = map(number)
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for seconds in values(var.model_startup_timeout_overrides) :
+      floor(seconds) == seconds && seconds >= 60 && seconds <= 7200
+    ])
+    error_message = "Model startup budgets must be integers from 60 through 7200 seconds."
+  }
+}
+
 variable "keda_polling_interval_seconds" {
   description = "Seconds between KEDA Prometheus trigger polls while a routed model is at zero replicas."
   type        = number

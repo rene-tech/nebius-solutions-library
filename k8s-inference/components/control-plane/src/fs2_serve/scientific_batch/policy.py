@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
@@ -71,6 +71,36 @@ class PolicyAwareScientificBatchController(ScientificBatchController):
 
     async def reconcile_once(self) -> UUID | None:
         return await super().reconcile_once()
+
+    @staticmethod
+    def _fence_same_workload_requeue(
+        attempt: ScientificAttemptState,
+        observation: WorkloadObservation,
+    ) -> WorkloadObservation:
+        """Keep Pod evidence consistent with an immutable admission on requeue.
+
+        The frozen core clears observed Pod identities at a reservation boundary.
+        Its newer lifecycle evidence must be detached at the same time, before
+        dataclass validation. Afterwards retain only tails for Pods already
+        bound to this attempt; a replacement Pod must not inherit the old
+        reservation's ledger. Existing durable identities and signals remain
+        untouched. Normal observations, including pending diagnostics, pass
+        through unchanged. This operational adaptation preserves model recipes.
+        """
+        candidate = (
+            replace(observation, pod_lifecycle=(), pending_code=None)
+            if isinstance(observation, DiagnosedWorkloadObservation)
+            else replace(observation, pod_lifecycle=())
+        )
+        fenced = ScientificBatchController._fence_same_workload_requeue(attempt, candidate)
+        if fenced is candidate:
+            return observation
+        known_pods = set(attempt.pod_uids)
+        return replace(
+            fenced,
+            pod_uids=tuple(uid for uid in observation.pod_uids if uid in known_pods),
+            pod_lifecycle=tuple(pod for pod in observation.pod_lifecycle if pod.pod_uid in known_pods),
+        )
 
     def _ingest_observation(
         self,

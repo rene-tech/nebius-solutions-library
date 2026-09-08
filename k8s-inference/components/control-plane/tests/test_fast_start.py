@@ -340,6 +340,10 @@ def test_default_fast_start_keeps_every_existing_spec_digest_stable() -> None:
     assert wire["cache"]["mechanism"] is None
     legacy = {key: value for key, value in wire.items() if key != "fastStart"}
     legacy["cache"] = {key: value for key, value in legacy["cache"].items() if key != "mechanism"}
+    assert wire["availability"]["startupTimeoutSeconds"] is None
+    legacy["availability"] = {
+        key: value for key, value in legacy["availability"].items() if key != "startupTimeoutSeconds"
+    }
     assert ModelDeploymentSpec.model_validate(legacy) == spec
     legacy["placement"]["poolRefs"] = sorted(legacy["placement"]["poolRefs"])
     legacy["exposure"]["openAIAliases"] = sorted(legacy["exposure"]["openAIAliases"])
