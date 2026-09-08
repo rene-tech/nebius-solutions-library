@@ -52,6 +52,14 @@ def require(condition, code):
     shared.check(condition, code)
 
 
+def comparison_tenant(value):
+    require(
+        isinstance(value, str) and bool(value.strip()) and value != OWNER["tenant_id"],
+        "comparison_tenant_must_be_existing_and_not_kopra",
+    )
+    return value
+
+
 def private_write(path, value):
     """Exclusive, durable, owner-only output; never replace an existing key."""
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -235,10 +243,32 @@ def discover(public, origin, token, trace, *, expected=None):
     mcp_models = asyncio.run(shared.mcp_call(origin, token, trace, "list_models", {}))
     http_ids = {item["id"] for item in http_models["data"]}
     mcp_ids = {item["id"] for item in mcp_models["data"]}
-    require(http_ids == mcp_ids, "http_mcp_inventory_differs")
+    require(http_ids == mcp_ids, "serving_http_mcp_inventory_differs")
+    scientific_http, _ = shared.exchange(public, trace, "GET", "/v1/scientific-models")
+    scientific_mcp = asyncio.run(shared.mcp_call(origin, token, trace, "list_scientific_models", {}))
+    scientific_http_ids = {item["model_id"] for item in scientific_http["data"]}
+    scientific_mcp_ids = {item["model_id"] for item in scientific_mcp["data"]}
+    require(scientific_http_ids == scientific_mcp_ids, "scientific_http_mcp_inventory_differs")
+    # Protocol-specific discovery is not a separate customer access policy.
+    # Keep public clone identities; do not collapse them to their model source.
+    all_ids = http_ids | scientific_http_ids
     if expected is not None:
-        require(http_ids == set(expected), "restricted_catalog_grant")
-    return {"http": http_models, "mcp": mcp_models, "model_ids": sorted(http_ids)}
+        require(all_ids == set(expected), "restricted_catalog_grant")
+    return {
+        "http": http_models,
+        "mcp": mcp_models,
+        "serving_model_ids": sorted(http_ids),
+        "scientific_http": scientific_http,
+        "scientific_mcp": scientific_mcp,
+        "scientific_model_ids": sorted(scientific_http_ids),
+        "model_ids": sorted(all_ids),
+    }
+
+
+def verify_platform_inventory(apps, model_ids):
+    expected = {item["public_model_id"] for item in apps if item["enabled"]}
+    require(REQUIRED_MODELS <= model_ids and expected <= model_ids, "available_platform_models_missing")
+    return expected
 
 
 def original_fixture():
@@ -323,7 +353,8 @@ def infer_one(public, admin, trace, origin, saved, app_id, args, evidence):
 
 def restricted_checks(admin, trace, origin, args, operation_id, evidence):
     name = "customer-access-disposable-" + str(uuid5(NAMESPACE_URL, str(args.output.resolve())))
-    owner = {"tenant_id": "customer-access-control", "principal_id": name}
+    require(bool(args.comparison_principal.strip()), "comparison_principal_required")
+    owner = {"tenant_id": comparison_tenant(args.comparison_tenant), "principal_id": args.comparison_principal}
     key_id = token = None
     try:
         disclosure = shared.admin_call(
@@ -385,12 +416,11 @@ def restricted_checks(admin, trace, origin, args, operation_id, evidence):
 def accept(admin, trace, origin, saved, args, evidence):
     apps = shared.admin_call(admin, trace, "GET", "/admin/api/v1/apps?limit=1000")
     require(not apps.get("next_cursor"), "apps_inventory_truncated")
-    expected = {item["public_model_id"] for item in apps["items"] if item["enabled"]}
     pheno = next(item for item in apps["items"] if item["public_model_id"] == "phenoage")
     with public_client(origin, saved["secret"]) as public:
         evidence["discovery"] = discover(public, origin, saved["secret"], trace)
         ids = set(evidence["discovery"]["model_ids"])
-        require(REQUIRED_MODELS <= ids and expected <= ids, "available_platform_models_missing")
+        expected = verify_platform_inventory(apps["items"], ids)
         # Inference credentials must not become a console session.
         shared.exchange(public, trace, "GET", "/admin/api/v1/context", expected=(401, 403))
         evidence["available_app_ids"] = sorted(expected)
@@ -421,11 +451,20 @@ def main():
     parser.add_argument("--key-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--release", required=True)
+    parser.add_argument("--comparison-tenant", help="Existing non-Kopra tenant; required for accept only")
+    parser.add_argument(
+        "--comparison-principal",
+        default="terraform-bootstrap-client",
+        help="Existing comparison owner; only the uniquely named disposable key is created/revoked",
+    )
     parser.add_argument("--timeout-seconds", type=int, default=1020)
     args = parser.parse_args()
     logging.basicConfig(level=logging.CRITICAL)
     os.umask(0o077)
     require(60 <= args.timeout_seconds <= 3600, "bounded_timeout_required")
+    if args.mode == "accept":
+        comparison_tenant(args.comparison_tenant)
+        require(bool(args.comparison_principal.strip()), "comparison_principal_required")
     require(not args.key_file.resolve().is_relative_to(shared.ROOT.parent), "key_file_must_be_outside_repository")
     args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
     access = json.loads(args.access_bundle.read_bytes())

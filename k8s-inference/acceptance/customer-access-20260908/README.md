@@ -6,8 +6,18 @@ scientific and academic model Apps. Tenant, user and key identify customer data
 and usage, not a separate customer deployment. This harness does not set user
 App grants, academic eligibility, special `use.*` scopes or model policies.
 
-This is a prepared live check, **not a claim that every model has been run**.
-The release manager runs it after deploying the shared-access implementation.
+Public acceptance `accept-r02` **passed** on deployed
+`21bccafaf889fa09475eaa4de00c4dfa0cf48d05` at 2026-09-08 16:44:25 UTC:
+27 App routes discovered across both protocols, real PhenoAge inference/replay,
+model denial, cross-customer result isolation and attributable usage. The
+retained Kopra key remains active; the disposable key was revoked and the admin
+session logged out. See [release evidence](RELEASE.md).
+
+This proves the public access path and PhenoAge runtime, **not that every model
+was executed**. The separate BindCraft and AlphaFold3 runtime check also passed
+at 16:54:28 UTC using the same ordinary key. It verified actual outputs, MCP
+results, customer-owned artifacts, usage and resource release. See the
+[scientific runbook](scientific_RUNBOOK.md) and release evidence above.
 
 ## Run
 
@@ -31,6 +41,8 @@ PYTHONPATH=src:../../catalog/runtime .venv/bin/python \
 
 PYTHONPATH=src:../../catalog/runtime .venv/bin/python \
   ../../acceptance/customer-access-20260908/customer_access.py accept \
+  --comparison-tenant tenant-e00f3wdfzwfjgbcyfv \
+  --comparison-principal terraform-bootstrap-client \
   --access-bundle /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/final-stack-output.json \
   --key-file "$customer_private/kopra-key.json" \
   --output "$customer_private/accept-r01" \
@@ -70,16 +82,21 @@ key names globally unique.
 
 `accept` requires the existing retained user/key and never modifies them. It:
 
-1. Compares HTTP `/v1/models` and MCP `list_models`, requires every enabled
-   shared App and specifically PhenoAge, BindCraft and AlphaFold3. Cold models
-   must remain discoverable. Paused Apps are not required. This cluster check
-   assumes enabled Apps are operator-shared, not deliberately private targets.
+1. Compares serving HTTP `/v1/models` with MCP `list_models`, and scientific
+   HTTP `/v1/scientific-models` with MCP `list_scientific_models`. Both pairs use
+   the same customer key. It unions serving `id` and scientific `model_id`
+   values and requires every enabled shared App, specifically PhenoAge,
+   BindCraft and AlphaFold3. Scientific App clones retain their public route ID,
+   not just their canonical source ID. All four raw responses are retained.
+   Cold models must remain discoverable. Paused Apps are not required. This
+   cluster check assumes enabled Apps are shared, not deliberately private.
 2. Confirms the inference key cannot access the admin context.
 3. Submits exactly one original synthetic clinical PhenoAge CPU fixture using
    the ordinary native route. The qualified fixture hash is unchanged. An exact
    HTTP replay must return the same durable operation ID. Actual HTTP and MCP
    results must match each other and the previously measured formula result.
-4. Creates one disposable key for a different customer with only `qwen3-8b`
+4. Creates one uniquely named disposable key for the existing owner passed as
+   `--comparison-tenant` and `--comparison-principal`, with only `qwen3-8b`
    allowed. PhenoAge invocation must be denied over HTTP and MCP, without an
    accepted HTTP operation. It then changes **only this disposable key** to
    allow PhenoAge, confirms discovery and proves Kopra's operation and result
@@ -97,6 +114,14 @@ grant regression unexpectedly accepts it, preserve that extra operation and
 report failure rather than counting a clean one-operation cohort. Real academic
 inference and artifact isolation require the release manager's separate
 qualified scientific-fixture check; discovery alone is not a runtime proof.
+
+The comparison tenant must already exist and differ from `kopra`; the live
+example uses the existing platform/default tenant. There is no invented test
+tenant or synthetic user. `--comparison-principal` defaults to the existing
+`terraform-bootstrap-client`; change it explicitly for another existing owner.
+`accept` refuses a missing comparison tenant or `kopra` before making API calls.
+Only the uniquely named disposable key is created/revoked; all existing keys
+and owner settings are preserved. `provision` does not need these arguments.
 
 The existing PhenoAge policy handles any cold activation and normal idle grace.
 The default terminal polling bound is 1,020 seconds, configurable with
@@ -120,9 +145,15 @@ PYTHONPATH=src:../../catalog/runtime .venv/bin/pytest -q \
 .venv/bin/ruff check ../../acceptance/customer-access-20260908
 ```
 
-Initial implementation: 16 tests passed. Checks cover exclusive `0600` secret
+Initial implementation plus comparison-tenant/protocol-discovery corrections:
+25 tests passed. Checks cover exclusive `0600` secret
 persistence, redacted HTTP disclosure receipts, retained-key reuse/no duplicate
 on missing secret, unchanged owner metadata, original fixture identity,
 disposable-key cleanup after failure, same-model cross-customer result probes
 and genuine MCP policy errors versus internal failures. All are mocked/offline;
 they create no cloud resources and are not live acceptance evidence.
+
+`accept-r01` is retained as a failed harness check: it compared the serving-only
+catalog to all Apps and stopped before inference. The corrected harness checks
+both protocol-specific discovery pairs and their union; it does not change
+customer scopes or production access rules to hide that failed attempt.

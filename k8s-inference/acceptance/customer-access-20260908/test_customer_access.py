@@ -15,6 +15,13 @@ from mcp.shared.exceptions import MCPError
 KEY_ID = "80bf6040-69b7-4eb6-bc04-8a7c8853506b"
 FAKE_SECRET = "fs2_pat_" + UUID(KEY_ID).hex + "_" + "synthetic-test-only-not-a-real-key" * 2
 ORIGIN = "https://example.invalid"
+COMPARISON_TENANT = "tenant-e00f3wdfzwfjgbcyfv"
+
+
+@pytest.mark.parametrize("value", [None, "", "kopra"])
+def test_comparison_tenant_must_be_explicit_and_different(value):
+    with pytest.raises(AssertionError, match="comparison_tenant"):
+        customer.comparison_tenant(value)
 
 
 def metadata(**updates):
@@ -177,7 +184,11 @@ def test_restricted_key_cleanup_and_same_model_cross_owner_probe(tmp_path, monke
                 None,
                 customer.shared.Trace(tmp_path),
                 ORIGIN,
-                SimpleNamespace(output=tmp_path),
+                SimpleNamespace(
+                    output=tmp_path,
+                    comparison_tenant=COMPARISON_TENANT,
+                    comparison_principal="terraform-bootstrap-client",
+                ),
                 "existing-operation",
                 evidence,
             )
@@ -186,7 +197,9 @@ def test_restricted_key_cleanup_and_same_model_cross_owner_probe(tmp_path, monke
             None,
             customer.shared.Trace(tmp_path),
             ORIGIN,
-            SimpleNamespace(output=tmp_path),
+            SimpleNamespace(
+                output=tmp_path, comparison_tenant=COMPARISON_TENANT, comparison_principal="terraform-bootstrap-client"
+            ),
             "existing-operation",
             evidence,
         )
@@ -195,6 +208,10 @@ def test_restricted_key_cleanup_and_same_model_cross_owner_probe(tmp_path, monke
         assert ("GET", "/v1/operations/existing-operation/result") in denials
         assert evidence["different_customer_same_model_result_isolation"]
     assert evidence["disposable_key_revoked"]
+    assert next(item for item in calls if item[0] == "POST")[2]["payload"]["tenant_id"] == COMPARISON_TENANT
+    assert (
+        next(item for item in calls if item[0] == "POST")[2]["payload"]["principal_id"] == "terraform-bootstrap-client"
+    )
     assert sum(method == "DELETE" for method, *_ in calls) == 1
 
 
@@ -228,3 +245,69 @@ def test_expected_mcp_rpc_denial_not_internal_failure(tmp_path, monkeypatch, cod
             asyncio.run(run)
     receipt = json.loads(next(Path(tmp_path).glob("*.json")).read_text())
     assert receipt["rpc_error"]["code"] == code
+
+
+@pytest.mark.parametrize(
+    "serving,science,expected,error",
+    [
+        (["phenoage"], ["bindcraft", "alphafold3", "app-science-clone"], None, None),
+        (["phenoage"], [], {"phenoage"}, None),
+        (["phenoage"], ["bindcraft"], {"phenoage"}, "restricted_catalog_grant"),
+    ],
+)
+def test_real_protocol_shapes_union_and_restricted_grants(tmp_path, monkeypatch, serving, science, expected, error):
+    paths, tools = [], []
+    serving_body = {"object": "list", "data": [{"id": identity} for identity in serving]}
+    science_body = {"object": "list", "data": [{"model_id": identity} for identity in science]}
+
+    def handle(request):
+        paths.append(request.url.path)
+        assert request.url.path in {"/v1/models", "/v1/scientific-models"}
+        return httpx.Response(200, json=serving_body if request.url.path == "/v1/models" else science_body)
+
+    async def mcp_call(origin, token, trace, name, arguments):
+        tools.append(name)
+        return serving_body if name == "list_models" else science_body
+
+    monkeypatch.setattr(customer.shared, "mcp_call", mcp_call)
+    with httpx.Client(base_url=ORIGIN, transport=httpx.MockTransport(handle)) as client:
+        if error:
+            with pytest.raises(AssertionError, match=error):
+                customer.discover(client, ORIGIN, FAKE_SECRET, customer.shared.Trace(tmp_path), expected=expected)
+        else:
+            found = customer.discover(client, ORIGIN, FAKE_SECRET, customer.shared.Trace(tmp_path), expected=expected)
+            assert found["http"] == found["mcp"] == serving_body
+            assert found["scientific_http"] == found["scientific_mcp"] == science_body
+            assert set(found["model_ids"]) == set(serving) | set(science)
+    assert paths == ["/v1/models", "/v1/scientific-models"]
+    assert tools == ["list_models", "list_scientific_models"]
+
+
+@pytest.mark.parametrize("mismatched", ["serving", "scientific"])
+def test_each_protocol_pair_must_match_not_just_combined_count(tmp_path, monkeypatch, mismatched):
+    def handle(request):
+        field = "id" if request.url.path == "/v1/models" else "model_id"
+        return httpx.Response(200, json={"data": [{field: "original"}]})
+
+    async def mcp_call(origin, token, trace, name, arguments):
+        protocol, field = ("serving", "id") if name == "list_models" else ("scientific", "model_id")
+        return {"data": [{field: "different" if protocol == mismatched else "original"}]}
+
+    monkeypatch.setattr(customer.shared, "mcp_call", mcp_call)
+    with httpx.Client(base_url=ORIGIN, transport=httpx.MockTransport(handle)) as client:
+        with pytest.raises(AssertionError, match=mismatched + "_http_mcp_inventory_differs"):
+            customer.discover(client, ORIGIN, FAKE_SECRET, customer.shared.Trace(tmp_path))
+
+
+def test_enabled_scientific_clone_requires_public_identity_paused_app_is_not_required():
+    apps = [{"public_model_id": model, "enabled": True} for model in customer.REQUIRED_MODELS]
+    apps.extend(
+        [
+            {"public_model_id": "app-science-clone", "model_ref": "protenix-v2", "enabled": True},
+            {"public_model_id": "app-paused-serving", "enabled": False},
+        ]
+    )
+    with pytest.raises(AssertionError, match="available_platform_models_missing"):
+        customer.verify_platform_inventory(apps, customer.REQUIRED_MODELS | {"protenix-v2"})
+    expected = customer.verify_platform_inventory(apps, customer.REQUIRED_MODELS | {"app-science-clone"})
+    assert "app-science-clone" in expected and "app-paused-serving" not in expected

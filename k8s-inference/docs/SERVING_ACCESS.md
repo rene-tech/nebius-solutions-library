@@ -26,6 +26,9 @@ tenant's operation returns not found.
   owner's tenant. Access requires **both** that tenant and an exact listed
   principal, plus the normal model grant. Matching a principal name in another
   tenant does not grant access. An empty Private allowlist admits nobody.
+  The release owner inspected all 16 live managed serving deployments on
+  September 8, 2026: all use Tenant visibility and empty principal lists, so
+  this compatibility exception affects none of the current Apps.
 - Research-only, license and commercial-use metadata remains visible and is not
   a separate customer scope requirement. Legacy `use.nonclinical` and
   `use.noncommercial` scope values remain accepted for token compatibility,
