@@ -21,6 +21,7 @@ class AppsRepository(Protocol):
     async def list_records(self) -> list[AppRecord]: ...
     async def get(self, app_id: UUID) -> AppRecord | None: ...
     async def seed(self, record: AppRecord) -> AppRecord: ...
+    async def attach_deployment(self, record: AppRecord, *, name: str) -> AppRecord: ...
     async def update(self, record: AppRecord, *, expected_revision: int) -> AppRecord: ...
 
 
@@ -80,6 +81,31 @@ class PostgresAppsRepository:
         if row is None:
             raise AppConflictError("app metadata revision changed; reload before saving")
         return AppRecord.model_validate(dict(row))
+
+    async def attach_deployment(self, record: AppRecord, *, name: str) -> AppRecord:
+        """Bind an unbound serving App once, without replacing user metadata.
+
+        Catalog seeding can precede ModelDeployment bootstrap. This atomic
+        transition preserves route/owner identity and advances the revision
+        once; concurrent API readers converge on the same persisted binding.
+        """
+        async with self.pool.acquire() as connection, connection.transaction():
+            await connection.execute(
+                """UPDATE fs2_apps SET deployment_name=$5,updated_at=GREATEST(updated_at,$6),revision=revision+1
+                WHERE app_id=$1 AND model_ref=$2 AND public_model_id=$3 AND namespace=$4
+                    AND execution_mode='serving' AND deployment_name IS NULL""",
+                record.app_id, record.model_ref, record.public_model_id, record.namespace, name, record.updated_at,
+            )
+            row = await connection.fetchrow("SELECT * FROM fs2_apps WHERE app_id=$1", record.app_id)
+        if row is None:
+            raise AppConflictError("app disappeared before deployment registration")
+        current = AppRecord.model_validate(dict(row))
+        if (current.execution_mode != "serving" or current.deployment_name != name or any(
+            getattr(current, field) != getattr(record, field)
+            for field in ("model_ref", "public_model_id", "namespace")
+        )):
+            raise AppConflictError("app identity already belongs to a different deployment")
+        return current
 
     async def usage(self, model_id: str, context: AdminContext, tenant_id: str | None) -> dict[str, Any]:
         bucket_seconds = 300 if (context.to_at - context.from_at).total_seconds() <= 86400 else 3600
@@ -197,3 +223,23 @@ class MemoryAppsRepository:
         )
         self.records[record.app_id] = updated
         return updated
+
+    async def attach_deployment(self, record: AppRecord, *, name: str) -> AppRecord:
+        current = self.records.get(record.app_id)
+        if current is None:
+            raise AppConflictError("app disappeared before deployment registration")
+        if (current.execution_mode != "serving" or any(
+            getattr(current, field) != getattr(record, field)
+            for field in ("model_ref", "public_model_id", "namespace")
+        ) or current.deployment_name not in {None, name}):
+            raise AppConflictError("app identity already belongs to a different deployment")
+        if current.deployment_name is None:
+            if any(item.app_id != record.app_id and (item.namespace, item.deployment_name) == (record.namespace, name)
+                   for item in self.records.values()):
+                raise AppConflictError("deployment already belongs to another app")
+            current = current.model_copy(update={
+                "deployment_name": name, "updated_at": max(current.updated_at, record.updated_at),
+                "revision": current.revision + 1,
+            })
+            self.records[record.app_id] = current
+        return current

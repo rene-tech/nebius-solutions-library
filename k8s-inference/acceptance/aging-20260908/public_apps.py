@@ -81,8 +81,7 @@ def fixtures(artifact_root):
     )
     for name in ("cpgs.json", "preprocessing.npz"):
         check(
-            hashlib.sha256((artifact_root / name).read_bytes()).hexdigest()
-            == manifest["artifacts"][name]["sha256"],
+            hashlib.sha256((artifact_root / name).read_bytes()).hexdigest() == manifest["artifacts"][name]["sha256"],
             "fixture_artifact_changed",
         )
     batches = {
@@ -91,22 +90,15 @@ def fixtures(artifact_root):
     }
     result = {}
     for model, batch in batches.items():
-        contract = json.loads(
-            (ROOT / "catalog/runtime/native" / f"{model}.json").read_bytes()
-        )
+        contract = json.loads((ROOT / "catalog/runtime/native" / f"{model}.json").read_bytes())
         requests = [{**batch, "samples": [sample]} for sample in batch["samples"]]
         check(
             [digest(item) for item in requests]
-            == [
-                item["payload_sha256"]
-                for item in contract["semantic_requests"]["requests"]
-            ],
+            == [item["payload_sha256"] for item in contract["semantic_requests"]["requests"]],
             "original_request_hash_changed",
         )
         for request in requests:
-            (
-                ClinicalRequest if model == "phenoage" else AltumAgeRequest
-            ).model_validate(request)
+            (ClinicalRequest if model == "phenoage" else AltumAgeRequest).model_validate(request)
         result[model] = requests
     return result
 
@@ -126,19 +118,11 @@ def validate_result(model, index, request, result):
         prediction["sample_id"] == request["samples"][0]["sample_id"],
         "response_sample_id",
     )
-    field = (
-        "phenotypic_age_years"
-        if model == "phenoage"
-        else "predicted_chronological_age_years"
-    )
+    field = "phenotypic_age_years" if model == "phenoage" else "predicted_chronological_age_years"
     value = prediction[field]
-    check(
-        isinstance(value, (int, float)) and math.isfinite(value), "response_nonfinite"
-    )
+    check(isinstance(value, (int, float)) and math.isfinite(value), "response_nonfinite")
     retained = json.loads((Path(__file__).parent / f"{model}-r01.json").read_bytes())
-    expected = retained["native_http_predictions"][index]["body"]["predictions"][0][
-        field
-    ]
+    expected = retained["native_http_predictions"][index]["body"]["predictions"][0][field]
     tolerance = 1e-10 if model == "phenoage" else 0.001
     check(
         math.isclose(value, expected, rel_tol=0, abs_tol=tolerance),
@@ -152,8 +136,7 @@ def validate_result(model, index, request, result):
         check(result["gpu_snapshot"] == "not-applicable-cpu", "formula_snapshot_claim")
     else:
         check(
-            result["weights_sha256"]
-            == "648f9d8cf8fb809e0ce9f1d46b652a936b2bb056b6d028c369ea5e2ed4a05e87",
+            result["weights_sha256"] == "648f9d8cf8fb809e0ce9f1d46b652a936b2bb056b6d028c369ea5e2ed4a05e87",
             "weights_identity",
         )
         cpu_expected = retained["cpu_cuda_parity"][1]["cpu"][index][field]
@@ -294,9 +277,7 @@ def await_terminal(public, admin, trace, app_path, operation_id, timeout_seconds
             transitions.append({"at": now(), "status": operation["status"]})
             previous = operation["status"]
         if operation["status"] in TERMINAL:
-            check(
-                operation["status"] == "succeeded", "operation_" + operation["status"]
-            )
+            check(operation["status"] == "succeeded", "operation_" + operation["status"])
             return operation, observations, transitions
         time.sleep(5)
     raise AssertionError("operation_poll_deadline")
@@ -340,6 +321,10 @@ def run_model(args, model, requests, origin, admin, admin_trace, source_key, app
     try:
         before = admin_call(admin, admin_trace, "GET", app_path + "/settings")
         evidence["original_settings"] = before
+        check(
+            before["serving"] is not None and before["capabilities"]["live_settings"],
+            "managed_app_settings_unavailable",
+        )
         spec = zero_worker_spec(before["serving"]["spec"])
         changed = admin_call(
             admin,
@@ -357,9 +342,7 @@ def run_model(args, model, requests, origin, admin, admin_trace, source_key, app
         limits = spec["availability"]
         timeout = limits.get("startupTimeoutSeconds") or 900
         quiet_timeout = limits["idleSeconds"] + limits["cooldownSeconds"] + 120
-        evidence["zero_before"] = wait_zero(
-            admin, admin_trace, app_path, time.monotonic() + quiet_timeout, "before"
-        )
+        evidence["zero_before"] = wait_zero(admin, admin_trace, app_path, time.monotonic() + quiet_timeout, "before")
         owner = owner_id(source_key["tenant_id"], source_key["principal_id"])
         disclosure = admin_call(
             admin,
@@ -439,14 +422,10 @@ def run_model(args, model, requests, origin, admin, admin_trace, source_key, app
                         "idempotency_key": idem,
                         "wait_seconds": 0,
                     }
-                    operation = asyncio.run(
-                        mcp_call(origin, token, trace, "invoke_model", parameters)
-                    )
+                    operation = asyncio.run(mcp_call(origin, token, trace, "invoke_model", parameters))
                     operation_id = operation["id"]
                     accepted(evidence, request, operation_id, index)
-                    replay = asyncio.run(
-                        mcp_call(origin, token, trace, "invoke_model", parameters)
-                    )
+                    replay = asyncio.run(mcp_call(origin, token, trace, "invoke_model", parameters))
                     check(
                         replay["id"] == operation_id and replay["reused"],
                         "mcp_replay_identity",
@@ -459,9 +438,7 @@ def run_model(args, model, requests, origin, admin, admin_trace, source_key, app
                     operation_id,
                     timeout + 120,
                 )
-                result, _ = exchange(
-                    public, trace, "GET", f"/v1/operations/{operation_id}/result"
-                )
+                result, _ = exchange(public, trace, "GET", f"/v1/operations/{operation_id}/result")
                 validation = validate_result(model, index, request, result)
                 mcp_result = asyncio.run(
                     mcp_call(
@@ -473,15 +450,12 @@ def run_model(args, model, requests, origin, admin, admin_trace, source_key, app
                     )
                 )
                 check(
-                    mcp_result["operation"]["id"] == operation_id
-                    and mcp_result["result"] == result,
+                    mcp_result["operation"]["id"] == operation_id and mcp_result["result"] == result,
                     "mcp_result_identity",
                 )
                 check(
                     any(
-                        container["ready"]
-                        for observed in observations
-                        for container in observed["containers"]["items"]
+                        container["ready"] for observed in observations for container in observed["containers"]["items"]
                     ),
                     "no_ready_worker_observed",
                 )
@@ -505,13 +479,10 @@ def run_model(args, model, requests, origin, admin, admin_trace, source_key, app
                     client_seconds=evidence["operations"][-1]["client_seconds"],
                 )
             check(
-                evidence["operations"][0]["validation"]["value"]
-                != evidence["operations"][1]["validation"]["value"],
+                evidence["operations"][0]["validation"]["value"] != evidence["operations"][1]["validation"]["value"],
                 "responses_not_distinct",
             )
-            evidence["zero_after"] = wait_zero(
-                admin, admin_trace, app_path, time.monotonic() + quiet_timeout, "after"
-            )
+            evidence["zero_after"] = wait_zero(admin, admin_trace, app_path, time.monotonic() + quiet_timeout, "after")
             runs = admin_call(admin, admin_trace, "GET", app_path + "/runs" + window)
             ids = {item["operation"]["id"] for item in runs["items"]}
             check(
@@ -519,13 +490,9 @@ def run_model(args, model, requests, origin, admin, admin_trace, source_key, app
                 "logical_runs_not_two",
             )
             evidence["runs"] = runs
-            evidence["usage"] = admin_call(
-                admin, admin_trace, "GET", app_path + "/usage" + window
-            )
+            evidence["usage"] = admin_call(admin, admin_trace, "GET", app_path + "/usage" + window)
             check(evidence["usage"]["logical_runs"] == 2, "logical_usage_not_two")
-            evidence["logs"] = admin_call(
-                admin, admin_trace, "GET", app_path + "/logs" + window
-            )
+            evidence["logs"] = admin_call(admin, admin_trace, "GET", app_path + "/logs" + window)
             final = admin_call(admin, admin_trace, "GET", app_path + "/settings")
             check(final["serving"]["spec"] == spec, "test_settings_changed")
             evidence["final_settings"] = final
@@ -543,9 +510,7 @@ def run_model(args, model, requests, origin, admin, admin_trace, source_key, app
     finally:
         if key_id is not None:
             try:
-                revoked_key = admin_call(
-                    admin, admin_trace, "DELETE", f"/admin/api/v1/keys/{key_id}"
-                )
+                revoked_key = admin_call(admin, admin_trace, "DELETE", f"/admin/api/v1/keys/{key_id}")
                 check(revoked_key["state"] == "revoked", "key_revocation_unconfirmed")
                 with httpx.Client(
                     base_url=origin,
@@ -556,9 +521,7 @@ def run_model(args, model, requests, origin, admin, admin_trace, source_key, app
                     exchange(revoked, trace, "GET", "/v1/models", expected=(401,))
                 evidence["test_key_revoked"] = True
             except Exception as error:
-                evidence.update(
-                    outcome="failed", key_cleanup_error=type(error).__name__
-                )
+                evidence.update(outcome="failed", key_cleanup_error=type(error).__name__)
         evidence["completed_at"] = now()
         write(output / "outcome.json", evidence)
     return evidence
@@ -580,10 +543,7 @@ def main():
         "logical_operations": 4,
         "parallel_clients": 2,
         "maximum_new_gpu_workers": 1,
-        "models": {
-            model: [digest(request) for request in items]
-            for model, items in requests.items()
-        },
+        "models": {model: [digest(request) for request in items] for model, items in requests.items()},
         "public_cold_boundary": "zero reusable workers with existing nodes/cache, not a new node or empty registry",
         "native_worker_qualification": "retained direct receipts; public acceptance does not infer GPU snapshots",
     }
@@ -601,9 +561,7 @@ def main():
     origin = access["endpoints"]["inference_base_url"].removesuffix("/v1")
     token_id, _ = TokenService._parse(access["credentials"]["scientific_access_token"])
     result = {"started_at": now(), "release": args.release, "outcome": "failed"}
-    with httpx.Client(
-        base_url=origin, timeout=60, trust_env=False, headers={"origin": origin}
-    ) as admin:
+    with httpx.Client(base_url=origin, timeout=60, trust_env=False, headers={"origin": origin}) as admin:
         try:
             exchange(
                 admin,
@@ -611,25 +569,17 @@ def main():
                 "POST",
                 "/admin/api/v1/session",
                 headers={
-                    "authorization": "Bearer "
-                    + access["credentials"]["admin_bootstrap_token"],
+                    "authorization": "Bearer " + access["credentials"]["admin_bootstrap_token"],
                 },
             )
             all_apps = admin_call(admin, trace, "GET", "/admin/api/v1/apps")["items"]
-            apps = {
-                model: next(
-                    item for item in all_apps if item["public_model_id"] == model
-                )
-                for model in MODELS
-            }
+            apps = {model: next(item for item in all_apps if item["public_model_id"] == model) for model in MODELS}
             for model, app in apps.items():
                 check(
                     app["model_ref"] == model and app["execution_mode"] == "serving",
                     "canonical_app_identity",
                 )
-            keys = admin_call(admin, trace, "GET", "/admin/api/v1/keys?limit=1000")[
-                "items"
-            ]
+            keys = admin_call(admin, trace, "GET", "/admin/api/v1/keys?limit=1000")["items"]
             source_key = next(item for item in keys if item["id"] == str(token_id))
             emit(
                 "campaign_started",
@@ -657,24 +607,16 @@ def main():
                     "model_id": item["model_id"],
                     "app_id": item["app_id"],
                     "outcome": item["outcome"],
-                    "operation_ids": [
-                        operation["operation_id"] for operation in item["operations"]
-                    ],
+                    "operation_ids": [operation["operation_id"] for operation in item["operations"]],
                 }
                 for item in outcomes
             ]
-            result["outcome"] = (
-                "passed"
-                if all(item["outcome"] == "passed" for item in outcomes)
-                else "failed"
-            )
+            result["outcome"] = "passed" if all(item["outcome"] == "passed" for item in outcomes) else "failed"
         except Exception as error:
             result["error_type"] = type(error).__name__
         finally:
             try:
-                exchange(
-                    admin, trace, "DELETE", "/admin/api/v1/session", expected=(204,)
-                )
+                exchange(admin, trace, "DELETE", "/admin/api/v1/session", expected=(204,))
             except Exception as error:
                 result.update(outcome="failed", logout_error=type(error).__name__)
             result["completed_at"] = now()

@@ -70,6 +70,13 @@ function rangeOption(value) {
   return options[value];
 }
 
+async function signOut(page) {
+  await page.getByRole("button", { name: /^Sign out / }).click();
+  await page
+    .getByRole("textbox", { name: "Bootstrap access token", exact: true })
+    .waitFor();
+}
+
 async function main() {
   process.umask(0o077);
   const [credentialPath, output, sourceCommit, ...flags] =
@@ -328,7 +335,14 @@ async function main() {
             !fs.existsSync(path.join(output, command.label + ".json")),
           "fresh evidence label required",
         );
-        if (command.action === "navigate") {
+        if (command.action === "sign-out") {
+          await signOut(page);
+          report.checks.push({
+            kind: "signed-out",
+            at: new Date().toISOString(),
+            mechanism: "real console Sign out button and login form observed",
+          });
+        } else if (command.action === "navigate") {
           await page.goto(adminPath(command.path));
           await page
             .getByRole("navigation", { name: "Main", exact: true })
@@ -804,4 +818,4 @@ if (require.main === module)
     );
     process.exitCode = 1;
   });
-module.exports = { sanitize, adminPath, rangeOption };
+module.exports = { sanitize, adminPath, rangeOption, signOut };

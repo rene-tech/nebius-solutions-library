@@ -7,7 +7,37 @@ const {
   verifySettingsRestoration,
   disabledCloneSpec,
 } = require("./browser_checks.cjs");
-const { sanitize, adminPath, rangeOption } = require("./browser_session.cjs");
+const {
+  sanitize,
+  adminPath,
+  rangeOption,
+  signOut,
+} = require("./browser_session.cjs");
+
+test("sign-out uses the actual console button and observes the login form", async () => {
+  const calls = [];
+  await signOut({
+    getByRole(role, options) {
+      calls.push({ role, options });
+      return {
+        async click() {
+          calls.push("clicked");
+        },
+        async waitFor() {
+          calls.push("login-visible");
+        },
+      };
+    },
+  });
+  assert.equal(calls[0].role, "button");
+  assert(calls[0].options.name.test("Sign out Bootstrap administrator"));
+  assert.equal(calls[1], "clicked");
+  assert.deepEqual(calls[2], {
+    role: "textbox",
+    options: { name: "Bootstrap access token", exact: true },
+  });
+  assert.equal(calls[3], "login-visible");
+});
 
 test("owned clone cleanup clears its hot floor and warm windows without changing source settings", () => {
   const original = {

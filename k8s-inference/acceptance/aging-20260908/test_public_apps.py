@@ -15,6 +15,7 @@ import public_apps as public
 def settings():
     return {
         "app_revision": 1,
+        "capabilities": {"live_settings": True},
         "serving": {
             "etag": "sha256:original",
             "spec": {

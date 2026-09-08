@@ -15,7 +15,7 @@ commit. The previous namespace holder was removed; a historical PID must not be
 reused without the owner's current confirmation.
 
 The Node runner accepts JSON-lines commands on stdin. Only `navigate`, `tab`,
-`range`, `filter`, `snapshot`, `verify-metrics` and `close` are used here. No
+`range`, `filter`, `snapshot`, `verify-metrics`, `sign-out` and `close` are used here. No
 one-time credential dialog is opened. The ordinary authenticated sign-in session
 is the sole stateful browser prerequisite, not an inference or configuration
 change. Close normally after the bounded checks, targeting 15 minutes after GO;
@@ -41,7 +41,8 @@ coordinate with the release owner if active workload acceptance needs more time.
    those exact identities and the same resolved time window after its accepted
    requests. Record real terminal results, logical run counts, owner attribution
    and observed HTTP counts separately. The browser does not add model traffic.
-5. Capture final loaded screenshots and query receipts, then close normally.
+5. Capture final loaded screenshots and query receipts, sign out through the
+   real console button, observe the login form, then close normally.
    Record all JavaScript exceptions, failed reads and non-success API responses;
    expected unauthenticated sign-in 401s and navigation cancellations, if present,
    remain documented rather than silently deleted.

@@ -1,8 +1,8 @@
 """Apps coordinate existing deployment, scientific-policy and run services.
 
 This layer owns identity and metadata, not a second inference controller.
-Default registration is create-only; restarting or applying Terraform cannot
-reset operator-edited app settings. Scientific details enrich durable gateway
+Default registration never resets operator-edited settings. A catalog App may
+gain its exact managed deployment after bootstrap. Scientific details enrich durable gateway
 operations and are never counted as additional requests.
 """
 
@@ -94,7 +94,7 @@ class AppsService:
     async def seed_defaults(self) -> None:
         """Register the complete current inventory without overwriting metadata."""
         now = self.clock()
-        existing_routes = {item.public_model_id for item in await self.repository.list_records()}
+        existing_routes = {item.public_model_id: item for item in await self.repository.list_records()}
         revisions: dict[str, ModelDeploymentRevision] = {}
         if self.deployments is not None:
             after: str | None = None
@@ -117,6 +117,8 @@ class AppsService:
         catalog = {model.id: model for model in self.registry.list()}
         for model_id in sorted(catalog.keys() | scientific_models.keys() | revisions.keys()):
             if model_id in existing_routes:
+                if model_id in revisions:
+                    await self._attach_default_deployment(existing_routes[model_id], revision=revisions[model_id])
                 continue
             revision = revisions.get(model_id)
             science = scientific_models.get(model_id)
@@ -153,7 +155,45 @@ class AppsService:
         record = await self.repository.get(parsed)
         if record is None:
             raise AdminProblemError(404, "app_not_found", "app was not found")
-        return record
+        return await self._attach_default_deployment(record)
+
+    async def _attach_default_deployment(
+        self, record: AppRecord, *, revision: ModelDeploymentRevision | None = None,
+    ) -> AppRecord:
+        """Resolve catalog-before-bootstrap ordering on normal App reads.
+
+        Only a canonical, previously unbound serving App is eligible. Existing
+        deployments, independent clones and scientific identities never move.
+        """
+        if (
+            self.deployments is None or record.deployment_name is not None
+            or record.execution_mode != "serving" or record.app_id != default_app_id(record.public_model_id)
+            or record.model_ref != record.public_model_id
+        ):
+            return record
+        if revision is None:
+            candidates: list[ModelDeploymentRevision] = []
+            after = None
+            while True:
+                page = await self.deployments.repository.list_current(
+                    namespace=record.namespace, tenant_id=None, after_name=after, limit=200,
+                )
+                candidates.extend(item for item in page if item.spec.public_model_id == record.public_model_id)
+                if len(page) < 200:
+                    break
+                after = page[-1].name
+            if len(candidates) != 1:
+                return record
+            revision = candidates[0]
+        if (
+            revision.namespace != record.namespace or revision.spec.model_ref != record.model_ref
+            or revision.spec.public_model_id != record.public_model_id
+            or (revision.spec.app is not None and revision.spec.app.app_id != record.app_id)
+        ):
+            return record
+        return await self.repository.attach_deployment(
+            record.model_copy(update={"updated_at": self.clock()}), name=revision.name,
+        )
 
     async def choices(self) -> list[AppChoice]:
         return [
@@ -210,6 +250,7 @@ class AppsService:
         )
 
     async def summary(self, record: AppRecord, context: AdminContext, tenant_id: str | None) -> AppSummary:
+        record = await self._attach_default_deployment(record)
         settings = await self.settings(record.app_id, context, tenant_id)
         enabled = True
         state, reason = "unavailable", None
