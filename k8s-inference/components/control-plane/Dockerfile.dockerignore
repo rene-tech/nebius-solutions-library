@@ -33,6 +33,10 @@ k8s-inference/catalog/runtime/*
 !k8s-inference/catalog/runtime/kubernetes/**
 !k8s-inference/catalog/runtime/models/
 !k8s-inference/catalog/runtime/models/**
+!k8s-inference/catalog/runtime/native/
+!k8s-inference/catalog/runtime/native/**
+!k8s-inference/catalog/runtime/deployment-runtimes/
+!k8s-inference/catalog/runtime/deployment-runtimes/**
 !k8s-inference/catalog/runtime/schema/
 !k8s-inference/catalog/runtime/schema/**
 !k8s-inference/catalog/runtime/sql/

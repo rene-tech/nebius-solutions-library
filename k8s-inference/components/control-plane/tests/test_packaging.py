@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import json
 import os
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -74,6 +76,8 @@ def test_container_imports_installed_packages_without_pythonpath_or_source_shado
     assert "!k8s-inference/catalog/runtime/pyproject.toml" in dockerignore
     assert "!k8s-inference/catalog/runtime/uv.lock" in dockerignore
     assert "!k8s-inference/catalog/runtime/models/**" in dockerignore
+    assert "!k8s-inference/catalog/runtime/native/**" in dockerignore
+    assert "!k8s-inference/catalog/runtime/deployment-runtimes/**" in dockerignore
     assert "!k8s-inference/catalog/runtime/kubernetes/**" in dockerignore
     assert "!k8s-inference/catalog/runtime/schema/**" in dockerignore
     assert "!k8s-inference/catalog/runtime/sql/**" in dockerignore
@@ -127,7 +131,29 @@ def test_docker_engine_applies_the_dockerfile_specific_root_context_policy(tmp_p
         control / "contracts" / "contract.json": "{}\n",
         catalog / "__init__.py": "\n",
     }
+    repository_root = CONTROL_ROOT.parents[2]
+    runtime_root = repository_root / "k8s-inference/catalog/runtime"
+    native_inputs = [
+        runtime_root / "packaged-repository/k8s-inference/acceptance/aging-20260908/in_pod.py",
+        runtime_root / "packaged-repository/k8s-inference/models/aging/fixtures.py",
+    ]
+    for model, device in (("phenoage", "cpu"), ("altumage", "cuda")):
+        declaration = runtime_root / "native" / f"{model}.json"
+        manifest_path = json.loads(declaration.read_text())["artifact_manifest"]["path"]
+        native_inputs.extend(
+            (
+                declaration,
+                runtime_root / "deployment-runtimes" / f"{model}-{device}.json",
+                (declaration.parent / manifest_path).resolve(),
+            )
+        )
+    # Exercise the real exact model payloads through BuildKit's policy, not a
+    # copy-only approximation that ignores Dockerfile.dockerignore.
+    for source in native_inputs:
+        target = context / source.relative_to(repository_root)
+        allowed[target] = source.read_text(encoding="utf-8")
     for path, value in allowed.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(value, encoding="utf-8")
     excluded = (
         context / "evidence" / "raw.json",
@@ -138,6 +164,9 @@ def test_docker_engine_applies_the_dockerfile_specific_root_context_policy(tmp_p
         control / "tests" / "test_private.py",
         context / "k8s-inference" / "components" / "private-helper" / "must-stay-out.yaml",
         context / "k8s-training" / "must-stay-out.tf",
+        catalog.parent / "native" / "tenant-secret.json",
+        catalog.parent / "deployment-runtimes" / ".env",
+        catalog.parent / "packaged-repository/k8s-inference/models/aging/private.pem",
     )
     for path in excluded:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -164,6 +193,11 @@ def test_docker_engine_applies_the_dockerfile_specific_root_context_policy(tmp_p
     actual = {path.relative_to(output) for path in output.rglob("*") if path.is_file()}
     expected = {path.relative_to(context) for path in allowed}
     assert actual == expected
+    build_policy = runpy.run_path(str(CONTROL_ROOT / "scripts/build_image.py"))
+    for source in native_inputs:
+        relative = source.relative_to(repository_root)
+        assert (output / relative).read_bytes() == source.read_bytes()
+        assert any(relative == admitted or admitted in relative.parents for admitted in build_policy["CONTEXT_INPUTS"])
 
 
 def test_application_context_policies_reclose_solution_siblings() -> None:

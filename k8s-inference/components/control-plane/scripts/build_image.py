@@ -32,6 +32,8 @@ CONTEXT_INPUTS = (
     CATALOG_REL / "contracts",
     CATALOG_REL / "kubernetes",
     CATALOG_REL / "models",
+    CATALOG_REL / "native",
+    CATALOG_REL / "deployment-runtimes",
     CATALOG_REL / "schema",
     CATALOG_REL / "sql",
     CATALOG_REL / "validators",
