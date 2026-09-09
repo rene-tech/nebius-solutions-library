@@ -142,6 +142,8 @@ async def test_http_all_core_descriptions_and_named_model_fields(registry, ciphe
     app = _app(runtime)
     key = await _key(runtime)
     async with app.router.lifespan_context(app), _connection(runtime, app, key) as client:
+        assert client.server_capabilities.tools is not None
+        assert client.server_capabilities.tools.list_changed is True
         tools = {item.name: item for item in (await client.list_tools()).tools}
         assert CORE_TOOLS <= tools.keys()
         assert CLIENT_ONLY_TOOLS.isdisjoint(tools)

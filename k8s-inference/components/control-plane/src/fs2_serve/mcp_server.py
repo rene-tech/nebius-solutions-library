@@ -19,6 +19,7 @@ from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.caching import CacheHint
 from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
+from mcp.server.lowlevel.server import NotificationOptions
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 from mcp.server.subscriptions import ToolsListChanged
@@ -247,6 +248,29 @@ def _tool_failure(params: CallToolRequestParams, error: Exception) -> CallToolRe
 
 class FS2MCPServer(MCPServer[Any]):
     """MCPServer that preserves safe domain failure semantics for agents."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # The SDK's high-level Streamable-HTTP adapter does not expose
+        # ``NotificationOptions`` even though its low-level initialization
+        # path requires that option to advertise legacy tools/list change
+        # notifications.  Keep the regular option factory, but make the
+        # server's actual published behavior visible to 2025-era clients.
+        create_options = self._lowlevel_server.create_initialization_options
+
+        def advertised_options(
+            notification_options: NotificationOptions | None = None,
+            experimental_capabilities: dict[str, dict[str, Any]] | None = None,
+            extensions: dict[str, dict[str, Any]] | None = None,
+        ) -> Any:
+            selected = notification_options or NotificationOptions(tools_changed=True)
+            return create_options(
+                selected,
+                experimental_capabilities,
+                extensions,
+            )
+
+        self._lowlevel_server.create_initialization_options = advertised_options  # type: ignore[method-assign]
 
     async def _handle_call_tool(
         self,
