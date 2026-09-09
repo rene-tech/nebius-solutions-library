@@ -143,5 +143,19 @@ The UI has passed its focused tests and the complete 217-test console suite plus
 TypeScript/production build. Offline cases include upstream 422 details, operation-
 less failures, historical absence, null metadata, binary/partial/redacted capture,
 plaintext rendering, duplicate headers, lazy loading and JSON export. These are
-synthetic technical fixtures, not evidence of deployed customer capture. Root will
-append exact release and live acceptance evidence after deployment.
+synthetic technical fixtures, not evidence of arbitrary customer capture.
+
+On 2026-09-09, release `88520758f90a7e171abd86a4a94787a6739d6ba7` was deployed
+with capture enabled. [Bounded live API acceptance](../acceptance/request-debug-20260909/README.md)
+verified a synthetic PhenoAge success, actual Boltz2 upstream 422 and OpenFold2
+upstream 400, operationless malformed HTTP 422, MCP discovery and malformed MCP
+arguments (tool error inside HTTP 200). The exact observed public bytes, private
+upstream error bodies, caller ownership, operation/attempt correlation and
+authentication redaction passed. No key, model or capacity setting changed.
+
+The first OpenFold2 call used the verifier's stale archival operation name and
+correctly returned 403. That failed receipt remains intact; only its unexecuted
+remaining cases ran after correcting the helper to use current discovery. This
+does not claim an error-free first attempt. Raw payloads stay private; the linked
+credential-free summary contains IDs/counts/hashes. Actual browser inspection is
+a separate release-owner acceptance gate.

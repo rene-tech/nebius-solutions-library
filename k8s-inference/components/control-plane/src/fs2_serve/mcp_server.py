@@ -29,6 +29,13 @@ from starlette.types import Scope as ASGIScope
 
 from .api import AppRuntime, _model_view, _pool_accelerator_classes
 from .auth import AuthenticationError, require_operation_access
+from .mcp_input_contracts import apply_tool_input_contract, describe_tool_parameters, tool_input_schema
+from .model_input_contracts import (
+    InputContractUnavailable,
+    ModelInputContract,
+    contract_for,
+    scientific_contract_for,
+)
 from .models import (
     MAX_IDEMPOTENCY_KEY_LENGTH,
     MIN_IDEMPOTENCY_KEY_LENGTH,
@@ -46,6 +53,7 @@ from .store import NotFoundError
 
 CORE_TOOLS = {
     "list_models",
+    "get_model_schema",
     "list_scientific_models",
     "invoke_model",
     "get_operation",
@@ -68,6 +76,24 @@ MCP_HTTP_PATH = "/mcp"
 MCP_CHILD_MOUNT_PATH = "/"
 MCP_STREAMABLE_HTTP_PATH = MCP_HTTP_PATH
 LOGGER = logging.getLogger(__name__)
+CORE_PARAMETER_DESCRIPTIONS = {
+    "model_id": "Authorized model/App route from list_models or list_scientific_models; not a download URL.",
+    "protocol": "Model protocol (e.g. native or openai-chat); omit in get_model_schema to list all its contracts.",
+    "payload": "Compatibility envelope: inputs from get_model_schema. Prefer the named tool's explicit fields.",
+    "request": "Batch run envelope from get_model_schema, with finalized input_manifest and model parameters.",
+    "operation_id": "UUID returned by submission. Reuse it for status, result and cancellation; never invent an ID.",
+    "artifact_id": "UUID of an authorized finalized input or published result artifact, not a filename or storage URL.",
+    "upload_id": "UUID returned by begin_scientific_artifact_upload, paired with that reservation's operation_id.",
+    "idempotency_key": "Reuse the same key when retrying the same submission/upload to avoid duplicate work.",
+    "wait_seconds": "Seconds to wait after admission (0 returns immediately); poll the returned operation thereafter.",
+    "sha256": "Lowercase hexadecimal SHA-256 of the exact prepared upload bytes, including compression if present.",
+    "size_bytes": "Exact size in bytes of the prepared upload, not the base64 string length or uncompressed size.",
+    "media_type": "MIME type of the input artifact (for example application/json for a manifest).",
+    "compression": "Compression of the uploaded bytes; use the supported upload format or null for uncompressed input.",
+    "content_base64": "Base64 of the entire reserved artifact; decoded byte size and SHA-256 must match reservation.",
+    "after_sequence": "Return events strictly after this sequence number; use 0 for the initial page.",
+    "limit": "Maximum number of lifecycle events in this page; continue from the last returned sequence.",
+}
 
 
 def _tool_result(payload: dict[str, Any]) -> CallToolResult:
@@ -316,6 +342,17 @@ class MCPAuthorizationMiddleware:
                 name = str((ctx.params or {}).get("name", ""))
                 if name not in CORE_TOOLS and name not in _model_tool_names(self.runtime, principal):
                     raise MCPError(code=INVALID_PARAMS, message="tool is outside token policy")
+                # Typed validation runs before the admission handler. Attribute
+                # rejected inputs too, without relying on a caller's model_id.
+                for model in self.runtime.registry.allowed_for_principal(principal, surface="mcp"):
+                    if name in _protocol_tool_names(model):
+                        observe_request_metadata(model_id=model.id)
+                        break
+                else:
+                    for profile in _scientific_tool_profiles(self.runtime, principal):
+                        if name == profile.mcp_tool_name:
+                            observe_request_metadata(model_id=profile.model_id)
+                            break
             result = await call_next(ctx)
             if ctx.method == "tools/call":
                 observe_mcp_result(result)
@@ -398,7 +435,14 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         "fs2-serve",
         title="fs2-serve model gateway",
         description="Authorized model and operation tools backed by durable fs2-serve admission.",
-        instructions="Results remain encrypted until TTL or explicit acknowledgement.",
+        instructions=(
+            "Prefer the named model tools. Their inputSchema describes the selected runtime's actual inputs; "
+            "get_model_schema provides examples and sources. NVIDIA BioNeMo skills can guide a workflow, but "
+            "NIM REST examples may require different fields or unsupported features. Do not silently omit "
+            "scientific inputs. Submissions return durable operations/runs, not immediate model predictions: "
+            "poll get_operation/get_scientific_status, then fetch results or artifacts with the corresponding "
+            "result tools. Results remain encrypted until TTL or explicit acknowledgement."
+        ),
         version="0.1.0",
         auth=AuthSettings(
             issuer_url=AnyHttpUrl(runtime.settings.authorization_server_url),
@@ -416,6 +460,11 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
     )
 
     async def list_models() -> dict[str, Any]:
+        """Discover serving models this API key may use, including protocols and active runtime identity.
+
+        Call get_model_schema for exact inputs/examples before invoking a named
+        model tool. This is authorization-aware discovery, not a readiness probe.
+        """
         principal = _principal()
         principal.require(Scope.CATALOG_READ)
         pool_classes = await _pool_accelerator_classes(runtime)
@@ -428,13 +477,75 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         }
 
     async def list_scientific_models() -> dict[str, Any]:
-        """List only scientific profiles this exact caller can submit."""
+        """Discover authorized batch-model profiles, operations, service classes and artifact contracts.
+
+        These are hosted Apps with durable batch execution. Use get_model_schema
+        for model-specific parameters and the upload tools for caller-owned inputs.
+        """
 
         principal = _principal()
         if runtime.scientific_batches is None:
             principal.require(Scope.CATALOG_READ)
             return {"object": "list", "data": []}
         return runtime.scientific_batches.discover(principal, surface="mcp")
+
+    def contract_view(contract: ModelInputContract, name: str, *, scientific: bool) -> dict[str, Any]:
+        return {
+            "tool_name": name,
+            "protocol": contract.protocol,
+            "input_schema": tool_input_schema(
+                contract.input_schema, scientific=scientific, max_wait_seconds=runtime.settings.max_sync_wait_seconds
+            ),
+            "examples": list(contract.examples),
+            "source_refs": list(contract.source_refs),
+            "model_ref": contract.model_ref,
+        }
+
+    async def get_model_schema(model_id: str, protocol: str | None = None) -> dict[str, Any]:
+        """Get concrete fields, constraints and examples for an authorized model's selected runtime.
+
+        The schema is for the named tool's flat arguments, not an opaque payload.
+        Scientific artifact examples must be uploaded/finalized by the caller.
+        """
+        principal = _principal()
+        principal.require(Scope.CATALOG_READ)
+        await runtime.revalidate_routes()
+        for model in runtime.registry.allowed_for_principal(principal, surface="mcp"):
+            if model.id != model_id:
+                continue
+            protocols = [item for item in model.gateway.protocols if protocol is None or protocol == item]
+            if not protocols:
+                break
+            try:
+                contracts = [
+                    contract_view(
+                        contract_for(model, item),
+                        f"{model.binding.mcp_tool_name}_{item.replace('-', '_')}",
+                        scientific=False,
+                    )
+                    for item in protocols
+                ]
+            except InputContractUnavailable:
+                raise MCPError(
+                    code=INVALID_PARAMS,
+                    message="The selected runtime has no published input contract; contact the platform operator.",
+                ) from None
+            return {
+                "model_id": model.id,
+                "contracts": contracts,
+                "active_runtime": _model_view(model)["active_runtime"],
+            }
+        if runtime.scientific_batches is not None and protocol in {None, "scientific-batch-v1"}:
+            for discovered in _scientific_tool_profiles(runtime, principal):
+                if discovered.model_id == model_id:
+                    catalog = runtime.scientific_batches.profiles
+                    profile = catalog.get(model_id)
+                    contract = scientific_contract_for(profile, catalog=catalog)
+                    return {
+                        "model_id": model_id,
+                        "contracts": [contract_view(contract, profile.mcp_tool_name, scientific=True)],
+                    }
+        raise MCPError(code=INVALID_PARAMS, message="model or protocol is outside token policy")
 
     async def invoke_model(
         model_id: str,
@@ -446,10 +557,9 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
     ) -> Annotated[CallToolResult, dict[str, Any]]:
         """Invoke any currently authorized model discovered by ``list_models``.
 
-        Model-specific convenience tools are fixed when the MCP process starts.
-        This generic tool resolves the atomic live registry at call time, so a
-        newly added ModelDeployment is immediately usable without restarting
-        every MCP replica.
+        Prefer the named model tools with explicit input schemas. This generic
+        envelope remains available for existing clients. Both routes resolve
+        the live registry and preserve the same durable operation lifecycle.
         """
 
         principal = _principal()
@@ -486,9 +596,20 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         )
 
     async def get_operation(operation_id: UUID) -> dict[str, Any]:
+        """Poll a submitted inference operation's status, timing, model and error metadata.
+
+        This does not submit new work or return the prediction. On completion,
+        use get_operation_result; retain the same operation_id across polls.
+        """
         return (await _metadata(runtime, _principal(), operation_id)).model_dump(mode="json")
 
     async def get_operation_result(operation_id: UUID) -> dict[str, Any]:
+        """Retrieve a completed operation's prediction together with its operation metadata.
+
+        Poll get_operation first: a queued/running operation has no result yet.
+        Scientific runs return their result/artifact publication envelope. Fetch
+        and save needed outputs before acknowledgement or their retention expiry.
+        """
         principal = _principal()
         operation = await _metadata(runtime, principal, operation_id)
         if operation.protocol == "scientific-batch-v1" and runtime.scientific_batches is not None:
@@ -497,6 +618,11 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         return result.model_dump(mode="json")
 
     async def cancel_operation(operation_id: UUID) -> dict[str, Any]:
+        """Request cancellation of an owned serving or batch operation and return its updated state.
+
+        Cancellation is not instantaneous GPU preemption. Poll status to observe
+        the terminal outcome; already completed work is not rerun or undone.
+        """
         principal = _principal()
         operation = await _metadata(runtime, principal, operation_id)
         if operation.protocol == "scientific-batch-v1" and runtime.scientific_batches is not None:
@@ -507,6 +633,12 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         return cancelled.model_dump(mode="json")
 
     async def acknowledge_operation(operation_id: UUID) -> dict[str, Any]:
+        """Acknowledge a terminal operation and purge its stored inference payload/result.
+
+        Save required outputs first: this is not a status poll and removed
+        payloads cannot subsequently be retrieved through operation result tools.
+        Debug request captures have separate operator-managed retention.
+        """
         principal = _principal()
         operation = await _metadata(runtime, principal, operation_id)
         if not operation.status.terminal:
@@ -520,7 +652,14 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         ctx: Context,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        """Submit a canonical scientific-run-request to a qualified profile."""
+        """Submit one durable batch run using the canonical scientific-run-request envelope.
+
+        Prefer the model's named typed tool. For this compatibility envelope,
+        get_model_schema supplies the selected profile's parameters and supported
+        operation/service_class values. Upload/finalize input artifacts first.
+        The response is a run handle, not its scientific output: poll status,
+        retrieve the published result, then download referenced artifacts.
+        """
 
         if runtime.scientific_batches is None:
             raise MCPError(code=INVALID_PARAMS, message="scientific batch submission is unavailable")
@@ -546,16 +685,32 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         return result
 
     async def get_scientific_status(operation_id: UUID) -> dict[str, Any]:
+        """Poll one batch run's queue/execution state and result-publication readiness.
+
+        Reuse the operation_id returned by submission. Successful execution may
+        precede artifact publication; use get_scientific_result once available.
+        """
         if runtime.scientific_batches is None:
             raise MCPError(code=INVALID_PARAMS, message="scientific batch service is unavailable")
         return await runtime.scientific_batches.status(operation_id, principal=_principal())
 
     async def cancel_scientific_run(operation_id: UUID) -> dict[str, Any]:
+        """Request cancellation of an owned queued/running batch run and return its state.
+
+        Poll get_scientific_status for the final outcome. Cancellation does not
+        remove already published artifacts or create a replacement run.
+        """
         if runtime.scientific_batches is None:
             raise MCPError(code=INVALID_PARAMS, message="scientific batch service is unavailable")
         return await runtime.scientific_batches.cancel(operation_id, principal=_principal())
 
     async def list_scientific_events(operation_id: UUID, after_sequence: int = 0, limit: int = 1000) -> dict[str, Any]:
+        """Read ordered lifecycle events for one batch run, with sequence-based pagination.
+
+        Start with after_sequence=0, then pass the last observed sequence to
+        retrieve later events without duplicates. Events describe progress and
+        failures; scientific results/artifact bytes use separate result tools.
+        """
         if runtime.scientific_batches is None:
             raise MCPError(code=INVALID_PARAMS, message="scientific batch service is unavailable")
         return await runtime.scientific_batches.events(
@@ -566,11 +721,22 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         )
 
     async def get_scientific_artifact(artifact_id: UUID) -> dict[str, Any]:
+        """Get an authorized artifact's metadata, digest, byte size and media type.
+
+        This does not download its contents. Use read_scientific_artifact_bytes
+        for a small inline result or download_scientific_artifact for a handle.
+        """
         if runtime.scientific_batches is None:
             raise MCPError(code=INVALID_PARAMS, message="scientific artifact service is unavailable")
         return dict(await runtime.scientific_batches.artifact(artifact_id, principal=_principal()))
 
     async def get_scientific_result(operation_id: UUID) -> dict[str, Any]:
+        """Retrieve the published batch-result envelope and its output artifact references.
+
+        Poll get_scientific_status until execution and publication are ready.
+        A returned artifact pointer is not file content; use artifact read or
+        download tools and verify the published SHA-256 against downloaded bytes.
+        """
         if runtime.scientific_batches is None:
             raise MCPError(code=INVALID_PARAMS, message="scientific result service is unavailable")
         result = dict(await runtime.scientific_batches.result(operation_id, principal=_principal()))
@@ -586,7 +752,13 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         compression: str | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        """Create a write-once customer upload handle for a scientific input."""
+        """Reserve a caller-owned, write-once input upload for a specific batch model.
+
+        Supply the SHA-256, exact byte size, MIME type and optional compression
+        of bytes you already prepared. Returns operation_id/upload_id and an
+        upload handle. Write those same bytes, then finalize before referencing
+        the artifact from a manifest or model submission. This does not run a model.
+        """
 
         if runtime.scientific_input_uploads is None:
             raise MCPError(code=INVALID_PARAMS, message="scientific input upload is unavailable")
@@ -644,7 +816,12 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         return receipt.model_dump(mode="json")
 
     async def finalize_scientific_artifact_upload(operation_id: UUID, upload_id: UUID) -> dict[str, Any]:
-        """Verify uploaded bytes and publish their immutable artifact pointer."""
+        """Finalize a reserved input upload after all bytes have been written.
+
+        Uses operation_id/upload_id from begin_scientific_artifact_upload,
+        verifies the reserved digest/size, and returns immutable artifact metadata
+        for input_manifest or nested manifest references. This is not run submission.
+        """
 
         if runtime.scientific_input_uploads is None:
             raise MCPError(code=INVALID_PARAMS, message="scientific input upload is unavailable")
@@ -656,7 +833,12 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         return result.model_dump(mode="json", exclude_none=True)
 
     async def download_scientific_artifact(artifact_id: UUID) -> dict[str, Any]:
-        """Issue a short-lived tenant-authorized result or input download handle."""
+        """Issue a short-lived authorized download handle for an input or result artifact.
+
+        Follow the returned method, URL and headers before expires_at, then
+        verify the artifact SHA-256 and byte count. The handle is not the content;
+        read_scientific_artifact_bytes returns small files directly through MCP.
+        """
 
         principal = _principal()
         principal.require(Scope.OPERATIONS_RESULT)
@@ -704,6 +886,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
     for function in (
         list_models,
         list_scientific_models,
+        get_model_schema,
         invoke_model,
         get_operation,
         get_operation_result,
@@ -722,6 +905,15 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         read_scientific_artifact_bytes,
     ):
         server.add_tool(function, name=function.__name__, meta={"fs2_core": True})
+        descriptions = CORE_PARAMETER_DESCRIPTIONS
+        if function.__name__ in {"put_scientific_artifact_bytes", "finalize_scientific_artifact_upload"}:
+            descriptions = {
+                **descriptions,
+                "operation_id": (
+                    "Upload reservation operation UUID from begin_scientific_artifact_upload, not a model run."
+                ),
+            }
+        describe_tool_parameters(server, function.__name__, descriptions)
 
     def named_handler(tool_name: str) -> Callable[..., Awaitable[CallToolResult]]:
         async def invoke_named_model(
@@ -759,6 +951,45 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         return invoke_named_model
 
     registered_names = set(CORE_TOOLS)
+    registered_contracts: dict[str, str] = {}
+
+    def register_contract(
+        name: str,
+        contract: ModelInputContract,
+        *,
+        handler: Callable[..., Awaitable[Any]],
+        title: str,
+        description: str,
+        meta: dict[str, Any],
+        scientific: bool,
+    ) -> None:
+        # Refresh schemas and provenance as well as handlers after live model
+        # edits. A reused tool name must never advertise a stale runtime DTO.
+        signature = json.dumps([contract.input_schema, meta], sort_keys=True, separators=(",", ":"))
+        if registered_contracts.get(name) == signature:
+            return
+        if name in CORE_TOOLS:
+            raise ValueError("model tool name collides with a core tool")
+        if name in registered_names:
+            server.remove_tool(name)
+        server.add_tool(
+            handler,
+            name=name,
+            title=title,
+            description=(description + " " + contract.input_schema.get("description", "")).strip(),
+            meta={**meta, "fs2_input_contract": "typed-model-v1", "fs2_input_sources": list(contract.source_refs)},
+        )
+        apply_tool_input_contract(
+            server,
+            name,
+            model_id=str(meta["fs2_model_id"]),
+            payload_schema=contract.input_schema,
+            scientific=scientific,
+            max_wait_seconds=runtime.settings.max_sync_wait_seconds,
+            openai=contract.protocol.startswith("openai-"),
+        )
+        registered_names.add(name)
+        registered_contracts[name] = signature
 
     def scientific_handler(tool_name: str) -> Callable[..., Awaitable[dict[str, Any]]]:
         async def submit_named_scientific_run(
@@ -792,12 +1023,21 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                 continue
             for protocol in model.gateway.protocols:
                 name = f"{model.binding.mcp_tool_name}_{protocol.replace('-', '_')}"
-                if name in registered_names:
+                try:
+                    contract = contract_for(model, protocol)
+                except InputContractUnavailable:
+                    # Do not publish an opaque substitute for an unknown DTO.
+                    # Discovery remains available with an explicit schema error.
+                    if name in registered_contracts:
+                        server.remove_tool(name)
+                        registered_names.discard(name)
+                        registered_contracts.pop(name)
                     continue
                 model_view = _model_view(model)
-                server.add_tool(
-                    named_handler(name),
-                    name=name,
+                register_contract(
+                    name,
+                    contract,
+                    handler=named_handler(name),
                     title=f"{model.gateway.display_name} ({protocol})",
                     description=model.binding.mcp_description,
                     meta={
@@ -807,8 +1047,8 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                         "fs2_active_runtime": model_view["active_runtime"],
                         "fs2_qualification": model_view["qualification"],
                     },
+                    scientific=False,
                 )
-                registered_names.add(name)
         if runtime.scientific_batches is not None:
             for profile in runtime.scientific_batches.profiles.list():
                 if len(registered_names) >= 4096:
@@ -816,11 +1056,18 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                 if not profile.mcp_discoverable or not profile.mcp_invocable:
                     continue
                 name = profile.mcp_tool_name
-                if name in registered_names:
+                try:
+                    contract = scientific_contract_for(profile, catalog=runtime.scientific_batches.profiles)
+                except InputContractUnavailable:
+                    if name in registered_contracts:
+                        server.remove_tool(name)
+                        registered_names.discard(name)
+                        registered_contracts.pop(name)
                     continue
-                server.add_tool(
-                    scientific_handler(name),
-                    name=name,
+                register_contract(
+                    name,
+                    contract,
+                    handler=scientific_handler(name),
                     title=profile.display_name,
                     description=profile.mcp_description,
                     meta={
@@ -829,8 +1076,8 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                         "fs2_model_revision": profile.model_revision,
                         "fs2_runtime_image_digest": profile.runtime_image_digest,
                     },
+                    scientific=True,
                 )
-                registered_names.add(name)
 
     authorization.set_tool_sync(sync_model_tools)
     sync_model_tools()

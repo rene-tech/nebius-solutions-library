@@ -1,0 +1,288 @@
+{
+  "bindcraft": {
+    "source": "k8s-inference/models/cancer-immunotherapy/images/bindcraft-native/activation/public-request.json",
+    "request": {
+      "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "operation": "design-binder",
+      "service_class": "customer-batch",
+      "input_manifest": {
+        "artifact_id": "manifest.bindcraft.pdl1.01",
+        "sha256": "9b652d670a286044c42556183906be45ca2fb1ee5af36919f724d642b7e22e00",
+        "size_bytes": 391,
+        "media_type": "application/vnd.fs2.scientific-manifest+json",
+        "compression": "none"
+      },
+      "parameters": {
+        "target": {
+          "chain": "A",
+          "hotspot_residues": [
+            37,
+            39,
+            98,
+            104,
+            106
+          ]
+        },
+        "binder_length": {
+          "minimum": 67,
+          "maximum": 67
+        },
+        "designs": 1,
+        "mpnn_lane": "soluble",
+        "seed": 912083
+      },
+      "client_context": {
+        "batch_id": "batch.primary-activation.bindcraft.01",
+        "correlation_id": "primary-activation.bindcraft.01",
+        "display_name": "BindCraft PD-L1 activation canary"
+      }
+    }
+  },
+  "boltzgen": {
+    "source": "k8s-inference/models/cancer-immunotherapy/runtime-images/boltzgen/activation/public-request.json",
+    "request": {
+      "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "operation": "design-binders",
+      "service_class": "customer-batch",
+      "input_manifest": {
+        "artifact_id": "manifest.boltzgen.pdl1.01",
+        "sha256": "d3fc05a26579932874e3f4ffb9babe63468bc85d6c475d172e7fa2b68370253a",
+        "size_bytes": 403,
+        "media_type": "application/vnd.fs2.scientific-manifest+json",
+        "compression": "none"
+      },
+      "parameters": {
+        "protocol": "protein-anything",
+        "batches": [
+          {
+            "shard_id": "pdl1-face",
+            "num_designs": 20,
+            "budget": 1,
+            "reuse_completed": false
+          }
+        ]
+      },
+      "client_context": {
+        "batch_id": "batch.primary-activation.boltzgen.01",
+        "correlation_id": "primary-activation.boltzgen.01",
+        "display_name": "BoltzGen PD-L1 bounded public acceptance"
+      }
+    }
+  },
+  "mosaic": {
+    "source": "k8s-inference/models/cancer-immunotherapy/runtime-images/mosaic/activation/public-request.json",
+    "request": {
+      "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "operation": "design-binder",
+      "service_class": "customer-batch",
+      "input_manifest": {
+        "artifact_id": "manifest.mosaic.minibinder.01",
+        "sha256": "23d109248070644bbe72f68a9d82ed7e8b4ff763913030ea6206366947795ca7",
+        "size_bytes": 398,
+        "media_type": "application/vnd.fs2.scientific-manifest+json",
+        "compression": "none"
+      },
+      "parameters": {
+        "schema": "fs2-serve.nebius.ai/mosaic-boltz2-proteinmpnn-parameters/v1",
+        "shard_count": 1,
+        "base_seed": 7300,
+        "hotspots": [
+          3,
+          7
+        ],
+        "binder_length": 40,
+        "optimizer_steps": 20
+      },
+      "client_context": {
+        "batch_id": "batch.primary-activation.mosaic.01",
+        "correlation_id": "primary-activation.mosaic.01",
+        "display_name": "Mosaic primary activation canary"
+      }
+    }
+  },
+  "proteina-complexa": {
+    "source": "k8s-inference/models/cancer-immunotherapy/runtime-images/proteina-complexa/activation/public-request.json",
+    "request": {
+      "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "operation": "design-binders",
+      "service_class": "customer-batch",
+      "input_manifest": {
+        "artifact_id": "manifest.proteina-complexa.pdl1.01",
+        "sha256": "9e918d1d57d8e0d35ed078fdbd2e22b18ecd58e61b1c7a9ab773d671a5b8d218",
+        "size_bytes": 426,
+        "media_type": "application/vnd.fs2.scientific-manifest+json",
+        "compression": "none"
+      },
+      "parameters": {
+        "variant": "protein-target",
+        "target_id": "02_PDL1",
+        "run_name": "pdl1-primary-activation",
+        "seed": 3,
+        "num_samples": 2,
+        "diffusion_steps": 25
+      },
+      "client_context": {
+        "batch_id": "batch.primary-activation.proteina-complexa.01",
+        "correlation_id": "primary-activation.proteina-complexa.01",
+        "display_name": "Proteina-Complexa PD-L1 activation canary"
+      }
+    }
+  },
+  "rfdiffusion": {
+    "source": "k8s-inference/models/cancer-immunotherapy/runtime-images/rfdiffusion/activation/public-request.json",
+    "request": {
+      "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "operation": "design-backbone",
+      "service_class": "customer-batch",
+      "input_manifest": {
+        "artifact_id": "manifest.rfdiffusion.activation.01",
+        "sha256": "3be62b4a3cf10dfa0567f96e8cbae36b0ef4dfb600d994f114238dfd9020c532",
+        "size_bytes": 411,
+        "media_type": "application/vnd.fs2.scientific-manifest+json",
+        "compression": "none"
+      },
+      "parameters": {
+        "schema": "fs2-serve.nebius.ai/rfdiffusion-parameters/v1",
+        "operation": "design-backbone",
+        "contigs": [
+          "76-76"
+        ],
+        "num_designs": 1,
+        "seed": 8100,
+        "diffuser_T": 50
+      },
+      "client_context": {
+        "batch_id": "batch.primary-activation.rfdiffusion.01",
+        "correlation_id": "primary-activation.rfdiffusion.01",
+        "display_name": "RFdiffusion backbone activation canary"
+      }
+    }
+  },
+  "alphafold3": {
+    "source": "k8s-inference/models/structure/batch-adapters/alphafold3/activation/public-request.json",
+    "request": {
+      "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "operation": "predict-complex-structure",
+      "service_class": "customer-batch",
+      "input_manifest": {
+        "artifact_id": "fixture.alphafold3.acceptance-manifest.v1",
+        "sha256": "b95539e48b80b8f919b378c4cbc07e8383bd82b19edb143ea131cef9e62d7823",
+        "size_bytes": 418,
+        "media_type": "application/vnd.fs2.scientific-manifest+json",
+        "compression": "none"
+      },
+      "parameters": {
+        "input_mode": "raw"
+      },
+      "client_context": {
+        "batch_id": "acceptance.alphafold3.h100.v1",
+        "correlation_id": "secondary-fleet.h100.acceptance",
+        "display_name": "AlphaFold 3 single-chain academic acceptance canary"
+      }
+    }
+  },
+  "esmfold2": {
+    "source": "k8s-inference/models/structure/batch-adapters/esmfold2/activation/public-request.json",
+    "request": {
+      "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "operation": "predict-structure",
+      "service_class": "customer-batch",
+      "input_manifest": {
+        "artifact_id": "fixture.esmfold2.acceptance-manifest.v1",
+        "sha256": "2670f4d5dd888e92e24feaad4f0663f9ffdbf2b12aa8d0e4c4e25e24c3efe260",
+        "size_bytes": 414,
+        "media_type": "application/vnd.fs2.scientific-manifest+json",
+        "compression": "none"
+      },
+      "parameters": {
+        "sequence": "MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFP",
+        "mode": "single-sequence",
+        "seed": 101
+      },
+      "client_context": {
+        "batch_id": "acceptance.esmfold2.h100.v1",
+        "correlation_id": "secondary-fleet.h100.acceptance",
+        "display_name": "ESMFold2 single-sequence acceptance canary"
+      }
+    }
+  },
+  "esmfold2-fast": {
+    "source": "k8s-inference/models/structure/batch-adapters/esmfold2-fast/activation/public-request.json",
+    "request": {
+      "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "operation": "predict-protein-structure",
+      "service_class": "customer-batch",
+      "input_manifest": {
+        "artifact_id": "fixture.esmfold2-fast.acceptance-manifest.v1",
+        "sha256": "d3041fb80a0f2aef8ef453c5f43771b215d9e3dbf91a4587666898ff846e42b6",
+        "size_bytes": 434,
+        "media_type": "application/vnd.fs2.scientific-manifest+json",
+        "compression": "none"
+      },
+      "parameters": {
+        "sequence": "MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFP",
+        "mode": "single-sequence",
+        "seed": 101
+      },
+      "client_context": {
+        "batch_id": "acceptance.esmfold2-fast.h100.v1",
+        "correlation_id": "secondary-fleet.h100.acceptance",
+        "display_name": "ESMFold2-Fast single-sequence acceptance canary"
+      }
+    }
+  },
+  "openfold3-openbind": {
+    "source": "k8s-inference/models/structure/batch-adapters/openfold3/activation/public-request.json",
+    "request": {
+      "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "operation": "predict-complex-structure",
+      "service_class": "customer-batch",
+      "input_manifest": {
+        "artifact_id": "fixture.openfold3-openbind.acceptance-manifest.v1",
+        "sha256": "0f4fc572b0ebc703b8105923551ff875597acd62fd5d391151c3e60df48eb811",
+        "size_bytes": 433,
+        "media_type": "application/vnd.fs2.scientific-manifest+json",
+        "compression": "none"
+      },
+      "parameters": {
+        "model_seeds": [
+          101
+        ],
+        "msa_mode": "none"
+      },
+      "client_context": {
+        "batch_id": "acceptance.openfold3-openbind.h100.v1",
+        "correlation_id": "secondary-fleet.h100.acceptance",
+        "display_name": "OpenFold3 OpenBind single-chain acceptance canary"
+      }
+    }
+  },
+  "protenix-v2": {
+    "source": "k8s-inference/models/structure/batch-adapters/protenix-v2/activation/public-request.json",
+    "request": {
+      "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "operation": "predict-complex-structure",
+      "service_class": "customer-batch",
+      "input_manifest": {
+        "artifact_id": "fixture.protenix-v2.acceptance-manifest.v1",
+        "sha256": "0ceb0f6fb5589d0ef97e95da4d0026047fbcd39ad877dd88aceb654a92bbdb6c",
+        "size_bytes": 417,
+        "media_type": "application/vnd.fs2.scientific-manifest+json",
+        "compression": "none"
+      },
+      "parameters": {
+        "checkpoint": "protenix-v2",
+        "msa_mode": "none",
+        "sample_count": 1,
+        "model_seeds": [
+          101
+        ]
+      },
+      "client_context": {
+        "batch_id": "acceptance.protenix-v2.h100.v1",
+        "correlation_id": "secondary-fleet.h100.acceptance",
+        "display_name": "Protenix v2 single-chain acceptance canary"
+      }
+    }
+  }
+}

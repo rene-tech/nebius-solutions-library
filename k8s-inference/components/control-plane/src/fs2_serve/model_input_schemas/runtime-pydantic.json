@@ -1,0 +1,500 @@
+{
+  "boltz2": {
+    "source": "k8s-inference/models/bionemo/boltz2/server.py",
+    "schema": {
+      "$defs": {
+        "A3M": {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "maxLength": 33554432,
+              "minLength": 3,
+              "title": "Alignment",
+              "type": "string"
+            },
+            "format": {
+              "const": "a3m",
+              "default": "a3m",
+              "title": "Format",
+              "type": "string"
+            },
+            "rank": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Rank",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "alignment"
+          ],
+          "title": "A3M",
+          "type": "object"
+        },
+        "MSA": {
+          "additionalProperties": false,
+          "properties": {
+            "msa_search": {
+              "$ref": "#/$defs/MSASearch"
+            }
+          },
+          "required": [
+            "msa_search"
+          ],
+          "title": "MSA",
+          "type": "object"
+        },
+        "MSASearch": {
+          "additionalProperties": false,
+          "properties": {
+            "a3m": {
+              "$ref": "#/$defs/A3M"
+            }
+          },
+          "required": [
+            "a3m"
+          ],
+          "title": "MSASearch",
+          "type": "object"
+        },
+        "Polymer": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "maxLength": 8,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9]+$",
+              "title": "Id",
+              "type": "string"
+            },
+            "molecule_type": {
+              "const": "protein",
+              "title": "Molecule Type",
+              "type": "string"
+            },
+            "sequence": {
+              "maxLength": 2048,
+              "minLength": 6,
+              "title": "Sequence",
+              "type": "string"
+            },
+            "msa": {
+              "$ref": "#/$defs/MSA"
+            }
+          },
+          "required": [
+            "id",
+            "molecule_type",
+            "sequence",
+            "msa"
+          ],
+          "title": "Polymer",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "polymers": {
+          "items": {
+            "$ref": "#/$defs/Polymer"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Polymers",
+          "type": "array"
+        },
+        "recycling_steps": {
+          "default": 3,
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Recycling Steps",
+          "type": "integer"
+        },
+        "sampling_steps": {
+          "default": 200,
+          "maximum": 500,
+          "minimum": 1,
+          "title": "Sampling Steps",
+          "type": "integer"
+        },
+        "diffusion_samples": {
+          "default": 1,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Diffusion Samples",
+          "type": "integer"
+        },
+        "output_format": {
+          "const": "mmcif",
+          "default": "mmcif",
+          "title": "Output Format",
+          "type": "string"
+        }
+      },
+      "required": [
+        "polymers"
+      ],
+      "title": "PredictRequest",
+      "type": "object"
+    }
+  },
+  "genmol": {
+    "source": "k8s-inference/models/bionemo/genmol/server.py",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "smiles": {
+          "title": "Smiles",
+          "type": "string"
+        },
+        "num_molecules": {
+          "default": 1,
+          "maximum": 16,
+          "minimum": 1,
+          "title": "Num Molecules",
+          "type": "integer"
+        },
+        "scoring": {
+          "default": "QED",
+          "title": "Scoring",
+          "type": "string"
+        },
+        "temperature": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": 1,
+          "title": "Temperature"
+        },
+        "noise": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": 1,
+          "title": "Noise"
+        },
+        "step_size": {
+          "default": 1,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Step Size",
+          "type": "integer"
+        },
+        "unique": {
+          "default": false,
+          "title": "Unique",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "smiles"
+      ],
+      "title": "GenerateRequest",
+      "type": "object"
+    }
+  },
+  "molmim": {
+    "source": "k8s-inference/models/bionemo/molmim/server.py",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "smi": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Smi",
+          "type": "string"
+        },
+        "algorithm": {
+          "const": "CMA-ES",
+          "default": "CMA-ES",
+          "title": "Algorithm",
+          "type": "string"
+        },
+        "num_molecules": {
+          "default": 1,
+          "maximum": 16,
+          "minimum": 1,
+          "title": "Num Molecules",
+          "type": "integer"
+        },
+        "property_name": {
+          "const": "QED",
+          "default": "QED",
+          "title": "Property Name",
+          "type": "string"
+        },
+        "minimize": {
+          "default": false,
+          "title": "Minimize",
+          "type": "boolean"
+        },
+        "min_similarity": {
+          "default": 0.3,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Min Similarity",
+          "type": "number"
+        },
+        "particles": {
+          "default": 2,
+          "maximum": 32,
+          "minimum": 1,
+          "title": "Particles",
+          "type": "integer"
+        },
+        "iterations": {
+          "default": 1,
+          "maximum": 16,
+          "minimum": 1,
+          "title": "Iterations",
+          "type": "integer"
+        },
+        "radius": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "maximum": 10,
+          "title": "Radius",
+          "type": "number"
+        }
+      },
+      "required": [
+        "smi"
+      ],
+      "title": "GenerateRequest",
+      "type": "object"
+    }
+  },
+  "msa-search-pdb70": {
+    "source": "k8s-inference/models/bionemo/msa-search-pdb70/local_server.py",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence": {
+          "maxLength": 4096,
+          "minLength": 6,
+          "title": "Sequence",
+          "type": "string"
+        },
+        "databases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Databases",
+          "type": "array"
+        },
+        "max_msa_sequences": {
+          "default": 500,
+          "maximum": 5000,
+          "minimum": 1,
+          "title": "Max Msa Sequences",
+          "type": "integer"
+        },
+        "output_alignment_formats": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Output Alignment Formats",
+          "type": "array"
+        }
+      },
+      "required": [
+        "sequence",
+        "databases",
+        "output_alignment_formats"
+      ],
+      "title": "SearchRequest",
+      "type": "object"
+    }
+  },
+  "altumage": {
+    "source": "k8s-inference/models/aging/contracts.py",
+    "schema": {
+      "$defs": {
+        "MethylationSample": {
+          "additionalProperties": false,
+          "properties": {
+            "sample_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Sample Id",
+              "type": "string"
+            },
+            "beta_values": {
+              "items": {
+                "anyOf": [
+                  {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "maxItems": 20318,
+              "minItems": 20318,
+              "title": "Beta Values",
+              "type": "array"
+            }
+          },
+          "required": [
+            "sample_id",
+            "beta_values"
+          ],
+          "title": "MethylationSample",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "cpg_sites": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20318,
+          "minItems": 20318,
+          "title": "Cpg Sites",
+          "type": "array"
+        },
+        "samples": {
+          "items": {
+            "$ref": "#/$defs/MethylationSample"
+          },
+          "maxItems": 128,
+          "minItems": 1,
+          "title": "Samples",
+          "type": "array"
+        },
+        "missing_values": {
+          "default": "error",
+          "enum": [
+            "error",
+            "reference_median"
+          ],
+          "title": "Missing Values",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cpg_sites",
+        "samples"
+      ],
+      "title": "AltumAgeRequest",
+      "type": "object"
+    }
+  },
+  "phenoage": {
+    "source": "k8s-inference/models/aging/contracts.py",
+    "schema": {
+      "$defs": {
+        "ClinicalSample": {
+          "additionalProperties": false,
+          "properties": {
+            "sample_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Sample Id",
+              "type": "string"
+            },
+            "age_years": {
+              "minimum": 0,
+              "title": "Age Years",
+              "type": "number"
+            },
+            "albumin_g_l": {
+              "exclusiveMinimum": 0,
+              "title": "Albumin G L",
+              "type": "number"
+            },
+            "creatinine_umol_l": {
+              "exclusiveMinimum": 0,
+              "title": "Creatinine Umol L",
+              "type": "number"
+            },
+            "glucose_mmol_l": {
+              "exclusiveMinimum": 0,
+              "title": "Glucose Mmol L",
+              "type": "number"
+            },
+            "c_reactive_protein_mg_dl": {
+              "description": "Raw CRP, not log(CRP); mg/dL, not mg/L.",
+              "exclusiveMinimum": 0,
+              "title": "C Reactive Protein Mg Dl",
+              "type": "number"
+            },
+            "lymphocyte_percent": {
+              "maximum": 100,
+              "minimum": 0,
+              "title": "Lymphocyte Percent",
+              "type": "number"
+            },
+            "mean_cell_volume_fl": {
+              "exclusiveMinimum": 0,
+              "title": "Mean Cell Volume Fl",
+              "type": "number"
+            },
+            "red_cell_distribution_width_percent": {
+              "maximum": 100,
+              "minimum": 0,
+              "title": "Red Cell Distribution Width Percent",
+              "type": "number"
+            },
+            "alkaline_phosphatase_u_l": {
+              "minimum": 0,
+              "title": "Alkaline Phosphatase U L",
+              "type": "number"
+            },
+            "white_blood_cell_count_10e3_per_ul": {
+              "exclusiveMinimum": 0,
+              "title": "White Blood Cell Count 10E3 Per Ul",
+              "type": "number"
+            }
+          },
+          "required": [
+            "sample_id",
+            "age_years",
+            "albumin_g_l",
+            "creatinine_umol_l",
+            "glucose_mmol_l",
+            "c_reactive_protein_mg_dl",
+            "lymphocyte_percent",
+            "mean_cell_volume_fl",
+            "red_cell_distribution_width_percent",
+            "alkaline_phosphatase_u_l",
+            "white_blood_cell_count_10e3_per_ul"
+          ],
+          "title": "ClinicalSample",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "samples": {
+          "items": {
+            "$ref": "#/$defs/ClinicalSample"
+          },
+          "maxItems": 512,
+          "minItems": 1,
+          "title": "Samples",
+          "type": "array"
+        }
+      },
+      "required": [
+        "samples"
+      ],
+      "title": "ClinicalRequest",
+      "type": "object"
+    }
+  }
+}

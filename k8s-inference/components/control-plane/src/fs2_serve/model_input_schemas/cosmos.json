@@ -1,0 +1,153 @@
+{
+  "source": "k8s-inference/models/general-media/k8s/cosmos3-nano.yaml#data.adapter.py",
+  "image": {
+    "additionalProperties": false,
+    "properties": {
+      "model": {
+        "const": "nvidia/Cosmos3-Nano@7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+        "default": "nvidia/Cosmos3-Nano@7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+        "title": "Model",
+        "type": "string"
+      },
+      "prompt": {
+        "maxLength": 4096,
+        "minLength": 1,
+        "title": "Prompt",
+        "type": "string"
+      },
+      "negative_prompt": {
+        "default": "",
+        "maxLength": 4096,
+        "title": "Negative Prompt",
+        "type": "string"
+      },
+      "seed": {
+        "default": 0,
+        "maximum": 4294967295,
+        "minimum": 0,
+        "title": "Seed",
+        "type": "integer"
+      },
+      "num_inference_steps": {
+        "default": 30,
+        "maximum": 50,
+        "minimum": 1,
+        "title": "Num Inference Steps",
+        "type": "integer"
+      },
+      "guidance_scale": {
+        "default": 7,
+        "maximum": 20,
+        "minimum": 0,
+        "title": "Guidance Scale",
+        "type": "number"
+      },
+      "mode": {
+        "const": "text-to-image",
+        "title": "Mode",
+        "type": "string"
+      },
+      "size": {
+        "default": "512x512",
+        "maxLength": 9,
+        "minLength": 7,
+        "title": "Size",
+        "type": "string"
+      },
+      "output_format": {
+        "const": "png",
+        "default": "png",
+        "title": "Output Format",
+        "type": "string"
+      }
+    },
+    "required": [
+      "prompt",
+      "mode"
+    ],
+    "title": "TextToImageRequest",
+    "type": "object"
+  },
+  "video": {
+    "additionalProperties": false,
+    "properties": {
+      "model": {
+        "const": "nvidia/Cosmos3-Nano@7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+        "default": "nvidia/Cosmos3-Nano@7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+        "title": "Model",
+        "type": "string"
+      },
+      "prompt": {
+        "maxLength": 4096,
+        "minLength": 1,
+        "title": "Prompt",
+        "type": "string"
+      },
+      "negative_prompt": {
+        "default": "",
+        "maxLength": 4096,
+        "title": "Negative Prompt",
+        "type": "string"
+      },
+      "seed": {
+        "default": 0,
+        "maximum": 4294967295,
+        "minimum": 0,
+        "title": "Seed",
+        "type": "integer"
+      },
+      "num_inference_steps": {
+        "default": 30,
+        "maximum": 50,
+        "minimum": 1,
+        "title": "Num Inference Steps",
+        "type": "integer"
+      },
+      "guidance_scale": {
+        "default": 7,
+        "maximum": 20,
+        "minimum": 0,
+        "title": "Guidance Scale",
+        "type": "number"
+      },
+      "mode": {
+        "const": "text-to-video",
+        "title": "Mode",
+        "type": "string"
+      },
+      "size": {
+        "default": "448x256",
+        "maxLength": 9,
+        "minLength": 7,
+        "title": "Size",
+        "type": "string"
+      },
+      "num_frames": {
+        "default": 25,
+        "maximum": 400,
+        "minimum": 5,
+        "title": "Num Frames",
+        "type": "integer"
+      },
+      "fps": {
+        "default": 24,
+        "maximum": 30,
+        "minimum": 1,
+        "title": "Fps",
+        "type": "integer"
+      },
+      "output_format": {
+        "const": "mp4",
+        "default": "mp4",
+        "title": "Output Format",
+        "type": "string"
+      }
+    },
+    "required": [
+      "prompt",
+      "mode"
+    ],
+    "title": "TextToVideoRequest",
+    "type": "object"
+  }
+}

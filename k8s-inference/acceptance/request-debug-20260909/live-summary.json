@@ -1,0 +1,426 @@
+{
+  "schema": "fs2-request-debug-public-acceptance/v1",
+  "deployed_source": "88520758f90a7e171abd86a4a94787a6739d6ba7",
+  "control_plane_digest": "sha256:aabc80f6ae713fa70a4850742b4fdd12ba55cd6cb3c2c50ab96d210bf2036bdb",
+  "scope": "logging feature: synthetic public/native upstream and operationless HTTP/MCP captures",
+  "outcome": "passed-after-harness-correction",
+  "first_attempt_clean": false,
+  "distinct_native_operations": 3,
+  "client_replays": 0,
+  "key_mutations": 0,
+  "settings_mutations": 0,
+  "capacity_mutations": 0,
+  "caller": {
+    "tenant_id": "rene",
+    "principal_id": "rene"
+  },
+  "original_failure": {
+    "run_id": "request-debug-r01",
+    "cause": "Verifier used archival predict; selected OpenFold2 discovery advertises predict-structure. Original403 remains failed. No production or authorization change.",
+    "exchange_id": "fc3c8229-ec8d-4688-aa56-cf2c01ba6862"
+  },
+  "runs": [
+    {
+      "run_id": "request-debug-r01",
+      "outcome": "failed",
+      "started_at": "2026-09-09T08:44:48.303486+00:00",
+      "completed_at": "2026-09-09T08:45:09.916977+00:00",
+      "helper_sha256": "d1aa4b4675a1a8a86712aef69b10d7638afb00509a4dfcc5e140af98c2208ef5",
+      "summary_sha256": "2a912a892a39877ce5ce2eeef72c2a117cafe1cb812104f8b54a980174f403a3",
+      "admin_logged_out": true,
+      "cases": [
+        {
+          "app_id": "38aad847-9010-51d0-bed7-bcb404bc755d",
+          "model_id": "phenoage",
+          "name": "phenoage",
+          "operation_id": "f10b7fa1-6758-4fd7-9a46-65d36367ce68",
+          "outcome": "passed",
+          "public_capture": {
+            "auth_redacted": true,
+            "complete_exact_body_capture": true,
+            "correlation_verified": true,
+            "exchange_id": "db57cd9a-76a5-491a-bd94-8c35df9f83b9",
+            "http_status": 202,
+            "owner_verified": true,
+            "request_bytes": 352,
+            "request_id": "bfd6d68f-0f0a-4d9f-a78d-22317fb1a910",
+            "request_sha256": "4f892889d7db468acc9139703e092e0ea6fd0a8e7785a1fc39de2a87b9a3d78e",
+            "response_bytes": 1128,
+            "response_sha256": "8ba7d4cf42acf98c9f253f3f6518da4e49545face1146238b6ce148246e5b17b"
+          },
+          "public_result_http_status": 200,
+          "terminal_status": "succeeded",
+          "transitions": [
+            {
+              "at": "2026-09-09T08:44:50.702366+00:00",
+              "status": "activating"
+            },
+            {
+              "at": "2026-09-09T08:44:53.944435+00:00",
+              "status": "activating"
+            },
+            {
+              "at": "2026-09-09T08:44:57.165893+00:00",
+              "status": "activating"
+            },
+            {
+              "at": "2026-09-09T08:45:00.390464+00:00",
+              "status": "activating"
+            },
+            {
+              "at": "2026-09-09T08:45:03.612444+00:00",
+              "status": "succeeded"
+            }
+          ],
+          "upstream_captures": [
+            {
+              "complete": true,
+              "exchange_id": "18ecc109-356b-44bd-8c91-c5e893bf954b",
+              "http_status": 200,
+              "operation_attempt": 1,
+              "owner_verified": true,
+              "request_sha256": "b15ebdc61742dff7d3293e35a09b2a3207fd39d6e05ef7f881d900b4172b7842",
+              "response_bytes": 382,
+              "response_sha256": "307e58cab82160c38cf546c78059fed4595b1b1818b3a7e820d53b72cb7f95e5",
+              "upstream_attempt": 1
+            }
+          ]
+        },
+        {
+          "app_id": "f9733475-f841-5239-993c-8a91b8be4970",
+          "model_id": "boltz2",
+          "name": "boltz2",
+          "operation_id": "e0073677-68c4-4e7f-bdee-3b33899e197a",
+          "outcome": "passed",
+          "public_capture": {
+            "auth_redacted": true,
+            "complete_exact_body_capture": true,
+            "correlation_verified": true,
+            "exchange_id": "045093c4-e4b8-40ad-b5a4-90d5fde1a253",
+            "http_status": 202,
+            "owner_verified": true,
+            "request_bytes": 36,
+            "request_id": "57281cdc-8d34-47b9-af3f-acd319627779",
+            "request_sha256": "6201047e9f6f600533c58798beba529035bdb4e3c84a97705c8e4d2e6ae0455f",
+            "response_bytes": 1126,
+            "response_sha256": "2bb1395c64177c9e56bfdaa69b97e6991b95ff5ac0d6d64392c0e4633b2d267f"
+          },
+          "public_result_http_status": 409,
+          "terminal_status": "failed",
+          "transitions": [
+            {
+              "at": "2026-09-09T08:45:05.393509+00:00",
+              "status": "activating"
+            },
+            {
+              "at": "2026-09-09T08:45:08.610484+00:00",
+              "status": "failed"
+            }
+          ],
+          "upstream_captures": [
+            {
+              "complete": true,
+              "exchange_id": "49b3d6d9-6973-46a8-9465-c846f8e59599",
+              "http_status": 422,
+              "operation_attempt": 1,
+              "owner_verified": true,
+              "request_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+              "response_bytes": 91,
+              "response_sha256": "b140d3ff3f03be152bc8f2fea7b6ed188b0c1c70edb4245681c7d20c04b34e80",
+              "upstream_attempt": 1
+            }
+          ]
+        }
+      ],
+      "error_code": "unexpected_http_403"
+    },
+    {
+      "run_id": "request-debug-r02",
+      "outcome": "passed",
+      "started_at": "2026-09-09T08:48:18.539954+00:00",
+      "completed_at": "2026-09-09T08:48:30.753998+00:00",
+      "helper_sha256": "b88041334403b1381f2993598eec1eb16c02fc4754751508dfd30643b8cd6923",
+      "summary_sha256": "9056dc31328909c52b9a6b100b5ac7c1a80c80e4919375e966a30bf2bedfa2f5",
+      "admin_logged_out": true,
+      "cases": [
+        {
+          "advertised_operation": "predict-structure",
+          "app_id": "ff44f0a8-c080-5a0a-a079-0acbbffa0694",
+          "model_id": "openfold2",
+          "name": "openfold2",
+          "operation_id": "ecf6d85a-a5a6-4eea-971a-b66f798e4f2b",
+          "outcome": "passed",
+          "public_capture": {
+            "auth_redacted": true,
+            "complete_exact_body_capture": true,
+            "correlation_verified": true,
+            "exchange_id": "a3aea547-3ba7-458e-8c9f-a2a3483c5299",
+            "http_status": 202,
+            "owner_verified": true,
+            "request_bytes": 46,
+            "request_id": "80f51766-b24c-42e8-965d-bc297384400a",
+            "request_sha256": "584c15cbb7bbbfa4b8271de15952e6df73cc748abe9b55e2f2c356357680d6eb",
+            "response_bytes": 1139,
+            "response_sha256": "803fb1eac5c2f7feba0aaa2a36019f4f8573aec467bc9641e106fb76d5e7bfd5"
+          },
+          "public_result_http_status": 409,
+          "terminal_status": "failed",
+          "transitions": [
+            {
+              "at": "2026-09-09T08:48:21.140371+00:00",
+              "status": "running"
+            },
+            {
+              "at": "2026-09-09T08:48:24.388835+00:00",
+              "status": "failed"
+            }
+          ],
+          "upstream_captures": [
+            {
+              "complete": true,
+              "exchange_id": "280d2689-f0e6-402a-91e0-f5eefa5e50dc",
+              "http_status": 400,
+              "operation_attempt": 1,
+              "owner_verified": true,
+              "request_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+              "response_bytes": 78,
+              "response_sha256": "9a99bc9e85760de55e3d0968b9f35ba6362ae64ed30aa275325cd2674fbf4dc6",
+              "upstream_attempt": 1
+            }
+          ]
+        },
+        {
+          "name": "malformed-http",
+          "outcome": "passed",
+          "public_capture": {
+            "auth_redacted": true,
+            "complete_exact_body_capture": true,
+            "correlation_verified": true,
+            "exchange_id": "0308142c-29fa-40cd-bf49-7fa9b66205f8",
+            "http_status": 422,
+            "owner_verified": true,
+            "request_bytes": 37,
+            "request_id": "085cb4d9-a8c3-4305-8d42-0528ecb732d2",
+            "request_sha256": "56381895d7a8226c6039ac3c805fbbac12213c3250a9956caf5e367798052007",
+            "response_bytes": 131,
+            "response_sha256": "38dd8458b6b25207458706bbd1647bd8ca463ccdb4d5a741821e27bd921fc07e"
+          }
+        },
+        {
+          "name": "mcp-list_models",
+          "outcome": "passed",
+          "public_capture": {
+            "auth_redacted": true,
+            "complete_exact_body_capture": true,
+            "correlation_verified": true,
+            "exchange_id": "e7fa99e4-40a1-447c-bb03-6eb96e52c1d7",
+            "http_status": 200,
+            "owner_verified": true,
+            "request_bytes": 276,
+            "request_id": "d78ea119-aa0f-4ad5-adf2-677b93ae6812",
+            "request_sha256": "0d21965a39940536c3977cd3692e8c9eb285ad0812a9350f730eaf74ca32300d",
+            "response_bytes": 33646,
+            "response_sha256": "2709907f478eac4050768bce43cda4c7ac06996eabb452a7054fea8ef36da7c9"
+          }
+        },
+        {
+          "name": "mcp-invoke_model",
+          "outcome": "passed",
+          "public_capture": {
+            "auth_redacted": true,
+            "complete_exact_body_capture": true,
+            "correlation_verified": true,
+            "exchange_id": "879e92ea-c2d6-4ae5-96ce-d10a119ddb53",
+            "http_status": 200,
+            "owner_verified": true,
+            "request_bytes": 345,
+            "request_id": "9a844239-19ca-47fb-a15b-71b8c68b790e",
+            "request_sha256": "ef03c2344dfeb494389424dcacecd5d20a2bceff11ae7cefab579a1e0739a00c",
+            "response_bytes": 593,
+            "response_sha256": "713107e26f5e6026595d8136a6a2e2cd5247f8adfdc38415921f9ed784fd923c"
+          }
+        }
+      ],
+      "error_code": null
+    }
+  ],
+  "capture_manifest": [
+    {
+      "run_id": "request-debug-r01",
+      "file": "boltz2-public.json",
+      "sha256": "3a898e9e9a7c08e06bf7bd1e8bef2dbf0b2d2ee6185f702a48370a39f06e1bc1",
+      "exchange_id": "045093c4-e4b8-40ad-b5a4-90d5fde1a253",
+      "request_id": "57281cdc-8d34-47b9-af3f-acd319627779",
+      "operation_id": "e0073677-68c4-4e7f-bdee-3b33899e197a",
+      "source": "public",
+      "model_id": "boltz2",
+      "mcp_tool": null,
+      "http_status": 202,
+      "operation_attempt": null,
+      "upstream_attempt": null,
+      "complete": true,
+      "request_bytes": 36,
+      "response_bytes": 1126
+    },
+    {
+      "run_id": "request-debug-r01",
+      "file": "boltz2-upstream-0.json",
+      "sha256": "ee9e787b56e3efb563b460e9544b2291cd28e22228fda20f2c65b13d220b65f1",
+      "exchange_id": "49b3d6d9-6973-46a8-9465-c846f8e59599",
+      "request_id": null,
+      "operation_id": "e0073677-68c4-4e7f-bdee-3b33899e197a",
+      "source": "upstream",
+      "model_id": "boltz2",
+      "mcp_tool": null,
+      "http_status": 422,
+      "operation_attempt": 1,
+      "upstream_attempt": 1,
+      "complete": true,
+      "request_bytes": 2,
+      "response_bytes": 91
+    },
+    {
+      "run_id": "request-debug-r01",
+      "file": "openfold2-original-403-public.json",
+      "sha256": "e857e5705bcbf55e04f4bad998b542e8633de9cfca66c614d2eea129b5d338c8",
+      "exchange_id": "fc3c8229-ec8d-4688-aa56-cf2c01ba6862",
+      "request_id": "b812ce61-88af-4b0e-8ba1-06084f1c019e",
+      "operation_id": null,
+      "source": "public",
+      "model_id": "openfold2",
+      "mcp_tool": null,
+      "http_status": 403,
+      "operation_attempt": null,
+      "upstream_attempt": null,
+      "complete": true,
+      "request_bytes": 36,
+      "response_bytes": 82
+    },
+    {
+      "run_id": "request-debug-r01",
+      "file": "phenoage-public.json",
+      "sha256": "b74e056ee0e1825bec523fd041482cee38194fd07a9aa2f9fbc169840d81a6bb",
+      "exchange_id": "db57cd9a-76a5-491a-bd94-8c35df9f83b9",
+      "request_id": "bfd6d68f-0f0a-4d9f-a78d-22317fb1a910",
+      "operation_id": "f10b7fa1-6758-4fd7-9a46-65d36367ce68",
+      "source": "public",
+      "model_id": "phenoage",
+      "mcp_tool": null,
+      "http_status": 202,
+      "operation_attempt": null,
+      "upstream_attempt": null,
+      "complete": true,
+      "request_bytes": 352,
+      "response_bytes": 1128
+    },
+    {
+      "run_id": "request-debug-r01",
+      "file": "phenoage-upstream-0.json",
+      "sha256": "078ea4c201a85db1037d77b8cd1849c0940b009b2ce7e36bc72af762c125ac2a",
+      "exchange_id": "18ecc109-356b-44bd-8c91-c5e893bf954b",
+      "request_id": null,
+      "operation_id": "f10b7fa1-6758-4fd7-9a46-65d36367ce68",
+      "source": "upstream",
+      "model_id": "phenoage",
+      "mcp_tool": null,
+      "http_status": 200,
+      "operation_attempt": 1,
+      "upstream_attempt": 1,
+      "complete": true,
+      "request_bytes": 314,
+      "response_bytes": 382
+    },
+    {
+      "run_id": "request-debug-r02",
+      "file": "malformed-http-public.json",
+      "sha256": "ebd9792c483aa5f846365c474601935f89b777635a6d4ee92b555b1f86b73c6e",
+      "exchange_id": "0308142c-29fa-40cd-bf49-7fa9b66205f8",
+      "request_id": "085cb4d9-a8c3-4305-8d42-0528ecb732d2",
+      "operation_id": null,
+      "source": "public",
+      "model_id": "phenoage",
+      "mcp_tool": null,
+      "http_status": 422,
+      "operation_attempt": null,
+      "upstream_attempt": null,
+      "complete": true,
+      "request_bytes": 37,
+      "response_bytes": 131
+    },
+    {
+      "run_id": "request-debug-r02",
+      "file": "mcp-invoke_model-public.json",
+      "sha256": "29c04e6e942c35cd1ff3decc03905f73e820be8dbba28ba23e311d03e0799cf3",
+      "exchange_id": "879e92ea-c2d6-4ae5-96ce-d10a119ddb53",
+      "request_id": "9a844239-19ca-47fb-a15b-71b8c68b790e",
+      "operation_id": null,
+      "source": "public",
+      "model_id": "phenoage",
+      "mcp_tool": "invoke_model",
+      "http_status": 200,
+      "operation_attempt": null,
+      "upstream_attempt": null,
+      "complete": true,
+      "request_bytes": 345,
+      "response_bytes": 593
+    },
+    {
+      "run_id": "request-debug-r02",
+      "file": "mcp-list_models-public.json",
+      "sha256": "026e890e07e62bd2628ee13e97cd385a4053d694541b257d2902c484cf17d555",
+      "exchange_id": "e7fa99e4-40a1-447c-bb03-6eb96e52c1d7",
+      "request_id": "d78ea119-aa0f-4ad5-adf2-677b93ae6812",
+      "operation_id": null,
+      "source": "public",
+      "model_id": null,
+      "mcp_tool": "list_models",
+      "http_status": 200,
+      "operation_attempt": null,
+      "upstream_attempt": null,
+      "complete": true,
+      "request_bytes": 276,
+      "response_bytes": 33646
+    },
+    {
+      "run_id": "request-debug-r02",
+      "file": "openfold2-public.json",
+      "sha256": "9ffed1a1b71552d3d38cb5e8573838c93d95798c546346c8685f9081b5ed677c",
+      "exchange_id": "a3aea547-3ba7-458e-8c9f-a2a3483c5299",
+      "request_id": "80f51766-b24c-42e8-965d-bc297384400a",
+      "operation_id": "ecf6d85a-a5a6-4eea-971a-b66f798e4f2b",
+      "source": "public",
+      "model_id": "openfold2",
+      "mcp_tool": null,
+      "http_status": 202,
+      "operation_attempt": null,
+      "upstream_attempt": null,
+      "complete": true,
+      "request_bytes": 46,
+      "response_bytes": 1139
+    },
+    {
+      "run_id": "request-debug-r02",
+      "file": "openfold2-upstream-0.json",
+      "sha256": "0620b139ba8219941f3a024e5ed0aa35659188bd380ffb3863a94441a8785fb2",
+      "exchange_id": "280d2689-f0e6-402a-91e0-f5eefa5e50dc",
+      "request_id": null,
+      "operation_id": "ecf6d85a-a5a6-4eea-971a-b66f798e4f2b",
+      "source": "upstream",
+      "model_id": "openfold2",
+      "mcp_tool": null,
+      "http_status": 400,
+      "operation_attempt": 1,
+      "upstream_attempt": 1,
+      "complete": true,
+      "request_bytes": 2,
+      "response_bytes": 78
+    }
+  ],
+  "limits": [
+    "Model payloads and raw captures remain private; this report contains identities, counts and hashes only.",
+    "Exactly three native operations: PhenoAge succeeded; deliberately invalid Boltz2/OpenFold2 failed as expected.",
+    "Two MCP tool calls were inspected; HTTP200 for malformed invocation carried a tool error, not a successful model prediction.",
+    "Historical payloads cannot be recovered; no retention/deletion or performance qualification is inferred.",
+    "Browser acceptance is a separate root-owned record."
+  ]
+}

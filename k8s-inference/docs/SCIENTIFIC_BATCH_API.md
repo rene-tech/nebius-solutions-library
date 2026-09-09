@@ -1,7 +1,7 @@
 # Scientific batch API quick start
 
 This page is for a researcher, hackathon team, or proof-of-concept customer who
-holds a scientific access token and wants to run one of the ten qualified
+holds a normal inference API key and wants to run one of the ten qualified
 cancer-immunotherapy models through the public endpoint. It describes the
 customer-visible contract only. Queue placement, images, commands, GPU
 scheduling, and licences are operator-owned and never appear in a request.
@@ -14,7 +14,7 @@ service, enforce the same token policy, and return the same documents.
 | Item | Where it comes from |
 | --- | --- |
 | Base URL | `inference_base_url` from `inference-stack output` (`https://<public-ip>/v1`), or the endpoint your operator handed you. |
-| Bearer token | `credentials.scientific_access_token` for the academic tenant, or a PAT issued in the admin console under **Access / API keys**. |
+| Bearer token | A normal inference API key issued for your user in the admin console, with the required models allowed. No separate scientific key or customer tenant is required. |
 | Scopes | `catalog.read` to discover, `inference.invoke` to upload and submit, `operations.read` to poll, `operations.result` to fetch results and artifacts, `operations.cancel` to cancel. |
 
 Send the token as `Authorization: Bearer <token>`. Every mutating call needs
@@ -22,10 +22,12 @@ an `Idempotency-Key` header of 8 to 200 characters that you choose; repeating
 the same call with the same key returns the same operation instead of a
 second run. Keep the token out of shell history, tickets, and logs.
 
-The general serving token also reaches the scientific catalog, but the two
-licensed academic profiles (AlphaFold 3 and BindCraft) are visible only to the
-academic tenant's token. Tenant boundaries are enforced on every route; a
-resource from another tenant returns `404`, never `403`.
+The same key's allowed-model policy controls serving and scientific Apps,
+including AlphaFold 3 and BindCraft when the operator has deployed their licensed
+runtimes. A model grant does not supply a software/model license: applicable
+academic or other usage terms still apply, and required license assets must be
+ready on the operator side. Customers share runtime capacity, not operation or
+artifact ownership; resources belonging to another customer remain inaccessible.
 
 ## 1. Discover the profiles your token can submit
 
@@ -33,7 +35,7 @@ resource from another tenant returns `404`, never `403`.
 curl -sS "$BASE/scientific-models" -H "Authorization: Bearer $TOKEN" | jq '.data[] | {model_id, operations, service_classes, parameter_schema}'
 ```
 
-`GET /v1/scientific-models` lists only profiles with a complete, tenant-specific
+`GET /v1/scientific-models` lists only profiles with a complete, authorized
 admission path for this exact caller: it runs the same static gates as
 submission, so a listed profile is submittable and an unlisted one is not.
 Each row carries `model_id`, `display_name`, `operations`, `service_classes`,

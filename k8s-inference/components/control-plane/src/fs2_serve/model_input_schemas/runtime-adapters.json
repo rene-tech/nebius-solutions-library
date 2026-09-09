@@ -1,0 +1,57 @@
+{
+  "altumage": {
+    "variant_id": "altumage-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/altumage-cuda.json"
+  },
+  "boltz2": {
+    "variant_id": "boltz2-hf-portable",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/boltz2-portable-h100.json"
+  },
+  "diffdock": {
+    "variant_id": "diffdock-upstream-portable",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/diffdock-portable-h100.json"
+  },
+  "evo2-40b": {
+    "variant_id": "evo2-40b-upstream-portable",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/evo2-40b-portable-h100.json"
+  },
+  "genmol": {
+    "variant_id": "nv-genmol-89m-v2-portable",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/genmol-portable-h100.json"
+  },
+  "molmim": {
+    "variant_id": "molmim-exact-weights-portable",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/molmim-portable-h100.json"
+  },
+  "msa-search-pdb70": {
+    "variant_id": "msa-search-pdb70-mmseqs2-portable",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/msa-search-pdb70-portable-cpu.json"
+  },
+  "openfold2": {
+    "variant_id": "openfold2-upstream-portable",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/openfold2-portable-h100.json"
+  },
+  "openfold3": {
+    "variant_id": "openfold3-preview2-upstream-portable",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/openfold3-portable-h100.json"
+  },
+  "phenoage": {
+    "variant_id": "phenoage-clinical-cpu-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/phenoage-cpu.json"
+  },
+  "proteinmpnn": {
+    "variant_id": "proteinmpnn-upstream-portable",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/proteinmpnn-portable-h100.json"
+  }
+}
