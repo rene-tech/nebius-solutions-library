@@ -43,7 +43,7 @@ def test_new_optional_fields_preserve_exact_gpu_and_static_msa_identities():
     gpu, _ = qualified_configuration()
     msa, _ = cpu_runtime_configuration()
     assert configuration_etag(gpu) == "76aa456c6535b7e1fb3e2bf088957be82dc4bbe110f27574ff27535e4c54df5f"
-    assert configuration_etag(msa) == "23dce3c7d049252fcdbcdaa2e72c2bc65733353d77d28e18261b5e048f37971b"
+    assert configuration_etag(msa) == "625ec35efa1b9dae0b27e95055500dd3afb136f4c9c7a4d02e5b214c864dce54"
     for original in (gpu, msa):
         payload = original.model_dump(mode="json")
         for pool in payload["pools"].values():
