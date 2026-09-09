@@ -1,0 +1,490 @@
+{
+  "schema": "fs2-typed-mcp-live-acceptance/v1",
+  "outcome": "passed",
+  "release": "5de025fe58cc42812629c87694a1ff326e0ef00f",
+  "started_at": "2026-09-09T09:14:47.964609+00:00",
+  "completed_at": "2026-09-09T09:16:17.867696+00:00",
+  "helper_sha256": "35a9c27ec1d3acfde1a752767fff483b6a6769d1a89d1c27d2f118f951bd9a34",
+  "source_evidence": {
+    "private_summary_sha256": "5e83fe74fecd9f79dbb6ea1b604a7480628ead6130db4782e1e6fe0ce1862f26",
+    "private_inventory_sha256": "e6b20f6a10efbde856918fd22efae1ec68626bb54f809ba87adc8eb028ad18f7"
+  },
+  "deployment": {
+    "control_plane_image_digest": "sha256:780f92b984b419aed112ced48d3df55eae1ad006091346c13f4953db23390870",
+    "verification": "Release owner verified Terraform apply and API/controller rollout before GO; this client does not inspect cluster images."
+  },
+  "catalog": {
+    "authorized_models": 27,
+    "named_model_protocol_tools": 27,
+    "protocol_counts": [
+      {
+        "protocol": "native",
+        "count": 14
+      },
+      {
+        "protocol": "openai-chat",
+        "count": 2
+      },
+      {
+        "protocol": "scientific-batch-v1",
+        "count": 11
+      }
+    ],
+    "provided_examples": 25,
+    "examples_validated": true,
+    "no_example_models": [
+      "altumage",
+      "nv-segment-ct"
+    ],
+    "tools_discovery_schema_exact_parity": true,
+    "concrete_flat_schemas": true,
+    "descriptions_present": true,
+    "entries": [
+      {
+        "model_id": "alphafold3",
+        "protocol": "scientific-batch-v1",
+        "tool_name": "submit_alphafold3",
+        "schema_sha256": "97ab5e4e9233069cc9e73e4296fb12e6513eeffb5f4a12c2a0fcd58531f6207a",
+        "description_sha256": "b4772f4d0bd932aa7ce78f508ea127f4bfeefb526f54fa31fe97a99c2fb9e7b7",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "altumage",
+        "protocol": "native",
+        "tool_name": "infer_altumage_native",
+        "schema_sha256": "27c4004bcf447f4eea189c516df78954b5a90c65f3f16037261c49121e22f804",
+        "description_sha256": "e086d5159e71b1dfc5b3983d4b29f698ebb8cbbde752645af63b53054eb24de2",
+        "example_count": 0,
+        "examples_state": "not_provided_asset_or_geometry_required"
+      },
+      {
+        "model_id": "app-95943840d2b14a65b5cdaa4717b2cdc3",
+        "protocol": "scientific-batch-v1",
+        "tool_name": "app_95943840d2b14a65b5cdaa4717b2cdc3",
+        "schema_sha256": "1aa85031d3b224e6e767d56c6bc22f509bbe4858bdcda912e0ae1b7f94aa5877",
+        "description_sha256": "7a4d9d7b363863d0cbcdcb53ca6b189c46a56de477fc3ffac19977f26f6adcf5",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "bindcraft",
+        "protocol": "scientific-batch-v1",
+        "tool_name": "submit_bindcraft",
+        "schema_sha256": "e4c35f9bd7804463a5bb1ae2cfc8e1b1dc9c126d02c35293de19f78adaae75cf",
+        "description_sha256": "4e51a10e7c7824416593145c0aee777610a99e0bbd1a6efa5410df349ba2b23c",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "boltz2",
+        "protocol": "native",
+        "tool_name": "boltz2_predict_native",
+        "schema_sha256": "79fd651422e704900237c3735c819505bc348c5c70b4ae3df852080180bd3dd9",
+        "description_sha256": "a643b4537ddcc990e3927401735ea87e8a21428312de8c0dbfaf7d69a07ed0bc",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "boltzgen",
+        "protocol": "scientific-batch-v1",
+        "tool_name": "submit_boltzgen",
+        "schema_sha256": "2d3fb31821aafbd2614a20e0e3bb6ea64ddb139413b5dfc8ec4e31f700811f07",
+        "description_sha256": "3957719aafaf4185bd67bdfb57e2e856b726b183e0b89776efe17daf6dccf4c5",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "cosmos3-nano",
+        "protocol": "native",
+        "tool_name": "cosmos3_nano_generate_media_native",
+        "schema_sha256": "883a27797af567a966f7f7151673366135c9b25af731e6a1ef220d44cf25782a",
+        "description_sha256": "c1a389571e82d736964b60662e08b63c7768db5bd8bd171e364582179151a14c",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "diffdock",
+        "protocol": "native",
+        "tool_name": "infer_diffdock_native",
+        "schema_sha256": "8e7192cfecf328c478ddf8874065b94790548a8d7279c98835f702f8478b765d",
+        "description_sha256": "e401950f0b87627a8b32704614dd3ce7fb9fefb1c86c898a9665ae4e11a8970d",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "esmfold2",
+        "protocol": "scientific-batch-v1",
+        "tool_name": "submit_esmfold2",
+        "schema_sha256": "0f68911dddaf62161067ede75a33c4c76de4bf6213e75e1937f91d41224f951d",
+        "description_sha256": "e61c7942b361788465aa032d8801633c94266981e33cd61846f11993a9b184c8",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "esmfold2-fast",
+        "protocol": "scientific-batch-v1",
+        "tool_name": "submit_esmfold2_fast",
+        "schema_sha256": "dc68471952bcc0f3be0e5cb8d5c2851faa88a77eaa7af47b7bd94a6822e8edf5",
+        "description_sha256": "c49bf632ea32db419e4cfe1d3d17af65ee6e01a7e8e5a677d15970e5d8c3bcd7",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "evo2-40b",
+        "protocol": "native",
+        "tool_name": "generate_dna_native",
+        "schema_sha256": "78022da6851398b47e7de548374a342ff7ae419fae2254499cfe25528e7d375f",
+        "description_sha256": "e4904bbd5e8a33907cebf128eb31e75ecb39a7a241f92392c5ac1de44d75b05c",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "genmol",
+        "protocol": "native",
+        "tool_name": "genmol_generate_native",
+        "schema_sha256": "d1635ab1148f50f880e6eebbb84a9153a8385ded7706708bc9baeb5374cdae79",
+        "description_sha256": "d29251686aa13df1c6ee70fcb1442e749ebfd70d1f21a58bddbba58a03693667",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "molmim",
+        "protocol": "native",
+        "tool_name": "molmim_run_native",
+        "schema_sha256": "0bc4acb2f009f33e18831ce3e13c7c2d345a2a88e1820690a9b7b279b9cf1db2",
+        "description_sha256": "dd109eef8b50ffaaf6aa16668081877b93fe88d73c6c2c9c5525444f667ae778",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "mosaic",
+        "protocol": "scientific-batch-v1",
+        "tool_name": "submit_mosaic",
+        "schema_sha256": "a36d1866d0357ff37bccf3590a6754d2c92ef4fb4133f7f408cf59201e3c4d7a",
+        "description_sha256": "4086e1f4c16349d577d1074f14dd703195ef0ff0f08aef98a92c74f43837d60f",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "msa-search-pdb70",
+        "protocol": "native",
+        "tool_name": "msa_search_native",
+        "schema_sha256": "dc3fd012093596c6e52f05d0b800bc31d8bbf693374f62adc96f4c8ebb69e0ba",
+        "description_sha256": "3f5391180808842a75d7bd69f4af1cbde66d6b7547d01976370d4be8dd4f17b5",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "nv-reason-cxr-3b",
+        "protocol": "openai-chat",
+        "tool_name": "analyze_image_openai_chat",
+        "schema_sha256": "b8b224556525bcf4d59ac94321b126865c7efeb85f6c075a713bc99246301ccb",
+        "description_sha256": "abc55bf73adfb5fc906f1f4353933bc20fb47cf7ada275ab72290452eed06f4b",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "nv-segment-ct",
+        "protocol": "native",
+        "tool_name": "segment_ct_native",
+        "schema_sha256": "be7997e89466d422db6eb506e6f8c27b69ada543a3133018d903d08c46b1e70c",
+        "description_sha256": "70363bda47a0eefccc9c512717d0e88b86cff0fc9178b39914bd90415508412d",
+        "example_count": 0,
+        "examples_state": "not_provided_asset_or_geometry_required"
+      },
+      {
+        "model_id": "openfold2",
+        "protocol": "native",
+        "tool_name": "infer_openfold2_native",
+        "schema_sha256": "09450f0e4b2bf13853a10e9f3ed637bf0f343a81a8cc52617a5e7df7a4dd612a",
+        "description_sha256": "d974403fa03676b4db25989c10b8d4816002c9f66a7144d4790ce7590f307c4d",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "openfold3",
+        "protocol": "native",
+        "tool_name": "infer_openfold3_native",
+        "schema_sha256": "2de69e1aa816561d32cb37806e26ef34e9b503d4d999102cbcf6f92bb7ab9b62",
+        "description_sha256": "bd3d4e008d3c61a622c31cc00be4d78a93f0ce68ba31a33a82a37f37c7922453",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "openfold3-openbind",
+        "protocol": "scientific-batch-v1",
+        "tool_name": "submit_openfold3_openbind",
+        "schema_sha256": "45f3420ec8422a4221b13e7b8235f0ef9b0b4bcccbd3b0951f0acfa100a648ec",
+        "description_sha256": "3cb39f4dc5aab208afec27f3cc58abcfdce0076e41804e4cd8f1771d9ec39a2e",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "phenoage",
+        "protocol": "native",
+        "tool_name": "infer_phenoage_native",
+        "schema_sha256": "0bae808b5559ce5ef8b01949c3758c274a88a0a91826b26e41cdb9eb3a4cf502",
+        "description_sha256": "895b7c01ce79d483248d829fcef4b3051986df9edc60c6adb34004fc530dcf10",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "proteina-complexa",
+        "protocol": "scientific-batch-v1",
+        "tool_name": "submit_proteina_complexa",
+        "schema_sha256": "981852c089bc689433537e2bde287d81ff42b2dd541ba755b6c4963d4528ee48",
+        "description_sha256": "4ea26cb10d3315938ad35aeddcfea1f607ce3e78fad4985ca8f10934f4f287e3",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "proteinmpnn",
+        "protocol": "native",
+        "tool_name": "infer_proteinmpnn_native",
+        "schema_sha256": "795a6f0f9d58fdfa4ec93233dbb68a8bce4e5337b3784d60b4b4ef753d559a47",
+        "description_sha256": "4696ca7be92cf0fb8549feb36e654ed233182d1684e569322ed9b4d3c6a44a68",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "protenix-v2",
+        "protocol": "scientific-batch-v1",
+        "tool_name": "submit_protenix_v2",
+        "schema_sha256": "1aa85031d3b224e6e767d56c6bc22f509bbe4858bdcda912e0ae1b7f94aa5877",
+        "description_sha256": "7a4d9d7b363863d0cbcdcb53ca6b189c46a56de477fc3ffac19977f26f6adcf5",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "qwen3-8b",
+        "protocol": "openai-chat",
+        "tool_name": "qwen3_8b_chat_openai_chat",
+        "schema_sha256": "628698e51300744f55310a593190ab73f2632c97a43f83f8c79f558ce168f156",
+        "description_sha256": "2d4f09ea7e1e4ff6cbc8bae9fd1bd85f9f8acc0e7a992d78231de49954a2a1b0",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "rfdiffusion",
+        "protocol": "scientific-batch-v1",
+        "tool_name": "submit_rfdiffusion",
+        "schema_sha256": "cbfeacc8f8aea5206c2a93b922eb938a9ad4e2fdd4349f96e3764ecde7f8dd4d",
+        "description_sha256": "fd831d6d58b8cdb87f827957f2f1cbf10511fdee9a77a4fbc754f59b9af2a0ad",
+        "example_count": 1,
+        "examples_state": "validated"
+      },
+      {
+        "model_id": "sdxl",
+        "protocol": "native",
+        "tool_name": "generate_image_native",
+        "schema_sha256": "2a009e764780f1c14a8e8391fdcff31eaeefbc30fd2006c42f7ac272a2474b4b",
+        "description_sha256": "0a9802dc3bbda6cb0aa85a2b4393624f10ac7f86caf4a3ae3b99ea314e75da71",
+        "example_count": 1,
+        "examples_state": "validated"
+      }
+    ]
+  },
+  "operations": [
+    {
+      "model_id": "phenoage",
+      "tool_name": "infer_phenoage_native",
+      "operation_id": "d6178188-c55a-4102-a397-bf067b12f59d",
+      "outcome": "passed",
+      "terminal_status": "succeeded",
+      "attempt": 1,
+      "started_at": "2026-09-09T09:15:15.052518+00:00",
+      "accepted_at": "2026-09-09T09:15:15.931928Z",
+      "operation_completed_at": "2026-09-09T09:15:28.927207Z",
+      "completed_at": "2026-09-09T09:15:31.761783+00:00",
+      "payload_sha256": "b15ebdc61742dff7d3293e35a09b2a3207fd39d6e05ef7f881d900b4172b7842",
+      "result_sha256": "da028f6841dc6299462988df2f1bd68bc204079eda9cfdbf3e176f192ff40f05",
+      "debug_capture": {
+        "auth_redacted": true,
+        "complete_exact_body_capture": true,
+        "correlation_verified": true,
+        "exchange_id": "92dea77e-a01c-4cd4-92bc-72c315c91cb1",
+        "http_status": 200,
+        "owner_verified": true,
+        "request_bytes": 684,
+        "request_id": "f226a34e-b1d7-4ad3-8e11-33f10371674f",
+        "request_sha256": "a9be79bd879b58abcb9b430d266c3dcd659b76606850ef73a4d6f342285a8b3c",
+        "response_bytes": 2725,
+        "response_sha256": "980438e03d21a6f601d2c6cad65e3fe559405727650328c8b1a9a996c72d1465"
+      }
+    },
+    {
+      "model_id": "qwen3-8b",
+      "tool_name": "qwen3_8b_chat_openai_chat",
+      "operation_id": "4f455f9b-2ac2-4cf2-82ff-9aff02d2d8a2",
+      "outcome": "passed",
+      "terminal_status": "succeeded",
+      "attempt": 1,
+      "started_at": "2026-09-09T09:15:32.254536+00:00",
+      "accepted_at": "2026-09-09T09:15:33.070330Z",
+      "operation_completed_at": "2026-09-09T09:15:34.015675Z",
+      "completed_at": "2026-09-09T09:15:38.350318+00:00",
+      "payload_sha256": "dcff6e311919f856cf01d434ea7c5c53eb4a80ce2bfbfa7be292321ccf65c73d",
+      "result_sha256": "32fb854fbfdb05777ecb316fcd7500b8a087ed247d68467fbd74764fcd3b498b",
+      "debug_capture": {
+        "auth_redacted": true,
+        "complete_exact_body_capture": true,
+        "correlation_verified": true,
+        "exchange_id": "a0d48fae-2143-4b19-b6bb-307e84ab7b5c",
+        "http_status": 200,
+        "owner_verified": true,
+        "request_bytes": 528,
+        "request_id": "7d1e5b72-a3e6-4473-afe9-1f16cb5bf283",
+        "request_sha256": "36961bc7eebf18bc02ebdb52d5b727da1cd2f9ea135a8be538bd673bbf823692",
+        "response_bytes": 2729,
+        "response_sha256": "5ca2e6aab5bfb8009617ba0e7244020ebbbd363a09cb179ef702c66a8483dd31"
+      }
+    },
+    {
+      "model_id": "boltz2",
+      "tool_name": "boltz2_predict_native",
+      "operation_id": "2df975d5-6f39-41dc-8752-132b5192e589",
+      "outcome": "passed",
+      "terminal_status": "succeeded",
+      "attempt": 1,
+      "started_at": "2026-09-09T09:15:38.839847+00:00",
+      "accepted_at": "2026-09-09T09:15:39.648434Z",
+      "operation_completed_at": "2026-09-09T09:16:04.916647Z",
+      "completed_at": "2026-09-09T09:16:07.809139+00:00",
+      "payload_sha256": "03debd5292c6df0b8ef532d0e57d0237d73b001970ee4e2e3e43b08b500a1ca7",
+      "result_sha256": "eb9a2d25930ccc9cc1a4a61175101ef72fdd4150b2621866589b5eec5cb1554b",
+      "debug_capture": {
+        "auth_redacted": true,
+        "complete_exact_body_capture": true,
+        "correlation_verified": true,
+        "exchange_id": "65f482aa-2ccb-4227-b80e-c9c745f8128f",
+        "http_status": 200,
+        "owner_verified": true,
+        "request_bytes": 639,
+        "request_id": "132bac9e-5ead-4188-a7af-b1a374583a10",
+        "request_sha256": "ced18499ee947d2ba642874c2c1112b20f01c00ba9c30887236708f607eade1c",
+        "response_bytes": 2721,
+        "response_sha256": "a3e7c846d4b12bfed857d0d2dd5e041ee852bc356ab0257758e08edba97c6883"
+      }
+    },
+    {
+      "model_id": "openfold2",
+      "tool_name": "infer_openfold2_native",
+      "operation_id": "1283c5b1-ac39-4aac-8e0b-5808aad14ead",
+      "outcome": "passed",
+      "terminal_status": "succeeded",
+      "attempt": 1,
+      "started_at": "2026-09-09T09:16:08.311810+00:00",
+      "accepted_at": "2026-09-09T09:16:09.791868Z",
+      "operation_completed_at": "2026-09-09T09:16:11.824501Z",
+      "completed_at": "2026-09-09T09:16:15.132490+00:00",
+      "payload_sha256": "f44d71c6d1224bead72645377e725acadf19b462978457d80890ab77f86ec589",
+      "result_sha256": "08aa6ae1fef956018c1f1ace5e8cd313b68647b922f3ae7a480bdf5d23639436",
+      "debug_capture": {
+        "auth_redacted": true,
+        "complete_exact_body_capture": true,
+        "correlation_verified": true,
+        "exchange_id": "cb9bd6a3-cbd8-4c3b-a147-bc775b4f5ca6",
+        "http_status": 200,
+        "owner_verified": true,
+        "request_bytes": 481,
+        "request_id": "38da0ca4-9746-4864-9377-7566b8e30633",
+        "request_sha256": "7388feab19c38e6cfa352bf3db5f96126dd9dbffc0c58fbafa4b3c4d9dfe40ea",
+        "response_bytes": 2747,
+        "response_sha256": "f5310b0cb2f2e4b26474f3571664c23a5e45bb355fac29b4632109b149cce8ea"
+      }
+    }
+  ],
+  "invalid_inputs": [
+    {
+      "model_id": "boltz2",
+      "tool_name": "boltz2_predict_native",
+      "operation_id": null,
+      "outcome": "passed",
+      "payload_sha256": "135b0c24f21f920a2792afb56a76bdd44d9efeb5eb7e82c537fbf0a306f5bf95",
+      "error": {
+        "code": -32602,
+        "issues": [
+          {
+            "field": "/polymers/0",
+            "missing_fields": [
+              "msa"
+            ],
+            "rule": "required"
+          }
+        ],
+        "model_id": "boltz2",
+        "type": "model_input_validation"
+      },
+      "debug_capture": {
+        "auth_redacted": true,
+        "complete_exact_body_capture": true,
+        "correlation_verified": true,
+        "exchange_id": "fbfdca30-2b35-42c5-b7e7-744886974942",
+        "http_status": 400,
+        "owner_verified": true,
+        "request_bytes": 456,
+        "request_id": "5a155e02-fd00-4da0-9629-5cf105eaf7ff",
+        "request_sha256": "ba70ceabcbbb53299a5455446aefa5fa22cb0a52365e22cc8738383be7b96f66",
+        "response_bytes": 284,
+        "response_sha256": "0b91528050715bb613136722cf77827924b5d76648c96ae73be4b2fb47eb6faa"
+      }
+    },
+    {
+      "model_id": "openfold2",
+      "tool_name": "infer_openfold2_native",
+      "operation_id": null,
+      "outcome": "passed",
+      "payload_sha256": "05b6b7775669b00930d8776fcaff94615f56d49ace56740e8e8a88eafabddd16",
+      "error": {
+        "code": -32602,
+        "issues": [
+          {
+            "allowed_fields": [
+              "idempotency_key",
+              "input_id",
+              "relax_prediction",
+              "selected_models",
+              "sequence",
+              "wait_seconds"
+            ],
+            "field": "/",
+            "message": "Only the fields declared by this runtime's input schema are supported.",
+            "rule": "additionalProperties"
+          }
+        ],
+        "model_id": "openfold2",
+        "type": "model_input_validation"
+      },
+      "debug_capture": {
+        "auth_redacted": true,
+        "complete_exact_body_capture": true,
+        "correlation_verified": true,
+        "exchange_id": "b0039db0-e852-4e40-873a-82554cf77ddc",
+        "http_status": 400,
+        "owner_verified": true,
+        "request_bytes": 412,
+        "request_id": "ca30bb77-f7cb-4e44-b913-faa078ee9e21",
+        "request_sha256": "a5a975d73b4fe48d3cc5868784edc15144ae03d811dc04940824d0bd16a7a97b",
+        "response_bytes": 461,
+        "response_sha256": "d47ecbf3b9abc8e508f3dc45f8aab7d96e307d7bc4b7ea64282a24efd8013aa2"
+      }
+    }
+  ],
+  "mcp_tools_call_count": 56,
+  "client_replays": 0,
+  "scientific_submissions": 0,
+  "key_mutations": 0,
+  "settings_mutations": 0,
+  "capacity_mutations": 0,
+  "admin_logged_out": true,
+  "mcp_session_closed": true,
+  "limitations": [
+    "Exactly four original serving predictions and two intentional preadmission invalid requests; no scientific batch execution in this run.",
+    "Asset/geometry-dependent AltumAge and nv-segment-ct examples were not provided; other 25 provided examples validated against their actual published schemas.",
+    "Existing platform capacity only, no node or GPU provisioning/policy mutations; no new cold-start, snapshot, accelerator or multi-replica qualification.",
+    "Successful requests verify meaningful model-specific results, not full NVIDIA NIM REST feature parity.",
+    "Only credential-free IDs and hashes are exported; full synthetic results, schemas, wire captures and redacted debug detail remain private.",
+    "Earlier request-debug endpoint-mismatch failure and recovered browser network incident remain in the separate request-debug-20260909 evidence."
+  ]
+}
