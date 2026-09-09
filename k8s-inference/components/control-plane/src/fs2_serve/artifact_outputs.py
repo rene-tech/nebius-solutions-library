@@ -14,6 +14,7 @@ from .scientific_artifacts import (
     BeginArtifactUpload,
     CloseStageAttempt,
     FinalizeArtifactUpload,
+    KueueAdmission,
     OpenStageAttempt,
     ScientificArtifactControllerPort,
 )
@@ -55,6 +56,12 @@ class ServingOutputArtifactizer:
         digest = hashlib.sha256(result.body).hexdigest()
         attempt_id = _identity(operation, "attempt")
         upload_id = _identity(operation, f"upload/{digest}")
+        started_at = operation.started_at or operation.ready_at or operation.accepted_at
+        # Result externalization is a CPU post-processing stage. The artifact
+        # ledger requires successful attempts to carry an admission timestamp,
+        # while a zero-accelerator admission deliberately carries no GPU pool,
+        # flavor or resource identity.
+        admission = KueueAdmission(accelerator_count=0, admitted_at=started_at)
         await self._artifacts.open_attempt(
             OpenStageAttempt(
                 attempt_id=attempt_id,
@@ -62,7 +69,8 @@ class ServingOutputArtifactizer:
                 tenant_id=operation.tenant_id,
                 stage_id="serving-output",
                 attempt_number=operation.attempt,
-                started_at=operation.started_at or operation.ready_at or operation.accepted_at,
+                admission=admission,
+                started_at=started_at,
             )
         )
         # application/octet-stream is part of every artifact deployment's
@@ -95,6 +103,7 @@ class ServingOutputArtifactizer:
                 tenant_id=operation.tenant_id,
                 status=ArtifactAttemptStatus.SUCCEEDED,
                 completed_at=datetime.now(UTC),
+                admission=admission,
             )
         )
         envelope = {

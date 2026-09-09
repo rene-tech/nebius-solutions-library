@@ -25,9 +25,12 @@ class _Artifacts:
         self.events: list[str] = []
         self.content = b""
         self.upload = None
+        self.opened = None
+        self.closed = None
 
     async def open_attempt(self, request):
         self.events.append("open")
+        self.opened = request
         return request
 
     async def begin_upload(self, request):
@@ -54,6 +57,7 @@ class _Artifacts:
 
     async def close_attempt(self, request):
         self.events.append("close")
+        self.closed = request
         return request
 
 
@@ -107,6 +111,9 @@ async def test_large_json_result_is_externalized_to_small_pointer():
     assert externalized.content_type == "application/json"
     assert artifacts.content == original
     assert artifacts.events == ["open", "begin", "store", "finalize", "close"]
+    assert artifacts.opened.admission.accelerator_count == 0
+    assert artifacts.opened.admission.admitted_at == artifacts.opened.started_at
+    assert artifacts.closed.admission == artifacts.opened.admission
 
 
 @pytest.mark.asyncio
