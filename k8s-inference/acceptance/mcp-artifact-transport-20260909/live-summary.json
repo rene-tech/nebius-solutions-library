@@ -1,0 +1,36 @@
+{
+  "deployment": {
+    "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+    "project_id": "project-e00rene",
+    "region": "eu-north1"
+  },
+  "image_digest": "sha256:60f38e8f5b42eb7a901443392de92d89d28844c4e5c530ea55d4941c60599773",
+  "operations": [
+    {
+      "attempt": 1,
+      "cold_start_seconds": 0.570715,
+      "model_id": "openfold2",
+      "operation_id": "14506e27-ee81-4f71-b8fc-9ce64dba43ba",
+      "result_bytes": 16537,
+      "result_transport": "inline",
+      "status": "succeeded"
+    },
+    {
+      "artifact_bytes": 80920,
+      "artifact_download_sha256_verified": true,
+      "attempt": 1,
+      "cold_start_seconds": 0.475162,
+      "model_id": "diffdock",
+      "operation_id": "d7588aae-fe3b-45ca-b38c-6d693ce981ee",
+      "result_pointer_bytes": 317,
+      "result_transport": "artifact-pointer",
+      "status": "succeeded"
+    }
+  ],
+  "parallel_admission_seconds": 1.765,
+  "parallel_completion_seconds": 11.848,
+  "schema": "fs2-serve.nebius.ai/mcp-artifact-transport-acceptance/v1",
+  "source_commit": "aedb4042b16669b4a67d6bd7aed8179afb5f4ede",
+  "terraform_converged": true,
+  "tool_discovery_example_bytes": 140
+}
