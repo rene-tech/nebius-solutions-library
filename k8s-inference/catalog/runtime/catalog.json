@@ -35,7 +35,7 @@
   "model_schema": "fs2-serve.nebius.ai/model/v1",
   "model_variants": {
     "path": "contracts/model-variants.json",
-    "sha256": "213a51ed04fa428e329fad6e4264441c7189ccf2cff6a4f8bf019eede4e9e456"
+    "sha256": "5fdee1ca5ef9305c8ee88c9e737c3aab6f2c9b0a7c8a0cf21e1128dbbe63c524"
   },
   "provenance_lock": {
     "path": "contracts/provenance-lock.json",

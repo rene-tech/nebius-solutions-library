@@ -17,7 +17,7 @@ metadata:
   annotations:
     fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
     fs2.nebius/model-content-digest: sha256:ee828baf233c8737406f15447acb4fd45fa23b96b9750e460cb137149319f2bd
-    fs2.nebius/runtime-image-digest: sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85
+    fs2.nebius/runtime-image-digest: sha256:8049b921688cd65c1c87cfbae38d3ec02db472e419ba762a6320766529a7663d
     fs2-serve.nebius.ai/source-revision: 8cc5ce367b5638c4306c2d7cfc652dd099a4643f
     fs2-serve.nebius.ai/identity-relationship: exact-public-database-independent-runtime
     fs2-serve.nebius.ai/exact-pdb70-database: "true"
@@ -40,7 +40,7 @@ spec:
       annotations:
         fs2.nebius/compile-cache-abi: deployment-profile-abi-v1
         fs2.nebius/model-content-digest: sha256:ee828baf233c8737406f15447acb4fd45fa23b96b9750e460cb137149319f2bd
-        fs2.nebius/runtime-image-digest: sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85
+        fs2.nebius/runtime-image-digest: sha256:8049b921688cd65c1c87cfbae38d3ec02db472e419ba762a6320766529a7663d
         prometheus.io/scrape: "true"
         prometheus.io/port: "8000"
         prometheus.io/path: /metrics
@@ -57,7 +57,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: msa-search-pdb70
-          image: registry.example.invalid/k8s-inference/models/msa-search-pdb70-mmseqs2@sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85
+          image: registry.example.invalid/k8s-inference/models/msa-search-pdb70-mmseqs2@sha256:8049b921688cd65c1c87cfbae38d3ec02db472e419ba762a6320766529a7663d
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

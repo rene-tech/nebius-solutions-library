@@ -192,7 +192,7 @@ class CatalogLoaderTests(unittest.TestCase):
         ).to_dict()
         self.assertEqual("exact-model", pdb70_variant["relationship"]["kind"])
         self.assertEqual(
-            "sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85",
+            "sha256:8049b921688cd65c1c87cfbae38d3ec02db472e419ba762a6320766529a7663d",
             pdb70_variant["runtime"]["image_digest"],
         )
         self.assertEqual(

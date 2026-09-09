@@ -28,10 +28,10 @@
     },
     "runtime": {
       "kind": "custom",
-      "version": "portable-cpu-20260907",
+      "version": "portable-cpu-20260909",
       "image": {
-        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/msa-search-pdb70@sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85",
-        "digest": "sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85",
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/msa-search-pdb70@sha256:8049b921688cd65c1c87cfbae38d3ec02db472e419ba762a6320766529a7663d",
+        "digest": "sha256:8049b921688cd65c1c87cfbae38d3ec02db472e419ba762a6320766529a7663d",
         "state": "resolved"
       },
       "command": [
@@ -173,7 +173,7 @@
   "qualification": {
     "active_runtime": {
       "model_revision": "8cc5ce367b5638c4306c2d7cfc652dd099a4643f",
-      "runtime_image_digest": "sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85",
+        "runtime_image_digest": "sha256:8049b921688cd65c1c87cfbae38d3ec02db472e419ba762a6320766529a7663d",
       "service": {
         "name": "msa-search-pdb70",
         "namespace": "fs2-models",
