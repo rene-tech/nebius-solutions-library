@@ -38,6 +38,9 @@ following, and downloading a scientific run over HTTPS or MCP.
 [Typed MCP model tools](docs/mcp-model-tools.md) describes every core tool,
 per-model input discovery, flat arguments, asynchronous results, and the
 compatibility boundary for NVIDIA BioNeMo skills and REST clients.
+[LibreChat client integration](integrations/librechat/README.md) provides the
+per-user MCP configuration, installable gateway skill, saved-agent instructions,
+file-bridge contract, and deployment acceptance handover.
 [Scientific readiness and operations](docs/SCIENTIFIC_READINESS_AND_OPERATIONS.md)
 summarizes all ten scientific profiles, Qwen/Cosmos, measured batch scaling,
 tested operator controls, final fleet acceptance, and startup/snapshot limits.
