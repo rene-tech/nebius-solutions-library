@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -33,7 +34,7 @@ from test_scientific_batch_production import (
 )
 
 from fs2_serve.api import AppRuntime, create_app
-from fs2_serve.mcp_server import CORE_TOOLS, PATTokenVerifier, build_mcp_server
+from fs2_serve.mcp_server import CLIENT_ONLY_TOOLS, CORE_TOOLS, PATTokenVerifier, build_mcp_server
 from fs2_serve.models import Scope, TokenCreate
 from fs2_serve.scientific_artifacts import (
     MemoryArtifactRepository,
@@ -181,6 +182,70 @@ async def test_gateway_only_client_uploads_finalizes_and_reads_exact_bytes(regis
 
 
 @pytest.mark.asyncio
+async def test_mcp_manifest_inspector_returns_only_compact_metadata(registry, cipher, hasher) -> None:
+    runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
+    _artifact_plane(runtime)
+    token = await _token(runtime, principal_id="scientist-a", tenant_id="tenant-a")
+    app = create_app(runtime)
+    async with app.router.lifespan_context(app), _client(app, token) as client:
+        input_upload = await _begin(client, key="manifest-input-0001", request=_upload_request())
+        assert (await _put(client, input_upload, PAYLOAD)).status_code == 200
+        input_pointer = (
+            await client.post(
+                f"/v1/scientific-artifacts/uploads/{input_upload['upload_id']}:finalize",
+                json={"operation_id": input_upload["operation_id"]},
+            )
+        ).json()
+        manifest = json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+                "manifest_id": "manifest-inspection-0001",
+                "entries": [
+                    {
+                        "name": "target-sequence",
+                        "semantic_type": "protein.sequence/v1",
+                        "artifact": input_pointer,
+                    }
+                ],
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+        manifest_type = "application/vnd.fs2.scientific-manifest+json"
+        manifest_upload = await _begin(
+            client,
+            key="manifest-document-0001",
+            request=_upload_request(payload=manifest, media_type=manifest_type),
+        )
+        assert (await _put(client, manifest_upload, manifest, media_type=manifest_type)).status_code == 200
+        manifest_pointer = (
+            await client.post(
+                f"/v1/scientific-artifacts/uploads/{manifest_upload['upload_id']}:finalize",
+                json={"operation_id": manifest_upload["operation_id"]},
+            )
+        ).json()
+
+    server = build_mcp_server(runtime)
+    context = Context(mcp_server=server, subscriptions=server._subscriptions)  # type: ignore[attr-defined]
+    access = await PATTokenVerifier(runtime).verify_token(token)
+    assert access is not None
+    auth_token = auth_context_var.set(AuthenticatedUser(access))
+    try:
+        inspected = await server._tool_manager.call_tool(  # type: ignore[attr-defined]
+            "inspect_scientific_artifact_manifest",
+            {"artifact_id": manifest_pointer["artifact_id"]},
+            context,
+            convert_result=False,
+        )
+    finally:
+        auth_context_var.reset(auth_token)
+    assert inspected["manifest_id"] == "manifest-inspection-0001"
+    assert inspected["entry_count"] == 1 and inspected["truncated"] is False
+    assert inspected["entries"][0]["artifact"]["artifact_id"] == input_pointer["artifact_id"]
+    assert "content_base64" not in json.dumps(inspected)
+
+
+@pytest.mark.asyncio
 async def test_declared_identity_is_immutable_and_a_mismatch_stores_nothing(registry, cipher, hasher) -> None:
     """Digest, size and media type are bound at reservation, not at write time."""
 
@@ -223,6 +288,37 @@ async def test_declared_identity_is_immutable_and_a_mismatch_stores_nothing(regi
         replaced = await _put(client, reservation, PAYLOAD)
         assert replaced.status_code == 409
         assert replaced.json()["error"]["type"] == "artifact_conflict"
+
+
+@pytest.mark.asyncio
+async def test_rejected_upload_reservation_releases_the_only_concurrency_slot(registry, cipher, hasher) -> None:
+    runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
+    _artifact_plane(runtime)
+    issued = await runtime.tokens.issue(
+        TokenCreate(
+            principal_id="scientist-a",
+            tenant_id="tenant-a",
+            scopes={Scope.INFERENCE_INVOKE, Scope.OPERATIONS_READ, Scope.OPERATIONS_RESULT},
+            models={"protein-design"},
+            max_concurrency=1,
+        ),
+        created_by="test",
+    )
+    app = create_app(runtime)
+    async with app.router.lifespan_context(app), _client(app, str(issued.token)) as client:
+        rejected = await client.post(
+            "/v1/scientific-artifacts/uploads",
+            headers={"idempotency-key": "public-bytes-rejected-0001"},
+            json=_upload_request(media_type="application/pdf"),
+        )
+        assert rejected.status_code == 422
+        assert rejected.json()["error"]["type"] == "artifact_policy_rejected"
+        accepted = await _begin(
+            client,
+            key="public-bytes-after-rejection-0001",
+            request=_upload_request(),
+        )
+        assert accepted["operation_id"]
 
 
 @pytest.mark.asyncio
@@ -397,7 +493,11 @@ async def test_mcp_offers_the_same_upload_submit_status_result_operations(regist
     }
     listed = {tool.name for tool in server._tool_manager.list_tools()}  # type: ignore[attr-defined]
     assert parity <= listed
-    assert parity <= CORE_TOOLS
+    assert parity - CLIENT_ONLY_TOOLS <= CORE_TOOLS
+    assert parity & CLIENT_ONLY_TOOLS == {
+        "put_scientific_artifact_bytes",
+        "read_scientific_artifact_bytes",
+    }
 
     auth_token = auth_context_var.set(AuthenticatedUser(access))
     try:

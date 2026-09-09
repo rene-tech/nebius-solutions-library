@@ -74,8 +74,9 @@ licensed/academic Apps. Access does not grant the underlying license.
 4. Restart LibreChat after changing filesystem deployment skills. Confirm the
    startup log reports that the skill directory was loaded.
 5. Each user opens MCP Settings, supplies their personal gateway key, and
-   initializes `bionemo-models`. Reconnect after a key or catalog change because
-   tool discovery is caller-specific and uncached.
+   initializes `bionemo-models`. The client must consume tool-list change
+   notifications and compare `tool_catalog_revision` during catalog polling;
+   refetch `tools/list` when it changes. Reconnect after a key change.
 
 LibreChat formats MCP tool IDs from the raw tool name and server name. On the
 inspected pin it produces names such as
@@ -102,8 +103,8 @@ separately if the workbench advertises them.
   examples, source references and selected runtime through `get_model_schema`.
 - Prefer each returned named typed tool. Model fields are flat; submission
   controls remain top-level. Generic envelope tools remain for compatible clients.
-- The all-model acceptance on 2026-09-09 saw 27 named model/App tools plus 19
-  core workflow tools. A user with a restricted allowlist correctly sees fewer.
+- Tool count is revisioned and caller-specific. A restricted allowlist sees
+  fewer tools, and paused/disabled acceptance Apps are not published.
 - Serving and scientific submissions are durable. Save the operation ID, poll
   the proper status tool and fetch the final result/artifacts. A long LibreChat
   tool timeout is not a substitute for this flow.
@@ -129,7 +130,7 @@ local path. The helper must:
 1. resolve a file that belongs to the current LibreChat user;
 2. stream and hash its real bytes outside the LLM context;
 3. reserve an upload with model ID, digest, byte count, media type and compression;
-4. use the returned upload handle for large data, or base64 MCP upload for small data;
+4. use the returned upload handle or HTTPS content path for all raw bytes;
 5. finalize it and return only immutable artifact metadata to the agent;
 6. build/upload/finalize canonical scientific manifests;
 7. download caller-owned results, verify digest/size, and store them in a
@@ -144,16 +145,15 @@ and bearer tokens must never enter model context or ordinary logs.
 The old `artifact-mcp.py` in the inspected workbench is **not compatible**: it
 still calls `clawbio_upload_create` / `clawbio_model_fetch`, assumes 32-character
 hex IDs and an `/upload/v1/` service. The fs2 gateway uses UUID upload/artifact
-identities and the `begin_model_artifact_upload` → put/handle →
-`finalize_model_artifact_upload` → read/download tools. Do not ship the old
+identities and the `begin_model_artifact_upload` → trusted HTTP transfer →
+`finalize_model_artifact_upload` → inspect/download tools. Do not ship the old
 bridge as though it were operational; replace it or initially disable
 attachment-workflow claims. Built-in smoke fixtures do not require that helper.
 
 Default server limits are 16 MiB for a raw MCP/HTTP request and 16 MiB decoded
-inline artifact content. Base64 plus JSON overhead means MCP can upload just
-under 12 MiB of binary in that default request. Large uploads use the returned
-presigned handle. MCP inline reads return base64; large reads use a download
-handle or authorized HTTP stream. The source defaults also include a 600-second
+inline artifact content. Agent-visible MCP never transports artifact bytes;
+the trusted client uses the returned upload/download handles or authorized
+HTTP stream. The source defaults also include a 600-second
 signed-handle lifetime, 24-hour ordinary payload/result TTL, seven-day operation
 metadata retention and 90-day scientific-artifact retention. Read the actual
 response ceilings/expiry timestamps because deployments can override defaults.
@@ -165,16 +165,16 @@ all-model contract check covered:
 
 - scientific batch: AlphaFold3, BindCraft, BoltzGen, ESMFold2,
   ESMFold2-Fast, Mosaic, OpenFold3-OpenBind, Proteina-Complexa, Protenix v2,
-  RFdiffusion, and one independent cloned App;
+  RFdiffusion; paused independent acceptance clones are not participant Apps;
 - native: AltumAge, Boltz2, Cosmos3-Nano, DiffDock, Evo2-40B, GenMol, MolMIM,
   MSA Search PDB70, NV-Segment CT, OpenFold2, OpenFold3, PhenoAge,
   ProteinMPNN, and SDXL;
 - OpenAI-chat: NV-Reason-CXR-3B and Qwen3-8B.
 
-Every listed App has a typed contract. Twenty-five have a validated embedded
-example. AltumAge and NV-Segment CT deliberately have no fake tiny example:
-they require complete CpG or imaging inputs. GLM is not part of this retained
-H100 deployment.
+Every listed App has a typed contract. AltumAge publishes compact immutable
+artifact-reference examples for its full canonical CpG inputs, while
+NV-Segment CT publishes a deterministic server-side NIfTI fixture. GLM is not
+part of this retained H100 deployment.
 
 NVIDIA BioNeMo Agent Toolkit skills remain domain references, not an invocation
 standard. Their direct NVIDIA REST URLs, authentication and immediate-response

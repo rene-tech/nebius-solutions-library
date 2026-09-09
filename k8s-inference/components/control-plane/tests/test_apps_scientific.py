@@ -10,7 +10,7 @@ import pytest
 from conftest import SOLUTION_ROOT
 from test_scientific_batch_execution_handoff import runtime_execution_map, runtime_plan, runtime_profile
 from test_scientific_batch_execution_handoff import scheduling as runtime_scheduling
-from test_scientific_batch_production import principal, scientific_runtime
+from test_scientific_batch_production import principal, profile_catalog, scientific_runtime
 
 from fs2_serve.apps_models import AppRecord
 from fs2_serve.apps_repository import MemoryAppsRepository
@@ -54,6 +54,24 @@ async def _inventory(model_ref="protein-design"):
     inventory = ScientificAppsInventory(repository)
     await inventory.refresh()
     return inventory, records
+
+
+@pytest.mark.asyncio
+async def test_paused_scientific_app_stays_admin_visible_but_cannot_be_discovered_or_submitted():
+    inventory, records = await _inventory()
+    paused = records[0]
+
+    async def discoverable():
+        return [record for record in await inventory.repository.list_records() if record.app_id != paused.app_id]
+
+    inventory.repository.list_discoverable_records = discoverable
+    await inventory.refresh()
+    profiles = AppScientificProfiles(profile_catalog(), inventory)
+    assert paused.public_model_id in inventory.records
+    assert paused.public_model_id not in {profile.model_id for profile in profiles.list()}
+    with pytest.raises(RuntimeError, match="paused"):
+        profiles.get(paused.public_model_id)
+    assert profiles.get(paused.public_model_id, runnable=False).model_id == paused.public_model_id
 
 
 @pytest.mark.asyncio

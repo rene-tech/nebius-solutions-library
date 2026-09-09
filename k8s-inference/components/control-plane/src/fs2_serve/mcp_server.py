@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import json
 import logging
 import math
@@ -19,9 +20,19 @@ from mcp.server.auth.settings import AuthSettings
 from mcp.server.caching import CacheHint
 from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
+from mcp.server.subscriptions import ToolsListChanged
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.shared.exceptions import MCPError
-from mcp_types import INTERNAL_ERROR, INVALID_PARAMS, CallToolResult, ListToolsResult, TextContent
+from mcp_types import (
+    INTERNAL_ERROR,
+    INVALID_PARAMS,
+    CallToolRequestParams,
+    CallToolResult,
+    InputRequiredResult,
+    ListToolsResult,
+    TextContent,
+)
 from pydantic import AnyHttpUrl, ValidationError
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Send
@@ -45,11 +56,25 @@ from .models import (
     Scope,
 )
 from .registry import ModelRouteUnavailableError, OperationalModel
-from .request_telemetry import observe_mcp_result, observe_request_metadata, request_telemetry_context
-from .scientific_artifacts import ArtifactNotFoundError
+from .request_telemetry import (
+    current_request_id,
+    observe_mcp_result,
+    observe_request_metadata,
+    request_telemetry_context,
+)
+from .runtime import RuntimeOperationError
+from .scientific_artifacts import ArtifactNotFoundError, ArtifactServiceError
+from .scientific_batch.profile_catalog import ScientificProfileError
 from .scientific_batch.service import ScientificProfileDiscovery
 from .scientific_input_uploads import ScientificInputUploadRequest
-from .store import NotFoundError
+from .scientific_run_result import ScientificArtifactManifest
+from .store import (
+    BudgetExceededError,
+    ConcurrencyExceededError,
+    ConflictError,
+    NotFoundError,
+    RateLimitExceededError,
+)
 
 CORE_TOOLS = {
     "list_models",
@@ -73,11 +98,22 @@ CORE_TOOLS = {
     "put_model_artifact_bytes",
     "finalize_model_artifact_upload",
     "download_scientific_artifact",
-    "read_scientific_artifact_bytes",
+    "inspect_scientific_artifact_manifest",
     "get_model_artifact",
     "download_model_artifact",
+    "inspect_model_artifact_manifest",
+    "get_tool_catalog_revision",
+}
+CLIENT_ONLY_TOOLS = {
+    "put_scientific_artifact_bytes",
+    "put_model_artifact_bytes",
+    "read_scientific_artifact_bytes",
     "read_model_artifact_bytes",
 }
+# Raw file transfer belongs to the HTTPS data plane. These names are retained
+# only as an explicit compatibility inventory and are never exposed by the
+# language-model-facing public MCP server.
+CORE_TOOLS -= CLIENT_ONLY_TOOLS
 MCP_HTTP_PATH = "/mcp"
 MCP_CHILD_MOUNT_PATH = "/"
 MCP_STREAMABLE_HTTP_PATH = MCP_HTTP_PATH
@@ -109,6 +145,123 @@ def _tool_result(payload: dict[str, Any]) -> CallToolResult:
     )
 
 
+def _exception_chain(error: BaseException) -> tuple[BaseException, ...]:
+    values: list[BaseException] = []
+    current: BaseException | None = error
+    while current is not None and current not in values and len(values) < 8:
+        values.append(current)
+        current = current.__cause__
+    return tuple(values)
+
+
+def _tool_failure(params: CallToolRequestParams, error: Exception) -> CallToolResult:
+    """Translate SDK-wrapped domain failures into one stable MCP result."""
+
+    chain = _exception_chain(error)
+    cause = chain[-1]
+    retryable = False
+    retry_after: int | None = None
+    code = "internal_tool_error"
+    message = "The tool failed unexpectedly. Use request_id when contacting the platform operator."
+    expected = False
+    if any(isinstance(item, ConcurrencyExceededError) for item in chain):
+        code, message, retryable, retry_after, expected = (
+            "admission_limit_reached",
+            "This API key has reached its concurrent-operation limit; retry the same request shortly.",
+            True,
+            2,
+            True,
+        )
+    elif any(isinstance(item, RateLimitExceededError) for item in chain):
+        code, message, retryable, retry_after, expected = (
+            "rate_limit_reached",
+            "This API key has reached its request-rate limit; retry the same request shortly.",
+            True,
+            2,
+            True,
+        )
+    elif any(isinstance(item, BudgetExceededError) for item in chain):
+        code, message, expected = "budget_exceeded", "This API key has exhausted its configured budget.", True
+    elif any(isinstance(item, ConflictError) for item in chain):
+        code = "operation_has_no_result" if "result" in str(cause).lower() else "operation_conflict"
+        message = (
+            "The operation has no successful result. Inspect get_operation for its terminal status and error."
+            if code == "operation_has_no_result"
+            else "The requested operation conflicts with its current durable state."
+        )
+        expected = True
+    elif any(isinstance(item, NotFoundError) for item in chain):
+        code, message, expected = "not_found", "The requested operation or artifact was not found.", True
+    elif next((item for item in chain if isinstance(item, ArtifactServiceError)), None) is not None:
+        artifact_error = next(item for item in chain if isinstance(item, ArtifactServiceError))
+        code = artifact_error.code
+        message = "The artifact request was rejected by the published upload or verification policy."
+        expected = True
+    elif next((item for item in chain if isinstance(item, RuntimeOperationError)), None) is not None:
+        runtime_error = next(item for item in chain if isinstance(item, RuntimeOperationError))
+        code = runtime_error.code
+        retryable = runtime_error.status_code >= 500
+        retry_after = 2 if retryable else None
+        message = "The selected model runtime could not complete the request."
+        expected = True
+    elif any(isinstance(item, ScientificProfileError) for item in chain):
+        code, message, expected = (
+            "scientific_profile_unavailable",
+            "The selected scientific App is not currently available for submission.",
+            True,
+        )
+    elif isinstance(error, ToolError) and not isinstance(error, UnexpectedToolError):
+        code, message, expected = "invalid_tool_arguments", "Tool arguments do not match the published schema.", True
+
+    request_id = str(current_request_id() or uuid4())
+    arguments = params.arguments or {}
+    operation_id: str | None = None
+    try:
+        if arguments.get("operation_id") is not None:
+            operation_id = str(UUID(str(arguments["operation_id"])))
+    except (TypeError, ValueError):
+        pass
+    payload: dict[str, Any] = {
+        "error": {
+            "type": code,
+            "code": code,
+            "message": message,
+            "retryable": retryable,
+            "durable_admission": operation_id is not None,
+            "request_id": request_id,
+        }
+    }
+    if operation_id is not None:
+        payload["error"]["operation_id"] = operation_id
+    idempotency_key = arguments.get("idempotency_key")
+    if isinstance(idempotency_key, str):
+        payload["error"]["idempotency_key"] = idempotency_key
+    if retry_after is not None:
+        payload["error"]["retry_after_seconds"] = retry_after
+    if expected:
+        LOGGER.info("MCP tool %s rejected request_id=%s error_type=%s", params.name, request_id, code)
+    else:
+        LOGGER.exception("MCP tool %s failed request_id=%s", params.name, request_id, exc_info=error)
+    return _tool_result(payload).model_copy(update={"is_error": True})
+
+
+class FS2MCPServer(MCPServer[Any]):
+    """MCPServer that preserves safe domain failure semantics for agents."""
+
+    async def _handle_call_tool(
+        self,
+        ctx: ServerRequestContext[Any, Any],
+        params: CallToolRequestParams,
+    ) -> CallToolResult | InputRequiredResult:
+        context = Context(request_context=ctx, mcp_server=self, input_params=params, subscriptions=self._subscriptions)
+        try:
+            return await self.call_tool(params.name, params.arguments or {}, context)
+        except MCPError:
+            raise
+        except Exception as error:
+            return _tool_failure(params, error)
+
+
 def _route_unavailable(principal: Principal) -> CallToolResult:
     """An admission availability failure is a tool result, not a protocol crash."""
 
@@ -116,8 +269,11 @@ def _route_unavailable(principal: Principal) -> CallToolResult:
     payload = {
         "error": {
             "type": "route_unavailable",
+            "code": "route_unavailable",
             "message": "Model route is temporarily unavailable; retry with the same idempotency key.",
             "retryable": True,
+            "durable_admission": False,
+            "retry_after_seconds": 2,
             "request_id": request_id,
         }
     }
@@ -321,10 +477,16 @@ def _scientific_tool_profiles(runtime: AppRuntime, principal: Principal) -> tupl
 class MCPAuthorizationMiddleware:
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
-        self._sync_tools: Callable[[], None] | None = None
+        self._sync_tools: Callable[[], bool] | None = None
+        self._notify_tools_changed: Callable[[], Awaitable[None]] | None = None
 
-    def set_tool_sync(self, callback: Callable[[], None]) -> None:
+    def set_tool_sync(
+        self,
+        callback: Callable[[], bool],
+        notify_tools_changed: Callable[[], Awaitable[None]],
+    ) -> None:
         self._sync_tools = callback
+        self._notify_tools_changed = notify_tools_changed
 
     async def __call__(self, ctx: ServerRequestContext[Any, Any], call_next: CallNext) -> HandlerResult:
         # MCP handlers may execute in SDK-owned tasks. Bind the actual HTTP
@@ -343,7 +505,9 @@ class MCPAuthorizationMiddleware:
             if ctx.method in {"tools/list", "tools/call"}:
                 await self.runtime.revalidate_routes()
                 if self._sync_tools is not None:
-                    self._sync_tools()
+                    changed = self._sync_tools()
+                    if changed and self._notify_tools_changed is not None:
+                        await self._notify_tools_changed()
             if ctx.method == "tools/call" and principal is not None:
                 name = str((ctx.params or {}).get("name", ""))
                 if name not in CORE_TOOLS and name not in _model_tool_names(self.runtime, principal):
@@ -437,7 +601,7 @@ async def _admit(
 
 def build_mcp_server(runtime: AppRuntime) -> MCPServer:
     authorization = MCPAuthorizationMiddleware(runtime)
-    server = MCPServer(
+    server = FS2MCPServer(
         "fs2-serve",
         title="fs2-serve model gateway",
         description="Authorized model and operation tools backed by durable fs2-serve admission.",
@@ -468,6 +632,20 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         middleware=[authorization],
     )
 
+    def catalog_metadata(principal: Principal) -> dict[str, Any]:
+        allowed = CORE_TOOLS | _model_tool_names(runtime, principal)
+        records = [
+            {"name": tool.name, "input_schema": tool.parameters}
+            for tool in server._tool_manager.list_tools()
+            if tool.name in allowed
+        ]
+        encoded = json.dumps(sorted(records, key=lambda item: item["name"]), sort_keys=True, separators=(",", ":"))
+        return {
+            "tool_catalog_revision": hashlib.sha256(encoded.encode()).hexdigest(),
+            "tool_count": len(records),
+            "refresh": "Refetch tools/list whenever this revision changes.",
+        }
+
     async def list_models() -> dict[str, Any]:
         """Discover serving models this API key may use, including protocols and active runtime identity.
 
@@ -479,6 +657,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         pool_classes = await _pool_accelerator_classes(runtime)
         return {
             "object": "list",
+            **catalog_metadata(principal),
             "data": [
                 _model_view(model, pool_accelerator_classes=pool_classes)
                 for model in runtime.registry.allowed_for_principal(principal, surface="mcp")
@@ -495,8 +674,22 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         principal = _principal()
         if runtime.scientific_batches is None:
             principal.require(Scope.CATALOG_READ)
-            return {"object": "list", "data": []}
-        return runtime.scientific_batches.discover(principal, surface="mcp")
+            return {"object": "list", **catalog_metadata(principal), "data": []}
+        return {
+            **runtime.scientific_batches.discover(principal, surface="mcp"),
+            **catalog_metadata(principal),
+        }
+
+    async def get_tool_catalog_revision() -> dict[str, Any]:
+        """Return the authorized MCP tool-catalog revision and refresh instructions.
+
+        Long-lived clients should compare this value after reconnects or catalog
+        polling and immediately refetch tools/list when it changes.
+        """
+
+        principal = _principal()
+        principal.require(Scope.CATALOG_READ)
+        return catalog_metadata(principal)
 
     def contract_view(contract: ModelInputContract, name: str, *, scientific: bool) -> dict[str, Any]:
         return {
@@ -732,8 +925,8 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
     async def get_scientific_artifact(artifact_id: UUID) -> dict[str, Any]:
         """Get an authorized artifact's metadata, digest, byte size and media type.
 
-        This does not download its contents. Use read_scientific_artifact_bytes
-        for a small inline result or download_scientific_artifact for a handle.
+        This does not download its contents. Use inspect_scientific_artifact_manifest
+        for a manifest or download_scientific_artifact for a client-side handle.
         """
         if runtime.scientific_batches is None:
             raise MCPError(code=INVALID_PARAMS, message="scientific artifact service is unavailable")
@@ -816,8 +1009,8 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         """Reserve immutable input bytes for any authorized serving or batch App.
 
         Hash the file outside the language-model context. Write it through the
-        returned handle or put_model_artifact_bytes, then finalize it and place
-        the small returned artifact reference in the typed model field.
+        returned HTTPS handle/content path, then finalize it and place the small
+        returned artifact reference in the typed model field.
         """
 
         return await begin_scientific_artifact_upload(
@@ -900,8 +1093,8 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         """Issue a short-lived authorized download handle for an input or result artifact.
 
         Follow the returned method, URL and headers before expires_at, then
-        verify the artifact SHA-256 and byte count. The handle is not the content;
-        read_scientific_artifact_bytes returns small files directly through MCP.
+        verify the artifact SHA-256 and byte count. The handle is not the content,
+        and raw file bytes never pass through the language-model-facing MCP tools.
         """
 
         principal = _principal()
@@ -928,6 +1121,50 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         """
 
         return await download_scientific_artifact(artifact_id)
+
+    async def inspect_scientific_artifact_manifest(artifact_id: UUID, limit: int = 200) -> dict[str, Any]:
+        """Parse a scientific artifact manifest without returning raw or base64 file bytes.
+
+        Returns compact entry names, semantic types, immutable artifact metadata
+        and a total count. Use download_scientific_artifact outside model context
+        when the underlying file content is actually required.
+        """
+
+        if not 1 <= limit <= 500:
+            raise MCPError(code=INVALID_PARAMS, message="limit is outside the configured bound")
+        principal = _principal()
+        principal.require(Scope.OPERATIONS_RESULT)
+        if runtime.artifact_service is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific artifact service is unavailable")
+        stream = await runtime.artifact_service.open_content(artifact_id, tenant_id=principal.tenant_id)
+        if stream.artifact.media_type != "application/vnd.fs2.scientific-manifest+json":
+            raise MCPError(code=INVALID_PARAMS, message="artifact is not a scientific manifest")
+        ceiling = 16 * 1024 * 1024
+        if stream.artifact.size_bytes > ceiling:
+            raise MCPError(code=INVALID_PARAMS, message="manifest exceeds the inspection ceiling")
+        content = bytearray()
+        async for chunk in stream.chunks:
+            content.extend(chunk)
+            if len(content) > ceiling:
+                raise MCPError(code=INVALID_PARAMS, message="manifest exceeds the inspection ceiling")
+        try:
+            document = json.loads(content)
+            manifest = ScientificArtifactManifest.model_validate(document)
+        except (UnicodeDecodeError, ValueError, ValidationError):
+            raise MCPError(code=INVALID_PARAMS, message="artifact is not a valid scientific manifest") from None
+        entries = [entry.model_dump(mode="json") for entry in manifest.entries]
+        return {
+            "artifact": stream.artifact.to_public_ref().model_dump(mode="json", exclude_none=True),
+            "manifest_id": manifest.manifest_id,
+            "entry_count": len(entries),
+            "entries": entries[:limit],
+            "truncated": len(entries) > limit,
+        }
+
+    async def inspect_model_artifact_manifest(artifact_id: UUID, limit: int = 200) -> dict[str, Any]:
+        """Inspect a serving or batch manifest as compact metadata without file bytes."""
+
+        return await inspect_scientific_artifact_manifest(artifact_id, limit)
 
     async def read_scientific_artifact_bytes(artifact_id: UUID) -> dict[str, Any]:
         """Return one authorized artifact's exact bytes, base64 encoded.
@@ -968,6 +1205,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
     for function in (
         list_models,
         list_scientific_models,
+        get_tool_catalog_revision,
         get_model_schema,
         invoke_model,
         get_operation,
@@ -987,9 +1225,11 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         put_model_artifact_bytes,
         finalize_model_artifact_upload,
         download_scientific_artifact,
+        inspect_scientific_artifact_manifest,
         read_scientific_artifact_bytes,
         get_model_artifact,
         download_model_artifact,
+        inspect_model_artifact_manifest,
         read_model_artifact_bytes,
     ):
         server.add_tool(function, name=function.__name__, meta={"fs2_core": True})
@@ -1055,12 +1295,12 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         description: str,
         meta: dict[str, Any],
         scientific: bool,
-    ) -> None:
+    ) -> bool:
         # Refresh schemas and provenance as well as handlers after live model
         # edits. A reused tool name must never advertise a stale runtime DTO.
         signature = json.dumps([contract.input_schema, meta], sort_keys=True, separators=(",", ":"))
         if registered_contracts.get(name) == signature:
-            return
+            return False
         if name in CORE_TOOLS:
             raise ValueError("model tool name collides with a core tool")
         if name in registered_names:
@@ -1083,6 +1323,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         )
         registered_names.add(name)
         registered_contracts[name] = signature
+        return True
 
     def scientific_handler(tool_name: str) -> Callable[..., Awaitable[dict[str, Any]]]:
         async def submit_named_scientific_run(
@@ -1101,15 +1342,16 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
 
         return submit_named_scientific_run
 
-    def sync_model_tools() -> None:
+    def sync_model_tools() -> bool:
         # Tool handlers resolve their model from the current registry on every
         # call.  Keeping old names registered is therefore safe: middleware
         # hides withdrawn names, and a later reuse cannot dispatch to stale
         # model identity.  The cap bounds operator-driven name churn; the
         # generic invoke_model tool remains available beyond it.
+        changed = False
         for model in runtime.registry.list(enabled_only=True):
             if len(registered_names) >= 4096:
-                return
+                return changed
             if not model.gateway.mcp_discoverable or not model.gateway.mcp_invocable:
                 continue
             if len(model.gateway.policy_operations) != 1 or not model.binding.mcp_enabled:
@@ -1125,9 +1367,10 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                         server.remove_tool(name)
                         registered_names.discard(name)
                         registered_contracts.pop(name)
+                        changed = True
                     continue
                 model_view = _model_view(model)
-                register_contract(
+                changed = register_contract(
                     name,
                     contract,
                     handler=named_handler(name),
@@ -1141,11 +1384,11 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                         "fs2_qualification": model_view["qualification"],
                     },
                     scientific=False,
-                )
+                ) or changed
         if runtime.scientific_batches is not None:
             for profile in runtime.scientific_batches.profiles.list():
                 if len(registered_names) >= 4096:
-                    return
+                    return changed
                 if not profile.mcp_discoverable or not profile.mcp_invocable:
                     continue
                 name = profile.mcp_tool_name
@@ -1156,8 +1399,9 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                         server.remove_tool(name)
                         registered_names.discard(name)
                         registered_contracts.pop(name)
+                        changed = True
                     continue
-                register_contract(
+                changed = register_contract(
                     name,
                     contract,
                     handler=scientific_handler(name),
@@ -1170,9 +1414,13 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                         "fs2_runtime_image_digest": profile.runtime_image_digest,
                     },
                     scientific=True,
-                )
+                ) or changed
+        return changed
 
-    authorization.set_tool_sync(sync_model_tools)
+    async def notify_tools_changed() -> None:
+        await server._subscriptions.publish(ToolsListChanged())
+
+    authorization.set_tool_sync(sync_model_tools, notify_tools_changed)
     sync_model_tools()
     return server
 

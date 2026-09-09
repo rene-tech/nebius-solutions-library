@@ -28,7 +28,7 @@ from fs2_serve.admission import AdmissionService
 from fs2_serve.api import AppRuntime, create_app
 from fs2_serve.auth import OperatorSessionService, PepperRing, TokenService
 from fs2_serve.crypto import KeyedHasher
-from fs2_serve.mcp_server import PATTokenVerifier, build_mcp_server
+from fs2_serve.mcp_server import CORE_TOOLS, PATTokenVerifier, build_mcp_server
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.models import OperationStatus, OperationView, Principal, Scope, TokenCreate
 from fs2_serve.runtime import StubRuntimeClient
@@ -1502,7 +1502,9 @@ async def test_http_scientific_discovery_mirrors_submission_gates_not_mcp_exposu
         )
     finally:
         auth_context_var.reset(auth_token)
-    assert discovered_mcp == {"object": "list", "data": []}
+    assert discovered_mcp["object"] == "list" and discovered_mcp["data"] == []
+    assert len(discovered_mcp["tool_catalog_revision"]) == 64
+    assert discovered_mcp["tool_count"] >= len(CORE_TOOLS)
 
 
 @pytest.mark.asyncio

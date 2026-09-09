@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import gzip
 import json
 import re
 from dataclasses import replace
@@ -13,7 +14,13 @@ import pytest
 from conftest import CATALOG_ROOT, SOLUTION_ROOT
 from jsonschema import Draft202012Validator
 
-from fs2_serve.model_input_contracts import InputContractUnavailable, _resource, contract_for, scientific_contract_for
+from fs2_serve.model_input_contracts import (
+    InputContractUnavailable,
+    _resource,
+    contract_for,
+    packaged_input_fixture,
+    scientific_contract_for,
+)
 from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog
 
 
@@ -201,7 +208,10 @@ def test_aging_units_and_full_panel_not_replaced_by_toy(registry):
     value["samples"][0]["c_reactive_protein_mg_dl"] = 0
     assert not Draft202012Validator(pheno.input_schema).is_valid(value)
     altum = contract_for(selected(registry, "altumage"), "native")
-    assert altum.examples == ()  # The full example requires pinned canonical CpG assets.
+    assert len(altum.examples) == 1
+    assert altum.examples[0]["cpg_sites"]["sha256"] == (
+        "0037a70f092cc2e157d07253a1849ff5d5035c6b60d6b7fb518f20ebc9e8f15e"
+    )
     assert "fixtures.py" in altum.input_schema["description"]
     assert not Draft202012Validator(altum.input_schema).is_valid(
         {
@@ -209,6 +219,17 @@ def test_aging_units_and_full_panel_not_replaced_by_toy(registry):
             "samples": [{"sample_id": "toy", "beta_values": [0.5]}],
         }
     )
+
+
+def test_segment_contract_publishes_a_real_deterministic_nifti_fixture(registry):
+    contract = contract_for(selected(registry, "nv-segment-ct"), "native")
+    example = contract.examples[0]
+    fixture_id = example["input_nifti_base64"]["fixture_id"]
+    first, media_type = packaged_input_fixture(fixture_id)
+    second, _ = packaged_input_fixture(fixture_id)
+    assert first == second
+    assert media_type == "application/gzip"
+    assert gzip.decompress(first)[344:348] == b"n+1\x00"
 
 
 def test_every_scientific_profile_uses_canonical_schema_and_examples():

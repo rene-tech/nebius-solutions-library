@@ -214,7 +214,7 @@ private and uncached, so the tool list reflects exactly your token's policy.
 | --- | --- | --- |
 | Discover | `list_scientific_models` | `GET /v1/scientific-models` |
 | Reserve upload | `begin_scientific_artifact_upload` | `POST /v1/scientific-artifacts/uploads` |
-| Write bytes | `put_scientific_artifact_bytes` (base64) | `PUT /v1/scientific-artifacts/uploads/{id}/content` |
+| Write bytes | trusted client follows the returned handle/content path | `PUT /v1/scientific-artifacts/uploads/{id}/content` |
 | Finalize | `finalize_scientific_artifact_upload` | `POST /v1/scientific-artifacts/uploads/{id}:finalize` |
 | Submit | `submit_scientific_run` | `POST /v1/models/{model_id}:submit` |
 | Status | `get_scientific_status` | `GET /v1/operations/{id}` |
@@ -222,12 +222,12 @@ private and uncached, so the tool list reflects exactly your token's policy.
 | Cancel | `cancel_scientific_run` | `POST /v1/operations/{id}:cancel` |
 | Result | `get_scientific_result` | `GET /v1/operations/{id}/result` |
 | Artifact pointer | `get_scientific_artifact` | `GET /v1/artifacts/{id}` |
-| Artifact bytes | `read_scientific_artifact_bytes` (base64) | `GET /v1/artifacts/{id}/content` |
+| Manifest entries | `inspect_scientific_artifact_manifest` | client downloads from `GET /v1/artifacts/{id}/content` |
 | Download handle | `download_scientific_artifact` | `GET /v1/artifacts/{id}/download` |
 
-The byte tools carry base64 and are bounded by the same inline ceiling as the
-HTTP routes. MCP submission additionally requires the profile to be
-MCP-invocable; every currently qualified profile is.
+Raw byte transfer is a trusted-client HTTPS responsibility and is intentionally
+absent from agent-visible MCP. MCP submission additionally requires the profile
+to be MCP-invocable; every currently qualified profile is.
 
 Each discovery row's `mcp_tool_name` is also a callable convenience tool with
 arguments `request` and optional `idempotency_key`. For example,

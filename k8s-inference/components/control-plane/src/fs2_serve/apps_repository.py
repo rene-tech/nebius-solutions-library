@@ -19,6 +19,7 @@ class AppConflictError(RuntimeError):
 
 class AppsRepository(Protocol):
     async def list_records(self) -> list[AppRecord]: ...
+    async def list_discoverable_records(self) -> list[AppRecord]: ...
     async def get(self, app_id: UUID) -> AppRecord | None: ...
     async def seed(self, record: AppRecord) -> AppRecord: ...
     async def attach_deployment(self, record: AppRecord, *, name: str) -> AppRecord: ...
@@ -32,6 +33,23 @@ class PostgresAppsRepository:
     async def list_records(self) -> list[AppRecord]:
         async with self.pool.acquire() as connection:
             rows = await connection.fetch("SELECT * FROM fs2_apps ORDER BY created_at,app_id")
+        return [AppRecord.model_validate(dict(row)) for row in rows]
+
+    async def list_discoverable_records(self) -> list[AppRecord]:
+        """Exclude scientific Apps held by any explicit operator pause.
+
+        Paused Apps remain in the admin inventory and retain their history,
+        but are not participant discovery or submission targets.
+        """
+
+        async with self.pool.acquire() as connection:
+            rows = await connection.fetch(
+                """SELECT app.* FROM fs2_apps app
+                WHERE app.execution_mode<>'scientific' OR NOT EXISTS (
+                    SELECT 1 FROM fs2_scientific_model_policies policy
+                    WHERE policy.model_id=app.public_model_id AND policy.paused
+                ) ORDER BY app.created_at,app.app_id"""
+            )
         return [AppRecord.model_validate(dict(row)) for row in rows]
 
     async def get(self, app_id: UUID) -> AppRecord | None:
@@ -187,6 +205,9 @@ class MemoryAppsRepository:
 
     async def list_records(self) -> list[AppRecord]:
         return sorted(self.records.values(), key=lambda item: (item.created_at, item.app_id))
+
+    async def list_discoverable_records(self) -> list[AppRecord]:
+        return await self.list_records()
 
     async def get(self, app_id: UUID) -> AppRecord | None:
         return self.records.get(app_id)

@@ -14,6 +14,7 @@ key determines the visible Apps and owns the resulting operations and artifacts.
 
 1. Call `list_models` and `list_scientific_models` when the requested App or
    current availability is not already established in this conversation.
+   Compare their `tool_catalog_revision`; refetch `tools/list` when it changes.
 2. Call `get_model_schema` with the selected public `model_id` and protocol.
 3. Use the returned `contracts[].tool_name`, flat `input_schema`, examples,
    source references and active-runtime identity. Independent Apps using the
@@ -59,20 +60,20 @@ Chat attachments and local paths are not gateway artifacts. For every input:
 
 1. Read the actual caller-owned bytes outside the language-model context.
 2. Compute exact SHA-256, byte count, media type and compression.
-3. Call `begin_model_artifact_upload`, transfer using its returned handle or
-   `put_model_artifact_bytes`, then call `finalize_model_artifact_upload`.
-   The older `begin_scientific_artifact_upload`, `put_scientific_artifact_bytes`
-   and `finalize_scientific_artifact_upload` names remain compatibility aliases.
+3. Call `begin_model_artifact_upload`, let the trusted client transfer through
+   its returned upload handle or HTTPS `content_path`, then call
+   `finalize_model_artifact_upload`. The scientific begin/finalize names remain
+   aliases; raw byte tools are deliberately not agent-visible.
 4. For a serving App, place that returned reference directly in a field marked
    `x-fs2-artifact-materialization`. For scientific batch, build and upload the
    canonical manifest from returned references.
 5. A server fixture reference shown by discovery is immediately usable; never
    expand it into bytes. Submit the named tool with small references only.
 
-Never invent or reuse another user's artifact ID. Keep large base64 values and
-structure/media files out of chat. MCP inline transfer has base64 overhead and
-is suitable only below the advertised ceiling; use returned upload/download
-handles or the HTTPS artifact path for larger files. Check handle expiry.
+Never invent or reuse another user's artifact ID. Keep base64 values and
+structure/media files out of chat. Use returned upload/download handles or the
+HTTPS artifact path and check handle expiry. Use
+`inspect_scientific_artifact_manifest` for compact result listings.
 
 ## Errors and user-facing results
 
@@ -83,6 +84,9 @@ handles or the HTTPS artifact path for larger files. Check handle expiry.
   substitute an admin credential or claim academic eligibility in the request.
 - For 429, retryable 503, or an interrupted submission, retain the same
   idempotency identity, back off, and check the saved operation.
+- For tool `isError`, follow structured `error.retryable`,
+  `error.durable_admission`, `error.operation_id`, and
+  `error.retry_after_seconds`; retain `error.request_id` for support.
 - For a terminal model failure, report the public model/App, operation ID,
   timestamps and returned structured error. Do not label acceptance as success.
 - Serving `get_operation_result` returns `{operation, result}`. Large or binary

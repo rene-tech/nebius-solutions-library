@@ -172,8 +172,8 @@ def _combine(sequence: str, members: dict[str, str]) -> str:
     query = records.pop(query_index)
     records.insert(0, ("query", query[1]))
     nonempty = [records[0]] + [record for record in records[1:] if _uppercase(record[1])]
-    if len(nonempty) < MAX_RECORDS:
-        raise RuntimeError(f"ColabFold returned only {len(nonempty)} usable records")
+    # Homolog count is data-dependent. A valid result containing the query and
+    # fewer than MAX_RECORDS hits is complete, not an upstream failure.
     return "\n".join(
         line
         for header, aligned in nonempty[:MAX_RECORDS]

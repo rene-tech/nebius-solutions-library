@@ -15,8 +15,10 @@ This reference supplements `SKILL.md`. Live `tools/list` and
   offered, `operations.cancel`, plus a model allowlist.
 - Ordinary serving operation access is tied to the exact submitting key and
   principal. Preserve that identity until required results are retrieved.
-- Tool discovery is authorization-aware, private, and uncached. Reconnect after
-  replacing credentials or after the operator changes the catalog.
+- Tool discovery is authorization-aware, private, and uncached. Subscribe to
+  tool-list change notifications where supported. Also compare the
+  `tool_catalog_revision` returned by catalog calls and refetch `tools/list`
+  whenever it changes; reconnect after replacing credentials.
 
 The current server uses MCP SDK 2.1.1 and supports modern and legacy protocol
 negotiation. Let LibreChat manage `MCP-Protocol-Version`, request routing headers,
@@ -37,12 +39,10 @@ limits and expiry timestamps returned by the server when available.
 | Signed upload/download handle | 600 seconds |
 | Serving synchronous wait maximum | 30 seconds |
 
-Base64 expands data by about one third. With a 16 MiB raw MCP request limit,
-`put_scientific_artifact_bytes` can carry just under 12 MiB of binary data after
-JSON-RPC overhead. Large uploads must use the handle returned by the reservation.
-Large downloads should use `download_scientific_artifact` or the authorized HTTP
-content route. `read_scientific_artifact_bytes` returns base64 and is bounded by
-the inline ceiling; its tool response can exceed the chat client's own limit.
+Raw bytes are not exposed as agent tools. The trusted client uploads through
+the handle/content path returned by reservation and downloads through
+`download_scientific_artifact` or the authorized HTTP content route. Manifest
+inspection returns compact metadata rather than base64.
 
 Ordinary payload/result TTL defaults to 24 hours and operation metadata to seven
 days. Scientific artifacts/results default to 90 days. Use returned expiry
@@ -54,19 +54,19 @@ durable store for an output.
 
 Core tools cover:
 
-- catalog/schema: `list_models`, `list_scientific_models`, `get_model_schema`;
+- catalog/schema: `list_models`, `list_scientific_models`,
+  `get_tool_catalog_revision`, `get_model_schema`;
 - serving: `invoke_model`, `get_operation`, `get_operation_result`,
   `cancel_operation`, `acknowledge_operation`;
 - scientific runs: `submit_scientific_run`, `get_scientific_status`,
   `list_scientific_events`, `get_scientific_result`, `cancel_scientific_run`;
 - artifacts: `begin_scientific_artifact_upload`,
-  `put_scientific_artifact_bytes`, `finalize_scientific_artifact_upload`,
-  `get_scientific_artifact`, `read_scientific_artifact_bytes`, and
-  `download_scientific_artifact`.
+  `finalize_scientific_artifact_upload`, `get_scientific_artifact`,
+  `inspect_scientific_artifact_manifest`, and `download_scientific_artifact`.
 
 There is also one named typed tool per authorized App. A 2026-09-09 all-model
-acceptance key saw 27 named tools: 14 native, two OpenAI-chat and 11 scientific
-batch Apps, including an independent App clone. Restricted keys see fewer.
+acceptance key saw named native, OpenAI-chat and scientific-batch Apps.
+Paused/disabled acceptance clones are excluded. Restricted keys see fewer.
 
 ## Scientific batch document
 

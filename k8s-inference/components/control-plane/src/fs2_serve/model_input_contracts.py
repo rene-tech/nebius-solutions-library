@@ -10,8 +10,11 @@ content, asset identities and cross-field relationships. No values are dropped.
 
 from __future__ import annotations
 
+import array
 import copy
+import gzip
 import json
+import struct
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib.resources import files
@@ -523,6 +526,7 @@ def _segment() -> Schema:
                 materialization="base64",
                 media_types=("application/x-nifti", "application/gzip", "application/octet-stream"),
                 max_bytes=32 * 1024 * 1024,
+                fixture_ids=("nifti/nv-segment-ct-synthetic-ellipsoid-v1",),
             ),
             "label_prompt": _array(
                 _field("integer", "VISTA3D anatomical label index."), "Nonempty anatomical label prompts.", minItems=1
@@ -966,18 +970,72 @@ def _examples(model_ref: str) -> tuple[dict[str, Any], ...]:
                 }
             ]
         },
+        "altumage": {
+            "cpg_sites": {
+                "artifact_id": "00000000-0000-4000-8000-000000000001",
+                "sha256": "0037a70f092cc2e157d07253a1849ff5d5035c6b60d6b7fb518f20ebc9e8f15e",
+                "size_bytes": 284453,
+                "media_type": "application/json",
+                "compression": "none",
+            },
+            "missing_values": "error",
+            "samples": [
+                {
+                    "sample_id": "synthetic-dnam-0",
+                    "beta_values": {
+                        "artifact_id": "00000000-0000-4000-8000-000000000002",
+                        "sha256": "92051e78b8a8ef95f8b6d697c61725a318019906086aa40ecffe16467be725c0",
+                        "size_bytes": 81273,
+                        "media_type": "application/json",
+                        "compression": "none",
+                    },
+                }
+            ],
+        },
+        "nv-segment-ct": {
+            "input_nifti_base64": {"fixture_id": "nifti/nv-segment-ct-synthetic-ellipsoid-v1"},
+            "label_prompt": [1],
+        },
     }
-    # Asset-bearing examples must not fabricate canonical CpG labels, PDB or NIfTI.
+    # Asset-bearing examples use immutable artifact or packaged fixture
+    # references, never fabricated scientific bytes in the model context.
     return (examples[model_ref],) if model_ref in examples else ()
 
 
 def packaged_input_fixture(fixture_id: str) -> tuple[bytes, str]:
     """Resolve a reviewed, immutable fixture without publishing its bytes."""
 
-    if fixture_id != "pdb/1ubq":
-        raise KeyError(fixture_id)
-    protein = _resource("native-examples.json")["diffdock"]["request"]["protein"]
-    return str(protein).encode("utf-8"), "chemical/x-pdb"
+    if fixture_id == "pdb/1ubq":
+        protein = _resource("native-examples.json")["diffdock"]["request"]["protein"]
+        return str(protein).encode("utf-8"), "chemical/x-pdb"
+    if fixture_id == "nifti/nv-segment-ct-synthetic-ellipsoid-v1":
+        shape = (96, 96, 96)
+        center = (48, 48, 48)
+        axes = (24, 18, 12)
+        voxels = array.array("f", [-1000.0]) * (shape[0] * shape[1] * shape[2])
+        for z in range(shape[2]):
+            dz = ((z - center[2]) / axes[2]) ** 2
+            for y in range(shape[1]):
+                dyz = ((y - center[1]) / axes[1]) ** 2 + dz
+                for x in range(shape[0]):
+                    if ((x - center[0]) / axes[0]) ** 2 + dyz <= 1.0:
+                        voxels[x + shape[0] * (y + shape[1] * z)] = 100.0
+        header = bytearray(352)
+        struct.pack_into("<i", header, 0, 348)
+        struct.pack_into("<8h", header, 40, 3, *shape, 1, 1, 1, 1)
+        struct.pack_into("<h", header, 70, 16)
+        struct.pack_into("<h", header, 72, 32)
+        struct.pack_into("<8f", header, 76, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+        struct.pack_into("<f", header, 108, 352.0)
+        struct.pack_into("<f", header, 112, 1.0)
+        header[123] = 2
+        struct.pack_into("<h", header, 254, 1)
+        struct.pack_into("<4f", header, 280, 1.0, 0.0, 0.0, 0.0)
+        struct.pack_into("<4f", header, 296, 0.0, 1.0, 0.0, 0.0)
+        struct.pack_into("<4f", header, 312, 0.0, 0.0, 1.0, 0.0)
+        header[344:348] = b"n+1\x00"
+        return gzip.compress(bytes(header) + voxels.tobytes(), compresslevel=9, mtime=0), "application/gzip"
+    raise KeyError(fixture_id)
 
 
 def _rebase_refs(value: Any, prefix: str) -> Any:

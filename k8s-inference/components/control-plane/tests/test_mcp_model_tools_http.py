@@ -16,13 +16,13 @@ from test_api_mcp import bound_model_registry, build_runtime
 from test_scientific_batch_production import scientific_runtime
 
 from fs2_serve.api import _model_view, create_app
-from fs2_serve.mcp_server import CORE_TOOLS, MCP_HTTP_PATH, mount_mcp
+from fs2_serve.mcp_server import CLIENT_ONLY_TOOLS, CORE_TOOLS, MCP_HTTP_PATH, mount_mcp
 from fs2_serve.models import Scope, TokenCreate
 from fs2_serve.registry import Registry
 from fs2_serve.request_debug import InMemoryDebugStore
 
 
-async def _key(runtime, *, tenant="tenant-a", models=("qwen3-8b",), catalog=True):
+async def _key(runtime, *, tenant="tenant-a", models=("qwen3-8b",), catalog=True, max_concurrency=4):
     scopes = {Scope.MCP_INVOKE, Scope.INFERENCE_INVOKE, Scope.OPERATIONS_READ, Scope.OPERATIONS_RESULT}
     if catalog:
         scopes.add(Scope.CATALOG_READ)
@@ -33,7 +33,7 @@ async def _key(runtime, *, tenant="tenant-a", models=("qwen3-8b",), catalog=True
             tenant_id=tenant,
             scopes=scopes,
             models=set(models),
-            max_concurrency=4,
+            max_concurrency=max_concurrency,
         ),
         created_by="offline-test",
     )
@@ -101,6 +101,42 @@ async def test_http_discovery_schema_flat_submission_and_legacy_replay(registry,
 
 
 @pytest.mark.asyncio
+async def test_http_tool_failures_keep_structured_retry_and_operation_context(registry, cipher, hasher):
+    runtime = build_runtime(registry, cipher, hasher)
+    app = _app(runtime)
+    key = await _key(runtime, max_concurrency=1)
+    payload = {"messages": [{"role": "user", "content": "first queued request"}], "max_tokens": 2}
+    async with app.router.lifespan_context(app), _connection(runtime, app, key) as client:
+        accepted = _data(
+            await client.call_tool(
+                "qwen3_8b_openai_chat",
+                payload | {"idempotency_key": "structured-error-first-20260909"},
+            )
+        )
+        limited = await client.call_tool(
+            "qwen3_8b_openai_chat",
+            payload | {"idempotency_key": "structured-error-second-20260909"},
+        )
+        assert limited.is_error is True
+        assert limited.structured_content["error"] == {
+            "type": "admission_limit_reached",
+            "code": "admission_limit_reached",
+            "message": "This API key has reached its concurrent-operation limit; retry the same request shortly.",
+            "retryable": True,
+            "durable_admission": False,
+            "request_id": limited.structured_content["error"]["request_id"],
+            "idempotency_key": "structured-error-second-20260909",
+            "retry_after_seconds": 2,
+        }
+        absent = await client.call_tool("get_operation_result", {"operation_id": accepted["id"]})
+        assert absent.is_error is True
+        error = absent.structured_content["error"]
+        assert error["type"] == "operation_has_no_result"
+        assert error["operation_id"] == accepted["id"]
+        assert error["durable_admission"] is True
+
+
+@pytest.mark.asyncio
 async def test_http_all_core_descriptions_and_named_model_fields(registry, cipher, hasher):
     runtime = build_runtime(registry, cipher, hasher)
     app = _app(runtime)
@@ -108,6 +144,12 @@ async def test_http_all_core_descriptions_and_named_model_fields(registry, ciphe
     async with app.router.lifespan_context(app), _connection(runtime, app, key) as client:
         tools = {item.name: item for item in (await client.list_tools()).tools}
         assert CORE_TOOLS <= tools.keys()
+        assert CLIENT_ONLY_TOOLS.isdisjoint(tools)
+        revision = _data(await client.call_tool("get_tool_catalog_revision", {}))
+        models = _data(await client.call_tool("list_models", {}))
+        assert len(revision["tool_catalog_revision"]) == 64
+        assert revision["tool_count"] == len(tools)
+        assert models["tool_catalog_revision"] == revision["tool_catalog_revision"]
         assert tools.keys() - CORE_TOOLS, "at least one authorized named model tool must be published"
         for name in CORE_TOOLS:
             description = tools[name].description or ""

@@ -127,7 +127,7 @@ def _search_local(sequence: str, max_sequences: int) -> str:
                 "resultdb",
                 "tmp",
                 "--max-seqs",
-                str(max(max_sequences, MAX_RECORDS)),
+                str(min(max_sequences, MAX_RECORDS)),
                 "--threads",
                 str(MMSEQS_THREADS),
                 "-s",
@@ -172,9 +172,12 @@ def _search_local(sequence: str, max_sequences: int) -> str:
     if not records or records[0][1].replace("-", "").upper() != sequence:
         raise RuntimeError("MMseqs2 PDB70 result did not echo the query")
     usable = [records[0], *[record for record in records[1:] if record[1].replace("-", "")]]
-    if len(usable) < MAX_RECORDS:
-        raise RuntimeError(f"PDB70 returned only {len(usable)} usable records")
-    return "".join(f">{header}\n{aligned}\n" for header, aligned in usable[:MAX_RECORDS])
+    # A short query may legitimately have only a handful of homologs in the
+    # pinned database.  The requested value is an upper bound, not a minimum
+    # result cardinality: returning the query plus the available hits is a
+    # successful search and must not be retried as an upstream failure.
+    limit = min(max_sequences, MAX_RECORDS)
+    return "".join(f">{header}\n{aligned}\n" for header, aligned in usable[:limit])
 
 
 def _cached_search(sequence: str, max_sequences: int) -> str:

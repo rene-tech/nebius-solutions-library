@@ -202,19 +202,18 @@ object-store access either:
 | MCP tool | HTTP equivalent |
 | --- | --- |
 | `begin_scientific_artifact_upload` | `POST /v1/scientific-artifacts/uploads` |
-| `put_scientific_artifact_bytes` | `PUT /v1/scientific-artifacts/uploads/{id}/content` |
+| trusted-client upload handle/content path | `PUT /v1/scientific-artifacts/uploads/{id}/content` |
 | `finalize_scientific_artifact_upload` | `POST /v1/scientific-artifacts/uploads/{id}:finalize` |
 | `submit_scientific_run` | `POST /v1/models/{model_id}:submit` |
 | `get_scientific_status` | `GET /v1/operations/{id}` |
 | `get_scientific_result` | `GET /v1/operations/{id}/result` |
 | `get_scientific_artifact` | `GET /v1/artifacts/{id}` |
-| `read_scientific_artifact_bytes` | `GET /v1/artifacts/{id}/content` |
+| `inspect_scientific_artifact_manifest` | metadata view; bytes use `GET /v1/artifacts/{id}/content` |
 | `download_scientific_artifact` | `GET /v1/artifacts/{id}/download` |
 
-The two byte tools carry base64 and enforce the same inline ceiling, rejecting
-an over-large payload on its encoded length before decoding it. They apply the
-identical digest, size, media-type and tenant checks as the HTTP routes,
-because they call the same service.
+Raw byte transfer stays in the trusted HTTPS client/data plane so files do not
+enter language-model context. Reservation, finalization, digest, size,
+media-type and tenant checks remain in the same artifact service.
 
 The controller surface stays under `/internal/scientific-artifacts`. It takes
 the tenant from the verified bearer principal; no request body can choose one.

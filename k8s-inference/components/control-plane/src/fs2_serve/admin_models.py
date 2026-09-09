@@ -197,9 +197,9 @@ class AdminQualificationStates(StrictModel):
     route_active: bool
     runtime_ready: bool
     semantic_qualified: bool
-    http_mcp_qualified: bool
+    http_mcp_qualified: bool | None
     cold_start_qualified: bool
-    elasticity_qualified: bool
+    elasticity_qualified: bool | None
 
 
 class AdminQualificationSnapshot(StrictModel):
@@ -207,6 +207,7 @@ class AdminQualificationSnapshot(StrictModel):
     authority: str = Field(min_length=1, max_length=128)
     observed_at: AwareDatetime | None
     states: AdminQualificationStates
+    state_reasons: dict[str, str] = Field(default_factory=dict, max_length=16)
 
 
 class AdminModelPolicy(StrictModel):

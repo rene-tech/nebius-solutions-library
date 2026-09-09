@@ -25,11 +25,19 @@ class ScientificAppsInventory:
     def __init__(self, repository: AppsRepository) -> None:
         self.repository = repository
         self.records: dict[str, AppRecord] = {}
+        self.discoverable_records: dict[str, AppRecord] = {}
 
     async def refresh(self) -> None:
+        all_records = await self.repository.list_records()
+        discoverable = await self.repository.list_discoverable_records()
         self.records = {
             item.public_model_id: item
-            for item in await self.repository.list_records()
+            for item in all_records
+            if item.execution_mode == "scientific" and item.public_model_id != item.model_ref
+        }
+        self.discoverable_records = {
+            item.public_model_id: item
+            for item in discoverable
             if item.execution_mode == "scientific" and item.public_model_id != item.model_ref
         }
 
@@ -66,6 +74,8 @@ class AppScientificProfiles(ScientificProfileCatalog):
     def get(self, model_id: str, *, runnable: bool = True) -> ScientificWorkloadProfile:
         profile = self.source.get(self.inventory.source(model_id), runnable=runnable)
         app = self.inventory.records.get(model_id)
+        if app is not None and runnable and model_id not in self.inventory.discoverable_records:
+            raise RuntimeError("scientific App is paused and unavailable for submission")
         return AppScientificProfile(value=profile.value, app=app) if app else profile
 
     def list(self, *, runnable_only: bool = True) -> tuple[ScientificWorkloadProfile, ...]:
@@ -75,7 +85,7 @@ class AppScientificProfiles(ScientificProfileCatalog):
             *profiles,
             *(
                 self.get(model_id, runnable=runnable_only)
-                for model_id, app in sorted(self.inventory.records.items())
+                for model_id, app in sorted(self.inventory.discoverable_records.items())
                 if app.model_ref in sources
             ),
         )

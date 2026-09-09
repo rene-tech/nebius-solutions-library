@@ -401,6 +401,20 @@ def _model_view(
     runtime_origin = None if projection is None else projection["runtime_origin"]
     qualification = None
     if projection is not None:
+        states = dict(projection["states"])
+        state_reasons: dict[str, str] = {}
+        if model.enabled and states.get("route_active") is False:
+            states["route_active"] = True
+            state_reasons["route_active"] = (
+                "Active live-route publication supersedes the retained candidate's pre-activation snapshot."
+            )
+        for evidence_state in ("http_mcp_qualified", "elasticity_qualified"):
+            if model.enabled and states.get(evidence_state) is False:
+                states[evidence_state] = None
+                state_reasons[evidence_state] = (
+                    "No retained qualification receipt is attached to this selected deployment runtime; "
+                    "unknown is not a failed qualification."
+                )
         if "deployment_runtime" in projection:
             # Deployment-selected candidates carry their exact retained row,
             # not the timestamped qualification-projection envelope used by
@@ -410,14 +424,16 @@ def _model_view(
                 "kind": "selected-deployment-runtime",
                 "authority": "explicit-deployment-runtime-record",
                 "observed_at": None,
-                "states": dict(projection["states"]),
+                "states": states,
+                "state_reasons": state_reasons,
             }
         else:
             qualification = {
                 "kind": "reviewed-evidence-snapshot",
                 "authority": projection["qualification_authority"],
                 "observed_at": projection["observed_at"],
-                "states": dict(projection["states"]),
+                "states": states,
+                "state_reasons": state_reasons,
             }
     return {
         "id": model.id,

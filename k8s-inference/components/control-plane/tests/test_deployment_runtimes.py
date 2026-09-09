@@ -259,20 +259,35 @@ def test_dynamic_route_pins_image_and_artifact_even_without_archival_binding(inp
     tools = asyncio.run(build_mcp_server(build_runtime(runtime_registry, cipher, hasher)).list_tools())
     tool = next(item for item in tools if item.name == "molmim_native")
     assert tool.meta is not None
-    assert tool.meta["fs2_qualification"] == {
+    expected_states = dict(entry["qualification"]["states"])
+    expected_states.update(
+        route_active=True,
+        http_mcp_qualified=None,
+        elasticity_qualified=None,
+    )
+    expected_qualification = {
         "kind": "selected-deployment-runtime",
         "authority": "explicit-deployment-runtime-record",
         "observed_at": None,
-        "states": entry["qualification"]["states"],
+        "states": expected_states,
+        "state_reasons": {
+            "route_active": (
+                "Active live-route publication supersedes the retained candidate's pre-activation snapshot."
+            ),
+            "http_mcp_qualified": (
+                "No retained qualification receipt is attached to this selected deployment runtime; "
+                "unknown is not a failed qualification."
+            ),
+            "elasticity_qualified": (
+                "No retained qualification receipt is attached to this selected deployment runtime; "
+                "unknown is not a failed qualification."
+            ),
+        },
     }
+    assert tool.meta["fs2_qualification"] == expected_qualification
     admin_identity = AdminReadService._identity(runtime_registry.get("molmim"))
     assert admin_identity.qualification is not None
-    assert admin_identity.qualification.model_dump(mode="json") == {
-        "kind": "selected-deployment-runtime",
-        "authority": "explicit-deployment-runtime-record",
-        "observed_at": None,
-        "states": entry["qualification"]["states"],
-    }
+    assert admin_identity.qualification.model_dump(mode="json") == expected_qualification
     for field, value in (
         ("runtime_image", "registry/runtime@sha256:" + hashlib.sha256(b"wrong-image").hexdigest()),
         ("artifact_manifest_digest", "sha256:" + hashlib.sha256(b"wrong-artifact").hexdigest()),

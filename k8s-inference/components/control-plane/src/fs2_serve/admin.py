@@ -769,6 +769,20 @@ class AdminReadService:
         active_runtime = None if projection is None else AdminRuntimeOrigin.model_validate(projection["runtime_origin"])
         qualification = None
         if projection is not None:
+            states = dict(projection["states"])
+            state_reasons: dict[str, str] = {}
+            if model.enabled and states.get("route_active") is False:
+                states["route_active"] = True
+                state_reasons["route_active"] = (
+                    "Active live-route publication supersedes the retained candidate's pre-activation snapshot."
+                )
+            for evidence_state in ("http_mcp_qualified", "elasticity_qualified"):
+                if model.enabled and states.get(evidence_state) is False:
+                    states[evidence_state] = None
+                    state_reasons[evidence_state] = (
+                        "No retained qualification receipt is attached to this selected deployment runtime; "
+                        "unknown is not a failed qualification."
+                    )
             if "deployment_runtime" in projection:
                 # An explicitly selected deployment-runtime record is not a
                 # timestamped legacy evidence projection. Preserve its states
@@ -778,7 +792,8 @@ class AdminReadService:
                         "kind": "selected-deployment-runtime",
                         "authority": "explicit-deployment-runtime-record",
                         "observed_at": None,
-                        "states": projection["states"],
+                        "states": states,
+                        "state_reasons": state_reasons,
                     }
                 )
             else:
@@ -787,7 +802,8 @@ class AdminReadService:
                         "kind": "reviewed-evidence-snapshot",
                         "authority": projection["qualification_authority"],
                         "observed_at": projection["observed_at"],
-                        "states": projection["states"],
+                        "states": states,
+                        "state_reasons": state_reasons,
                     }
                 )
         gpu_class = gateway.gpu_class

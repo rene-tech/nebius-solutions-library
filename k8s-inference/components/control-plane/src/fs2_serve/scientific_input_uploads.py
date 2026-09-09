@@ -10,7 +10,8 @@ principal, so an upload can only ever be advanced by the tenant that opened it.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import logging
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -23,7 +24,9 @@ from .scientific_artifacts import (
     ArtifactAccess,
     ArtifactCompression,
     ArtifactDirection,
+    AttemptStatus,
     BeginArtifactUpload,
+    CloseStageAttempt,
     FinalizeArtifactUpload,
     OpenStageAttempt,
     ScientificArtifactControllerPort,
@@ -36,6 +39,7 @@ RAW_SHA256 = r"^[a-f0-9]{64}$"
 UPLOAD_PROTOCOL = "scientific-artifact-upload-v1"
 UPLOAD_MODEL_REVISION = "scientific-input-artifact-v1"
 CompressionInput = ArtifactCompression | Literal["none"]
+LOGGER = logging.getLogger(__name__)
 
 
 class ScientificInputUploadRequest(StrictModel):
@@ -157,30 +161,62 @@ class ScientificInputUploadService:
         )
         attempt_id = _identity(operation.id, "attempt")
         upload_id = _identity(operation.id, "upload")
-        await self.artifacts.open_attempt(
-            OpenStageAttempt(
-                attempt_id=attempt_id,
-                operation_id=operation.id,
-                tenant_id=principal.tenant_id,
-                stage_id="input-upload",
-                attempt_number=1,
-                started_at=operation.accepted_at,
+        attempt_opened = False
+        try:
+            await self.artifacts.open_attempt(
+                OpenStageAttempt(
+                    attempt_id=attempt_id,
+                    operation_id=operation.id,
+                    tenant_id=principal.tenant_id,
+                    stage_id="input-upload",
+                    attempt_number=1,
+                    started_at=operation.accepted_at,
+                )
             )
-        )
-        result = await self.artifacts.begin_upload(
-            BeginArtifactUpload(
-                upload_id=upload_id,
-                attempt_id=attempt_id,
-                operation_id=operation.id,
-                tenant_id=principal.tenant_id,
-                direction=ArtifactDirection.INPUT,
-                expected_digest=f"sha256:{request.sha256}",
-                expected_size_bytes=request.size_bytes,
-                media_type=request.media_type.lower(),
-                compression=request.compression if isinstance(request.compression, ArtifactCompression) else None,
-                access=ArtifactAccess(),
+            attempt_opened = True
+            result = await self.artifacts.begin_upload(
+                BeginArtifactUpload(
+                    upload_id=upload_id,
+                    attempt_id=attempt_id,
+                    operation_id=operation.id,
+                    tenant_id=principal.tenant_id,
+                    direction=ArtifactDirection.INPUT,
+                    expected_digest=f"sha256:{request.sha256}",
+                    expected_size_bytes=request.size_bytes,
+                    media_type=request.media_type.lower(),
+                    compression=(
+                        request.compression if isinstance(request.compression, ArtifactCompression) else None
+                    ),
+                    access=ArtifactAccess(),
+                )
             )
-        )
+        except Exception:
+            # Admission precedes artifact policy validation so the same
+            # idempotency key has a durable identity. If reservation fails,
+            # release that admission immediately: a rejected file must never
+            # strand a queued operation or consume the principal's concurrency.
+            if attempt_opened:
+                try:
+                    await self.artifacts.close_attempt(
+                        CloseStageAttempt(
+                            attempt_id=attempt_id,
+                            operation_id=operation.id,
+                            tenant_id=principal.tenant_id,
+                            status=AttemptStatus.FAILED,
+                            completed_at=datetime.now(UTC),
+                        )
+                    )
+                except Exception:
+                    LOGGER.exception("failed to close rejected input-upload attempt operation_id=%s", operation.id)
+            try:
+                await self.store.cancel_operation(
+                    operation.id,
+                    tenant_id=principal.tenant_id,
+                    actor=principal.principal_id,
+                )
+            except Exception:
+                LOGGER.exception("failed to cancel rejected input-upload operation_id=%s", operation.id)
+            raise
         return ScientificInputUpload(
             operation_id=operation.id,
             upload_id=upload_id,

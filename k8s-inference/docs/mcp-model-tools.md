@@ -70,6 +70,7 @@ and `submit_scientific_run` envelopes remain available for existing clients.
 |---|---|
 | `list_models` | Discover authorized serving Apps, protocols and active runtime metadata. Choose a model, then read its schema. |
 | `list_scientific_models` | Discover authorized scientific profiles, operations and submission capabilities. Use their named tool and upload workflow. |
+| `get_tool_catalog_revision` | Read the caller-specific tool revision; refetch `tools/list` when it changes. |
 | `get_model_schema` | Read one authorized model's concrete input fields, examples and source references. This does not start a worker or a run. |
 | `invoke_model` | Generic serving submission with explicit model/protocol/payload; retain the returned operation ID. Prefer the named typed tool for new integrations. |
 | `get_operation` | Read your operation's queue/running/terminal state and result availability. Poll after asynchronous acceptance; it does not rerun inference. |
@@ -77,13 +78,11 @@ and `submit_scientific_run` envelopes remain available for existing clients.
 | `cancel_operation` | Request cancellation of your serving operation; observe its subsequent terminal state and resource release. |
 | `acknowledge_operation` | Acknowledge an operation and release its retained result/payload according to platform policy. Download what you need first. |
 | `begin_model_artifact_upload` | Reserve tenant-owned bytes for any authorized serving or batch App; use the returned handle without passing bytes through the LLM. |
-| `put_model_artifact_bytes` | Inline-transfer only a small reserved file from a trusted helper, never from model-generated base64. |
 | `finalize_model_artifact_upload` | Verify and return the immutable artifact reference accepted by transport-enabled typed fields. |
 | `get_model_artifact` | Inspect metadata for a serving input/output artifact without returning file bytes. |
 | `download_model_artifact` | Obtain a short-lived handle for a serving artifact; download and verify it outside model context. |
-| `read_model_artifact_bytes` | Base64-read a small artifact for non-LLM client code; do not copy its result into another model call. |
+| `inspect_model_artifact_manifest` | Parse a scientific manifest into bounded entry metadata without returning raw bytes. |
 | `begin_scientific_artifact_upload` | Declare an input artifact's exact metadata and obtain an upload identity; does not submit science. |
-| `put_scientific_artifact_bytes` | Transfer the artifact bytes using the declared upload contract and encoding. Preserve exact size and hash. |
 | `finalize_scientific_artifact_upload` | Complete and validate the upload; retain the finalized artifact metadata for the manifest/run request. |
 | `submit_scientific_run` | Generic scientific submission for an explicit model/run request. Prefer its named typed model tool, then retain the operation ID. |
 | `get_scientific_status` | Follow the existing run's stages, shards, queueing and execution state; no duplicate submission. |
@@ -91,7 +90,7 @@ and `submit_scientific_run` envelopes remain available for existing clients.
 | `get_scientific_result` | Read published result metadata after execution and publication finish; use returned artifact identifiers. |
 | `get_scientific_artifact` | Inspect one caller-owned artifact's metadata before downloading; metadata is not the file bytes. |
 | `download_scientific_artifact` | Obtain the existing artifact download response/location described by the tool. Follow its expiry and access requirements. |
-| `read_scientific_artifact_bytes` | Retrieve caller-owned artifact bytes in the documented MCP encoding where supported; respect the tool's size limit. |
+| `inspect_scientific_artifact_manifest` | Return manifest entry names, semantic types, sizes and digests without adding base64 content to chat. |
 | `cancel_scientific_run` | Request cancellation of your scientific run; continue checking terminal/cleanup status. |
 
 Scientific sequence: upload constituent input files → build/upload/finalize the
@@ -102,6 +101,11 @@ artifact IDs with arbitrary local paths or reuse another customer's uploads.
 and run envelopes. Mixed or long-running batches may queue on limited capacity;
 retain operation IDs rather than repeatedly submitting requests.
 
+Raw upload/download bytes are intentionally absent from agent-visible MCP.
+The trusted UI/client transfers bytes using the reservation's `handle` or
+`content_path`, and downloads through the returned handle or authorized HTTPS
+content route. This prevents model context from absorbing scientific files.
+
 ## Errors and troubleshooting
 
 Invalid typed model fields return MCP error `-32602` before durable admission.
@@ -111,6 +115,11 @@ Each issue has a JSON-pointer `field` and a validation `rule`, plus applicable
 using the published schema; do not blindly retry the same invalid input.
 Unauthorized/unknown tools or models return a generic policy error rather than
 another customer's schema or operation data.
+
+Expected execution failures return `isError=true` with structured `error`
+content: stable `type`/`code`, `retryable`, `durable_admission`, `request_id`,
+and, when applicable, `operation_id`, `idempotency_key`, and
+`retry_after_seconds`. Preserve those values rather than retrying blindly.
 
 Runtime failures are different: an accepted operation may fail while executing.
 Operators can inspect its actual request and upstream error in
