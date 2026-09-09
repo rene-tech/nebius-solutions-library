@@ -10,7 +10,7 @@ import re
 import ssl
 import time
 from collections.abc import AsyncIterator, Callable, Iterable, Mapping
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -487,6 +487,10 @@ class FederationRouter:
         timeout_seconds: float,
         content_type: str | None = None,
         content: bytes | None = None,
+        exchange_observer: Callable[
+            [AbstractAsyncContextManager[httpx.Response], int], AbstractAsyncContextManager[httpx.Response]
+        ]
+        | None = None,
     ) -> AsyncIterator[httpx.Response]:
         try:
             route = self.routes[model.id]
@@ -506,7 +510,7 @@ class FederationRouter:
             if remaining <= 0:
                 await circuit.failed()
                 raise FederationTransportError("federated request deadline elapsed")
-            context = client.stream(
+            context: AbstractAsyncContextManager[httpx.Response] = client.stream(
                 method,
                 route.url(path, attempt),
                 headers=self._headers(
@@ -520,6 +524,8 @@ class FederationRouter:
                 follow_redirects=False,
                 extensions={"sni_hostname": route.destination.host},
             )
+            if exchange_observer is not None:
+                context = exchange_observer(context, attempt + 1)
             try:
                 response = await context.__aenter__()
             except asyncio.CancelledError:

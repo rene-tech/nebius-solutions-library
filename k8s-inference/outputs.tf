@@ -154,6 +154,7 @@ output "effective_configuration" {
       }
       grafana_publish_external = var.deployment.observability.grafana.publish_external
       dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
+      request_debug_enabled    = var.deployment.observability.request_debug_enabled
     }
     model_express = {
       enabled         = var.deployment.acceleration.model_express.enabled

@@ -247,6 +247,9 @@ class Settings(BaseSettings):
     authorization_server_url: str = "https://identity.example.invalid"
     max_request_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=256 * 1024 * 1024)
     max_response_bytes: int = Field(default=128 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
+    # Opt-in full customer transport/upstream capture for evaluation debugging.
+    # Existing body-size limits apply; authentication secrets are never retained.
+    request_debug_enabled: bool = False
     payload_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
     scientific_artifacts_enabled: bool = False
     artifact_store_endpoint: str = Field(

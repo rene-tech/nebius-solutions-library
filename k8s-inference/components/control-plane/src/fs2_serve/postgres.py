@@ -537,7 +537,9 @@ class PostgresStore:
             await connection.execute(
                 f"GRANT SELECT,INSERT,UPDATE ON fs2_apps,fs2_inference_users TO {quoted_runtime}"
             )
-            await connection.execute(f"GRANT SELECT,INSERT ON fs2_request_telemetry TO {quoted_runtime}")
+            await connection.execute(
+                f"GRANT SELECT,INSERT ON fs2_request_telemetry,fs2_request_debug TO {quoted_runtime}"
+            )
             # Scientific artifact provenance. Rows are append-only for the
             # runtime role: the only permitted updates are the two documented
             # one-way transitions, and DELETE is additionally gated in SQL by

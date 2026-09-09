@@ -1363,6 +1363,12 @@ variable "enable_cold_start_keepers" {
   default     = true
 }
 
+variable "request_debug_enabled" {
+  description = "Capture complete public and upstream exchanges for operator debugging; authentication secrets are excluded."
+  type        = bool
+  default     = false
+}
+
 variable "enable_dcgm_cold_start_campaign" {
   description = "Temporarily collect and scrape only GPU utilization/framebuffer proxy metrics every second for a reviewed cold-start campaign. Defaults to the standard 30-second observability cadence."
   type        = bool

@@ -16,6 +16,7 @@ import {
 import { scientificRunNeedsRefresh } from "../scientific/ScientificRunDetailPage";
 import { formatTimestamp } from "../../lib/format";
 import { AppRunTransport } from "./AppTransport";
+import { RequestDebugLog } from "./RequestDebugLog";
 
 export function appRunNeedsRefresh(run?: AppRun) {
   if (!run) return true;
@@ -147,6 +148,7 @@ export function AppRunDetail({
               />
             </div>
             <AppRunTransport observations={data.observed_transport} />
+            <RequestDebugLog appId={appId} operationId={runId} />
             {operation.error_class ? (
               <p className="inline-notice inline-notice--error">
                 {operation.error_class} · {operation.outcome}

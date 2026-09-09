@@ -105,6 +105,8 @@ from .models import (
     TokenView,
 )
 from .registry import OperationalModel, Registry, RegistryError
+from .request_debug import DebugCaptureMiddleware, DebugStore, InMemoryDebugStore, PostgresDebugStore
+from .request_debug_routes import request_debug_router
 from .request_telemetry import InMemoryRequestTelemetryStore, PostgresRequestTelemetryStore, RequestTelemetryMiddleware
 from .route_revalidation import RouteRevalidator
 from .scientific_admin import ScientificAdminReadService, ScientificRunQuery
@@ -250,6 +252,7 @@ class AppRuntime:
     scientific_input_uploads: ScientificInputUploadService | None = None
     snapshot_capabilities: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     serving_snapshot_bundles: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    request_debug_store: DebugStore | None = None
 
     async def revalidate_routes(self) -> bool:
         if self.route_revalidator is not None and not await self.route_revalidator.refresh():
@@ -575,6 +578,19 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     transport_store = PostgresRequestTelemetryStore(pool) if pool is not None else InMemoryRequestTelemetryStore()
     app.state.request_telemetry = transport_store
     app.add_middleware(RequestTelemetryMiddleware, store=transport_store)
+    debug_store = runtime.request_debug_store
+    if debug_store is None:
+        if pool is not None:
+            payload_cipher = getattr(runtime.store, "cipher", None)
+            if payload_cipher is None:
+                raise RuntimeError("PostgreSQL request debugging requires the existing payload cipher")
+            debug_store = PostgresDebugStore(pool, payload_cipher)
+        else:
+            debug_store = InMemoryDebugStore()
+        runtime.request_debug_store = debug_store
+    app.state.request_debug = debug_store
+    if runtime.settings.request_debug_enabled:
+        runtime.admission.runtime.debug_store = debug_store
     allowed_hosts, allowed_origins = runtime.settings.public_transport_allowlists()
     app.add_middleware(
         TrustedEdgeMiddleware,
@@ -582,6 +598,8 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         allowed_hosts=allowed_hosts,
         allowed_origins=allowed_origins,
     )
+    if runtime.settings.request_debug_enabled:
+        app.add_middleware(DebugCaptureMiddleware, store=debug_store, principal_resolver=runtime.tokens.verify)
 
     @app.middleware("http")
     async def access_log(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
@@ -2183,6 +2201,17 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         app_observability_router(
             apps=apps_service,
             service=observations,
+            access=admin_access,
+            operator_dependency=operator,
+            context_dependency=app_context,
+            envelope=app_envelope,
+            problem_responses=admin_problem_responses,
+        )
+    )
+    app.include_router(
+        request_debug_router(
+            apps=apps_service,
+            store=debug_store,
             access=admin_access,
             operator_dependency=operator,
             context_dependency=app_context,

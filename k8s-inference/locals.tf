@@ -1133,6 +1133,7 @@ locals {
     keda_cooldown_period_seconds    = var.deployment.models.scaling.cooldown_period_seconds
     enable_cold_start_keepers       = var.deployment.models.cold_start_keepers
     enable_dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
+    request_debug_enabled           = var.deployment.observability.request_debug_enabled
     # core_pool_capacity is declared inside the workloads stage's scheduling
     # object and read as var.scheduling.core_pool_capacity, so it must travel
     # inside that object. Emitted as a sibling it was an undeclared variable:

@@ -8,7 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appsApi } from "../../api/appsClient";
 import type { AppRun, AppSettings, AppSummary } from "../../api/appsTypes";
 import { adminApi, AdminApiError } from "../../api/client";
@@ -26,6 +26,13 @@ import { AppsPage } from "./AppsPage";
 import { AppDetailPage } from "./AppDetailPage";
 import { AppRunDetail, appRunNeedsRefresh } from "./AppRunDetail";
 import { AppSettingsTab } from "./AppSettingsTab";
+import { requestDebugApi } from "../../api/requestDebugClient";
+
+beforeEach(() => {
+  vi.spyOn(requestDebugApi, "list").mockResolvedValue(
+    testEnvelope({ items: [], next_cursor: null }),
+  );
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -237,6 +244,12 @@ describe("App run publication", () => {
       <AppRunDetail appId={app.app_id} runId={pending.operation.id} />,
     );
     expect(await screen.findByText("Finalizing results")).toBeInTheDocument();
+    expect(requestDebugApi.list).toHaveBeenCalledWith(
+      app.app_id,
+      expect.any(URLSearchParams),
+      { operation_id: pending.operation.id, cursor: undefined },
+      expect.any(AbortSignal),
+    );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5100);
     });

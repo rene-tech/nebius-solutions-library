@@ -57,6 +57,9 @@ Related official documentation:
 See [the approved Apps contract](../../docs/ADMIN_APPS_REDESIGN.md) for identity,
 time-window, accounting and settings semantics. The Apps runtime API uses the
 existing admin session; no infrastructure credentials enter the browser.
+The opt-in [request debug viewer](../../docs/request-debug-logging.md) adds lazy
+request/response inspection within Runs and a collapsed global log for rejected
+requests without App attribution. See that guide for capture and retention limits.
 
 ## Develop and verify
 

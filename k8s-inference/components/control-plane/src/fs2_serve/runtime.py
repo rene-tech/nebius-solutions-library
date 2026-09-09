@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
+from collections.abc import AsyncIterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 from pydantic import ValidationError
@@ -16,6 +19,16 @@ from pydantic import ValidationError
 from .federation import FederationRouter, FederationTransportError
 from .models import ClaimedOperation, ReportedUsage, RuntimeIdentity, RuntimeLifecycleObservation, RuntimeResult
 from .registry import OperationalModel, ProbeSpec
+from .request_debug import (
+    DebugExchange,
+    DebugStore,
+    body_capture,
+    credential_values,
+    persist_debug_exchange,
+    redact_headers,
+    redact_query,
+    redact_text,
+)
 
 
 class RuntimeOperationError(RuntimeError):
@@ -56,6 +69,152 @@ _TRACEPARENT_RE = re.compile(r"^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$")
 _MAX_REFLECTED_HEADER_BYTES = 256
 _MAX_USAGE_FIELDS = 16
 _MAX_REPORTED_TOKEN_COUNT = 2**63 - 1
+_DEBUG_CAPTURE_EXTENSION = "fs2_upstream_debug_capture"
+_LOGGER = logging.getLogger(__name__)
+
+
+class _UpstreamCapture:
+    """Observe an existing dispatch without exposing its payload in public errors."""
+
+    def __init__(
+        self,
+        operation: ClaimedOperation,
+        endpoint: str,
+        request_body: bytes,
+        request_headers: dict[str, str],
+        maximum: int,
+        upstream_attempt: int,
+    ) -> None:
+        self.operation = operation
+        self.endpoint = endpoint
+        self.method = "POST"
+        self.query_string = ""
+        self.request_body = request_body
+        self.request_headers = list(request_headers.items())
+        self.response_headers: list[tuple[str, str]] = []
+        self.request_content_type: str | None = operation.request_content_type
+        self.response_content_type: str | None = None
+        self.maximum = maximum
+        self.upstream_attempt = upstream_attempt
+        self.started_at = datetime.now(UTC)
+        self.completed_at: datetime | None = None
+        self.status: int | None = None
+        self.content = bytearray()
+        self.observed_bytes = 0
+        self.read_started = False
+        self.complete = False
+        self.disconnected = False
+        self.error_type: str | None = None
+        self.error_detail: str | None = None
+        self.known_credentials: list[str] = []
+
+    def request(self, request: httpx.Request) -> None:
+        self.endpoint = request.url.path
+        self.query_string = request.url.query.decode("ascii", errors="replace")
+        self.method = request.method
+        self.request_headers = list(request.headers.multi_items())
+        self.request_content_type = request.headers.get("content-type")
+        try:
+            self.request_body = request.content
+        except httpx.RequestNotRead:
+            pass  # Dispatch input is already bytes; never consume/resend a request stream.
+        self.known_credentials.extend(credential_values(self.request_headers, self.query_string, self.request_body))
+
+    def response(self, response: httpx.Response) -> None:
+        self.request(response.request)
+        self.status = response.status_code
+        self.response_headers = list(response.headers.multi_items())
+        self.response_content_type = response.headers.get("content-type")
+        self.known_credentials.extend(credential_values(self.response_headers))
+
+    def observe(self, chunk: bytes) -> None:
+        self.read_started = True
+        self.observed_bytes += len(chunk)
+        remaining = max(0, self.maximum - len(self.content))
+        self.content.extend(chunk[:remaining])
+        if self.observed_bytes > self.maximum:
+            self.error_type = "ResponseBodyLimitExceeded"
+            self.error_detail = f"debug response capture exceeded configured maximum of {self.maximum} bytes"
+
+    def finished(self) -> None:
+        self.read_started = True
+        self.complete = self.observed_bytes <= self.maximum
+        self.completed_at = datetime.now(UTC)
+
+    def failed(self, error: BaseException) -> None:
+        if isinstance(error, httpx.HTTPError):
+            try:
+                self.request(error.request)
+            except RuntimeError:
+                pass  # Some transport exceptions carry no prepared request.
+        self.error_type = self.error_type or type(error).__name__
+        self.error_detail = self.error_detail or str(error)
+        self.disconnected = self.disconnected or isinstance(error, asyncio.CancelledError)
+        self.completed_at = self.completed_at or datetime.now(UTC)
+
+    async def drain_unread(self, response: httpx.Response) -> None:
+        # Success bodies are observed by the normal bounded reader. Only consume
+        # a body here when normal handling did not read it (HTTP rejection,
+        # preemption or invalid headers). Never resume a partially failed stream.
+        if self.read_started or self.disconnected:
+            return
+        self.read_started = True
+        try:
+            async for chunk in response.aiter_bytes():
+                self.observe(chunk)
+                if self.observed_bytes > self.maximum:
+                    return
+            self.finished()
+        except asyncio.CancelledError as error:
+            self.failed(error)
+            raise
+        except Exception as error:
+            # Debug-only consumption must not change an already determined
+            # upstream status or replace the original protocol exception.
+            self.failed(error)
+
+    def exchange(self) -> DebugExchange:
+        request = body_capture(
+            self.request_body, self.request_content_type, complete=True, known_credentials=self.known_credentials
+        )
+        response = body_capture(
+            bytes(self.content),
+            self.response_content_type,
+            complete=self.complete,
+            known_credentials=self.known_credentials,
+        )
+        # observed_bytes counts bytes actually delivered by the existing decoded
+        # HTTP body iterator, not wire/compressed bytes or advertised Content-Length.
+        response = response.model_copy(update={"observed_bytes": self.observed_bytes})
+        return DebugExchange(
+            id=uuid4(),
+            source="upstream",
+            request_id=None,
+            operation_id=self.operation.id,
+            operation_attempt=self.operation.attempt,
+            upstream_attempt=self.upstream_attempt,
+            started_at=self.started_at,
+            completed_at=self.completed_at or datetime.now(UTC),
+            tenant_id=self.operation.tenant_id,
+            principal_id=self.operation.principal_id,
+            token_id=self.operation.token_id,
+            model_id=self.operation.model_id,
+            mcp_tool=None,
+            endpoint=self.endpoint,
+            method=self.method,
+            http_status=self.status,
+            error_type=self.error_type
+            or ("upstream_http_error" if self.status is not None and self.status >= 400 else None),
+            error_detail=redact_text(self.error_detail, known_credentials=self.known_credentials)
+            if self.error_detail
+            else None,
+            query_string=redact_query(self.query_string, known_credentials=self.known_credentials),
+            request_headers=redact_headers(self.request_headers, known_credentials=self.known_credentials),
+            response_headers=redact_headers(self.response_headers, known_credentials=self.known_credentials),
+            request_body=request,
+            response_body=response,
+            disconnected=self.disconnected,
+        )
 
 
 def sanitize_error_detail(value: str, limit: int = 200) -> str:
@@ -114,6 +273,7 @@ class RuntimeClient:
         client: httpx.AsyncClient | None = None,
         metadata_provider: RuntimeMetadataProvider | None = None,
         federation: FederationRouter | None = None,
+        debug_store: DebugStore | None = None,
     ) -> None:
         self.activation_timeout_seconds = activation_timeout_seconds
         self.runtime_timeout_seconds = runtime_timeout_seconds
@@ -122,6 +282,47 @@ class RuntimeClient:
         self._owns_client = client is None
         self.metadata_provider = metadata_provider or NullRuntimeMetadataProvider()
         self.federation = federation or FederationRouter({})
+        self.debug_store = debug_store
+
+    @asynccontextmanager
+    async def _debug_stream(
+        self,
+        stream: AbstractAsyncContextManager[httpx.Response],
+        operation: ClaimedOperation,
+        endpoint: str,
+        request_body: bytes,
+        headers: dict[str, str],
+        upstream_attempt: int,
+    ) -> AsyncIterator[httpx.Response]:
+        capture = _UpstreamCapture(
+            operation, endpoint, request_body, headers, self.max_response_bytes, upstream_attempt
+        )
+        try:
+            async with stream as response:
+                capture.response(response)
+                response.extensions[_DEBUG_CAPTURE_EXTENSION] = capture
+                try:
+                    yield response
+                except BaseException as error:
+                    capture.failed(error)
+                    raise
+                finally:
+                    await capture.drain_unread(response)
+        except BaseException as error:
+            capture.failed(error)
+            raise
+        finally:
+            if self.debug_store is not None:
+                try:
+                    await persist_debug_exchange(self.debug_store, capture.exchange())
+                except Exception as error:
+                    # Debug serialization/storage failures must not replace an
+                    # inference result. Never put payloads or exception text in logs.
+                    _LOGGER.warning(
+                        "upstream debug capture failed operation_id=%s error_type=%s",
+                        operation.id,
+                        type(error).__name__,
+                    )
 
     async def close(self) -> None:
         actions = [self.federation.close()]
@@ -376,6 +577,8 @@ class RuntimeClient:
                     content=request_body,
                     timeout=self._timeout(operation, self.runtime_timeout_seconds),
                 )
+                if self.debug_store is not None:
+                    stream = self._debug_stream(stream, operation, endpoint, request_body, headers, 1)
             else:
                 stream = self.federation.stream(
                     model,
@@ -385,6 +588,13 @@ class RuntimeClient:
                     timeout_seconds=self._timeout(operation, self.runtime_timeout_seconds),
                     content_type=operation.request_content_type,
                     content=request_body,
+                    exchange_observer=(
+                        lambda context, attempt: self._debug_stream(
+                            context, operation, endpoint, request_body, headers, attempt
+                        )
+                    )
+                    if self.debug_store is not None
+                    else None,
                 )
             async with stream as response:
                 content_type = self._content_type(response, operation.protocol)
@@ -394,7 +604,8 @@ class RuntimeClient:
                 if response.status_code in (409, 410) and preempted is not None and preempted.lower() == "true":
                     raise PreemptedError("runtime reported preemption")
                 if not response.is_success:
-                    # Failure bodies are deliberately never buffered or persisted.
+                    # Public results/ledger remain payload-free for failures;
+                    # the optional encrypted debug capture owns their bodies.
                     runtime, lifecycle = await self._trusted_runtime_observation(operation, model)
                     return RuntimeResult(
                         status_code=response.status_code,
@@ -407,10 +618,17 @@ class RuntimeClient:
                         lifecycle=lifecycle,
                     )
                 content = bytearray()
+                capture = response.extensions.get(_DEBUG_CAPTURE_EXTENSION)
+                if isinstance(capture, _UpstreamCapture):
+                    capture.read_started = True
                 async for chunk in response.aiter_bytes():
+                    if isinstance(capture, _UpstreamCapture):
+                        capture.observe(chunk)
                     content.extend(chunk)
                     if len(content) > self.max_response_bytes:
                         raise RuntimeProtocolError("runtime response exceeded configured maximum")
+                if isinstance(capture, _UpstreamCapture):
+                    capture.finished()
                 semantic = self._semantic_outcome(operation.protocol, bytes(content))
                 runtime, lifecycle = await self._trusted_runtime_observation(operation, model)
                 return RuntimeResult(

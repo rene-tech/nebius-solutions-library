@@ -75,6 +75,7 @@ from .models import TokenCreate
 from .postgres import PostgresMaintenanceStore, PostgresStore
 from .postgresql_release import render_postgresql_release_contract
 from .registry import Registry
+from .request_debug import PostgresDebugStore
 from .route_revalidation import RouteRevalidator
 from .runtime import RuntimeClient
 from .runtime_kubernetes import KubernetesRuntimeMetadataProvider
@@ -495,12 +496,14 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         if settings.admin_capacity_enabled
         else None
     )
+    request_debug_store = PostgresDebugStore(store.pool, store.cipher)
     runtime_client = RuntimeClient(
         activation_timeout_seconds=settings.activation_timeout_seconds,
         runtime_timeout_seconds=settings.runtime_timeout_seconds,
         max_response_bytes=settings.max_response_bytes,
         metadata_provider=runtime_metadata_provider,
         federation=federation,
+        debug_store=request_debug_store if settings.request_debug_enabled else None,
     )
 
     async def refresh_routes() -> bool:
@@ -601,6 +604,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         store=store,
         tokens=tokens,
         admission=admission,
+        request_debug_store=request_debug_store,
         metrics=metrics,
         admin_token=settings.admin_token(),
         operator_sessions=OperatorSessionService(

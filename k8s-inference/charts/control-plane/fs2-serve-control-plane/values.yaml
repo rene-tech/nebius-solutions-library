@@ -327,6 +327,8 @@ config:
   otlpEndpoint: ""
   maxRequestBytes: "16777216"
   maxResponseBytes: "134217728"
+  # Evaluation-only full customer request/response logs in the existing database.
+  requestDebugEnabled: false
   payloadTtlSeconds: "86400"
   operationRetentionSeconds: "604800"
   patRetentionSeconds: "604800"
@@ -362,11 +364,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: 724abd1a44de2b80b8abf7dec65e683c5b69031b7f2ea4a1829d5bdb232a306a
-    migrationSetSha256: 1e8fb1205d0cf08ef9e177c4a6fc874f3924c2121024762cf7dc6d32c3d5c89a
-    migrationCount: 28
+    contractPayloadSha256: bb2a18a8132b0e65356b1c4960b7893ff601240b4ccd899e5d53e00bf1aff11e
+    migrationSetSha256: 9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2
+    migrationCount: 29
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0028_request_telemetry.sql
+    lastMigrationVersion: 0029_request_debug.sql
     namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
   resources:
     requests:

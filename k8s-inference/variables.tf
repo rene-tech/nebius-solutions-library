@@ -633,6 +633,7 @@ variable "deployment" {
 
     observability = optional(object({
       dcgm_cold_start_campaign = optional(bool, false)
+      request_debug_enabled    = optional(bool, false)
       grafana = optional(object({
         publish_external = optional(bool, false)
       }), {})

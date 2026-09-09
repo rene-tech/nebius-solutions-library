@@ -6,6 +6,7 @@ import { useAdminTimeWindow } from "../../components/AdminTimeWindow";
 import { DataBoundary } from "../../components/DataBoundary";
 import { useSession } from "../../auth/SessionContext";
 import { formatTimestamp } from "../../lib/format";
+import { GlobalRequestDebugLog } from "./RequestDebugLog";
 
 export function AppsPage() {
   const { params, navigation } = useAdminTimeWindow();
@@ -240,6 +241,7 @@ export function AppsPage() {
           </>
         )}
       </DataBoundary>
+      <GlobalRequestDebugLog />
     </div>
   );
 }

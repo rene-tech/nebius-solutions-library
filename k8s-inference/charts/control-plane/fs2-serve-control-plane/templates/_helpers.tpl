@@ -244,6 +244,8 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.config.maxRequestBytes | quote }}
 - name: FS2_MAX_RESPONSE_BYTES
   value: {{ .Values.config.maxResponseBytes | quote }}
+- name: FS2_REQUEST_DEBUG_ENABLED
+  value: {{ .Values.config.requestDebugEnabled | quote }}
 - name: FS2_SYNC_WAIT_SECONDS
   value: {{ .Values.config.syncWaitSeconds | quote }}
 - name: FS2_MAX_SYNC_WAIT_SECONDS

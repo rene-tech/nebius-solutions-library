@@ -542,6 +542,21 @@ class DeploymentContractTests(unittest.TestCase):
             },
         )
 
+    def test_request_debug_capture_is_an_opt_in_tfvars_workload_setting(self) -> None:
+        for enabled in (False, True):
+            deployment = {
+                "schema_version": 1,
+                "name": "fs2-request-debug",
+                "target": self.catalog_target(),
+                "observability": {"request_debug_enabled": enabled},
+            }
+            label = f"request-debug-{enabled}"
+            outputs = self._planned_outputs(self._write_configuration(label, deployment), label)
+            self.assertIs(
+                outputs["deployment_contract"]["stages"]["workloads"]["request_debug_enabled"], enabled
+            )
+            self.assertIs(outputs["effective_configuration"]["observability"]["request_debug_enabled"], enabled)
+
     def test_invalid_alertmanager_storage_and_retention_are_rejected_at_root(self) -> None:
         deployment = {
             "schema_version": 1,

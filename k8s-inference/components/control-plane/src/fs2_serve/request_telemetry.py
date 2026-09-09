@@ -105,6 +105,22 @@ def _uuid(value: object) -> UUID | None:
         return None
 
 
+def ensure_request_id(scope: Scope) -> UUID:
+    """Allocate one server-owned exchange ID before authentication/dispatch."""
+    state = scope.setdefault("state", {})
+    identity = _uuid(state.get("fs2_request_id"))
+    if identity is None:
+        identity = uuid4()
+        state["fs2_request_id"] = identity
+    return identity
+
+
+def current_request_id() -> UUID | None:
+    """Join synchronous runtime dispatch to the enclosing public exchange."""
+    state = _STATE.get()
+    return _uuid(state.get("fs2_request_id")) if state is not None else None
+
+
 def _label(value: object, limit: int = 256) -> str | None:
     return value if isinstance(value, str) and 0 < len(value) <= limit and value.isprintable() else None
 
@@ -180,6 +196,7 @@ class RequestTelemetryMiddleware:
         started_at = datetime.now(UTC)
         started_clock = time.monotonic()
         state = scope.setdefault("state", {})
+        request_id = ensure_request_id(scope)
         token = _STATE.set(state)
         request_bytes = response_bytes = 0
         request_complete = response_complete = disconnected = False
@@ -225,7 +242,7 @@ class RequestTelemetryMiddleware:
                 if not isinstance(principal, Principal):
                     principal = None
                 observation = RequestTelemetry(
-                    request_id=uuid4(),
+                    request_id=request_id,
                     started_at=started_at,
                     completed_at=finished_at or datetime.now(UTC),
                     endpoint=path[:1024],

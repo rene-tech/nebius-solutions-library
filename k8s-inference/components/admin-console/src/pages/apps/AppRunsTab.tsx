@@ -5,6 +5,7 @@ import { useAdminTimeWindow } from "../../components/AdminTimeWindow";
 import { DataBoundary } from "../../components/DataBoundary";
 import { Measurement } from "../../components/Measurement";
 import { formatTimestamp } from "../../lib/format";
+import { RequestDebugLog } from "./RequestDebugLog";
 
 export function AppRunsTab({ appId }: { appId: string }) {
   const { params, navigation } = useAdminTimeWindow();
@@ -203,6 +204,7 @@ export function AppRunsTab({ appId }: { appId: string }) {
           </>
         )}
       </DataBoundary>
+      <RequestDebugLog appId={appId} />
     </div>
   );
 }

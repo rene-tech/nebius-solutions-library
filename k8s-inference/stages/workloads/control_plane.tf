@@ -64,6 +64,7 @@ locals {
       otlpEndpoint           = "http://fs2-otel-gateway.fs2-observability.svc.cluster.local:4318/v1/traces"
       syncWaitSeconds        = "30"
       maxSyncWaitSeconds     = "30"
+      requestDebugEnabled    = var.request_debug_enabled
       }, var.model_scaling_mode == "keda" ? {
       activationTimeoutSeconds = "7200"
     } : {})
