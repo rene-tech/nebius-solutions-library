@@ -47,6 +47,8 @@ from .apps_scientific import (
     AppScientificScheduling,
     ScientificAppsInventory,
 )
+from .artifact_inputs import ArtifactInputMaterializer
+from .artifact_outputs import ServingOutputArtifactizer
 from .auth import OperatorSessionService, PepperRing, TokenService
 from .configuration import (
     TERRAFORM_BASELINE_ACTOR,
@@ -386,6 +388,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             store=store,
             artifacts=artifact_service,
             profiles=scientific_profiles,
+            registry=registry,
         )
     if settings.scientific_batch_enabled:
         if artifact_service is None or scientific_profiles is None:
@@ -530,6 +533,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         wait_poll_max_seconds=settings.wait_poll_max_seconds,
         route_refresh=refresh_routes,
         lifecycle=lifecycle,
+        artifact_inputs=ArtifactInputMaterializer(artifact_service) if artifact_service is not None else None,
+        artifact_outputs=ServingOutputArtifactizer(artifact_service) if artifact_service is not None else None,
     )
     initial_configuration = (
         load_platform_configuration(settings.admin_configuration_file)

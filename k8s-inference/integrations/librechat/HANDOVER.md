@@ -119,8 +119,10 @@ separately if the workbench advertises them.
 
 ## File and artifact bridge requirement
 
-The main MCP is enough for inline model inputs and small artifact transfers, but
-a smooth scientific workbench also needs a file-capable helper. LibreChat
+The main MCP now accepts immutable artifact references in every typed field
+marked `x-fs2-artifact-materialization`, provides small server-side fixture
+references, and externalizes binary or large serving results. A smooth
+workbench still needs a file-capable helper because LibreChat
 attachments exist in LibreChat storage; the remote gateway cannot read their
 local path. The helper must:
 
@@ -142,9 +144,10 @@ and bearer tokens must never enter model context or ordinary logs.
 The old `artifact-mcp.py` in the inspected workbench is **not compatible**: it
 still calls `clawbio_upload_create` / `clawbio_model_fetch`, assumes 32-character
 hex IDs and an `/upload/v1/` service. The fs2 gateway uses UUID upload/artifact
-identities and the begin → put/handle → finalize → read/download tools. Do not
-ship the old bridge as though it were operational; replace it or initially
-disable file-workflow claims.
+identities and the `begin_model_artifact_upload` → put/handle →
+`finalize_model_artifact_upload` → read/download tools. Do not ship the old
+bridge as though it were operational; replace it or initially disable
+attachment-workflow claims. Built-in smoke fixtures do not require that helper.
 
 Default server limits are 16 MiB for a raw MCP/HTTP request and 16 MiB decoded
 inline artifact content. Base64 plus JSON overhead means MCP can upload just

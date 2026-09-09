@@ -25,7 +25,10 @@ Legacy routes may have null runtime metadata; this is unknown information, not
 a claim that their worker is currently Ready.
 
 Examples describe valid input shape, not scientific recommendations. Large
-artifacts or sample artifact IDs are not already uploaded on your behalf.
+fields advertise `x-fs2-artifact-materialization` and accept the immutable
+reference returned by the model-artifact upload tools. Pinned `fixture_id`
+examples are server-side assets and contain no bytes in discovery. Other sample
+artifact IDs are not already uploaded on your behalf.
 JSON-schema validity does not guarantee valid biology, imaging geometry, or a
 valid external asset; the model performs those additional checks.
 
@@ -73,6 +76,12 @@ and `submit_scientific_run` envelopes remain available for existing clients.
 | `get_operation_result` | Retrieve your published serving result after successful completion. Preserve actual structured/binary result metadata rather than treating status as output. |
 | `cancel_operation` | Request cancellation of your serving operation; observe its subsequent terminal state and resource release. |
 | `acknowledge_operation` | Acknowledge an operation and release its retained result/payload according to platform policy. Download what you need first. |
+| `begin_model_artifact_upload` | Reserve tenant-owned bytes for any authorized serving or batch App; use the returned handle without passing bytes through the LLM. |
+| `put_model_artifact_bytes` | Inline-transfer only a small reserved file from a trusted helper, never from model-generated base64. |
+| `finalize_model_artifact_upload` | Verify and return the immutable artifact reference accepted by transport-enabled typed fields. |
+| `get_model_artifact` | Inspect metadata for a serving input/output artifact without returning file bytes. |
+| `download_model_artifact` | Obtain a short-lived handle for a serving artifact; download and verify it outside model context. |
+| `read_model_artifact_bytes` | Base64-read a small artifact for non-LLM client code; do not copy its result into another model call. |
 | `begin_scientific_artifact_upload` | Declare an input artifact's exact metadata and obtain an upload identity; does not submit science. |
 | `put_scientific_artifact_bytes` | Transfer the artifact bytes using the declared upload contract and encoding. Preserve exact size and hash. |
 | `finalize_scientific_artifact_upload` | Complete and validate the upload; retain the finalized artifact metadata for the manifest/run request. |

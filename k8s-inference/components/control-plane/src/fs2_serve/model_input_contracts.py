@@ -27,6 +27,8 @@ from .scientific_batch.profile_catalog import (
 Schema = dict[str, Any]
 _PROTEIN = "ACDEFGHIKLMNPQRSTVWY"
 _SEQUENCE = "ACDEFGHIKLMNPQRSTVWY"
+_ARTIFACT_ID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+_SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
 
 class InputContractUnavailable(ValueError):  # noqa: N818 - published adapter interface
@@ -74,6 +76,65 @@ def _integer(description: str, minimum: int, maximum: int, default: int) -> Sche
 
 def _constant(value: Any, description: str) -> Schema:
     return {"const": value, "default": value, "description": description}
+
+
+def _artifact_reference(*, media_types: tuple[str, ...]) -> Schema:
+    """Small immutable pointer returned by the platform upload tools."""
+
+    return _object(
+        {
+            "artifact_id": _field(
+                "string", "Caller-owned immutable artifact UUID returned after upload finalization.",
+                pattern=_ARTIFACT_ID_PATTERN,
+            ),
+            "sha256": _field("string", "SHA-256 of the exact uploaded bytes.", pattern=_SHA256_PATTERN),
+            "size_bytes": _field("integer", "Exact uploaded byte count.", minimum=0),
+            "media_type": _field(
+                "string", "Media type of the uploaded bytes.", enum=list(media_types),
+            ),
+            "compression": _constant("none", "Artifact input must be stored without transport compression."),
+        },
+        ("artifact_id", "sha256", "size_bytes", "media_type", "compression"),
+        "Tenant-owned artifact reference. Upload and finalize the bytes before submitting this model call.",
+    )
+
+
+def _fixture_reference(*fixture_ids: str) -> Schema:
+    return _object(
+        {
+            "fixture_id": _field(
+                "string", "Pinned server-side smoke fixture; no fixture bytes pass through the language model.",
+                enum=list(fixture_ids),
+            )
+        },
+        ("fixture_id",),
+        "Pinned server-side fixture reference.",
+    )
+
+
+def _transportable(
+    inline: Schema,
+    *,
+    materialization: str,
+    media_types: tuple[str, ...],
+    max_bytes: int,
+    fixture_ids: tuple[str, ...] = (),
+) -> Schema:
+    """Allow bulk bytes to move out-of-band while retaining the inline API."""
+
+    choices = [inline, _artifact_reference(media_types=media_types)]
+    if fixture_ids:
+        choices.append(_fixture_reference(*fixture_ids))
+    return {
+        "anyOf": choices,
+        "description": (
+            inline.get("description", "Model input")
+            + " Prefer an artifact reference for nontrivial files so clients never serialize file bytes through an LLM."
+        ),
+        "x-fs2-artifact-materialization": materialization,
+        "x-fs2-artifact-max-bytes": max_bytes,
+        "x-fs2-artifact-media-types": list(media_types),
+    }
 
 
 _DESCRIPTIONS = {
@@ -225,6 +286,13 @@ def _pydantic_contract(model_ref: str) -> tuple[Schema, tuple[str, ...]]:
             "No ligands, affinity prediction, templates, seed or online MSA search."
         )
         schema["$defs"]["Polymer"]["properties"]["sequence"]["pattern"] = rf"^[{_PROTEIN.lower()}{_PROTEIN}\s]+$"
+        a3m = schema["$defs"]["A3M"]["properties"]
+        a3m["alignment"] = _transportable(
+            a3m["alignment"],
+            materialization="utf-8",
+            media_types=("text/x-a3m", "text/plain"),
+            max_bytes=16 * 1024 * 1024,
+        )
     elif model_ref == "msa-search-pdb70":
         props["databases"]["const"] = ["pdb70_220313"]
         props["output_alignment_formats"]["const"] = ["a3m"]
@@ -240,13 +308,26 @@ def _pydantic_contract(model_ref: str) -> tuple[Schema, tuple[str, ...]]:
         )
     elif model_ref == "altumage":
         props["cpg_sites"]["uniqueItems"] = True
+        props["cpg_sites"] = _transportable(
+            props["cpg_sites"],
+            materialization="json",
+            media_types=("application/json",),
+            max_bytes=16 * 1024 * 1024,
+        )
         schema["description"] = (
             "Methylation-based chronological-age prediction, not clinical PhenoAge. Requires the entire "
             "canonical 20,318-CpG panel. Generate a full synthetic example with "
             "models/aging/fixtures.py methylation_payload and the pinned model preprocessing assets; "
             "a shortened CpG example is not a valid request."
         )
-        schema["$defs"]["MethylationSample"]["properties"]["beta_values"]["items"]["examples"] = [0.5, None]
+        sample = schema["$defs"]["MethylationSample"]["properties"]
+        sample["beta_values"]["items"]["examples"] = [0.5, None]
+        sample["beta_values"] = _transportable(
+            sample["beta_values"],
+            materialization="json",
+            media_types=("application/json",),
+            max_bytes=16 * 1024 * 1024,
+        )
     elif model_ref == "phenoage":
         schema["description"] = "Clinical PhenoAge from age plus nine blood biomarkers, not DNA-methylation PhenoAge."
     _describe(schema)
@@ -278,7 +359,12 @@ def _openfold3() -> Schema:
     label = _field("string", "Unique input or chain label.", pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$")
     a3m = _object(
         {
-            "alignment": _field("string", "Literal nonempty A3M text.", minLength=1),
+            "alignment": _transportable(
+                _field("string", "Literal nonempty A3M text.", minLength=1),
+                materialization="utf-8",
+                media_types=("text/x-a3m", "text/plain"),
+                max_bytes=16 * 1024 * 1024,
+            ),
             "format": _constant("a3m", "A3M alignment format."),
         },
         ("alignment", "format"),
@@ -318,10 +404,16 @@ def _openfold3() -> Schema:
 def _diffdock() -> Schema:
     schema = _object(
         {
-            "protein": _field(
-                "string",
-                "Inline PDB containing ATOM records; 40–2,000,000 UTF-8 bytes (runtime checked).",
-                pattern="ATOM",
+            "protein": _transportable(
+                _field(
+                    "string",
+                    "Inline PDB containing ATOM records; 40–2,000,000 UTF-8 bytes (runtime checked).",
+                    pattern="ATOM",
+                ),
+                materialization="utf-8",
+                media_types=("chemical/x-pdb", "text/plain"),
+                max_bytes=2_000_000,
+                fixture_ids=("pdb/1ubq",),
             ),
             "ligand": _field("string", "Ligand SMILES, not an uploaded ligand path.", minLength=1, maxLength=4096),
             "ligand_file_type": _constant("txt", "Inline SMILES only."),
@@ -350,8 +442,16 @@ def _proteinmpnn() -> Schema:
     temperature = _field("number", "Finite sampling temperature.", minimum=0.01, maximum=1)
     return _object(
         {
-            "input_pdb": _field(
-                "string", "Inline PDB with ATOM records; 40–2,000,000 UTF-8 bytes (runtime checked).", pattern="ATOM"
+            "input_pdb": _transportable(
+                _field(
+                    "string",
+                    "Inline PDB with ATOM records; 40–2,000,000 UTF-8 bytes (runtime checked).",
+                    pattern="ATOM",
+                ),
+                materialization="utf-8",
+                media_types=("chemical/x-pdb", "text/plain"),
+                max_bytes=2_000_000,
+                fixture_ids=("pdb/1ubq",),
             ),
             "input_pdb_chains": {
                 "anyOf": [
@@ -413,11 +513,16 @@ def _sdxl() -> Schema:
 def _segment() -> Schema:
     schema = _object(
         {
-            "input_nifti_base64": _field(
-                "string",
-                "Base64-encoded NIfTI bytes (<=32 MiB decoded), finite 3D volume, each dimension 8–512.",
-                minLength=1,
-                contentEncoding="base64",
+            "input_nifti_base64": _transportable(
+                _field(
+                    "string",
+                    "Base64-encoded NIfTI bytes (<=32 MiB decoded), finite 3D volume, each dimension 8–512.",
+                    minLength=1,
+                    contentEncoding="base64",
+                ),
+                materialization="base64",
+                media_types=("application/x-nifti", "application/gzip", "application/octet-stream"),
+                max_bytes=32 * 1024 * 1024,
             ),
             "label_prompt": _array(
                 _field("integer", "VISTA3D anatomical label index."), "Nonempty anatomical label prompts.", minItems=1
@@ -509,10 +614,16 @@ def _evo2() -> Schema:
 def _rfdiffusion() -> Schema:
     return _object(
         {
-            "input_pdb": _field(
-                "string",
-                "Inline input protein PDB, beginning with an ATOM or HEADER record.",
-                pattern=r"^(ATOM|HEADER)",
+            "input_pdb": _transportable(
+                _field(
+                    "string",
+                    "Inline input protein PDB, beginning with an ATOM or HEADER record.",
+                    pattern=r"^(ATOM|HEADER)",
+                ),
+                materialization="utf-8",
+                media_types=("chemical/x-pdb", "text/plain"),
+                max_bytes=2_000_000,
+                fixture_ids=("pdb/1ubq",),
             ),
             "contigs": _field(
                 "string",
@@ -604,6 +715,22 @@ def _chat(model_ref: str) -> tuple[Schema, tuple[str, ...]]:
     }
     if model_ref == "nv-reason-cxr-3b":
         allowed_parts |= {"ChatCompletionContentPartImageParam", "CustomChatCompletionContentSimpleImageParam"}
+        image_url = definitions.get("ImageURL", {}).get("properties", {})
+        if "url" in image_url:
+            image_url["url"] = _transportable(
+                image_url["url"],
+                materialization="data-url",
+                media_types=("image/png", "image/jpeg", "image/webp"),
+                max_bytes=16 * 1024 * 1024,
+            )
+        simple_image = definitions.get("CustomChatCompletionContentSimpleImageParam", {}).get("properties", {})
+        if "image_url" in simple_image:
+            simple_image["image_url"] = _transportable(
+                simple_image["image_url"],
+                materialization="data-url",
+                media_types=("image/png", "image/jpeg", "image/webp"),
+                max_bytes=16 * 1024 * 1024,
+            )
     for name in allowed_parts:
         definitions[name]["additionalProperties"] = False
     messages = schema["properties"]["messages"]["items"]["anyOf"]
@@ -755,7 +882,15 @@ def contract_for(model: OperationalModel, protocol: str) -> ModelInputContract:
 def _examples(model_ref: str) -> tuple[dict[str, Any], ...]:
     fixture = _resource("native-examples.json").get(model_ref)
     if fixture is not None:
-        return (copy.deepcopy(fixture["request"]),)
+        # The canonical validation requests retain their complete PDB bytes in
+        # package data. Discovery must never inject those bytes into an LLM
+        # context merely to explain how to call a model.
+        request = copy.deepcopy(fixture["request"])
+        if model_ref == "diffdock":
+            request["protein"] = {"fixture_id": "pdb/1ubq"}
+        elif model_ref == "proteinmpnn":
+            request["input_pdb"] = {"fixture_id": "pdb/1ubq"}
+        return (request,)
     if model_ref in {"qwen3-8b", "nv-reason-cxr-3b", "glm-5-2-fp8"}:
         return (
             {
@@ -834,6 +969,15 @@ def _examples(model_ref: str) -> tuple[dict[str, Any], ...]:
     }
     # Asset-bearing examples must not fabricate canonical CpG labels, PDB or NIfTI.
     return (examples[model_ref],) if model_ref in examples else ()
+
+
+def packaged_input_fixture(fixture_id: str) -> tuple[bytes, str]:
+    """Resolve a reviewed, immutable fixture without publishing its bytes."""
+
+    if fixture_id != "pdb/1ubq":
+        raise KeyError(fixture_id)
+    protein = _resource("native-examples.json")["diffdock"]["request"]["protein"]
+    return str(protein).encode("utf-8"), "chemical/x-pdb"
 
 
 def _rebase_refs(value: Any, prefix: str) -> Any:

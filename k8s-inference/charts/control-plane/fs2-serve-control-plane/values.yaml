@@ -721,18 +721,24 @@ scientificArtifacts:
   inlineContentMaxBytes: 16777216
   retentionSeconds: 7776000
   mediaTypes:
-    - application/octet-stream
-    - application/json
     - application/gzip
+    - application/json
+    - application/octet-stream
     - application/vnd.fs2.scientific-manifest+json
     - application/vnd.fs2.scientific-validation+json
+    - application/x-nifti
     - application/x-tar
     - chemical/x-cif
     - chemical/x-mmcif
     - chemical/x-pdb
+    - image/jpeg
+    - image/png
+    - image/webp
     - text/csv
     - text/plain
+    - text/x-a3m
     - text/x-fasta
+    - video/mp4
   # CIDRs the control plane may reach on 443 to serve artifact handles and
   # verify stored objects. Empty keeps the default-deny egress policy intact.
   egressCidrs: []

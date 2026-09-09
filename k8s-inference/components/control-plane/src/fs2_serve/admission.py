@@ -18,6 +18,8 @@ from opentelemetry.trace import SpanKind
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from .activation_contract import ActivationContractError, ScaleContract
+from .artifact_inputs import ArtifactInputError, ArtifactInputMaterializer
+from .artifact_outputs import ServingOutputArtifactizer
 from .lifecycle import (
     LifecycleClock,
     LifecycleCorrelation,
@@ -86,6 +88,8 @@ class AdmissionService:
         wait_poll_max_seconds: float = 0.5,
         route_refresh: Callable[[], Awaitable[bool]] | None = None,
         lifecycle: LifecycleRepository | None = None,
+        artifact_inputs: ArtifactInputMaterializer | None = None,
+        artifact_outputs: ServingOutputArtifactizer | None = None,
     ) -> None:
         self.registry = registry
         self.store = store
@@ -101,6 +105,8 @@ class AdmissionService:
         self.wait_poll_max_seconds = wait_poll_max_seconds
         self.route_refresh = route_refresh
         self.lifecycle = lifecycle or NullLifecycleRepository()
+        self.artifact_inputs = artifact_inputs
+        self.artifact_outputs = artifact_outputs
         self._wake = asyncio.Event()
         self._stop_claiming = asyncio.Event()
         self._stop_maintenance = asyncio.Event()
@@ -654,6 +660,13 @@ class AdmissionService:
             )
             try:
                 model = await self._current_model(claimed)
+                if self.artifact_inputs is not None:
+                    request_body = await self.artifact_inputs.materialize(
+                        model,
+                        claimed.protocol,
+                        tenant_id=claimed.tenant_id,
+                        request_body=request_body,
+                    )
                 invocation_started = datetime.now(UTC)
                 with self._tracer.start_as_current_span("fs2.runtime.invoke", kind=SpanKind.CLIENT) as span:
                     span.set_attribute("fs2.operation.id", str(claimed.id))
@@ -670,8 +683,6 @@ class AdmissionService:
                     span.set_attribute("fs2.runtime.http_status", result.status_code)
                     span.set_attribute("fs2.runtime.semantic_outcome", result.semantic_outcome)
                 invocation_finished = datetime.now(UTC)
-                result_body = result.body
-                result_content_type = result.content_type
                 await self._record_runtime_observation(
                     claimed,
                     result.runtime,
@@ -686,6 +697,20 @@ class AdmissionService:
                 if await self._retry(model, claimed, failure):
                     return
             success = 200 <= result.status_code < 300 and result.semantic_outcome == "protocol_valid"
+            if success and self.artifact_outputs is not None:
+                try:
+                    result = await self.artifact_outputs.externalize(claimed, result)
+                except Exception:  # pragma: no cover - artifact plane availability boundary
+                    # Artifact externalization is an optimization at this boundary. A
+                    # successful model invocation must remain retrievable even when the
+                    # artifact plane is temporarily unavailable; retaining the inline
+                    # result also avoids rerunning and double-charging GPU work.
+                    LOGGER.exception(
+                        "result artifact externalization failed; retaining inline result",
+                        extra={"operation_id": str(claimed.id), "tenant_id": claimed.tenant_id},
+                    )
+            result_body = result.body
+            result_content_type = result.content_type
             final = await self.store.complete_operation(
                 claimed.id,
                 status=OperationStatus.SUCCEEDED if success else OperationStatus.FAILED,
@@ -701,6 +726,8 @@ class AdmissionService:
                 fencing_token=claimed.fencing_token,
                 usage=result.usage,
             )
+        except ArtifactInputError as exc:
+            final = await self._terminal_failure(claimed, exc)
         except PreemptedError as exc:
             if model is not None and await self._retry(model, claimed, exc):
                 return

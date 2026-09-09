@@ -131,6 +131,50 @@ async def test_http_all_core_descriptions_and_named_model_fields(registry, ciphe
 
 
 @pytest.mark.asyncio
+async def test_large_native_examples_publish_small_server_fixture_references(registry, cipher, hasher):
+    native = bound_model_registry(registry, "diffdock")
+    model = native.get("diffdock")
+    declaration = json.loads((CATALOG_ROOT / "deployment-runtimes" / "diffdock-portable-h100.json").read_text())
+    record = declaration["record"]
+    image_digest = record["runtime"]["image"]["digest"]
+    native = Registry(
+        native.catalog,
+        {
+            "diffdock": replace(
+                model,
+                variant_id=declaration["variant_id"],
+                gateway=replace(
+                    model.gateway,
+                    mcp_discoverable=True,
+                    mcp_invocable=True,
+                    runtime_kind=record["runtime"]["kind"],
+                    runtime_image_digest=image_digest,
+                    gpu_class=record["resources"]["gpu"]["class"],
+                    qualification=None,
+                    binding=replace(
+                        model.binding,
+                        backend_runtime_image_digest=image_digest,
+                        backend_gpu_class=record["resources"]["gpu"]["class"],
+                    ),
+                ),
+            )
+        },
+    )
+    runtime = build_runtime(native, cipher, hasher)
+    app = _app(runtime)
+    key = await _key(runtime, models=("diffdock",))
+    async with app.router.lifespan_context(app), _connection(runtime, app, key) as client:
+        tools = {item.name: item for item in (await client.list_tools()).tools}
+        schema = tools["diffdock_native"].input_schema
+        assert schema["properties"]["protein"]["x-fs2-artifact-materialization"] == "utf-8"
+        discovered = _data(await client.call_tool("get_model_schema", {"model_id": "diffdock"}))
+        example = discovered["contracts"][0]["examples"][0]
+        assert example["protein"] == {"fixture_id": "pdb/1ubq"}
+        assert len(json.dumps(example)) < 1024
+        Draft202012Validator(schema).validate(example)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "model_id,tool_name,invalid,field",
     [

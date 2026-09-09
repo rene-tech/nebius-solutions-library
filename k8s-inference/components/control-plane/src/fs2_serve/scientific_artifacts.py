@@ -852,6 +852,13 @@ class ScientificArtifactControllerPort(Protocol):
         declared_size_bytes: int | None = None,
     ) -> InlineUploadReceipt: ...
 
+    async def store_trusted_upload_content(
+        self,
+        request: FinalizeArtifactUpload,
+        *,
+        content: bytes,
+    ) -> InlineUploadReceipt: ...
+
     async def finalize_upload(self, request: FinalizeArtifactUpload) -> ArtifactRecord: ...
 
     async def download(
@@ -1042,11 +1049,49 @@ class ScientificArtifactService:
         a claim that contradicts the intent is rejected without reading further.
         """
 
+        return await self._store_content(
+            request,
+            content=content,
+            declared_media_type=declared_media_type,
+            declared_size_bytes=declared_size_bytes,
+            max_bytes=self._max_inline_content_bytes,
+        )
+
+    async def store_trusted_upload_content(
+        self,
+        request: FinalizeArtifactUpload,
+        *,
+        content: bytes,
+    ) -> InlineUploadReceipt:
+        """Persist bytes already bounded by the runtime response collector.
+
+        This path is not public and therefore does not inherit the smaller HTTP
+        inline-upload ceiling. It still enforces the artifact policy, immutable
+        upload intent, digest, size and media type before and after storage.
+        """
+
+        return await self._store_content(
+            request,
+            content=content,
+            declared_media_type=None,
+            declared_size_bytes=None,
+            max_bytes=self._max_artifact_bytes,
+        )
+
+    async def _store_content(
+        self,
+        request: FinalizeArtifactUpload,
+        *,
+        content: bytes,
+        declared_media_type: str | None,
+        declared_size_bytes: int | None,
+        max_bytes: int,
+    ) -> InlineUploadReceipt:
         intent = await self._repository.get_upload(request)
         if intent.artifact_id is not None:
             raise ArtifactConflictError("a finalized upload cannot accept new bytes")
-        if len(content) > self._max_inline_content_bytes:
-            raise ArtifactContentTooLargeError("artifact exceeds the inline gateway ceiling")
+        if len(content) > max_bytes:
+            raise ArtifactContentTooLargeError("artifact exceeds the selected content ceiling")
         if declared_media_type is not None:
             declared = declared_media_type.split(";", 1)[0].strip().lower()
             if declared != intent.media_type:

@@ -18,6 +18,7 @@ from pydantic import Field
 
 from .auth import require_operation_access
 from .models import AdmissionRequest, ModelId, Principal, Scope, StrictModel
+from .registry import Registry
 from .scientific_artifacts import (
     ArtifactAccess,
     ArtifactCompression,
@@ -112,10 +113,12 @@ class ScientificInputUploadService:
         store: Store,
         artifacts: ScientificArtifactControllerPort,
         profiles: ScientificProfileCatalog,
+        registry: Registry | None = None,
     ) -> None:
         self.store = store
         self.artifacts = artifacts
         self.profiles = profiles
+        self.registry = registry
 
     @property
     def max_content_bytes(self) -> int:
@@ -129,9 +132,15 @@ class ScientificInputUploadService:
         idempotency_key: str,
     ) -> ScientificInputUpload:
         principal.require(Scope.INFERENCE_INVOKE, model_id=request.model_id)
-        # An input may be staged for a profile whose runtime is not qualified
-        # yet, but never for a model this deployment does not declare at all.
-        self.profiles.get(request.model_id, runnable=False)
+        # An input may be staged for a scientific profile whose runtime is not
+        # qualified yet or for a serving App that is currently cold. Never
+        # reserve storage for a model this deployment does not declare.
+        try:
+            self.profiles.get(request.model_id, runnable=False)
+        except (KeyError, RuntimeError):
+            if self.registry is None:
+                raise
+            self.registry.get(request.model_id, require_enabled=False)
         operation = await self.store.append_operation(
             principal=principal,
             admission=AdmissionRequest(

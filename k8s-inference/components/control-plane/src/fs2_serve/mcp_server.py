@@ -69,8 +69,14 @@ CORE_TOOLS = {
     "begin_scientific_artifact_upload",
     "put_scientific_artifact_bytes",
     "finalize_scientific_artifact_upload",
+    "begin_model_artifact_upload",
+    "put_model_artifact_bytes",
+    "finalize_model_artifact_upload",
     "download_scientific_artifact",
     "read_scientific_artifact_bytes",
+    "get_model_artifact",
+    "download_model_artifact",
+    "read_model_artifact_bytes",
 }
 MCP_HTTP_PATH = "/mcp"
 MCP_CHILD_MOUNT_PATH = "/"
@@ -83,7 +89,7 @@ CORE_PARAMETER_DESCRIPTIONS = {
     "request": "Batch run envelope from get_model_schema, with finalized input_manifest and model parameters.",
     "operation_id": "UUID returned by submission. Reuse it for status, result and cancellation; never invent an ID.",
     "artifact_id": "UUID of an authorized finalized input or published result artifact, not a filename or storage URL.",
-    "upload_id": "UUID returned by begin_scientific_artifact_upload, paired with that reservation's operation_id.",
+    "upload_id": "UUID returned by an artifact-upload begin tool, paired with that reservation's operation_id.",
     "idempotency_key": "Reuse the same key when retrying the same submission/upload to avoid duplicate work.",
     "wait_seconds": "Seconds to wait after admission (0 returns immediately); poll the returned operation thereafter.",
     "sha256": "Lowercase hexadecimal SHA-256 of the exact prepared upload bytes, including compression if present.",
@@ -439,9 +445,12 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
             "Prefer the named model tools. Their inputSchema describes the selected runtime's actual inputs; "
             "get_model_schema provides examples and sources. NVIDIA BioNeMo skills can guide a workflow, but "
             "NIM REST examples may require different fields or unsupported features. Do not silently omit "
-            "scientific inputs. Submissions return durable operations/runs, not immediate model predictions: "
+            "scientific inputs. Keep file bytes out of tool arguments: use server fixture references or the "
+            "model artifact upload tools for fields marked x-fs2-artifact-materialization. Submissions return "
+            "durable operations/runs, not immediate model predictions: "
             "poll get_operation/get_scientific_status, then fetch results or artifacts with the corresponding "
-            "result tools. Results remain encrypted until TTL or explicit acknowledgement."
+            "result tools. Large outputs are artifact pointers; download them outside model context. Results "
+            "remain encrypted until TTL or explicit acknowledgement."
         ),
         version="0.1.0",
         auth=AuthSettings(
@@ -744,6 +753,20 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         observe_request_metadata(operation_id=operation_id)
         return result
 
+    async def get_model_artifact(artifact_id: UUID) -> dict[str, Any]:
+        """Get metadata for a caller-owned serving input or output artifact.
+
+        The response contains no file bytes or storage credentials. Use a read
+        or download tool for content and verify the returned digest and size.
+        """
+
+        principal = _principal()
+        principal.require(Scope.OPERATIONS_RESULT)
+        if runtime.artifact_service is None:
+            raise MCPError(code=INVALID_PARAMS, message="model artifact service is unavailable")
+        stream = await runtime.artifact_service.open_content(artifact_id, tenant_id=principal.tenant_id)
+        return stream.artifact.to_public_ref().model_dump(mode="json", exclude_none=True)
+
     async def begin_scientific_artifact_upload(
         model_id: str,
         sha256: str,
@@ -752,7 +775,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         compression: str | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        """Reserve a caller-owned, write-once input upload for a specific batch model.
+        """Reserve a caller-owned, write-once input upload for a model.
 
         Supply the SHA-256, exact byte size, MIME type and optional compression
         of bytes you already prepared. Returns operation_id/upload_id and an
@@ -781,6 +804,25 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
             idempotency_key=idempotency_key or f"mcp-scientific-upload-{uuid4()}",
         )
         return result.model_dump(mode="json")
+
+    async def begin_model_artifact_upload(
+        model_id: str,
+        sha256: str,
+        size_bytes: int,
+        media_type: str,
+        compression: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Reserve immutable input bytes for any authorized serving or batch App.
+
+        Hash the file outside the language-model context. Write it through the
+        returned handle or put_model_artifact_bytes, then finalize it and place
+        the small returned artifact reference in the typed model field.
+        """
+
+        return await begin_scientific_artifact_upload(
+            model_id, sha256, size_bytes, media_type, compression, idempotency_key
+        )
 
     async def put_scientific_artifact_bytes(
         operation_id: UUID,
@@ -815,6 +857,19 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         )
         return receipt.model_dump(mode="json")
 
+    async def put_model_artifact_bytes(
+        operation_id: UUID,
+        upload_id: UUID,
+        content_base64: str,
+    ) -> dict[str, Any]:
+        """Write a small reserved model input; use the upload handle for larger files.
+
+        File bytes must be read and encoded by a trusted client helper, never
+        generated or copied through the language-model conversation.
+        """
+
+        return await put_scientific_artifact_bytes(operation_id, upload_id, content_base64)
+
     async def finalize_scientific_artifact_upload(operation_id: UUID, upload_id: UUID) -> dict[str, Any]:
         """Finalize a reserved input upload after all bytes have been written.
 
@@ -831,6 +886,15 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
             upload_id=upload_id,
         )
         return result.model_dump(mode="json", exclude_none=True)
+
+    async def finalize_model_artifact_upload(operation_id: UUID, upload_id: UUID) -> dict[str, Any]:
+        """Verify a reserved serving or batch input and return its immutable reference.
+
+        Put this returned object directly in a transport-enabled typed model
+        field; the worker verifies tenant ownership again before invocation.
+        """
+
+        return await finalize_scientific_artifact_upload(operation_id, upload_id)
 
     async def download_scientific_artifact(artifact_id: UUID) -> dict[str, Any]:
         """Issue a short-lived authorized download handle for an input or result artifact.
@@ -855,6 +919,15 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                 "headers": dict(result.handle.headers),
             },
         }
+
+    async def download_model_artifact(artifact_id: UUID) -> dict[str, Any]:
+        """Issue a short-lived download handle for a serving input or output artifact.
+
+        Download outside the language-model context and verify the immutable
+        SHA-256 and byte count from the operation result.
+        """
+
+        return await download_scientific_artifact(artifact_id)
 
     async def read_scientific_artifact_bytes(artifact_id: UUID) -> dict[str, Any]:
         """Return one authorized artifact's exact bytes, base64 encoded.
@@ -883,6 +956,15 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
             "content_base64": base64.b64encode(bytes(content)).decode("ascii"),
         }
 
+    async def read_model_artifact_bytes(artifact_id: UUID) -> dict[str, Any]:
+        """Read a small serving artifact as base64; prefer download handles for files.
+
+        Do not ask a language model to copy the returned base64 into another
+        tool call. A client-side file helper should decode and save it directly.
+        """
+
+        return await read_scientific_artifact_bytes(artifact_id)
+
     for function in (
         list_models,
         list_scientific_models,
@@ -901,16 +983,27 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         begin_scientific_artifact_upload,
         put_scientific_artifact_bytes,
         finalize_scientific_artifact_upload,
+        begin_model_artifact_upload,
+        put_model_artifact_bytes,
+        finalize_model_artifact_upload,
         download_scientific_artifact,
         read_scientific_artifact_bytes,
+        get_model_artifact,
+        download_model_artifact,
+        read_model_artifact_bytes,
     ):
         server.add_tool(function, name=function.__name__, meta={"fs2_core": True})
         descriptions = CORE_PARAMETER_DESCRIPTIONS
-        if function.__name__ in {"put_scientific_artifact_bytes", "finalize_scientific_artifact_upload"}:
+        if function.__name__ in {
+            "put_scientific_artifact_bytes",
+            "finalize_scientific_artifact_upload",
+            "put_model_artifact_bytes",
+            "finalize_model_artifact_upload",
+        }:
             descriptions = {
                 **descriptions,
                 "operation_id": (
-                    "Upload reservation operation UUID from begin_scientific_artifact_upload, not a model run."
+                    "Upload reservation operation UUID from the corresponding begin tool, not a model run."
                 ),
             }
         describe_tool_parameters(server, function.__name__, descriptions)

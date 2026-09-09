@@ -53,17 +53,21 @@ specific incompatibility and ask the user to choose a supported workflow.
 - Download and verify outputs before `acknowledge_operation`; acknowledgement
   purges an ordinary retained payload/result.
 
-## Scientific artifacts
+## Model artifacts
 
 Chat attachments and local paths are not gateway artifacts. For every input:
 
 1. Read the actual caller-owned bytes outside the language-model context.
 2. Compute exact SHA-256, byte count, media type and compression.
-3. Call `begin_scientific_artifact_upload`, transfer using its returned handle
-   or `put_scientific_artifact_bytes`, then finalize.
-4. Build a canonical manifest from the returned immutable artifact references;
-   upload and finalize that manifest too.
-5. Submit the named scientific tool with the finalized manifest reference.
+3. Call `begin_model_artifact_upload`, transfer using its returned handle or
+   `put_model_artifact_bytes`, then call `finalize_model_artifact_upload`.
+   The older `begin_scientific_artifact_upload`, `put_scientific_artifact_bytes`
+   and `finalize_scientific_artifact_upload` names remain compatibility aliases.
+4. For a serving App, place that returned reference directly in a field marked
+   `x-fs2-artifact-materialization`. For scientific batch, build and upload the
+   canonical manifest from returned references.
+5. A server fixture reference shown by discovery is immediately usable; never
+   expand it into bytes. Submit the named tool with small references only.
 
 Never invent or reuse another user's artifact ID. Keep large base64 values and
 structure/media files out of chat. MCP inline transfer has base64 overhead and
@@ -81,8 +85,10 @@ handles or the HTTPS artifact path for larger files. Check handle expiry.
   idempotency identity, back off, and check the saved operation.
 - For a terminal model failure, report the public model/App, operation ID,
   timestamps and returned structured error. Do not label acceptance as success.
-- Serving `get_operation_result` returns `{operation, result}`. Scientific
-  results are versioned run documents whose output manifests point to artifacts.
+- Serving `get_operation_result` returns `{operation, result}`. Large or binary
+  serving results use `operation-artifact-result/v1`; use
+  `download_model_artifact` outside model context. Scientific results are
+  versioned run documents whose output manifests point to artifacts.
   Preserve structured fields and verify artifact hashes rather than pasting raw
   files into the answer.
 

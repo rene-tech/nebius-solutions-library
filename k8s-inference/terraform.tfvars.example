@@ -482,13 +482,19 @@ deployment = {
   #       "application/octet-stream",
   #       "application/vnd.fs2.scientific-manifest+json",
   #       "application/vnd.fs2.scientific-validation+json",
+  #       "application/x-nifti",
   #       "application/x-tar",
   #       "chemical/x-cif",
   #       "chemical/x-mmcif",
   #       "chemical/x-pdb",
+  #       "image/jpeg",
+  #       "image/png",
+  #       "image/webp",
   #       "text/csv",
   #       "text/plain",
+  #       "text/x-a3m",
   #       "text/x-fasta",
+  #       "video/mp4",
   #     ]
   #   }
   # }

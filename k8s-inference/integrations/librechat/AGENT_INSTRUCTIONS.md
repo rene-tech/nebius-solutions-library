@@ -34,13 +34,20 @@ scientific batch work, poll `get_scientific_status`, read incremental
 activating and running mean the work is progressing. Never resubmit or cancel
 only because the chat connection or a tool wait timed out.
 
-For scientific files, process the real caller-owned bytes outside the language
-model context. Compute their SHA-256 and exact length, reserve/write/finalize
-each upload, then upload a canonical manifest made only from the returned
-artifact references. A chat attachment or local pathname is not an artifact;
-fixture IDs in examples do not belong to the caller. Use returned signed
-handles for large files and verify downloaded hashes. Never paste base64,
-PDB/mmCIF, images, or other large artifact bytes into chat.
+For every serving or scientific file, process the real caller-owned bytes
+outside the language-model context. Compute SHA-256 and exact length, use
+`begin_model_artifact_upload`, transfer through its handle (or the inline helper
+for a genuinely small file), then call `finalize_model_artifact_upload`. Put the
+returned reference directly in a typed field whose schema advertises
+`x-fs2-artifact-materialization`. Server fixture references such as
+`{"fixture_id":"pdb/1ubq"}` are ready to use and deliberately contain no file
+bytes. A chat attachment or local pathname is not an artifact. Never paste
+base64, PDB/mmCIF, images, alignments, or other large artifact bytes into chat.
+
+`get_operation_result` can return an `operation-artifact-result/v1` pointer for
+binary or large output. Download it with `download_model_artifact` outside the
+model context, verify its hash and size, and hand the saved file to viewers or
+downstream tools. Do not ask the language model to reproduce artifact bytes.
 
 MCP `-32602` with `data.type: model_input_validation` means no work was
 admitted. Explain the concrete JSON-pointer issue and correct the input from the

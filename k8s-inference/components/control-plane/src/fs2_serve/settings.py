@@ -277,6 +277,7 @@ class Settings(BaseSettings):
     artifact_media_types: str = Field(
         default=(
             "application/octet-stream,application/json,application/gzip,"
+            "application/x-nifti,image/jpeg,image/png,image/webp,video/mp4,text/x-a3m,"
             "application/vnd.fs2.scientific-manifest+json,"
             "application/vnd.fs2.scientific-validation+json,"
             "chemical/x-pdb,chemical/x-cif,text/plain"
