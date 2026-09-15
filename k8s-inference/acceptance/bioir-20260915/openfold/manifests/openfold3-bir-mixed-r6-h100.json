@@ -1,0 +1,262 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "openfold3-bir-source",
+        "namespace": "fs2-bioir-openfold",
+        "labels": {
+          "evaluation": "fs2-bioir-20260915",
+          "lane": "openfold",
+          "model": "openfold3",
+          "variant": "bir-mixed"
+        }
+      },
+      "data": {
+        "bir_openfold3_server.py": "#!/usr/bin/env python3\n\"\"\"Preserve Preview2 preprocessing, confidence scorer and HTTP boundary with BIR.\"\"\"\nimport gc\nimport hashlib\nimport os\nfrom pathlib import Path\nimport sys\nimport threading\nimport time\nimport traceback\n\nsys.path.insert(0, '/payload/server')\nimport server as current\ncurrent.ARTIFACTS = Path('/payload/weights')\n\nclass Runtime(current.Runtime):\n    def __init__(self):\n        self._candidate_ready = False\n        self._loaded = False\n        super().__init__()\n\n    @property\n    def ready(self):\n        return self._loaded and self._candidate_ready\n\n    @ready.setter\n    def ready(self, value):\n        self._loaded = value\n\n    def load(self):\n        started = time.perf_counter()\n        try:\n            import torch\n            import bionemo_ir\n            from bionemo_ir.models.openfold3 import OpenFold3\n            from openfold3.core.utils.tensor_utils import tensor_tree_map\n            checkpoint = current.ARTIFACTS / 'of3-p2-155k.pt'\n            expected = 'af09eac4f29cef856633af07558cb143226fe95ebbef2c20921769d4a5f4bee4'\n            h = hashlib.sha256()\n            with checkpoint.open('rb') as f:\n                for block in iter(lambda: f.read(8 * 1024 * 1024), b''):\n                    h.update(block)\n            if h.hexdigest() != expected:\n                raise RuntimeError('Preview2 checkpoint digest mismatch')\n            super().load()\n            if self.error:\n                return\n            original = self.module.model.cpu()\n            shared = self.module.config.architecture.shared\n            recycles = shared.num_recycles\n            steps = shared.diffusion.no_full_rollout_steps\n            samples = shared.diffusion.no_full_rollout_samples\n            config = OpenFold3.get_pretrained_config('openfold3')\n            precision = os.environ.get('BIOIR_EVAL_PRECISION', 'float32')\n            if precision == 'float32':\n                config.set_dtype('float32')\n                config.trunk.pairformer.s_path_dtype = torch.float32\n                config.auxiliary_heads_config.pairformer.s_path_dtype = torch.float32\n                config.set_triangle_attention_backend('SDPA')\n                config.set_pairwise_attention_backend('SDPA')\n            candidate = OpenFold3(config=config, include_load_weights=False, model_name='openfold3')\n            candidate.load_weights(original.state_dict())\n            version = original.version_tensor.detach().clone()\n\n            class Shim(torch.nn.Module):\n                def __init__(self, model):\n                    super().__init__()\n                    self.runtime = model\n                    self.register_buffer('version_tensor', version)\n\n                def forward(self, batch):\n                    # Both paths receive the identical upstream tensors. Preserve\n                    # the metadata/sample-axis contract expected by its scorer.\n                    perms = batch.pop('ref_space_uid_to_perm', None)\n                    # Native Lightning has already seeded torch with 42 before\n                    # preprocessing. Preserve that advanced RNG state instead\n                    # of restarting diffusion with a new private seed-42 stream.\n                    output = self.runtime(batch, recycling_steps=recycles, num_sampling_steps=steps, diffusion_samples=samples, sampling_seed=None)\n                    expanded = tensor_tree_map(lambda t: t.unsqueeze(1), batch)\n                    expanded['ref_space_uid_to_perm'] = perms\n                    output['recycles'] = recycles\n                    return expanded, output\n\n            self.module.model = Shim(candidate).cuda().eval()\n            del original, candidate\n            gc.collect()\n            torch.cuda.empty_cache()\n            torch.cuda.synchronize()\n            self.identity.update({'runtime_origin': 'bioir-preview2-evaluation', 'bionemo_ir': bionemo_ir.__version__, 'precision_variant': precision, 'checkpoint_sha256': expected, 'recycling_steps': recycles, 'sampling_steps': steps, 'samples': samples, 'sampling_rng': 'preserve upstream global seed42 stream; BIR sampling_seed=None', 'bir_config': config.model_dump(mode='json'), 'load_seconds': time.perf_counter() - started, 'integration': 'BIR model under unchanged Preview2 Lightning/data/confidence/output code'})\n            self._candidate_ready = True\n            current.event('BIR_MODEL_READY', **self.identity)\n        except Exception as exc:\n            self.error = str(exc)\n            current.event('LOAD_FAILED', error=self.error)\n            traceback.print_exc()\n\n    def predict(self, payload):\n        result = super().predict(payload)\n        result['outputs'][0]['runtime_metrics']['runtime_origin'] = 'bioir-preview2-evaluation'\n        result['outputs'][0]['structures_with_scores'][0]['source'] += '; BIR public evaluation'\n        return result\n\nif __name__ == '__main__':\n    current.RUNTIME = Runtime()\n    current.event('PROCESS_START')\n    threading.Thread(target=current.RUNTIME.load, daemon=True).start()\n    current.ThreadingHTTPServer(('0.0.0.0', 8000), current.Handler).serve_forever()\n",
+        "benchmark_http.py": "#!/usr/bin/env python3\n\"\"\"In-pod benchmark: preserve every attempt and actual full HTTP response.\"\"\"\nimport argparse\nfrom concurrent.futures import ThreadPoolExecutor\nimport datetime as dt\nimport hashlib\nimport json\nimport math\nfrom pathlib import Path\nimport time\nimport urllib.request\nimport urllib.error\n\nAA = dict(zip('ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE PRO SER THR TRP TYR VAL'.split(), 'ARNDCQEGHILKMFPSTWYV'))\n\ndef validate(model, case, response):\n    if model == 'openfold2':\n        records = response['structures_in_ranked_order']\n        assert len(records) == 1\n        result = records[0]\n        seq = ''.join(AA[line[17:20]] for line in result['structure'].splitlines() if line.startswith('ATOM  ') and line[12:16].strip() == 'CA')\n        assert seq == case['chains'][0]['sequence'], 'sequence mismatch'\n        for row in result['predicted_aligned_error']:\n            assert all(math.isfinite(x) for x in row)\n        assert len(result['plddt']) == len(seq)\n        assert all(math.isfinite(x) for x in result['plddt'])\n        return {'residues': len(seq), 'confidence': result['confidence'], 'ptm': result['ptm_score'], 'server_seconds': result['inference_seconds']}\n    records = response['outputs'][0]['structures_with_scores']\n    assert len(records) == 1\n    result = records[0]\n    assert '_atom_site.Cartn_x' in result['structure']\n    assert all(math.isfinite(result[k]) for k in ('confidence_score', 'complex_plddt_score', 'complex_pde_score', 'ptm_score', 'iptm_score'))\n    return {'residues_expected': sum(len(c['sequence']) for c in case['chains']), 'confidence': result['confidence_score'], 'ptm': result['ptm_score'], 'server_seconds': response['outputs'][0]['runtime_metrics']['inference_seconds']}\n\ndef payload(model, case, request_id):\n    if model == 'openfold2':\n        return {'input_id': request_id, 'sequence': case['chains'][0]['sequence'], 'selected_models': [1], 'relax_prediction': False}\n    molecules = []\n    for chain in case['chains']:\n        m = {'type': 'protein', 'id': chain['id'], 'sequence': chain['sequence'], 'diffusion_samples': 1}\n        if 'msa' in chain:\n            m['msa'] = {'main': {'a3m': {'alignment': chain['msa'], 'format': 'a3m'}}}\n        molecules.append(m)\n    return {'request_id': request_id, 'inputs': [{'input_id': request_id, 'output_format': 'cif', 'molecules': molecules}]}\n\ndef main():\n    parser = argparse.ArgumentParser()\n    parser.add_argument('--model', choices=['openfold2', 'openfold3'], required=True)\n    parser.add_argument('--variant', default='baseline')\n    parser.add_argument('--cases', type=Path, required=True)\n    parser.add_argument('--output', type=Path, required=True)\n    parser.add_argument('--base-url', default='http://127.0.0.1:8000')\n    parser.add_argument('--repetitions', type=int, default=3)\n    parser.add_argument('--stop-after-failure', action='store_true')\n    args = parser.parse_args()\n    args.output.mkdir(parents=True, exist_ok=True)\n    cases = json.loads(args.cases.read_text())\n    if args.model == 'openfold2':\n        cases = [c for c in cases if c['feature'] == 'monomer']\n    endpoint = '/biology/openfold/openfold2/predict-structure-from-msa-and-template' if args.model == 'openfold2' else '/biology/openfold/openfold3/predict'\n    identity = json.loads(urllib.request.urlopen(args.base_url + '/v1/runtime').read())\n    (args.output / 'runtime.json').write_text(json.dumps(identity, indent=2) + '\\n')\n    def attempt(case, cohort, index):\n        request_id = f'{args.model}-{args.variant}-{case[\"id\"]}-{cohort}-{index}'\n        request = payload(args.model, case, request_id)\n        body = json.dumps(request).encode()\n        row = {'request_id': request_id, 'case': case['id'], 'variant': args.variant, 'cohort': cohort, 'utc': dt.datetime.now(dt.timezone.utc).isoformat(), 'input_sha256': hashlib.sha256(body).hexdigest(), 'input_bytes': len(body)}\n        (args.output / f'{request_id}.request.json').write_bytes(body)\n        started = time.perf_counter()\n        try:\n            response = urllib.request.urlopen(urllib.request.Request(args.base_url + endpoint, body, {'Content-Type': 'application/json'}), timeout=1800)\n            raw = response.read()\n            row['http_seconds'] = time.perf_counter() - started\n            row['status'] = response.status\n            parsed = json.loads(raw)\n            (args.output / f'{request_id}.response.json').write_bytes(raw)\n            row['validation'] = validate(args.model, case, parsed)\n            row['valid'] = True\n        except Exception as exc:\n            row['valid'] = False\n            row['error'] = f'{type(exc).__name__}: {exc}'\n            if isinstance(exc, urllib.error.HTTPError):\n                row['status'] = exc.code\n                (args.output / f'{request_id}.response.json').write_bytes(exc.read())\n        row['wall_to_validated_artifact_seconds'] = time.perf_counter() - started\n        with (args.output / 'attempts.jsonl').open('a') as handle:\n            handle.write(json.dumps(row) + '\\n')\n        print(json.dumps(row), flush=True)\n        return row\n    for case in cases:\n        first = attempt(case, 'first_shape', 0)\n        if args.stop_after_failure and not first['valid']:\n            return\n        for i in range(args.repetitions):\n            attempt(case, 'warm', i + 1)\n    # Current adapters serialize under a runtime lock. Measure accepted concurrent\n    # requests including queue time; this is not represented as true tensor batching.\n    started = time.perf_counter()\n    with ThreadPoolExecutor(max_workers=3) as pool:\n        rows = list(pool.map(lambda c: attempt(c, 'mixed_concurrent', 0), cases[:3]))\n    summary = {'seconds': time.perf_counter() - started, 'attempts': len(rows), 'valid': sum(r['valid'] for r in rows), 'concurrency': 3, 'meaning': 'HTTP concurrent queue, not tensor batching'}\n    (args.output / 'mixed-summary.json').write_text(json.dumps(summary, indent=2) + '\\n')\n\nif __name__ == '__main__':\n    main()\n",
+        "probe_contract.py": "#!/usr/bin/env python3\nimport argparse\nimport copy\nimport json\nfrom pathlib import Path\nimport urllib.request\nimport urllib.error\nfrom benchmark_http import payload\n\nparser = argparse.ArgumentParser()\nparser.add_argument('--model', required=True)\nparser.add_argument('--output', type=Path, required=True)\nparser.add_argument('--cases', type=Path, required=True)\nargs = parser.parse_args()\ncase = json.loads(args.cases.read_text())[0]\nbase = payload(args.model, case, 'contract-probe')\nendpoint = '/biology/openfold/openfold2/predict-structure-from-msa-and-template' if args.model == 'openfold2' else '/biology/openfold/openfold3/predict'\nprobes = {}\nif args.model == 'openfold2':\n    for name, fields in {'msa': {'msa': '>query\\n' + case['chains'][0]['sequence']}, 'templates': {'templates': []}, 'seed': {'seed': 43}, 'parameter_set': {'selected_models': [2]}, 'relaxation': {'relax_prediction': True}, 'batch': {'inputs': [base, base]}}.items():\n        probes[name] = base | fields\nelse:\n    for name, fields in {'templates': {'templates': []}, 'ligand': {'type': 'ligand', 'sequence': 'CCO'}, 'rna': {'type': 'rna', 'sequence': 'ACGU'}, 'dna': {'type': 'dna', 'sequence': 'ACGT'}, 'samples': {'diffusion_samples': 2}, 'seed': {'seed': 43}}.items():\n        item = copy.deepcopy(base)\n        item['inputs'][0]['molecules'][0].update(fields)\n        probes[name] = item\n    probes['batch'] = copy.deepcopy(base)\n    probes['batch']['inputs'].append(copy.deepcopy(base['inputs'][0]))\nrows = []\nfor name, value in probes.items():\n    try:\n        response = urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000' + endpoint, json.dumps(value).encode(), {'Content-Type': 'application/json'}), timeout=60)\n        code, raw = response.status, response.read().decode()\n    except urllib.error.HTTPError as exc:\n        code, raw = exc.code, exc.read().decode()\n    rows.append({'feature': name, 'http_status': code, 'response': json.loads(raw), 'expected': 'explicit rejection by current boundary'})\nargs.output.write_text(json.dumps(rows, indent=2) + '\\n')\nprint(json.dumps(rows))\n"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "openfold3-bir-mixed-r6-h100",
+        "namespace": "fs2-bioir-openfold",
+        "labels": {
+          "evaluation": "fs2-bioir-20260915",
+          "lane": "openfold",
+          "model": "openfold3",
+          "variant": "bir-mixed"
+        }
+      },
+      "spec": {
+        "automountServiceAccountToken": false,
+        "restartPolicy": "Never",
+        "nodeSelector": {
+          "kubernetes.io/hostname": "computeinstance-e00j20a9hkb508cn4a"
+        },
+        "tolerations": [
+          {
+            "key": "dedicated",
+            "operator": "Equal",
+            "value": "fs2-inference",
+            "effect": "NoSchedule"
+          }
+        ],
+        "securityContext": {
+          "runAsUser": 10001,
+          "runAsGroup": 10001,
+          "fsGroup": 10001
+        },
+        "initContainers": [
+          {
+            "name": "exact-current-artifacts",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+            "command": [
+              "/bin/bash",
+              "-ec",
+              "source /opt/fs2/activate.sh; python -c 'import shutil; shutil.copytree(\"/opt/fs2/openfold3-preview2\", \"/payload/server\"); shutil.copytree(\"/opt/fs2/openfold3-preview2-artifacts\", \"/payload/weights\")'"
+            ],
+            "volumeMounts": [
+              {
+                "name": "payload",
+                "mountPath": "/payload"
+              }
+            ],
+            "resources": {
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "limits": {
+                "cpu": "2",
+                "memory": "4Gi"
+              }
+            }
+          },
+          {
+            "name": "upstream-preprocessor-dependencies",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+            "command": [
+              "python",
+              "-m",
+              "pip",
+              "install",
+              "--no-cache-dir",
+              "--no-deps",
+              "--target",
+              "/deps/lib/python3.12/site-packages",
+              "openfold3==0.4.2",
+              "pytorch-lightning==2.6.6",
+              "pdbeccdutils==1.0.4",
+              "awscli==1.46.1",
+              "awscrt==0.36.3",
+              "boto3==1.43.95",
+              "ijson==3.5.1",
+              "memory_profiler==0.61.0",
+              "wandb==0.30.0",
+              "lmdb==2.3.0",
+              "torchmetrics==1.9.0",
+              "lightning-utilities==0.15.3",
+              "docutils==0.19",
+              "colorama==0.4.6",
+              "rsa==4.7.2",
+              "jmespath==1.1.0",
+              "botocore==1.43.95",
+              "s3transfer==0.19.2",
+              "psutil==7.2.2",
+              "gemmi==0.7.5",
+              "scipy==1.18.1",
+              "opentelemetry-exporter-otlp-proto-http==1.44.0",
+              "opentelemetry-exporter-otlp-proto-common==1.44.0",
+              "func_timeout==4.3.5"
+            ],
+            "volumeMounts": [
+              {
+                "name": "deps",
+                "mountPath": "/deps"
+              }
+            ],
+            "resources": {
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "limits": {
+                "cpu": "2",
+                "memory": "4Gi"
+              }
+            }
+          }
+        ],
+        "containers": [
+          {
+            "name": "model",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+            "command": [
+              "python",
+              "/eval/bir_openfold3_server.py"
+            ],
+            "env": [
+              {
+                "name": "PYTHONPATH",
+                "value": "/deps/lib/python3.12/site-packages:/payload/server"
+              },
+              {
+                "name": "FS2_OPENFOLD2_CHECKPOINT",
+                "value": "/payload/weights/finetuning_no_templ_ptm_1.pt"
+              },
+              {
+                "name": "BIOIR_EVAL_PRECISION",
+                "value": "mixed"
+              },
+              {
+                "name": "PYTHONUNBUFFERED",
+                "value": "1"
+              },
+              {
+                "name": "BIOIR_CACHE",
+                "value": "/tmp/bioir-cache"
+              },
+              {
+                "name": "OPENFOLD_CACHE",
+                "value": "/tmp/openfold-cache"
+              },
+              {
+                "name": "XDG_CACHE_HOME",
+                "value": "/tmp/xdg-cache"
+              },
+              {
+                "name": "TRITON_CACHE_DIR",
+                "value": "/tmp/triton-cache"
+              },
+              {
+                "name": "TORCH_EXTENSIONS_DIR",
+                "value": "/tmp/torch-extensions"
+              },
+              {
+                "name": "TORCHINDUCTOR_CACHE_DIR",
+                "value": "/tmp/torchinductor-cache"
+              },
+              {
+                "name": "USER",
+                "value": "bioir-evaluation"
+              }
+            ],
+            "volumeMounts": [
+              {
+                "name": "payload",
+                "mountPath": "/payload"
+              },
+              {
+                "name": "source",
+                "mountPath": "/eval"
+              },
+              {
+                "name": "deps",
+                "mountPath": "/deps"
+              },
+              {
+                "name": "shm",
+                "mountPath": "/dev/shm"
+              }
+            ],
+            "resources": {
+              "requests": {
+                "cpu": "8",
+                "memory": "64Gi",
+                "nvidia.com/gpu": "1",
+                "ephemeral-storage": "20Gi"
+              },
+              "limits": {
+                "cpu": "32",
+                "memory": "192Gi",
+                "nvidia.com/gpu": "1",
+                "ephemeral-storage": "60Gi"
+              }
+            },
+            "readinessProbe": {
+              "httpGet": {
+                "path": "/v1/health/ready",
+                "port": 8000
+              },
+              "periodSeconds": 5
+            }
+          }
+        ],
+        "volumes": [
+          {
+            "name": "payload",
+            "emptyDir": {
+              "sizeLimit": "5Gi"
+            }
+          },
+          {
+            "name": "source",
+            "configMap": {
+              "name": "openfold3-bir-source"
+            }
+          },
+          {
+            "name": "deps",
+            "emptyDir": {
+              "sizeLimit": "8Gi"
+            }
+          },
+          {
+            "name": "shm",
+            "emptyDir": {
+              "medium": "Memory",
+              "sizeLimit": "8Gi"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "fs2-bioir-of3-bundle-inventory",
+    "namespace": "fs2-bioir-snapshot",
+    "labels": {
+      "evaluation": "fs2-bioir-20260915",
+      "lane": "snapshot",
+      "benchmark-model": "openfold3-bir",
+      "role": "bundle-inventory"
+    }
+  },
+  "spec": {
+    "restartPolicy": "Never",
+    "automountServiceAccountToken": false,
+    "nodeSelector": {
+      "kubernetes.io/hostname": "computeinstance-e00j20a9hkb508cn4a"
+    },
+    "tolerations": [
+      {
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference",
+        "effect": "NoSchedule"
+      }
+    ],
+    "securityContext": {
+      "runAsUser": 0,
+      "runAsGroup": 0
+    },
+    "containers": [
+      {
+        "name": "inventory",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+        "command": [
+          "python",
+          "-c",
+          "\"\"\"Read-only fingerprint of only the task-owned snapshot PVC.\"\"\"\nimport hashlib\nimport json\nfrom pathlib import Path\nimport time\n\nroot = Path('/bundle')\nstarted = time.time()\nrows = []\nfor path in sorted(root.rglob('*')):\n    if not path.is_file() or path.is_symlink():\n        continue\n    digest = hashlib.sha256()\n    with path.open('rb') as stream:\n        for block in iter(lambda: stream.read(8 * 1024 * 1024), b''):\n            digest.update(block)\n    rows.append({'path': str(path.relative_to(root)), 'bytes': path.stat().st_size, 'sha256': digest.hexdigest()})\nprint(json.dumps({'started_unix': started, 'completed_unix': time.time(), 'total_file_bytes': sum(v['bytes'] for v in rows), 'files': rows}))\n"
+        ],
+        "resources": {
+          "requests": {
+            "cpu": "1",
+            "memory": "256Mi"
+          },
+          "limits": {
+            "cpu": "2",
+            "memory": "2Gi"
+          }
+        },
+        "volumeMounts": [
+          {
+            "name": "bundle",
+            "mountPath": "/bundle",
+            "readOnly": true
+          }
+        ]
+      }
+    ],
+    "volumes": [
+      {
+        "name": "bundle",
+        "persistentVolumeClaim": {
+          "claimName": "fs2-bioir-of3-checkpoints",
+          "readOnly": true
+        }
+      }
+    ]
+  }
+}

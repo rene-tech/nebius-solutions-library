@@ -1,0 +1,345 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"labels\":{\"benchmark-model\":\"proteina-complexa\",\"evaluation\":\"fs2-bioir-20260915\",\"lane\":\"coverage\"},\"name\":\"fs2-bioir-coverage-proteina-complexa\",\"namespace\":\"fs2-bioir-coverage\"},\"spec\":{\"activeDeadlineSeconds\":14400,\"automountServiceAccountToken\":false,\"containers\":[{\"command\":[\"python\",\"-c\",\"import time; time.sleep(14400)\"],\"image\":\"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"runtime\",\"resources\":{\"limits\":{\"cpu\":\"8000m\",\"ephemeral-storage\":\"32Gi\",\"memory\":\"96Gi\",\"nvidia.com/gpu\":\"1\"},\"requests\":{\"cpu\":\"8000m\",\"ephemeral-storage\":\"32Gi\",\"memory\":\"96Gi\",\"nvidia.com/gpu\":\"1\"}},\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]}},\"volumeMounts\":[{\"mountPath\":\"/work\",\"name\":\"work\"},{\"mountPath\":\"/eval\",\"name\":\"eval\",\"readOnly\":true},{\"mountPath\":\"/opt/fs2/artifacts/complexa-protein\",\"name\":\"complexa-protein\",\"readOnly\":true,\"subPath\":\"scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536\"},{\"mountPath\":\"/opt/fs2/artifacts/complexa-ligand\",\"name\":\"complexa-ligand\",\"readOnly\":true,\"subPath\":\"scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5\"},{\"mountPath\":\"/opt/fs2/artifacts/complexa-ame\",\"name\":\"complexa-ame\",\"readOnly\":true,\"subPath\":\"scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a\"},{\"mountPath\":\"/opt/fs2/artifacts/rosettafold3-checkpoint\",\"name\":\"rosettafold3-checkpoint\",\"readOnly\":true,\"subPath\":\"scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce\"},{\"mountPath\":\"/opt/fs2/artifacts/alphafold2-params\",\"name\":\"alphafold2-params\",\"readOnly\":true,\"subPath\":\"scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4\"}]}],\"nodeSelector\":{\"kubernetes.io/hostname\":\"computeinstance-e00r9tdjfszjs3angk\"},\"restartPolicy\":\"Never\",\"securityContext\":{\"fsGroup\":10001,\"runAsGroup\":10001,\"runAsUser\":10001,\"seccompProfile\":{\"type\":\"RuntimeDefault\"},\"supplementalGroups\":[1000]},\"tolerations\":[{\"effect\":\"NoSchedule\",\"key\":\"dedicated\",\"operator\":\"Equal\",\"value\":\"fs2-inference\"}],\"volumes\":[{\"emptyDir\":{\"sizeLimit\":\"32Gi\"},\"name\":\"work\"},{\"configMap\":{\"name\":\"fs2-bioir-coverage-batch\"},\"name\":\"eval\"},{\"hostPath\":{\"path\":\"/mnt/fs2-reference-data/data\",\"type\":\"Directory\"},\"name\":\"complexa-protein\"},{\"hostPath\":{\"path\":\"/mnt/fs2-reference-data/data\",\"type\":\"Directory\"},\"name\":\"complexa-ligand\"},{\"hostPath\":{\"path\":\"/mnt/fs2-reference-data/data\",\"type\":\"Directory\"},\"name\":\"complexa-ame\"},{\"hostPath\":{\"path\":\"/mnt/fs2-reference-data/data\",\"type\":\"Directory\"},\"name\":\"rosettafold3-checkpoint\"},{\"hostPath\":{\"path\":\"/mnt/fs2-reference-data/data\",\"type\":\"Directory\"},\"name\":\"alphafold2-params\"}]}}\n"
+    },
+    "creationTimestamp": "2026-09-15T21:31:49Z",
+    "generation": 1,
+    "labels": {
+      "benchmark-model": "proteina-complexa",
+      "evaluation": "fs2-bioir-20260915",
+      "lane": "coverage",
+      "topology.kubernetes.io/region": "eu-north1"
+    },
+    "name": "fs2-bioir-coverage-proteina-complexa",
+    "namespace": "fs2-bioir-coverage",
+    "resourceVersion": "42260537",
+    "uid": "d9c51198-b816-4c13-a7a5-ca42836286be"
+  },
+  "spec": {
+    "activeDeadlineSeconds": 14400,
+    "automountServiceAccountToken": false,
+    "containers": [
+      {
+        "command": [
+          "python",
+          "-c",
+          "import time; time.sleep(14400)"
+        ],
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "runtime",
+        "resources": {
+          "limits": {
+            "cpu": "8",
+            "ephemeral-storage": "32Gi",
+            "memory": "96Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "requests": {
+            "cpu": "8",
+            "ephemeral-storage": "32Gi",
+            "memory": "96Gi",
+            "nvidia.com/gpu": "1"
+          }
+        },
+        "securityContext": {
+          "allowPrivilegeEscalation": false,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File",
+        "volumeMounts": [
+          {
+            "mountPath": "/work",
+            "name": "work"
+          },
+          {
+            "mountPath": "/eval",
+            "name": "eval",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/opt/fs2/artifacts/complexa-protein",
+            "name": "complexa-protein",
+            "readOnly": true,
+            "subPath": "scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536"
+          },
+          {
+            "mountPath": "/opt/fs2/artifacts/complexa-ligand",
+            "name": "complexa-ligand",
+            "readOnly": true,
+            "subPath": "scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5"
+          },
+          {
+            "mountPath": "/opt/fs2/artifacts/complexa-ame",
+            "name": "complexa-ame",
+            "readOnly": true,
+            "subPath": "scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a"
+          },
+          {
+            "mountPath": "/opt/fs2/artifacts/rosettafold3-checkpoint",
+            "name": "rosettafold3-checkpoint",
+            "readOnly": true,
+            "subPath": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce"
+          },
+          {
+            "mountPath": "/opt/fs2/artifacts/alphafold2-params",
+            "name": "alphafold2-params",
+            "readOnly": true,
+            "subPath": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4"
+          }
+        ]
+      }
+    ],
+    "dnsPolicy": "ClusterFirst",
+    "enableServiceLinks": true,
+    "nodeName": "computeinstance-e00r9tdjfszjs3angk",
+    "nodeSelector": {
+      "kubernetes.io/hostname": "computeinstance-e00r9tdjfszjs3angk"
+    },
+    "preemptionPolicy": "PreemptLowerPriority",
+    "priority": 0,
+    "restartPolicy": "Never",
+    "schedulerName": "default-scheduler",
+    "securityContext": {
+      "fsGroup": 10001,
+      "runAsGroup": 10001,
+      "runAsUser": 10001,
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      },
+      "supplementalGroups": [
+        1000
+      ]
+    },
+    "serviceAccount": "default",
+    "serviceAccountName": "default",
+    "terminationGracePeriodSeconds": 30,
+    "tolerations": [
+      {
+        "effect": "NoSchedule",
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference"
+      },
+      {
+        "effect": "NoExecute",
+        "key": "node.kubernetes.io/not-ready",
+        "operator": "Exists",
+        "tolerationSeconds": 300
+      },
+      {
+        "effect": "NoExecute",
+        "key": "node.kubernetes.io/unreachable",
+        "operator": "Exists",
+        "tolerationSeconds": 300
+      },
+      {
+        "effect": "NoSchedule",
+        "key": "nvidia.com/gpu",
+        "operator": "Exists"
+      }
+    ],
+    "volumes": [
+      {
+        "emptyDir": {
+          "sizeLimit": "32Gi"
+        },
+        "name": "work"
+      },
+      {
+        "configMap": {
+          "defaultMode": 420,
+          "name": "fs2-bioir-coverage-batch"
+        },
+        "name": "eval"
+      },
+      {
+        "hostPath": {
+          "path": "/mnt/fs2-reference-data/data",
+          "type": "Directory"
+        },
+        "name": "complexa-protein"
+      },
+      {
+        "hostPath": {
+          "path": "/mnt/fs2-reference-data/data",
+          "type": "Directory"
+        },
+        "name": "complexa-ligand"
+      },
+      {
+        "hostPath": {
+          "path": "/mnt/fs2-reference-data/data",
+          "type": "Directory"
+        },
+        "name": "complexa-ame"
+      },
+      {
+        "hostPath": {
+          "path": "/mnt/fs2-reference-data/data",
+          "type": "Directory"
+        },
+        "name": "rosettafold3-checkpoint"
+      },
+      {
+        "hostPath": {
+          "path": "/mnt/fs2-reference-data/data",
+          "type": "Directory"
+        },
+        "name": "alphafold2-params"
+      }
+    ]
+  },
+  "status": {
+    "conditions": [
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T21:33:36Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "PodReadyToStartContainers"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T21:31:49Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "Initialized"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T21:33:36Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T21:33:36Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "ContainersReady"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T21:31:49Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "PodScheduled"
+      }
+    ],
+    "containerStatuses": [
+      {
+        "allocatedResources": {
+          "cpu": "8",
+          "ephemeral-storage": "32Gi",
+          "memory": "96Gi",
+          "nvidia.com/gpu": "1"
+        },
+        "containerID": "containerd://f7246d33a356ceac38a37216811f69f09ee4a32c5309872d86cd6579328e48d9",
+        "image": "sha256:b455d68551fec946c4d56f3d12adf80a5e0e89118a4526ed0dc6d61944d7d462",
+        "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+        "lastState": {},
+        "name": "runtime",
+        "ready": true,
+        "resources": {
+          "limits": {
+            "cpu": "8",
+            "ephemeral-storage": "32Gi",
+            "memory": "96Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "requests": {
+            "cpu": "8",
+            "ephemeral-storage": "32Gi",
+            "memory": "96Gi",
+            "nvidia.com/gpu": "1"
+          }
+        },
+        "restartCount": 0,
+        "started": true,
+        "state": {
+          "running": {
+            "startedAt": "2026-09-15T21:33:35Z"
+          }
+        },
+        "user": {
+          "linux": {
+            "gid": 10001,
+            "supplementalGroups": [
+              1000,
+              10001
+            ],
+            "uid": 10001
+          }
+        },
+        "volumeMounts": [
+          {
+            "mountPath": "/work",
+            "name": "work"
+          },
+          {
+            "mountPath": "/eval",
+            "name": "eval",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          },
+          {
+            "mountPath": "/opt/fs2/artifacts/complexa-protein",
+            "name": "complexa-protein",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          },
+          {
+            "mountPath": "/opt/fs2/artifacts/complexa-ligand",
+            "name": "complexa-ligand",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          },
+          {
+            "mountPath": "/opt/fs2/artifacts/complexa-ame",
+            "name": "complexa-ame",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          },
+          {
+            "mountPath": "/opt/fs2/artifacts/rosettafold3-checkpoint",
+            "name": "rosettafold3-checkpoint",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          },
+          {
+            "mountPath": "/opt/fs2/artifacts/alphafold2-params",
+            "name": "alphafold2-params",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          }
+        ]
+      }
+    ],
+    "hostIP": "10.6.123.0",
+    "hostIPs": [
+      {
+        "ip": "10.6.123.0"
+      }
+    ],
+    "observedGeneration": 1,
+    "phase": "Running",
+    "podIP": "10.6.14.89",
+    "podIPs": [
+      {
+        "ip": "10.6.14.89"
+      }
+    ],
+    "qosClass": "Guaranteed",
+    "startTime": "2026-09-15T21:31:49Z"
+  }
+}

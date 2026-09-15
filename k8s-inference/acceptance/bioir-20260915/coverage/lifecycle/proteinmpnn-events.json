@@ -1,0 +1,172 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:21:31Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-proteinmpnn",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42230042",
+        "uid": "a5775062-b4aa-46cd-b992-3c721c58bd15"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:21:31Z",
+      "message": "Successfully assigned fs2-bioir-coverage/fs2-bioir-coverage-proteinmpnn to computeinstance-e00r9tdjfszjs3angk",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:21:31Z",
+        "name": "fs2-bioir-coverage-proteinmpnn.18d59b667c244493",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42230045",
+        "uid": "36d8bcb2-ddf2-4471-8522-e98ade4a8bcb"
+      },
+      "reason": "Scheduled",
+      "reportingComponent": "default-scheduler",
+      "reportingInstance": "",
+      "source": {
+        "component": "default-scheduler"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:21:32Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-proteinmpnn",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42230044",
+        "uid": "a5775062-b4aa-46cd-b992-3c721c58bd15"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:21:32Z",
+      "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/proteinmpnn@sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38\"",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:21:32Z",
+        "name": "fs2-bioir-coverage-proteinmpnn.18d59b66aae94d02",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42230082",
+        "uid": "bcd5553d-1ea9-4e05-99cc-006f1c41e8dd"
+      },
+      "reason": "Pulling",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:22:21Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-proteinmpnn",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42230044",
+        "uid": "a5775062-b4aa-46cd-b992-3c721c58bd15"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:22:21Z",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/proteinmpnn@sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38\" in 49.506s (49.506s including waiting). Image size: 3390275971 bytes.",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:22:21Z",
+        "name": "fs2-bioir-coverage-proteinmpnn.18d59b7231b5ee4f",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42232144",
+        "uid": "fee711dd-c782-4d31-b223-4358e51c8878"
+      },
+      "reason": "Pulled",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:22:21Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-proteinmpnn",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42230044",
+        "uid": "a5775062-b4aa-46cd-b992-3c721c58bd15"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:22:21Z",
+      "message": "Container created",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:22:21Z",
+        "name": "fs2-bioir-coverage-proteinmpnn.18d59b7232982088",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42232145",
+        "uid": "213da204-d4ae-4854-810a-6499ab3dcfe5"
+      },
+      "reason": "Created",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:22:21Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-proteinmpnn",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42230044",
+        "uid": "a5775062-b4aa-46cd-b992-3c721c58bd15"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:22:21Z",
+      "message": "Container started",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:22:21Z",
+        "name": "fs2-bioir-coverage-proteinmpnn.18d59b72401a228d",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42232159",
+        "uid": "53c13c7e-f630-4aba-8a07-43b1478b7587"
+      },
+      "reason": "Started",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    "resourceVersion": ""
+  }
+}

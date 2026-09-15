@@ -1,0 +1,16 @@
+{
+  "status": "pass",
+  "checks": {
+    "eight_complete_matrices": true,
+    "218_sequence_validated_samples_known_10_chain_id_failures": true,
+    "81_schema_probes": true,
+    "all_completed_http_attempts_counted": true,
+    "all_pod_cost_bounds_complete": true,
+    "production_spec_unchanged": true,
+    "runtime_scripts_match_retained_sources": true,
+    "both_gpus_idle_no_processes_after_cleanup": true
+  },
+  "scientific_noninferiority": "not established",
+  "feature_gate": "chain-ID fidelity failed; no promotion",
+  "shared_cache": "PVC deleted after snapshot consumers released it; historical Released PV CSI timeout resolved by normal reclamation, final-cluster-state.json confirms PV absent; no forced deletion"
+}

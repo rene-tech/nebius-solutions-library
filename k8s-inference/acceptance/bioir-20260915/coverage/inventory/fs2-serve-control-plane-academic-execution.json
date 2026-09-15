@@ -1,0 +1,8 @@
+{
+  "claim_namespace": "fs2-academic-poc",
+  "cross_namespace_mount": "false",
+  "execution_namespace": "fs2-academic-poc",
+  "job_template": "apiVersion: batch/v1\nkind: Job\nmetadata:\n  namespace: fs2-academic-poc\n  labels:\n    app.kubernetes.io/part-of: fs2-serve\n    kueue.x-k8s.io/queue-name: academic-scientific\nspec:\n  template:\n    spec:\n      serviceAccountName: fs2-academic-runner\n      automountServiceAccountToken: false\n      restartPolicy: Never\n      securityContext:\n        runAsNonRoot: true\n        supplementalGroups: [65532]\n      volumes:\n        - name: academic-assets\n          persistentVolumeClaim:\n            claimName: academic-assets-runtime-rwx\n            readOnly: true\n      containers:\n        - name: scientific\n          volumeMounts:\n            - name: academic-assets\n              mountPath: /models/af3.bin.zst\n              subPath: alphafold3/af3.bin.zst\n              readOnly: true\n            - name: academic-assets\n              mountPath: /opt/fs2/academic/pyrosetta-bindcraft/site-packages\n              subPath: scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d\n              readOnly: true\n",
+  "local_queue": "academic-scientific",
+  "service_account": "fs2-academic-runner"
+}

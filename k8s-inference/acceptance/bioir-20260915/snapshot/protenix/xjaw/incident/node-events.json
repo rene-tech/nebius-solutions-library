@@ -1,0 +1,41 @@
+{
+  "observed_unix": 1789513298.3140314,
+  "value": {
+    "apiVersion": "v1",
+    "items": [
+      {
+        "apiVersion": "v1",
+        "count": 2,
+        "eventTime": null,
+        "firstTimestamp": "2026-09-15T20:50:21Z",
+        "involvedObject": {
+          "apiVersion": "v1",
+          "kind": "Node",
+          "name": "computeinstance-e00xjaw5jqexvvnpat",
+          "uid": "54fff439-0b80-434e-a60f-7edee7051c44"
+        },
+        "kind": "Event",
+        "lastTimestamp": "2026-09-15T23:00:34Z",
+        "message": "Node computeinstance-e00xjaw5jqexvvnpat status is now: NodeNotReady",
+        "metadata": {
+          "creationTimestamp": "2026-09-15T23:00:34Z",
+          "name": "computeinstance-e00xjaw5jqexvvnpat.18d599b32f69931f",
+          "namespace": "default",
+          "resourceVersion": "42479797",
+          "uid": "ff9ac327-f78b-45b2-9e6c-921b76bba395"
+        },
+        "reason": "NodeNotReady",
+        "reportingComponent": "node-controller",
+        "reportingInstance": "",
+        "source": {
+          "component": "node-controller"
+        },
+        "type": "Normal"
+      }
+    ],
+    "kind": "List",
+    "metadata": {
+      "resourceVersion": ""
+    }
+  }
+}

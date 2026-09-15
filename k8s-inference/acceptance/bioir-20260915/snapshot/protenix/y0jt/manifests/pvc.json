@@ -1,0 +1,25 @@
+{
+  "apiVersion": "v1",
+  "kind": "PersistentVolumeClaim",
+  "metadata": {
+    "name": "fs2-bioir-protenix-snapshot-y0jt",
+    "namespace": "fs2-bioir-protenix",
+    "labels": {
+      "evaluation": "fs2-bioir-20260915",
+      "lane": "snapshot",
+      "benchmark-model": "protenix-bir",
+      "snapshot-cohort": "y0jt"
+    }
+  },
+  "spec": {
+    "accessModes": [
+      "ReadWriteOnce"
+    ],
+    "storageClassName": "compute-csi-default-sc",
+    "resources": {
+      "requests": {
+        "storage": "128Gi"
+      }
+    }
+  }
+}

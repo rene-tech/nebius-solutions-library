@@ -1,0 +1,23 @@
+{
+  "started_unix": 1789507346.5420573,
+  "completed_unix": 1789507359.1897905,
+  "returncode": 0,
+  "command": [
+    "kubectl",
+    "--kubeconfig",
+    "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+    "--context",
+    "k8s-inference-h100",
+    "-n",
+    "fs2-bioir-coverage",
+    "exec",
+    "fs2-bioir-coverage-proteinmpnn",
+    "-c",
+    "runtime",
+    "--",
+    "python",
+    "/eval/client.py",
+    "--model",
+    "proteinmpnn"
+  ]
+}

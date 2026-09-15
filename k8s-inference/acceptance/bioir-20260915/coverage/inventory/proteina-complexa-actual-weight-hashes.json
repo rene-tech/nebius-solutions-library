@@ -1,0 +1,15 @@
+{
+  "method": "Full SHA256 read after all benchmark requests; source mount read-only",
+  "files": [
+    {
+      "path": "/opt/fs2/artifacts/complexa-protein/complexa.ckpt",
+      "bytes": 2934289381,
+      "sha256": "589db1741f29838c7961386f6b873087238c72682e56189b89e0ae02610c19e9"
+    },
+    {
+      "path": "/opt/fs2/artifacts/complexa-protein/complexa_ae.ckpt",
+      "bytes": 4100101779,
+      "sha256": "35f8865efd269995eeaf1670e1c1085acfe2988c40abdeda8e09a0e15eb40816"
+    }
+  ]
+}

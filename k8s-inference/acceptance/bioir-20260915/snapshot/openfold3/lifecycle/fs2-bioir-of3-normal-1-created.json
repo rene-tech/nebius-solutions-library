@@ -1,0 +1,7 @@
+{
+  "unix": 1789513222.0455484,
+  "run": "of3-normal-1",
+  "model": "openfold3",
+  "cuda_graph_requested": true,
+  "variant": "normal"
+}

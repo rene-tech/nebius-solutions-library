@@ -1,0 +1,205 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:23:20Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-molmim",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42234629",
+        "uid": "e15777f6-575e-4fe9-b267-87a71719b594"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:23:20Z",
+      "message": "Successfully assigned fs2-bioir-coverage/fs2-bioir-coverage-molmim to computeinstance-e00r9tdjfszjs3angk",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:23:20Z",
+        "name": "fs2-bioir-coverage-molmim.18d59b7fe710392a",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42234631",
+        "uid": "533f7f2c-1bc1-4d01-a6b0-8dd3f2035966"
+      },
+      "reason": "Scheduled",
+      "reportingComponent": "default-scheduler",
+      "reportingInstance": "",
+      "source": {
+        "component": "default-scheduler"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:23:21Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{molmim}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-molmim",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42234630",
+        "uid": "e15777f6-575e-4fe9-b267-87a71719b594"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:23:21Z",
+      "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/molmim@sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958\"",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:23:21Z",
+        "name": "fs2-bioir-coverage-molmim.18d59b8007675998",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42234653",
+        "uid": "3338adf8-81a9-42ab-bdcd-6acc1ea3b04c"
+      },
+      "reason": "Pulling",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:24:10Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{molmim}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-molmim",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42234630",
+        "uid": "e15777f6-575e-4fe9-b267-87a71719b594"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:24:10Z",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/molmim@sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958\" in 49.551s (49.551s including waiting). Image size: 3561338004 bytes.",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:24:10Z",
+        "name": "fs2-bioir-coverage-molmim.18d59b8b90ee5f94",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42236726",
+        "uid": "b3738ff6-7494-413c-803b-9e065035ac8b"
+      },
+      "reason": "Pulled",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:24:10Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{molmim}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-molmim",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42234630",
+        "uid": "e15777f6-575e-4fe9-b267-87a71719b594"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:24:10Z",
+      "message": "Container created",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:24:10Z",
+        "name": "fs2-bioir-coverage-molmim.18d59b8b926ec63e",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42236729",
+        "uid": "7976dc09-1b10-4eb1-ade9-5445580150a2"
+      },
+      "reason": "Created",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:24:11Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{molmim}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-molmim",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42234630",
+        "uid": "e15777f6-575e-4fe9-b267-87a71719b594"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:24:11Z",
+      "message": "Container started",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:24:11Z",
+        "name": "fs2-bioir-coverage-molmim.18d59b8ba61b72b5",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42236744",
+        "uid": "f9d38063-2837-4182-b16c-f8af2aa8f399"
+      },
+      "reason": "Started",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 3,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:24:11Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{molmim}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-molmim",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42234630",
+        "uid": "e15777f6-575e-4fe9-b267-87a71719b594"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:24:13Z",
+      "message": "Readiness probe failed: Get \"http://10.6.14.59:8000/v1/health/ready\": dial tcp 10.6.14.59:8000: connect: connection refused",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:24:11Z",
+        "name": "fs2-bioir-coverage-molmim.18d59b8bbf6dd26d",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42236845",
+        "uid": "db4d10e2-8125-41f0-9873-c581631121b2"
+      },
+      "reason": "Unhealthy",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Warning"
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    "resourceVersion": ""
+  }
+}

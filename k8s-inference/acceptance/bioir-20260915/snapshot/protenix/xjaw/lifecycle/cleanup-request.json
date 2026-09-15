@@ -1,0 +1,10 @@
+{
+  "unix": 1789513638.7441533,
+  "receipts": [
+    "pod \"bir-protenix-xjaw-normal-3\" deleted from fs2-bioir-protenix namespace\n",
+    "persistentvolumeclaim \"fs2-bioir-protenix-snapshot-xjaw\" deleted from fs2-bioir-protenix namespace\n",
+    "configmap \"fs2-bioir-protenix-snapshot-app-xjaw\" deleted from fs2-bioir-protenix namespace\nconfigmap \"fs2-bioir-protenix-snapshot-source-xjaw\" deleted from fs2-bioir-protenix namespace\n"
+  ],
+  "interrupted": true,
+  "force": false
+}

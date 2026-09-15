@@ -1,0 +1,267 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"labels\":{\"benchmark-model\":\"molmim\",\"evaluation\":\"fs2-bioir-20260915\",\"lane\":\"coverage\"},\"name\":\"fs2-bioir-coverage-molmim\",\"namespace\":\"fs2-bioir-coverage\"},\"spec\":{\"activeDeadlineSeconds\":14400,\"automountServiceAccountToken\":false,\"containers\":[{\"image\":\"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/molmim@sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958\",\"imagePullPolicy\":\"IfNotPresent\",\"livenessProbe\":{\"failureThreshold\":6,\"httpGet\":{\"path\":\"/v1/health/ready\",\"port\":\"http\",\"scheme\":\"HTTP\"},\"initialDelaySeconds\":300,\"periodSeconds\":30,\"successThreshold\":1,\"timeoutSeconds\":5},\"name\":\"molmim\",\"ports\":[{\"containerPort\":8000,\"name\":\"http\",\"protocol\":\"TCP\"}],\"readinessProbe\":{\"failureThreshold\":180,\"httpGet\":{\"path\":\"/v1/health/ready\",\"port\":\"http\",\"scheme\":\"HTTP\"},\"periodSeconds\":5,\"successThreshold\":1,\"timeoutSeconds\":3},\"resources\":{\"limits\":{\"cpu\":\"16\",\"memory\":\"64Gi\",\"nvidia.com/gpu\":\"1\"},\"requests\":{\"cpu\":\"8\",\"memory\":\"24Gi\",\"nvidia.com/gpu\":\"1\"}},\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]}},\"terminationMessagePath\":\"/dev/termination-log\",\"terminationMessagePolicy\":\"File\",\"volumeMounts\":[{\"mountPath\":\"/dev/shm\",\"name\":\"dshm\"},{\"mountPath\":\"/eval\",\"name\":\"evaluation-client\",\"readOnly\":true}]}],\"dnsPolicy\":\"ClusterFirst\",\"initContainers\":[],\"nodeSelector\":{\"kubernetes.io/hostname\":\"computeinstance-e00r9tdjfszjs3angk\"},\"restartPolicy\":\"Never\",\"schedulerName\":\"default-scheduler\",\"securityContext\":{\"runAsGroup\":1000,\"runAsNonRoot\":true,\"runAsUser\":1000,\"seccompProfile\":{\"type\":\"RuntimeDefault\"}},\"terminationGracePeriodSeconds\":60,\"tolerations\":[{\"effect\":\"NoSchedule\",\"key\":\"dedicated\",\"operator\":\"Equal\",\"value\":\"fs2-inference\"}],\"volumes\":[{\"emptyDir\":{\"medium\":\"Memory\",\"sizeLimit\":\"8Gi\"},\"name\":\"dshm\"},{\"configMap\":{\"name\":\"fs2-bioir-coverage-client\"},\"name\":\"evaluation-client\"}]}}\n"
+    },
+    "creationTimestamp": "2026-09-15T21:23:20Z",
+    "generation": 1,
+    "labels": {
+      "benchmark-model": "molmim",
+      "evaluation": "fs2-bioir-20260915",
+      "lane": "coverage",
+      "topology.kubernetes.io/region": "eu-north1"
+    },
+    "name": "fs2-bioir-coverage-molmim",
+    "namespace": "fs2-bioir-coverage",
+    "resourceVersion": "42237056",
+    "uid": "e15777f6-575e-4fe9-b267-87a71719b594"
+  },
+  "spec": {
+    "activeDeadlineSeconds": 14400,
+    "automountServiceAccountToken": false,
+    "containers": [
+      {
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/molmim@sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958",
+        "imagePullPolicy": "IfNotPresent",
+        "livenessProbe": {
+          "failureThreshold": 6,
+          "httpGet": {
+            "path": "/v1/health/ready",
+            "port": "http",
+            "scheme": "HTTP"
+          },
+          "initialDelaySeconds": 300,
+          "periodSeconds": 30,
+          "successThreshold": 1,
+          "timeoutSeconds": 5
+        },
+        "name": "molmim",
+        "ports": [
+          {
+            "containerPort": 8000,
+            "name": "http",
+            "protocol": "TCP"
+          }
+        ],
+        "readinessProbe": {
+          "failureThreshold": 180,
+          "httpGet": {
+            "path": "/v1/health/ready",
+            "port": "http",
+            "scheme": "HTTP"
+          },
+          "periodSeconds": 5,
+          "successThreshold": 1,
+          "timeoutSeconds": 3
+        },
+        "resources": {
+          "limits": {
+            "cpu": "16",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "requests": {
+            "cpu": "8",
+            "memory": "24Gi",
+            "nvidia.com/gpu": "1"
+          }
+        },
+        "securityContext": {
+          "allowPrivilegeEscalation": false,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File",
+        "volumeMounts": [
+          {
+            "mountPath": "/dev/shm",
+            "name": "dshm"
+          },
+          {
+            "mountPath": "/eval",
+            "name": "evaluation-client",
+            "readOnly": true
+          }
+        ]
+      }
+    ],
+    "dnsPolicy": "ClusterFirst",
+    "enableServiceLinks": true,
+    "nodeName": "computeinstance-e00r9tdjfszjs3angk",
+    "nodeSelector": {
+      "kubernetes.io/hostname": "computeinstance-e00r9tdjfszjs3angk"
+    },
+    "preemptionPolicy": "PreemptLowerPriority",
+    "priority": 0,
+    "restartPolicy": "Never",
+    "schedulerName": "default-scheduler",
+    "securityContext": {
+      "runAsGroup": 1000,
+      "runAsNonRoot": true,
+      "runAsUser": 1000,
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      }
+    },
+    "serviceAccount": "default",
+    "serviceAccountName": "default",
+    "terminationGracePeriodSeconds": 60,
+    "tolerations": [
+      {
+        "effect": "NoSchedule",
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference"
+      },
+      {
+        "effect": "NoExecute",
+        "key": "node.kubernetes.io/not-ready",
+        "operator": "Exists",
+        "tolerationSeconds": 300
+      },
+      {
+        "effect": "NoExecute",
+        "key": "node.kubernetes.io/unreachable",
+        "operator": "Exists",
+        "tolerationSeconds": 300
+      },
+      {
+        "effect": "NoSchedule",
+        "key": "nvidia.com/gpu",
+        "operator": "Exists"
+      }
+    ],
+    "volumes": [
+      {
+        "emptyDir": {
+          "medium": "Memory",
+          "sizeLimit": "8Gi"
+        },
+        "name": "dshm"
+      },
+      {
+        "configMap": {
+          "defaultMode": 420,
+          "name": "fs2-bioir-coverage-client"
+        },
+        "name": "evaluation-client"
+      }
+    ]
+  },
+  "status": {
+    "conditions": [
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T21:24:11Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "PodReadyToStartContainers"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T21:23:20Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "Initialized"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T21:24:18Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T21:24:18Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "ContainersReady"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T21:23:20Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "PodScheduled"
+      }
+    ],
+    "containerStatuses": [
+      {
+        "allocatedResources": {
+          "cpu": "8",
+          "memory": "24Gi",
+          "nvidia.com/gpu": "1"
+        },
+        "containerID": "containerd://9ea5e8317228ff63220c8a651441615fa0ce025afd97ec6fe7e4c6a5bca5eadb",
+        "image": "sha256:b0706f46671ed304451f80e122d2287ea5ed3af70ca2e7ee1a0b13740659a38c",
+        "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/molmim@sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958",
+        "lastState": {},
+        "name": "molmim",
+        "ready": true,
+        "resources": {
+          "limits": {
+            "cpu": "16",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "requests": {
+            "cpu": "8",
+            "memory": "24Gi",
+            "nvidia.com/gpu": "1"
+          }
+        },
+        "restartCount": 0,
+        "started": true,
+        "state": {
+          "running": {
+            "startedAt": "2026-09-15T21:24:11Z"
+          }
+        },
+        "user": {
+          "linux": {
+            "gid": 1000,
+            "supplementalGroups": [
+              1000
+            ],
+            "uid": 1000
+          }
+        },
+        "volumeMounts": [
+          {
+            "mountPath": "/dev/shm",
+            "name": "dshm"
+          },
+          {
+            "mountPath": "/eval",
+            "name": "evaluation-client",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          }
+        ]
+      }
+    ],
+    "hostIP": "10.6.123.0",
+    "hostIPs": [
+      {
+        "ip": "10.6.123.0"
+      }
+    ],
+    "observedGeneration": 1,
+    "phase": "Running",
+    "podIP": "10.6.14.59",
+    "podIPs": [
+      {
+        "ip": "10.6.14.59"
+      }
+    ],
+    "qosClass": "Burstable",
+    "startTime": "2026-09-15T21:23:20Z"
+  }
+}

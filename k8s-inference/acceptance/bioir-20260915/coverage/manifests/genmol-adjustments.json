@@ -1,0 +1,32 @@
+[
+  {
+    "container": "genmol",
+    "env": "CUDA_CACHE_PATH",
+    "old": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/cuda",
+    "new": "/tmp/fs2-bioir/cuda_cache_path"
+  },
+  {
+    "container": "genmol",
+    "env": "HOME",
+    "old": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/home",
+    "new": "/tmp/fs2-bioir/home"
+  },
+  {
+    "container": "genmol",
+    "env": "TORCH_EXTENSIONS_DIR",
+    "old": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/torch-extensions",
+    "new": "/tmp/fs2-bioir/torch_extensions_dir"
+  },
+  {
+    "container": "genmol",
+    "env": "TORCHINDUCTOR_CACHE_DIR",
+    "old": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/torchinductor",
+    "new": "/tmp/fs2-bioir/torchinductor_cache_dir"
+  },
+  {
+    "container": "genmol",
+    "env": "TRITON_CACHE_DIR",
+    "old": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/triton",
+    "new": "/tmp/fs2-bioir/triton_cache_dir"
+  }
+]

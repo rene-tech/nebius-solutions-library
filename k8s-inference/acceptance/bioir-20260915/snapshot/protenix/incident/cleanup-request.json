@@ -1,0 +1,13 @@
+{
+  "unix": 1789512267.3221002,
+  "pod": "bir-protenix-snapshot-restore-3",
+  "pvc": "fs2-bioir-protenix-snapshot",
+  "pv": "pvc-923170d6-9a45-4d29-8d06-0dabbb7cb56a",
+  "configmaps": [
+    "fs2-bioir-protenix-snapshot-app",
+    "fs2-bioir-protenix-snapshot-source"
+  ],
+  "force": false,
+  "provider_mutations": false,
+  "snapshot_binary_disposition": "normal PVC reclamation requested after retained scientific outputs/logs; not claimed complete"
+}

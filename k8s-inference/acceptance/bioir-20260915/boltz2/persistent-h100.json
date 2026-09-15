@@ -1,0 +1,155 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "boltz2-persistent-h100",
+    "namespace": "fs2-bioir-boltz2",
+    "labels": {
+      "evaluation": "fs2-bioir-20260915",
+      "lane": "boltz2",
+      "variant": "persistent"
+    }
+  },
+  "spec": {
+    "automountServiceAccountToken": false,
+    "restartPolicy": "Never",
+    "nodeSelector": {
+      "kubernetes.io/hostname": "computeinstance-e00fkt1bsa4ec657sn"
+    },
+    "tolerations": [
+      {
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference",
+        "effect": "NoSchedule"
+      }
+    ],
+    "securityContext": {
+      "runAsUser": 1000,
+      "runAsGroup": 1000,
+      "runAsNonRoot": true,
+      "fsGroup": 1000,
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      },
+      "fsGroupChangePolicy": "OnRootMismatch"
+    },
+    "containers": [
+      {
+        "name": "boltz2",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/boltz2@sha256:93d5fae96d87dff930206cf331f170b73f2369067f0b32169e0008f0db320a90",
+        "imagePullPolicy": "IfNotPresent",
+        "env": [
+          {
+            "name": "HF_HOME",
+            "value": "/models/huggingface"
+          },
+          {
+            "name": "HF_HUB_CACHE",
+            "value": "/models/huggingface/hub"
+          },
+          {
+            "name": "HF_HUB_DISABLE_XET",
+            "value": "1"
+          },
+          {
+            "name": "CUDA_CACHE_PATH",
+            "value": "/models/eval-cache/cuda"
+          },
+          {
+            "name": "TORCH_EXTENSIONS_DIR",
+            "value": "/models/eval-cache/torch-extensions"
+          },
+          {
+            "name": "TORCHINDUCTOR_CACHE_DIR",
+            "value": "/models/eval-cache/torchinductor"
+          },
+          {
+            "name": "TRITON_CACHE_DIR",
+            "value": "/models/eval-cache/triton"
+          },
+          {
+            "name": "XDG_CACHE_HOME",
+            "value": "/models/eval-cache/xdg"
+          },
+          {
+            "name": "EVAL_NO_KERNELS",
+            "value": "1"
+          }
+        ],
+        "ports": [
+          {
+            "containerPort": 8000,
+            "name": "http"
+          }
+        ],
+        "resources": {
+          "requests": {
+            "cpu": "12",
+            "memory": "96Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "limits": {
+            "cpu": "32",
+            "memory": "192Gi",
+            "nvidia.com/gpu": "1"
+          }
+        },
+        "securityContext": {
+          "allowPrivilegeEscalation": false,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          }
+        },
+        "readinessProbe": {
+          "httpGet": {
+            "path": "/v1/health/ready",
+            "port": "http"
+          },
+          "periodSeconds": 5,
+          "timeoutSeconds": 3,
+          "failureThreshold": 360
+        },
+        "volumeMounts": [
+          {
+            "name": "cache",
+            "mountPath": "/models"
+          },
+          {
+            "name": "dshm",
+            "mountPath": "/dev/shm"
+          }
+        ],
+        "command": [
+          "python",
+          "-m",
+          "uvicorn",
+          "persistent_upstream:app",
+          "--app-dir",
+          "/models",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8000"
+        ]
+      }
+    ],
+    "volumes": [
+      {
+        "name": "cache",
+        "persistentVolumeClaim": {
+          "claimName": "evaluation-cache"
+        }
+      },
+      {
+        "name": "dshm",
+        "emptyDir": {
+          "medium": "Memory",
+          "sizeLimit": "16Gi"
+        }
+      }
+    ]
+  }
+}

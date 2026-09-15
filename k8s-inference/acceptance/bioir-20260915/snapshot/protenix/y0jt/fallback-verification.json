@@ -1,0 +1,24 @@
+{
+  "status": "pass",
+  "identity_rejected_before_restore_commands": true,
+  "actual_restore_commands": [],
+  "new_worker_pid": 55,
+  "captured_worker_pid": 174,
+  "http_health_not_file_marker": true,
+  "new_model_load_seconds": 2.5491825150093064,
+  "container_started_unix": 1789514938.0,
+  "first_observed_http_ready_unix": 1789514951.4214516,
+  "container_to_http_ready_seconds": 13.421451568603516,
+  "validated_new_predictions": 2,
+  "cache_state": "Supervisor copies captured executable cache before rejecting identity. Fresh ordinary-load controls have empty executable caches; this single fallback is not a matched cache-only benchmark.",
+  "causal_limit": "Cache reuse is a verified configuration difference, not proof that it alone explains all timing differences.",
+  "log_caution": "worker.log deliberately includes copied donor prefix; last ready event and actual live HTTP health identify the new worker.",
+  "health_construction": "Frozen bir_server.py constructs ProtenixBackend before starting HTTPServer; checkpoint torch.load/load_weights and CUDA synchronize precede backend.ready. No readiness file is consulted.",
+  "evidence": [
+    "raw/bir-protenix-y0jt-fallback/supervisor.log",
+    "raw/bir-protenix-y0jt-fallback/worker.log",
+    "lifecycle/bir-protenix-y0jt-fallback-ready.json",
+    "manifests/app.json",
+    "manifests/source.json"
+  ]
+}

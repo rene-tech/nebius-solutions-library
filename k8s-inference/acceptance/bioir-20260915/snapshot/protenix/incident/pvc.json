@@ -1,0 +1,52 @@
+{
+  "observed_unix": 1789511811.9093006,
+  "value": {
+    "apiVersion": "v1",
+    "kind": "PersistentVolumeClaim",
+    "metadata": {
+      "annotations": {
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"PersistentVolumeClaim\",\"metadata\":{\"annotations\":{},\"labels\":{\"benchmark-model\":\"protenix-bir\",\"evaluation\":\"fs2-bioir-20260915\",\"lane\":\"snapshot\"},\"name\":\"fs2-bioir-protenix-snapshot\",\"namespace\":\"fs2-bioir-protenix\"},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"resources\":{\"requests\":{\"storage\":\"128Gi\"}},\"storageClassName\":\"compute-csi-default-sc\"}}\n",
+        "pv.kubernetes.io/bind-completed": "yes",
+        "pv.kubernetes.io/bound-by-controller": "yes",
+        "volume.beta.kubernetes.io/storage-provisioner": "compute.csi.nebius.com",
+        "volume.kubernetes.io/selected-node": "computeinstance-e00fkt1bsa4ec657sn",
+        "volume.kubernetes.io/storage-provisioner": "compute.csi.nebius.com"
+      },
+      "creationTimestamp": "2026-09-15T22:16:59Z",
+      "finalizers": [
+        "kubernetes.io/pvc-protection"
+      ],
+      "labels": {
+        "benchmark-model": "protenix-bir",
+        "evaluation": "fs2-bioir-20260915",
+        "lane": "snapshot"
+      },
+      "name": "fs2-bioir-protenix-snapshot",
+      "namespace": "fs2-bioir-protenix",
+      "resourceVersion": "42372830",
+      "uid": "923170d6-9a45-4d29-8d06-0dabbb7cb56a"
+    },
+    "spec": {
+      "accessModes": [
+        "ReadWriteOnce"
+      ],
+      "resources": {
+        "requests": {
+          "storage": "128Gi"
+        }
+      },
+      "storageClassName": "compute-csi-default-sc",
+      "volumeMode": "Filesystem",
+      "volumeName": "pvc-923170d6-9a45-4d29-8d06-0dabbb7cb56a"
+    },
+    "status": {
+      "accessModes": [
+        "ReadWriteOnce"
+      ],
+      "capacity": {
+        "storage": "128Gi"
+      },
+      "phase": "Bound"
+    }
+  }
+}

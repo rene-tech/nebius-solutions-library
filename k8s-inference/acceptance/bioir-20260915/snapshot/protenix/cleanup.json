@@ -1,0 +1,82 @@
+{
+  "observed_unix": 1789515047.8159091,
+  "namespace": "fs2-bioir-protenix",
+  "cohorts": {
+    "fkt": {
+      "pods": [],
+      "pvc": null,
+      "pv": null,
+      "configmaps": [
+        null,
+        null
+      ],
+      "gpu_release": "Final memory not directly re-probed after historical interruption. Latest manager receipt has this node Ready=True again; historical STOPPED evidence is not current state. Last completed pod release was separately verified.",
+      "cleanup_receipts": "incident/cleanup-request.json",
+      "latest_saved_node_condition": {
+        "name": "computeinstance-e00fkt1bsa4ec657sn",
+        "ready": {
+          "lastHeartbeatTime": "2026-09-15T23:30:05Z",
+          "lastTransitionTime": "2026-09-15T23:17:17Z",
+          "message": "kubelet is posting ready status",
+          "reason": "KubeletReady",
+          "status": "True",
+          "type": "Ready"
+        }
+      }
+    },
+    "xjaw": {
+      "pods": [],
+      "pvc": null,
+      "pv": null,
+      "configmaps": [
+        null,
+        null
+      ],
+      "gpu_release": "Final memory not directly re-probed after historical interruption. Latest manager receipt has this node Ready=True again; historical STOPPED evidence is not current state. Last completed pod release was separately verified.",
+      "cleanup_receipts": "xjaw/lifecycle/cleanup-request.json",
+      "latest_saved_node_condition": {
+        "name": "computeinstance-e00xjaw5jqexvvnpat",
+        "ready": {
+          "lastHeartbeatTime": "2026-09-15T23:28:41Z",
+          "lastTransitionTime": "2026-09-15T23:16:58Z",
+          "message": "kubelet is posting ready status",
+          "reason": "KubeletReady",
+          "status": "True",
+          "type": "Ready"
+        }
+      }
+    },
+    "y0jt": {
+      "pods": [],
+      "pvc": null,
+      "pv": null,
+      "configmaps": [
+        null,
+        null
+      ],
+      "gpu_release": {
+        "unix": 1789515042.35427,
+        "processes": "",
+        "telemetry": "GPU-9885f9c6-110a-10b5-2c26-c256e895d575, NVIDIA H100 80GB HBM3, 580.173.02, 0 MiB, 0 %\n"
+      },
+      "cleanup_receipts": "y0jt/lifecycle/cleanup-request.json",
+      "latest_saved_node_condition": {
+        "name": "computeinstance-e00y0jttwekyghrznp",
+        "ready": {
+          "lastHeartbeatTime": "2026-09-15T23:30:06Z",
+          "lastTransitionTime": "2026-09-09T18:27:07Z",
+          "message": "kubelet is posting ready status",
+          "reason": "KubeletReady",
+          "status": "True",
+          "type": "Ready"
+        }
+      }
+    }
+  },
+  "normal_deletion_only": true,
+  "force_or_finalizer_changes": false,
+  "provider_changes": false,
+  "material_disposition": "Task-only immutable ConfigMaps and checkpoint PVCs requested for deletion where receipts exist. Predictions, manifests, source hashes and logs retained. Checkpoint binary has no backup outside its PVC; deletion receipts alone do not prove physical reclamation.",
+  "manager_closure_evidence": "../../report/final-cluster-state.json",
+  "manager_closure_recorded_at": "2026-09-15T23:31:26.667852+00:00"
+}

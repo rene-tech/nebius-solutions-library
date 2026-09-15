@@ -1,0 +1,160 @@
+[
+  {
+    "id": "bir-support",
+    "url": "https://raw.githubusercontent.com/NVIDIA-BioNeMo/BioNeMo-Inference-Runtime/main/docs/ref/support-matrix.md",
+    "sha256": "c7919f6183fb1ec316804ac99ee5cd4273b37bb8bb11c8d6a2c2beb23e382917",
+    "bytes": 14044,
+    "path": "sources/bir-support.txt"
+  },
+  {
+    "id": "bir-hubs",
+    "url": "https://raw.githubusercontent.com/NVIDIA-BioNeMo/BioNeMo-Inference-Runtime/main/bionemo_ir/hubs.py",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "id": "rfdiffusion-attention",
+    "url": "https://raw.githubusercontent.com/RosettaCommons/RFdiffusion/9273ef67335acaf91df0150473a274759229cdf6/rfdiffusion/Attention_module.py",
+    "sha256": "f5c50065a5dafdb2fdfd698d5725932423e8c839c989438de49b5121ec6fa498",
+    "bytes": 15450,
+    "path": "sources/rfdiffusion-attention.txt"
+  },
+  {
+    "id": "rfdiffusion-track",
+    "url": "https://raw.githubusercontent.com/RosettaCommons/RFdiffusion/9273ef67335acaf91df0150473a274759229cdf6/rfdiffusion/Track_module.py",
+    "sha256": "696e6e4ab66e45ec3314d7da75b69114acbc0b2609914a05fb395b76fb3c0dd1",
+    "bytes": 21629,
+    "path": "sources/rfdiffusion-track.txt"
+  },
+  {
+    "id": "complexa-readme",
+    "url": "https://raw.githubusercontent.com/NVIDIA-BioNeMo/Proteina-Complexa/54058860d43444c7289873f77d3e50b5b02348cd/README.md",
+    "sha256": "de5ab6410206dcbccaa4011146de9c61969e88cbaeb85f4c13d23dd645eda49a",
+    "bytes": 31852,
+    "path": "sources/complexa-readme.txt"
+  },
+  {
+    "id": "genmol-modelcard",
+    "url": "https://raw.githubusercontent.com/NVIDIA-BioNeMo/genmol/main/MODEL_CARD.md",
+    "sha256": "70bf15b11e797069c5911bd73993494cc350ecc870accdf2e55d1824e2c9b501",
+    "bytes": 9173,
+    "path": "sources/genmol-modelcard.txt"
+  },
+  {
+    "id": "evo2-readme",
+    "url": "https://raw.githubusercontent.com/ArcInstitute/evo2/main/README.md",
+    "sha256": "58787c8ef5cb4fba4c04322a4ceb9f174e2233ec22d4193622fb6bc67d651d89",
+    "bytes": 12895,
+    "path": "sources/evo2-readme.txt"
+  },
+  {
+    "id": "proteinmpnn-source",
+    "url": "https://raw.githubusercontent.com/dauparas/ProteinMPNN/main/protein_mpnn_utils.py",
+    "sha256": "74c8f9b7553422a7a0bbd705874844ee103c8926c2c96f154a87e0b824071e1b",
+    "bytes": 63491,
+    "path": "sources/proteinmpnn-source.txt"
+  },
+  {
+    "id": "diffdock-readme",
+    "url": "https://raw.githubusercontent.com/gcorso/DiffDock/main/README.md",
+    "sha256": "6f63088d85b5f05d58416ede319387c1b7f3661b27741a36314ada861f2056de",
+    "bytes": 14229,
+    "path": "sources/diffdock-readme.txt"
+  },
+  {
+    "id": "diffdock-score",
+    "url": "https://raw.githubusercontent.com/gcorso/DiffDock/main/models/score_model.py",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "id": "bir-commit",
+    "url": "https://api.github.com/repos/NVIDIA-BioNeMo/BioNeMo-Inference-Runtime/commits/main",
+    "sha256": "76b37609a511f5286cffa99b8bbc9072a3763c5c54faa15ef7bd23d0fa2306c2",
+    "bytes": 31990,
+    "path": "sources/bir-commit.txt"
+  },
+  {
+    "id": "complexa-tree",
+    "url": "https://api.github.com/repos/NVIDIA-BioNeMo/Proteina-Complexa/git/trees/54058860d43444c7289873f77d3e50b5b02348cd?recursive=1",
+    "sha256": "cbba1c24f8bc98de58f049b049d36996e174cb1faa6f06c0ec496a1f1a0d2dd1",
+    "bytes": 199030,
+    "path": "sources/complexa-tree.txt"
+  },
+  {
+    "id": "complexa-transformer",
+    "url": "https://raw.githubusercontent.com/NVIDIA-BioNeMo/Proteina-Complexa/54058860d43444c7289873f77d3e50b5b02348cd/src/proteinfoundation/nn/protein_transformer.py",
+    "sha256": "9571abc1ce1255be9d47937e4d8adf93cc78f8d0e504ac8af3578961a0081b16",
+    "bytes": 23378,
+    "path": "sources/complexa-transformer.txt"
+  },
+  {
+    "id": "complexa-af2-reward",
+    "url": "https://raw.githubusercontent.com/NVIDIA-BioNeMo/Proteina-Complexa/54058860d43444c7289873f77d3e50b5b02348cd/src/proteinfoundation/rewards/alphafold2_reward.py",
+    "sha256": "32c611c2c7c4cb849bd3432d2ae0f71854415139cd4b007878b9574241582294",
+    "bytes": 16361,
+    "path": "sources/complexa-af2-reward.txt"
+  },
+  {
+    "id": "complexa-latents",
+    "url": "https://raw.githubusercontent.com/NVIDIA-BioNeMo/Proteina-Complexa/54058860d43444c7289873f77d3e50b5b02348cd/src/proteinfoundation/nn/local_latents_transformer_v2.py",
+    "sha256": "719bc7aee773778d00e047873da32373ed9ed707f5f1298da49b232449a037df",
+    "bytes": 12990,
+    "path": "sources/complexa-latents.txt"
+  },
+  {
+    "id": "diffdock-score-pinned",
+    "url": "https://raw.githubusercontent.com/gcorso/DiffDock/85c49b60d3e0b0182a59ee43a34a6d7036981284/models/score_model.py",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "id": "bir-opm",
+    "url": "https://raw.githubusercontent.com/NVIDIA-BioNeMo/BioNeMo-Inference-Runtime/401c6fcc4a43925bcf1342b6c0979b060130b396/bionemo_ir/_torch/custom_ops.py",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "id": "complexa-transformer",
+    "url": "https://raw.githubusercontent.com/NVIDIA-BioNeMo/Proteina-Complexa/54058860d43444c7289873f77d3e50b5b02348cd/src/proteinfoundation/nn/protein_transformer.py",
+    "sha256": "9571abc1ce1255be9d47937e4d8adf93cc78f8d0e504ac8af3578961a0081b16",
+    "bytes": 23378,
+    "path": "sources/complexa-transformer.txt"
+  },
+  {
+    "id": "complexa-af2-reward",
+    "url": "https://raw.githubusercontent.com/NVIDIA-BioNeMo/Proteina-Complexa/54058860d43444c7289873f77d3e50b5b02348cd/src/proteinfoundation/rewards/alphafold2_reward.py",
+    "sha256": "32c611c2c7c4cb849bd3432d2ae0f71854415139cd4b007878b9574241582294",
+    "bytes": 16361,
+    "path": "sources/complexa-af2-reward.txt"
+  },
+  {
+    "id": "complexa-latents",
+    "url": "https://raw.githubusercontent.com/NVIDIA-BioNeMo/Proteina-Complexa/54058860d43444c7289873f77d3e50b5b02348cd/src/proteinfoundation/nn/local_latents_transformer_v2.py",
+    "sha256": "719bc7aee773778d00e047873da32373ed9ed707f5f1298da49b232449a037df",
+    "bytes": 12990,
+    "path": "sources/complexa-latents.txt"
+  },
+  {
+    "id": "diffdock-score-pinned",
+    "url": "https://raw.githubusercontent.com/gcorso/DiffDock/85c49b60d3e0b0182a59ee43a34a6d7036981284/models/score_model.py",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "id": "bir-opm-dispatch",
+    "url": "https://raw.githubusercontent.com/NVIDIA-BioNeMo/BioNeMo-Inference-Runtime/401c6fcc4a43925bcf1342b6c0979b060130b396/bionemo_ir/_torch/custom_ops/outer_product_mean/ops.py",
+    "sha256": "e9cd8e79c0c27eae8e8a07c6bc7c5b32f9dab4bfe5e8eb5558147ad37463d2d9",
+    "bytes": 2247,
+    "path": "sources/bir-opm-dispatch.txt"
+  },
+  {
+    "id": "bir-opm-config",
+    "url": "https://raw.githubusercontent.com/NVIDIA-BioNeMo/BioNeMo-Inference-Runtime/401c6fcc4a43925bcf1342b6c0979b060130b396/bionemo_ir/_torch/custom_ops/outer_product_mean/_config.py",
+    "sha256": "941d11d9f9f73a117fbf3fa7fb5d2f4fca18023b658e3aa795ce68ed634cb543",
+    "bytes": 5886,
+    "path": "sources/bir-opm-config.txt"
+  },
+  {
+    "id": "bir-opm-cutedsl",
+    "url": "https://raw.githubusercontent.com/NVIDIA-BioNeMo/BioNeMo-Inference-Runtime/401c6fcc4a43925bcf1342b6c0979b060130b396/bionemo_ir/_torch/custom_ops/outer_product_mean/cutedsl.py",
+    "sha256": "29518098f9d74aeddf84e94308b31a234e0330dee0e8546826db20167ccf2039",
+    "bytes": 8550,
+    "path": "sources/bir-opm-cutedsl.txt"
+  }
+]

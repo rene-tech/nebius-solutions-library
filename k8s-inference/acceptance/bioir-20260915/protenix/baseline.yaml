@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fs2-bioir-protenix
+  labels:
+    evaluation: fs2-bioir-20260915
+    lane: protenix
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: protenix-current-h100
+  namespace: fs2-bioir-protenix
+  labels:
+    evaluation: fs2-bioir-20260915
+    lane: protenix
+    app.kubernetes.io/name: bioir-protenix-baseline
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  nodeSelector:
+    kubernetes.io/hostname: computeinstance-e00xjaw5jqexvvnpat
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: fs2-inference
+      effect: NoSchedule
+  securityContext:
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+  containers:
+    - name: scientific-stage
+      image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e
+      imagePullPolicy: IfNotPresent
+      command: ["/opt/protenix-venv/bin/python", "-c", "import time; time.sleep(21600)"]
+      resources:
+        requests:
+          cpu: "8"
+          memory: 96Gi
+          ephemeral-storage: 32Gi
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "12"
+          memory: 160Gi
+          ephemeral-storage: 128Gi
+          nvidia.com/gpu: "1"
+      env:
+        - {name: HF_HUB_OFFLINE, value: "1"}
+        - {name: TRANSFORMERS_OFFLINE, value: "1"}
+      volumeMounts:
+        - {name: workspace, mountPath: /mnt/fs2-scientific}
+        - {name: cache, mountPath: /cache}
+        - name: model
+          mountPath: /models/protenix-v2
+          readOnly: true
+          subPath: scientific-localization/public/generations/protenix-v2/sha256/5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48
+  volumes:
+    - name: model
+      hostPath:
+        path: /mnt/fs2-reference-data/data
+        type: Directory
+    - {name: workspace, emptyDir: {}}
+    - {name: cache, emptyDir: {}}

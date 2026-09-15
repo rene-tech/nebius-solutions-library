@@ -1,0 +1,40 @@
+{
+  "utc": "2026-09-15T22:30:41.191425+00:00",
+  "deleted": [
+    {
+      "kind": "configmap",
+      "name": "openfold2-bir-source",
+      "uid": "b8f5b92a-c174-4583-bd47-4daf1bbf7290"
+    },
+    {
+      "kind": "configmap",
+      "name": "openfold3-bir-source",
+      "uid": "8768c9a1-b308-415d-870c-a8108199a007"
+    },
+    {
+      "kind": "configmap",
+      "name": "openfold3-upstream-resident-source",
+      "uid": "ae697493-5074-4553-ac3f-b900d15e0442"
+    }
+  ],
+  "nodes": [
+    {
+      "gpu": "h100",
+      "node": "computeinstance-e00j20a9hkb508cn4a",
+      "allocations": [],
+      "compute_processes": "",
+      "state": "NVIDIA H100 80GB HBM3, 580.159.04, 0 MiB, 0 %\n"
+    },
+    {
+      "gpu": "l40s",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "allocations": [],
+      "compute_processes": "",
+      "state": "NVIDIA L40S, 580.173.02, 0 MiB, 0 %\n"
+    }
+  ],
+  "namespace_retained": true,
+  "pvc_created": false,
+  "production_changed": false,
+  "note": "Only task-owned source ConfigMaps removed; exact source remains in frozen local manifests. Both GPU nodes free before snapshot reassignment."
+}

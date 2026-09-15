@@ -1,0 +1,80 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "fs2-bioir-snapshot-openfold2-bundle-inventory",
+    "namespace": "fs2-bioir-snapshot",
+    "labels": {
+      "evaluation": "fs2-bioir-20260915",
+      "lane": "snapshot",
+      "benchmark-model": "boltz2-bir",
+      "role": "bundle-inventory"
+    }
+  },
+  "spec": {
+    "restartPolicy": "Never",
+    "activeDeadlineSeconds": 900,
+    "automountServiceAccountToken": false,
+    "nodeSelector": {
+      "kubernetes.io/hostname": "computeinstance-e00sa78kng1kwhej6q"
+    },
+    "tolerations": [
+      {
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference",
+        "effect": "NoSchedule"
+      }
+    ],
+    "containers": [
+      {
+        "name": "collector",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+        "command": [
+          "python",
+          "-c",
+          "import hashlib,json,pathlib,time; root=pathlib.Path(\"/snapshot/openfold2-01\"); start=time.time(); rows=[]\nfor p in sorted(root.rglob(\"*\")):\n if p.is_file() and not p.is_symlink():\n  h=hashlib.sha256()\n  with p.open(\"rb\") as f:\n   for chunk in iter(lambda:f.read(8*1024*1024),b\"\"):h.update(chunk)\n  rows.append({\"path\":str(p.relative_to(root)),\"bytes\":p.stat().st_size,\"sha256\":h.hexdigest()})\nprint(json.dumps({\"run\":\"openfold2-01\",\"files\":rows,\"bytes\":sum(r[\"bytes\"] for r in rows),\"hash_seconds\":time.time()-start}))"
+        ],
+        "resources": {
+          "requests": {
+            "cpu": "1",
+            "memory": "512Mi"
+          },
+          "limits": {
+            "cpu": "1",
+            "memory": "512Mi"
+          }
+        },
+        "securityContext": {
+          "runAsUser": 0,
+          "allowPrivilegeEscalation": false,
+          "readOnlyRootFilesystem": true,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          },
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          }
+        },
+        "volumeMounts": [
+          {
+            "name": "bundle",
+            "mountPath": "/snapshot",
+            "readOnly": true
+          }
+        ]
+      }
+    ],
+    "volumes": [
+      {
+        "name": "bundle",
+        "persistentVolumeClaim": {
+          "claimName": "fs2-bioir-snapshot-openfold2-checkpoints",
+          "readOnly": true
+        }
+      }
+    ]
+  }
+}

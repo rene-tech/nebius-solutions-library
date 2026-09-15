@@ -1,0 +1,61 @@
+{
+  "unix": 1789511070.6621456,
+  "deleted": [
+    {
+      "namespace": "fs2-bioir-boltz2",
+      "kind": "configmap",
+      "name": "fs2-bioir-snapshot-app",
+      "uid": "8e6ccd12-7f69-4520-80c9-31dfe2f9dbe5"
+    },
+    {
+      "namespace": "fs2-bioir-boltz2",
+      "kind": "configmap",
+      "name": "fs2-bioir-snapshot-source",
+      "uid": "bb647f8a-f522-436a-94b8-8d483890b645"
+    },
+    {
+      "namespace": "fs2-bioir-boltz2",
+      "kind": "pvc",
+      "name": "fs2-bioir-snapshot-checkpoints",
+      "uid": "753e45c4-3827-4007-bb3a-f2726954ae7e",
+      "pv": "pvc-753e45c4-3827-4007-bb3a-f2726954ae7e",
+      "reclaim_policy": "Delete",
+      "pv_deleted": true
+    },
+    {
+      "namespace": "fs2-bioir-snapshot",
+      "kind": "configmap",
+      "name": "fs2-bioir-snapshot-openfold2-app",
+      "uid": "fcabd5c0-97fa-40f8-be27-67c53489ae85"
+    },
+    {
+      "namespace": "fs2-bioir-snapshot",
+      "kind": "configmap",
+      "name": "fs2-bioir-snapshot-source",
+      "uid": "55205286-d2a6-4f8a-b089-5e3db8c8398e"
+    },
+    {
+      "namespace": "fs2-bioir-snapshot",
+      "kind": "pvc",
+      "name": "fs2-bioir-snapshot-openfold2-checkpoints",
+      "uid": "14c17928-d5f9-4850-9537-2be3b7438132",
+      "pv": "pvc-14c17928-d5f9-4850-9537-2be3b7438132",
+      "reclaim_policy": "Delete",
+      "pv_deleted": true
+    },
+    {
+      "namespace": "fs2-bioir-boltz2",
+      "kind": "pvc",
+      "name": "evaluation-cache",
+      "uid": "cf75a701-6ede-4d91-935e-af6116917554",
+      "pv": "pvc-cf75a701-6ede-4d91-935e-af6116917554",
+      "reclaim_policy": "Delete",
+      "pv_deleted": false
+    }
+  ],
+  "namespaces_deleted": false,
+  "production_resources_changed": false,
+  "both_assigned_gpu_nodes_no_allocations_or_processes": true,
+  "note": "Explicit parent approval for Boltz evaluation-cache removal. All PVC objects deleted and both snapshot PVs reclaimed. Boltz cache PV remains Released after CSI DeadlineExceeded; no finalizer bypass or controller change. Raw outputs, provenance and hashes retained.",
+  "pending_storage_reclamation": "pvc-cf75a701-6ede-4d91-935e-af6116917554"
+}

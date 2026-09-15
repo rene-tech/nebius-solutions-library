@@ -1,0 +1,8 @@
+[
+  {
+    "stage": "app ConfigMap creation before GPU allocation",
+    "error": "Client-side apply adds last-applied annotation exceeding262144-byte annotation limit with full public A3M",
+    "effect": "No GPU pod created; helper source ConfigMap alone existed",
+    "correction": "Create the immutable app ConfigMap directly, retaining full MSA content; no truncation and no server limits changed"
+  }
+]

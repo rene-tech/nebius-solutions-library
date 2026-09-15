@@ -1,0 +1,23 @@
+{
+  "started_unix": 1789507747.5805247,
+  "completed_unix": 1789507810.8303645,
+  "returncode": 0,
+  "command": [
+    "kubectl",
+    "--kubeconfig",
+    "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+    "--context",
+    "k8s-inference-h100",
+    "-n",
+    "fs2-bioir-coverage",
+    "exec",
+    "fs2-bioir-coverage-diffdock",
+    "-c",
+    "runtime",
+    "--",
+    "python",
+    "/eval/client.py",
+    "--model",
+    "diffdock"
+  ]
+}

@@ -1,0 +1,172 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:25:50Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-rfdiffusion",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42240928",
+        "uid": "85bdd8af-6e37-4934-8b61-7c6d2a9c7348"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:25:50Z",
+      "message": "Successfully assigned fs2-bioir-coverage/fs2-bioir-coverage-rfdiffusion to computeinstance-e00krzha55t0sg3t56",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:25:50Z",
+        "name": "fs2-bioir-coverage-rfdiffusion.18d59ba2e02c160a",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42240930",
+        "uid": "582f4729-b44f-4ba5-b8a6-cb62fb796b35"
+      },
+      "reason": "Scheduled",
+      "reportingComponent": "default-scheduler",
+      "reportingInstance": "",
+      "source": {
+        "component": "default-scheduler"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:25:51Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-rfdiffusion",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42240929",
+        "uid": "85bdd8af-6e37-4934-8b61-7c6d2a9c7348"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:25:51Z",
+      "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19\"",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:25:51Z",
+        "name": "fs2-bioir-coverage-rfdiffusion.18d59ba300cd824b",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42240958",
+        "uid": "1512dd50-e7b8-47da-9778-57fd7dcd5137"
+      },
+      "reason": "Pulling",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00krzha55t0sg3t56",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00krzha55t0sg3t56"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:27:21Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-rfdiffusion",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42240929",
+        "uid": "85bdd8af-6e37-4934-8b61-7c6d2a9c7348"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:27:21Z",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19\" in 1m30.075s (1m30.075s including waiting). Image size: 4154027189 bytes.",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:27:21Z",
+        "name": "fs2-bioir-coverage-rfdiffusion.18d59bb7f9b6b629",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42244742",
+        "uid": "0c1f2017-3d3b-47cf-9a4f-ee1cddaeb2c9"
+      },
+      "reason": "Pulled",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00krzha55t0sg3t56",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00krzha55t0sg3t56"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:27:21Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-rfdiffusion",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42240929",
+        "uid": "85bdd8af-6e37-4934-8b61-7c6d2a9c7348"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:27:21Z",
+      "message": "Container created",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:27:21Z",
+        "name": "fs2-bioir-coverage-rfdiffusion.18d59bb7fbb8fabd",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42244744",
+        "uid": "0b1d04de-40d1-47e6-9f36-6e3f28ec5196"
+      },
+      "reason": "Created",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00krzha55t0sg3t56",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00krzha55t0sg3t56"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:27:21Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-rfdiffusion",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42240929",
+        "uid": "85bdd8af-6e37-4934-8b61-7c6d2a9c7348"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:27:21Z",
+      "message": "Container started",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:27:21Z",
+        "name": "fs2-bioir-coverage-rfdiffusion.18d59bb80a57fca4",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42244756",
+        "uid": "666a7af9-46f5-4b9e-8a00-1ca92a29c3ae"
+      },
+      "reason": "Started",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00krzha55t0sg3t56",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00krzha55t0sg3t56"
+      },
+      "type": "Normal"
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    "resourceVersion": ""
+  }
+}

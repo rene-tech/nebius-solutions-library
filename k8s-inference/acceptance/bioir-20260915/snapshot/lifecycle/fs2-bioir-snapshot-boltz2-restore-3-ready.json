@@ -1,0 +1,603 @@
+{
+  "unix": 1789509921.1961944,
+  "observed_wait_seconds": 136.97437953948975,
+  "health": {
+    "status": "ready",
+    "model": "boltz2",
+    "source_revision": "401c6fcc4a43925bcf1342b6c0979b060130b396",
+    "model_revision": "6fdef46d763fee7fbb83ca5501ccceff43b85607",
+    "artifact_sha256": {
+      "boltz2_conf.ckpt": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1"
+    },
+    "compute_capability": "9.0",
+    "startup_seconds": 34.755941
+  },
+  "pod": {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "annotations": {
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"labels\":{\"benchmark-model\":\"boltz2-bir\",\"evaluation\":\"fs2-bioir-20260915\",\"lane\":\"snapshot\",\"loop\":\"asyncio\",\"topology.kubernetes.io/region\":\"eu-north1\"},\"name\":\"fs2-bioir-snapshot-boltz2-restore-3\",\"namespace\":\"fs2-bioir-boltz2\"},\"spec\":{\"activeDeadlineSeconds\":14400,\"automountServiceAccountToken\":false,\"containers\":[{\"command\":[\"python\",\"/snapshot-source/serving_supervisor.py\",\"--directory\",\"/checkpoints/boltz2-asyncio-01\",\"--request-mode\",\"server\",\"--fallback\",\"fail\",\"--source-directory\",\"/snapshot-bundle\",\"restore\",\"--\",\"python\",\"-m\",\"uvicorn\",\"bir_worker:app\",\"--app-dir\",\"/snapshot-app\",\"--host\",\"0.0.0.0\",\"--port\",\"8000\",\"--loop\",\"asyncio\"],\"env\":[{\"name\":\"HF_HOME\",\"value\":\"/models/huggingface\"},{\"name\":\"HF_HUB_CACHE\",\"value\":\"/models/huggingface/hub\"},{\"name\":\"HF_HUB_DISABLE_XET\",\"value\":\"1\"},{\"name\":\"CUDA_CACHE_PATH\",\"value\":\"/models/eval-cache/cuda\"},{\"name\":\"TORCH_EXTENSIONS_DIR\",\"value\":\"/models/eval-cache/torch-extensions\"},{\"name\":\"TORCHINDUCTOR_CACHE_DIR\",\"value\":\"/models/eval-cache/torchinductor\"},{\"name\":\"TRITON_CACHE_DIR\",\"value\":\"/models/eval-cache/triton\"},{\"name\":\"XDG_CACHE_HOME\",\"value\":\"/models/eval-cache/xdg\"},{\"name\":\"BOLTZ_SOURCE_REVISION\",\"value\":\"401c6fcc4a43925bcf1342b6c0979b060130b396\"},{\"name\":\"BOLTZ_MODEL_REPOSITORY\",\"value\":\"boltz-community/boltz-2\"},{\"name\":\"BOLTZ_MODEL_REVISION\",\"value\":\"6fdef46d763fee7fbb83ca5501ccceff43b85607\"},{\"name\":\"BOLTZ_CONF_SHA256\",\"value\":\"090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1\"},{\"name\":\"BOLTZ_AFF_SHA256\",\"value\":\"dcc5cd3722b1c9eaa34267e4ae32f55cbbf1963f4c19319381ccfa30fdd2ca9e\"},{\"name\":\"BOLTZ_MOLS_SHA256\",\"value\":\"39e076d96dbec6b4e86982bbda16f3a53a2a60c9bdc17828d88f6f9a0c7d1fd7\"},{\"name\":\"BOLTZ2_CKPT\",\"value\":\"/models/boltz2_conf.ckpt\"},{\"name\":\"BOLTZ_MOL_DIR\",\"value\":\"/models/mols\"},{\"name\":\"BIOIR_CACHE\",\"value\":\"/runtime-cache/bioir-cache\"},{\"name\":\"HF_HUB_OFFLINE\",\"value\":\"1\"},{\"name\":\"TRANSFORMERS_OFFLINE\",\"value\":\"1\"},{\"name\":\"FS2_SNAPSHOT_RUNTIME_IMAGE\",\"value\":\"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\"},{\"name\":\"FS2_SNAPSHOT_TOOLS_IMAGE\",\"value\":\"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\"},{\"name\":\"FS2_MODEL_REVISION\",\"value\":\"6fdef46d763fee7fbb83ca5501ccceff43b85607\"},{\"name\":\"FS2_RUNTIME_ID\",\"value\":\"boltz2-bir-public-0.1.0\"}],\"image\":\"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"boltz2\",\"ports\":[{\"containerPort\":8000,\"name\":\"http\",\"protocol\":\"TCP\"}],\"resources\":{\"limits\":{\"cpu\":\"16\",\"memory\":\"192Gi\",\"nvidia.com/gpu\":\"1\"},\"requests\":{\"cpu\":\"12\",\"memory\":\"96Gi\",\"nvidia.com/gpu\":\"1\"}},\"securityContext\":{\"appArmorProfile\":{\"type\":\"Unconfined\"},\"capabilities\":{\"add\":[\"SYS_ADMIN\",\"SYS_PTRACE\",\"CHECKPOINT_RESTORE\",\"NET_ADMIN\",\"SYS_TIME\",\"SYS_RESOURCE\"]},\"runAsGroup\":0,\"runAsNonRoot\":false,\"runAsUser\":0,\"seccompProfile\":{\"type\":\"Unconfined\"}},\"terminationMessagePath\":\"/dev/termination-log\",\"terminationMessagePolicy\":\"File\",\"volumeMounts\":[{\"mountPath\":\"/models\",\"name\":\"cache\",\"readOnly\":true},{\"mountPath\":\"/dev/shm\",\"name\":\"dshm\"},{\"mountPath\":\"/snapshot-app\",\"name\":\"app\",\"readOnly\":true},{\"mountPath\":\"/runtime-cache\",\"name\":\"snapshot-checkpoints\",\"subPath\":\"boltz2-asyncio-01/runtime-cache\"},{\"mountPath\":\"/tools\",\"name\":\"snapshot-tools\"},{\"mountPath\":\"/snapshot-source\",\"name\":\"snapshot-source\",\"readOnly\":true},{\"mountPath\":\"/checkpoints\",\"name\":\"snapshot-checkpoints\"},{\"mountPath\":\"/tmp\",\"name\":\"snapshot-checkpoints\",\"subPath\":\"boltz2-asyncio-01/tmp\"},{\"mountPath\":\"/snapshot-bundle\",\"name\":\"snapshot-bundle\",\"readOnly\":true,\"subPath\":\"boltz2-asyncio-01\"},{\"mountPath\":\"/checkpoints/boltz2-asyncio-01/images\",\"name\":\"snapshot-bundle\",\"readOnly\":true,\"subPath\":\"boltz2-asyncio-01/images\"}]}],\"dnsPolicy\":\"ClusterFirst\",\"enableServiceLinks\":true,\"initContainers\":[{\"command\":[\"/bin/sh\",\"-c\",\"cp -a /snapshot-binaries/. /tools/ \\u0026\\u0026 cp -L /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /tools/lib/ \\u0026\\u0026 mkdir -p \\\"$1/runtime-cache\\\" \\\"$1/tmp\\\" \\u0026\\u0026 if [ -n \\\"$2\\\" ]; then chown \\\"$2:$2\\\" \\\"$1/runtime-cache\\\" \\\"$1/tmp\\\"; fi \\u0026\\u0026 for part in runtime-cache tmp; do cp -a /snapshot-bundle/$part/. \\\"$1/$part/\\\"; done\",\"snapshot-tools\",\"/checkpoints/boltz2-asyncio-01\",\"\"],\"image\":\"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"snapshot-tools\",\"resources\":{},\"securityContext\":{\"runAsGroup\":0,\"runAsNonRoot\":false,\"runAsUser\":0},\"terminationMessagePath\":\"/dev/termination-log\",\"terminationMessagePolicy\":\"File\",\"volumeMounts\":[{\"mountPath\":\"/tools\",\"name\":\"snapshot-tools\"},{\"mountPath\":\"/checkpoints\",\"name\":\"snapshot-checkpoints\"},{\"mountPath\":\"/models\",\"name\":\"cache\",\"readOnly\":true},{\"mountPath\":\"/snapshot-bundle\",\"name\":\"snapshot-bundle\",\"readOnly\":true,\"subPath\":\"boltz2-asyncio-01\"}]}],\"nodeSelector\":{\"kubernetes.io/hostname\":\"computeinstance-e00y0jttwekyghrznp\"},\"preemptionPolicy\":\"PreemptLowerPriority\",\"priority\":0,\"restartPolicy\":\"Never\",\"schedulerName\":\"default-scheduler\",\"securityContext\":{\"runAsGroup\":1000,\"runAsNonRoot\":true,\"runAsUser\":1000,\"seccompProfile\":{\"type\":\"RuntimeDefault\"},\"supplementalGroups\":[1000]},\"serviceAccount\":\"default\",\"serviceAccountName\":\"default\",\"terminationGracePeriodSeconds\":30,\"tolerations\":[{\"effect\":\"NoSchedule\",\"key\":\"dedicated\",\"operator\":\"Equal\",\"value\":\"fs2-inference\"},{\"effect\":\"NoExecute\",\"key\":\"node.kubernetes.io/not-ready\",\"operator\":\"Exists\",\"tolerationSeconds\":300},{\"effect\":\"NoExecute\",\"key\":\"node.kubernetes.io/unreachable\",\"operator\":\"Exists\",\"tolerationSeconds\":300},{\"effect\":\"NoSchedule\",\"key\":\"nvidia.com/gpu\",\"operator\":\"Exists\"}],\"volumes\":[{\"name\":\"cache\",\"persistentVolumeClaim\":{\"claimName\":\"evaluation-cache\"}},{\"emptyDir\":{\"medium\":\"Memory\",\"sizeLimit\":\"16Gi\"},\"name\":\"dshm\"},{\"configMap\":{\"defaultMode\":420,\"name\":\"fs2-bioir-snapshot-app\"},\"name\":\"app\"},{\"emptyDir\":{},\"name\":\"snapshot-tools\"},{\"configMap\":{\"defaultMode\":292,\"name\":\"fs2-bioir-snapshot-source\"},\"name\":\"snapshot-source\"},{\"emptyDir\":{},\"name\":\"snapshot-checkpoints\"},{\"name\":\"snapshot-bundle\",\"persistentVolumeClaim\":{\"claimName\":\"fs2-bioir-snapshot-checkpoints\",\"readOnly\":true}}]}}\n"
+      },
+      "creationTimestamp": "2026-09-15T22:03:04Z",
+      "generation": 1,
+      "labels": {
+        "benchmark-model": "boltz2-bir",
+        "evaluation": "fs2-bioir-20260915",
+        "lane": "snapshot",
+        "loop": "asyncio",
+        "topology.kubernetes.io/region": "eu-north1"
+      },
+      "name": "fs2-bioir-snapshot-boltz2-restore-3",
+      "namespace": "fs2-bioir-boltz2",
+      "resourceVersion": "42336844",
+      "uid": "34f5cb73-e21f-4e9a-b681-61f3108cab9c"
+    },
+    "spec": {
+      "activeDeadlineSeconds": 14400,
+      "automountServiceAccountToken": false,
+      "containers": [
+        {
+          "command": [
+            "python",
+            "/snapshot-source/serving_supervisor.py",
+            "--directory",
+            "/checkpoints/boltz2-asyncio-01",
+            "--request-mode",
+            "server",
+            "--fallback",
+            "fail",
+            "--source-directory",
+            "/snapshot-bundle",
+            "restore",
+            "--",
+            "python",
+            "-m",
+            "uvicorn",
+            "bir_worker:app",
+            "--app-dir",
+            "/snapshot-app",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--loop",
+            "asyncio"
+          ],
+          "env": [
+            {
+              "name": "HF_HOME",
+              "value": "/models/huggingface"
+            },
+            {
+              "name": "HF_HUB_CACHE",
+              "value": "/models/huggingface/hub"
+            },
+            {
+              "name": "HF_HUB_DISABLE_XET",
+              "value": "1"
+            },
+            {
+              "name": "CUDA_CACHE_PATH",
+              "value": "/models/eval-cache/cuda"
+            },
+            {
+              "name": "TORCH_EXTENSIONS_DIR",
+              "value": "/models/eval-cache/torch-extensions"
+            },
+            {
+              "name": "TORCHINDUCTOR_CACHE_DIR",
+              "value": "/models/eval-cache/torchinductor"
+            },
+            {
+              "name": "TRITON_CACHE_DIR",
+              "value": "/models/eval-cache/triton"
+            },
+            {
+              "name": "XDG_CACHE_HOME",
+              "value": "/models/eval-cache/xdg"
+            },
+            {
+              "name": "BOLTZ_SOURCE_REVISION",
+              "value": "401c6fcc4a43925bcf1342b6c0979b060130b396"
+            },
+            {
+              "name": "BOLTZ_MODEL_REPOSITORY",
+              "value": "boltz-community/boltz-2"
+            },
+            {
+              "name": "BOLTZ_MODEL_REVISION",
+              "value": "6fdef46d763fee7fbb83ca5501ccceff43b85607"
+            },
+            {
+              "name": "BOLTZ_CONF_SHA256",
+              "value": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1"
+            },
+            {
+              "name": "BOLTZ_AFF_SHA256",
+              "value": "dcc5cd3722b1c9eaa34267e4ae32f55cbbf1963f4c19319381ccfa30fdd2ca9e"
+            },
+            {
+              "name": "BOLTZ_MOLS_SHA256",
+              "value": "39e076d96dbec6b4e86982bbda16f3a53a2a60c9bdc17828d88f6f9a0c7d1fd7"
+            },
+            {
+              "name": "BOLTZ2_CKPT",
+              "value": "/models/boltz2_conf.ckpt"
+            },
+            {
+              "name": "BOLTZ_MOL_DIR",
+              "value": "/models/mols"
+            },
+            {
+              "name": "BIOIR_CACHE",
+              "value": "/runtime-cache/bioir-cache"
+            },
+            {
+              "name": "HF_HUB_OFFLINE",
+              "value": "1"
+            },
+            {
+              "name": "TRANSFORMERS_OFFLINE",
+              "value": "1"
+            },
+            {
+              "name": "FS2_SNAPSHOT_RUNTIME_IMAGE",
+              "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+            },
+            {
+              "name": "FS2_SNAPSHOT_TOOLS_IMAGE",
+              "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
+            },
+            {
+              "name": "FS2_MODEL_REVISION",
+              "value": "6fdef46d763fee7fbb83ca5501ccceff43b85607"
+            },
+            {
+              "name": "FS2_RUNTIME_ID",
+              "value": "boltz2-bir-public-0.1.0"
+            }
+          ],
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+          "imagePullPolicy": "IfNotPresent",
+          "name": "boltz2",
+          "ports": [
+            {
+              "containerPort": 8000,
+              "name": "http",
+              "protocol": "TCP"
+            }
+          ],
+          "resources": {
+            "limits": {
+              "cpu": "16",
+              "memory": "192Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "12",
+              "memory": "96Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "securityContext": {
+            "appArmorProfile": {
+              "type": "Unconfined"
+            },
+            "capabilities": {
+              "add": [
+                "SYS_ADMIN",
+                "SYS_PTRACE",
+                "CHECKPOINT_RESTORE",
+                "NET_ADMIN",
+                "SYS_TIME",
+                "SYS_RESOURCE"
+              ]
+            },
+            "runAsGroup": 0,
+            "runAsNonRoot": false,
+            "runAsUser": 0,
+            "seccompProfile": {
+              "type": "Unconfined"
+            }
+          },
+          "terminationMessagePath": "/dev/termination-log",
+          "terminationMessagePolicy": "File",
+          "volumeMounts": [
+            {
+              "mountPath": "/models",
+              "name": "cache",
+              "readOnly": true
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "dshm"
+            },
+            {
+              "mountPath": "/snapshot-app",
+              "name": "app",
+              "readOnly": true
+            },
+            {
+              "mountPath": "/runtime-cache",
+              "name": "snapshot-checkpoints",
+              "subPath": "boltz2-asyncio-01/runtime-cache"
+            },
+            {
+              "mountPath": "/tools",
+              "name": "snapshot-tools"
+            },
+            {
+              "mountPath": "/snapshot-source",
+              "name": "snapshot-source",
+              "readOnly": true
+            },
+            {
+              "mountPath": "/checkpoints",
+              "name": "snapshot-checkpoints"
+            },
+            {
+              "mountPath": "/tmp",
+              "name": "snapshot-checkpoints",
+              "subPath": "boltz2-asyncio-01/tmp"
+            },
+            {
+              "mountPath": "/snapshot-bundle",
+              "name": "snapshot-bundle",
+              "readOnly": true,
+              "subPath": "boltz2-asyncio-01"
+            },
+            {
+              "mountPath": "/checkpoints/boltz2-asyncio-01/images",
+              "name": "snapshot-bundle",
+              "readOnly": true,
+              "subPath": "boltz2-asyncio-01/images"
+            }
+          ]
+        }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "enableServiceLinks": true,
+      "initContainers": [
+        {
+          "command": [
+            "/bin/sh",
+            "-c",
+            "cp -a /snapshot-binaries/. /tools/ && cp -L /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /tools/lib/ && mkdir -p \"$1/runtime-cache\" \"$1/tmp\" && if [ -n \"$2\" ]; then chown \"$2:$2\" \"$1/runtime-cache\" \"$1/tmp\"; fi && for part in runtime-cache tmp; do cp -a /snapshot-bundle/$part/. \"$1/$part/\"; done",
+            "snapshot-tools",
+            "/checkpoints/boltz2-asyncio-01",
+            ""
+          ],
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+          "imagePullPolicy": "IfNotPresent",
+          "name": "snapshot-tools",
+          "resources": {},
+          "securityContext": {
+            "runAsGroup": 0,
+            "runAsNonRoot": false,
+            "runAsUser": 0
+          },
+          "terminationMessagePath": "/dev/termination-log",
+          "terminationMessagePolicy": "File",
+          "volumeMounts": [
+            {
+              "mountPath": "/tools",
+              "name": "snapshot-tools"
+            },
+            {
+              "mountPath": "/checkpoints",
+              "name": "snapshot-checkpoints"
+            },
+            {
+              "mountPath": "/models",
+              "name": "cache",
+              "readOnly": true
+            },
+            {
+              "mountPath": "/snapshot-bundle",
+              "name": "snapshot-bundle",
+              "readOnly": true,
+              "subPath": "boltz2-asyncio-01"
+            }
+          ]
+        }
+      ],
+      "nodeName": "computeinstance-e00y0jttwekyghrznp",
+      "nodeSelector": {
+        "kubernetes.io/hostname": "computeinstance-e00y0jttwekyghrznp"
+      },
+      "preemptionPolicy": "PreemptLowerPriority",
+      "priority": 0,
+      "restartPolicy": "Never",
+      "schedulerName": "default-scheduler",
+      "securityContext": {
+        "runAsGroup": 1000,
+        "runAsNonRoot": true,
+        "runAsUser": 1000,
+        "seccompProfile": {
+          "type": "RuntimeDefault"
+        },
+        "supplementalGroups": [
+          1000
+        ]
+      },
+      "serviceAccount": "default",
+      "serviceAccountName": "default",
+      "terminationGracePeriodSeconds": 30,
+      "tolerations": [
+        {
+          "effect": "NoSchedule",
+          "key": "dedicated",
+          "operator": "Equal",
+          "value": "fs2-inference"
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/not-ready",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/unreachable",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoSchedule",
+          "key": "nvidia.com/gpu",
+          "operator": "Exists"
+        }
+      ],
+      "volumes": [
+        {
+          "name": "cache",
+          "persistentVolumeClaim": {
+            "claimName": "evaluation-cache"
+          }
+        },
+        {
+          "emptyDir": {
+            "medium": "Memory",
+            "sizeLimit": "16Gi"
+          },
+          "name": "dshm"
+        },
+        {
+          "configMap": {
+            "defaultMode": 420,
+            "name": "fs2-bioir-snapshot-app"
+          },
+          "name": "app"
+        },
+        {
+          "emptyDir": {},
+          "name": "snapshot-tools"
+        },
+        {
+          "configMap": {
+            "defaultMode": 292,
+            "name": "fs2-bioir-snapshot-source"
+          },
+          "name": "snapshot-source"
+        },
+        {
+          "emptyDir": {},
+          "name": "snapshot-checkpoints"
+        },
+        {
+          "name": "snapshot-bundle",
+          "persistentVolumeClaim": {
+            "claimName": "fs2-bioir-snapshot-checkpoints",
+            "readOnly": true
+          }
+        }
+      ]
+    },
+    "status": {
+      "conditions": [
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-15T22:03:40Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodReadyToStartContainers"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-15T22:03:47Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "Initialized"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-15T22:03:48Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "Ready"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-15T22:03:48Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "ContainersReady"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-15T22:03:04Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodScheduled"
+        }
+      ],
+      "containerStatuses": [
+        {
+          "allocatedResources": {
+            "cpu": "12",
+            "memory": "96Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://930dbbd8aa10aa104e441397e0bd16143511932966da625b536d88e9e4d43cd0",
+          "image": "sha256:79d8c7bacaa62a2fcc776cc3cf6b1c0bea728f044817050dc20379f8a2ce7286",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+          "lastState": {},
+          "name": "boltz2",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "16",
+              "memory": "192Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "12",
+              "memory": "96Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T22:03:47Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 0,
+              "supplementalGroups": [
+                0,
+                1000
+              ],
+              "uid": 0
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/models",
+              "name": "cache",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "dshm"
+            },
+            {
+              "mountPath": "/snapshot-app",
+              "name": "app",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            },
+            {
+              "mountPath": "/runtime-cache",
+              "name": "snapshot-checkpoints"
+            },
+            {
+              "mountPath": "/tools",
+              "name": "snapshot-tools"
+            },
+            {
+              "mountPath": "/snapshot-source",
+              "name": "snapshot-source",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            },
+            {
+              "mountPath": "/checkpoints",
+              "name": "snapshot-checkpoints"
+            },
+            {
+              "mountPath": "/tmp",
+              "name": "snapshot-checkpoints"
+            },
+            {
+              "mountPath": "/snapshot-bundle",
+              "name": "snapshot-bundle",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            },
+            {
+              "mountPath": "/checkpoints/boltz2-asyncio-01/images",
+              "name": "snapshot-bundle",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            }
+          ]
+        }
+      ],
+      "hostIP": "10.6.15.20",
+      "hostIPs": [
+        {
+          "ip": "10.6.15.20"
+        }
+      ],
+      "initContainerStatuses": [
+        {
+          "containerID": "containerd://106d68e5ac4276529d087455b0e2ff25d3c1febf364b85c3826ab7f9d4aac742",
+          "image": "sha256:dd1e374fcbad2cb6e12d186db51f49a7911642fadd366892bbf6000dfd5c7e54",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+          "lastState": {},
+          "name": "snapshot-tools",
+          "ready": true,
+          "resources": {},
+          "restartCount": 0,
+          "started": false,
+          "state": {
+            "terminated": {
+              "containerID": "containerd://106d68e5ac4276529d087455b0e2ff25d3c1febf364b85c3826ab7f9d4aac742",
+              "exitCode": 0,
+              "finishedAt": "2026-09-15T22:03:44Z",
+              "reason": "Completed",
+              "startedAt": "2026-09-15T22:03:40Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 0,
+              "supplementalGroups": [
+                0,
+                1000
+              ],
+              "uid": 0
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/tools",
+              "name": "snapshot-tools"
+            },
+            {
+              "mountPath": "/checkpoints",
+              "name": "snapshot-checkpoints"
+            },
+            {
+              "mountPath": "/models",
+              "name": "cache",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            },
+            {
+              "mountPath": "/snapshot-bundle",
+              "name": "snapshot-bundle",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            }
+          ]
+        }
+      ],
+      "observedGeneration": 1,
+      "phase": "Running",
+      "podIP": "10.0.5.56",
+      "podIPs": [
+        {
+          "ip": "10.0.5.56"
+        }
+      ],
+      "qosClass": "Burstable",
+      "startTime": "2026-09-15T22:03:04Z"
+    }
+  }
+}

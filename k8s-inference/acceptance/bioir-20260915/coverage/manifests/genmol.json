@@ -1,0 +1,184 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "fs2-bioir-coverage-genmol",
+    "namespace": "fs2-models",
+    "labels": {
+      "evaluation": "fs2-bioir-20260915",
+      "lane": "coverage",
+      "benchmark-model": "genmol"
+    }
+  },
+  "spec": {
+    "automountServiceAccountToken": false,
+    "containers": [
+      {
+        "env": [
+          {
+            "name": "CUDA_CACHE_PATH",
+            "value": "/tmp/fs2-bioir/cuda_cache_path"
+          },
+          {
+            "name": "MODEL_CACHE",
+            "value": "/models"
+          },
+          {
+            "name": "HOME",
+            "value": "/tmp/fs2-bioir/home"
+          },
+          {
+            "name": "HF_HOME",
+            "value": "/models/huggingface"
+          },
+          {
+            "name": "HF_HUB_CACHE",
+            "value": "/models/huggingface/hub"
+          },
+          {
+            "name": "HF_XET_CACHE",
+            "value": "/models/huggingface/xet"
+          },
+          {
+            "name": "HF_HUB_DISABLE_XET",
+            "value": "1"
+          },
+          {
+            "name": "TORCH_EXTENSIONS_DIR",
+            "value": "/tmp/fs2-bioir/torch_extensions_dir"
+          },
+          {
+            "name": "TORCHINDUCTOR_CACHE_DIR",
+            "value": "/tmp/fs2-bioir/torchinductor_cache_dir"
+          },
+          {
+            "name": "TRITON_CACHE_DIR",
+            "value": "/tmp/fs2-bioir/triton_cache_dir"
+          },
+          {
+            "name": "XDG_CACHE_HOME",
+            "value": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/xdg"
+          }
+        ],
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf",
+        "imagePullPolicy": "IfNotPresent",
+        "livenessProbe": {
+          "failureThreshold": 6,
+          "httpGet": {
+            "path": "/v1/health/ready",
+            "port": "http",
+            "scheme": "HTTP"
+          },
+          "initialDelaySeconds": 300,
+          "periodSeconds": 30,
+          "successThreshold": 1,
+          "timeoutSeconds": 5
+        },
+        "name": "genmol",
+        "ports": [
+          {
+            "containerPort": 8000,
+            "name": "http",
+            "protocol": "TCP"
+          }
+        ],
+        "readinessProbe": {
+          "failureThreshold": 360,
+          "httpGet": {
+            "path": "/v1/health/ready",
+            "port": "http",
+            "scheme": "HTTP"
+          },
+          "periodSeconds": 5,
+          "successThreshold": 1,
+          "timeoutSeconds": 3
+        },
+        "resources": {
+          "limits": {
+            "cpu": "16",
+            "memory": "96Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "requests": {
+            "cpu": "8",
+            "memory": "48Gi",
+            "nvidia.com/gpu": "1"
+          }
+        },
+        "securityContext": {
+          "allowPrivilegeEscalation": false,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File",
+        "volumeMounts": [
+          {
+            "mountPath": "/models",
+            "name": "model-cache",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/dev/shm",
+            "name": "dshm"
+          },
+          {
+            "name": "evaluation-client",
+            "mountPath": "/eval",
+            "readOnly": true
+          }
+        ]
+      }
+    ],
+    "dnsPolicy": "ClusterFirst",
+    "initContainers": [],
+    "nodeSelector": {
+      "kubernetes.io/hostname": "computeinstance-e00r9tdjfszjs3angk"
+    },
+    "restartPolicy": "Never",
+    "schedulerName": "default-scheduler",
+    "securityContext": {
+      "fsGroup": 1000,
+      "runAsGroup": 1000,
+      "runAsNonRoot": true,
+      "runAsUser": 1000,
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      }
+    },
+    "terminationGracePeriodSeconds": 60,
+    "tolerations": [
+      {
+        "effect": "NoSchedule",
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference"
+      }
+    ],
+    "volumes": [
+      {
+        "name": "model-cache",
+        "persistentVolumeClaim": {
+          "claimName": "genmol-model-cache-rwx-621b425d"
+        }
+      },
+      {
+        "emptyDir": {
+          "medium": "Memory",
+          "sizeLimit": "8Gi"
+        },
+        "name": "dshm"
+      },
+      {
+        "name": "evaluation-client",
+        "configMap": {
+          "name": "fs2-bioir-coverage-client"
+        }
+      }
+    ],
+    "activeDeadlineSeconds": 14400
+  }
+}

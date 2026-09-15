@@ -1,0 +1,607 @@
+{
+  "models": [
+    {
+      "model_id": "boltz2",
+      "bir_fit": "supported public module and build_processor pipeline",
+      "status": "measured",
+      "adoption_status": "conditional-prototype",
+      "baseline": {
+        "schema": "bioir-boltz2-evaluation/v1",
+        "evaluation": "fs2-bioir-20260915",
+        "evaluation_repo_commit": "83bcb2d6c7f4dc112e414e00596e0d6b03e22712",
+        "baseline_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/boltz2@sha256:93d5fae96d87dff930206cf331f170b73f2369067f0b32169e0008f0db320a90",
+        "baseline_server_sha256": "5bb34260291dd4ff63b932b53df98801d4c641e86ae092deccc75d64c91e3302",
+        "baseline_source_commit": "b1ebfc46ecf57f5414e0d1a6f9027bbb122c53bc",
+        "checkpoint_revision": "6fdef46d763fee7fbb83ca5501ccceff43b85607",
+        "checkpoint_sha256": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
+        "parameters": {
+          "recycling_steps": 3,
+          "sampling_steps": 200,
+          "diffusion_samples": 1
+        },
+        "seed": {
+          "request_field_supported": false,
+          "current_diffusion_seed": null,
+          "persistent_and_bir_seed": "42 + process-local request index",
+          "deterministic_debug_cohort": "Earlier BIR L40S fixed-seed42 runs retained separately; not independent quality replicates.",
+          "limitation": "Deployed HTTP schema rejects seed. Current is uncontrolled; persistent/BIR use matched candidate seed sequence. No bit-identical or same-random-draw claim."
+        },
+        "fixtures": [
+          "T1031",
+          "T1038",
+          "T1096"
+        ],
+        "fixture_source": "Public NVIDIA BioIR source 401c6fcc4a43925bcf1342b6c0979b060130b396 examples/data/samples",
+        "msa": "All supplied ordinary A3M rows retained, no remote MSA request and no query-only substitution.",
+        "templates": "Deployed API does not accept templates. None passed to any comparator.",
+        "complex_fixture": {
+          "id": "7sfy",
+          "polymers": 3,
+          "msa": "all ordinary A3M rows",
+          "paired_msa_and_templates": "Not representable by deployed API; absent from all variants, explicitly distinct from complete upstream 7sfy JSON."
+        },
+        "gpu_assignment": {
+          "h100": "computeinstance-e00fkt1bsa4ec657sn",
+          "l40s": "computeinstance-e00ax3mgt7y3a0asa6"
+        },
+        "client": "stdlib urllib in the same pod via loopback HTTP; quality validation on client CPU",
+        "clock": "time.monotonic accepted client POST to response bytes, separately through semantic validation; excludes no failed attempts",
+        "baseline_model_residency": "Every request launches a new boltz predict subprocess with --no_kernels. HTTP ready only confirms CUDA and cached artifacts.",
+        "candidate_residency": "Single uvicorn process holds actual model. Persistent upstream uses original data pipeline, predict_step, and writer, bypassing Lightning teardown. BIR uses public wheel plus diffusion CUDA graph.",
+        "quality": "Sequence-aligned CA-lDDT to experimental reference, 15 angstrom reference-neighbor cutoff and 0.5/1/2/4 angstrom thresholds; all coordinates finite and expected residue count. Not OpenStructure all-atom lDDT or biological efficacy.",
+        "no_promotion": true,
+        "evidence": "raw/live-deployment.stdout"
+      },
+      "comparisons": {
+        "h100": {
+          "T1031": {
+            "http_median_seconds": {
+              "current": 29.89114487400002,
+              "persistent": 6.534313145999931,
+              "bir": 2.1234847659998195,
+              "persistent_tools": 6.366514251000353
+            },
+            "validated_median_seconds": {
+              "current": 29.926455540999996,
+              "persistent": 6.567858433999845,
+              "bir": 2.1616902810001193,
+              "persistent_tools": 6.4004049270001815
+            },
+            "ratio_to_bir": {
+              "current": 14.076458354023606,
+              "persistent": 3.0771650687700234,
+              "persistent_tools": 2.9981445371955613
+            },
+            "validated_ratio_to_bir": {
+              "current": 13.844007073554652,
+              "persistent": 3.038297619102578,
+              "persistent_tools": 2.9608334659482276
+            }
+          },
+          "T1038": {
+            "http_median_seconds": {
+              "current": 30.1885273580001,
+              "persistent": 6.920047003000036,
+              "bir": 2.2712247570002546,
+              "persistent_tools": 6.82449206299998
+            },
+            "validated_median_seconds": {
+              "current": 30.255953866000027,
+              "persistent": 6.98564976900002,
+              "bir": 2.3363943849999487,
+              "persistent_tools": 6.878827482000361
+            },
+            "ratio_to_bir": {
+              "current": 13.29173929834753,
+              "persistent": 3.0468349649991335,
+              "persistent_tools": 3.0047629773169184
+            },
+            "validated_ratio_to_bir": {
+              "current": 12.949848732837411,
+              "persistent": 2.9899274770771087,
+              "persistent_tools": 2.944206477366839
+            }
+          },
+          "T1096": {
+            "http_median_seconds": {
+              "current": 36.14841080299993,
+              "persistent": 12.624914262999937,
+              "bir": 3.138186302000122,
+              "persistent_tools": 8.814673544000016
+            },
+            "validated_median_seconds": {
+              "current": 36.29353693400003,
+              "persistent": 12.774828957999944,
+              "bir": 3.306097538999893,
+              "persistent_tools": 8.961513447000016
+            },
+            "ratio_to_bir": {
+              "current": 11.518886173188875,
+              "persistent": 4.022997058827722,
+              "persistent_tools": 2.8088432921850393
+            },
+            "validated_ratio_to_bir": {
+              "current": 10.97775746355595,
+              "persistent": 3.8640205884138488,
+              "persistent_tools": 2.7106016508245268
+            }
+          }
+        },
+        "l40s": {
+          "T1031": {
+            "http_median_seconds": {
+              "current": 36.411938003000614,
+              "persistent": 8.25310714799889,
+              "bir": 2.4808928220008966,
+              "persistent_tools": 8.317535713000325
+            },
+            "validated_median_seconds": {
+              "current": 36.452365053000904,
+              "persistent": 8.293801611998788,
+              "bir": 2.5278085360005207,
+              "persistent_tools": 8.358981748000588
+            },
+            "ratio_to_bir": {
+              "current": 14.676949233797838,
+              "persistent": 3.326668155435498,
+              "persistent_tools": 3.3526380661184882
+            },
+            "validated_ratio_to_bir": {
+              "current": 14.420540374737225,
+              "persistent": 3.281024450182915,
+              "persistent_tools": 3.306809684734313
+            }
+          },
+          "T1038": {
+            "http_median_seconds": {
+              "current": 36.72262951600169,
+              "persistent": 8.710611788001188,
+              "bir": 2.595427082000242,
+              "persistent_tools": 9.046376950000194
+            },
+            "validated_median_seconds": {
+              "current": 36.7952612450008,
+              "persistent": 8.788028658000258,
+              "bir": 2.678005559000667,
+              "persistent_tools": 9.114197638000405
+            },
+            "ratio_to_bir": {
+              "current": 14.148973697115126,
+              "persistent": 3.356138127867611,
+              "persistent_tools": 3.485506109086424
+            },
+            "validated_ratio_to_bir": {
+              "current": 13.739800173802267,
+              "persistent": 3.2815572874612053,
+              "persistent_tools": 3.4033527702614212
+            }
+          },
+          "T1096": {
+            "http_median_seconds": {
+              "current": 50.7645964000003,
+              "persistent": 22.196456016999946,
+              "bir": 5.429169274000742,
+              "persistent_tools": 14.419103325000833
+            },
+            "validated_median_seconds": {
+              "current": 50.9288204759996,
+              "persistent": 22.368219702000715,
+              "bir": 5.633164031998604,
+              "persistent_tools": 14.596740160999616
+            },
+            "ratio_to_bir": {
+              "current": 9.350343273160092,
+              "persistent": 4.088370595349559,
+              "persistent_tools": 2.655858124382154
+            },
+            "validated_ratio_to_bir": {
+              "current": 9.040890729739756,
+              "persistent": 3.9708092246098934,
+              "persistent_tools": 2.59121518174943
+            }
+          }
+        }
+      },
+      "quality": {
+        "metric": "Sequence-aligned CA-lDDT to experimental reference, 15 angstrom reference-neighbor cutoff and 0.5/1/2/4 angstrom thresholds; all coordinates finite and expected residue count. Not OpenStructure all-atom lDDT or biological efficacy.",
+        "formal_noninferiority": "unverified; three targets and three draws are insufficient",
+        "sample_audit": "evidence/quality-audit.json",
+        "statistics": "statistics.json"
+      },
+      "features": {
+        "full_supplied_msa": "measured",
+        "templates": "not accepted by current schema",
+        "ligand_rna_dna_affinity": "HTTP422 preserved; no current product support and no BIR affinity pipeline claim",
+        "two_samples": "measured; candidate explicitly returns all computed samples, not public default best-only",
+        "chain_id_fidelity": "failed: BIR CIF writer changes A,C to A,B",
+        "native_homomer": "current fails repeated-sequence MSA-path validation; retained baseline defect",
+        "batch": "no native batch endpoint; mixed-input serial workload measured",
+        "cancellation_idempotency": "not implemented by native adapter; no claim of parity beyond absence",
+        "mcp_gateway": "not directly probed; native HTTP envelope reused, end-to-end MCP qualification unverified",
+        "http_errors": "nine invalid/unsupported cases; expected422"
+      },
+      "snapshot": {
+        "status": "separate snapshot lane",
+        "evidence": "../snapshot/report.md",
+        "cuda_graph": "actual captured GRAPH_VERIFIED telemetry on H100; not a CUDA process snapshot",
+        "worker": "single uvicorn process owns actual GPU model; fresh-process restarts exercised distinct shapes"
+      },
+      "recommendation": "conditional prototype: resolve chain IDs, wider scientific noninferiority and snapshot/production-serving gates before adoption",
+      "limitations": [
+        "n=3 per representative case; no p95/p99 inference",
+        "CA-lDDT is not all-atom lDDT",
+        "Complex flattened CA-lDDT is exploratory; chain IDs and DockQ need separate gate",
+        "Initial current baseline cannot accept a seed; candidates use 42+request index",
+        "No shared caches flushed; startup/image/artifact cohorts separated",
+        "BIR and upstream torch/runtime versions differ; library+runtime package comparison, not a single-kernel causal experiment"
+      ],
+      "public_bir": {
+        "release": "bionemo-ir==0.1.0",
+        "wheel": "bionemo_ir-0.1.0-cp312-cp312-manylinux_2_34_x86_64.whl",
+        "wheel_sha256": "ebbfe2808a9a56ad9838a81f887000b89a7554d674bb7a9eac130c7cf2c4e8ae",
+        "source_commit": "401c6fcc4a43925bcf1342b6c0979b060130b396",
+        "source_note": "Public source reference; wheel build provenance is not asserted to equal this commit.",
+        "source_repository": "https://github.com/NVIDIA-BioNeMo/BioNeMo-Inference-Runtime",
+        "base_image": "python@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea",
+        "private_ea_used": false,
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+        "recipe": [
+          "Dockerfile.bioir",
+          "Dockerfile.bioir-tools"
+        ],
+        "runtime_requirements": [
+          "Writable BIOIR_CACHE",
+          "Host C compiler for Triton CUDA binding",
+          "Explicit CUDA 13 compatible driver"
+        ],
+        "resolved_torch": "2.12.0+cu130",
+        "resolved_at": "2026-09-15T21:26:00Z"
+      },
+      "resource_accounting": {
+        "confirmed_pod_allocations": [
+          {
+            "pod": "boltz2-persistent-kernels-h100",
+            "uid": "d6a55b14-a429-4c29-84f1-39735ea9babc",
+            "gpu": "h100",
+            "scheduled_unix": 1789508639.0,
+            "delete_confirmed_unix": 1789508687.8845804,
+            "allocated_gpu_seconds": 48.88458037376404,
+            "valid_requests": 0,
+            "attempts": 3,
+            "allocated_gpu_seconds_per_valid_request": null,
+            "valid_requests_per_allocated_gpu_hour": 0.0,
+            "sum_validated_request_seconds": 20.008960539999407,
+            "outside_recorded_requests_seconds": 28.87561983376463,
+            "outside_request_note": "Includes image/init/startup/loading/idle/operator gaps/collection/termination; not measured GPU-idle telemetry."
+          },
+          {
+            "pod": "boltz2-persistent-tools-h100",
+            "uid": "6810340e-5aa0-40be-a444-63bd87406140",
+            "gpu": "h100",
+            "scheduled_unix": 1789509050.0,
+            "delete_confirmed_unix": 1789509270.4156454,
+            "allocated_gpu_seconds": 220.41564536094666,
+            "valid_requests": 21,
+            "attempts": 21,
+            "allocated_gpu_seconds_per_valid_request": 10.495983112426032,
+            "valid_requests_per_allocated_gpu_hour": 342.9883567303015,
+            "sum_validated_request_seconds": 186.7874956720011,
+            "outside_recorded_requests_seconds": 33.62814968894554,
+            "outside_request_note": "Includes image/init/startup/loading/idle/operator gaps/collection/termination; not measured GPU-idle telemetry."
+          },
+          {
+            "pod": "boltz2-persistent-cue-h100",
+            "uid": "961fadbb-0048-4179-a097-57fa9a3cac5d",
+            "gpu": "h100",
+            "scheduled_unix": 1789508859.0,
+            "delete_confirmed_unix": 1789509024.8336275,
+            "allocated_gpu_seconds": 165.83362746238708,
+            "valid_requests": 13,
+            "attempts": 21,
+            "allocated_gpu_seconds_per_valid_request": 12.756432881722084,
+            "valid_requests_per_allocated_gpu_hour": 282.2105547357381,
+            "sum_validated_request_seconds": 125.76050862599868,
+            "outside_recorded_requests_seconds": 40.0731188363884,
+            "outside_request_note": "Includes image/init/startup/loading/idle/operator gaps/collection/termination; not measured GPU-idle telemetry."
+          },
+          {
+            "pod": "boltz2-bir-l40s",
+            "uid": "f0df702c-53c6-4937-b77c-963c9d039b53",
+            "gpu": "l40s",
+            "scheduled_unix": 1789508188.0,
+            "delete_confirmed_unix": 1789508491.8852751,
+            "allocated_gpu_seconds": 303.88527512550354,
+            "valid_requests": 21,
+            "attempts": 21,
+            "allocated_gpu_seconds_per_valid_request": 14.47072738692874,
+            "valid_requests_per_allocated_gpu_hour": 248.7780955124511,
+            "sum_validated_request_seconds": 70.34345583800132,
+            "outside_recorded_requests_seconds": 233.54181928750222,
+            "outside_request_note": "Includes image/init/startup/loading/idle/operator gaps/collection/termination; not measured GPU-idle telemetry."
+          },
+          {
+            "pod": "boltz2-bir-h100",
+            "uid": "7365dc75-9dfd-40ed-9887-252831306e37",
+            "gpu": "h100",
+            "scheduled_unix": 1789508689.0,
+            "delete_confirmed_unix": 1789508854.3832817,
+            "allocated_gpu_seconds": 165.38328170776367,
+            "valid_requests": 21,
+            "attempts": 21,
+            "allocated_gpu_seconds_per_valid_request": 7.875394367036366,
+            "valid_requests_per_allocated_gpu_hour": 457.1199653274934,
+            "sum_validated_request_seconds": 61.68451918200026,
+            "outside_recorded_requests_seconds": 103.69876252576341,
+            "outside_request_note": "Includes image/init/startup/loading/idle/operator gaps/collection/termination; not measured GPU-idle telemetry."
+          },
+          {
+            "pod": "boltz2-current-l40s",
+            "uid": "152d38da-7f60-4239-9e64-50c985944e23",
+            "gpu": "l40s",
+            "scheduled_unix": 1789508493.0,
+            "delete_confirmed_unix": 1789509424.7224424,
+            "allocated_gpu_seconds": 931.7224423885345,
+            "valid_requests": 21,
+            "attempts": 21,
+            "allocated_gpu_seconds_per_valid_request": 44.36773535183498,
+            "valid_requests_per_allocated_gpu_hour": 81.14004403091784,
+            "sum_validated_request_seconds": 848.1549538690051,
+            "outside_recorded_requests_seconds": 83.56748851952943,
+            "outside_request_note": "Includes image/init/startup/loading/idle/operator gaps/collection/termination; not measured GPU-idle telemetry."
+          },
+          {
+            "pod": "boltz2-persistent-kernels-l40s",
+            "uid": "b8fcf1d9-866f-4dce-8559-9c5820117b94",
+            "gpu": "l40s",
+            "scheduled_unix": 1789509730.0,
+            "delete_confirmed_unix": 1789509782.5011506,
+            "allocated_gpu_seconds": 52.501150608062744,
+            "valid_requests": 0,
+            "attempts": 3,
+            "allocated_gpu_seconds_per_valid_request": null,
+            "valid_requests_per_allocated_gpu_hour": 0.0,
+            "sum_validated_request_seconds": 23.95840588000101,
+            "outside_recorded_requests_seconds": 28.542744728061734,
+            "outside_request_note": "Includes image/init/startup/loading/idle/operator gaps/collection/termination; not measured GPU-idle telemetry."
+          },
+          {
+            "pod": "boltz2-persistent-l40s",
+            "uid": "ba2cec79-ab4f-4765-a2af-d3674c91679b",
+            "gpu": "l40s",
+            "scheduled_unix": 1789509426.0,
+            "delete_confirmed_unix": 1789509729.3905559,
+            "allocated_gpu_seconds": 303.39055585861206,
+            "valid_requests": 21,
+            "attempts": 21,
+            "allocated_gpu_seconds_per_valid_request": 14.447169326600575,
+            "valid_requests_per_allocated_gpu_hour": 249.18376178865495,
+            "sum_validated_request_seconds": 273.51327612899877,
+            "outside_recorded_requests_seconds": 29.877279729613292,
+            "outside_request_note": "Includes image/init/startup/loading/idle/operator gaps/collection/termination; not measured GPU-idle telemetry."
+          },
+          {
+            "pod": "boltz2-current-h100",
+            "uid": "b6e17405-144f-4f91-9ff1-0ea2afef3854",
+            "gpu": "h100",
+            "scheduled_unix": 1789507064.0,
+            "delete_confirmed_unix": 1789508163.488201,
+            "allocated_gpu_seconds": 1099.4882009029388,
+            "valid_requests": 16,
+            "attempts": 21,
+            "allocated_gpu_seconds_per_valid_request": 68.71801255643368,
+            "valid_requests_per_allocated_gpu_hour": 52.38801103340339,
+            "sum_validated_request_seconds": 546.0771893140011,
+            "outside_recorded_requests_seconds": 553.4110115889378,
+            "outside_request_note": "Includes image/init/startup/loading/idle/operator gaps/collection/termination; not measured GPU-idle telemetry."
+          },
+          {
+            "pod": "boltz2-persistent-tools-l40s",
+            "uid": "fa0eb7d9-cefc-4334-81d2-158b5785b0cc",
+            "gpu": "l40s",
+            "scheduled_unix": 1789509793.0,
+            "delete_confirmed_unix": 1789510110.1680732,
+            "allocated_gpu_seconds": 317.16807317733765,
+            "valid_requests": 21,
+            "attempts": 21,
+            "allocated_gpu_seconds_per_valid_request": 15.103241579873222,
+            "valid_requests_per_allocated_gpu_hour": 238.3594264159429,
+            "sum_validated_request_seconds": 251.38331776299674,
+            "outside_recorded_requests_seconds": 65.7847554143409,
+            "outside_request_note": "Includes image/init/startup/loading/idle/operator gaps/collection/termination; not measured GPU-idle telemetry."
+          },
+          {
+            "pod": "boltz2-persistent-h100",
+            "uid": "94bc13df-9de2-4c46-9ed9-25da83dfbbe4",
+            "gpu": "h100",
+            "scheduled_unix": 1789508260.0,
+            "delete_confirmed_unix": 1789508638.657606,
+            "allocated_gpu_seconds": 378.65760588645935,
+            "valid_requests": 21,
+            "attempts": 21,
+            "allocated_gpu_seconds_per_valid_request": 18.031314566021873,
+            "valid_requests_per_allocated_gpu_hour": 199.65266463621145,
+            "sum_validated_request_seconds": 201.3138663599991,
+            "outside_recorded_requests_seconds": 177.34373952646024,
+            "outside_request_note": "Includes image/init/startup/loading/idle/operator gaps/collection/termination; not measured GPU-idle telemetry."
+          }
+        ],
+        "all_pod_allocation_bounds": {
+          "h100": {
+            "pod_windows": [
+              {
+                "pod": "boltz2-current-h100",
+                "uid": "b6e17405-144f-4f91-9ff1-0ea2afef3854",
+                "gpu_seconds_lower": 1099.4882009029388,
+                "gpu_seconds_upper": 1099.4882009029388,
+                "method": "schedule through confirmed delete response (conservative confirmation tail)"
+              },
+              {
+                "pod": "boltz2-persistent-h100",
+                "uid": "7aaccd8a-5971-4ea4-9904-4dba468c2482",
+                "gpu_seconds_lower": 79.0,
+                "gpu_seconds_upper": 82.0,
+                "method": "Killing event lower bound; next one-GPU pod schedule upper bound, including possible unallocated gap"
+              },
+              {
+                "pod": "boltz2-persistent-h100",
+                "uid": "9c8008ec-3590-47a2-aba7-58ea21dc6a60",
+                "gpu_seconds_lower": 10.0,
+                "gpu_seconds_upper": 13.0,
+                "method": "Killing event lower bound; next one-GPU pod schedule upper bound, including possible unallocated gap"
+              },
+              {
+                "pod": "boltz2-persistent-h100",
+                "uid": "94bc13df-9de2-4c46-9ed9-25da83dfbbe4",
+                "gpu_seconds_lower": 378.65760588645935,
+                "gpu_seconds_upper": 378.65760588645935,
+                "method": "schedule through confirmed delete response (conservative confirmation tail)"
+              },
+              {
+                "pod": "boltz2-persistent-kernels-h100",
+                "uid": "d6a55b14-a429-4c29-84f1-39735ea9babc",
+                "gpu_seconds_lower": 48.88458037376404,
+                "gpu_seconds_upper": 48.88458037376404,
+                "method": "schedule through confirmed delete response (conservative confirmation tail)"
+              },
+              {
+                "pod": "boltz2-bir-h100",
+                "uid": "7365dc75-9dfd-40ed-9887-252831306e37",
+                "gpu_seconds_lower": 165.38328170776367,
+                "gpu_seconds_upper": 165.38328170776367,
+                "method": "schedule through confirmed delete response (conservative confirmation tail)"
+              },
+              {
+                "pod": "boltz2-persistent-cue-h100",
+                "uid": "961fadbb-0048-4179-a097-57fa9a3cac5d",
+                "gpu_seconds_lower": 165.83362746238708,
+                "gpu_seconds_upper": 165.83362746238708,
+                "method": "schedule through confirmed delete response (conservative confirmation tail)"
+              },
+              {
+                "pod": "boltz2-persistent-tools-h100",
+                "uid": "6810340e-5aa0-40be-a444-63bd87406140",
+                "gpu_seconds_lower": 220.41564536094666,
+                "gpu_seconds_upper": 220.41564536094666,
+                "method": "schedule through confirmed delete response (conservative confirmation tail)"
+              }
+            ],
+            "valid_predictions": 92,
+            "all_attempts_gpu_seconds_lower": 2167.6629416942596,
+            "all_attempts_gpu_seconds_upper": 2173.6629416942596,
+            "gpu_seconds_per_valid_lower": 23.56155371406804,
+            "gpu_seconds_per_valid_upper": 23.626771105372388,
+            "valid_per_gpu_hour_lower": 152.3695296299464,
+            "valid_per_gpu_hour_upper": 152.79128208979387
+          },
+          "l40s": {
+            "pod_windows": [
+              {
+                "pod": "boltz2-bir-l40s",
+                "uid": "175d26e7-3d24-4137-91ab-a3b1f3ea3adf",
+                "gpu_seconds_lower": 0,
+                "gpu_seconds_upper": 224.0,
+                "method": "Killing event lower bound; next one-GPU pod schedule upper bound, including possible unallocated gap"
+              },
+              {
+                "pod": "boltz2-bir-l40s",
+                "uid": "764eb4a4-c419-4a60-8bde-d0c793f35ee7",
+                "gpu_seconds_lower": 0,
+                "gpu_seconds_upper": 114.0,
+                "method": "Killing event lower bound; next one-GPU pod schedule upper bound, including possible unallocated gap"
+              },
+              {
+                "pod": "boltz2-bir-l40s",
+                "uid": "1e11c21b-c340-4269-ae3a-78d370eba05a",
+                "gpu_seconds_lower": 106.0,
+                "gpu_seconds_upper": 110.0,
+                "method": "Killing event lower bound; next one-GPU pod schedule upper bound, including possible unallocated gap"
+              },
+              {
+                "pod": "boltz2-bir-l40s",
+                "uid": "4711e335-df33-4edf-8cab-fc52836f8510",
+                "gpu_seconds_lower": 0,
+                "gpu_seconds_upper": 43.0,
+                "method": "Killing event lower bound; next one-GPU pod schedule upper bound, including possible unallocated gap"
+              },
+              {
+                "pod": "boltz2-bir-l40s",
+                "uid": "29596a26-43e0-43ca-a9bc-033444901a3e",
+                "gpu_seconds_lower": 110.0,
+                "gpu_seconds_upper": 115.0,
+                "method": "Killing event lower bound; next one-GPU pod schedule upper bound, including possible unallocated gap"
+              },
+              {
+                "pod": "boltz2-bir-l40s",
+                "uid": "f0df702c-53c6-4937-b77c-963c9d039b53",
+                "gpu_seconds_lower": 303.88527512550354,
+                "gpu_seconds_upper": 303.88527512550354,
+                "method": "schedule through confirmed delete response (conservative confirmation tail)"
+              },
+              {
+                "pod": "boltz2-current-l40s",
+                "uid": "152d38da-7f60-4239-9e64-50c985944e23",
+                "gpu_seconds_lower": 931.7224423885345,
+                "gpu_seconds_upper": 931.7224423885345,
+                "method": "schedule through confirmed delete response (conservative confirmation tail)"
+              },
+              {
+                "pod": "boltz2-persistent-l40s",
+                "uid": "ba2cec79-ab4f-4765-a2af-d3674c91679b",
+                "gpu_seconds_lower": 303.39055585861206,
+                "gpu_seconds_upper": 303.39055585861206,
+                "method": "schedule through confirmed delete response (conservative confirmation tail)"
+              },
+              {
+                "pod": "boltz2-persistent-kernels-l40s",
+                "uid": "b8fcf1d9-866f-4dce-8559-9c5820117b94",
+                "gpu_seconds_lower": 52.501150608062744,
+                "gpu_seconds_upper": 52.501150608062744,
+                "method": "schedule through confirmed delete response (conservative confirmation tail)"
+              },
+              {
+                "pod": "boltz2-persistent-tools-l40s",
+                "uid": "fa0eb7d9-cefc-4334-81d2-158b5785b0cc",
+                "gpu_seconds_lower": 317.16807317733765,
+                "gpu_seconds_upper": 317.16807317733765,
+                "method": "schedule through confirmed delete response (conservative confirmation tail)"
+              }
+            ],
+            "valid_predictions": 99,
+            "all_attempts_gpu_seconds_lower": 2124.6674971580505,
+            "all_attempts_gpu_seconds_upper": 2514.6674971580505,
+            "gpu_seconds_per_valid_lower": 21.46128785008132,
+            "gpu_seconds_per_valid_upper": 25.400681789475257,
+            "valid_per_gpu_hour_lower": 141.7284791738014,
+            "valid_per_gpu_hour_upper": 167.74389426897133
+          }
+        },
+        "limitations": "Confirmed pod schedule-to-delete windows include termination confirmation and are conservative; failed early pod windows remain in event evidence, not silently charged zero."
+      },
+      "attempts": {
+        "total_prediction_attempts": 228,
+        "total_valid_predictions": 191,
+        "total_failed_predictions": 37,
+        "schema_probe_attempts": 81,
+        "schema_probe_passes": 81,
+        "startup_failures_separate": [
+          "L40S BIR cache permission",
+          "L40S BIR missing C compiler",
+          "L40S BIR unpack_row import"
+        ],
+        "non_http_diagnostics_separate": [
+          "One direct current homomer reproduction",
+          "One interrupted in-flight BIR adapter request; see logs"
+        ]
+      },
+      "evidence": [
+        "contract.json",
+        "fixtures/manifest.json",
+        "statistics.json",
+        "evidence/",
+        "raw/",
+        "report.md"
+      ],
+      "cleanup": "GPU pods deleted after evidence collection. After snapshot consumers released it, the manager-authorized coverage worker deleted evaluation-cache PVC. Its PV initially remained Released with CSI VolumeFailedDelete/DeadlineExceeded; final read-only cluster receipt confirms the PV is now absent through normal reclamation. Historical exception retained at ../snapshot/lifecycle/storage-reclamation-exception.json; closure ../report/final-cluster-state.json. No forced deletion, finalizer or production changes."
+    }
+  ]
+}

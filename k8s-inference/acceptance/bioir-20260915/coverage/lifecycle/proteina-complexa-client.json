@@ -1,0 +1,24 @@
+{
+  "started_unix": 1789508925.9251735,
+  "completed_unix": 1789510078.1869853,
+  "returncode": 1,
+  "command": [
+    "kubectl",
+    "--kubeconfig",
+    "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+    "--context",
+    "k8s-inference-h100",
+    "-n",
+    "fs2-bioir-coverage",
+    "exec",
+    "fs2-bioir-coverage-proteina-complexa",
+    "-c",
+    "runtime",
+    "--",
+    "python",
+    "/eval/batch_client.py",
+    "--model",
+    "proteina-complexa",
+    "--extended-complexa"
+  ]
+}

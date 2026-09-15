@@ -1,0 +1,205 @@
+{
+  "unix": 1789511059.179251,
+  "pv": {
+    "apiVersion": "v1",
+    "kind": "PersistentVolume",
+    "metadata": {
+      "annotations": {
+        "pv.kubernetes.io/provisioned-by": "mounted-fs-path.csi.nebius.ai",
+        "volume.kubernetes.io/provisioner-deletion-secret-name": "",
+        "volume.kubernetes.io/provisioner-deletion-secret-namespace": ""
+      },
+      "creationTimestamp": "2026-09-15T21:17:43Z",
+      "finalizers": [
+        "kubernetes.io/pv-protection"
+      ],
+      "name": "pvc-cf75a701-6ede-4d91-935e-af6116917554",
+      "resourceVersion": "42381139",
+      "uid": "4eabb228-4ffd-4161-9273-8beafe4f53f7"
+    },
+    "spec": {
+      "accessModes": [
+        "ReadWriteMany"
+      ],
+      "capacity": {
+        "storage": "1Ti"
+      },
+      "claimRef": {
+        "apiVersion": "v1",
+        "kind": "PersistentVolumeClaim",
+        "name": "evaluation-cache",
+        "namespace": "fs2-bioir-boltz2",
+        "resourceVersion": "42220513",
+        "uid": "cf75a701-6ede-4d91-935e-af6116917554"
+      },
+      "csi": {
+        "driver": "mounted-fs-path.csi.nebius.ai",
+        "fsType": "ext4",
+        "volumeAttributes": {
+          "csi.storage.k8s.io/pv/name": "pvc-cf75a701-6ede-4d91-935e-af6116917554",
+          "csi.storage.k8s.io/pvc/name": "evaluation-cache",
+          "csi.storage.k8s.io/pvc/namespace": "fs2-bioir-boltz2",
+          "storage.kubernetes.io/csiProvisionerIdentity": "1789506430194-8081-mounted-fs-path.csi.nebius.ai-computeinstance-e00fkt1bsa4ec657sn"
+        },
+        "volumeHandle": "pvc-cf75a701-6ede-4d91-935e-af6116917554"
+      },
+      "persistentVolumeReclaimPolicy": "Delete",
+      "storageClassName": "csi-mounted-fs-path-sc",
+      "volumeMode": "Filesystem"
+    },
+    "status": {
+      "lastPhaseTransitionTime": "2026-09-15T22:21:18Z",
+      "phase": "Released"
+    }
+  },
+  "events": [
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:55Z",
+      "count": 8,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:31Z",
+      "count": 7,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:55Z",
+      "count": 8,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:24:00Z",
+      "count": 8,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:31Z",
+      "count": 7,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:31Z",
+      "count": 7,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:55Z",
+      "count": 8,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:31Z",
+      "count": 7,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:31Z",
+      "count": 7,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:31Z",
+      "count": 7,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:31Z",
+      "count": 7,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:31Z",
+      "count": 7,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:31Z",
+      "count": 7,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:31Z",
+      "count": 7,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:31Z",
+      "count": 7,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:31Z",
+      "count": 7,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:31Z",
+      "count": 7,
+      "reportingController": null
+    },
+    {
+      "reason": "VolumeFailedDelete",
+      "message": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "firstTimestamp": "2026-09-15T22:21:28Z",
+      "lastTimestamp": "2026-09-15T22:23:31Z",
+      "count": 7,
+      "reportingController": null
+    }
+  ],
+  "former_pvc": "fs2-bioir-boltz2/evaluation-cache",
+  "authorization": "Parent directed preservation as a separate storage follow-up; no scope expansion",
+  "action": "PVC deletion requested and completed. No finalizer removal, force deletion, controller modification or backing-directory removal.",
+  "status": "pending-controller-reclamation"
+}

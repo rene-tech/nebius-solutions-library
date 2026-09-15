@@ -1,0 +1,351 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "fs2-bioir-of3-donor",
+    "namespace": "fs2-bioir-snapshot",
+    "labels": {
+      "evaluation": "fs2-bioir-20260915",
+      "lane": "snapshot",
+      "benchmark-model": "openfold3-bir"
+    }
+  },
+  "spec": {
+    "automountServiceAccountToken": false,
+    "restartPolicy": "Never",
+    "nodeSelector": {
+      "kubernetes.io/hostname": "computeinstance-e00j20a9hkb508cn4a"
+    },
+    "tolerations": [
+      {
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference",
+        "effect": "NoSchedule"
+      }
+    ],
+    "securityContext": {
+      "runAsUser": 10001,
+      "runAsGroup": 10001,
+      "supplementalGroups": [
+        10001
+      ]
+    },
+    "initContainers": [
+      {
+        "name": "snapshot-tools",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+        "command": [
+          "/bin/sh",
+          "-c",
+          "cp -a /snapshot-binaries/. /tools/ && cp -L /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /tools/lib/ && mkdir -p \"$1/cache\" \"$1/runtime-cache\" \"$1/tmp\" && if [ -n \"$2\" ]; then chown \"$2:$2\" \"$1/runtime-cache\" \"$1/tmp\"; fi",
+          "snapshot-tools",
+          "/checkpoints/of3-donor",
+          ""
+        ],
+        "securityContext": {
+          "runAsUser": 0,
+          "runAsGroup": 0,
+          "runAsNonRoot": false
+        },
+        "volumeMounts": [
+          {
+            "name": "snapshot-tools",
+            "mountPath": "/tools"
+          },
+          {
+            "name": "snapshot-checkpoints",
+            "mountPath": "/checkpoints"
+          }
+        ]
+      },
+      {
+        "name": "exact-current-artifacts",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+        "command": [
+          "/bin/bash",
+          "-ec",
+          "source /opt/fs2/activate.sh; python -c 'import shutil; shutil.copytree(\"/opt/fs2/openfold3-preview2\", \"/payload/server\"); shutil.copytree(\"/opt/fs2/openfold3-preview2-artifacts\", \"/payload/weights\")'"
+        ],
+        "volumeMounts": [
+          {
+            "name": "payload",
+            "mountPath": "/payload"
+          }
+        ],
+        "resources": {
+          "requests": {
+            "cpu": "1",
+            "memory": "2Gi"
+          },
+          "limits": {
+            "cpu": "2",
+            "memory": "4Gi"
+          }
+        }
+      },
+      {
+        "name": "upstream-preprocessor-dependencies",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+        "command": [
+          "python",
+          "-m",
+          "pip",
+          "install",
+          "--no-cache-dir",
+          "--no-deps",
+          "--target",
+          "/deps/lib/python3.12/site-packages",
+          "openfold3==0.4.2",
+          "pytorch-lightning==2.6.6",
+          "pdbeccdutils==1.0.4",
+          "awscli==1.46.1",
+          "awscrt==0.36.3",
+          "boto3==1.43.95",
+          "ijson==3.5.1",
+          "memory_profiler==0.61.0",
+          "wandb==0.30.0",
+          "lmdb==2.3.0",
+          "torchmetrics==1.9.0",
+          "lightning-utilities==0.15.3",
+          "docutils==0.19",
+          "colorama==0.4.6",
+          "rsa==4.7.2",
+          "jmespath==1.1.0",
+          "botocore==1.43.95",
+          "s3transfer==0.19.2",
+          "psutil==7.2.2",
+          "gemmi==0.7.5",
+          "scipy==1.18.1",
+          "opentelemetry-exporter-otlp-proto-http==1.44.0",
+          "opentelemetry-exporter-otlp-proto-common==1.44.0",
+          "func_timeout==4.3.5"
+        ],
+        "volumeMounts": [
+          {
+            "name": "deps",
+            "mountPath": "/deps"
+          }
+        ],
+        "resources": {
+          "requests": {
+            "cpu": "1",
+            "memory": "2Gi"
+          },
+          "limits": {
+            "cpu": "2",
+            "memory": "4Gi"
+          }
+        }
+      }
+    ],
+    "containers": [
+      {
+        "name": "boltz2",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+        "command": [
+          "python",
+          "/snapshot-source/serving_supervisor.py",
+          "--directory",
+          "/checkpoints/of3-donor",
+          "--request-mode",
+          "server",
+          "--fallback",
+          "fail",
+          "donor",
+          "--",
+          "python",
+          "/snapshot-app/bir_openfold3_server.py"
+        ],
+        "env": [
+          {
+            "name": "PYTHONPATH",
+            "value": "/deps/lib/python3.12/site-packages:/payload/server"
+          },
+          {
+            "name": "FS2_OPENFOLD2_CHECKPOINT",
+            "value": "/payload/weights/finetuning_no_templ_ptm_1.pt"
+          },
+          {
+            "name": "BIOIR_EVAL_PRECISION",
+            "value": "float32"
+          },
+          {
+            "name": "PYTHONUNBUFFERED",
+            "value": "1"
+          },
+          {
+            "name": "BIOIR_CACHE",
+            "value": "/tmp/bioir-cache"
+          },
+          {
+            "name": "OPENFOLD_CACHE",
+            "value": "/tmp/openfold-cache"
+          },
+          {
+            "name": "XDG_CACHE_HOME",
+            "value": "/tmp/xdg-cache"
+          },
+          {
+            "name": "TRITON_CACHE_DIR",
+            "value": "/tmp/triton-cache"
+          },
+          {
+            "name": "TORCH_EXTENSIONS_DIR",
+            "value": "/tmp/torch-extensions"
+          },
+          {
+            "name": "TORCHINDUCTOR_CACHE_DIR",
+            "value": "/tmp/torchinductor-cache"
+          },
+          {
+            "name": "USER",
+            "value": "bioir-evaluation"
+          },
+          {
+            "name": "BIOIR_CUDA_GRAPH",
+            "value": "1"
+          },
+          {
+            "name": "BIOIR_GPU_RESIDENT",
+            "value": "1"
+          },
+          {
+            "name": "FS2_SNAPSHOT_RUNTIME_IMAGE",
+            "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+          },
+          {
+            "name": "FS2_SNAPSHOT_TOOLS_IMAGE",
+            "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
+          },
+          {
+            "name": "FS2_MODEL_REVISION",
+            "value": "af09eac4f29cef856633af07558cb143226fe95ebbef2c20921769d4a5f4bee4:app:9e084b9003b386a520398aebb48642ab814ebcfa79ce2916f73e3a91f551ad94"
+          },
+          {
+            "name": "FS2_RUNTIME_ID",
+            "value": "openfold3-preview2-bir-0.1.0-fp32-native-rng-graph-resident"
+          }
+        ],
+        "volumeMounts": [
+          {
+            "name": "payload",
+            "mountPath": "/payload"
+          },
+          {
+            "name": "source",
+            "mountPath": "/snapshot-app",
+            "readOnly": true
+          },
+          {
+            "name": "deps",
+            "mountPath": "/deps"
+          },
+          {
+            "name": "shm",
+            "mountPath": "/dev/shm"
+          },
+          {
+            "name": "snapshot-tools",
+            "mountPath": "/tools"
+          },
+          {
+            "name": "snapshot-source",
+            "mountPath": "/snapshot-source",
+            "readOnly": true
+          },
+          {
+            "name": "snapshot-checkpoints",
+            "mountPath": "/checkpoints"
+          },
+          {
+            "name": "snapshot-checkpoints",
+            "mountPath": "/tmp",
+            "subPath": "of3-donor/tmp"
+          }
+        ],
+        "resources": {
+          "requests": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1",
+            "ephemeral-storage": "20Gi"
+          },
+          "limits": {
+            "cpu": "32",
+            "memory": "192Gi",
+            "nvidia.com/gpu": "1",
+            "ephemeral-storage": "60Gi"
+          }
+        },
+        "securityContext": {
+          "runAsUser": 0,
+          "runAsGroup": 0,
+          "runAsNonRoot": false,
+          "capabilities": {
+            "add": [
+              "SYS_ADMIN",
+              "SYS_PTRACE",
+              "CHECKPOINT_RESTORE",
+              "NET_ADMIN",
+              "SYS_TIME",
+              "SYS_RESOURCE"
+            ]
+          },
+          "seccompProfile": {
+            "type": "Unconfined"
+          },
+          "appArmorProfile": {
+            "type": "Unconfined"
+          }
+        }
+      }
+    ],
+    "volumes": [
+      {
+        "name": "payload",
+        "emptyDir": {
+          "sizeLimit": "5Gi"
+        }
+      },
+      {
+        "name": "source",
+        "configMap": {
+          "name": "fs2-bioir-of3-snapshot-app"
+        }
+      },
+      {
+        "name": "deps",
+        "emptyDir": {
+          "sizeLimit": "8Gi"
+        }
+      },
+      {
+        "name": "shm",
+        "emptyDir": {
+          "medium": "Memory",
+          "sizeLimit": "8Gi"
+        }
+      },
+      {
+        "name": "snapshot-tools",
+        "emptyDir": {}
+      },
+      {
+        "name": "snapshot-source",
+        "configMap": {
+          "name": "fs2-bioir-of3-snapshot-source",
+          "defaultMode": 292
+        }
+      },
+      {
+        "name": "snapshot-checkpoints",
+        "persistentVolumeClaim": {
+          "claimName": "fs2-bioir-of3-checkpoints"
+        }
+      }
+    ],
+    "terminationGracePeriodSeconds": 30,
+    "activeDeadlineSeconds": 14400
+  }
+}

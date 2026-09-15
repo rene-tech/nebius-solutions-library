@@ -1,0 +1,267 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:21:34Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-msa-search-pdb70",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42230187",
+        "uid": "48bb44dd-4fd7-4319-a634-4ad643490241"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:21:34Z",
+      "message": "0/19 nodes are available: 17 node(s) had untolerated taint(s), 2 node(s) didn't match Pod's node affinity/selector. no new claims to deallocate, preemption: 0/19 nodes are available: 19 Preemption is not helpful for scheduling.",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:21:34Z",
+        "name": "fs2-bioir-coverage-msa-search-pdb70.18d59b6741390497",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42230188",
+        "uid": "979a383a-24fa-4d40-8a4a-711b1b0a9aab"
+      },
+      "reason": "FailedScheduling",
+      "reportingComponent": "default-scheduler",
+      "reportingInstance": "",
+      "source": {
+        "component": "default-scheduler"
+      },
+      "type": "Warning"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:21:34Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-msa-search-pdb70",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42230189",
+        "uid": "48bb44dd-4fd7-4319-a634-4ad643490241"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:21:34Z",
+      "message": "pod didn't trigger scale-up: 2 node(s) had untolerated taint(s), 1 node(s) didn't match Pod's node affinity/selector, 1 max node group size reached",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:21:34Z",
+        "name": "fs2-bioir-coverage-msa-search-pdb70.18d59b674472a108",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42230193",
+        "uid": "1d92a250-56e1-41a3-b1e1-8cf69595b874"
+      },
+      "reason": "NotTriggerScaleUp",
+      "reportingComponent": "cluster-autoscaler",
+      "reportingInstance": "",
+      "source": {
+        "component": "cluster-autoscaler"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:22:42Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-msa-search-pdb70",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42233009",
+        "uid": "48bb44dd-4fd7-4319-a634-4ad643490241"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:22:42Z",
+      "message": "Successfully assigned fs2-bioir-coverage/fs2-bioir-coverage-msa-search-pdb70 to computeinstance-e00krzha55t0sg3t56",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:22:42Z",
+        "name": "fs2-bioir-coverage-msa-search-pdb70.18d59b76fb8b5ec5",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42233013",
+        "uid": "22ebe34e-cd3d-41ba-b45f-7e1dc40856fe"
+      },
+      "reason": "Scheduled",
+      "reportingComponent": "default-scheduler",
+      "reportingInstance": "",
+      "source": {
+        "component": "default-scheduler"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:22:42Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{msa-search-pdb70}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-msa-search-pdb70",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42233010",
+        "uid": "48bb44dd-4fd7-4319-a634-4ad643490241"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:22:42Z",
+      "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/msa-search-pdb70@sha256:8049b921688cd65c1c87cfbae38d3ec02db472e419ba762a6320766529a7663d\"",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:22:42Z",
+        "name": "fs2-bioir-coverage-msa-search-pdb70.18d59b771e8cfd7e",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42233040",
+        "uid": "375968bc-08fe-4a5e-9e03-b7200c9a303c"
+      },
+      "reason": "Pulling",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00krzha55t0sg3t56",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00krzha55t0sg3t56"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:22:44Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{msa-search-pdb70}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-msa-search-pdb70",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42233010",
+        "uid": "48bb44dd-4fd7-4319-a634-4ad643490241"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:22:44Z",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/msa-search-pdb70@sha256:8049b921688cd65c1c87cfbae38d3ec02db472e419ba762a6320766529a7663d\" in 2.067s (2.067s including waiting). Image size: 90573444 bytes.",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:22:44Z",
+        "name": "fs2-bioir-coverage-msa-search-pdb70.18d59b7799c58560",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42233136",
+        "uid": "156b7447-5c92-4398-9f14-1f318254a464"
+      },
+      "reason": "Pulled",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00krzha55t0sg3t56",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00krzha55t0sg3t56"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:22:44Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{msa-search-pdb70}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-msa-search-pdb70",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42233010",
+        "uid": "48bb44dd-4fd7-4319-a634-4ad643490241"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:22:44Z",
+      "message": "Container created",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:22:44Z",
+        "name": "fs2-bioir-coverage-msa-search-pdb70.18d59b779a8fcc2a",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42233137",
+        "uid": "04d2789a-553e-4393-9414-5d8caa527828"
+      },
+      "reason": "Created",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00krzha55t0sg3t56",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00krzha55t0sg3t56"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:22:45Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{msa-search-pdb70}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-msa-search-pdb70",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42233010",
+        "uid": "48bb44dd-4fd7-4319-a634-4ad643490241"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:22:45Z",
+      "message": "Container started",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:22:45Z",
+        "name": "fs2-bioir-coverage-msa-search-pdb70.18d59b779fe4153d",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42233142",
+        "uid": "c5451879-278b-4518-a9e9-55f68615c912"
+      },
+      "reason": "Started",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00krzha55t0sg3t56",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00krzha55t0sg3t56"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:22:45Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{msa-search-pdb70}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-msa-search-pdb70",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42233010",
+        "uid": "48bb44dd-4fd7-4319-a634-4ad643490241"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:22:45Z",
+      "message": "Readiness probe failed: Get \"http://10.6.88.97:8000/v1/health/ready\": dial tcp 10.6.88.97:8000: connect: connection refused",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:22:45Z",
+        "name": "fs2-bioir-coverage-msa-search-pdb70.18d59b77b6d401ad",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42233161",
+        "uid": "d30816dd-dfbb-445e-b858-4879b0811463"
+      },
+      "reason": "Unhealthy",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00krzha55t0sg3t56",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00krzha55t0sg3t56"
+      },
+      "type": "Warning"
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    "resourceVersion": ""
+  }
+}

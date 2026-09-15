@@ -1,0 +1,53 @@
+{
+  "observed_unix": 1789513301.171488,
+  "value": {
+    "apiVersion": "v1",
+    "kind": "PersistentVolumeClaim",
+    "metadata": {
+      "annotations": {
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"PersistentVolumeClaim\",\"metadata\":{\"annotations\":{},\"labels\":{\"benchmark-model\":\"protenix-bir\",\"evaluation\":\"fs2-bioir-20260915\",\"lane\":\"snapshot\",\"snapshot-cohort\":\"xjaw\"},\"name\":\"fs2-bioir-protenix-snapshot-xjaw\",\"namespace\":\"fs2-bioir-protenix\"},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"resources\":{\"requests\":{\"storage\":\"128Gi\"}},\"storageClassName\":\"compute-csi-default-sc\"}}\n",
+        "pv.kubernetes.io/bind-completed": "yes",
+        "pv.kubernetes.io/bound-by-controller": "yes",
+        "volume.beta.kubernetes.io/storage-provisioner": "compute.csi.nebius.com",
+        "volume.kubernetes.io/selected-node": "computeinstance-e00xjaw5jqexvvnpat",
+        "volume.kubernetes.io/storage-provisioner": "compute.csi.nebius.com"
+      },
+      "creationTimestamp": "2026-09-15T22:39:06Z",
+      "finalizers": [
+        "kubernetes.io/pvc-protection"
+      ],
+      "labels": {
+        "benchmark-model": "protenix-bir",
+        "evaluation": "fs2-bioir-20260915",
+        "lane": "snapshot",
+        "snapshot-cohort": "xjaw"
+      },
+      "name": "fs2-bioir-protenix-snapshot-xjaw",
+      "namespace": "fs2-bioir-protenix",
+      "resourceVersion": "42426390",
+      "uid": "8845dff7-ccce-4a13-9140-d9655bcfa217"
+    },
+    "spec": {
+      "accessModes": [
+        "ReadWriteOnce"
+      ],
+      "resources": {
+        "requests": {
+          "storage": "128Gi"
+        }
+      },
+      "storageClassName": "compute-csi-default-sc",
+      "volumeMode": "Filesystem",
+      "volumeName": "pvc-8845dff7-ccce-4a13-9140-d9655bcfa217"
+    },
+    "status": {
+      "accessModes": [
+        "ReadWriteOnce"
+      ],
+      "capacity": {
+        "storage": "128Gi"
+      },
+      "phase": "Bound"
+    }
+  }
+}

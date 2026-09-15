@@ -1,0 +1,925 @@
+{
+  "models": [
+    {
+      "model_id": "protenix-v2",
+      "bir_fit": "Public BIR0.1.0 model module in exact current Protenix v2 featurizer/dumper/validator prototype",
+      "status": "partial",
+      "baseline": {
+        "variant": "ordinary load of identical persistent BIR worker on same H100",
+        "request_history": "load\u2192warm76\u2192129\u219276",
+        "summary": {
+          "variant": "normal",
+          "n": 2,
+          "create_to_ready_seconds": {
+            "samples": [
+              84.62077474594116,
+              96.20135831832886
+            ],
+            "median": 90.41106653213501
+          },
+          "container_to_ready_seconds": {
+            "samples": [
+              59.62077474594116,
+              61.20135831832886
+            ],
+            "median": 60.41106653213501
+          },
+          "create_to_first_validated_seconds": {
+            "samples": [
+              102.7465877532959,
+              114.39085698127747
+            ],
+            "median": 108.56872236728668
+          },
+          "container_to_first_validated_seconds": {
+            "samples": [
+              77.7465877532959,
+              79.39085698127747
+            ],
+            "median": 78.56872236728668
+          },
+          "first_request_seconds": {
+            "samples": [
+              14.543807848000142,
+              14.601099974000135
+            ],
+            "median": 14.572453911000139
+          }
+        }
+      },
+      "comparisons": [
+        {
+          "variant": "fresh-pod CUDA/CRIU restore",
+          "request_history": "donor load\u2192warm76\u2192capture\u2192donor deletion\u2192fresh restore\u2192129\u219276",
+          "summary": {
+            "variant": "restore",
+            "n": 3,
+            "create_to_ready_seconds": {
+              "samples": [
+                123.3349859714508,
+                122.6721522808075,
+                122.74064922332764
+              ],
+              "median": 122.74064922332764
+            },
+            "container_to_ready_seconds": {
+              "samples": [
+                88.3349859714508,
+                87.6721522808075,
+                87.74064922332764
+              ],
+              "median": 87.74064922332764
+            },
+            "create_to_first_validated_seconds": {
+              "samples": [
+                133.64636278152466,
+                132.84437131881714,
+                132.5861587524414
+              ],
+              "median": 132.84437131881714
+            },
+            "container_to_first_validated_seconds": {
+              "samples": [
+                98.64636278152466,
+                97.84437131881714,
+                97.5861587524414
+              ],
+              "median": 97.84437131881714
+            },
+            "first_request_seconds": {
+              "samples": [
+                6.642411589999938,
+                6.549093294999693,
+                6.193407861000196
+              ],
+              "median": 6.549093294999693
+            }
+          },
+          "restore_over_normal_ready_ratio": 1.4523936467278715,
+          "first_validated_output_ratio": null,
+          "first_output_ratio_exclusion": "normal first input76; restored first input129. Keep raw clocks, do not divide unlike request histories.",
+          "partial_comparison": true
+        }
+      ],
+      "quality": {
+        "native_validation": "finite coordinates, chain sequence/residue cardinality, confidence envelope, exact checkpoint/provenance, successful forward and actual graph state",
+        "matched_history_output_pairs": [
+          {
+            "pod": "bir-protenix-xjaw-restore-1",
+            "label": "measured",
+            "case": "ubiquitin-76",
+            "byte_identical": false,
+            "ca_lddt_to_comparison": [
+              0.6846494213750851
+            ],
+            "comparison": "normal control1,76\u2192129\u219276 request history",
+            "matched_request_history": true
+          },
+          {
+            "pod": "bir-protenix-xjaw-restore-2",
+            "label": "measured",
+            "case": "ubiquitin-76",
+            "byte_identical": false,
+            "ca_lddt_to_comparison": [
+              0.8347515316541865
+            ],
+            "comparison": "normal control1,76\u2192129\u219276 request history",
+            "matched_request_history": true
+          },
+          {
+            "pod": "bir-protenix-xjaw-restore-3",
+            "label": "measured",
+            "case": "ubiquitin-76",
+            "byte_identical": false,
+            "ca_lddt_to_comparison": [
+              0.8989108236895847
+            ],
+            "comparison": "normal control1,76\u2192129\u219276 request history",
+            "matched_request_history": true
+          },
+          {
+            "pod": "bir-protenix-xjaw-restore-1",
+            "label": "measured",
+            "case": "lysozyme-129",
+            "byte_identical": false,
+            "ca_lddt_to_comparison": [
+              0.7106472968002943
+            ],
+            "comparison": "normal control1,76\u2192129\u219276 request history",
+            "matched_request_history": true
+          },
+          {
+            "pod": "bir-protenix-xjaw-restore-2",
+            "label": "measured",
+            "case": "lysozyme-129",
+            "byte_identical": false,
+            "ca_lddt_to_comparison": [
+              0.6606289076866495
+            ],
+            "comparison": "normal control1,76\u2192129\u219276 request history",
+            "matched_request_history": true
+          },
+          {
+            "pod": "bir-protenix-xjaw-restore-3",
+            "label": "measured",
+            "case": "lysozyme-129",
+            "byte_identical": false,
+            "ca_lddt_to_comparison": [
+              0.6771791099668996
+            ],
+            "comparison": "normal control1,76\u2192129\u219276 request history",
+            "matched_request_history": true
+          }
+        ],
+        "byte_identical_to_normal_count": 0,
+        "paired_count": 6,
+        "scientific_parity": "NOT QUALIFIED: experimental-reference regression in Protenix model lane persists independently of snapshot results",
+        "metric": "Full matching-sequence per-chain CA-lDDT;15A pairs,0.5/1/2/4A thresholds; not all-atom lDDT or interface quality",
+        "reference_scores": [
+          {
+            "pod": "bir-protenix-xjaw-donor",
+            "case": "ubiquitin-76",
+            "label": "warm-prepared",
+            "scores": [
+              0.4982344632768362
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-normal-1",
+            "case": "ubiquitin-76",
+            "label": "first",
+            "scores": [
+              0.4945268361581921
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-normal-1",
+            "case": "lysozyme-129",
+            "label": "measured",
+            "scores": [
+              0.28069736403069734
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-normal-1",
+            "case": "ubiquitin-76",
+            "label": "measured",
+            "scores": [
+              0.5012358757062146
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-normal-2",
+            "case": "ubiquitin-76",
+            "label": "first",
+            "scores": [
+              0.4872881355932203
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-normal-2",
+            "case": "lysozyme-129",
+            "label": "measured",
+            "scores": [
+              0.2934601267934601
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-normal-2",
+            "case": "ubiquitin-76",
+            "label": "measured",
+            "scores": [
+              0.484816384180791
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-restore-1",
+            "case": "lysozyme-129",
+            "label": "measured",
+            "scores": [
+              0.29612946279612945
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-restore-1",
+            "case": "ubiquitin-76",
+            "label": "measured",
+            "scores": [
+              0.5026483050847458
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-restore-2",
+            "case": "lysozyme-129",
+            "label": "measured",
+            "scores": [
+              0.29587921254587923
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-restore-2",
+            "case": "ubiquitin-76",
+            "label": "measured",
+            "scores": [
+              0.486228813559322
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-restore-3",
+            "case": "lysozyme-129",
+            "label": "measured",
+            "scores": [
+              0.28720387053720386
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-restore-3",
+            "case": "ubiquitin-76",
+            "label": "measured",
+            "scores": [
+              0.4929378531073446
+            ]
+          }
+        ],
+        "within_cohort_numerical_dispersion": [
+          {
+            "variant": "restore",
+            "case": "ubiquitin-76",
+            "pods": [
+              "bir-protenix-xjaw-restore-1",
+              "bir-protenix-xjaw-restore-2"
+            ],
+            "byte_identical": false,
+            "ca_lddt": [
+              0.7233893557422969
+            ]
+          },
+          {
+            "variant": "restore",
+            "case": "ubiquitin-76",
+            "pods": [
+              "bir-protenix-xjaw-restore-1",
+              "bir-protenix-xjaw-restore-3"
+            ],
+            "byte_identical": false,
+            "ca_lddt": [
+              0.6841032608695652
+            ]
+          },
+          {
+            "variant": "restore",
+            "case": "ubiquitin-76",
+            "pods": [
+              "bir-protenix-xjaw-restore-2",
+              "bir-protenix-xjaw-restore-3"
+            ],
+            "byte_identical": false,
+            "ca_lddt": [
+              0.7863451086956522
+            ]
+          },
+          {
+            "variant": "restore",
+            "case": "lysozyme-129",
+            "pods": [
+              "bir-protenix-xjaw-restore-1",
+              "bir-protenix-xjaw-restore-2"
+            ],
+            "byte_identical": false,
+            "ca_lddt": [
+              0.8756993659082432
+            ]
+          },
+          {
+            "variant": "restore",
+            "case": "lysozyme-129",
+            "pods": [
+              "bir-protenix-xjaw-restore-1",
+              "bir-protenix-xjaw-restore-3"
+            ],
+            "byte_identical": false,
+            "ca_lddt": [
+              0.80675474506885
+            ]
+          },
+          {
+            "variant": "restore",
+            "case": "lysozyme-129",
+            "pods": [
+              "bir-protenix-xjaw-restore-2",
+              "bir-protenix-xjaw-restore-3"
+            ],
+            "byte_identical": false,
+            "ca_lddt": [
+              0.7655377744696688
+            ]
+          },
+          {
+            "variant": "normal",
+            "case": "ubiquitin-76",
+            "pods": [
+              "bir-protenix-xjaw-normal-1",
+              "bir-protenix-xjaw-normal-2"
+            ],
+            "byte_identical": false,
+            "ca_lddt": [
+              0.8502814919071077
+            ]
+          },
+          {
+            "variant": "normal",
+            "case": "lysozyme-129",
+            "pods": [
+              "bir-protenix-xjaw-normal-1",
+              "bir-protenix-xjaw-normal-2"
+            ],
+            "byte_identical": false,
+            "ca_lddt": [
+              0.6889015583428354
+            ]
+          }
+        ]
+      },
+      "features": {
+        "three_fresh_restore_cycles": 3,
+        "different_shape_after_restore": "129-aa graph capture followed by76-aa graph replay",
+        "seed": 101,
+        "cycles": 10,
+        "diffusion_steps": 200,
+        "samples": 1,
+        "dtype": "bf16 serving profile with BIR mixed-precision implementation",
+        "msa_templates": "disabled exactly as model lane",
+        "request_routing": "pod-local Python HTTPServer, no external Service/Ingress or production label",
+        "fallback": "not completed in this cohort"
+      },
+      "snapshot": {
+        "mechanism": "NVIDIA cuda-checkpoint plus CRIU process dump/restore; not CUDA Graph capture alone",
+        "identity": {
+          "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94",
+          "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+          "kernel_release": "6.11.0-1016-nvidia",
+          "runtime_id": "protenix-v2-bir-public-0.1.0-global-rng",
+          "model_revision": "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48:8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+          "gpu_uuid": "GPU-ca98bcbc-cf06-a4c2-e3bc-c27a0cba95bc",
+          "gpu_name": "NVIDIA H100 80GB HBM3",
+          "driver_version": "580.159.04",
+          "compute_capability": "9.0",
+          "snapshot_source_sha256": {
+            "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+            "serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+            "serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+            "serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+            "serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+            "sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+            "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c"
+          }
+        },
+        "capture": {
+          "action": "capture",
+          "records": [
+            {
+              "command": [
+                "/tools/cuda-checkpoint",
+                "--action",
+                "lock",
+                "--pid",
+                "174"
+              ],
+              "seconds": 0.0135775510007079,
+              "returncode": 0,
+              "stdout": "",
+              "stderr": ""
+            },
+            {
+              "command": [
+                "/tools/cuda-checkpoint",
+                "--action",
+                "checkpoint",
+                "--pid",
+                "174"
+              ],
+              "seconds": 0.9659816719995433,
+              "returncode": 0,
+              "stdout": "",
+              "stderr": ""
+            },
+            {
+              "command": [
+                "/tools/lib/ld-linux-x86-64.so.2",
+                "--library-path",
+                "/tools/lib",
+                "/tools/criu",
+                "dump",
+                "--tree",
+                "174",
+                "--images-dir",
+                "/checkpoints/protenix-xjaw-globalrng-r1/images",
+                "--shell-job",
+                "--log-file",
+                "dump.log",
+                "-v4",
+                "--file-locks",
+                "--tcp-established",
+                "--link-remap",
+                "--manage-cgroups=ignore",
+                "--libdir",
+                "/tmp/empty-criu-plugins"
+              ],
+              "seconds": 2.821010216999639,
+              "returncode": 0,
+              "stdout": "",
+              "stderr": ""
+            }
+          ],
+          "status": "passed",
+          "runtime_identity": {
+            "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94",
+            "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+            "kernel_release": "6.11.0-1016-nvidia",
+            "runtime_id": "protenix-v2-bir-public-0.1.0-global-rng",
+            "model_revision": "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48:8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+            "gpu_uuid": "GPU-ca98bcbc-cf06-a4c2-e3bc-c27a0cba95bc",
+            "gpu_name": "NVIDIA H100 80GB HBM3",
+            "driver_version": "580.159.04",
+            "compute_capability": "9.0",
+            "snapshot_source_sha256": {
+              "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+              "serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+              "serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+              "serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+              "serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+              "sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+              "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c"
+            }
+          },
+          "cuda_process_probes": [
+            {
+              "pid": 174,
+              "returncode": 0,
+              "state": "running",
+              "stderr": ""
+            }
+          ],
+          "cuda_pids": [
+            174
+          ],
+          "checkpoint_flush_seconds": 85.43479007400038
+        },
+        "lifecycle": [
+          {
+            "pod": "bir-protenix-xjaw-donor",
+            "variant": "donor",
+            "pod_uid": "c3f5cec1-4aed-445c-9686-d3d155e1871b",
+            "created_unix": 1789511955.0,
+            "container_started_unix": 1789511991.0,
+            "ready_unix": 1789512053.0516412,
+            "create_to_ready_seconds": 98.05164122581482,
+            "container_to_ready_seconds": 62.05164122581482,
+            "init_seconds": 0.0,
+            "image_pull_events": [
+              "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\"",
+              "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" in 10.666s (10.666s including waiting). Image size: 224071224 bytes.",
+              "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" already present on machine and can be accessed by the pod"
+            ],
+            "ready_metadata": {
+              "ready": true,
+              "model": "protenix-v2",
+              "pid": 174,
+              "model_load_seconds": 53.48639878499944,
+              "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+              "binding": {
+                "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+                "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+                "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+                "dtype": "bf16",
+                "model_name": "protenix-v2",
+                "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+              }
+            },
+            "first_request_seconds": 14.250674547000017,
+            "create_to_first_validated_seconds": 115.9209144115448,
+            "container_to_first_validated_seconds": 79.9209144115448,
+            "first_request_case": "ubiquitin-76",
+            "gpu_slot_seconds_bounds": [
+              239.1306037902832,
+              241.31041550636292
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-normal-1",
+            "variant": "normal",
+            "pod_uid": "73c84bda-9258-40e2-bebb-3abc9865310f",
+            "created_unix": 1789512752.0,
+            "container_started_unix": 1789512777.0,
+            "ready_unix": 1789512836.6207747,
+            "create_to_ready_seconds": 84.62077474594116,
+            "container_to_ready_seconds": 59.62077474594116,
+            "init_seconds": 0.0,
+            "image_pull_events": [
+              "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+              "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" already present on machine and can be accessed by the pod"
+            ],
+            "ready_metadata": {
+              "ready": true,
+              "model": "protenix-v2",
+              "pid": 175,
+              "model_load_seconds": 52.28538642300009,
+              "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+              "binding": {
+                "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+                "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+                "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+                "dtype": "bf16",
+                "model_name": "protenix-v2",
+                "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+              }
+            },
+            "first_request_seconds": 14.543807848000142,
+            "create_to_first_validated_seconds": 102.7465877532959,
+            "container_to_first_validated_seconds": 77.7465877532959,
+            "first_request_case": "ubiquitin-76",
+            "gpu_slot_seconds_bounds": [
+              151.88753390312195,
+              154.13568568229675
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-normal-2",
+            "variant": "normal",
+            "pod_uid": "03bd6cb2-667b-4ab0-a603-e9780b429296",
+            "created_unix": 1789512920.0,
+            "container_started_unix": 1789512955.0,
+            "ready_unix": 1789513016.2013583,
+            "create_to_ready_seconds": 96.20135831832886,
+            "container_to_ready_seconds": 61.20135831832886,
+            "init_seconds": 0.0,
+            "image_pull_events": [
+              "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+              "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" already present on machine and can be accessed by the pod"
+            ],
+            "ready_metadata": {
+              "ready": true,
+              "model": "protenix-v2",
+              "pid": 174,
+              "model_load_seconds": 53.99871915899985,
+              "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+              "binding": {
+                "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+                "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+                "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+                "dtype": "bf16",
+                "model_name": "protenix-v2",
+                "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+              }
+            },
+            "first_request_seconds": 14.601099974000135,
+            "create_to_first_validated_seconds": 114.39085698127747,
+            "container_to_first_validated_seconds": 79.39085698127747,
+            "first_request_case": "ubiquitin-76",
+            "gpu_slot_seconds_bounds": [
+              163.21728348731995,
+              165.62682271003723
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-restore-1",
+            "variant": "restore",
+            "pod_uid": "63b445e9-4e18-4c7d-9614-4adbf36d63d5",
+            "created_unix": 1789512214.0,
+            "container_started_unix": 1789512249.0,
+            "ready_unix": 1789512337.334986,
+            "create_to_ready_seconds": 123.3349859714508,
+            "container_to_ready_seconds": 88.3349859714508,
+            "init_seconds": 0.0,
+            "image_pull_events": [
+              "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+              "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" already present on machine and can be accessed by the pod"
+            ],
+            "ready_metadata": {
+              "ready": true,
+              "model": "protenix-v2",
+              "pid": 174,
+              "model_load_seconds": 53.48639878499944,
+              "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+              "binding": {
+                "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+                "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+                "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+                "dtype": "bf16",
+                "model_name": "protenix-v2",
+                "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+              }
+            },
+            "first_request_seconds": 6.642411589999938,
+            "create_to_first_validated_seconds": 133.64636278152466,
+            "container_to_first_validated_seconds": 98.64636278152466,
+            "first_request_case": "lysozyme-129",
+            "gpu_slot_seconds_bounds": [
+              165.0859031677246,
+              166.68434834480286
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-restore-2",
+            "variant": "restore",
+            "pod_uid": "ca9e1a3d-e8a0-4c32-80a5-9c5551242912",
+            "created_unix": 1789512394.0,
+            "container_started_unix": 1789512429.0,
+            "ready_unix": 1789512516.6721523,
+            "create_to_ready_seconds": 122.6721522808075,
+            "container_to_ready_seconds": 87.6721522808075,
+            "init_seconds": 0.0,
+            "image_pull_events": [
+              "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+              "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" already present on machine and can be accessed by the pod"
+            ],
+            "ready_metadata": {
+              "ready": true,
+              "model": "protenix-v2",
+              "pid": 174,
+              "model_load_seconds": 53.48639878499944,
+              "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+              "binding": {
+                "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+                "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+                "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+                "dtype": "bf16",
+                "model_name": "protenix-v2",
+                "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+              }
+            },
+            "first_request_seconds": 6.549093294999693,
+            "create_to_first_validated_seconds": 132.84437131881714,
+            "container_to_first_validated_seconds": 97.84437131881714,
+            "first_request_case": "lysozyme-129",
+            "gpu_slot_seconds_bounds": [
+              163.90359139442444,
+              166.22973108291626
+            ]
+          },
+          {
+            "pod": "bir-protenix-xjaw-restore-3",
+            "variant": "restore",
+            "pod_uid": "1f94dfcd-045f-43f3-8467-f5ae55c2faf9",
+            "created_unix": 1789512573.0,
+            "container_started_unix": 1789512608.0,
+            "ready_unix": 1789512695.7406492,
+            "create_to_ready_seconds": 122.74064922332764,
+            "container_to_ready_seconds": 87.74064922332764,
+            "init_seconds": 0.0,
+            "image_pull_events": [
+              "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+              "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" already present on machine and can be accessed by the pod"
+            ],
+            "ready_metadata": {
+              "ready": true,
+              "model": "protenix-v2",
+              "pid": 174,
+              "model_load_seconds": 53.48639878499944,
+              "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+              "binding": {
+                "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+                "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+                "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+                "dtype": "bf16",
+                "model_name": "protenix-v2",
+                "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+              }
+            },
+            "first_request_seconds": 6.193407861000196,
+            "create_to_first_validated_seconds": 132.5861587524414,
+            "container_to_first_validated_seconds": 97.5861587524414,
+            "first_request_case": "lysozyme-129",
+            "gpu_slot_seconds_bounds": [
+              163.48562669754028,
+              165.58370304107666
+            ]
+          }
+        ],
+        "startup_summaries": [
+          {
+            "variant": "donor",
+            "n": 1,
+            "create_to_ready_seconds": {
+              "samples": [
+                98.05164122581482
+              ],
+              "median": 98.05164122581482
+            },
+            "container_to_ready_seconds": {
+              "samples": [
+                62.05164122581482
+              ],
+              "median": 62.05164122581482
+            },
+            "create_to_first_validated_seconds": {
+              "samples": [
+                115.9209144115448
+              ],
+              "median": 115.9209144115448
+            },
+            "container_to_first_validated_seconds": {
+              "samples": [
+                79.9209144115448
+              ],
+              "median": 79.9209144115448
+            },
+            "first_request_seconds": {
+              "samples": [
+                14.250674547000017
+              ],
+              "median": 14.250674547000017
+            }
+          },
+          {
+            "variant": "restore",
+            "n": 3,
+            "create_to_ready_seconds": {
+              "samples": [
+                123.3349859714508,
+                122.6721522808075,
+                122.74064922332764
+              ],
+              "median": 122.74064922332764
+            },
+            "container_to_ready_seconds": {
+              "samples": [
+                88.3349859714508,
+                87.6721522808075,
+                87.74064922332764
+              ],
+              "median": 87.74064922332764
+            },
+            "create_to_first_validated_seconds": {
+              "samples": [
+                133.64636278152466,
+                132.84437131881714,
+                132.5861587524414
+              ],
+              "median": 132.84437131881714
+            },
+            "container_to_first_validated_seconds": {
+              "samples": [
+                98.64636278152466,
+                97.84437131881714,
+                97.5861587524414
+              ],
+              "median": 97.84437131881714
+            },
+            "first_request_seconds": {
+              "samples": [
+                6.642411589999938,
+                6.549093294999693,
+                6.193407861000196
+              ],
+              "median": 6.549093294999693
+            }
+          },
+          {
+            "variant": "normal",
+            "n": 2,
+            "create_to_ready_seconds": {
+              "samples": [
+                84.62077474594116,
+                96.20135831832886
+              ],
+              "median": 90.41106653213501
+            },
+            "container_to_ready_seconds": {
+              "samples": [
+                59.62077474594116,
+                61.20135831832886
+              ],
+              "median": 60.41106653213501
+            },
+            "create_to_first_validated_seconds": {
+              "samples": [
+                102.7465877532959,
+                114.39085698127747
+              ],
+              "median": 108.56872236728668
+            },
+            "container_to_first_validated_seconds": {
+              "samples": [
+                77.7465877532959,
+                79.39085698127747
+              ],
+              "median": 78.56872236728668
+            },
+            "first_request_seconds": {
+              "samples": [
+                14.543807848000142,
+                14.601099974000135
+              ],
+              "median": 14.572453911000139
+            }
+          }
+        ],
+        "gpu_slot_seconds_bounds": [
+          1046.7105424404144,
+          1059.5707063674927
+        ],
+        "gpu_slot_seconds_per_validated_prediction_bounds": [
+          80.51619557233957,
+          81.5054389513456
+        ],
+        "gpu_cost_scope": "Includes loading, troubleshooting, capture/flush, request execution, collection, idle gaps and deletion. Slot-time proxy, not GPU compute time or production throughput. Excludes interrupted normal3 lifetime whose release is unobserved; do not treat closed-pod sum as total experiment cost.",
+        "interrupted_cohort": {
+          "completed_restores": 3,
+          "completed_normal_controls": 2,
+          "interrupted_normal_control": "bir-protenix-xjaw-normal-3",
+          "fallback": "unrun",
+          "reason": "NodeNotReady during ordinary loading, before observed model readiness or inference; initiating cause not attributed",
+          "evidence": "incident/",
+          "cleanup": "Final normal reclamation confirmed: task pods/PVC/PV/ConfigMaps absent. Earlier pending receipts are historical. No force/finalizer/provider changes."
+        }
+      },
+      "recommendation": "Hold: three real restores and two controls were measured; replacement node became NotReady during normal-control3 before observed readiness. No further retries authorized. Fallback unrun, numerical/scientific equivalence unqualified; observed3v2 timing ratio is descriptive, not an acceptance pass.",
+      "limitations": [
+        "Technical restore compatibility only: model-lane Protenix scientific-quality regression remains disqualifying.",
+        "Same GPU UUID, image, driver and kernel only; no device remapping or driver-upgrade qualification.",
+        "Tiny fixed-seed public cohort does not establish biological non-inferiority or tail latency.",
+        "Preparation handoffs reused exactly from validated current CPU lane; candidate image lacks zstd for standalone CPU handoff packaging.",
+        "Readiness polling and kubectl overhead are included; health model_load_seconds is inherited captured metadata, not restore time.",
+        "First donor and later restored outputs differ, but their request histories differ too. Matched-history controls and their own numerical dispersion are retained without causal attribution.",
+        "Per-request wall_seconds ends after native wrapper and finite-coordinate/cardinality validation. Additional sequence/graph audit and controller collection occur outside that request clock; full pod allocation bounds include them.",
+        "Ordinary-load controls start with an empty task executable cache; restore and guarded normal-load fallback reuse the donor's captured executable cache. Fallback is a single distinct cached-start path, not another matched normal control or a repeated cache-only optimization benchmark.",
+        "Initial donor setup is separate from matched normal/restore controls. Failed CPU-preparation and manual orchestration delays belong to the original fkt cohort, not this replacement."
+      ],
+      "evidence": [
+        "analysis.json",
+        "manifests/",
+        "inventory/",
+        "lifecycle/",
+        "raw/",
+        "../control.py",
+        "../operate.py",
+        "../matrix.py",
+        "../request.py",
+        "../summarize.py"
+      ],
+      "resource_closure": {
+        "pods": [],
+        "pvc": null,
+        "pv": null,
+        "configmaps": [
+          null,
+          null
+        ],
+        "gpu_release": "Final memory not directly re-probed after historical interruption. Latest manager receipt has this node Ready=True again; historical STOPPED evidence is not current state. Last completed pod release was separately verified.",
+        "cleanup_receipts": "xjaw/lifecycle/cleanup-request.json",
+        "latest_saved_node_condition": {
+          "name": "computeinstance-e00xjaw5jqexvvnpat",
+          "ready": {
+            "lastHeartbeatTime": "2026-09-15T23:28:41Z",
+            "lastTransitionTime": "2026-09-15T23:16:58Z",
+            "message": "kubelet is posting ready status",
+            "reason": "KubeletReady",
+            "status": "True",
+            "type": "Ready"
+          }
+        }
+      }
+    }
+  ]
+}

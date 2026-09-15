@@ -1,0 +1,6 @@
+FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:1bd717a1b1af007c457b4e9053f0c015b2994d5420078f2a09112fb8a943a255
+# Triton builds a small driver binding in its first runtime use, even though
+# the BioIR wheel itself ships precompiled kernels. OF2 adapters need these
+# public Python data-pipeline dependencies.
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential && apt-get clean
+RUN python -m pip install --no-cache-dir ml-collections==1.1.0 dm-tree==0.1.9 && python -m pip freeze > /opt/bioir-pip-freeze.txt

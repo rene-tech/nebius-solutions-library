@@ -1,0 +1,269 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"labels\":{\"benchmark-model\":\"rfdiffusion\",\"evaluation\":\"fs2-bioir-20260915\",\"lane\":\"coverage\"},\"name\":\"fs2-bioir-coverage-rfdiffusion\",\"namespace\":\"fs2-bioir-coverage\"},\"spec\":{\"activeDeadlineSeconds\":14400,\"automountServiceAccountToken\":false,\"containers\":[{\"command\":[\"python\",\"-c\",\"import time; time.sleep(14400)\"],\"image\":\"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"runtime\",\"resources\":{\"limits\":{\"cpu\":\"16000m\",\"ephemeral-storage\":\"32Gi\",\"memory\":\"64Gi\",\"nvidia.com/gpu\":\"1\"},\"requests\":{\"cpu\":\"8000m\",\"ephemeral-storage\":\"16Gi\",\"memory\":\"48Gi\",\"nvidia.com/gpu\":\"1\"}},\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]}},\"volumeMounts\":[{\"mountPath\":\"/work\",\"name\":\"work\"},{\"mountPath\":\"/eval\",\"name\":\"eval\",\"readOnly\":true},{\"mountPath\":\"/opt/fs2/artifacts/rfdiffusion-base-checkpoint\",\"name\":\"rfdiffusion-checkpoint\",\"readOnly\":true,\"subPath\":\"scientific-localization/public/generations/rfdiffusion-base-checkpoint/sha256/7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c\"}]}],\"nodeSelector\":{\"kubernetes.io/hostname\":\"computeinstance-e00krzha55t0sg3t56\"},\"restartPolicy\":\"Never\",\"securityContext\":{\"fsGroup\":10001,\"runAsGroup\":10001,\"runAsUser\":10001,\"seccompProfile\":{\"type\":\"RuntimeDefault\"},\"supplementalGroups\":[1000]},\"tolerations\":[{\"effect\":\"NoSchedule\",\"key\":\"dedicated\",\"operator\":\"Equal\",\"value\":\"fs2-inference\"}],\"volumes\":[{\"emptyDir\":{\"sizeLimit\":\"32Gi\"},\"name\":\"work\"},{\"configMap\":{\"name\":\"fs2-bioir-coverage-batch\"},\"name\":\"eval\"},{\"hostPath\":{\"path\":\"/mnt/fs2-reference-data/data\",\"type\":\"Directory\"},\"name\":\"rfdiffusion-checkpoint\"}]}}\n"
+    },
+    "creationTimestamp": "2026-09-15T21:25:50Z",
+    "generation": 1,
+    "labels": {
+      "benchmark-model": "rfdiffusion",
+      "evaluation": "fs2-bioir-20260915",
+      "lane": "coverage",
+      "topology.kubernetes.io/region": "eu-north1"
+    },
+    "name": "fs2-bioir-coverage-rfdiffusion",
+    "namespace": "fs2-bioir-coverage",
+    "resourceVersion": "42244770",
+    "uid": "85bdd8af-6e37-4934-8b61-7c6d2a9c7348"
+  },
+  "spec": {
+    "activeDeadlineSeconds": 14400,
+    "automountServiceAccountToken": false,
+    "containers": [
+      {
+        "command": [
+          "python",
+          "-c",
+          "import time; time.sleep(14400)"
+        ],
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "runtime",
+        "resources": {
+          "limits": {
+            "cpu": "16",
+            "ephemeral-storage": "32Gi",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "requests": {
+            "cpu": "8",
+            "ephemeral-storage": "16Gi",
+            "memory": "48Gi",
+            "nvidia.com/gpu": "1"
+          }
+        },
+        "securityContext": {
+          "allowPrivilegeEscalation": false,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File",
+        "volumeMounts": [
+          {
+            "mountPath": "/work",
+            "name": "work"
+          },
+          {
+            "mountPath": "/eval",
+            "name": "eval",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
+            "name": "rfdiffusion-checkpoint",
+            "readOnly": true,
+            "subPath": "scientific-localization/public/generations/rfdiffusion-base-checkpoint/sha256/7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c"
+          }
+        ]
+      }
+    ],
+    "dnsPolicy": "ClusterFirst",
+    "enableServiceLinks": true,
+    "nodeName": "computeinstance-e00krzha55t0sg3t56",
+    "nodeSelector": {
+      "kubernetes.io/hostname": "computeinstance-e00krzha55t0sg3t56"
+    },
+    "preemptionPolicy": "PreemptLowerPriority",
+    "priority": 0,
+    "restartPolicy": "Never",
+    "schedulerName": "default-scheduler",
+    "securityContext": {
+      "fsGroup": 10001,
+      "runAsGroup": 10001,
+      "runAsUser": 10001,
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      },
+      "supplementalGroups": [
+        1000
+      ]
+    },
+    "serviceAccount": "default",
+    "serviceAccountName": "default",
+    "terminationGracePeriodSeconds": 30,
+    "tolerations": [
+      {
+        "effect": "NoSchedule",
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference"
+      },
+      {
+        "effect": "NoExecute",
+        "key": "node.kubernetes.io/not-ready",
+        "operator": "Exists",
+        "tolerationSeconds": 300
+      },
+      {
+        "effect": "NoExecute",
+        "key": "node.kubernetes.io/unreachable",
+        "operator": "Exists",
+        "tolerationSeconds": 300
+      },
+      {
+        "effect": "NoSchedule",
+        "key": "nvidia.com/gpu",
+        "operator": "Exists"
+      }
+    ],
+    "volumes": [
+      {
+        "emptyDir": {
+          "sizeLimit": "32Gi"
+        },
+        "name": "work"
+      },
+      {
+        "configMap": {
+          "defaultMode": 420,
+          "name": "fs2-bioir-coverage-batch"
+        },
+        "name": "eval"
+      },
+      {
+        "hostPath": {
+          "path": "/mnt/fs2-reference-data/data",
+          "type": "Directory"
+        },
+        "name": "rfdiffusion-checkpoint"
+      }
+    ]
+  },
+  "status": {
+    "conditions": [
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T21:27:21Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "PodReadyToStartContainers"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T21:25:50Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "Initialized"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T21:27:21Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T21:27:21Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "ContainersReady"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T21:25:50Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "PodScheduled"
+      }
+    ],
+    "containerStatuses": [
+      {
+        "allocatedResources": {
+          "cpu": "8",
+          "ephemeral-storage": "16Gi",
+          "memory": "48Gi",
+          "nvidia.com/gpu": "1"
+        },
+        "containerID": "containerd://d7a4957e613d24c5de52ecc2ffe03fbfceedb46354595eb43637fb8be65b4294",
+        "image": "sha256:a5fb4313f537b7b6512df09d2d93e3bb37924ba64eb94a589b9e0393afe56f9e",
+        "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+        "lastState": {},
+        "name": "runtime",
+        "ready": true,
+        "resources": {
+          "limits": {
+            "cpu": "16",
+            "ephemeral-storage": "32Gi",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "requests": {
+            "cpu": "8",
+            "ephemeral-storage": "16Gi",
+            "memory": "48Gi",
+            "nvidia.com/gpu": "1"
+          }
+        },
+        "restartCount": 0,
+        "started": true,
+        "state": {
+          "running": {
+            "startedAt": "2026-09-15T21:27:21Z"
+          }
+        },
+        "user": {
+          "linux": {
+            "gid": 10001,
+            "supplementalGroups": [
+              1000,
+              10001
+            ],
+            "uid": 10001
+          }
+        },
+        "volumeMounts": [
+          {
+            "mountPath": "/work",
+            "name": "work"
+          },
+          {
+            "mountPath": "/eval",
+            "name": "eval",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          },
+          {
+            "mountPath": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
+            "name": "rfdiffusion-checkpoint",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          }
+        ]
+      }
+    ],
+    "hostIP": "10.6.25.162",
+    "hostIPs": [
+      {
+        "ip": "10.6.25.162"
+      }
+    ],
+    "observedGeneration": 1,
+    "phase": "Running",
+    "podIP": "10.6.88.126",
+    "podIPs": [
+      {
+        "ip": "10.6.88.126"
+      }
+    ],
+    "qosClass": "Burstable",
+    "startTime": "2026-09-15T21:25:50Z"
+  }
+}

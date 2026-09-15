@@ -1,0 +1,7 @@
+{
+  "unix": 1789507576.7802055,
+  "pod": "fs2-bioir-coverage-rfdiffusion",
+  "namespace": "fs2-bioir-coverage",
+  "current_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+  "runtime_entrypoint": "executed per request by batch_client.py; idle parent owns allocation between requests"
+}

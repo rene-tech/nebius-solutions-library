@@ -1,0 +1,205 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:30:38Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-genmol",
+        "namespace": "fs2-models",
+        "resourceVersion": "42253033",
+        "uid": "2a429718-ef2a-407f-b93c-573539b4344c"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:30:38Z",
+      "message": "Successfully assigned fs2-models/fs2-bioir-coverage-genmol to computeinstance-e00r9tdjfszjs3angk",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:30:38Z",
+        "name": "fs2-bioir-coverage-genmol.18d59be5df5e3b1b",
+        "namespace": "fs2-models",
+        "resourceVersion": "42253035",
+        "uid": "16e289c4-33eb-4caa-a580-60c99acc0ed4"
+      },
+      "reason": "Scheduled",
+      "reportingComponent": "default-scheduler",
+      "reportingInstance": "",
+      "source": {
+        "component": "default-scheduler"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:30:39Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{genmol}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-genmol",
+        "namespace": "fs2-models",
+        "resourceVersion": "42253034",
+        "uid": "2a429718-ef2a-407f-b93c-573539b4344c"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:30:39Z",
+      "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf\"",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:30:39Z",
+        "name": "fs2-bioir-coverage-genmol.18d59be612af42d4",
+        "namespace": "fs2-models",
+        "resourceVersion": "42253076",
+        "uid": "bf6181f6-7e83-4234-9718-d158491253dc"
+      },
+      "reason": "Pulling",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:30:48Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{genmol}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-genmol",
+        "namespace": "fs2-models",
+        "resourceVersion": "42253034",
+        "uid": "2a429718-ef2a-407f-b93c-573539b4344c"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:30:48Z",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf\" in 8.724s (8.724s including waiting). Image size: 3491770311 bytes.",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:30:48Z",
+        "name": "fs2-bioir-coverage-genmol.18d59be81ab34bf2",
+        "namespace": "fs2-models",
+        "resourceVersion": "42253433",
+        "uid": "934e005d-20d8-4fb8-aa80-05760ed0c48b"
+      },
+      "reason": "Pulled",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:30:48Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{genmol}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-genmol",
+        "namespace": "fs2-models",
+        "resourceVersion": "42253034",
+        "uid": "2a429718-ef2a-407f-b93c-573539b4344c"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:30:48Z",
+      "message": "Container created",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:30:48Z",
+        "name": "fs2-bioir-coverage-genmol.18d59be81ba47d4a",
+        "namespace": "fs2-models",
+        "resourceVersion": "42253435",
+        "uid": "8536cb37-dbba-4fe0-8066-5e63d1b4e3d0"
+      },
+      "reason": "Created",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:30:48Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{genmol}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-genmol",
+        "namespace": "fs2-models",
+        "resourceVersion": "42253034",
+        "uid": "2a429718-ef2a-407f-b93c-573539b4344c"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:30:48Z",
+      "message": "Container started",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:30:48Z",
+        "name": "fs2-bioir-coverage-genmol.18d59be82968a31e",
+        "namespace": "fs2-models",
+        "resourceVersion": "42253447",
+        "uid": "ba59d772-a479-4512-8de1-12a086c6bf3e"
+      },
+      "reason": "Started",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 3,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:30:48Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{genmol}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-genmol",
+        "namespace": "fs2-models",
+        "resourceVersion": "42253034",
+        "uid": "2a429718-ef2a-407f-b93c-573539b4344c"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:30:54Z",
+      "message": "Readiness probe failed: Get \"http://10.6.14.8:8000/v1/health/ready\": dial tcp 10.6.14.8:8000: connect: connection refused",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:30:48Z",
+        "name": "fs2-bioir-coverage-genmol.18d59be849935374",
+        "namespace": "fs2-models",
+        "resourceVersion": "42253723",
+        "uid": "a998cfc2-c695-490b-9780-15fd36674ed6"
+      },
+      "reason": "Unhealthy",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Warning"
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    "resourceVersion": ""
+  }
+}

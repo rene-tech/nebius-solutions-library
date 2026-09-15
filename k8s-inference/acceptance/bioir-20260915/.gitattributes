@@ -1,0 +1,12 @@
+# Preserve measured/source evidence byte-for-byte, including fixed-column PDB
+# padding and vendor log formatting. Do not normalize data to satisfy lint.
+**/raw/** -whitespace
+**/evidence/** -whitespace
+**/fixtures/** -whitespace
+**/sources/** -whitespace
+*.pdb -whitespace
+*.cif -whitespace
+*.a3m -whitespace
+*.log -whitespace
+*.stdout -whitespace
+*.stderr -whitespace

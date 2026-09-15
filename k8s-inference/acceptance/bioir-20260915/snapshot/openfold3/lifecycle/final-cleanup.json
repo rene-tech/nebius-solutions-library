@@ -1,0 +1,26 @@
+{
+  "unix": 1789514315.769233,
+  "deleted": [
+    {
+      "kind": "configmap",
+      "name": "fs2-bioir-of3-snapshot-app",
+      "uid": "50a25e05-f5f1-48cc-9266-646046563dd7"
+    },
+    {
+      "kind": "configmap",
+      "name": "fs2-bioir-of3-snapshot-source",
+      "uid": "d03e1bf6-9a85-4349-94bf-9e7fd5cd7bd8"
+    },
+    {
+      "kind": "pvc",
+      "name": "fs2-bioir-of3-checkpoints",
+      "uid": "16d2d25a-6319-4ecc-be38-96d19c12ae28",
+      "pv": "pvc-16d2d25a-6319-4ecc-be38-96d19c12ae28",
+      "pv_deleted": true
+    }
+  ],
+  "namespace_deleted": false,
+  "production_changed": false,
+  "gpu_no_allocations_or_processes": true,
+  "note": "Reproducible temporary CUDA/CRIU bundles removed after fingerprinting. Raw outputs, manifests, identities, logs and hashes retained; snapshot pages require recapture."
+}

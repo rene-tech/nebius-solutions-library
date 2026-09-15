@@ -1,0 +1,51 @@
+[
+  {
+    "id": "T1031",
+    "length": 95,
+    "msa_rows": 1618,
+    "input_sha256": "c06788821cc48c35ad380e0db41025abd6abb4735424e342bdc23cc84c2c2473",
+    "reference_sha256": "e3bd6197d8a1885f802217bbb8a68205a031d469d167e83c2f41460d235195cf",
+    "source_commit": "401c6fcc4a43925bcf1342b6c0979b060130b396"
+  },
+  {
+    "id": "T1038",
+    "length": 199,
+    "msa_rows": 89,
+    "input_sha256": "aa93b14cce4c10c8ed96e9731b2bbee569c3f5dd25a09f2ef080006e95818f4f",
+    "reference_sha256": "51c76141cff8cff73ef3fc4f4efafb8647a33f6fa128f8c99a199805d7bf138a",
+    "source_commit": "401c6fcc4a43925bcf1342b6c0979b060130b396"
+  },
+  {
+    "id": "T1096",
+    "length": 464,
+    "msa_rows": 59,
+    "input_sha256": "f07d2df7412073f0834dfa294fc4e2e5be5592d27c99039db8233fec119b0b8d",
+    "reference_sha256": "e1ba5bfb8ba137ec578efc398660a067361b0e52c73de52dce0bbd1e41230803",
+    "source_commit": "401c6fcc4a43925bcf1342b6c0979b060130b396"
+  },
+  {
+    "id": "7sfy",
+    "length": 134,
+    "chains": [
+      "A",
+      "B",
+      "C"
+    ],
+    "input_sha256": "b25687ce364d150cd6d9c0048f9bd878bfdc3871efff9b14da2c8677197dc9dc",
+    "reference_sha256": "72c2bd4c126806e01d18ff61907c220f38b8f586823c6af71157733976f2327a",
+    "source_commit": "401c6fcc4a43925bcf1342b6c0979b060130b396",
+    "limitation": "Ordinary MSAs only; paired MSAs and templates absent. 7sfy_ac omits chainB; flattened CA-lDDT against full complex is exploratory, not DockQ or a complex quality gate."
+  },
+  {
+    "id": "7sfy_ac",
+    "length": 88,
+    "chains": [
+      "A",
+      "C"
+    ],
+    "input_sha256": "956a6b24b6a8158924f563bd6bc79e002f808d693ef3160c5bbc83fc71db53b4",
+    "reference_sha256": "72c2bd4c126806e01d18ff61907c220f38b8f586823c6af71157733976f2327a",
+    "source_commit": "401c6fcc4a43925bcf1342b6c0979b060130b396",
+    "limitation": "Ordinary MSAs only; paired MSAs and templates absent. 7sfy_ac omits chainB; flattened CA-lDDT against full complex is exploratory, not DockQ or a complex quality gate."
+  }
+]

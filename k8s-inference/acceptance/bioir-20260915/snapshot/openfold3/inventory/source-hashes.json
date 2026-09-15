@@ -1,0 +1,21 @@
+{
+  "app": {
+    "bir_openfold3_server.py": "835477d5774d10c59ccd8188ab9fd442de549f0cac5b72525dfae529a5998181",
+    "resident_gpu.py": "98d30cefc5babf4ca8269e916e45ec43a531aef84c4beecd02ba3fa043f87de4",
+    "benchmark_http.py": "7ba4514663526891300120ef8d11f3481207ff34a0baf2a0a3a5d17e27e2a08d",
+    "probe_contract.py": "797eabf2b6ec2522299af43435c124e339a8299934f1562c95f72786fc6a528c",
+    "request.py": "dad4467fb4266e951d4e7e263ba564bcf07976b1bc0e50b0396a7c1f7abd8ae2",
+    "cases.json": "e6c7a6db4cff37e54eca76838754bcf259f6fa4a031adcdaee1a68be5bd9a8c1"
+  },
+  "helpers": {
+    "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c",
+    "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+    "serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+    "serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+    "serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+    "serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+    "sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5"
+  },
+  "source_manifest": "/home/tux/worktrees/fs2-bioir-evaluation-20260915/k8s-inference/acceptance/bioir-20260915/openfold/manifests/openfold3-bir-float32-graph-resident-r7-h100.json",
+  "source_manifest_sha256": "25f2221b152e086d6cafc18d97444e26d4bd031b02215fb53666cfcf83c53aaf"
+}

@@ -1,0 +1,302 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T22:18:01Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "name": "bir-protenix-snapshot-donor",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42372594",
+        "uid": "8bc57304-3af7-48e1-b7f8-3e1277e1437b"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T22:18:01Z",
+      "message": "Successfully assigned fs2-bioir-protenix/bir-protenix-snapshot-donor to computeinstance-e00fkt1bsa4ec657sn",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T22:18:01Z",
+        "name": "bir-protenix-snapshot-donor.18d59e7be3ce7e35",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42372867",
+        "uid": "0aef12ea-2f18-4d39-a195-2b1ffd681686"
+      },
+      "reason": "Scheduled",
+      "reportingComponent": "default-scheduler",
+      "reportingInstance": "",
+      "source": {
+        "component": "default-scheduler"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T22:18:27Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "name": "bir-protenix-snapshot-donor",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42372866",
+        "uid": "8bc57304-3af7-48e1-b7f8-3e1277e1437b"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T22:18:27Z",
+      "message": "AttachVolume.Attach succeeded for volume \"pvc-923170d6-9a45-4d29-8d06-0dabbb7cb56a\" ",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T22:18:27Z",
+        "name": "bir-protenix-snapshot-donor.18d59e81c5c19b10",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42373916",
+        "uid": "ecd25360-dd3c-4b36-ac0b-c4580bb8c2d2"
+      },
+      "reason": "SuccessfulAttachVolume",
+      "reportingComponent": "attachdetach-controller",
+      "reportingInstance": "",
+      "source": {
+        "component": "attachdetach-controller"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T22:18:27Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.initContainers{snapshot-tools}",
+        "kind": "Pod",
+        "name": "bir-protenix-snapshot-donor",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42372866",
+        "uid": "8bc57304-3af7-48e1-b7f8-3e1277e1437b"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T22:18:27Z",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T22:18:27Z",
+        "name": "bir-protenix-snapshot-donor.18d59e81f5155c6b",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42373958",
+        "uid": "51b79a14-3ce3-4756-89fc-1eb77d5f83bf"
+      },
+      "reason": "Pulled",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00fkt1bsa4ec657sn",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00fkt1bsa4ec657sn"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T22:18:27Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.initContainers{snapshot-tools}",
+        "kind": "Pod",
+        "name": "bir-protenix-snapshot-donor",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42372866",
+        "uid": "8bc57304-3af7-48e1-b7f8-3e1277e1437b"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T22:18:27Z",
+      "message": "Container created",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T22:18:27Z",
+        "name": "bir-protenix-snapshot-donor.18d59e81f7c7e5b4",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42373960",
+        "uid": "131b2c62-4471-4666-a688-82ac5f202a7c"
+      },
+      "reason": "Created",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00fkt1bsa4ec657sn",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00fkt1bsa4ec657sn"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T22:18:28Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.initContainers{snapshot-tools}",
+        "kind": "Pod",
+        "name": "bir-protenix-snapshot-donor",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42372866",
+        "uid": "8bc57304-3af7-48e1-b7f8-3e1277e1437b"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T22:18:28Z",
+      "message": "Container started",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T22:18:28Z",
+        "name": "bir-protenix-snapshot-donor.18d59e820ca98a42",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42373975",
+        "uid": "cf261996-0a0a-49d7-9a91-3b2ec2054e4b"
+      },
+      "reason": "Started",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00fkt1bsa4ec657sn",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00fkt1bsa4ec657sn"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T22:18:29Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{scientific-stage}",
+        "kind": "Pod",
+        "name": "bir-protenix-snapshot-donor",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42372866",
+        "uid": "8bc57304-3af7-48e1-b7f8-3e1277e1437b"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T22:18:29Z",
+      "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\"",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T22:18:29Z",
+        "name": "bir-protenix-snapshot-donor.18d59e8234363683",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42374000",
+        "uid": "5e95a288-aac7-4aa9-a4f6-99134bcc93e1"
+      },
+      "reason": "Pulling",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00fkt1bsa4ec657sn",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00fkt1bsa4ec657sn"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T22:18:35Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{scientific-stage}",
+        "kind": "Pod",
+        "name": "bir-protenix-snapshot-donor",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42372866",
+        "uid": "8bc57304-3af7-48e1-b7f8-3e1277e1437b"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T22:18:35Z",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" in 6.01s (6.01s including waiting). Image size: 3722860672 bytes.",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T22:18:35Z",
+        "name": "bir-protenix-snapshot-donor.18d59e839a7d94c3",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42374267",
+        "uid": "86453b3f-791e-435f-a5cc-53e9c8613ac4"
+      },
+      "reason": "Pulled",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00fkt1bsa4ec657sn",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00fkt1bsa4ec657sn"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T22:18:35Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{scientific-stage}",
+        "kind": "Pod",
+        "name": "bir-protenix-snapshot-donor",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42372866",
+        "uid": "8bc57304-3af7-48e1-b7f8-3e1277e1437b"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T22:18:35Z",
+      "message": "Container created",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T22:18:35Z",
+        "name": "bir-protenix-snapshot-donor.18d59e839c261dce",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42374268",
+        "uid": "f1c5bcd7-e202-4db6-9b14-48d6569ac15c"
+      },
+      "reason": "Created",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00fkt1bsa4ec657sn",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00fkt1bsa4ec657sn"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T22:18:35Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{scientific-stage}",
+        "kind": "Pod",
+        "name": "bir-protenix-snapshot-donor",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42372866",
+        "uid": "8bc57304-3af7-48e1-b7f8-3e1277e1437b"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T22:18:35Z",
+      "message": "Container started",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T22:18:35Z",
+        "name": "bir-protenix-snapshot-donor.18d59e83a8e782e9",
+        "namespace": "fs2-bioir-protenix",
+        "resourceVersion": "42374278",
+        "uid": "6bed545a-794b-4908-861e-f8afd77bb141"
+      },
+      "reason": "Started",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00fkt1bsa4ec657sn",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00fkt1bsa4ec657sn"
+      },
+      "type": "Normal"
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    "resourceVersion": ""
+  }
+}

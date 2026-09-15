@@ -1,0 +1,19 @@
+{
+  "status": "pass",
+  "acceptance_pass": true,
+  "checks": {
+    "three_restores_three_controls_plus_fallback": true,
+    "retained_native_and_semantically_valid_predictions": 18,
+    "unique_fresh_pods_donor_deleted_first_same_gpu_no_remap": true,
+    "actual_gpu_owning_worker_capture": true,
+    "guarded_identity_failure_and_successful_fallback": true,
+    "fallback_new_loaded_worker_not_stale_ready_marker": true,
+    "frozen_model_and_harness_identity_unchanged": true,
+    "matched_history_numerical_variation_retained_without_parity_claim": true,
+    "replacement_gpu_empty_after_matrix": true
+  },
+  "scientific_parity": "not-qualified",
+  "numerical_parity": "see retained pairwise dispersion; no equivalence inference",
+  "scope": "y0jt independent cohort only; prior interrupted attempts retained separately",
+  "acceptance_scope": "Technical capture/fresh-pod restore protocol only; not a scientific-parity or performance-improvement pass"
+}

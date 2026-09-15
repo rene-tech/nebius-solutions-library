@@ -1,0 +1,115 @@
+{
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "analyze.py",
+      "sha256": "a2bcd5fa0e0da47e0c7519e9a1fbd89bd0fe1df5f3c016876807a9c653fd2bc5",
+      "bytes": 21494
+    },
+    {
+      "path": "bundle_inventory.py",
+      "sha256": "58e27d7b99af8c047ca9325c4cb83e915c5c0e224646f8d3b07d51e9179b2a46",
+      "bytes": 713
+    },
+    {
+      "path": "cleanup.py",
+      "sha256": "c68d4af1ced27b1ec1de48b6255740415c02b8eb281d89ce481086a0737a878c",
+      "bytes": 3816
+    },
+    {
+      "path": "control.py",
+      "sha256": "30d797d3185b9e21dcd179f942a096460df9667e5fe6c55e13949107f5219f47",
+      "bytes": 5770
+    },
+    {
+      "path": "feature_probe.py",
+      "sha256": "4ac8dade1041a7f052d80f100ff20b5fd13900639c0f66d66ce789f599ff45a3",
+      "bytes": 278
+    },
+    {
+      "path": "final_audit.py",
+      "sha256": "f9b5c6afd4ca13c9b8db3ee768f8b09fcf8057d4b8e2cb95b7e81ef424a239bd",
+      "bytes": 1133
+    },
+    {
+      "path": "hash_evidence.py",
+      "sha256": "96e6b2d88ba7a8241d4c9fbe2a09129ca6aeec0ba5819c9b60e3ec48a759280b",
+      "bytes": 596
+    },
+    {
+      "path": "manifests/app.json",
+      "sha256": "a9472531c419dc54e4a3812db866599d95e7cbfb4b45ae78e82530dfc4ddcced",
+      "bytes": 324203
+    },
+    {
+      "path": "manifests/fs2-bioir-of3-bundle-inventory.json",
+      "sha256": "70139b710e05a90effd88ff4aff04a5ca30b243d91781768b8e2e7cd389cd4df",
+      "bytes": 2353
+    },
+    {
+      "path": "manifests/fs2-bioir-of3-donor.json",
+      "sha256": "74c0e33d43bff55c113a7f5d25b30fef6adf4b029971d966a1e24774aa7761fa",
+      "bytes": 9879
+    },
+    {
+      "path": "manifests/fs2-bioir-of3-fallback.json",
+      "sha256": "0f7758373027864124dadafed6620f8fa44a982a8478398f16ecf9736d5b1aa0",
+      "bytes": 11947
+    },
+    {
+      "path": "manifests/fs2-bioir-of3-normal-1.json",
+      "sha256": "c7e44bf35e0dccb7b1d2dc931b2289c9c071b7a075b8064031ae9c87196617e0",
+      "bytes": 9891
+    },
+    {
+      "path": "manifests/fs2-bioir-of3-normal-2.json",
+      "sha256": "0e7c84f9f324712623f7c7825c66b45a8bdf35e8821abd5bd93fe1d753e473d1",
+      "bytes": 9891
+    },
+    {
+      "path": "manifests/fs2-bioir-of3-normal-3.json",
+      "sha256": "adfe802947b6ac70563d816b8156fbe2680bd395755f2067f4543e750ff52645",
+      "bytes": 9891
+    },
+    {
+      "path": "manifests/fs2-bioir-of3-restore-1.json",
+      "sha256": "e3db2bffa85a0cfdd807e269a11ca1b8af16741b02ad80d6e531746c86f98bac",
+      "bytes": 12027
+    },
+    {
+      "path": "manifests/fs2-bioir-of3-restore-2.json",
+      "sha256": "cc925b9c868c9ea0a42b4cc145e0f21dbd912fa1e4d46ba06b408798e9632a3b",
+      "bytes": 12027
+    },
+    {
+      "path": "manifests/fs2-bioir-of3-restore-3.json",
+      "sha256": "f62c7d1c77f1a7144746e5515320e853a790cfbf04051c813aab9ebeb5a71d0e",
+      "bytes": 12027
+    },
+    {
+      "path": "manifests/pvc.json",
+      "sha256": "65c3358e96d688858392373e00bfa8e751679de5e413dc9c28d34a1fff5041c0",
+      "bytes": 488
+    },
+    {
+      "path": "manifests/source.json",
+      "sha256": "0bd844e3f3e83e09aca7c7fada4a535b35e3a612aa05a4919c53536f5376bb5f",
+      "bytes": 32346
+    },
+    {
+      "path": "matrix.py",
+      "sha256": "d48b26741f7a05f17ebcd5066a1889ecaa3c4fcd7ce624554f7793f9c66fab28",
+      "bytes": 1361
+    },
+    {
+      "path": "operate.py",
+      "sha256": "20b07318962378cc62b3855d50f64b97942c8e19582ff8a7e8264adcc74663d9",
+      "bytes": 2694
+    },
+    {
+      "path": "request.py",
+      "sha256": "dad4467fb4266e951d4e7e263ba564bcf07976b1bc0e50b0396a7c1f7abd8ae2",
+      "bytes": 1920
+    }
+  ]
+}

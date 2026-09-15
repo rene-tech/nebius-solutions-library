@@ -1,0 +1,9 @@
+{
+  "reason": "Require matched request history for causal snapshot numerical-parity comparison",
+  "action": "SIGINT only local matrix.py process498458 during restore2 health polling; GPU pod/worker untouched",
+  "inference_in_flight": false,
+  "resume": "Observe existing restore2, run129→76, release; resume matrix --restore-start3",
+  "normal_control_history": "load→warm76(seed101,10cycles,200steps,1sample)→129→76",
+  "snapshot_history": "load→warm76(seed101,10cycles,200steps,1sample)→capture→delete donor→fresh restore→129→76",
+  "timing_boundary": "Matched readiness precedes control warm76. First-output clocks remain shape/history-labeled, not a matched ratio."
+}

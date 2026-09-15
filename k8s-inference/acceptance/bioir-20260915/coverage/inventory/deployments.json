@@ -1,0 +1,2587 @@
+[
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "creationTimestamp": "2026-09-09T18:15:38Z",
+      "generation": 3,
+      "labels": {
+        "app.kubernetes.io/component": "model-runtime",
+        "app.kubernetes.io/instance": "diffdock-b300",
+        "app.kubernetes.io/managed-by": "fs2-model-controller",
+        "app.kubernetes.io/name": "diffdock",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2-serve.nebius.ai/model-deployment": "diffdock",
+        "fs2-serve.nebius.ai/model-id": "diffdock",
+        "fs2-serve.nebius.ai/workload-role": "burst-h100-1x",
+        "fs2.nebius.ai/model-id": "diffdock",
+        "kueue.x-k8s.io/priority-class": "standard",
+        "kueue.x-k8s.io/queue-name": "inference-models"
+      },
+      "name": "diffdock-b300-burst-h100-1x",
+      "namespace": "fs2-models",
+      "ownerReferences": [
+        {
+          "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "ModelDeployment",
+          "name": "diffdock",
+          "uid": "a09bc912-3bfd-4462-a886-c5c0e8ea3963"
+        }
+      ],
+      "resourceVersion": "20373484",
+      "uid": "181e16cf-ed21-4222-bceb-c74711b35344"
+    },
+    "spec": {
+      "progressDeadlineSeconds": 7200,
+      "replicas": 0,
+      "revisionHistoryLimit": 10,
+      "selector": {
+        "matchLabels": {
+          "fs2-serve.nebius.ai/model-deployment": "diffdock",
+          "fs2-serve.nebius.ai/workload-role": "burst-h100-1x"
+        }
+      },
+      "strategy": {
+        "type": "Recreate"
+      },
+      "template": {
+        "metadata": {
+          "annotations": {
+            "fs2-serve.nebius.ai/effective-hot-floor": "1",
+            "fs2-serve.nebius.ai/spec-digest": "sha256:9f8f745f38eb5e730a3b6d3339a4109f6ec18a3dcae110379784add93093087f",
+            "fs2-serve.nebius.ai/workload-pool-ref": "h100-1x",
+            "fs2-serve.nebius.ai/workload-role": "burst",
+            "fs2-serve.nebius.ai/workload-segment-capacity": "3",
+            "fs2-serve.nebius.ai/workload-segment-offset": "1",
+            "fs2.nebius.ai/confidence-checkpoint-sha256": "18d0fcc97fc55436786db02305ac61c734ad682aa5f8dee601555369c8461a57",
+            "fs2.nebius.ai/esm-checkpoint-sha256": "ea9d0522b335a8778dea6535a65301f10208dece28cd5865482b0b1fc446168c",
+            "fs2.nebius.ai/score-checkpoint-sha256": "64afbdc97f6c700df0309162eb533ee6f2754c71412aca7a3a534a7239667260",
+            "fs2.nebius.ai/source-revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",
+            "fs2.nebius/compile-cache-abi": "driver-580.159.04-sm90",
+            "fs2.nebius/model-content-digest": "sha256:fe05bca0521f77e120fe135021f555269b0128e929e60f201542d4c17483329c",
+            "fs2.nebius/runtime-image-digest": "sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7",
+            "kueue.x-k8s.io/pod-suspending-parent": "deployment"
+          },
+          "labels": {
+            "app.kubernetes.io/component": "model-runtime",
+            "app.kubernetes.io/managed-by": "fs2-model-controller",
+            "app.kubernetes.io/name": "diffdock",
+            "app.kubernetes.io/part-of": "fs2-serve",
+            "fs2-serve.nebius.ai/model-deployment": "diffdock",
+            "fs2-serve.nebius.ai/model-id": "diffdock",
+            "fs2-serve.nebius.ai/workload-role": "burst-h100-1x",
+            "fs2.nebius.ai/model-id": "diffdock",
+            "kueue.x-k8s.io/managed": "true",
+            "kueue.x-k8s.io/priority-class": "standard",
+            "kueue.x-k8s.io/queue-name": "inference-models"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "containers": [
+            {
+              "env": [
+                {
+                  "name": "FS2_PORT",
+                  "value": "8000"
+                }
+              ],
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7",
+              "imagePullPolicy": "IfNotPresent",
+              "livenessProbe": {
+                "failureThreshold": 4,
+                "httpGet": {
+                  "path": "/healthz",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 15,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "name": "runtime",
+              "ports": [
+                {
+                  "containerPort": 8000,
+                  "name": "http",
+                  "protocol": "TCP"
+                }
+              ],
+              "readinessProbe": {
+                "failureThreshold": 6,
+                "httpGet": {
+                  "path": "/readyz",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "resources": {
+                "limits": {
+                  "cpu": "24",
+                  "memory": "200Gi",
+                  "nvidia.com/gpu": "1"
+                },
+                "requests": {
+                  "cpu": "8",
+                  "memory": "64Gi",
+                  "nvidia.com/gpu": "1"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "readOnlyRootFilesystem": true
+              },
+              "startupProbe": {
+                "failureThreshold": 360,
+                "httpGet": {
+                  "path": "/readyz",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/tmp",
+                  "name": "tmp"
+                }
+              ]
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "enableServiceLinks": false,
+          "nodeSelector": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "capacity.fs2.nebius/gpu-count": "1",
+            "capacity.fs2.nebius/type": "preemptible",
+            "local-nvme.fs2.nebius/eligible": "false",
+            "snapshot.fs2.nebius/eligible": "false",
+            "topology.fs2.nebius/scope": "standalone",
+            "workload.fs2.nebius/gpu": "true"
+          },
+          "restartPolicy": "Always",
+          "schedulerName": "default-scheduler",
+          "securityContext": {
+            "fsGroup": 10001,
+            "runAsGroup": 10001,
+            "runAsNonRoot": true,
+            "runAsUser": 10001,
+            "seccompProfile": {
+              "type": "RuntimeDefault"
+            }
+          },
+          "terminationGracePeriodSeconds": 30,
+          "tolerations": [
+            {
+              "effect": "NoSchedule",
+              "key": "dedicated",
+              "operator": "Equal",
+              "value": "fs2-inference"
+            }
+          ],
+          "volumes": [
+            {
+              "emptyDir": {
+                "sizeLimit": "16Gi"
+              },
+              "name": "tmp"
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-09-09T18:15:38Z",
+          "lastUpdateTime": "2026-09-09T18:15:38Z",
+          "message": "ReplicaSet \"diffdock-b300-burst-h100-1x-74dfcffb69\" has successfully progressed.",
+          "reason": "NewReplicaSetAvailable",
+          "status": "True",
+          "type": "Progressing"
+        },
+        {
+          "lastTransitionTime": "2026-09-09T18:15:59Z",
+          "lastUpdateTime": "2026-09-09T18:15:59Z",
+          "message": "Deployment has minimum availability.",
+          "reason": "MinimumReplicasAvailable",
+          "status": "True",
+          "type": "Available"
+        }
+      ],
+      "observedGeneration": 3,
+      "terminatingReplicas": 0
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "creationTimestamp": "2026-09-07T13:49:20Z",
+      "generation": 2,
+      "labels": {
+        "app.kubernetes.io/component": "model-runtime",
+        "app.kubernetes.io/instance": "diffdock-b300",
+        "app.kubernetes.io/managed-by": "fs2-model-controller",
+        "app.kubernetes.io/name": "diffdock",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2-serve.nebius.ai/model-deployment": "diffdock",
+        "fs2-serve.nebius.ai/model-id": "diffdock",
+        "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x",
+        "fs2.nebius.ai/model-id": "diffdock",
+        "kueue.x-k8s.io/priority-class": "standard",
+        "kueue.x-k8s.io/queue-name": "inference-models"
+      },
+      "name": "diffdock-b300-hot-h100-reserved-8x",
+      "namespace": "fs2-models",
+      "ownerReferences": [
+        {
+          "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "ModelDeployment",
+          "name": "diffdock",
+          "uid": "a09bc912-3bfd-4462-a886-c5c0e8ea3963"
+        }
+      ],
+      "resourceVersion": "20366526",
+      "uid": "e6573d61-81fe-4c1e-9855-988ce9ae03ca"
+    },
+    "spec": {
+      "progressDeadlineSeconds": 7200,
+      "replicas": 1,
+      "revisionHistoryLimit": 10,
+      "selector": {
+        "matchLabels": {
+          "fs2-serve.nebius.ai/model-deployment": "diffdock",
+          "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x"
+        }
+      },
+      "strategy": {
+        "type": "Recreate"
+      },
+      "template": {
+        "metadata": {
+          "annotations": {
+            "fs2-serve.nebius.ai/effective-hot-floor": "1",
+            "fs2-serve.nebius.ai/spec-digest": "sha256:9f8f745f38eb5e730a3b6d3339a4109f6ec18a3dcae110379784add93093087f",
+            "fs2-serve.nebius.ai/workload-pool-ref": "h100-reserved-8x",
+            "fs2-serve.nebius.ai/workload-role": "hot",
+            "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+            "fs2-serve.nebius.ai/workload-segment-offset": "0",
+            "fs2.nebius.ai/confidence-checkpoint-sha256": "18d0fcc97fc55436786db02305ac61c734ad682aa5f8dee601555369c8461a57",
+            "fs2.nebius.ai/esm-checkpoint-sha256": "ea9d0522b335a8778dea6535a65301f10208dece28cd5865482b0b1fc446168c",
+            "fs2.nebius.ai/score-checkpoint-sha256": "64afbdc97f6c700df0309162eb533ee6f2754c71412aca7a3a534a7239667260",
+            "fs2.nebius.ai/source-revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",
+            "fs2.nebius/compile-cache-abi": "driver-580.159.04-sm90",
+            "fs2.nebius/model-content-digest": "sha256:fe05bca0521f77e120fe135021f555269b0128e929e60f201542d4c17483329c",
+            "fs2.nebius/runtime-image-digest": "sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7",
+            "kueue.x-k8s.io/pod-suspending-parent": "deployment"
+          },
+          "labels": {
+            "app.kubernetes.io/component": "model-runtime",
+            "app.kubernetes.io/managed-by": "fs2-model-controller",
+            "app.kubernetes.io/name": "diffdock",
+            "app.kubernetes.io/part-of": "fs2-serve",
+            "fs2-serve.nebius.ai/model-deployment": "diffdock",
+            "fs2-serve.nebius.ai/model-id": "diffdock",
+            "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x",
+            "fs2.nebius.ai/model-id": "diffdock",
+            "kueue.x-k8s.io/managed": "true",
+            "kueue.x-k8s.io/priority-class": "standard",
+            "kueue.x-k8s.io/queue-name": "inference-models"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "containers": [
+            {
+              "env": [
+                {
+                  "name": "FS2_PORT",
+                  "value": "8000"
+                }
+              ],
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7",
+              "imagePullPolicy": "IfNotPresent",
+              "livenessProbe": {
+                "failureThreshold": 4,
+                "httpGet": {
+                  "path": "/healthz",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 15,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "name": "runtime",
+              "ports": [
+                {
+                  "containerPort": 8000,
+                  "name": "http",
+                  "protocol": "TCP"
+                }
+              ],
+              "readinessProbe": {
+                "failureThreshold": 6,
+                "httpGet": {
+                  "path": "/readyz",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "resources": {
+                "limits": {
+                  "cpu": "24",
+                  "memory": "200Gi",
+                  "nvidia.com/gpu": "1"
+                },
+                "requests": {
+                  "cpu": "8",
+                  "memory": "64Gi",
+                  "nvidia.com/gpu": "1"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "readOnlyRootFilesystem": true
+              },
+              "startupProbe": {
+                "failureThreshold": 360,
+                "httpGet": {
+                  "path": "/readyz",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/tmp",
+                  "name": "tmp"
+                }
+              ]
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "enableServiceLinks": false,
+          "nodeSelector": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
+            "capacity.fs2.nebius/gpu-count": "8",
+            "capacity.fs2.nebius/source": "capacity-block",
+            "capacity.fs2.nebius/type": "regular",
+            "local-nvme.fs2.nebius/eligible": "false",
+            "snapshot.fs2.nebius/eligible": "false",
+            "topology.fs2.nebius/scope": "standalone",
+            "workload.fs2.nebius/gpu": "true"
+          },
+          "restartPolicy": "Always",
+          "schedulerName": "default-scheduler",
+          "securityContext": {
+            "fsGroup": 10001,
+            "runAsGroup": 10001,
+            "runAsNonRoot": true,
+            "runAsUser": 10001,
+            "seccompProfile": {
+              "type": "RuntimeDefault"
+            }
+          },
+          "terminationGracePeriodSeconds": 30,
+          "tolerations": [
+            {
+              "effect": "NoSchedule",
+              "key": "dedicated",
+              "operator": "Equal",
+              "value": "fs2-inference"
+            }
+          ],
+          "volumes": [
+            {
+              "emptyDir": {
+                "sizeLimit": "16Gi"
+              },
+              "name": "tmp"
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "availableReplicas": 1,
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-09-09T18:16:05Z",
+          "lastUpdateTime": "2026-09-09T18:16:05Z",
+          "message": "Deployment has minimum availability.",
+          "reason": "MinimumReplicasAvailable",
+          "status": "True",
+          "type": "Available"
+        },
+        {
+          "lastTransitionTime": "2026-09-07T13:49:20Z",
+          "lastUpdateTime": "2026-09-09T18:16:05Z",
+          "message": "ReplicaSet \"diffdock-b300-hot-h100-reserved-8x-7b946d88bf\" has successfully progressed.",
+          "reason": "NewReplicaSetAvailable",
+          "status": "True",
+          "type": "Progressing"
+        }
+      ],
+      "observedGeneration": 2,
+      "readyReplicas": 1,
+      "replicas": 1,
+      "terminatingReplicas": 0,
+      "updatedReplicas": 1
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "creationTimestamp": "2026-09-07T10:37:12Z",
+      "generation": 2,
+      "labels": {
+        "app.kubernetes.io/component": "model-runtime",
+        "app.kubernetes.io/instance": "evo2-40b",
+        "app.kubernetes.io/managed-by": "fs2-model-controller",
+        "app.kubernetes.io/name": "evo2-40b",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "app.kubernetes.io/version": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+        "fs2-serve.nebius.ai/model-deployment": "evo2-40b",
+        "fs2-serve.nebius.ai/model-id": "evo2-40b",
+        "fs2-serve.nebius.ai/workload-role": "burst-h100-reserved-8x",
+        "kueue.x-k8s.io/priority-class": "standard",
+        "kueue.x-k8s.io/queue-name": "inference-models"
+      },
+      "name": "evo2-40b",
+      "namespace": "fs2-models",
+      "ownerReferences": [
+        {
+          "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "ModelDeployment",
+          "name": "evo2-40b",
+          "uid": "3b91f34e-e4d6-4ff7-b8a8-f71ba5d8a982"
+        }
+      ],
+      "resourceVersion": "20370088",
+      "uid": "3a26f098-574a-4cc5-b685-ae66dd56dacc"
+    },
+    "spec": {
+      "progressDeadlineSeconds": 7200,
+      "replicas": 1,
+      "revisionHistoryLimit": 2,
+      "selector": {
+        "matchLabels": {
+          "app.kubernetes.io/instance": "evo2-40b"
+        }
+      },
+      "strategy": {
+        "type": "Recreate"
+      },
+      "template": {
+        "metadata": {
+          "annotations": {
+            "fs2-serve.nebius.ai/effective-hot-floor": "1",
+            "fs2-serve.nebius.ai/spec-digest": "sha256:06558be77406d3a2a882c48f9498f29b66904455da54c5d2f05ab5f538f7bf3c",
+            "fs2-serve.nebius.ai/workload-pool-ref": "h100-reserved-8x",
+            "fs2-serve.nebius.ai/workload-role": "burst",
+            "fs2-serve.nebius.ai/workload-segment-capacity": "2",
+            "fs2-serve.nebius.ai/workload-segment-offset": "0",
+            "fs2.nebius/compile-cache-abi": "driver-580.159.04-sm90",
+            "fs2.nebius/model-content-digest": "sha256:b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa",
+            "fs2.nebius/model-repository": "arcinstitute/evo2_40b",
+            "fs2.nebius/model-revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+            "fs2.nebius/runtime-image-digest": "sha256:5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c",
+            "kueue.x-k8s.io/pod-suspending-parent": "deployment"
+          },
+          "labels": {
+            "app.kubernetes.io/component": "model-runtime",
+            "app.kubernetes.io/instance": "evo2-40b",
+            "app.kubernetes.io/managed-by": "fs2-model-controller",
+            "app.kubernetes.io/name": "evo2-40b",
+            "app.kubernetes.io/part-of": "fs2-serve",
+            "app.kubernetes.io/version": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+            "fs2-serve.nebius.ai/model-deployment": "evo2-40b",
+            "fs2-serve.nebius.ai/model-id": "evo2-40b",
+            "kueue.x-k8s.io/managed": "true",
+            "kueue.x-k8s.io/priority-class": "standard",
+            "kueue.x-k8s.io/queue-name": "inference-models"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "containers": [
+            {
+              "args": [
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8001"
+              ],
+              "command": [
+                "python3",
+                "/opt/fs2-evo2/evo2_serve.py"
+              ],
+              "env": [
+                {
+                  "name": "CUDA_CACHE_PATH",
+                  "value": "/model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.159.04-sm90/cuda"
+                },
+                {
+                  "name": "EVO2_MODEL_PATH",
+                  "value": "/model-cache/evo2_40b.pt"
+                },
+                {
+                  "name": "PYTORCH_CUDA_ALLOC_CONF",
+                  "value": "expandable_segments:True"
+                },
+                {
+                  "name": "TORCH_EXTENSIONS_DIR",
+                  "value": "/model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.159.04-sm90/torch-extensions"
+                },
+                {
+                  "name": "TORCHINDUCTOR_CACHE_DIR",
+                  "value": "/model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.159.04-sm90/torchinductor"
+                },
+                {
+                  "name": "TRITON_CACHE_DIR",
+                  "value": "/model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.159.04-sm90/triton"
+                },
+                {
+                  "name": "TRITON_PTXAS_PATH",
+                  "value": "/usr/local/cuda/bin/ptxas"
+                }
+              ],
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+              "imagePullPolicy": "IfNotPresent",
+              "name": "model",
+              "resources": {
+                "limits": {
+                  "cpu": "64",
+                  "ephemeral-storage": "32Gi",
+                  "memory": "256Gi",
+                  "nvidia.com/gpu": "2"
+                },
+                "requests": {
+                  "cpu": "16",
+                  "ephemeral-storage": "8Gi",
+                  "memory": "128Gi",
+                  "nvidia.com/gpu": "2"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                }
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/model-cache",
+                  "name": "model-cache"
+                }
+              ]
+            },
+            {
+              "command": [
+                "python3",
+                "/opt/fs2-evo2/evo2_proxy.py"
+              ],
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+              "imagePullPolicy": "IfNotPresent",
+              "livenessProbe": {
+                "failureThreshold": 4,
+                "httpGet": {
+                  "path": "/v1/runtime",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 30,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "name": "relay",
+              "ports": [
+                {
+                  "containerPort": 8000,
+                  "name": "http",
+                  "protocol": "TCP"
+                }
+              ],
+              "readinessProbe": {
+                "failureThreshold": 3,
+                "httpGet": {
+                  "path": "/v1/health/ready",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "resources": {
+                "limits": {
+                  "cpu": "2",
+                  "ephemeral-storage": "2Gi",
+                  "memory": "1Gi"
+                },
+                "requests": {
+                  "cpu": "250m",
+                  "ephemeral-storage": "256Mi",
+                  "memory": "256Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                }
+              },
+              "startupProbe": {
+                "failureThreshold": 240,
+                "httpGet": {
+                  "path": "/v1/health/ready",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 15,
+                "successThreshold": 1,
+                "timeoutSeconds": 5
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File"
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "enableServiceLinks": false,
+          "initContainers": [
+            {
+              "command": [
+                "/bin/sh",
+                "-ec",
+                "for directory in cuda torch-extensions torchinductor triton; do\n  mkdir -p \"${FS2_RUNTIME_CACHE_ROOT}/${directory}\"\ndone\ntest -w \"${FS2_RUNTIME_CACHE_ROOT}\"\n"
+              ],
+              "env": [
+                {
+                  "name": "FS2_RUNTIME_CACHE_ROOT",
+                  "value": "/model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.159.04-sm90"
+                }
+              ],
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+              "imagePullPolicy": "IfNotPresent",
+              "name": "prepare-runtime-cache",
+              "resources": {
+                "limits": {
+                  "cpu": "1",
+                  "ephemeral-storage": "128Mi",
+                  "memory": "256Mi"
+                },
+                "requests": {
+                  "cpu": "10m",
+                  "ephemeral-storage": "16Mi",
+                  "memory": "16Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "readOnlyRootFilesystem": true
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/model-cache",
+                  "name": "model-cache"
+                }
+              ]
+            },
+            {
+              "command": [
+                "python3",
+                "/opt/fs2-evo2/evo2_stage.py"
+              ],
+              "env": [
+                {
+                  "name": "DO_NOT_TRACK",
+                  "value": "1"
+                },
+                {
+                  "name": "HF_HOME",
+                  "value": "/model-cache/hf-home"
+                },
+                {
+                  "name": "HF_HUB_DISABLE_TELEMETRY",
+                  "value": "1"
+                },
+                {
+                  "name": "HF_HUB_DOWNLOAD_TIMEOUT",
+                  "value": "3600"
+                },
+                {
+                  "name": "HF_XET_CACHE",
+                  "value": "/model-cache/xet"
+                },
+                {
+                  "name": "HOME",
+                  "value": "/model-cache/home"
+                }
+              ],
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+              "imagePullPolicy": "IfNotPresent",
+              "name": "materialize-checkpoint",
+              "resources": {
+                "limits": {
+                  "cpu": "32",
+                  "ephemeral-storage": "8Gi",
+                  "memory": "32Gi"
+                },
+                "requests": {
+                  "cpu": "8",
+                  "ephemeral-storage": "2Gi",
+                  "memory": "8Gi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                }
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/model-cache",
+                  "name": "model-cache"
+                }
+              ]
+            }
+          ],
+          "nodeSelector": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
+            "capacity.fs2.nebius/gpu-count": "8",
+            "capacity.fs2.nebius/source": "capacity-block",
+            "capacity.fs2.nebius/type": "regular",
+            "local-nvme.fs2.nebius/eligible": "false",
+            "snapshot.fs2.nebius/eligible": "false",
+            "topology.fs2.nebius/scope": "standalone",
+            "workload.fs2.nebius/gpu": "true"
+          },
+          "restartPolicy": "Always",
+          "schedulerName": "default-scheduler",
+          "securityContext": {
+            "fsGroup": 65532,
+            "fsGroupChangePolicy": "OnRootMismatch",
+            "runAsGroup": 65532,
+            "runAsNonRoot": true,
+            "runAsUser": 65532,
+            "seccompProfile": {
+              "type": "RuntimeDefault"
+            }
+          },
+          "serviceAccount": "evo2-40b",
+          "serviceAccountName": "evo2-40b",
+          "terminationGracePeriodSeconds": 30,
+          "tolerations": [
+            {
+              "effect": "NoSchedule",
+              "key": "dedicated",
+              "operator": "Equal",
+              "value": "fs2-inference"
+            }
+          ],
+          "volumes": [
+            {
+              "name": "model-cache",
+              "persistentVolumeClaim": {
+                "claimName": "evo2-40b-cache-rwx-ecc3e914"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "availableReplicas": 1,
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-09-09T18:17:28Z",
+          "lastUpdateTime": "2026-09-09T18:17:28Z",
+          "message": "Deployment has minimum availability.",
+          "reason": "MinimumReplicasAvailable",
+          "status": "True",
+          "type": "Available"
+        },
+        {
+          "lastTransitionTime": "2026-09-07T10:37:13Z",
+          "lastUpdateTime": "2026-09-09T18:17:28Z",
+          "message": "ReplicaSet \"evo2-40b-6c54b59b88\" has successfully progressed.",
+          "reason": "NewReplicaSetAvailable",
+          "status": "True",
+          "type": "Progressing"
+        }
+      ],
+      "observedGeneration": 2,
+      "readyReplicas": 1,
+      "replicas": 1,
+      "terminatingReplicas": 0,
+      "updatedReplicas": 1
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "creationTimestamp": "2026-09-09T18:15:39Z",
+      "generation": 3,
+      "labels": {
+        "app.kubernetes.io/component": "model-runtime",
+        "app.kubernetes.io/instance": "genmol-b300",
+        "app.kubernetes.io/managed-by": "fs2-model-controller",
+        "app.kubernetes.io/name": "genmol",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2-serve.nebius.ai/model-deployment": "genmol",
+        "fs2-serve.nebius.ai/model-id": "genmol",
+        "fs2-serve.nebius.ai/workload-role": "burst-h100-1x",
+        "kueue.x-k8s.io/priority-class": "standard",
+        "kueue.x-k8s.io/queue-name": "inference-models"
+      },
+      "name": "genmol-b300-burst-h100-1x",
+      "namespace": "fs2-models",
+      "ownerReferences": [
+        {
+          "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "ModelDeployment",
+          "name": "genmol",
+          "uid": "0abaa659-b477-4920-a43b-0f973aa50cc2"
+        }
+      ],
+      "resourceVersion": "20366192",
+      "uid": "be51dfb5-f01b-42fc-ad5e-78b3dcc50f1d"
+    },
+    "spec": {
+      "progressDeadlineSeconds": 7200,
+      "replicas": 0,
+      "revisionHistoryLimit": 10,
+      "selector": {
+        "matchLabels": {
+          "fs2-serve.nebius.ai/model-deployment": "genmol",
+          "fs2-serve.nebius.ai/workload-role": "burst-h100-1x"
+        }
+      },
+      "strategy": {
+        "type": "Recreate"
+      },
+      "template": {
+        "metadata": {
+          "annotations": {
+            "fs2-serve.nebius.ai/effective-hot-floor": "1",
+            "fs2-serve.nebius.ai/spec-digest": "sha256:f5e59d053e74db3efd96f982ea66830631bf8578e5e66294b6ac3e3d5ade33d0",
+            "fs2-serve.nebius.ai/workload-pool-ref": "h100-1x",
+            "fs2-serve.nebius.ai/workload-role": "burst",
+            "fs2-serve.nebius.ai/workload-segment-capacity": "3",
+            "fs2-serve.nebius.ai/workload-segment-offset": "1",
+            "fs2.nebius/compile-cache-abi": "driver-580.159.04-sm90",
+            "fs2.nebius/model-content-digest": "sha256:7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a",
+            "fs2.nebius/runtime-image-digest": "sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf",
+            "kueue.x-k8s.io/pod-suspending-parent": "deployment",
+            "prometheus.io/path": "/metrics",
+            "prometheus.io/port": "8000",
+            "prometheus.io/scrape": "true"
+          },
+          "labels": {
+            "app.kubernetes.io/component": "model-runtime",
+            "app.kubernetes.io/managed-by": "fs2-model-controller",
+            "app.kubernetes.io/name": "genmol",
+            "app.kubernetes.io/part-of": "fs2-serve",
+            "fs2-serve.nebius.ai/model-deployment": "genmol",
+            "fs2-serve.nebius.ai/model-id": "genmol",
+            "fs2-serve.nebius.ai/workload-role": "burst-h100-1x",
+            "kueue.x-k8s.io/managed": "true",
+            "kueue.x-k8s.io/priority-class": "standard",
+            "kueue.x-k8s.io/queue-name": "inference-models"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "containers": [
+            {
+              "env": [
+                {
+                  "name": "CUDA_CACHE_PATH",
+                  "value": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/cuda"
+                },
+                {
+                  "name": "MODEL_CACHE",
+                  "value": "/models"
+                },
+                {
+                  "name": "HOME",
+                  "value": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/home"
+                },
+                {
+                  "name": "HF_HOME",
+                  "value": "/models/huggingface"
+                },
+                {
+                  "name": "HF_HUB_CACHE",
+                  "value": "/models/huggingface/hub"
+                },
+                {
+                  "name": "HF_XET_CACHE",
+                  "value": "/models/huggingface/xet"
+                },
+                {
+                  "name": "HF_HUB_DISABLE_XET",
+                  "value": "1"
+                },
+                {
+                  "name": "TORCH_EXTENSIONS_DIR",
+                  "value": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/torch-extensions"
+                },
+                {
+                  "name": "TORCHINDUCTOR_CACHE_DIR",
+                  "value": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/torchinductor"
+                },
+                {
+                  "name": "TRITON_CACHE_DIR",
+                  "value": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/triton"
+                },
+                {
+                  "name": "XDG_CACHE_HOME",
+                  "value": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/xdg"
+                }
+              ],
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf",
+              "imagePullPolicy": "IfNotPresent",
+              "livenessProbe": {
+                "failureThreshold": 6,
+                "httpGet": {
+                  "path": "/v1/health/ready",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "initialDelaySeconds": 300,
+                "periodSeconds": 30,
+                "successThreshold": 1,
+                "timeoutSeconds": 5
+              },
+              "name": "genmol",
+              "ports": [
+                {
+                  "containerPort": 8000,
+                  "name": "http",
+                  "protocol": "TCP"
+                }
+              ],
+              "readinessProbe": {
+                "failureThreshold": 360,
+                "httpGet": {
+                  "path": "/v1/health/ready",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "resources": {
+                "limits": {
+                  "cpu": "16",
+                  "memory": "96Gi",
+                  "nvidia.com/gpu": "1"
+                },
+                "requests": {
+                  "cpu": "8",
+                  "memory": "48Gi",
+                  "nvidia.com/gpu": "1"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                }
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/models",
+                  "name": "model-cache"
+                },
+                {
+                  "mountPath": "/dev/shm",
+                  "name": "dshm"
+                }
+              ]
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "initContainers": [
+            {
+              "command": [
+                "/bin/sh",
+                "-ec",
+                "for directory in home cuda torch-extensions torchinductor triton xdg; do\n  mkdir -p \"${FS2_RUNTIME_CACHE_ROOT}/${directory}\"\ndone\ntest -w \"${FS2_RUNTIME_CACHE_ROOT}\"\n"
+              ],
+              "env": [
+                {
+                  "name": "FS2_RUNTIME_CACHE_ROOT",
+                  "value": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90"
+                }
+              ],
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf",
+              "imagePullPolicy": "IfNotPresent",
+              "name": "prepare-runtime-cache",
+              "resources": {
+                "limits": {
+                  "cpu": "1",
+                  "ephemeral-storage": "128Mi",
+                  "memory": "256Mi"
+                },
+                "requests": {
+                  "cpu": "10m",
+                  "ephemeral-storage": "16Mi",
+                  "memory": "16Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "readOnlyRootFilesystem": true
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/models",
+                  "name": "model-cache"
+                }
+              ]
+            }
+          ],
+          "nodeSelector": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "capacity.fs2.nebius/gpu-count": "1",
+            "capacity.fs2.nebius/type": "preemptible",
+            "local-nvme.fs2.nebius/eligible": "false",
+            "snapshot.fs2.nebius/eligible": "false",
+            "topology.fs2.nebius/scope": "standalone",
+            "workload.fs2.nebius/gpu": "true"
+          },
+          "restartPolicy": "Always",
+          "schedulerName": "default-scheduler",
+          "securityContext": {
+            "fsGroup": 1000,
+            "runAsGroup": 1000,
+            "runAsNonRoot": true,
+            "runAsUser": 1000,
+            "seccompProfile": {
+              "type": "RuntimeDefault"
+            }
+          },
+          "serviceAccount": "genmol-b300",
+          "serviceAccountName": "genmol-b300",
+          "terminationGracePeriodSeconds": 60,
+          "tolerations": [
+            {
+              "effect": "NoSchedule",
+              "key": "dedicated",
+              "operator": "Equal",
+              "value": "fs2-inference"
+            }
+          ],
+          "volumes": [
+            {
+              "name": "model-cache",
+              "persistentVolumeClaim": {
+                "claimName": "genmol-model-cache-rwx-621b425d"
+              }
+            },
+            {
+              "emptyDir": {
+                "medium": "Memory",
+                "sizeLimit": "8Gi"
+              },
+              "name": "dshm"
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-09-09T18:15:39Z",
+          "lastUpdateTime": "2026-09-09T18:15:39Z",
+          "message": "ReplicaSet \"genmol-b300-burst-h100-1x-b95c7f7d\" has successfully progressed.",
+          "reason": "NewReplicaSetAvailable",
+          "status": "True",
+          "type": "Progressing"
+        },
+        {
+          "lastTransitionTime": "2026-09-09T18:16:00Z",
+          "lastUpdateTime": "2026-09-09T18:16:00Z",
+          "message": "Deployment has minimum availability.",
+          "reason": "MinimumReplicasAvailable",
+          "status": "True",
+          "type": "Available"
+        }
+      ],
+      "observedGeneration": 3,
+      "terminatingReplicas": 0
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "creationTimestamp": "2026-09-07T13:49:10Z",
+      "generation": 2,
+      "labels": {
+        "app.kubernetes.io/component": "model-runtime",
+        "app.kubernetes.io/instance": "genmol-b300",
+        "app.kubernetes.io/managed-by": "fs2-model-controller",
+        "app.kubernetes.io/name": "genmol",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2-serve.nebius.ai/model-deployment": "genmol",
+        "fs2-serve.nebius.ai/model-id": "genmol",
+        "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x",
+        "kueue.x-k8s.io/priority-class": "standard",
+        "kueue.x-k8s.io/queue-name": "inference-models"
+      },
+      "name": "genmol-b300-hot-h100-reserved-8x",
+      "namespace": "fs2-models",
+      "ownerReferences": [
+        {
+          "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "ModelDeployment",
+          "name": "genmol",
+          "uid": "0abaa659-b477-4920-a43b-0f973aa50cc2"
+        }
+      ],
+      "resourceVersion": "20366148",
+      "uid": "eb30739c-4e20-4542-8004-13ce06d8a3e5"
+    },
+    "spec": {
+      "progressDeadlineSeconds": 7200,
+      "replicas": 1,
+      "revisionHistoryLimit": 10,
+      "selector": {
+        "matchLabels": {
+          "fs2-serve.nebius.ai/model-deployment": "genmol",
+          "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x"
+        }
+      },
+      "strategy": {
+        "type": "Recreate"
+      },
+      "template": {
+        "metadata": {
+          "annotations": {
+            "fs2-serve.nebius.ai/effective-hot-floor": "1",
+            "fs2-serve.nebius.ai/spec-digest": "sha256:f5e59d053e74db3efd96f982ea66830631bf8578e5e66294b6ac3e3d5ade33d0",
+            "fs2-serve.nebius.ai/workload-pool-ref": "h100-reserved-8x",
+            "fs2-serve.nebius.ai/workload-role": "hot",
+            "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+            "fs2-serve.nebius.ai/workload-segment-offset": "0",
+            "fs2.nebius/compile-cache-abi": "driver-580.159.04-sm90",
+            "fs2.nebius/model-content-digest": "sha256:7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a",
+            "fs2.nebius/runtime-image-digest": "sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf",
+            "kueue.x-k8s.io/pod-suspending-parent": "deployment",
+            "prometheus.io/path": "/metrics",
+            "prometheus.io/port": "8000",
+            "prometheus.io/scrape": "true"
+          },
+          "labels": {
+            "app.kubernetes.io/component": "model-runtime",
+            "app.kubernetes.io/managed-by": "fs2-model-controller",
+            "app.kubernetes.io/name": "genmol",
+            "app.kubernetes.io/part-of": "fs2-serve",
+            "fs2-serve.nebius.ai/model-deployment": "genmol",
+            "fs2-serve.nebius.ai/model-id": "genmol",
+            "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x",
+            "kueue.x-k8s.io/managed": "true",
+            "kueue.x-k8s.io/priority-class": "standard",
+            "kueue.x-k8s.io/queue-name": "inference-models"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "containers": [
+            {
+              "env": [
+                {
+                  "name": "CUDA_CACHE_PATH",
+                  "value": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/cuda"
+                },
+                {
+                  "name": "MODEL_CACHE",
+                  "value": "/models"
+                },
+                {
+                  "name": "HOME",
+                  "value": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/home"
+                },
+                {
+                  "name": "HF_HOME",
+                  "value": "/models/huggingface"
+                },
+                {
+                  "name": "HF_HUB_CACHE",
+                  "value": "/models/huggingface/hub"
+                },
+                {
+                  "name": "HF_XET_CACHE",
+                  "value": "/models/huggingface/xet"
+                },
+                {
+                  "name": "HF_HUB_DISABLE_XET",
+                  "value": "1"
+                },
+                {
+                  "name": "TORCH_EXTENSIONS_DIR",
+                  "value": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/torch-extensions"
+                },
+                {
+                  "name": "TORCHINDUCTOR_CACHE_DIR",
+                  "value": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/torchinductor"
+                },
+                {
+                  "name": "TRITON_CACHE_DIR",
+                  "value": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/triton"
+                },
+                {
+                  "name": "XDG_CACHE_HOME",
+                  "value": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90/xdg"
+                }
+              ],
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf",
+              "imagePullPolicy": "IfNotPresent",
+              "livenessProbe": {
+                "failureThreshold": 6,
+                "httpGet": {
+                  "path": "/v1/health/ready",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "initialDelaySeconds": 300,
+                "periodSeconds": 30,
+                "successThreshold": 1,
+                "timeoutSeconds": 5
+              },
+              "name": "genmol",
+              "ports": [
+                {
+                  "containerPort": 8000,
+                  "name": "http",
+                  "protocol": "TCP"
+                }
+              ],
+              "readinessProbe": {
+                "failureThreshold": 360,
+                "httpGet": {
+                  "path": "/v1/health/ready",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "resources": {
+                "limits": {
+                  "cpu": "16",
+                  "memory": "96Gi",
+                  "nvidia.com/gpu": "1"
+                },
+                "requests": {
+                  "cpu": "8",
+                  "memory": "48Gi",
+                  "nvidia.com/gpu": "1"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                }
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/models",
+                  "name": "model-cache"
+                },
+                {
+                  "mountPath": "/dev/shm",
+                  "name": "dshm"
+                }
+              ]
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "initContainers": [
+            {
+              "command": [
+                "/bin/sh",
+                "-ec",
+                "for directory in home cuda torch-extensions torchinductor triton xdg; do\n  mkdir -p \"${FS2_RUNTIME_CACHE_ROOT}/${directory}\"\ndone\ntest -w \"${FS2_RUNTIME_CACHE_ROOT}\"\n"
+              ],
+              "env": [
+                {
+                  "name": "FS2_RUNTIME_CACHE_ROOT",
+                  "value": "/models/.fs2/runtime/7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.159.04-sm90"
+                }
+              ],
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf",
+              "imagePullPolicy": "IfNotPresent",
+              "name": "prepare-runtime-cache",
+              "resources": {
+                "limits": {
+                  "cpu": "1",
+                  "ephemeral-storage": "128Mi",
+                  "memory": "256Mi"
+                },
+                "requests": {
+                  "cpu": "10m",
+                  "ephemeral-storage": "16Mi",
+                  "memory": "16Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "readOnlyRootFilesystem": true
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/models",
+                  "name": "model-cache"
+                }
+              ]
+            }
+          ],
+          "nodeSelector": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
+            "capacity.fs2.nebius/gpu-count": "8",
+            "capacity.fs2.nebius/source": "capacity-block",
+            "capacity.fs2.nebius/type": "regular",
+            "local-nvme.fs2.nebius/eligible": "false",
+            "snapshot.fs2.nebius/eligible": "false",
+            "topology.fs2.nebius/scope": "standalone",
+            "workload.fs2.nebius/gpu": "true"
+          },
+          "restartPolicy": "Always",
+          "schedulerName": "default-scheduler",
+          "securityContext": {
+            "fsGroup": 1000,
+            "runAsGroup": 1000,
+            "runAsNonRoot": true,
+            "runAsUser": 1000,
+            "seccompProfile": {
+              "type": "RuntimeDefault"
+            }
+          },
+          "serviceAccount": "genmol-b300",
+          "serviceAccountName": "genmol-b300",
+          "terminationGracePeriodSeconds": 60,
+          "tolerations": [
+            {
+              "effect": "NoSchedule",
+              "key": "dedicated",
+              "operator": "Equal",
+              "value": "fs2-inference"
+            }
+          ],
+          "volumes": [
+            {
+              "name": "model-cache",
+              "persistentVolumeClaim": {
+                "claimName": "genmol-model-cache-rwx-621b425d"
+              }
+            },
+            {
+              "emptyDir": {
+                "medium": "Memory",
+                "sizeLimit": "8Gi"
+              },
+              "name": "dshm"
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "availableReplicas": 1,
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-09-09T18:16:00Z",
+          "lastUpdateTime": "2026-09-09T18:16:00Z",
+          "message": "Deployment has minimum availability.",
+          "reason": "MinimumReplicasAvailable",
+          "status": "True",
+          "type": "Available"
+        },
+        {
+          "lastTransitionTime": "2026-09-07T13:49:10Z",
+          "lastUpdateTime": "2026-09-09T18:16:00Z",
+          "message": "ReplicaSet \"genmol-b300-hot-h100-reserved-8x-f99894c9b\" has successfully progressed.",
+          "reason": "NewReplicaSetAvailable",
+          "status": "True",
+          "type": "Progressing"
+        }
+      ],
+      "observedGeneration": 2,
+      "readyReplicas": 1,
+      "replicas": 1,
+      "terminatingReplicas": 0,
+      "updatedReplicas": 1
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "creationTimestamp": "2026-09-09T18:15:39Z",
+      "generation": 3,
+      "labels": {
+        "app.kubernetes.io/component": "model-runtime",
+        "app.kubernetes.io/instance": "molmim-b300",
+        "app.kubernetes.io/managed-by": "fs2-model-controller",
+        "app.kubernetes.io/name": "molmim",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2-serve.nebius.ai/model-deployment": "molmim",
+        "fs2-serve.nebius.ai/model-id": "molmim",
+        "fs2-serve.nebius.ai/workload-role": "burst-h100-1x",
+        "kueue.x-k8s.io/priority-class": "standard",
+        "kueue.x-k8s.io/queue-name": "inference-models"
+      },
+      "name": "molmim-b300-burst-h100-1x",
+      "namespace": "fs2-models",
+      "ownerReferences": [
+        {
+          "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "ModelDeployment",
+          "name": "molmim",
+          "uid": "1b0700cf-7588-4c4d-894e-05a654fd761a"
+        }
+      ],
+      "resourceVersion": "20371345",
+      "uid": "972bc702-e8e7-41f4-b7d8-31991bd78416"
+    },
+    "spec": {
+      "progressDeadlineSeconds": 7200,
+      "replicas": 0,
+      "revisionHistoryLimit": 10,
+      "selector": {
+        "matchLabels": {
+          "fs2-serve.nebius.ai/model-deployment": "molmim",
+          "fs2-serve.nebius.ai/workload-role": "burst-h100-1x"
+        }
+      },
+      "strategy": {
+        "type": "Recreate"
+      },
+      "template": {
+        "metadata": {
+          "annotations": {
+            "fs2-serve.nebius.ai/effective-hot-floor": "1",
+            "fs2-serve.nebius.ai/spec-digest": "sha256:cab7c4ae2374c5220b28783c6fb3713971361af4830da819ea70c784dc1f62cd",
+            "fs2-serve.nebius.ai/workload-pool-ref": "h100-1x",
+            "fs2-serve.nebius.ai/workload-role": "burst",
+            "fs2-serve.nebius.ai/workload-segment-capacity": "3",
+            "fs2-serve.nebius.ai/workload-segment-offset": "1",
+            "fs2.nebius/compile-cache-abi": "driver-580.159.04-sm90",
+            "fs2.nebius/model-content-digest": "sha256:10522c9db6018c355313f9f01a0edea2b021ddc0a5a22ae4540cbf5bdafbd1f5",
+            "fs2.nebius/runtime-image-digest": "sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958",
+            "kueue.x-k8s.io/pod-suspending-parent": "deployment",
+            "prometheus.io/path": "/metrics",
+            "prometheus.io/port": "8000",
+            "prometheus.io/scrape": "true"
+          },
+          "labels": {
+            "app.kubernetes.io/component": "model-runtime",
+            "app.kubernetes.io/managed-by": "fs2-model-controller",
+            "app.kubernetes.io/name": "molmim",
+            "app.kubernetes.io/part-of": "fs2-serve",
+            "fs2-serve.nebius.ai/model-deployment": "molmim",
+            "fs2-serve.nebius.ai/model-id": "molmim",
+            "fs2-serve.nebius.ai/workload-role": "burst-h100-1x",
+            "kueue.x-k8s.io/managed": "true",
+            "kueue.x-k8s.io/priority-class": "standard",
+            "kueue.x-k8s.io/queue-name": "inference-models"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "containers": [
+            {
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/molmim@sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958",
+              "imagePullPolicy": "IfNotPresent",
+              "livenessProbe": {
+                "failureThreshold": 6,
+                "httpGet": {
+                  "path": "/v1/health/ready",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "initialDelaySeconds": 300,
+                "periodSeconds": 30,
+                "successThreshold": 1,
+                "timeoutSeconds": 5
+              },
+              "name": "molmim",
+              "ports": [
+                {
+                  "containerPort": 8000,
+                  "name": "http",
+                  "protocol": "TCP"
+                }
+              ],
+              "readinessProbe": {
+                "failureThreshold": 180,
+                "httpGet": {
+                  "path": "/v1/health/ready",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "resources": {
+                "limits": {
+                  "cpu": "16",
+                  "memory": "64Gi",
+                  "nvidia.com/gpu": "1"
+                },
+                "requests": {
+                  "cpu": "8",
+                  "memory": "24Gi",
+                  "nvidia.com/gpu": "1"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                }
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/dev/shm",
+                  "name": "dshm"
+                }
+              ]
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "nodeSelector": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "capacity.fs2.nebius/gpu-count": "1",
+            "capacity.fs2.nebius/type": "preemptible",
+            "local-nvme.fs2.nebius/eligible": "false",
+            "snapshot.fs2.nebius/eligible": "false",
+            "topology.fs2.nebius/scope": "standalone",
+            "workload.fs2.nebius/gpu": "true"
+          },
+          "restartPolicy": "Always",
+          "schedulerName": "default-scheduler",
+          "securityContext": {
+            "runAsGroup": 1000,
+            "runAsNonRoot": true,
+            "runAsUser": 1000,
+            "seccompProfile": {
+              "type": "RuntimeDefault"
+            }
+          },
+          "serviceAccount": "molmim-b300",
+          "serviceAccountName": "molmim-b300",
+          "terminationGracePeriodSeconds": 60,
+          "tolerations": [
+            {
+              "effect": "NoSchedule",
+              "key": "dedicated",
+              "operator": "Equal",
+              "value": "fs2-inference"
+            }
+          ],
+          "volumes": [
+            {
+              "emptyDir": {
+                "medium": "Memory",
+                "sizeLimit": "8Gi"
+              },
+              "name": "dshm"
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-09-09T18:15:39Z",
+          "lastUpdateTime": "2026-09-09T18:15:39Z",
+          "message": "ReplicaSet \"molmim-b300-burst-h100-1x-5f5c4b64b7\" has successfully progressed.",
+          "reason": "NewReplicaSetAvailable",
+          "status": "True",
+          "type": "Progressing"
+        },
+        {
+          "lastTransitionTime": "2026-09-09T18:16:01Z",
+          "lastUpdateTime": "2026-09-09T18:16:01Z",
+          "message": "Deployment has minimum availability.",
+          "reason": "MinimumReplicasAvailable",
+          "status": "True",
+          "type": "Available"
+        }
+      ],
+      "observedGeneration": 3,
+      "terminatingReplicas": 0
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "creationTimestamp": "2026-09-07T09:54:15Z",
+      "generation": 2,
+      "labels": {
+        "app.kubernetes.io/component": "model-runtime",
+        "app.kubernetes.io/instance": "molmim-b300",
+        "app.kubernetes.io/managed-by": "fs2-model-controller",
+        "app.kubernetes.io/name": "molmim",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2-serve.nebius.ai/model-deployment": "molmim",
+        "fs2-serve.nebius.ai/model-id": "molmim",
+        "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x",
+        "kueue.x-k8s.io/priority-class": "standard",
+        "kueue.x-k8s.io/queue-name": "inference-models"
+      },
+      "name": "molmim-b300-hot-h100-reserved-8x",
+      "namespace": "fs2-models",
+      "ownerReferences": [
+        {
+          "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "ModelDeployment",
+          "name": "molmim",
+          "uid": "1b0700cf-7588-4c4d-894e-05a654fd761a"
+        }
+      ],
+      "resourceVersion": "20365389",
+      "uid": "efc762ef-0779-4824-8fdf-8c2e213762e0"
+    },
+    "spec": {
+      "progressDeadlineSeconds": 7200,
+      "replicas": 1,
+      "revisionHistoryLimit": 10,
+      "selector": {
+        "matchLabels": {
+          "fs2-serve.nebius.ai/model-deployment": "molmim",
+          "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x"
+        }
+      },
+      "strategy": {
+        "type": "Recreate"
+      },
+      "template": {
+        "metadata": {
+          "annotations": {
+            "fs2-serve.nebius.ai/effective-hot-floor": "1",
+            "fs2-serve.nebius.ai/spec-digest": "sha256:cab7c4ae2374c5220b28783c6fb3713971361af4830da819ea70c784dc1f62cd",
+            "fs2-serve.nebius.ai/workload-pool-ref": "h100-reserved-8x",
+            "fs2-serve.nebius.ai/workload-role": "hot",
+            "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+            "fs2-serve.nebius.ai/workload-segment-offset": "0",
+            "fs2.nebius/compile-cache-abi": "driver-580.159.04-sm90",
+            "fs2.nebius/model-content-digest": "sha256:10522c9db6018c355313f9f01a0edea2b021ddc0a5a22ae4540cbf5bdafbd1f5",
+            "fs2.nebius/runtime-image-digest": "sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958",
+            "kueue.x-k8s.io/pod-suspending-parent": "deployment",
+            "prometheus.io/path": "/metrics",
+            "prometheus.io/port": "8000",
+            "prometheus.io/scrape": "true"
+          },
+          "labels": {
+            "app.kubernetes.io/component": "model-runtime",
+            "app.kubernetes.io/managed-by": "fs2-model-controller",
+            "app.kubernetes.io/name": "molmim",
+            "app.kubernetes.io/part-of": "fs2-serve",
+            "fs2-serve.nebius.ai/model-deployment": "molmim",
+            "fs2-serve.nebius.ai/model-id": "molmim",
+            "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x",
+            "kueue.x-k8s.io/managed": "true",
+            "kueue.x-k8s.io/priority-class": "standard",
+            "kueue.x-k8s.io/queue-name": "inference-models"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "containers": [
+            {
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/molmim@sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958",
+              "imagePullPolicy": "IfNotPresent",
+              "livenessProbe": {
+                "failureThreshold": 6,
+                "httpGet": {
+                  "path": "/v1/health/ready",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "initialDelaySeconds": 300,
+                "periodSeconds": 30,
+                "successThreshold": 1,
+                "timeoutSeconds": 5
+              },
+              "name": "molmim",
+              "ports": [
+                {
+                  "containerPort": 8000,
+                  "name": "http",
+                  "protocol": "TCP"
+                }
+              ],
+              "readinessProbe": {
+                "failureThreshold": 180,
+                "httpGet": {
+                  "path": "/v1/health/ready",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "resources": {
+                "limits": {
+                  "cpu": "16",
+                  "memory": "64Gi",
+                  "nvidia.com/gpu": "1"
+                },
+                "requests": {
+                  "cpu": "8",
+                  "memory": "24Gi",
+                  "nvidia.com/gpu": "1"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                }
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/dev/shm",
+                  "name": "dshm"
+                }
+              ]
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "nodeSelector": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
+            "capacity.fs2.nebius/gpu-count": "8",
+            "capacity.fs2.nebius/source": "capacity-block",
+            "capacity.fs2.nebius/type": "regular",
+            "local-nvme.fs2.nebius/eligible": "false",
+            "snapshot.fs2.nebius/eligible": "false",
+            "topology.fs2.nebius/scope": "standalone",
+            "workload.fs2.nebius/gpu": "true"
+          },
+          "restartPolicy": "Always",
+          "schedulerName": "default-scheduler",
+          "securityContext": {
+            "runAsGroup": 1000,
+            "runAsNonRoot": true,
+            "runAsUser": 1000,
+            "seccompProfile": {
+              "type": "RuntimeDefault"
+            }
+          },
+          "serviceAccount": "molmim-b300",
+          "serviceAccountName": "molmim-b300",
+          "terminationGracePeriodSeconds": 60,
+          "tolerations": [
+            {
+              "effect": "NoSchedule",
+              "key": "dedicated",
+              "operator": "Equal",
+              "value": "fs2-inference"
+            }
+          ],
+          "volumes": [
+            {
+              "emptyDir": {
+                "medium": "Memory",
+                "sizeLimit": "8Gi"
+              },
+              "name": "dshm"
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "availableReplicas": 1,
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-09-09T18:15:50Z",
+          "lastUpdateTime": "2026-09-09T18:15:50Z",
+          "message": "Deployment has minimum availability.",
+          "reason": "MinimumReplicasAvailable",
+          "status": "True",
+          "type": "Available"
+        },
+        {
+          "lastTransitionTime": "2026-09-07T09:54:15Z",
+          "lastUpdateTime": "2026-09-09T18:15:50Z",
+          "message": "ReplicaSet \"molmim-b300-hot-h100-reserved-8x-bbb94f885\" has successfully progressed.",
+          "reason": "NewReplicaSetAvailable",
+          "status": "True",
+          "type": "Progressing"
+        }
+      ],
+      "observedGeneration": 2,
+      "readyReplicas": 1,
+      "replicas": 1,
+      "terminatingReplicas": 0,
+      "updatedReplicas": 1
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "creationTimestamp": "2026-09-07T10:24:18Z",
+      "generation": 2,
+      "labels": {
+        "app.kubernetes.io/instance": "msa-search-pdb70",
+        "app.kubernetes.io/name": "msa-search-pdb70",
+        "fs2-serve.nebius.ai/model-id": "msa-search-pdb70"
+      },
+      "name": "msa-search-pdb70",
+      "namespace": "fs2-models",
+      "resourceVersion": "20261208",
+      "uid": "ca83e4ab-204a-41d8-b701-5d5d0a9e3f39"
+    },
+    "spec": {
+      "progressDeadlineSeconds": 600,
+      "replicas": 1,
+      "revisionHistoryLimit": 10,
+      "selector": {
+        "matchLabels": {
+          "app.kubernetes.io/instance": "msa-search-pdb70"
+        }
+      },
+      "strategy": {
+        "type": "Recreate"
+      },
+      "template": {
+        "metadata": {
+          "annotations": {
+            "fs2.nebius/compile-cache-abi": "not-applicable",
+            "fs2.nebius/model-content-digest": "sha256:ee828baf233c8737406f15447acb4fd45fa23b96b9750e460cb137149319f2bd",
+            "fs2.nebius/runtime-image-digest": "sha256:8049b921688cd65c1c87cfbae38d3ec02db472e419ba762a6320766529a7663d",
+            "prometheus.io/path": "/metrics",
+            "prometheus.io/port": "8000",
+            "prometheus.io/scrape": "true"
+          },
+          "labels": {
+            "app.kubernetes.io/component": "model-runtime",
+            "app.kubernetes.io/instance": "msa-search-pdb70",
+            "app.kubernetes.io/name": "msa-search-pdb70",
+            "app.kubernetes.io/part-of": "fs2-serve",
+            "fs2-serve.nebius.ai/model-id": "msa-search-pdb70"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "containers": [
+            {
+              "command": [
+                "python",
+                "-m",
+                "uvicorn",
+                "local_server:app",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8000"
+              ],
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/msa-search-pdb70@sha256:8049b921688cd65c1c87cfbae38d3ec02db472e419ba762a6320766529a7663d",
+              "imagePullPolicy": "IfNotPresent",
+              "livenessProbe": {
+                "failureThreshold": 6,
+                "httpGet": {
+                  "path": "/v1/health/live",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "initialDelaySeconds": 20,
+                "periodSeconds": 30,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "name": "msa-search-pdb70",
+              "ports": [
+                {
+                  "containerPort": 8000,
+                  "name": "http",
+                  "protocol": "TCP"
+                }
+              ],
+              "readinessProbe": {
+                "failureThreshold": 20,
+                "httpGet": {
+                  "path": "/v1/health/ready",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 3,
+                "successThreshold": 1,
+                "timeoutSeconds": 2
+              },
+              "resources": {
+                "limits": {
+                  "cpu": "8",
+                  "memory": "8Gi"
+                },
+                "requests": {
+                  "cpu": "2",
+                  "memory": "2Gi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                }
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/cache",
+                  "name": "cache"
+                }
+              ]
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "nodeSelector": {
+            "capacity.fs2.nebius/pool": "general-cpu",
+            "capacity.fs2.nebius/pool-id": "batch-cpu",
+            "workload.fs2.nebius/general-cpu": "true"
+          },
+          "restartPolicy": "Always",
+          "schedulerName": "default-scheduler",
+          "securityContext": {
+            "fsGroup": 65532,
+            "runAsGroup": 65532,
+            "runAsNonRoot": true,
+            "runAsUser": 65532,
+            "seccompProfile": {
+              "type": "RuntimeDefault"
+            }
+          },
+          "serviceAccount": "msa-search-pdb70",
+          "serviceAccountName": "msa-search-pdb70",
+          "terminationGracePeriodSeconds": 30,
+          "tolerations": [
+            {
+              "effect": "NoSchedule",
+              "key": "workload.fs2.nebius/general-cpu",
+              "operator": "Equal",
+              "value": "true"
+            }
+          ],
+          "volumes": [
+            {
+              "emptyDir": {
+                "sizeLimit": "4Gi"
+              },
+              "name": "cache"
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "availableReplicas": 1,
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-09-09T17:35:01Z",
+          "lastUpdateTime": "2026-09-09T17:35:01Z",
+          "message": "Deployment has minimum availability.",
+          "reason": "MinimumReplicasAvailable",
+          "status": "True",
+          "type": "Available"
+        },
+        {
+          "lastTransitionTime": "2026-09-07T10:24:18Z",
+          "lastUpdateTime": "2026-09-09T17:35:01Z",
+          "message": "ReplicaSet \"msa-search-pdb70-557f59688\" has successfully progressed.",
+          "reason": "NewReplicaSetAvailable",
+          "status": "True",
+          "type": "Progressing"
+        }
+      ],
+      "observedGeneration": 2,
+      "readyReplicas": 1,
+      "replicas": 1,
+      "terminatingReplicas": 0,
+      "updatedReplicas": 1
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "creationTimestamp": "2026-09-09T18:15:41Z",
+      "generation": 3,
+      "labels": {
+        "app.kubernetes.io/component": "model-runtime",
+        "app.kubernetes.io/instance": "proteinmpnn-b300",
+        "app.kubernetes.io/managed-by": "fs2-model-controller",
+        "app.kubernetes.io/name": "proteinmpnn",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2-serve.nebius.ai/model-deployment": "proteinmpnn",
+        "fs2-serve.nebius.ai/model-id": "proteinmpnn",
+        "fs2-serve.nebius.ai/workload-role": "burst-h100-1x",
+        "fs2.nebius.ai/model-id": "proteinmpnn",
+        "kueue.x-k8s.io/priority-class": "standard",
+        "kueue.x-k8s.io/queue-name": "inference-models"
+      },
+      "name": "proteinmpnn-b300-burst-h100-1x",
+      "namespace": "fs2-models",
+      "ownerReferences": [
+        {
+          "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "ModelDeployment",
+          "name": "proteinmpnn",
+          "uid": "359d7efc-7b43-4884-992a-1bbf21085f0f"
+        }
+      ],
+      "resourceVersion": "20366495",
+      "uid": "ab064d80-93b0-479d-adbd-215429434f14"
+    },
+    "spec": {
+      "progressDeadlineSeconds": 7200,
+      "replicas": 0,
+      "revisionHistoryLimit": 10,
+      "selector": {
+        "matchLabels": {
+          "fs2-serve.nebius.ai/model-deployment": "proteinmpnn",
+          "fs2-serve.nebius.ai/workload-role": "burst-h100-1x"
+        }
+      },
+      "strategy": {
+        "type": "Recreate"
+      },
+      "template": {
+        "metadata": {
+          "annotations": {
+            "fs2-serve.nebius.ai/effective-hot-floor": "1",
+            "fs2-serve.nebius.ai/spec-digest": "sha256:446c99bb20122da32574bf35b69bde8f8f1331eb425eb7c1d8ed3bd77d5ce0dd",
+            "fs2-serve.nebius.ai/workload-pool-ref": "h100-1x",
+            "fs2-serve.nebius.ai/workload-role": "burst",
+            "fs2-serve.nebius.ai/workload-segment-capacity": "3",
+            "fs2-serve.nebius.ai/workload-segment-offset": "1",
+            "fs2.nebius.ai/checkpoint-sha256": "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
+            "fs2.nebius.ai/source-revision": "8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+            "fs2.nebius/compile-cache-abi": "driver-580.159.04-sm90",
+            "fs2.nebius/model-content-digest": "sha256:c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
+            "fs2.nebius/runtime-image-digest": "sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38",
+            "kueue.x-k8s.io/pod-suspending-parent": "deployment"
+          },
+          "labels": {
+            "app.kubernetes.io/component": "model-runtime",
+            "app.kubernetes.io/managed-by": "fs2-model-controller",
+            "app.kubernetes.io/name": "proteinmpnn",
+            "app.kubernetes.io/part-of": "fs2-serve",
+            "fs2-serve.nebius.ai/model-deployment": "proteinmpnn",
+            "fs2-serve.nebius.ai/model-id": "proteinmpnn",
+            "fs2-serve.nebius.ai/workload-role": "burst-h100-1x",
+            "fs2.nebius.ai/model-id": "proteinmpnn",
+            "kueue.x-k8s.io/managed": "true",
+            "kueue.x-k8s.io/priority-class": "standard",
+            "kueue.x-k8s.io/queue-name": "inference-models"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "containers": [
+            {
+              "env": [
+                {
+                  "name": "FS2_PORT",
+                  "value": "8000"
+                }
+              ],
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/proteinmpnn@sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38",
+              "imagePullPolicy": "IfNotPresent",
+              "livenessProbe": {
+                "exec": {
+                  "command": [
+                    "/bin/sh",
+                    "-c",
+                    "kill -0 1"
+                  ]
+                },
+                "failureThreshold": 4,
+                "periodSeconds": 15,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "name": "runtime",
+              "ports": [
+                {
+                  "containerPort": 8000,
+                  "name": "http",
+                  "protocol": "TCP"
+                }
+              ],
+              "readinessProbe": {
+                "exec": {
+                  "command": [
+                    "/bin/sh",
+                    "-c",
+                    "kill -0 1"
+                  ]
+                },
+                "failureThreshold": 6,
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "resources": {
+                "limits": {
+                  "cpu": "16",
+                  "memory": "128Gi",
+                  "nvidia.com/gpu": "1"
+                },
+                "requests": {
+                  "cpu": "4",
+                  "memory": "16Gi",
+                  "nvidia.com/gpu": "1"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "readOnlyRootFilesystem": true
+              },
+              "startupProbe": {
+                "failureThreshold": 360,
+                "httpGet": {
+                  "path": "/readyz",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/tmp",
+                  "name": "tmp"
+                }
+              ]
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "enableServiceLinks": false,
+          "nodeSelector": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "capacity.fs2.nebius/gpu-count": "1",
+            "capacity.fs2.nebius/type": "preemptible",
+            "local-nvme.fs2.nebius/eligible": "false",
+            "snapshot.fs2.nebius/eligible": "false",
+            "topology.fs2.nebius/scope": "standalone",
+            "workload.fs2.nebius/gpu": "true"
+          },
+          "restartPolicy": "Always",
+          "schedulerName": "default-scheduler",
+          "securityContext": {
+            "fsGroup": 10001,
+            "runAsGroup": 10001,
+            "runAsNonRoot": true,
+            "runAsUser": 10001,
+            "seccompProfile": {
+              "type": "RuntimeDefault"
+            }
+          },
+          "terminationGracePeriodSeconds": 30,
+          "tolerations": [
+            {
+              "effect": "NoSchedule",
+              "key": "dedicated",
+              "operator": "Equal",
+              "value": "fs2-inference"
+            }
+          ],
+          "volumes": [
+            {
+              "emptyDir": {
+                "sizeLimit": "8Gi"
+              },
+              "name": "tmp"
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-09-09T18:15:41Z",
+          "lastUpdateTime": "2026-09-09T18:15:42Z",
+          "message": "ReplicaSet \"proteinmpnn-b300-burst-h100-1x-68f7f4d5dd\" has successfully progressed.",
+          "reason": "NewReplicaSetAvailable",
+          "status": "True",
+          "type": "Progressing"
+        },
+        {
+          "lastTransitionTime": "2026-09-09T18:16:05Z",
+          "lastUpdateTime": "2026-09-09T18:16:05Z",
+          "message": "Deployment has minimum availability.",
+          "reason": "MinimumReplicasAvailable",
+          "status": "True",
+          "type": "Available"
+        }
+      ],
+      "observedGeneration": 3,
+      "terminatingReplicas": 0
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "creationTimestamp": "2026-09-07T09:54:15Z",
+      "generation": 2,
+      "labels": {
+        "app.kubernetes.io/component": "model-runtime",
+        "app.kubernetes.io/instance": "proteinmpnn-b300",
+        "app.kubernetes.io/managed-by": "fs2-model-controller",
+        "app.kubernetes.io/name": "proteinmpnn",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2-serve.nebius.ai/model-deployment": "proteinmpnn",
+        "fs2-serve.nebius.ai/model-id": "proteinmpnn",
+        "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x",
+        "fs2.nebius.ai/model-id": "proteinmpnn",
+        "kueue.x-k8s.io/priority-class": "standard",
+        "kueue.x-k8s.io/queue-name": "inference-models"
+      },
+      "name": "proteinmpnn-b300-hot-h100-reserved-8x",
+      "namespace": "fs2-models",
+      "ownerReferences": [
+        {
+          "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "ModelDeployment",
+          "name": "proteinmpnn",
+          "uid": "359d7efc-7b43-4884-992a-1bbf21085f0f"
+        }
+      ],
+      "resourceVersion": "20365344",
+      "uid": "bd7fa87f-8d9f-4558-819f-bfaac304d856"
+    },
+    "spec": {
+      "progressDeadlineSeconds": 7200,
+      "replicas": 1,
+      "revisionHistoryLimit": 10,
+      "selector": {
+        "matchLabels": {
+          "fs2-serve.nebius.ai/model-deployment": "proteinmpnn",
+          "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x"
+        }
+      },
+      "strategy": {
+        "type": "Recreate"
+      },
+      "template": {
+        "metadata": {
+          "annotations": {
+            "fs2-serve.nebius.ai/effective-hot-floor": "1",
+            "fs2-serve.nebius.ai/spec-digest": "sha256:446c99bb20122da32574bf35b69bde8f8f1331eb425eb7c1d8ed3bd77d5ce0dd",
+            "fs2-serve.nebius.ai/workload-pool-ref": "h100-reserved-8x",
+            "fs2-serve.nebius.ai/workload-role": "hot",
+            "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+            "fs2-serve.nebius.ai/workload-segment-offset": "0",
+            "fs2.nebius.ai/checkpoint-sha256": "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
+            "fs2.nebius.ai/source-revision": "8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+            "fs2.nebius/compile-cache-abi": "driver-580.159.04-sm90",
+            "fs2.nebius/model-content-digest": "sha256:c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
+            "fs2.nebius/runtime-image-digest": "sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38",
+            "kueue.x-k8s.io/pod-suspending-parent": "deployment"
+          },
+          "labels": {
+            "app.kubernetes.io/component": "model-runtime",
+            "app.kubernetes.io/managed-by": "fs2-model-controller",
+            "app.kubernetes.io/name": "proteinmpnn",
+            "app.kubernetes.io/part-of": "fs2-serve",
+            "fs2-serve.nebius.ai/model-deployment": "proteinmpnn",
+            "fs2-serve.nebius.ai/model-id": "proteinmpnn",
+            "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x",
+            "fs2.nebius.ai/model-id": "proteinmpnn",
+            "kueue.x-k8s.io/managed": "true",
+            "kueue.x-k8s.io/priority-class": "standard",
+            "kueue.x-k8s.io/queue-name": "inference-models"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "containers": [
+            {
+              "env": [
+                {
+                  "name": "FS2_PORT",
+                  "value": "8000"
+                }
+              ],
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/proteinmpnn@sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38",
+              "imagePullPolicy": "IfNotPresent",
+              "livenessProbe": {
+                "exec": {
+                  "command": [
+                    "/bin/sh",
+                    "-c",
+                    "kill -0 1"
+                  ]
+                },
+                "failureThreshold": 4,
+                "periodSeconds": 15,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "name": "runtime",
+              "ports": [
+                {
+                  "containerPort": 8000,
+                  "name": "http",
+                  "protocol": "TCP"
+                }
+              ],
+              "readinessProbe": {
+                "exec": {
+                  "command": [
+                    "/bin/sh",
+                    "-c",
+                    "kill -0 1"
+                  ]
+                },
+                "failureThreshold": 6,
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "resources": {
+                "limits": {
+                  "cpu": "16",
+                  "memory": "128Gi",
+                  "nvidia.com/gpu": "1"
+                },
+                "requests": {
+                  "cpu": "4",
+                  "memory": "16Gi",
+                  "nvidia.com/gpu": "1"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "readOnlyRootFilesystem": true
+              },
+              "startupProbe": {
+                "failureThreshold": 360,
+                "httpGet": {
+                  "path": "/readyz",
+                  "port": "http",
+                  "scheme": "HTTP"
+                },
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 3
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/tmp",
+                  "name": "tmp"
+                }
+              ]
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "enableServiceLinks": false,
+          "nodeSelector": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
+            "capacity.fs2.nebius/gpu-count": "8",
+            "capacity.fs2.nebius/source": "capacity-block",
+            "capacity.fs2.nebius/type": "regular",
+            "local-nvme.fs2.nebius/eligible": "false",
+            "snapshot.fs2.nebius/eligible": "false",
+            "topology.fs2.nebius/scope": "standalone",
+            "workload.fs2.nebius/gpu": "true"
+          },
+          "restartPolicy": "Always",
+          "schedulerName": "default-scheduler",
+          "securityContext": {
+            "fsGroup": 10001,
+            "runAsGroup": 10001,
+            "runAsNonRoot": true,
+            "runAsUser": 10001,
+            "seccompProfile": {
+              "type": "RuntimeDefault"
+            }
+          },
+          "terminationGracePeriodSeconds": 30,
+          "tolerations": [
+            {
+              "effect": "NoSchedule",
+              "key": "dedicated",
+              "operator": "Equal",
+              "value": "fs2-inference"
+            }
+          ],
+          "volumes": [
+            {
+              "emptyDir": {
+                "sizeLimit": "8Gi"
+              },
+              "name": "tmp"
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "availableReplicas": 1,
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-09-09T18:15:49Z",
+          "lastUpdateTime": "2026-09-09T18:15:49Z",
+          "message": "Deployment has minimum availability.",
+          "reason": "MinimumReplicasAvailable",
+          "status": "True",
+          "type": "Available"
+        },
+        {
+          "lastTransitionTime": "2026-09-07T09:54:15Z",
+          "lastUpdateTime": "2026-09-09T18:15:49Z",
+          "message": "ReplicaSet \"proteinmpnn-b300-hot-h100-reserved-8x-966f7dcfd\" has successfully progressed.",
+          "reason": "NewReplicaSetAvailable",
+          "status": "True",
+          "type": "Progressing"
+        }
+      ],
+      "observedGeneration": 2,
+      "readyReplicas": 1,
+      "replicas": 1,
+      "terminatingReplicas": 0,
+      "updatedReplicas": 1
+    }
+  }
+]

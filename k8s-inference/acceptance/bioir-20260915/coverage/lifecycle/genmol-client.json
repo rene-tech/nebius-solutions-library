@@ -1,0 +1,23 @@
+{
+  "started_unix": 1789507854.1267483,
+  "completed_unix": 1789507866.3208241,
+  "returncode": 0,
+  "command": [
+    "kubectl",
+    "--kubeconfig",
+    "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+    "--context",
+    "k8s-inference-h100",
+    "-n",
+    "fs2-models",
+    "exec",
+    "fs2-bioir-coverage-genmol",
+    "-c",
+    "genmol",
+    "--",
+    "python",
+    "/eval/client.py",
+    "--model",
+    "genmol"
+  ]
+}
