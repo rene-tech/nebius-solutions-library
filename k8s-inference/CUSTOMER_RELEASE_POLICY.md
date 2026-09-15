@@ -72,6 +72,21 @@ identities, hashes, status and timings without credentials or private inputs.
 
 - `unit-tested`, `schema-validated`, `runtime-probed`, `model-qualified`, and
   `customer-ready` are distinct states.
+- A bounded smoke fixture qualifies only the exact operation, input shape,
+  output shape, client path, and workload state that it exercised. It must
+  never be summarized as the App, model, integration, or platform "working."
+- Before saying `working`, `ready`, or `done`, the release owner must enumerate
+  every customer-requested and customer-advertised workflow and attach current
+  end-to-end evidence for each one. Any missing workflow makes the combined
+  verdict `not ready`.
+- If the intended customer workflow or acceptable reduced scope is ambiguous,
+  the release owner must ask the user before making a readiness claim. A narrow
+  implementation must be named as narrow and cannot silently redefine the
+  requested outcome.
+- Upstream model capability and platform-exposed capability are separate. A
+  platform App cannot inherit a capability claim from a model card unless the
+  deployed API/MCP contract, artifact transport, runtime, terminal result, and
+  customer client have all passed together.
 - A release report must name failed, skipped and untested paths. Skipped work
   cannot be counted as passing.
 - Customer-ready status is false if the customer-shaped gate is absent, stale,
@@ -90,3 +105,11 @@ in the Agent Task Deck under `fs2-stockholm-customer-readiness-remediation-r2026
 
 Cosmos snapshot remediation is intentionally outside that Stockholm work item and
 must be handled independently.
+
+The rule was reinforced after the September 2026 Cosmos3-Nano robotics handoff.
+The exact pinned model/runtime supported image-to-video, video-to-video,
+transfer, and robotics action modes, but the deployed public adapter exposed
+only bounded text-to-image and text-to-video acceptance paths. A successful
+text-to-video fixture was therefore not evidence that the Cosmos App satisfied
+the advertised robotics workflows. Remediation is tracked under
+`fs2-cosmos3-customer-workflows-remediation-r20260915`.
