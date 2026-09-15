@@ -47,6 +47,11 @@ tested operator controls, final fleet acceptance, and startup/snapshot limits.
 [Customer trial acceptance and handoff](acceptance/customer-trial-remediation-20260907/FINAL-ACCEPTANCE.md)
 records two clean September 8 H100 customer cohorts, deployed fixes, live entry
 points, complete measurements and the remaining qualification boundaries.
+[Customer-shaped release acceptance](CUSTOMER_RELEASE_POLICY.md) is the mandatory
+release rule for customer, event, proof-of-concept and hackathon readiness. A
+component or synthetic pass may never be broadened into a customer-ready claim;
+the exact release, tenant policy, client integration, invocation path and workload
+shape must pass end to end.
 [Optional scientific GPU snapshots](models/scientific-snapshot/ADMIN-STARTUP.md)
 explains Terraform bundle configuration, live admin startup selection, normal-load
 fallback, and the measured compatibility boundary for each qualified option.
