@@ -1,6 +1,6 @@
 ---
 title: 'Supervise BioIR evaluation and publish complete per-model recommendation report'
-status: 'running'
+status: done
 epic: 'nim-fast-start-platform'
 agent: 'codex'
 parent_id: ''
@@ -10,9 +10,9 @@ repo_path: '/home/tux/worktrees/fs2-bioir-evaluation-20260915'
 code_path: 'k8s-inference/acceptance/bioir-20260915/report'
 branch: 'fs2/bioir-evaluation-20260915'
 session: ''
-summary: 'Final evaluation accepted:12models,4snapshot studies,allnegative findings preserved. Resources reclaimed,27model deployments desired-ready. Publication pending; no promotion.'
+summary: 'Evaluation complete and published to main: 12 models, four snapshot studies, all negative findings preserved. No production promotion; task resources reclaimed.'
 created_at: '2026-09-15T21:15:00Z'
-updated_at: '2026-09-15T23:37:00Z'
+updated_at: '2026-09-15T23:38:35Z'
 ---
 ## Original Description
 
@@ -35,7 +35,7 @@ Evidence-backed model-by-model adoption decision for selling inference per reque
 - [x] Preserve all attempts/failures; validate scientific output and required feature behavior.
 - [x] Record wall time, compute/allocated-GPU seconds per valid request, cold/warm/batch results, snapshot implications and uncertainty.
 - [x] Save runnable code, sanitized raw evidence, result.json and report.md in lane directory.
-- [ ] Update this ticket with concrete results, source commit, resource IDs and cleanup disposition.
+- [x] Update this ticket with concrete results, source commit, resource IDs and cleanup disposition.
 - [x] Surface genuine capacity/access/license blockers without bypassing permissions or claiming success.
 - [x] Do not alter production routing/models/drivers/quotas, and remove only task-owned test resources after collecting evidence.
 - [x] Manager checks scope completeness and integrates final report; no autonomous promotion.
@@ -76,3 +76,9 @@ Evaluation-only isolated resources; production remains untouched.
 ## Manager Acceptance — 2026-09-15
 
 The bounded evaluation is accepted, including negative and unsupported results. Final report and hash-bound acceptance are in `k8s-inference/acceptance/bioir-20260915/report/`. One final consistency review resolved stale aggregate/cleanup wording without new experiments. All 12 model results and four snapshot-model studies are accounted for; no candidate was promoted. All task pods/PVCs/ConfigMaps are absent, and all 27 model deployments have desired replicas ready in the final receipt. Historical capacity interruptions remain documented; current node state is separate from earlier observations. Publication receipt follows after Git push.
+
+## Publication Receipt
+
+Published to `rene-tech/nebius-solutions-library` **main** in commit `0b980615c326ae613d503fe81a5fb71ae652248c`. Report: https://github.com/rene-tech/nebius-solutions-library/blob/0b980615c326ae613d503fe81a5fb71ae652248c/k8s-inference/acceptance/bioir-20260915/report/report.md
+
+This closes the requested evaluation, not the adoption gates. The nine evaluation cards are done; no GPU experiment or benchmark runner remains active. Recommendations require separate implementation direction. No remote worker branches were created. Final closure-card snapshots are added in a documentation-only follow-up commit.
