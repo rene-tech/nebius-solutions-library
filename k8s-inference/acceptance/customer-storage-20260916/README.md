@@ -11,8 +11,10 @@ LibreChat, model input adapters, billing and old-result migration are unchanged.
 The Nebius tenant has exhausted `iam.storageaccesspolicy.count`, limit **10**.
 The failed bucket-create operation `opstoragebucket-e00kvcfj4q763m784j` reported
 `RESOURCE_EXHAUSTED` for tenant `tenant-e00f3wdfzwfjgbcyfv`. **No cloud limits
-were raised.** No unrelated policies were deleted. Approval has been requested
-in the conversation and the user's requested Slack DM.
+were raised.** No unrelated policies were deleted. On 2026-09-16 the user
+confirmed that they will handle the limit. The agent must not raise it or submit
+a quota request. Storage remains partially accepted; no repeated blocker
+notification is needed while the user handles this.
 
 | Platform tenant | User(s) | State |
 | --- | --- | --- |
@@ -93,11 +95,12 @@ old operations referenced by `fs2_scientific_stage_attempts`. It was observed
 during rollout and needs a separate retention fix; no scientific history was
 deleted as part of the bucket work.
 
-## Resume after explicit quota approval / capacity becomes available
+## Resume after the user resolves the quota
 
-1. Resolve the IAM policy quota through the approved path; do not silently
-   remove unrelated policies. The controller resumes new provisioning within
-   five minutes after a quota backoff expires.
+1. The user owns resolution of the IAM policy quota. Do not raise limits or
+   remove unrelated policies. The controller retries new provisioning after
+   its five-minute quota backoff; verify actual provisioning results rather
+   than treating the limit change itself as acceptance.
 2. Run `verify.py` with the control-plane venv, explicit kubeconfig/context and
    `--origin https://89.169.99.188`. It verifies all existing users, shared tenant
    access, multipart transfer, and two private-user fixtures. It disables fixture
