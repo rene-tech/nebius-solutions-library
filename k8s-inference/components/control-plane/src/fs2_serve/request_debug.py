@@ -1,10 +1,10 @@
 """Opt-in HTTP/MCP debug captures, separate from usage telemetry.
 
-Capture is off by default and, when enabled, is bounded: each stored body is
-capped to a redacted prefix, captures are deleted after a configurable TTL by
-the maintenance job, and detail reads require an ADMIN operator and emit an
-audit event. Authentication material is removed; encrypted PostgreSQL details
-are available only through the operator API. No body, header, query or exception
+Capture is off by default and, when enabled, is scoped, time-bounded and
+memory-bounded: each stored body is capped to a redacted prefix, captures are
+deleted by the platform's central retention purge, and detail reads require an
+ADMIN operator and emit an audit event. Authentication material is removed;
+encrypted PostgreSQL details are available only through the operator API. No body, header, query or exception
 message is written to ordinary application logs. An unread or interrupted body
 is explicit, and a body stored only as a bounded prefix is flagged truncated.
 """
@@ -157,8 +157,6 @@ class DebugStore(Protocol):
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None: ...
 
-    async def purge_expired(self, *, before: datetime) -> int: ...
-
 
 def _name(value: str) -> str:
     return "".join(character for character in value.lower() if character.isalnum())
@@ -237,12 +235,44 @@ def _redact_scalar(match: re.Match[bytes]) -> bytes:
     return match[1] + match[2] + b'"[REDACTED]"' if _name(name) in _AUTH_NAMES else match[0]
 
 
+def _redact_prefix_runs(raw: bytes, prefixes: Credentials) -> bytes:
+    """Redact a known credential PREFIX and the credential-like bytes around it.
+
+    Used when only a prefix of a credential is known (an unterminated/bounded
+    scalar). Anchoring on the high-entropy leading bytes and consuming the
+    surrounding value run means redaction still fires when a response echoes the
+    full value (exact-match would leave the suffix) or when only a shorter prefix
+    of the secret survives the store cap (exact-match would miss it entirely).
+    """
+    for prefix in _known_bytes(prefixes):
+        if len(prefix) < 8:
+            continue
+        anchor = re.escape(prefix[:8])
+        pattern = rb'[^"\\\s,}\]]*' + anchor + rb'[^"\\\s,}\]]*'
+        raw = re.sub(pattern, REDACTED.encode(), raw)
+    return raw
+
+
+def _trim_trailing_partial(raw: bytes, credentials: Credentials) -> bytes:
+    """Scrub a credential whose leading bytes dangle at the end of a buffer.
+
+    A streaming or cap boundary can cut a credential mid-value, leaving a prefix
+    of it at the end of the retained bytes that whole-value redaction misses.
+    """
+    for credential in _known_bytes(credentials):
+        for size in range(min(len(credential) - 1, len(raw)), 7, -1):
+            if raw.endswith(credential[:size]):
+                return raw[:-size] + REDACTED.encode()
+    return raw
+
+
 def body_capture(
     raw: bytes,
     content_type: str | None,
     complete: bool,
     known_credentials: Credentials = (),
     max_bytes: int | None = None,
+    credential_prefixes: Credentials = (),
 ) -> DebugBody:
     observed = len(raw)
     original = raw
@@ -262,13 +292,11 @@ def body_capture(
         # Also covers JSON inside SSE data lines and partial/malformed bodies.
         raw = _JSON_SCALAR.sub(_redact_scalar, raw)
     known_credentials = tuple(known_credentials)
+    credential_prefixes = tuple(credential_prefixes)
     raw = _redact_bytes(raw, known_credentials)
+    raw = _redact_prefix_runs(raw, credential_prefixes)
     if not complete:
-        for credential in _known_bytes(known_credentials):
-            for size in range(min(len(credential) - 1, len(raw)), 7, -1):
-                if raw.endswith(credential[:size]):
-                    raw = raw[:-size] + REDACTED.encode()
-                    break
+        raw = _trim_trailing_partial(raw, (*known_credentials, *credential_prefixes))
     redacted = raw != original
     # Now that the full body is redacted, cap the retained bytes. A `truncated`
     # body stores only this bounded prefix; `observed_bytes` still reports the
@@ -276,6 +304,11 @@ def body_capture(
     truncated = max_bytes is not None and len(raw) > max_bytes
     if truncated:
         raw = raw[:max_bytes]
+        # The cap is a fresh boundary that can leave a credential prefix dangling
+        # inside the retained bytes; re-run redaction and scrub the trailing partial.
+        raw = _redact_bytes(raw, known_credentials)
+        raw = _redact_prefix_runs(raw, credential_prefixes)
+        raw = _trim_trailing_partial(raw, (*known_credentials, *credential_prefixes))
     try:
         text = raw.decode("utf-8")
         encoding: Literal["utf-8", "base64"] = "utf-8"
@@ -301,16 +334,26 @@ def bounded_body_capture(
     *,
     max_bytes: int | None,
     observed_bytes: int,
+    credential_prefixes: Credentials = (),
 ) -> DebugBody:
     """Redact/cap a bounded prefix while reporting the true observed length.
 
     ``head`` is at most a bounded buffer (near the store cap); ``observed_bytes``
     is the full number of wire bytes seen. If the tail beyond ``head`` was
-    discarded, or the redacted head exceeds the cap, the body is flagged truncated.
+    discarded (``observed_bytes`` exceeds the buffer) the capture is NOT complete,
+    which triggers the trailing-partial-credential scrub on the buffer edge, and
+    the body is flagged truncated.
     """
-    body = body_capture(head, content_type, complete, known_credentials, max_bytes)
-    truncated = body.truncated or observed_bytes > len(head)
-    return body.model_copy(update={"observed_bytes": observed_bytes, "truncated": truncated})
+    bounded = observed_bytes > len(head)
+    body = body_capture(
+        head,
+        content_type,
+        complete and not bounded,
+        known_credentials,
+        max_bytes,
+        credential_prefixes,
+    )
+    return body.model_copy(update={"observed_bytes": observed_bytes, "truncated": body.truncated or bounded})
 
 
 def _body_bytes(body: DebugBody) -> bytes:
@@ -352,16 +395,25 @@ def credential_values(headers: HeaderPairs, query: str | bytes = "", body: bytes
                         collect(json.loads(match[3]), True)
                 except (ValueError, UnicodeError):
                     continue
-            # A malformed body can end in an unterminated sensitive value (no
-            # closing quote), which the terminated-scalar pass above misses. Its
-            # partial value must still be collected so an error response echoing
-            # it is redacted, not just the request copy.
-            tail = _JSON_UNTERMINATED.search(body)
-            if tail is not None and _name(tail[1].decode("latin-1")) in _AUTH_NAMES:
-                partial = tail[2][:_UNTERMINATED_VALUE_MAX].decode("utf-8", "ignore")
-                if partial and partial != REDACTED:
-                    values.append(partial)
     return tuple(values)
+
+
+def body_credential_prefixes(body: bytes | None) -> tuple[str, ...]:
+    """Credential PREFIXES learned from an unterminated/bounded sensitive scalar.
+
+    A malformed or buffer-truncated body can end in an unterminated sensitive
+    value, so only its prefix is known. It is returned separately from full
+    credentials so redaction removes the prefix AND any credential-like bytes
+    that follow it — otherwise a response echoing the full value would keep the
+    suffix. Bounded to _UNTERMINATED_VALUE_MAX so a huge body cannot blow up memory.
+    """
+    if not body:
+        return ()
+    tail = _JSON_UNTERMINATED.search(body)
+    if tail is None or _name(tail[1].decode("latin-1")) not in _AUTH_NAMES:
+        return ()
+    partial = tail[2][:_UNTERMINATED_VALUE_MAX].decode("utf-8", "ignore")
+    return (partial,) if len(partial) >= 8 and partial != REDACTED else ()
 
 
 def _sanitize(exchange: DebugExchange) -> DebugExchange:
@@ -470,26 +522,14 @@ class InMemoryDebugStore:
         row = self.exchanges.get(exchange_id)
         return row.model_copy(deep=True) if row and (tenant_id is None or row.tenant_id == tenant_id) else None
 
-    async def purge_expired(self, *, before: datetime) -> int:
-        expired = [key for key, row in self.exchanges.items() if row.started_at < before]
-        for key in expired:
-            del self.exchanges[key]
-        return len(expired)
-
 
 class PostgresDebugStore:
-    def __init__(self, pool: asyncpg.Pool[Any], cipher: PayloadCipher | None = None) -> None:
+    def __init__(self, pool: asyncpg.Pool[Any], cipher: PayloadCipher) -> None:
         self.pool, self.cipher = pool, cipher
 
     @staticmethod
     def _aad(exchange_id: UUID, tenant_id: str | None, model_id: str | None) -> bytes:
         return json.dumps(["fs2.debug/v1", str(exchange_id), tenant_id, model_id], separators=(",", ":")).encode()
-
-    def _cipher(self) -> PayloadCipher:
-        if self.cipher is None:
-            # Retention purge needs no key material; recording/reading a payload does.
-            raise RuntimeError("request debug payload cipher is required for this operation")
-        return self.cipher
 
     async def record(self, exchange: DebugExchange) -> None:
         async with self.pool.acquire() as connection:
@@ -502,7 +542,7 @@ class PostgresDebugStore:
                 exchange = exchange.model_copy(update={"model_id": model_id})
             exchange = _sanitize(exchange)
             metadata = _summary(exchange).model_dump()
-            encrypted = self._cipher().encrypt(
+            encrypted = self.cipher.encrypt(
                 exchange.model_dump_json().encode(), aad=self._aad(exchange.id, exchange.tenant_id, exchange.model_id)
             )
             columns = (*DebugExchangeSummary.model_fields, "key_id", "nonce", "ciphertext")
@@ -555,17 +595,11 @@ class PostgresDebugStore:
             )
         if row is None:
             return None
-        raw = self._cipher().decrypt(
+        raw = self.cipher.decrypt(
             Ciphertext(row["key_id"], bytes(row["nonce"]), bytes(row["ciphertext"])),
             aad=self._aad(row["id"], row["tenant_id"], row["model_id"]),
         )
         return DebugExchange.model_validate_json(raw)
-
-    async def purge_expired(self, *, before: datetime) -> int:
-        """Delete captures older than the TTL. No key material is required."""
-        async with self.pool.acquire() as connection:
-            result = await connection.execute("DELETE FROM fs2_request_debug WHERE started_at < $1", before)
-        return int(result.removeprefix("DELETE "))
 
 
 async def persist_debug_exchange(
@@ -650,6 +684,23 @@ class DebugCapturePolicy:
             return False
         return True
 
+    def tenant_admissible(self, tenant_id: str | None, now: datetime) -> bool:
+        """Pre-buffer gate on the authenticated tenant.
+
+        Returns False when a tenant-scoped policy cannot admit this tenant (or the
+        policy is disabled/expired/unscoped), so the public middleware can decide
+        eligibility from resolved identity BEFORE buffering any bytes. A model-only
+        policy has no tenant constraint, so it returns True and the model is matched
+        after the bounded body is read.
+        """
+        if not self.enabled or self.expires_at is None or now >= self.expires_at:
+            return False
+        if not self.tenants and not self.models:
+            return False
+        if self.tenants and (tenant_id is None or tenant_id not in self.tenants):
+            return False
+        return True
+
 
 # Fail-closed default when a middleware/client is constructed without an explicit
 # policy. Production always injects a scoped policy from settings.
@@ -677,6 +728,21 @@ class DebugCaptureMiddleware:
         # straddling the cap before truncation, but never the whole payload.
         return None if self.max_body_bytes is None else 2 * self.max_body_bytes
 
+    async def _resolve_principal(self, request_headers: list[tuple[bytes, bytes]]) -> Principal | None:
+        """Best-effort read-only verify of the caller's bearer token. Never changes
+        the response or assigns an unverified owner; a failure yields no principal."""
+        if self.principal_resolver is None:
+            return None
+        authorization = next((value for key, value in request_headers if key.lower() == b"authorization"), b"")
+        if not authorization.lower().startswith(b"bearer "):
+            return None
+        try:
+            return await asyncio.wait_for(
+                self.principal_resolver(authorization[7:].decode("ascii")), timeout=self.persist_timeout_seconds
+            )
+        except Exception:
+            return None
+
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
         if (
@@ -696,6 +762,17 @@ class DebugCaptureMiddleware:
         if not self.policy.path_model_admissible(path_model, started_at):
             await self.app(scope, receive, send)
             return
+        request_headers = list(scope.get("headers", []))
+        # For a tenant-scoped policy, resolve the caller's tenant from its bearer
+        # token BEFORE buffering, so an out-of-scope tenant is never observed. An
+        # absent/unverifiable token has no tenant and is not admissible.
+        pre_resolved: Principal | None = None
+        if self.policy.tenants:
+            pre_resolved = await self._resolve_principal(request_headers)
+            tenant = pre_resolved.tenant_id if pre_resolved else None
+            if not self.policy.tenant_admissible(tenant, started_at):
+                await self.app(scope, receive, send)
+                return
         state = scope.setdefault("state", {})
         request_id = ensure_request_id(scope)
         store_limit = self._store_limit()
@@ -707,7 +784,6 @@ class DebugCaptureMiddleware:
         error_type: str | None = None
         response_headers: list[tuple[bytes, bytes]] = []
         response_operation: UUID | None = None
-        request_headers = list(scope.get("headers", []))
         query = scope.get("query_string", b"")
 
         def _accumulate(buffer: bytearray, chunk: bytes) -> None:
@@ -764,19 +840,9 @@ class DebugCaptureMiddleware:
             try:
                 principal = state.get("principal")
                 if not isinstance(principal, Principal):
-                    principal = None
-                if principal is None and self.principal_resolver is not None:
-                    authorization = next(
-                        (value for key, value in request_headers if key.lower() == b"authorization"), b""
-                    )
-                    if authorization.lower().startswith(b"bearer "):
-                        try:
-                            principal = await asyncio.wait_for(
-                                self.principal_resolver(authorization[7:].decode("ascii")),
-                                timeout=self.persist_timeout_seconds,
-                            )
-                        except Exception:
-                            principal = None  # Never change the response or assign an unverified owner.
+                    principal = pre_resolved  # reuse any pre-buffer resolution
+                if principal is None:
+                    principal = await self._resolve_principal(request_headers)
                 model_id = (
                     _label(state.get("model_id"))
                     or _label(scope.get("path_params", {}).get("model_id"))
@@ -800,6 +866,9 @@ class DebugCaptureMiddleware:
                 # admits. An unscoped/expired/disabled policy records nothing.
                 if self.policy.should_capture(tenant_id=capture_tenant, model_id=model_id, now=datetime.now(UTC)):
                     known = credential_values([*request_headers, *response_headers], query, bytes(request_parts))
+                    # A credential in an unterminated/bounded request scalar is only
+                    # known as a prefix; redact it (and its echoed suffix) in BOTH bodies.
+                    prefixes = body_credential_prefixes(bytes(request_parts))
                     request_type = next(
                         (_text(value) for key, value in request_headers if key.lower() == b"content-type"), None
                     )
@@ -833,6 +902,7 @@ class DebugCaptureMiddleware:
                             known,
                             max_bytes=self.max_body_bytes,
                             observed_bytes=request_observed,
+                            credential_prefixes=prefixes,
                         ),
                         response_body=bounded_body_capture(
                             bytes(response_parts),
@@ -841,6 +911,7 @@ class DebugCaptureMiddleware:
                             known,
                             max_bytes=self.max_body_bytes,
                             observed_bytes=response_observed,
+                            credential_prefixes=prefixes,
                         ),
                     )
                     await persist_debug_exchange(self.store, exchange, self.persist_timeout_seconds)

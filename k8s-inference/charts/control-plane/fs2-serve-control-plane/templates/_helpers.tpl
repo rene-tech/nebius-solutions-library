@@ -183,8 +183,6 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.config.auditRetentionSeconds | quote }}
 - name: FS2_USAGE_RETENTION_SECONDS
   value: {{ .Values.config.usageRetentionSeconds | quote }}
-- name: FS2_REQUEST_DEBUG_RETENTION_SECONDS
-  value: {{ .Values.config.requestDebugRetentionSeconds | quote }}
 {{- end -}}
 
 {{- define "fs2-serve.runtimeEnv" -}}

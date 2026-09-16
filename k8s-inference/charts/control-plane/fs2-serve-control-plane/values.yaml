@@ -334,9 +334,8 @@ config:
   # Hard ceiling on each stored captured body (bytes); a bounded, redacted prefix
   # is kept, never the whole payload. Far below maxResponseBytes by design.
   requestDebugMaxBodyBytes: "65536"
-  # TTL for captured debug exchanges (seconds); SAI-02's maintenance purge deletes
-  # rows older than this so capture cannot accumulate customer payloads unbounded.
-  requestDebugRetentionSeconds: "86400"
+  # Retention/purge of captured exchanges is owned by the central platform
+  # maintenance purge, not by this facility, so no retention value is set here.
   # Scope + hard time-bound. Enabling requestDebug records nothing unless a tenant
   # and/or model (App) scope is named AND requestDebugExpiresAt is a future instant
   # within requestDebugMaxWindowSeconds. Settings validation rejects any other

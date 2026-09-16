@@ -669,11 +669,10 @@ async def maintain(settings: Settings) -> None:
             audit_retention_seconds=settings.audit_retention_seconds,
             usage_retention_seconds=settings.usage_retention_seconds,
         )
-        # NOTE: request-debug/telemetry retention purge is owned by SAI-02 (the
-        # sole central purge owner). This task provides the debug purge primitive
-        # (PostgresDebugStore.purge_expired), the request_debug_retention_seconds
-        # knob, and the maintenance-role DELETE grant on fs2_request_debug for
-        # SAI-02 to wire here; it is intentionally not scheduled from this task.
+        # NOTE: retention purge of request-debug and transport-telemetry rows is
+        # owned entirely by the central platform maintenance purge (its own
+        # retention settings, DELETE grants and schedule). This capture facility
+        # defines no purge here to avoid duplicate/colliding purge machinery.
     finally:
         await store.close()
 

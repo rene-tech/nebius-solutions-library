@@ -2,10 +2,10 @@
 
 This is an opt-in operator debugging facility, separate from ordinary logs, usage
 counters and logical run history. It is **off by default** and, when enabled, is
-governed: each stored body is capped to a redacted prefix, captures are deleted
-after a configurable TTL by the maintenance job, and reading a captured exchange
-requires an ADMIN operator and is audited. Enable it deliberately for a bounded
-window rather than leaving it on as a standing state.
+governed: each stored body is capped to a redacted prefix, captures are deleted by
+the platform's central retention purge, and reading a captured exchange requires an
+ADMIN operator and is audited. Enable it deliberately for a bounded window rather
+than leaving it on as a standing state.
 
 ## Enable capture
 
@@ -51,15 +51,15 @@ capturing broadly. Because capture is time-bounded, disable it before the expiry
 passes; leaving `request_debug_enabled = true` with a stale expiry captures nothing
 and will fail a subsequent restart.
 
-Two more chart values bound each retained record and are safe to leave at defaults:
+One more chart value bounds each retained record and is safe to leave at default:
 
 - `config.requestDebugMaxBodyBytes` (default `65536`) caps the stored size of each
   captured request/response body. Only a bounded, redacted prefix is kept, and the
   middleware buffers at most twice this cap regardless of body size.
-- `config.requestDebugRetentionSeconds` (default `86400`) is the TTL for captured
-  exchanges. The retention purge is scheduled by the platform maintenance job
-  (owned centrally, not by this facility); transport-telemetry retention is owned
-  by that same central job.
+
+Retention/purge of captured exchanges (and of transport telemetry) is owned by the
+platform's central maintenance purge — its own retention settings, DELETE grants
+and schedule — not by this capture facility.
 
 Capture covers observed public `/v1/` HTTP exchanges and `/mcp` traffic that the
 policy admits, including validation failures and requests rejected before an
@@ -173,15 +173,14 @@ HTTP 0 or success.
   a missing row is not proof no request happened. Process failure can also leave
   missing captures. Bodies from before capture was enabled, or from failed
   persistence, cannot be reconstructed from old usage/logical-run metadata.
-- Captured exchanges have a **hard TTL**: `fs2_request_debug` rows older than
-  `requestDebugRetentionSeconds` (default 24h) are deleted by the platform's central
-  maintenance purge (scheduled centrally, not by this facility). The purge runs
-  under a maintenance credential that can delete by timestamp only and can read no
-  payload, header, query or ciphertext column. Enabling capture still increases
-  PostgreSQL/storage use within the TTL window; disabling capture stops new rows but
-  does not retroactively delete history faster than the TTL. Reads require ADMIN and
-  are audited, so retention is bounded and access is attributable rather than
-  open-ended.
+- Captured exchanges have a **hard TTL** owned by the platform's central maintenance
+  purge (its own retention setting, DELETE grant and schedule; this capture facility
+  defines none of that). The purge deletes `fs2_request_debug` rows by timestamp
+  under a maintenance credential that can read no payload, header, query or
+  ciphertext column. Enabling capture still increases PostgreSQL/storage use within
+  the TTL window; disabling capture stops new rows but does not retroactively delete
+  history faster than the TTL. Reads require ADMIN and are audited, so retention is
+  bounded and access is attributable rather than open-ended.
 
 ## Verification status
 

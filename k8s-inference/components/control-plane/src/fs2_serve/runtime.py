@@ -24,6 +24,7 @@ from .request_debug import (
     DebugExchange,
     DebugStore,
     body_capture,
+    body_credential_prefixes,
     bounded_body_capture,
     credential_values,
     persist_debug_exchange,
@@ -182,12 +183,16 @@ class _UpstreamCapture:
             self.failed(error)
 
     def exchange(self) -> DebugExchange:
+        # A credential in an unterminated request scalar is known only as a prefix;
+        # redact it and any echoed suffix in both the request and the response.
+        prefixes = body_credential_prefixes(self.request_body)
         request = body_capture(
             self.request_body,
             self.request_content_type,
             complete=True,
             known_credentials=self.known_credentials,
             max_bytes=self.debug_max_body_bytes,
+            credential_prefixes=prefixes,
         )
         # observed_bytes counts bytes actually delivered by the existing decoded
         # HTTP body iterator, not wire/compressed bytes or advertised Content-Length.
@@ -200,6 +205,7 @@ class _UpstreamCapture:
             self.known_credentials,
             max_bytes=self.debug_max_body_bytes,
             observed_bytes=self.observed_bytes,
+            credential_prefixes=prefixes,
         )
         return DebugExchange(
             id=uuid4(),
@@ -315,6 +321,15 @@ class RuntimeClient:
         headers: dict[str, str],
         upstream_attempt: int,
     ) -> AsyncIterator[httpx.Response]:
+        # Gate on tenant/model scope BEFORE wrapping or buffering: the operation's
+        # tenant and model are known up front, so an unmatched exchange is never
+        # observed, drained or held in memory at all.
+        if self.debug_store is None or not self.debug_capture_policy.should_capture(
+            tenant_id=operation.tenant_id, model_id=operation.model_id, now=datetime.now(UTC)
+        ):
+            async with stream as response:
+                yield response
+            return
         capture = _UpstreamCapture(
             operation,
             endpoint,
@@ -339,19 +354,16 @@ class RuntimeClient:
             capture.failed(error)
             raise
         finally:
-            if self.debug_store is not None and self.debug_capture_policy.should_capture(
-                tenant_id=operation.tenant_id, model_id=operation.model_id, now=datetime.now(UTC)
-            ):
-                try:
-                    await persist_debug_exchange(self.debug_store, capture.exchange())
-                except Exception as error:
-                    # Debug serialization/storage failures must not replace an
-                    # inference result. Never put payloads or exception text in logs.
-                    _LOGGER.warning(
-                        "upstream debug capture failed operation_id=%s error_type=%s",
-                        operation.id,
-                        type(error).__name__,
-                    )
+            try:
+                await persist_debug_exchange(self.debug_store, capture.exchange())
+            except Exception as error:
+                # Debug serialization/storage failures must not replace an
+                # inference result. Never put payloads or exception text in logs.
+                _LOGGER.warning(
+                    "upstream debug capture failed operation_id=%s error_type=%s",
+                    operation.id,
+                    type(error).__name__,
+                )
 
     async def close(self) -> None:
         actions = [self.federation.close()]

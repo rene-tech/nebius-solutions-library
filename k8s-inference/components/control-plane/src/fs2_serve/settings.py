@@ -258,10 +258,9 @@ class Settings(BaseSettings):
     # bounded, redacted prefix, never the whole multi-megabyte payload. A truncated
     # body is flagged so operators know they are looking at a prefix.
     request_debug_max_body_bytes: int = Field(default=64 * 1024, ge=1024, le=8 * 1024 * 1024)
-    # TTL for captured debug exchanges. SAI-02 (the central purge owner) uses this
-    # knob to delete fs2_request_debug rows so capture cannot accumulate customer
-    # payloads without bound. This task does not schedule the purge itself.
-    request_debug_retention_seconds: int = Field(default=86400, ge=3600, le=2592000)
+    # Retention/purge of captured debug exchanges is owned by the central platform
+    # maintenance purge (its own retention setting, DELETE grant and schedule), not
+    # by this capture facility, so no retention knob is defined here.
     # Scope + time-bound for capture. There is no global capture switch: enabling
     # request_debug records nothing unless a tenant and/or model (App) scope is
     # named AND request_debug_expires_at is a future instant within the strict
@@ -403,18 +402,21 @@ class Settings(BaseSettings):
             if self.artifact_inline_content_max_bytes > self.artifact_max_bytes:
                 raise ValueError("artifact_inline_content_max_bytes cannot exceed artifact_max_bytes")
         if self.request_debug_enabled:
-            # Capture must be scoped and time-bounded; reject an enabled policy
-            # that would capture broadly or without a bounded future expiry.
+            # Capture must be scoped and bounded to a maximum window. These reject
+            # genuine misconfigurations (no scope, no expiry, or an unbounded
+            # window) at startup. A PAST expiry is intentionally NOT rejected: an
+            # elapsed window normalizes to capture-off at runtime (should_capture
+            # fails closed) so a stale expiry never crash-loops the control plane.
+            # To actually capture, the expiry must be in the future (enforced at
+            # runtime), which is what "new activation requires a future expiry" means.
             tenants = [item for item in self.request_debug_tenants.split(",") if item.strip()]
             models = [item for item in self.request_debug_models.split(",") if item.strip()]
             if not tenants and not models:
                 raise ValueError("request_debug_enabled requires request_debug_tenants and/or request_debug_models")
             if self.request_debug_expires_at is None:
                 raise ValueError("request_debug_enabled requires a bounded request_debug_expires_at")
-            now = datetime.now(UTC)
-            if self.request_debug_expires_at <= now:
-                raise ValueError("request_debug_expires_at must be a future instant")
-            if self.request_debug_expires_at > now + timedelta(seconds=self.request_debug_max_window_seconds):
+            horizon = datetime.now(UTC) + timedelta(seconds=self.request_debug_max_window_seconds)
+            if self.request_debug_expires_at > horizon:
                 raise ValueError("request_debug_expires_at exceeds request_debug_max_window_seconds")
         database_roles = {
             self.reporting_database_role,

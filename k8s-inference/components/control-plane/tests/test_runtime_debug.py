@@ -129,6 +129,32 @@ async def test_success_capture_preserves_original_bytes_and_result_semantics(reg
 
 
 @pytest.mark.asyncio
+async def test_out_of_scope_operation_is_gated_before_capture(registry) -> None:
+    """SAI-01: an out-of-scope upstream exchange is gated before wrapping/buffering."""
+    response_body = b'{ "choices": [{"message": {"content": "ok"}}], "usage": {"prompt_tokens": 3} }\n'
+
+    async def handler(_request):
+        return httpx.Response(200, content=response_body, headers={"content-type": "application/json"})
+
+    sink = DebugSink()
+    scoped_elsewhere = DebugCapturePolicy(
+        enabled=True, tenants=frozenset({"some-other-tenant"}), expires_at=datetime(2099, 1, 1, tzinfo=UTC)
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        runtime_client = RuntimeClient(
+            activation_timeout_seconds=2,
+            runtime_timeout_seconds=2,
+            max_response_bytes=4096,
+            client=client,
+            debug_store=sink,
+            debug_capture_policy=scoped_elsewhere,
+        )
+        result = await runtime_client.invoke(registry.get("qwen3-8b"), claimed(registry), b'{"messages":[]}')
+    assert result.body == response_body  # response still flows to the caller
+    assert sink.exchanges == []  # nothing captured for the out-of-scope tenant
+
+
+@pytest.mark.asyncio
 async def test_binary_error_is_lossless_base64_without_changing_public_result(registry) -> None:
     raw = b"\xff\x00\x81validation failure\x80"
 
@@ -393,3 +419,33 @@ async def test_cancellation_records_incomplete_attempt_and_does_not_retry(regist
     exchange = sink.exchanges[0]
     assert exchange.disconnected and exchange.error_type == "CancelledError"
     assert not exchange.response_body.complete
+
+
+@pytest.mark.asyncio
+async def test_upstream_bounded_response_does_not_store_a_boundary_credential(registry) -> None:
+    """SAI-01: a credential echoed in a large upstream response, straddling the debug
+    cap in a body that exceeds the bounded buffer, must not be stored verbatim."""
+    secret = "UPSTREAMKEY" + "".join(f"{i % 10}" for i in range(120))  # 131-char credential
+    request_body = b'{"api_key":"' + secret.encode() + b'","messages":[]}'
+    response_body = b'{"detail":"rejected ' + secret.encode() + b'","pad":"' + b"Z" * 4000 + b'"}'
+
+    async def handler(_request):
+        return httpx.Response(400, content=response_body, headers={"content-type": "application/json"})
+
+    sink = DebugSink()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        runtime_client = RuntimeClient(
+            activation_timeout_seconds=2,
+            runtime_timeout_seconds=2,
+            max_response_bytes=1 << 20,
+            client=client,
+            debug_store=sink,
+            debug_max_body_bytes=64,
+            debug_capture_policy=_CAPTURE_POLICY,
+        )
+        await runtime_client.invoke(registry.get("qwen3-8b"), claimed(registry), request_body)
+    exchange = sink.exchanges[0]
+    assert exchange.response_body.observed_bytes == len(response_body)
+    assert exchange.response_body.truncated
+    detail = exchange.model_dump_json()
+    assert all(secret[:size] not in detail for size in range(8, len(secret) + 1))

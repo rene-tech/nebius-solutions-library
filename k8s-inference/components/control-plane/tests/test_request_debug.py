@@ -400,21 +400,6 @@ async def test_middleware_caps_stored_body_size_but_reports_true_observed_bytes(
     assert exchange.response_body.observed_bytes == len(big_response)
 
 
-async def test_purge_expired_deletes_only_captures_older_than_the_cutoff():
-    """SAI-01: the TTL purge callable bounds retention of captured payloads."""
-    store = InMemoryDebugStore()
-    old = row(started_at=NOW - timedelta(days=2))
-    recent = row(started_at=NOW)
-    for exchange in (old, recent):
-        await store.record(exchange)
-    removed = await store.purge_expired(before=NOW - timedelta(days=1))
-    assert removed == 1
-    remaining = await store.list()
-    assert [item.id for item in remaining.items] == [recent.id]
-    # A second purge with nothing expired is a no-op.
-    assert await store.purge_expired(before=NOW - timedelta(days=1)) == 0
-
-
 def test_capture_policy_is_scoped_and_time_bounded():
     """SAI-01: no global capture; a scope AND a bounded future expiry are mandatory."""
     now = NOW
@@ -637,6 +622,60 @@ async def test_storage_credentials_endpoint_is_never_captured():
     assert b"SECRET" in outgoing[-1]["body"]  # response still returned to the caller
 
 
+async def test_known_credential_prefix_at_cap_boundary_is_not_stored():
+    """SAI-01: a known credential longer than the head, echoed in a body larger than
+    the buffer, must not leave a prefix in the stored (truncated) capture."""
+    secret = "K" + "".join(f"{i % 10}" for i in range(240))  # 241-char known credential
+    body = (
+        b'{"model":"boltz2","pad":"' + b"P" * 20 + b'","echo":"' + secret.encode() + b'","tail":"' + b"Z" * 4000 + b'"}'
+    )
+
+    async def app(scope, receive, send):
+        while (await receive()).get("more_body", False):
+            pass
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": b'{"ok":true}'})
+
+    store, _, _ = await capture(
+        app,
+        chunks=[{"type": "http.request", "body": body, "more_body": False}],
+        headers=[(b"x-api-key", secret.encode()), (b"content-type", b"application/json")],
+        max_body_bytes=64,
+    )
+    (exchange,) = store.exchanges.values()
+    stored = _stored_bytes(exchange.request_body)
+    assert exchange.request_body.observed_bytes == len(body)
+    assert exchange.request_body.truncated
+    # No prefix of the credential (down to 8 bytes) survives in the stored bytes.
+    assert all(secret[:size].encode() not in stored for size in range(8, len(secret) + 1))
+
+
+async def test_unterminated_password_learned_as_prefix_redacts_full_echoed_value():
+    """SAI-01: when only a prefix of an unterminated password is buffered, a response
+    echoing the full value must be fully redacted, not just its learned prefix."""
+    secret = "PW" + "".join(f"{i % 10}" for i in range(90))  # 92-char secret
+    # Request buffer is bounded (store_limit = 2*cap), so only a prefix is learned.
+    request = b'{"model":"boltz2","password":"' + secret.encode()  # unterminated
+
+    async def app(scope, receive, send):
+        await receive()
+        await send({"type": "http.response.start", "status": 400, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": b'{"detail":"bad ' + secret.encode() + b'"}'})
+
+    store, outgoing, _ = await capture(
+        app,
+        chunks=[{"type": "http.request", "body": request}],
+        headers=[(b"content-type", b"application/json")],
+        max_body_bytes=64,
+    )
+    (exchange,) = store.exchanges.values()
+    # Neither the request copy nor the echoed response retains any run of the secret.
+    for body in (exchange.request_body, exchange.response_body):
+        stored = _stored_bytes(body)
+        assert all(secret[:size].encode() not in stored for size in range(8, len(secret) + 1))
+    assert secret not in exchange.model_dump_json()
+
+
 def _future_iso(hours: float) -> str:
     return (datetime.now(UTC) + timedelta(hours=hours)).isoformat()
 
@@ -652,13 +691,6 @@ def test_settings_reject_enabled_capture_without_scope_or_bounded_expiry():
     # Enabled and scoped but no expiry.
     with _pytest.raises(ValidationError, match="expires_at"):
         Settings(request_debug_enabled=True, request_debug_models="boltz2")
-    # Enabled, scoped, but expiry already in the past.
-    with _pytest.raises(ValidationError, match="future"):
-        Settings(
-            request_debug_enabled=True,
-            request_debug_models="boltz2",
-            request_debug_expires_at=(datetime.now(UTC) - timedelta(hours=1)).isoformat(),
-        )
     # Enabled, scoped, but expiry beyond the strict maximum window.
     with _pytest.raises(ValidationError, match="max_window"):
         Settings(
@@ -667,6 +699,19 @@ def test_settings_reject_enabled_capture_without_scope_or_bounded_expiry():
             request_debug_max_window_seconds=3600,
             request_debug_expires_at=_future_iso(48),
         )
+
+
+def test_settings_expired_window_is_service_safe_not_a_crash():
+    """SAI-01: a stale (past) expiry must NOT crash the control plane; it normalizes
+    to capture-off. Startup succeeds and the built policy captures nothing."""
+    settings = Settings(
+        request_debug_enabled=True,
+        request_debug_models="boltz2",
+        request_debug_expires_at=(datetime.now(UTC) - timedelta(hours=1)).isoformat(),
+    )  # does not raise
+    policy = settings.debug_capture_policy()
+    assert policy.enabled is True and policy.expires_at is not None
+    assert policy.should_capture(tenant_id="t", model_id="boltz2", now=datetime.now(UTC)) is False
 
 
 def test_settings_build_scoped_bounded_capture_policy():
