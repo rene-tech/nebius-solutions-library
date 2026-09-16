@@ -12,10 +12,11 @@ VOICES = json.loads((Path(__file__).parent / "two_voices.json").read_text())
 
 
 class Backend:
-    def __init__(self, bad_audio=False, stt_pending=False, bad_judge=False):
+    def __init__(self, bad_audio=False, stt_pending=False, bad_judge=False, long_text=False):
         self.calls = []
         self.bad_audio, self.stt_pending = bad_audio, stt_pending
         self.bad_judge = bad_judge
+        self.long_text = long_text
 
     def __call__(self, request):
         assert request.headers["Authorization"] == "Bearer ordinary-platform-token"
@@ -41,7 +42,7 @@ class Backend:
             return httpx.Response(
                 200,
                 json={
-                    "content": VOICES[voice]["text"],
+                    "content": "x" * 4097 if self.long_text else VOICES[voice]["text"],
                     "finish_reason": "stop",
                     "usage": {"total_tokens": 10},
                     "telemetry": {"queue_ms": 1},
@@ -152,6 +153,22 @@ async def test_invalid_judgment_is_not_a_success():
         )
     assert not report["passed"]
     assert "five valid named criteria" in report["failures"][0]["message"]
+
+
+async def test_long_text_fails_explicitly_without_truncation_or_voice_request():
+    backend = Backend(long_text=True)
+    async with httpx.AsyncClient(base_url="https://fixture.test", transport=httpx.MockTransport(backend)) as client:
+        report, audio = await run_pipeline(
+            PlatformClient(client, "ordinary-platform-token"),
+            run_id="long-text",
+            profile_id="profile-000",
+            patient_model="patient",
+            clinician_model="clinician",
+        )
+    assert not report["passed"] and not audio
+    assert "4096" in report["failures"][0]["message"]
+    assert len(report["transcript"][1]["content"]) == 4097
+    assert not any(request.url.path.endswith("/synthesize") for request in backend.calls)
 
 
 @pytest.mark.parametrize("payload", [b"", b"odd"])

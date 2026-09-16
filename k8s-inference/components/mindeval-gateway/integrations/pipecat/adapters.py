@@ -172,6 +172,8 @@ class MagpieProcessor(CheckedProcessor):
         await self.push_frame(frame, direction)
         if not isinstance(frame, LLMTextFrame) or self.failures:
             return
+        if len(frame.text) > 4096:
+            raise ValueError("Magpie accepts at most 4096 characters; this reference does not segment or truncate text")
         voice = self.voices[frame.metadata["role"]]
         context = {**frame.metadata, "voice": voice, "text": frame.text}
         context_id = str(uuid4())
