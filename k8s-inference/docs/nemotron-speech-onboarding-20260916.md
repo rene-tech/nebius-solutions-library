@@ -46,10 +46,22 @@ Current detailed evidence is in
 and [`fresh snapshot restore`](../acceptance/nemotron-speech-20260916/SNAPSHOT-RESTORE.md).
 Both 30-minute synthetic files and all five supplied medical recordings were
 processed completely. English approximate mixed-speaker WER is 16–18% for the
-English model and 19–22% for multilingual; medical-term errors remain. German
-has no verified transcript; its first paced partial took 9.015 s from playback
+English model and 19–22% for multilingual; medical-term errors remain. The HHU
+German long recordings have no verified transcript; their first paced partial took 9.015 s from playback
 start, about0.615s after the model-aligned first word (not verified onset). Do not
 claim clinical accuracy, acceptable live latency or customer readiness.
+
+The separate complete human-transcribed MultiMed German test split is now
+benchmarked: **16.94% WER,8.88% CER** across1,091clips/30,709words,3.795haudio
+processed in12.43min on the warmed restored H100. All90timing-repeat transcripts
+match; one spoken-reference clip produced no transcript. See the full
+[German benchmark report](../acceptance/nemotron-speech-20260916/GERMAN-MULTIMED.md),
+which retains failures, normalization, exact conditions and raw word alignments.
+
+Public backend and both Apps are deployed. Full customer-path qualification is
+underway, not passed: multipart scratch and shared-App policy corrections are
+applied; KEDA rejected the multilingual autoscaler's long generated name and
+the reusable renderer correction is being released. Negative receipts remain.
 
 Initial H100 direct-runtime evidence is retained in
 [`acceptance/nemotron-speech-20260916`](../acceptance/nemotron-speech-20260916/README.md).
@@ -60,7 +72,7 @@ All rows still require public-path evidence; CPU tests alone do not qualify them
 | Capability | Upstream / selected adapter | Platform status |
 | --- | --- | --- |
 | Live incremental audio, early partials, final flush | NeMo `Frame` / `transcribe_step` | Both models verified directly on H100 at 560 ms; public transport pending |
-| Complete file transcription | Same stream, all frames through EOS | 30-minute synthetic files and complete medical recordings passed privately; public multipart/artifact APIs implemented but not deployed |
+| Complete file transcription | Same stream, all frames through EOS | 30-minute synthetic files and complete medical recordings passed privately; public multipart/artifact APIs deployed, full customer-path tests underway |
 | English 80/160/560/1120 ms | Left context 70, right 0/1/6/13 | Strict options and profile validation; GPU matrix pending |
 | Multilingual additionally 320 ms | Left context 56, right 0/1/3/6/13 | Strict options and profile validation; GPU matrix pending |
 | 32 out-of-box locales | 19 primary + 13 broad-coverage | Identifiers CPU-tested; English/German recordings measured, other languages unqualified |
@@ -140,11 +152,13 @@ the server contract/reference client and handover, not that UI implementation.
 Read-only inventory on 2026-09-16: Scientific AI cluster
 `mk8scluster-e00j5z9te7x5dd9g6a` / project-e00rene / eu-north1 has unused
 preemptible H100 and regular L40S GPU slots. Initial diagnostics reused H100s without
-creating nodes or changing quotas. Only task-owned Jobs may be created/stopped;
-no production gateway rollout or sibling model changes have occurred. Two H100
-Jobs completed successfully; resource identities, raw traces and phase-separated
-cold/warm measurements are recorded in the acceptance directory. No speech GPU
-remains occupied after Job completion. Storage limits remain user-owned.
+creating nodes or changing quotas. Initial diagnostic Jobs completed and were
+removed. Two private snapshot-restored Pods remain until their~12:23UTC deadline;
+two public speech Apps have one hot H100 replica each and maximum two. Gateway
+rollout includes the speech backend/audio upload scratch; sibling registrations
+are preserved. Production snapshots are not yet enabled. Resource identities,
+raw traces and phase-separated timings are recorded in the acceptance directory.
+Storage limits remain user-owned.
 
 ## Sources
 

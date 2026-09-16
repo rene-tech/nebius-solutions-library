@@ -1,0 +1,966 @@
+{
+  "started_at": "2026-09-16T11:28:15.692078+00:00",
+  "scope": "files",
+  "complete_customer_acceptance": false,
+  "measurements": [
+    {
+      "model": "nemotron-speech-en-0-6b",
+      "case": "en-01",
+      "input_sha256": "bed0455e336172d5e8c8eaa56bf54efa69cce5f115fba17cfb7d92d482953af5",
+      "transport_sha256": "a4bf68687801610eb4af999a9633f088c3fbf5dd6dc890af23f188a13e5d31df",
+      "transport_bytes": 6748717,
+      "submit_status": 202,
+      "operation_id": "40c25ea6-083c-4e80-8017-ade257de368d",
+      "wall_seconds": 54.07983176596463,
+      "final_status": 200,
+      "result": {
+        "text": "Hello hello yeah, okay hello how can I help you this morning hi um I've just had some um diarrhea for the last three days um and it's been affecting me I need to stay close to the toilet and um yeah it's been affecting my day to day activities sorry to hear that um and when you say diarrhea what do you mean by diarrhea do you mean you're going to the toilet more often or are your stools more loose Yeah so it's like loose and watery stool going to the toilet quite often um and like some pain in my like lower stomach okay and how many times a day are you going let's say over the last couple of days probably like six seven times a day six seven times a day and you may mention is mainly water tree have you noticed any other things like blood in your stools no no blood Yeah just watery and loose stool okay and you mentioned you've had some pain in your tummy as well Yeah whereabouts is a pain exactly so it's like in my lower abdomen so uh like um yeah just to one side one side and what side is that uh on the left side left side okay and can you describe the pain to me Yeah it feels um like uh cramp uh like a muscular cramp and um yeah I feel a bit weak and shaky okay and there's a pain is that is it there all the time or does it come and go uh it comes and goes and goes a pain move anywhere else for example towards your back um no just mainly my stomach okay fine and you mentioned you've been feeling quite weak and shaky as well would you mean by shaky do you mean you've been having uh are you been feeling feverish for example um yeah it doesn't feel like uh yeah I just mainly feel weaker I haven't had a fever um at the moment but I did notice um a temperature when the symptom started so um yeah around about three or four days ago you measure your temperature then yeah I didn't measure my temperature no but I felt um just a bit hot okay okay any other symptoms like sweating or um no and uh any vomiting at all Yeah so um I vomited at the start of the symptoms but now um I've stopped vomiting stop vomiting okay and was your vomit I know it's not nice thing to talk about but was it just normal food colour yeah yeah just normal vomit yeah and there was no blood in your vomit is that right no blood no no okay um and um any other symptoms at all you mentioned tummy pain you mentioned diarrhea you mentioned the vomiting anything else that comes to mind um I had a loss of appetite um so I haven't been eating as much um but I've been able to hold down fluids okay so you're drinking fluids what kind of foods have you managed to eat anything um just soups and uh yeah light foods like smoothies and yeah liquid foods mainly okay fine um and so you start just three days ago the symptoms are you aware of any triggers which may have caused your symptoms to uh to kick on So for example take away food or eating out or being around other people who would similar symptoms Yeah so I had takeaway about four days ago um uh but other than that I've yeah been uh eating normally I think unusual Yeah do you remember where you ate um yeah I ate at a Chinese restaurant with friends okay anyone else on well with similar symptoms um so no one else in the family so I uh wife and two kids and one um child was vomiting but they haven't got diarrhea there's no one with the same symptoms okay okay fine um right and uh in terms of your your overall health are you normally fitting well or um yeah I mean other than um asthma um I use an inhaler everything uh else is fine okay and did your asthma well controlled uh yeah that's fine just yeah you send inhaler and uh that's under control fine and you don't have any other tummy problem bowel problems I should be aware of no no okay um in t ap apart from the inhalers do you take any other medications uh no no other medications okay fine and in terms of just your your day to day life you said it's been affecting your life um in what way has it been affecting your life uh sorry I need to stay close to the toilet cause I go quite frequently during the these past three days okay um yeah other than that it's uh yeah the main concern and have you are you currently working at the moment uh yeah I I work work um I'm an accountant okay have you been going into work the last three days or have you been at home uh yeah I've been going to work okay that must be difficult for you then yeah it's been quite difficult and you say you mentioned you live with a wife and two children is that right Yes all right um just couple of other questions we need to ask so um do you smoke at all uh no I don't smoke and do you drink much in the web alcohol  no I I don't drink alcohol no okay so um uh normally at this stage I like to um examine you if that's okay but um um but but but but but but but but but but but but but but but but but but but but but having listened to your stories uh I think um just to recap the for the last three days you've been having loose dull diarrhea a bit of tummy pain mainly on the left hand side uh um and vomiting and being generally quite weak and lethargic you mentioned you having this Chinese takeaway as well three days ago and I wonder whether that might be the cause of your problems okay um it seems like you may have something uh called gastroenteritis which essentially just uh tummy bug or infection of your of your tummy mainly caused by viruses but it can be uh possibility of bacteria uh causing your symptoms at this stage uh what what we'd recommend is just what we say conservative management so I don't think you need anything like antibiotics is really just um making sure you're well hydrated so drinking fluids um there are things like dire light you can get from the pharmacy which uh it's um it helps replenish some of your minerals and vitamins and if you are having vomiting and diarrhea I would certainly recommend that and first you know first couple of days yeah if you are feeling feverish and weak taking some paracetamol two tablets up to four times a day for the first few days can also help I would certainly advise you to take some time work actually I know you're quite keen to work but um I would say next two two to three days um clears from your system take some time off and rest um you know if your symptoms haven't got better you know in in three to four days I'd like to come back and see you again because if it is ongoing then we have to wonder whether there's something else causing symptoms and we may need to do further tests like um taking a sample of your store so we can test that um et cetera et cetera yeah sure yeah how's that sound that sounds great Yeah yeah do you have any questions for me um no further questions okay is is is the treatment plan clear uh yeah yeah that's that's very clear thank you great well I wish you all the best okay thank you thank you bye",
+        "segments": [
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 3,
+            "segment_id": 0,
+            "revision": 3,
+            "text": " Hello hello",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " Hello hello",
+                "start_seconds": 2.88,
+                "end_seconds": 4.32,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 7,
+            "segment_id": 1,
+            "revision": 4,
+            "text": " yeah, okay hello",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " yeah, okay hello",
+                "start_seconds": 8.24,
+                "end_seconds": 9.2,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 19,
+            "segment_id": 2,
+            "revision": 12,
+            "text": " how can I help you this morning hi um I've just had some um diarrhea for the last three days",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " how can I help you this morning hi um I've just had some um diarrhea for the last three days",
+                "start_seconds": 11.2,
+                "end_seconds": 17.36,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 32,
+            "segment_id": 3,
+            "revision": 13,
+            "text": " um and it's been affecting me I need to stay close to the toilet and um yeah it's been affecting my day to day activities",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um and it's been affecting me I need to stay close to the toilet and um yeah it's been affecting my day to day activities",
+                "start_seconds": 19.04,
+                "end_seconds": 25.2,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 33,
+            "segment_id": 4,
+            "revision": 1,
+            "text": " sor",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " sor",
+                "start_seconds": 26.8,
+                "end_seconds": 26.88,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 94,
+            "segment_id": 5,
+            "revision": 61,
+            "text": "ry to hear that um and when you say diarrhea what do you mean by diarrhea do you mean you're going to the toilet more often or are your stools more loose Yeah so it's like loose and watery stool going to the toilet quite often um and like some pain in my like lower stomach okay and how many times a day are you going let's say over the last couple of days probably like six seven times a day six seven times a day and you may mention is mainly water tree have you noticed any other things like blood in your stools no no blood Yeah just watery and loose stool okay and you mentioned you've had some pain in your tummy as well",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": "ry to hear that um and when you say diarrhea what do you mean by diarrhea do you mean you're going to the toilet more often or are your stools more loose Yeah so it's like loose and watery stool going to the toilet quite often um and like some pain in my like lower stomach okay and how many times a day are you going let's say over the last couple of days probably like six seven times a day six seven times a day and you may mention is mainly water tree have you noticed any other things like blood in your stools no no blood Yeah just watery and loose stool okay and you mentioned you've had some pain in your tummy as well",
+                "start_seconds": 27.04,
+                "end_seconds": 62.16,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 122,
+            "segment_id": 6,
+            "revision": 28,
+            "text": " Yeah whereabouts is a pain exactly so it's like in my lower abdomen so uh like um yeah just to one side one side and what side is that uh on the left side left side okay and can you describe the pain to me Yeah it feels um like uh cramp",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " Yeah whereabouts is a pain exactly so it's like in my lower abdomen so uh like um yeah just to one side one side and what side is that uh on the left side left side okay and can you describe the pain to me Yeah it feels um like uh cramp",
+                "start_seconds": 63.28,
+                "end_seconds": 80.72,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 163,
+            "segment_id": 7,
+            "revision": 41,
+            "text": " uh like a muscular cramp and um yeah I feel a bit weak and shaky okay and there's a pain is that is it there all the time or does it come and go uh it comes and goes and goes a pain move anywhere else for example towards your back um no just mainly my stomach okay fine and you mentioned you've been feeling quite weak and shaky as well would you mean by shaky do you mean you've been having uh are you been feeling feverish for example",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " uh like a muscular cramp and um yeah I feel a bit weak and shaky okay and there's a pain is that is it there all the time or does it come and go uh it comes and goes and goes a pain move anywhere else for example towards your back um no just mainly my stomach okay fine and you mentioned you've been feeling quite weak and shaky as well would you mean by shaky do you mean you've been having uh are you been feeling feverish for example",
+                "start_seconds": 81.76,
+                "end_seconds": 106.48,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 187,
+            "segment_id": 8,
+            "revision": 24,
+            "text": " um yeah it doesn't feel like uh yeah I just mainly feel weaker I haven't had a fever um at the moment but I did notice um a temperature when the symptom started so um yeah around about three or four days ago",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um yeah it doesn't feel like uh yeah I just mainly feel weaker I haven't had a fever um at the moment but I did notice um a temperature when the symptom started so um yeah around about three or four days ago",
+                "start_seconds": 107.6,
+                "end_seconds": 120.4,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 190,
+            "segment_id": 9,
+            "revision": 3,
+            "text": " you measure your temperature then",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " you measure your temperature then",
+                "start_seconds": 121.52,
+                "end_seconds": 122.08,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 203,
+            "segment_id": 10,
+            "revision": 13,
+            "text": " yeah I didn't measure my temperature no but I felt um just a bit hot okay okay any other symptoms like sweating or um",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " yeah I didn't measure my temperature no but I felt um just a bit hot okay okay any other symptoms like sweating or um",
+                "start_seconds": 123.2,
+                "end_seconds": 130.8,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 205,
+            "segment_id": 11,
+            "revision": 2,
+            "text": " no",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " no",
+                "start_seconds": 132.72,
+                "end_seconds": 132.8,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 220,
+            "segment_id": 12,
+            "revision": 15,
+            "text": " and uh any vomiting at all Yeah so um I vomited at the start of the symptoms but now um I've stopped vomiting",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " and uh any vomiting at all Yeah so um I vomited at the start of the symptoms but now um I've stopped vomiting",
+                "start_seconds": 134.08,
+                "end_seconds": 142.24,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 230,
+            "segment_id": 13,
+            "revision": 10,
+            "text": " stop vomiting okay and was your vomit I know it's not nice thing to talk about but was it just normal food colour",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " stop vomiting okay and was your vomit I know it's not nice thing to talk about but was it just normal food colour",
+                "start_seconds": 143.44,
+                "end_seconds": 148.64,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 251,
+            "segment_id": 14,
+            "revision": 21,
+            "text": " yeah yeah just normal vomit yeah and there was no blood in your vomit is that right no blood no no okay um and um any other symptoms at all you mentioned tummy pain you mentioned diarrhea you mentioned the vomiting",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " yeah yeah just normal vomit yeah and there was no blood in your vomit is that right no blood no no okay um and um any other symptoms at all you mentioned tummy pain you mentioned diarrhea you mentioned the vomiting",
+                "start_seconds": 150.08,
+                "end_seconds": 161.84,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 254,
+            "segment_id": 15,
+            "revision": 3,
+            "text": " anything else that comes to mind",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " anything else that comes to mind",
+                "start_seconds": 163.12,
+                "end_seconds": 163.84,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 267,
+            "segment_id": 16,
+            "revision": 13,
+            "text": " um I had a loss of appetite um so I haven't been eating as much um but I've been able to hold down fluids",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um I had a loss of appetite um so I haven't been eating as much um but I've been able to hold down fluids",
+                "start_seconds": 165.2,
+                "end_seconds": 172.48,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 270,
+            "segment_id": 17,
+            "revision": 3,
+            "text": " okay so you're drinking fluids",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " okay so you're drinking fluids",
+                "start_seconds": 173.68,
+                "end_seconds": 174.56,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 278,
+            "segment_id": 18,
+            "revision": 8,
+            "text": " what kind of foods have you managed to eat anything um just soups",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " what kind of foods have you managed to eat anything um just soups",
+                "start_seconds": 176.08,
+                "end_seconds": 180.32,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 285,
+            "segment_id": 19,
+            "revision": 7,
+            "text": " and uh yeah light foods like smoothies and",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " and uh yeah light foods like smoothies and",
+                "start_seconds": 181.44,
+                "end_seconds": 184.32,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 292,
+            "segment_id": 20,
+            "revision": 7,
+            "text": " yeah liquid foods mainly okay fine um and so",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " yeah liquid foods mainly okay fine um and so",
+                "start_seconds": 185.36,
+                "end_seconds": 189.92,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 303,
+            "segment_id": 21,
+            "revision": 11,
+            "text": " you start just three days ago the symptoms are you aware of any triggers which may have caused your symptoms to uh to kick on So for example",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " you start just three days ago the symptoms are you aware of any triggers which may have caused your symptoms to uh to kick on So for example",
+                "start_seconds": 191.12,
+                "end_seconds": 196.16,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 317,
+            "segment_id": 22,
+            "revision": 14,
+            "text": " take away food or eating out or being around other people who would similar symptoms Yeah so I had takeaway about four days ago",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " take away food or eating out or being around other people who would similar symptoms Yeah so I had takeaway about four days ago",
+                "start_seconds": 198.0,
+                "end_seconds": 204.96,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 327,
+            "segment_id": 23,
+            "revision": 10,
+            "text": " um uh but other than that I've yeah been uh eating normally",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um uh but other than that I've yeah been uh eating normally",
+                "start_seconds": 206.64,
+                "end_seconds": 211.12,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 340,
+            "segment_id": 24,
+            "revision": 13,
+            "text": " I think unusual Yeah do you remember where you ate um yeah I ate at a Chinese restaurant with friends",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " I think unusual Yeah do you remember where you ate um yeah I ate at a Chinese restaurant with friends",
+                "start_seconds": 212.24,
+                "end_seconds": 218.96,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 365,
+            "segment_id": 25,
+            "revision": 25,
+            "text": " okay anyone else on well with similar symptoms um so no one else in the family so I uh wife and two kids and one um child was vomiting but they haven't got diarrhea there's no one with the same symptoms",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " okay anyone else on well with similar symptoms um so no one else in the family so I uh wife and two kids and one um child was vomiting but they haven't got diarrhea there's no one with the same symptoms",
+                "start_seconds": 220.08,
+                "end_seconds": 233.52,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 368,
+            "segment_id": 26,
+            "revision": 3,
+            "text": " okay okay fine",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " okay okay fine",
+                "start_seconds": 234.64,
+                "end_seconds": 235.36,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 391,
+            "segment_id": 27,
+            "revision": 23,
+            "text": " um right and uh in terms of your your overall health are you normally fitting well or um yeah I mean other than um asthma um I use an inhaler everything uh else is fine",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um right and uh in terms of your your overall health are you normally fitting well or um yeah I mean other than um asthma um I use an inhaler everything uh else is fine",
+                "start_seconds": 236.96,
+                "end_seconds": 249.76,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 419,
+            "segment_id": 28,
+            "revision": 28,
+            "text": " okay and did your asthma well controlled uh yeah that's fine just yeah you send inhaler and uh that's under control fine and you don't have any other tummy problem bowel problems I should be aware of no no okay um in t ap apart from the inhalers do you take any other medications",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " okay and did your asthma well controlled uh yeah that's fine just yeah you send inhaler and uh that's under control fine and you don't have any other tummy problem bowel problems I should be aware of no no okay um in t ap apart from the inhalers do you take any other medications",
+                "start_seconds": 250.96,
+                "end_seconds": 267.92,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 436,
+            "segment_id": 29,
+            "revision": 17,
+            "text": " uh no no other medications okay fine and in terms of just your your day to day life you said it's been affecting your life um in what way has it been affecting your life",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " uh no no other medications okay fine and in terms of just your your day to day life you said it's been affecting your life um in what way has it been affecting your life",
+                "start_seconds": 269.44,
+                "end_seconds": 278.4,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 460,
+            "segment_id": 30,
+            "revision": 24,
+            "text": " uh sorry I need to stay close to the toilet cause I go quite frequently during the these past three days okay um yeah other than that it's uh yeah the main concern and have you are you currently working at the moment uh yeah I I work",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " uh sorry I need to stay close to the toilet cause I go quite frequently during the these past three days okay um yeah other than that it's uh yeah the main concern and have you are you currently working at the moment uh yeah I I work",
+                "start_seconds": 279.44,
+                "end_seconds": 294.88,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 472,
+            "segment_id": 31,
+            "revision": 12,
+            "text": " work um I'm an accountant okay have you been going into work the last three days or have you been at home uh yeah I've been going to work",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " work um I'm an accountant okay have you been going into work the last three days or have you been at home uh yeah I've been going to work",
+                "start_seconds": 296.48,
+                "end_seconds": 302.8,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 502,
+            "segment_id": 32,
+            "revision": 30,
+            "text": " okay that must be difficult for you then yeah it's been quite difficult and you say you mentioned you live with a wife and two children is that right Yes all right um just couple of other questions we need to ask so um do you smoke at all uh no I don't smoke and do you drink much in the web alcohol  no I I don't drink alcohol no okay",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " okay that must be difficult for you then yeah it's been quite difficult and you say you mentioned you live with a wife and two children is that right Yes all right um just couple of other questions we need to ask so um do you smoke at all uh no I don't smoke and do you drink much in the web alcohol  no I I don't drink alcohol no okay",
+                "start_seconds": 304.08,
+                "end_seconds": 322.96,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 504,
+            "segment_id": 33,
+            "revision": 2,
+            "text": " so um",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " so um",
+                "start_seconds": 324.32,
+                "end_seconds": 324.56,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 533,
+            "segment_id": 34,
+            "revision": 29,
+            "text": " uh normally at this stage I like to um examine you if that's okay but um um but but but but but but but but but but but but but but but but but but but but but having listened to your stories uh I think um just to recap the for the last three days you've been having loose dull diarrhea a bit of tummy pain mainly on the left hand side uh um and vomiting and being generally quite weak and lethargic",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " uh normally at this stage I like to um examine you if that's okay but um um but but but but but but but but but but but but but but but but but but but but but having listened to your stories uh I think um just to recap the for the last three days you've been having loose dull diarrhea a bit of tummy pain mainly on the left hand side uh um and vomiting and being generally quite weak and lethargic",
+                "start_seconds": 326.08,
+                "end_seconds": 342.64,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 547,
+            "segment_id": 35,
+            "revision": 14,
+            "text": " you mentioned you having this Chinese takeaway as well three days ago and I wonder whether that might be the cause of your problems okay um it seems like you may have something",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " you mentioned you having this Chinese takeaway as well three days ago and I wonder whether that might be the cause of your problems okay um it seems like you may have something",
+                "start_seconds": 343.92,
+                "end_seconds": 350.56,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 551,
+            "segment_id": 36,
+            "revision": 4,
+            "text": " uh called gastroenteritis",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " uh called gastroenteritis",
+                "start_seconds": 351.68,
+                "end_seconds": 353.12,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 560,
+            "segment_id": 37,
+            "revision": 9,
+            "text": " which essentially just uh tummy bug or infection of your of your tummy",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " which essentially just uh tummy bug or infection of your of your tummy",
+                "start_seconds": 354.72,
+                "end_seconds": 358.4,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 571,
+            "segment_id": 38,
+            "revision": 11,
+            "text": " mainly caused by viruses but it can be uh possibility of bacteria uh causing your symptoms",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " mainly caused by viruses but it can be uh possibility of bacteria uh causing your symptoms",
+                "start_seconds": 360.64,
+                "end_seconds": 366.4,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 589,
+            "segment_id": 39,
+            "revision": 18,
+            "text": " at this stage uh what what we'd recommend is just what we say conservative management so I don't think you need anything like antibiotics is really just um making sure you're well hydrated",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " at this stage uh what what we'd recommend is just what we say conservative management so I don't think you need anything like antibiotics is really just um making sure you're well hydrated",
+                "start_seconds": 369.2,
+                "end_seconds": 378.56,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 592,
+            "segment_id": 40,
+            "revision": 3,
+            "text": " so drinking fluids",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " so drinking fluids",
+                "start_seconds": 379.68,
+                "end_seconds": 380.96,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 596,
+            "segment_id": 41,
+            "revision": 4,
+            "text": " um there are things like",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um there are things like",
+                "start_seconds": 383.04,
+                "end_seconds": 384.24,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 608,
+            "segment_id": 42,
+            "revision": 12,
+            "text": " dire light you can get from the pharmacy which uh it's um it helps replenish some of your minerals and vitamins",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " dire light you can get from the pharmacy which uh it's um it helps replenish some of your minerals and vitamins",
+                "start_seconds": 385.52,
+                "end_seconds": 391.44,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 617,
+            "segment_id": 43,
+            "revision": 9,
+            "text": " and if you are having vomiting and diarrhea I would certainly recommend that and first you know first couple of days",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " and if you are having vomiting and diarrhea I would certainly recommend that and first you know first couple of days",
+                "start_seconds": 392.88,
+                "end_seconds": 396.88,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 625,
+            "segment_id": 44,
+            "revision": 8,
+            "text": " yeah if you are feeling feverish and weak taking some paracetamol",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " yeah if you are feeling feverish and weak taking some paracetamol",
+                "start_seconds": 398.16,
+                "end_seconds": 402.16,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 631,
+            "segment_id": 45,
+            "revision": 6,
+            "text": " two tablets up to four times a day for the first few days can also help",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " two tablets up to four times a day for the first few days can also help",
+                "start_seconds": 403.36,
+                "end_seconds": 405.84,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 642,
+            "segment_id": 46,
+            "revision": 11,
+            "text": " I would certainly advise you to take some time work actually I know you're quite keen to work but um I would say next two two to three days um",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " I would certainly advise you to take some time work actually I know you're quite keen to work but um I would say next two two to three days um",
+                "start_seconds": 407.12,
+                "end_seconds": 413.44,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 648,
+            "segment_id": 47,
+            "revision": 6,
+            "text": " clears from your system take some time off and rest",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " clears from your system take some time off and rest",
+                "start_seconds": 415.12,
+                "end_seconds": 417.36,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 659,
+            "segment_id": 48,
+            "revision": 11,
+            "text": " um you know if your symptoms haven't got better you know in in three to four days I'd like to come back and see you again",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um you know if your symptoms haven't got better you know in in three to four days I'd like to come back and see you again",
+                "start_seconds": 418.96,
+                "end_seconds": 424.4,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 666,
+            "segment_id": 49,
+            "revision": 7,
+            "text": " because if it is ongoing then we have to wonder whether there's something else causing symptoms",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " because if it is ongoing then we have to wonder whether there's something else causing symptoms",
+                "start_seconds": 426.0,
+                "end_seconds": 428.88,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 676,
+            "segment_id": 50,
+            "revision": 10,
+            "text": " and we may need to do further tests like um taking a sample of your store so we can test that",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " and we may need to do further tests like um taking a sample of your store so we can test that",
+                "start_seconds": 430.4,
+                "end_seconds": 434.8,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 680,
+            "segment_id": 51,
+            "revision": 4,
+            "text": " um et cetera et cetera",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um et cetera et cetera",
+                "start_seconds": 436.24,
+                "end_seconds": 437.44,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 689,
+            "segment_id": 52,
+            "revision": 9,
+            "text": " yeah sure yeah how's that sound that sounds great Yeah yeah do you have any questions for me",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " yeah sure yeah how's that sound that sounds great Yeah yeah do you have any questions for me",
+                "start_seconds": 438.48,
+                "end_seconds": 443.04,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 696,
+            "segment_id": 53,
+            "revision": 7,
+            "text": " um no further questions okay is is is the treatment plan clear",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um no further questions okay is is is the treatment plan clear",
+                "start_seconds": 444.64,
+                "end_seconds": 448.64,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "2b6a1c8e-4f9c-4240-accb-4fddb4865eaf",
+            "sequence": 707,
+            "segment_id": 54,
+            "revision": 11,
+            "text": " uh yeah yeah that's that's very clear thank you great well I wish you all the best okay thank you thank you bye",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " uh yeah yeah that's that's very clear thank you great well I wish you all the best okay thank you thank you bye",
+                "start_seconds": 449.84,
+                "end_seconds": 456.08,
+                "confidence": null
+              }
+            ]
+          }
+        ],
+        "audio_seconds": 457.92,
+        "processing_seconds": 24.795320025878027,
+        "model": "nemotron-speech-en-0.6b",
+        "language": "en-US",
+        "model_revision": "ebe59e5a817142986528bbbee5dba8db7b38ed50"
+      }
+    }
+  ],
+  "temporary_key_id": "ae2ec5e7-b5fc-4a94-8eb9-2046703a8f52",
+  "temporary_key_revoked": true,
+  "finished_at": "2026-09-16T11:29:11.461756+00:00"
+}

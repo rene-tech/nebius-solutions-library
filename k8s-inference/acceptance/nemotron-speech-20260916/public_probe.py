@@ -22,6 +22,51 @@ import httpx
 IDS = ("nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b")
 
 
+def submit_file(client, path, model, language, row):
+    """Keep full audio intact; use durable artifacts above compatibility size."""
+    key = "speech-public-" + uuid4().hex
+    if path.stat().st_size <= 8 * 1024 * 1024:
+        row["transport"] = "multipart"
+        with path.open("rb") as handle:
+            return client.post("/v1/audio/transcriptions",
+                data={"model": model, "language": language, "response_format": "verbose_json"},
+                files={"file": ("recording.flac", handle, "audio/flac")},
+                headers={"idempotency-key": key})
+    row["transport"] = "artifact-native-async"
+    response = client.post("/v1/scientific-artifacts/uploads", json={
+        "model_id": model, "sha256": row["transport_sha256"],
+        "size_bytes": row["transport_bytes"], "media_type": "audio/flac", "compression": "none",
+    }, headers={"idempotency-key": key + "-upload"})
+    response.raise_for_status()
+    upload = response.json()
+    row["upload_operation_id"] = upload["operation_id"]
+    if path.stat().st_size <= upload["max_content_bytes"]:
+        with path.open("rb") as handle:
+            response = client.put(upload["content_path"], content=handle,
+                headers={"content-type": "audio/flac", "content-length": str(path.stat().st_size)})
+    else:
+        # Separate client: NEVER send the platform bearer token to object storage.
+        # Neither the signed URL nor its exception text belongs in receipts.
+        try:
+            with httpx.Client(timeout=180, trust_env=False) as storage, path.open("rb") as handle:
+                response = storage.put(upload["handle"]["url"], content=handle,
+                                       headers=upload["handle"]["headers"])
+        except httpx.HTTPError:
+            raise RuntimeError("direct_audio_upload_transport_failed") from None
+        if response.status_code >= 400:
+            raise RuntimeError(f"direct_audio_upload_failed_http_{response.status_code}")
+    response.raise_for_status()
+    response = client.post("/v1/scientific-artifacts/uploads/" + upload["upload_id"] + ":finalize",
+                           json={"operation_id": upload["operation_id"]})
+    response.raise_for_status()
+    artifact = response.json()
+    row["artifact_id"] = artifact["artifact_id"]
+    return client.post("/v1/models/" + model + ":invoke", json={
+        "operation": "transcribe", "payload": {"audio": artifact,
+            "options": {"model": model.replace("0-6b", "0.6b"), "language": language}},
+    }, headers={"idempotency-key": key, "x-fs2-wait-seconds": "0"})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("kubeconfig", "context", "origin"):
@@ -98,19 +143,14 @@ def main():
                         path = Path(directory) / "recording.flac"
                         subprocess.run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-i", str(source),
                                         "-c:a", "flac", str(path)], check=True, timeout=90)
-                        if path.stat().st_size > 8 * 1024 * 1024:
-                            raise ValueError("fixture_exceeds_compatibility_limit_use_artifact_api")
                         started = time.monotonic()
-                        with path.open("rb") as handle:
-                            response = client.post("/v1/audio/transcriptions",
-                                data={"model": model, "language": language, "response_format": "verbose_json"},
-                                files={"file": ("recording.flac", handle, "audio/flac")},
-                                headers={"idempotency-key": "speech-public-" + uuid4().hex})
                         row = {"model": model, "case": case, "input_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
                                "transport_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-                               "transport_bytes": path.stat().st_size, "submit_status": response.status_code,
-                               "operation_id": response.headers.get("x-fs2-operation-id")}
+                               "transport_bytes": path.stat().st_size}
                         receipt["measurements"].append(row)
+                        response = submit_file(client, path, model, language, row)
+                        row.update(submit_status=response.status_code,
+                                   operation_id=response.headers.get("x-fs2-operation-id"))
                         if response.status_code == 202:
                             operation_id = response.json()["id"] if "id" in response.json() else response.json()["operation_id"]
                             row["operation_id"] = operation_id
