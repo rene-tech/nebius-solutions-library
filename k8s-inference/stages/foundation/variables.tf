@@ -77,13 +77,18 @@ variable "kube_system_uid" {
 variable "network_policy_boundary" {
   description = "Foundation-owned namespaces for the permanent Envoy allow/deny boundary. Workloads may consume but never own or disable this boundary."
   type = object({
-    mode                           = optional(string, "public")
-    gateway_namespace              = optional(string, "envoy-gateway-system")
-    controller_namespace           = optional(string, "envoy-gateway-system")
-    security_owner_kubeconfig_path = optional(string)
-    security_owner_username        = optional(string, "fs2-network-policy-security-owner")
-    security_handoff_socket_path   = optional(string, "/run/fs2/network-policy-security.sock")
-    security_handoff_public_key    = optional(string)
+    mode                                     = optional(string, "public")
+    gateway_namespace                        = optional(string, "envoy-gateway-system")
+    controller_namespace                     = optional(string, "envoy-gateway-system")
+    security_owner_kubeconfig_path           = optional(string)
+    security_owner_username                  = optional(string, "fs2-network-policy-security-owner")
+    security_handoff_socket_path             = optional(string, "/run/fs2/network-policy-security.sock")
+    security_handoff_server_public_key       = optional(string)
+    security_handoff_client_public_key       = optional(string)
+    security_handoff_recovery_public_key     = optional(string)
+    security_handoff_client_private_key_path = optional(string)
+    security_handoff_peer_uid                = optional(number)
+    security_handoff_peer_gid                = optional(number)
   })
   default = {}
 
@@ -122,10 +127,53 @@ variable "network_policy_boundary" {
 
   validation {
     condition = (
-      var.network_policy_boundary.security_handoff_public_key == null ||
-      can(regex("^[A-Za-z0-9_-]{43}$", var.network_policy_boundary.security_handoff_public_key))
+      alltrue([
+        for value in [
+          var.network_policy_boundary.security_handoff_server_public_key,
+          var.network_policy_boundary.security_handoff_client_public_key,
+          var.network_policy_boundary.security_handoff_recovery_public_key,
+        ] : value == null || can(regex("^[A-Za-z0-9_-]{43}$", value))
+      ])
     )
-    error_message = "The security handoff public key must be one unpadded base64url Ed25519 public key."
+    error_message = "Every security handoff public key must be an unpadded base64url Ed25519 public key."
+  }
+
+  validation {
+    condition = (
+      var.network_policy_boundary.security_handoff_client_private_key_path == null ||
+      (
+        startswith(var.network_policy_boundary.security_handoff_client_private_key_path, "/") &&
+        !strcontains(var.network_policy_boundary.security_handoff_client_private_key_path, "..") &&
+        (
+          var.network_policy_boundary.security_owner_kubeconfig_path == null ||
+          abspath(var.network_policy_boundary.security_handoff_client_private_key_path) !=
+          abspath(var.network_policy_boundary.security_owner_kubeconfig_path)
+        )
+      )
+    )
+    error_message = "The coordinator signing-key path must be absolute, traversal-free, and distinct from the security-owner kubeconfig."
+  }
+
+  validation {
+    condition = (
+      var.network_policy_boundary.security_handoff_peer_uid == null ||
+      (
+        var.network_policy_boundary.security_handoff_peer_uid >= 1 &&
+        floor(var.network_policy_boundary.security_handoff_peer_uid) == var.network_policy_boundary.security_handoff_peer_uid
+      )
+    )
+    error_message = "The security handoff Unix peer UID must be a positive integer."
+  }
+
+  validation {
+    condition = (
+      var.network_policy_boundary.security_handoff_peer_gid == null ||
+      (
+        var.network_policy_boundary.security_handoff_peer_gid >= 1 &&
+        floor(var.network_policy_boundary.security_handoff_peer_gid) == var.network_policy_boundary.security_handoff_peer_gid
+      )
+    )
+    error_message = "The security handoff Unix peer GID must be a positive integer."
   }
 
   validation {

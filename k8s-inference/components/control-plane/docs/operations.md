@@ -790,31 +790,55 @@ preflight binds both foundation kubeconfigs to the same API server and exact
 `kube-system` UID. It proves the ordinary identity cannot patch, update, delete,
 or collection-delete either admission resource, any permanent guard/deny,
 transition/parameter ConfigMap, or Lease; it also cannot mint the retained
-transition-ServiceAccount token or impersonate the security owner. The security
-identity can patch/update the exact governed objects but cannot delete them or
-collection-delete their resource types.
+transition-ServiceAccount token, impersonate any user, group, ServiceAccount,
+UID or user-extra, or bind/escalate or rewrite the boundary RBAC delegation.
+The security identity can patch/update only the exact governed objects and
+cannot delete them, collection-delete their resource types, bind, escalate, or
+delegate its authority.
 Before foundation apply, provision the mode-0600
 `<run_root>/network-policy-security-owner-kubeconfig` for the exact configured
 external username. Its identity must be distinct from the ordinary run
 kubeconfig and independently authorized for the protected resources. The apply
 fails closed unless both exact named owner permissions and negative ordinary
 permissions are proven. The security-owner kubeconfig path is never emitted to
-workloads. Protected topology instead pins a Unix handoff socket, an Ed25519
-public key and the SHA-256 of the selected API server plus exact `kube-system`
-UID. Every transition repeats ordinary negative authorization checks and accepts
-protected patches only through candidate-bound, short-lived responses signed by
-that key. The handoff accepts exact patch or admission-recovery actions only;
-there is no generic kubectl or delete action. The retained
+workloads. Protected topology instead pins a Unix handoff socket, the exact
+coordinator peer UID/GID, distinct Ed25519 coordinator-request, enforcer-response
+and recovery-approval public keys, and the SHA-256 of the selected API server
+plus exact `kube-system` UID. The coordinator has only its request-signing key
+and ordinary kubeconfig. The security-owner kubeconfig and response-signing key
+are mode 0400/0600, owned by a dedicated enforcer Unix UID, and held exclusively
+by `network-policy-security-enforcer.sh`; that UID must differ from the rollout
+peer UID. The socket parent is likewise enforcer-owned and is not group/world
+writable. The separate recovery-approval private key is never present in either
+process. The enforcer
+checks `SO_PEERCRED`, verifies the coordinator signature, rereads the
+same-cluster topology, target UID/resourceVersion/state hash, Lease fence and
+durable receipt, and authorizes only the named semantic operations
+`lease-acquire`, `lease-renew`, `lease-release`, `receipt-write`, `guard-stage`,
+`deny-relax` and `deny-activate`. It server-dry-runs when requested, rereads
+every result, and signs a response bound to the request hash. There is no
+caller-selected resource/name/namespace, generic patch, kubectl, token minting,
+impersonation or delete action. The retained
 transition ServiceAccount remains at its stable Terraform address solely to
 avoid deleting an existing object; token automount is disabled, no protected
 RoleBinding names it, and the ordinary rollout identity must not be able to
 mint its token. No rollout-mintable privileged token exists.
 Permanent boundary deletion is never admitted. The external security owner is
 the only update identity; workload credentials have no protected-object
-mutation path. Incident recovery is reversible: signed automation may change
+mutation path. Incident recovery is reversible: separately approved signed automation may change
 the binding and its parameter ConfigMap from `Deny` to `Audit`+`Warn`, and may
-restore `Deny`; both transitions acquire the same Lease fence and remain signed,
-same-cluster, exact-object, receipt-bound and deletion-disabled.
+restore `Deny`. A short-lived recovery signature is bound to an exact SEC, INC,
+or CHG record, cluster, topology UID/hash, receipt UID/resourceVersion/hash, and
+the exact old binding and parameter UID/resourceVersion/state/spec/data.
+The enforcer records the exact old binding/parameter objects and recovery intent
+before mutation, including the accepted approval hash and its original receipt
+binding. Resume must present that exact approval; once durably accepted it
+remains the bounded recovery capability even after its issuance window closes.
+The enforcer refreshes its attempt/Lease fence on resume, applies the safe
+parameter-first relaxation or binding-first re-enforcement order, rereads all
+live objects, records the exact new objects, and only then reports completion.
+A crash leaves resumable durable intent; the coordinator validates completion
+while it still holds the Lease.
 
 Before each existing public release, `stage` acquires and renews the 60-second
 namespaced Lease fence, reads the protected live-topology ConfigMap, renders the
@@ -842,13 +866,28 @@ zero Ready Pods. The public chart has no guard-disable value: applicability
 comes from protected live topology rather than caller-rendered booleans.
 
 ```bash
+# Run under the security-owned identity. Startup refuses to unlink or replace
+# an existing socket path.
+components/control-plane/scripts/network-policy-security-enforcer.sh serve \
+  --socket /run/fs2/network-policy-security.sock \
+  --security-kubeconfig SECURITY_OWNER_KUBECONFIG \
+  --client-public-key PINNED_COORDINATOR_PUBLIC_KEY \
+  --server-private-key SECURITY_OWNED_RESPONSE_PRIVATE_KEY \
+  --recovery-public-key PINNED_RECOVERY_APPROVAL_PUBLIC_KEY \
+  --peer-uid EXACT_COORDINATOR_UID \
+  --peer-gid EXACT_COORDINATOR_GID \
+  --api-server-sha256 EXPECTED_API_SERVER_SHA256 \
+  --kube-system-uid EXPECTED_KUBE_SYSTEM_UID
+
 components/control-plane/scripts/network-policy-transition.sh stage \
   --release fs2-serve-control-plane \
   --release-namespace fs2-system \
   --chart charts/control-plane/fs2-serve-control-plane \
   --kubeconfig RUN_OWNED_KUBECONFIG \
   --security-handoff-socket /run/fs2/network-policy-security.sock \
-  --security-handoff-public-key PINNED_ED25519_PUBLIC_KEY \
+  --security-handoff-server-public-key PINNED_ENFORCER_PUBLIC_KEY \
+  --security-handoff-client-public-key PINNED_COORDINATOR_PUBLIC_KEY \
+  --security-handoff-client-private-key COORDINATOR_REQUEST_PRIVATE_KEY \
   --values EXACT_BASE_VALUES \
   --values EXACT_CANDIDATE_VALUES
 
@@ -860,20 +899,39 @@ components/control-plane/scripts/network-policy-transition.sh rollback \
   --chart charts/control-plane/fs2-serve-control-plane \
   --kubeconfig RUN_OWNED_KUBECONFIG \
   --security-handoff-socket /run/fs2/network-policy-security.sock \
-  --security-handoff-public-key PINNED_ED25519_PUBLIC_KEY \
+  --security-handoff-server-public-key PINNED_ENFORCER_PUBLIC_KEY \
+  --security-handoff-client-public-key PINNED_COORDINATOR_PUBLIC_KEY \
+  --security-handoff-client-private-key COORDINATOR_REQUEST_PRIVATE_KEY \
   --revision CAPTURED_PRE_ROLLOUT_REVISION \
   --values EXACT_BASE_VALUES \
   --values EXACT_CANDIDATE_VALUES
 
-# Security-owner incident recovery is signed, reversible, and never deletion.
+# Security automation signs exact live topology and receipt state. Store the
+# output mode 0600; it expires after five minutes and is single-state bound.
+components/control-plane/scripts/network-policy-security-recovery-approval.sh \
+  --security-kubeconfig SECURITY_OWNER_KUBECONFIG \
+  --recovery-private-key SECURITY_OWNED_RECOVERY_PRIVATE_KEY \
+  --mode audit-warn \
+  --recovery-reference SEC-1234 > REVIEWED_RECOVERY_APPROVAL
+
+# Incident recovery is signed, reversible, receipt-durable and never deletion.
 components/control-plane/scripts/network-policy-transition.sh recover-audit-warn \
   --release fs2-serve-control-plane \
   --release-namespace fs2-system \
   --chart charts/control-plane/fs2-serve-control-plane \
   --kubeconfig RUN_OWNED_KUBECONFIG \
   --security-handoff-socket /run/fs2/network-policy-security.sock \
-  --security-handoff-public-key PINNED_ED25519_PUBLIC_KEY \
-  --recovery-reference REVIEWED_INCIDENT_REFERENCE
+  --security-handoff-server-public-key PINNED_ENFORCER_PUBLIC_KEY \
+  --security-handoff-client-public-key PINNED_COORDINATOR_PUBLIC_KEY \
+  --security-handoff-client-private-key COORDINATOR_REQUEST_PRIVATE_KEY \
+  --recovery-reference SEC-1234 \
+  --recovery-approval REVIEWED_RECOVERY_APPROVAL
+
+components/control-plane/scripts/network-policy-security-recovery-approval.sh \
+  --security-kubeconfig SECURITY_OWNER_KUBECONFIG \
+  --recovery-private-key SECURITY_OWNED_RECOVERY_PRIVATE_KEY \
+  --mode deny \
+  --recovery-reference SEC-1234 > REVIEWED_DENY_RECOVERY_APPROVAL
 
 components/control-plane/scripts/network-policy-transition.sh recover-deny \
   --release fs2-serve-control-plane \
@@ -881,8 +939,11 @@ components/control-plane/scripts/network-policy-transition.sh recover-deny \
   --chart charts/control-plane/fs2-serve-control-plane \
   --kubeconfig RUN_OWNED_KUBECONFIG \
   --security-handoff-socket /run/fs2/network-policy-security.sock \
-  --security-handoff-public-key PINNED_ED25519_PUBLIC_KEY \
-  --recovery-reference REVIEWED_INCIDENT_REFERENCE
+  --security-handoff-server-public-key PINNED_ENFORCER_PUBLIC_KEY \
+  --security-handoff-client-public-key PINNED_COORDINATOR_PUBLIC_KEY \
+  --security-handoff-client-private-key COORDINATOR_REQUEST_PRIVATE_KEY \
+  --recovery-reference SEC-1234 \
+  --recovery-approval REVIEWED_DENY_RECOVERY_APPROVAL
 ```
 
 `rollback` discovers the exact namespaces from protected live topology,

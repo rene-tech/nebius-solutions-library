@@ -82,13 +82,16 @@ def ephemeral_storage_gib(quantity: object | None) -> float:
     if match is None:
         raise AssertionError(f"unsupported ephemeral-storage quantity: {quantity!r}")
     value = float(match.group(1))
-    return value * {
-        None: 1 / 1073741824,
-        "Ki": 1 / 1048576,
-        "Mi": 1 / 1024,
-        "Gi": 1,
-        "Ti": 1024,
-    }[match.group(2)]
+    return (
+        value
+        * {
+            None: 1 / 1073741824,
+            "Ki": 1 / 1048576,
+            "Mi": 1 / 1024,
+            "Gi": 1,
+            "Ti": 1024,
+        }[match.group(2)]
+    )
 
 
 def container_ephemeral_request_gib(container: dict[str, Any]) -> float:
@@ -124,7 +127,9 @@ class DeploymentContractTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.terraform = shutil.which("terraform")
         if cls.terraform is None:
-            raise unittest.SkipTest("terraform is required for deployment-contract tests")
+            raise unittest.SkipTest(
+                "terraform is required for deployment-contract tests"
+            )
 
         cls.model_contract = json.loads(
             (PROFILES_ROOT / "model-profiles.json").read_text(encoding="utf-8")
@@ -192,7 +197,10 @@ class DeploymentContractTests(unittest.TestCase):
             }
         path = cls.run_root / f"{name}.tfvars.json"
         path.write_text(
-            json.dumps({"deployment": deployment, **top_level}, indent=2, sort_keys=True) + "\n",
+            json.dumps(
+                {"deployment": deployment, **top_level}, indent=2, sort_keys=True
+            )
+            + "\n",
             encoding="utf-8",
         )
         path.chmod(0o600)
@@ -325,7 +333,8 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertEqual(contract["artifact_delivery"]["mode"], "regional-mirror")
         self.assertEqual(contract["artifact_delivery"]["repository_prefix"], "")
         self.assertIn(
-            "nvcr.io", contract["stages"]["infrastructure"]["registry_delivery"]["source_hosts"]
+            "nvcr.io",
+            contract["stages"]["infrastructure"]["registry_delivery"]["source_hosts"],
         )
         self.assertNotIn("nebius_profile", contract["stages"]["infrastructure"])
         self.assertEqual(
@@ -381,7 +390,9 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertEqual(
             contract["sha256"], hashlib.sha256(canonical_payload.encode()).hexdigest()
         )
-        self.assertEqual(outputs["effective_configuration"]["profiles"], contract["profiles"])
+        self.assertEqual(
+            outputs["effective_configuration"]["profiles"], contract["profiles"]
+        )
         self.assertEqual(
             outputs["effective_configuration"]["contract_sha256"], contract["sha256"]
         )
@@ -453,9 +464,9 @@ class DeploymentContractTests(unittest.TestCase):
             "system-inotify",
         )
         self.assertEqual(
-            outputs["deployment_contract"]["stages"]["infrastructure"][
-                "system_pool"
-            ]["inotify_max_user_instances"],
+            outputs["deployment_contract"]["stages"]["infrastructure"]["system_pool"][
+                "inotify_max_user_instances"
+            ],
             16384,
         )
 
@@ -467,18 +478,16 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("cluster.system_pool", result.stderr)
 
-        cluster_source = (
-            DEPLOY_ROOT / "stages/infrastructure/cluster.tf"
-        ).read_text(encoding="utf-8")
+        cluster_source = (DEPLOY_ROOT / "stages/infrastructure/cluster.tf").read_text(
+            encoding="utf-8"
+        )
         system_resource, non_system_resources = cluster_source.split(
             'resource "nebius_mk8s_v1_node_group" "reference_data"', 1
         )
         system_resource = system_resource.split(
             'resource "nebius_mk8s_v1_node_group" "system"', 1
         )[1]
-        self.assertIn(
-            "local.system_shared_cache_cloud_init_user_data", system_resource
-        )
+        self.assertIn("local.system_shared_cache_cloud_init_user_data", system_resource)
         self.assertIn(
             "local.system_shared_cache_reference_data_cloud_init_user_data",
             system_resource,
@@ -551,13 +560,25 @@ class DeploymentContractTests(unittest.TestCase):
                 "observability": {"request_debug_enabled": enabled},
             }
             label = f"request-debug-{enabled}"
-            outputs = self._planned_outputs(self._write_configuration(label, deployment), label)
-            self.assertIs(
-                outputs["deployment_contract"]["stages"]["workloads"]["request_debug_enabled"], enabled
+            outputs = self._planned_outputs(
+                self._write_configuration(label, deployment), label
             )
-            self.assertIs(outputs["effective_configuration"]["observability"]["request_debug_enabled"], enabled)
+            self.assertIs(
+                outputs["deployment_contract"]["stages"]["workloads"][
+                    "request_debug_enabled"
+                ],
+                enabled,
+            )
+            self.assertIs(
+                outputs["effective_configuration"]["observability"][
+                    "request_debug_enabled"
+                ],
+                enabled,
+            )
 
-    def test_invalid_alertmanager_storage_and_retention_are_rejected_at_root(self) -> None:
+    def test_invalid_alertmanager_storage_and_retention_are_rejected_at_root(
+        self,
+    ) -> None:
         deployment = {
             "schema_version": 1,
             "name": "fs2-alertmanager-invalid",
@@ -595,7 +616,9 @@ class DeploymentContractTests(unittest.TestCase):
                 }
             },
         }
-        variable_file = self._write_configuration("invalid-flavor-preference", deployment)
+        variable_file = self._write_configuration(
+            "invalid-flavor-preference", deployment
+        )
         result, _ = self._plan_file(variable_file, "invalid-flavor-preference")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("scheduling must use", result.stderr)
@@ -609,7 +632,9 @@ class DeploymentContractTests(unittest.TestCase):
                 "cohort": {"fair_sharing_weight": 0.000000001},
             },
         }
-        variable_file = self._write_configuration("invalid-fair-sharing-weight", deployment)
+        variable_file = self._write_configuration(
+            "invalid-fair-sharing-weight", deployment
+        )
         result, _ = self._plan_file(variable_file, "invalid-fair-sharing-weight")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("greater than 1e-9", result.stderr)
@@ -630,14 +655,18 @@ class DeploymentContractTests(unittest.TestCase):
                 }
             },
         }
-        variable_file = self._write_configuration("duplicate-admission-checks", deployment)
+        variable_file = self._write_configuration(
+            "duplicate-admission-checks", deployment
+        )
         result, _ = self._plan_file(variable_file, "duplicate-admission-checks")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("scheduling must use", result.stderr)
 
     def test_root_rejects_effective_scheduling_invariants_before_stages(self) -> None:
         pool_profiles = json.loads(
-            (PROFILES_ROOT / "accelerator-pool-profiles.json").read_text(encoding="utf-8")
+            (PROFILES_ROOT / "accelerator-pool-profiles.json").read_text(
+                encoding="utf-8"
+            )
         )
         minimal = pool_profiles["profiles"]["minimal"]
         pool_ids = list(minimal["pool_order"])
@@ -669,15 +698,36 @@ class DeploymentContractTests(unittest.TestCase):
         }
         cases: dict[str, tuple[dict[str, Any], str]] = {
             "duplicate-pool-order": (
-                {"cluster_queues": {"customer": {**valid_queue, "flavor_order": [pool_ids[0], pool_ids[0]]}}},
+                {
+                    "cluster_queues": {
+                        "customer": {
+                            **valid_queue,
+                            "flavor_order": [pool_ids[0], pool_ids[0]],
+                        }
+                    }
+                },
                 "pool orders must be exact",
             ),
             "foreign-quota-pool": (
-                {"cluster_queues": {"customer": {**valid_queue, "pool_quotas": {"foreign": {"nominal_quota": 0}}}}},
+                {
+                    "cluster_queues": {
+                        "customer": {
+                            **valid_queue,
+                            "pool_quotas": {"foreign": {"nominal_quota": 0}},
+                        }
+                    }
+                },
                 "quota and AdmissionCheck pool keys",
             ),
             "floor-above-capacity": (
-                {"cluster_queues": {"customer": {**valid_queue, "pool_quotas": {pool_ids[0]: {"nominal_quota": 2}}}}},
+                {
+                    "cluster_queues": {
+                        "customer": {
+                            **valid_queue,
+                            "pool_quotas": {pool_ids[0]: {"nominal_quota": 2}},
+                        }
+                    }
+                },
                 "summed floors cannot exceed",
             ),
             "stable-localqueue-rebind": (
@@ -781,13 +831,17 @@ class DeploymentContractTests(unittest.TestCase):
                     "target": self.catalog_target(),
                     "scheduling": scheduling,
                 }
-                variable_file = self._write_configuration(f"root-scheduling-{name}", deployment)
+                variable_file = self._write_configuration(
+                    f"root-scheduling-{name}", deployment
+                )
                 result, _ = self._plan_file(variable_file, f"root-scheduling-{name}")
                 self.assertNotEqual(result.returncode, 0)
                 diagnostics = re.sub(r"\s+", " ", f"{result.stdout}\n{result.stderr}")
                 self.assertIn(message, diagnostics)
 
-    def _modelexpress_deployment(self, name: str, rdma_resource_name: str) -> dict[str, Any]:
+    def _modelexpress_deployment(
+        self, name: str, rdma_resource_name: str
+    ) -> dict[str, Any]:
         return {
             "schema_version": 1,
             "name": name,
@@ -862,7 +916,9 @@ class DeploymentContractTests(unittest.TestCase):
     def test_kueue_exclusion_grammar_accepts_a_literal_prefix(self) -> None:
         """Kueue matches these with strings.HasPrefix, so a bare prefix is valid."""
 
-        source = (DEPLOY_ROOT / "stages/foundation/variables.tf").read_text(encoding="utf-8")
+        source = (DEPLOY_ROOT / "stages/foundation/variables.tf").read_text(
+            encoding="utf-8"
+        )
         match = re.search(
             r'can\(regex\("(\^\[a-z0-9\][^"]*?)", prefix\)\)',
             source,
@@ -878,7 +934,12 @@ class DeploymentContractTests(unittest.TestCase):
         ):
             with self.subTest(accepted=accepted):
                 self.assertIsNotNone(pattern.fullmatch(accepted))
-        for rejected in ("Example.com/gpu", "example.com//gpu", "example.com/gpu/extra", "-bad"):
+        for rejected in (
+            "Example.com/gpu",
+            "example.com//gpu",
+            "example.com/gpu/extra",
+            "-bad",
+        ):
             with self.subTest(rejected=rejected):
                 self.assertIsNone(pattern.fullmatch(rejected))
 
@@ -889,10 +950,14 @@ class DeploymentContractTests(unittest.TestCase):
         # cpu or memory. The reachable source of a bare prefix is the
         # foundation's own operator input, which is gated there and mirrored at
         # the root for anything the root derives.
-        foundation = (DEPLOY_ROOT / "stages/foundation/releases.tf").read_text(encoding="utf-8")
+        foundation = (DEPLOY_ROOT / "stages/foundation/releases.tf").read_text(
+            encoding="utf-8"
+        )
         root = (DEPLOY_ROOT / "main.tf").read_text(encoding="utf-8")
         self.assertIn("!startswith(core_name, prefix)", foundation)
-        self.assertIn('for core_name in ["cpu", "memory"] : !startswith(core_name, prefix)', root)
+        self.assertIn(
+            'for core_name in ["cpu", "memory"] : !startswith(core_name, prefix)', root
+        )
         self.assertIn("prefix of cpu or memory", root)
 
     def test_core_admission_accepts_a_qualified_auxiliary_prefix(self) -> None:
@@ -962,7 +1027,9 @@ class DeploymentContractTests(unittest.TestCase):
             scheduling["cpu_stage_requests"]["reference-data"],
             {"cpu_millicores": 16000, "memory_mib": 65536},
         )
-        self.assertEqual(scheduling["academic_cpu_local_queue"], "academic-scientific-cpu")
+        self.assertEqual(
+            scheduling["academic_cpu_local_queue"], "academic-scientific-cpu"
+        )
         self.assertEqual(scheduling["reference_cluster_queue"], "reference-data-cpu")
         # Warm capacity is tried first. Alphabetical pool order would put
         # h100-preemptible first, so this is an explicit operator decision and
@@ -1001,7 +1068,10 @@ class DeploymentContractTests(unittest.TestCase):
             ["h100-warm", "h100-preemptible"],
         )
         self.assertEqual(
-            {scheduling["pool_resource_names"][pool] for pool in ("h100-warm", "h100-preemptible")},
+            {
+                scheduling["pool_resource_names"][pool]
+                for pool in ("h100-warm", "h100-preemptible")
+            },
             {"nvidia.com/gpu"},
         )
 
@@ -1050,12 +1120,18 @@ class DeploymentContractTests(unittest.TestCase):
         variable_file = self._write_configuration("scientific-batch-shape", deployment)
         # This is the complete customer-authored scientific batch surface. The
         # generated map belongs to the repository, not terraform.tfvars.
-        customer_batch = json.loads(variable_file.read_text(encoding="utf-8"))["deployment"]["scientific_batch"]
+        customer_batch = json.loads(variable_file.read_text(encoding="utf-8"))[
+            "deployment"
+        ]["scientific_batch"]
         self.assertNotIn("execution_map", customer_batch)
 
         outputs = self._planned_outputs(variable_file, "scientific-batch-shape")
-        stage = outputs["deployment_contract"]["stages"]["workloads"]["scientific_batch"]
-        committed_map_path = DEPLOY_ROOT / "catalog/runtime/contracts/scientific-execution-map.json"
+        stage = outputs["deployment_contract"]["stages"]["workloads"][
+            "scientific_batch"
+        ]
+        committed_map_path = (
+            DEPLOY_ROOT / "catalog/runtime/contracts/scientific-execution-map.json"
+        )
         committed_map = json.loads(committed_map_path.read_text(encoding="utf-8"))
         self.assertEqual(
             stage,
@@ -1093,17 +1169,24 @@ class DeploymentContractTests(unittest.TestCase):
             effective["execution_map_source"],
             "catalog/runtime/contracts/scientific-execution-map.json",
         )
-        helm_bytes = json.dumps(committed_map, separators=(",", ":"), sort_keys=True).encode()
-        self.assertEqual(effective["execution_map_sha256"], hashlib.sha256(helm_bytes).hexdigest())
+        helm_bytes = json.dumps(
+            committed_map, separators=(",", ":"), sort_keys=True
+        ).encode()
+        self.assertEqual(
+            effective["execution_map_sha256"], hashlib.sha256(helm_bytes).hexdigest()
+        )
         profiles = json.loads(
-            (DEPLOY_ROOT / "catalog/runtime/contracts/scientific-workload-profiles.json").read_text(
-                encoding="utf-8"
-            )
+            (
+                DEPLOY_ROOT
+                / "catalog/runtime/contracts/scientific-workload-profiles.json"
+            ).read_text(encoding="utf-8")
         )["profiles"]
         profiles_by_id = {profile["model_id"]: profile for profile in profiles}
         for model in committed_map["models"]:
             self.assertEqual(
-                profiles_by_id[model["model_id"]]["qualification"]["execution_map_sha256"],
+                profiles_by_id[model["model_id"]]["qualification"][
+                    "execution_map_sha256"
+                ],
                 effective["execution_map_sha256"],
             )
 
@@ -1112,9 +1195,13 @@ class DeploymentContractTests(unittest.TestCase):
                 source = (DEPLOY_ROOT / relative).read_text(encoding="utf-8")
                 self.assertEqual(source.count("    scientific_batch = {"), 1)
 
-    def test_scientific_execution_map_advanced_override_preserves_exact_object(self) -> None:
+    def test_scientific_execution_map_advanced_override_preserves_exact_object(
+        self,
+    ) -> None:
         committed_map = json.loads(
-            (DEPLOY_ROOT / "catalog/runtime/contracts/scientific-execution-map.json").read_text(encoding="utf-8")
+            (
+                DEPLOY_ROOT / "catalog/runtime/contracts/scientific-execution-map.json"
+            ).read_text(encoding="utf-8")
         )
         deployment = {
             "schema_version": 1,
@@ -1139,15 +1226,21 @@ class DeploymentContractTests(unittest.TestCase):
         )
         stage = outputs["deployment_contract"]["stages"]["workloads"]
         self.assertEqual(stage["scientific_batch"]["execution_map"], committed_map)
-        self._assert_scientific_cpu_image_roles(stage["scientific_batch"]["execution_map"])
+        self._assert_scientific_cpu_image_roles(
+            stage["scientific_batch"]["execution_map"]
+        )
         self.assertEqual(
-            outputs["effective_configuration"]["scientific_batch"]["execution_map_source"],
+            outputs["effective_configuration"]["scientific_batch"][
+                "execution_map_source"
+            ],
             "deployment.scientific_batch.execution_map",
         )
 
     def test_invalid_or_tampered_scientific_execution_map_is_refused(self) -> None:
         committed_map = json.loads(
-            (DEPLOY_ROOT / "catalog/runtime/contracts/scientific-execution-map.json").read_text(encoding="utf-8")
+            (
+                DEPLOY_ROOT / "catalog/runtime/contracts/scientific-execution-map.json"
+            ).read_text(encoding="utf-8")
         )
         invalid_schema = json.loads(json.dumps(committed_map))
         invalid_schema["schema"] = "fs2-serve.nebius.ai/scientific-execution-map/v2"
@@ -1185,7 +1278,9 @@ class DeploymentContractTests(unittest.TestCase):
                         }
                     },
                 }
-                variable_file = self._write_configuration(f"scientific-map-{label}", deployment)
+                variable_file = self._write_configuration(
+                    f"scientific-map-{label}", deployment
+                )
                 result, _ = self._plan_file(variable_file, f"scientific-map-{label}")
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(
@@ -1199,7 +1294,10 @@ class DeploymentContractTests(unittest.TestCase):
         end = example.index("  # By default the wrapper copies", start)
         scientific_example = example[start:end]
         self.assertNotIn("execution_map =", scientific_example)
-        self.assertIn("catalog/runtime/contracts/scientific-execution-map.json", scientific_example)
+        self.assertIn(
+            "catalog/runtime/contracts/scientific-execution-map.json",
+            scientific_example,
+        )
 
     def test_measured_capacity_without_a_verifiable_origin_is_refused(self) -> None:
         """A pair of integers with no origin is a claim, not a measurement."""
@@ -1279,7 +1377,7 @@ class DeploymentContractTests(unittest.TestCase):
             ["h100-warm_1.x", "h100-preemptible_1.x"],
         )
         # The same grammar, stated once, is what every layer checks against.
-        grammar = '^[a-z0-9](?:[-_a-z0-9.]{0,61}[a-z0-9])?$'
+        grammar = "^[a-z0-9](?:[-_a-z0-9.]{0,61}[a-z0-9])?$"
         for relative in (
             "variables.tf",
             "stages/workloads/variables.tf",
@@ -1287,7 +1385,9 @@ class DeploymentContractTests(unittest.TestCase):
             "modules/kueue-scheduling/variables.tf",
         ):
             with self.subTest(layer=relative):
-                self.assertIn(grammar, (DEPLOY_ROOT / relative).read_text(encoding="utf-8"))
+                self.assertIn(
+                    grammar, (DEPLOY_ROOT / relative).read_text(encoding="utf-8")
+                )
         schema = json.loads(
             (
                 DEPLOY_ROOT / "catalog/runtime/schema/cpu-stage-classes.schema.json"
@@ -1556,13 +1656,15 @@ class DeploymentContractTests(unittest.TestCase):
             outputs["academic_assets"]["readiness_manifest_sha256"], expected
         )
         self.assertEqual(
-            outputs["deployment_contract"]["stages"]["workloads"][
-                "academic_assets"
-            ]["readiness_manifest_sha256"],
+            outputs["deployment_contract"]["stages"]["workloads"]["academic_assets"][
+                "readiness_manifest_sha256"
+            ],
             expected,
         )
 
-    def _raw_af3_deployment(self, name: str, override: dict[str, Any] | None = None) -> Path:
+    def _raw_af3_deployment(
+        self, name: str, override: dict[str, Any] | None = None
+    ) -> Path:
         """The shipped raw configuration's scheduling inputs, as a tfvars file."""
 
         scheduling: dict[str, Any] = {
@@ -1587,7 +1689,11 @@ class DeploymentContractTests(unittest.TestCase):
             "schema_version": 1,
             "name": name,
             "target": self.catalog_target(),
-            "profiles": {"capacity": "minimal", "accelerators": "minimal", "models": "none"},
+            "profiles": {
+                "capacity": "minimal",
+                "accelerators": "minimal",
+                "models": "none",
+            },
             "cluster": {"kubernetes_version": "1.34"},
             "scientific_batch": {"enabled": True, "runtime_cache": {"enabled": True}},
             "scheduling": scheduling,
@@ -1609,7 +1715,7 @@ class DeploymentContractTests(unittest.TestCase):
                         },
                     },
                     "queue": {"nominal_cpu": "24", "nominal_memory": "96Gi"},
-                }
+                },
             },
         }
         return self._write_configuration(
@@ -1635,7 +1741,8 @@ class DeploymentContractTests(unittest.TestCase):
 
     def test_a_smaller_override_cannot_lower_the_raw_stage_floor(self) -> None:
         variable_file = self._raw_af3_deployment(
-            "raw-af3-override", {"reference-data": {"cpu_millicores": 1, "memory_mib": 1}}
+            "raw-af3-override",
+            {"reference-data": {"cpu_millicores": 1, "memory_mib": 1}},
         )
         scheduling = self._planned_outputs(variable_file, "raw-af3-override")[
             "effective_configuration"
@@ -1676,18 +1783,21 @@ class DeploymentContractTests(unittest.TestCase):
                 reference = deployment["deployment"]["storage"]["reference_data"]
                 for key, value in mutation.items():
                     reference[key] = {**reference.get(key, {}), **value}
-                variable_file.write_text(json.dumps(deployment, indent=2), encoding="utf-8")
+                variable_file.write_text(
+                    json.dumps(deployment, indent=2), encoding="utf-8"
+                )
                 result, _ = self._plan_file(variable_file, name)
                 self.assertNotEqual(result.returncode, 0)
                 diagnostics = re.sub(r"\s+", " ", f"{result.stdout}\n{result.stderr}")
                 self.assertIn(expected, diagnostics)
 
-
     def test_root_and_workloads_derive_one_academic_scheduling_lane(self) -> None:
         """Both stages must derive the licensed lane from the same facts."""
 
         root_locals = (DEPLOY_ROOT / "locals.tf").read_text(encoding="utf-8")
-        queue_source = (DEPLOY_ROOT / "stages/workloads/queue.tf").read_text(encoding="utf-8")
+        queue_source = (DEPLOY_ROOT / "stages/workloads/queue.tf").read_text(
+            encoding="utf-8"
+        )
         for expression in (
             "var.academic_assets.execution.local_queue",
             "var.academic_assets.execution.cluster_queue",
@@ -1698,13 +1808,21 @@ class DeploymentContractTests(unittest.TestCase):
                 self.assertIn(expression, queue_source)
         # Both derive the model list from the declared assets rather than a
         # separately maintained copy.
-        self.assertIn("for asset in values(var.academic_assets.assets) : asset.model_id", root_locals)
-        self.assertIn("for asset in values(var.academic_assets.assets) : asset.model_id", queue_source)
+        self.assertIn(
+            "for asset in values(var.academic_assets.assets) : asset.model_id",
+            root_locals,
+        )
+        self.assertIn(
+            "for asset in values(var.academic_assets.assets) : asset.model_id",
+            queue_source,
+        )
         # These operator-owned asset lanes serve any customer whose API key
         # grants the model; no customer must inherit the asset owner's ID.
         for source in (root_locals, queue_source):
             self.assertIn("tenant_ids          = toset([])", source)
-            self.assertNotIn("tenant_ids          = toset([var.academic_assets.tenant_id])", source)
+            self.assertNotIn(
+                "tenant_ids          = toset([var.academic_assets.tenant_id])", source
+            )
         # Both reject an operator lane that collides with the derived one.
         self.assertIn("root_academic_lane_queue_collisions", root_locals)
         self.assertIn("managed_lane_queue_collisions", queue_source)
@@ -1750,7 +1868,8 @@ class DeploymentContractTests(unittest.TestCase):
             }
             if scientific:
                 deployment["scientific_batch"] = {
-                    "enabled": True, "runtime_cache": {"enabled": True}
+                    "enabled": True,
+                    "runtime_cache": {"enabled": True},
                 }
             variable_file = self._write_configuration(name, deployment)
             result, _ = self._plan_file(variable_file, name)
@@ -1770,14 +1889,10 @@ class DeploymentContractTests(unittest.TestCase):
                 }
             },
         }
-        variable_file = self._write_configuration(
-            "jobset-qualified-minor", deployment
-        )
+        variable_file = self._write_configuration("jobset-qualified-minor", deployment)
         outputs = self._planned_outputs(variable_file, "jobset-qualified-minor")
         jobset = outputs["deployment_contract"]["stages"]["foundation"]["jobset"]
-        self.assertEqual(
-            jobset, {"enabled": True, "kubernetes_version": "1.35.6"}
-        )
+        self.assertEqual(jobset, {"enabled": True, "kubernetes_version": "1.35.6"})
 
     def test_dynamic_model_tfvars_normalize_without_internal_json(self) -> None:
         deployment = {
@@ -1847,23 +1962,34 @@ class DeploymentContractTests(unittest.TestCase):
             "profiles": {"models": "full_catalog"},
             "models": {"selection": "explicit", "enabled": ["qwen3-8b"]},
             "dynamic_models": {
-                "enabled": True, "writes_enabled": True, "workload_owner": "controller",
-                "bootstrap_model_ids": ["qwen3-8b"], "fresh_install": True,
+                "enabled": True,
+                "writes_enabled": True,
+                "workload_owner": "controller",
+                "bootstrap_model_ids": ["qwen3-8b"],
+                "fresh_install": True,
             },
         }
         path = self._write_configuration("startup-default", deployment)
-        defaults = self._planned_outputs(path, "startup-default")["deployment_contract"]["stages"]["workloads"]
+        defaults = self._planned_outputs(path, "startup-default")[
+            "deployment_contract"
+        ]["stages"]["workloads"]
         self.assertEqual(defaults["model_startup_timeout_overrides"], {})
         deployment["models"]["startup_timeout_overrides"] = {"qwen3-8b": 1200}
         path = self._write_configuration("startup-explicit", deployment)
-        configured = self._planned_outputs(path, "startup-explicit")["deployment_contract"]["stages"]["workloads"]
-        self.assertEqual(configured["model_startup_timeout_overrides"], {"qwen3-8b": 1200})
+        configured = self._planned_outputs(path, "startup-explicit")[
+            "deployment_contract"
+        ]["stages"]["workloads"]
+        self.assertEqual(
+            configured["model_startup_timeout_overrides"], {"qwen3-8b": 1200}
+        )
         for index, invalid in enumerate((59, 7201, 1200.5)):
             deployment["models"]["startup_timeout_overrides"] = {"qwen3-8b": invalid}
             path = self._write_configuration(f"startup-invalid-{index}", deployment)
             result, _ = self._plan_file(path, f"startup-invalid-{index}")
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("models.startup_timeout_overrides", result.stderr + result.stdout)
+            self.assertIn(
+                "models.startup_timeout_overrides", result.stderr + result.stdout
+            )
         deployment["models"]["startup_timeout_overrides"] = {"not-selected": 900}
         path = self._write_configuration("startup-unknown", deployment)
         result, _ = self._plan_file(path, "startup-unknown")
@@ -1873,9 +1999,14 @@ class DeploymentContractTests(unittest.TestCase):
         # adding the feature must not change their persisted revision digest.
         source = (DEPLOY_ROOT / "stages/workloads/model_controller.tf").read_text()
         self.assertIn("availability = merge({", source)
-        self.assertIn("startupTimeoutSeconds = var.model_startup_timeout_overrides[model_id]", source)
+        self.assertIn(
+            "startupTimeoutSeconds = var.model_startup_timeout_overrides[model_id]",
+            source,
+        )
 
-    def test_modelexpress_tfvars_resolve_managed_service_and_exact_model_clients(self) -> None:
+    def test_modelexpress_tfvars_resolve_managed_service_and_exact_model_clients(
+        self,
+    ) -> None:
         deployment = {
             "schema_version": 1,
             "name": "fs2-modelexpress-test",
@@ -1929,7 +2060,9 @@ class DeploymentContractTests(unittest.TestCase):
             "fs2-modelexpress.fs2-modelexpress.svc.cluster.local:8001",
         )
         self.assertEqual(configured["server_image"]["digest"], f"sha256:{'9' * 64}")
-        self.assertTrue(outputs["deployment_contract"]["secret_requirements"]["nvcr_dockerconfig"])
+        self.assertTrue(
+            outputs["deployment_contract"]["secret_requirements"]["nvcr_dockerconfig"]
+        )
         self.assertTrue(
             outputs["effective_configuration"]["model_express"][
                 "managed_nvcr_server_requires_pull_secret"
@@ -1952,13 +2085,20 @@ class DeploymentContractTests(unittest.TestCase):
                 }
             },
         )
-        self.assertEqual(outputs["effective_configuration"]["model_express"]["model_ids"], ["qwen3-8b"])
         self.assertEqual(
-            outputs["effective_configuration"]["model_express"]["models"]["qwen3-8b"]["transport_default"]["mode"],
+            outputs["effective_configuration"]["model_express"]["model_ids"],
+            ["qwen3-8b"],
+        )
+        self.assertEqual(
+            outputs["effective_configuration"]["model_express"]["models"]["qwen3-8b"][
+                "transport_default"
+            ]["mode"],
             "nixl-rdma",
         )
 
-    def test_modelexpress_rejects_a_runtime_kind_that_only_claims_the_vllm_adapter(self) -> None:
+    def test_modelexpress_rejects_a_runtime_kind_that_only_claims_the_vllm_adapter(
+        self,
+    ) -> None:
         deployment = {
             "schema_version": 1,
             "name": "fs2-modelexpress-runtime-kind-test",
@@ -1992,7 +2132,9 @@ class DeploymentContractTests(unittest.TestCase):
                 }
             },
         }
-        variable_file = self._write_configuration("modelexpress-runtime-kind", deployment)
+        variable_file = self._write_configuration(
+            "modelexpress-runtime-kind", deployment
+        )
         result, _ = self._plan_file(variable_file, "modelexpress-runtime-kind")
 
         self.assertNotEqual(result.returncode, 0)
@@ -2076,7 +2218,11 @@ class DeploymentContractTests(unittest.TestCase):
     def test_fast_start_inputs_propagate_to_the_workload_stage(self) -> None:
         evidence_file = self.run_root / "fast-start-evidence.json"
         evidence_file.write_text("{}\n", encoding="utf-8")
-        snapshot = json.loads((DEPLOY_ROOT / "acceptance/h100-fleet/snapshots/qwen3-8b-bundle.json").read_text())
+        snapshot = json.loads(
+            (
+                DEPLOY_ROOT / "acceptance/h100-fleet/snapshots/qwen3-8b-bundle.json"
+            ).read_text()
+        )
         deployment = {
             "schema_version": 1,
             "name": "fs2-fast-start-input-test",
@@ -2095,7 +2241,9 @@ class DeploymentContractTests(unittest.TestCase):
                 "fresh_install": True,
                 "fast_start_evidence_file": str(evidence_file),
                 "gpu_snapshots": {
-                    "bundle_files": ["acceptance/h100-fleet/snapshots/qwen3-8b-bundle.json"],
+                    "bundle_files": [
+                        "acceptance/h100-fleet/snapshots/qwen3-8b-bundle.json"
+                    ],
                     "cache": {"claim_name": snapshot["pvc"], "manage_claim": False},
                     "adopt_existing": True,
                 },
@@ -2116,7 +2264,9 @@ class DeploymentContractTests(unittest.TestCase):
         ]
 
         self.assertEqual(dynamic["fast_start_evidence_file"], str(evidence_file))
-        self.assertEqual(dynamic["gpu_snapshots"]["bundles"], {snapshot["bundle_id"]: snapshot})
+        self.assertEqual(
+            dynamic["gpu_snapshots"]["bundles"], {snapshot["bundle_id"]: snapshot}
+        )
         self.assertFalse(dynamic["gpu_snapshots"]["cache"]["manage_claim"])
         self.assertTrue(dynamic["gpu_snapshots"]["adopt_existing"])
         self.assertEqual(dynamic["fast_start_wait_second_value"], 0.025)
@@ -2141,7 +2291,9 @@ class DeploymentContractTests(unittest.TestCase):
         result, _ = self._plan_file(variable_file, "invalid-owner")
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("dynamic_models must use one exclusive ownership mode", result.stderr)
+        self.assertIn(
+            "dynamic_models must use one exclusive ownership mode", result.stderr
+        )
 
     def test_dynamic_model_workload_contract_is_derived_and_single_writer(self) -> None:
         controller_source = (
@@ -2163,7 +2315,7 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("model_controller_expected_handoff_receipt", controller_source)
         controller_owned_gvks = controller_source.split(
             "model_controller_supported_template_gvks = toset([", 1
-        )[1].split("])" , 1)[0]
+        )[1].split("])", 1)[0]
         self.assertNotIn('"v1/PersistentVolumeClaim"', controller_owned_gvks)
         self.assertIn(
             'document.manifest.kind == "PersistentVolumeClaim"', controller_source
@@ -2184,7 +2336,9 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("model_controller_fast_start_evidence_valid", controller_source)
         self.assertIn('"compatibilityTupleDigest"', controller_source)
         self.assertIn('"compatibilityTupleComplete"', controller_source)
-        self.assertNotIn("sha256(jsonencode({ source = model.model.source", controller_source)
+        self.assertNotIn(
+            "sha256(jsonencode({ source = model.model.source", controller_source
+        )
         self.assertIn(
             "!contains(local.model_controller_dynamic_model_ids, model_id)",
             workload_locals,
@@ -2200,21 +2354,15 @@ class DeploymentContractTests(unittest.TestCase):
             controller_source,
         )
         self.assertIn(
-            '!contains(local.model_controller_dynamic_model_ids, document.model_id)',
+            "!contains(local.model_controller_dynamic_model_ids, document.model_id)",
             controller_source,
         )
-        self.assertIn(
-            "for_each = local.terraform_owned_model_manifests", models_source
-        )
-        self.assertIn(
-            "for_each = local.terraform_owned_model_scalers", models_source
-        )
+        self.assertIn("for_each = local.terraform_owned_model_manifests", models_source)
+        self.assertIn("for_each = local.terraform_owned_model_scalers", models_source)
         self.assertIn(
             '"/admin/api/v1/model-deployments:plan-preview"', controller_source
         )
-        self.assertIn(
-            '"/admin/api/v1/model-deployments:apply"', controller_source
-        )
+        self.assertIn('"/admin/api/v1/model-deployments:apply"', controller_source)
         self.assertIn(
             "public_authority = urllib.parse.urlsplit(public_origin).netloc",
             controller_source,
@@ -2227,20 +2375,20 @@ class DeploymentContractTests(unittest.TestCase):
     def test_model_cache_is_shared_rwx_without_changing_the_default_storage_class(
         self,
     ) -> None:
-        infrastructure = (
-            DEPLOY_ROOT / "stages/infrastructure/cluster.tf"
-        ).read_text(encoding="utf-8")
+        infrastructure = (DEPLOY_ROOT / "stages/infrastructure/cluster.tf").read_text(
+            encoding="utf-8"
+        )
         foundation = (DEPLOY_ROOT / "stages/foundation/releases.tf").read_text(
             encoding="utf-8"
         )
         workload_locals = (DEPLOY_ROOT / "stages/workloads/locals.tf").read_text(
             encoding="utf-8"
         )
-        controller = (
-            DEPLOY_ROOT / "stages/workloads/model_controller.tf"
-        ).read_text(encoding="utf-8")
+        controller = (DEPLOY_ROOT / "stages/workloads/model_controller.tf").read_text(
+            encoding="utf-8"
+        )
 
-        self.assertIn('shared_cache_mount_path', infrastructure)
+        self.assertIn("shared_cache_mount_path", infrastructure)
         self.assertIn('"storage.fs2.nebius/shared-cache" = "true"', infrastructure)
         self.assertIn(
             "try(each.value.features.reference_data_filesystem, false)",
@@ -2254,17 +2402,13 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn('key      = "storage.fs2.nebius/shared-cache"', foundation)
         self.assertNotIn("is-default-class", foundation)
         self.assertIn('accessModes      = ["ReadWriteMany"]', workload_locals)
-        self.assertIn(
-            'storageClassName = "csi-mounted-fs-path-sc"', workload_locals
-        )
+        self.assertIn('storageClassName = "csi-mounted-fs-path-sc"', workload_locals)
         self.assertIn("shared_cache_claim_names", workload_locals)
         self.assertIn(
             "claimName = local.shared_cache_claim_names[volume.persistentVolumeClaim.claimName]",
             workload_locals,
         )
-        self.assertIn(
-            "model_controller_bundle_requires_shared_cache", controller
-        )
+        self.assertIn("model_controller_bundle_requires_shared_cache", controller)
         self.assertIn(
             "!local.model_controller_bundle_requires_shared_cache[model_id] || pool.features.shared_filesystem",
             controller,
@@ -2323,10 +2467,13 @@ class DeploymentContractTests(unittest.TestCase):
             r"^fs2-reference-data-test-r[0-9a-f]{10}-reference-data$",
         )
         self.assertTrue(workloads["pipeline"]["enabled"])
-        self.assertEqual("alphafold3-public-databases-v3.0", workloads["pipeline"]["bundle_id"])
+        self.assertEqual(
+            "alphafold3-public-databases-v3.0", workloads["pipeline"]["bundle_id"]
+        )
         self.assertFalse(workloads["network"]["allow_public_msa_opt_in"])
         self.assertEqual(
-            2048, outputs["effective_configuration"]["reference_data"]["filesystem_size_gib"]
+            2048,
+            outputs["effective_configuration"]["reference_data"]["filesystem_size_gib"],
         )
         self.assertEqual(
             "full-only-when-versioned-bucket-empty",
@@ -2344,26 +2491,36 @@ class DeploymentContractTests(unittest.TestCase):
         infrastructure_source = (
             DEPLOY_ROOT / "stages/infrastructure/storage.tf"
         ).read_text(encoding="utf-8")
-        cluster_source = (
-            DEPLOY_ROOT / "stages/infrastructure/cluster.tf"
-        ).read_text(encoding="utf-8")
-        pipeline_source = (
-            DEPLOY_ROOT / "reference-data/terraform/main.tf"
-        ).read_text(encoding="utf-8")
-        workload_outputs = (
-            DEPLOY_ROOT / "stages/workloads/outputs.tf"
-        ).read_text(encoding="utf-8")
+        cluster_source = (DEPLOY_ROOT / "stages/infrastructure/cluster.tf").read_text(
+            encoding="utf-8"
+        )
+        pipeline_source = (DEPLOY_ROOT / "reference-data/terraform/main.tf").read_text(
+            encoding="utf-8"
+        )
+        workload_outputs = (DEPLOY_ROOT / "stages/workloads/outputs.tf").read_text(
+            encoding="utf-8"
+        )
         self.assertIn('versioning_policy     = "ENABLED"', infrastructure_source)
-        self.assertIn('forbid_deletion  = var.reference_data.filesystem.forbid_deletion', infrastructure_source)
+        self.assertIn(
+            "forbid_deletion  = var.reference_data.filesystem.forbid_deletion",
+            infrastructure_source,
+        )
         self.assertIn('mount_tag   = "fs2reference"', cluster_source)
-        self.assertIn('resource "nebius_mk8s_v1_node_group" "reference_data"', cluster_source)
+        self.assertIn(
+            'resource "nebius_mk8s_v1_node_group" "reference_data"', cluster_source
+        )
         self.assertIn('"workload.fs2.nebius/reference-data" = "true"', cluster_source)
         self.assertIn('effect = "NO_SCHEDULE"', cluster_source)
         self.assertNotIn('"nvidia.com/gpu"', pipeline_source)
-        self.assertIn('suspend                 = true', pipeline_source)
-        self.assertIn('"--object-store-prefix", "s3://${var.object_bucket_name}/reference-data"', pipeline_source)
+        self.assertIn("suspend                 = true", pipeline_source)
+        self.assertIn(
+            '"--object-store-prefix", "s3://${var.object_bucket_name}/reference-data"',
+            pipeline_source,
+        )
         self.assertIn('"placement-contract.json" = file(', pipeline_source)
-        self.assertIn("tools_sha256     = sha256(jsonencode(local.tools_files))", pipeline_source)
+        self.assertIn(
+            "tools_sha256     = sha256(jsonencode(local.tools_files))", pipeline_source
+        )
         self.assertRegex(pipeline_source, r"data\s*=\s*local\.tools_files")
         self.assertRegex(
             pipeline_source,
@@ -2425,23 +2582,23 @@ class DeploymentContractTests(unittest.TestCase):
         unmatched_file = self._write_configuration(
             "reference-retained-unmatched", unmatched
         )
-        result, _ = self._plan_file(
-            unmatched_file, "reference-retained-unmatched"
-        )
+        result, _ = self._plan_file(unmatched_file, "reference-retained-unmatched")
         self.assertNotEqual(0, result.returncode)
         self.assertIn(
             "explicit retain+forbid_deletion semantics",
             f"{result.stdout}\n{result.stderr}",
         )
 
-    def test_reference_filesystem_attachment_is_explicit_per_accelerator_pool(self) -> None:
+    def test_reference_filesystem_attachment_is_explicit_per_accelerator_pool(
+        self,
+    ) -> None:
         variables = (DEPLOY_ROOT / "variables.tf").read_text(encoding="utf-8")
-        infrastructure = (
-            DEPLOY_ROOT / "stages/infrastructure/cluster.tf"
-        ).read_text(encoding="utf-8")
-        pool_locals = (
-            DEPLOY_ROOT / "stages/infrastructure/variables.tf"
-        ).read_text(encoding="utf-8")
+        infrastructure = (DEPLOY_ROOT / "stages/infrastructure/cluster.tf").read_text(
+            encoding="utf-8"
+        )
+        pool_locals = (DEPLOY_ROOT / "stages/infrastructure/variables.tf").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("reference_data_filesystem = optional(bool, false)", variables)
         self.assertIn("reference_data_filesystem = optional(bool, false)", pool_locals)
         self.assertIn(
@@ -2480,9 +2637,9 @@ class DeploymentContractTests(unittest.TestCase):
         )
 
     def test_reference_namespace_has_one_cross_state_owner(self) -> None:
-        foundation_locals = (
-            DEPLOY_ROOT / "stages/foundation/locals.tf"
-        ).read_text(encoding="utf-8")
+        foundation_locals = (DEPLOY_ROOT / "stages/foundation/locals.tf").read_text(
+            encoding="utf-8"
+        )
         namespace_block_start = foundation_locals.index("namespaces = toset([")
         namespace_block_end = foundation_locals.index("])", namespace_block_start)
         foundation_namespaces = set(
@@ -2491,12 +2648,12 @@ class DeploymentContractTests(unittest.TestCase):
                 foundation_locals[namespace_block_start:namespace_block_end],
             )
         )
-        workloads = (
-            DEPLOY_ROOT / "stages/workloads/reference_data.tf"
-        ).read_text(encoding="utf-8")
-        reference_module = (
-            DEPLOY_ROOT / "reference-data/terraform/main.tf"
-        ).read_text(encoding="utf-8")
+        workloads = (DEPLOY_ROOT / "stages/workloads/reference_data.tf").read_text(
+            encoding="utf-8"
+        )
+        reference_module = (DEPLOY_ROOT / "reference-data/terraform/main.tf").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn("fs2-data", foundation_namespaces)
         self.assertNotIn("fs2-reference-data", foundation_namespaces)
@@ -2504,12 +2661,12 @@ class DeploymentContractTests(unittest.TestCase):
             workloads,
             r'(?s)module "reference_data".*?'
             r'source\s*=\s*"\.\./\.\./reference-data/terraform".*?'
-            r'namespace\s*=\s*var\.reference_data\.namespace',
+            r"namespace\s*=\s*var\.reference_data\.namespace",
         )
         self.assertRegex(
             reference_module,
             r'(?s)resource "kubernetes_namespace_v1" "reference_data"\s*\{.*?'
-            r'name\s*=\s*var\.namespace',
+            r"name\s*=\s*var\.namespace",
         )
 
     def test_reference_data_capacity_below_af3_plus_one_tib_is_rejected(self) -> None:
@@ -2552,7 +2709,9 @@ class DeploymentContractTests(unittest.TestCase):
                 }
             },
         }
-        variable_file = self._write_configuration("reference-capacity-too-small", deployment)
+        variable_file = self._write_configuration(
+            "reference-capacity-too-small", deployment
+        )
         result, _ = self._plan_file(variable_file, "reference-capacity-too-small")
         self.assertNotEqual(0, result.returncode)
         self.assertRegex(
@@ -2599,8 +2758,9 @@ class DeploymentContractTests(unittest.TestCase):
         outputs = self._planned_outputs(variable_file, "port-offset")
 
         self.assertEqual(
-            outputs["deployment_contract"]["stages"]["infrastructure"]
-            ["port_forward_local_ports"],
+            outputs["deployment_contract"]["stages"]["infrastructure"][
+                "port_forward_local_ports"
+            ],
             deployment["edge"]["port_forward_ports"],
         )
         self.assertEqual(
@@ -2668,7 +2828,10 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("glm-5-2-fp8", contract["selected_model_ids"])
         self.assertIn("qwen3-8b", contract["selected_model_ids"])
         self.assertTrue(
-            all("b300-preemptible" in pool for pool in contract["selected_accelerator_pool_ids"])
+            all(
+                "b300-preemptible" in pool
+                for pool in contract["selected_accelerator_pool_ids"]
+            )
         )
         infrastructure = contract["stages"]["infrastructure"]
         self.assertEqual(infrastructure["gpu_floor_profile"], "zero")
@@ -2731,9 +2894,7 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("glm-5-2-fp8 requires 768.000 GiB", diagnostics)
         self.assertIn("only 224 GiB", diagnostics)
 
-        deployment["accelerator_pools"]["b300-8x-local"]["boot_disk"][
-            "size_gib"
-        ] = 2048
+        deployment["accelerator_pools"]["b300-8x-local"]["boot_disk"]["size_gib"] = 2048
         variable_file = self._write_configuration("glm-large-boot", deployment)
         contract = self._planned_outputs(variable_file, "glm-large-boot")[
             "deployment_contract"
@@ -2774,9 +2935,7 @@ class DeploymentContractTests(unittest.TestCase):
                 )
 
     def test_full_catalog_surfaces_have_exact_model_set_coverage(self) -> None:
-        canonical = set(
-            self.model_profiles["full_catalog"]["canonical_routes"]
-        )
+        canonical = set(self.model_profiles["full_catalog"]["canonical_routes"])
         native = set(self.model_contract.get("managed_native_model_ids", []))
         all_declared = canonical | native
         self.assertFalse(canonical & native)
@@ -2786,7 +2945,14 @@ class DeploymentContractTests(unittest.TestCase):
             set(self.model_contract["model_autoscaling_targets"]),
         )
         self.assertEqual(
-            {model_id for model_id in all_declared if self.model_contract["model_autoscaling_targets"][model_id]["gpu_count"] > 0},
+            {
+                model_id
+                for model_id in all_declared
+                if self.model_contract["model_autoscaling_targets"][model_id][
+                    "gpu_count"
+                ]
+                > 0
+            },
             {
                 placement["model_id"]
                 for placement in self.model_contract["workload_placements"].values()
@@ -2807,83 +2973,164 @@ class DeploymentContractTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
         )
         self.assertEqual(
-            {model_id for model_id in all_declared if self.model_contract["model_autoscaling_targets"][model_id]["gpu_count"] > 0},
+            {
+                model_id
+                for model_id in all_declared
+                if self.model_contract["model_autoscaling_targets"][model_id][
+                    "gpu_count"
+                ]
+                > 0
+            },
             set(accelerator_compatibility["models"]),
         )
 
-    def test_native_aging_explicit_cpu_and_h100_plan_preserves_archived_defaults(self) -> None:
+    def test_native_aging_explicit_cpu_and_h100_plan_preserves_archived_defaults(
+        self,
+    ) -> None:
         entries = {
-            model: json.loads((DEPLOY_ROOT / f"catalog/runtime/deployment-runtimes/{model}-{device}.json").read_text())
+            model: json.loads(
+                (
+                    DEPLOY_ROOT
+                    / f"catalog/runtime/deployment-runtimes/{model}-{device}.json"
+                ).read_text()
+            )
             for model, device in [("phenoage", "cpu"), ("altumage", "cuda")]
         }
         pool_id = "h100-test"
         deployment = {
-            "schema_version": 1, "name": "fs2-aging-native-plan",
-            "target": self.catalog_target(), "profiles": {"models": "full_catalog"},
-            "accelerator_pools": {pool_id: {
-                "platform": "gpu-h100-sxm", "preset": "1gpu-16vcpu-200gb",
-                "accelerator_class": "nvidia-h100-sxm5-80gb", "gpus_per_node": 1,
-                "gpu_memory_gb": 80, "capacity_type": "regular", "min_nodes": 1, "max_nodes": 2,
-                "driver": {"mode": "managed", "preset": "cuda12.4"},
-                "schedulable_capacity": {
-                    "cpu_millicores": 15000, "memory_mib": 180000,
-                    "evidence": {"pool_id": pool_id, "source": f"fixture:utf8:{pool_id}",
-                        "captured_at": "2026-09-08T00:00:00Z",
-                        "payload_sha256": hashlib.sha256(pool_id.encode()).hexdigest()},
-                },
-            }},
-            "cpu_pools": {"batch-cpu": {
-                "platform": "cpu-d3", "preset": "8vcpu-32gb", "capacity_type": "regular",
-                "autoscaling": {"min_nodes": 1, "max_nodes": 2},
-                "schedulable_capacity": {"cpu_millicores": 7000, "memory_mib": 28672, "ephemeral_storage_mib": 114688},
-            }},
+            "schema_version": 1,
+            "name": "fs2-aging-native-plan",
+            "target": self.catalog_target(),
+            "profiles": {"models": "full_catalog"},
+            "accelerator_pools": {
+                pool_id: {
+                    "platform": "gpu-h100-sxm",
+                    "preset": "1gpu-16vcpu-200gb",
+                    "accelerator_class": "nvidia-h100-sxm5-80gb",
+                    "gpus_per_node": 1,
+                    "gpu_memory_gb": 80,
+                    "capacity_type": "regular",
+                    "min_nodes": 1,
+                    "max_nodes": 2,
+                    "driver": {"mode": "managed", "preset": "cuda12.4"},
+                    "schedulable_capacity": {
+                        "cpu_millicores": 15000,
+                        "memory_mib": 180000,
+                        "evidence": {
+                            "pool_id": pool_id,
+                            "source": f"fixture:utf8:{pool_id}",
+                            "captured_at": "2026-09-08T00:00:00Z",
+                            "payload_sha256": hashlib.sha256(
+                                pool_id.encode()
+                            ).hexdigest(),
+                        },
+                    },
+                }
+            },
+            "cpu_pools": {
+                "batch-cpu": {
+                    "platform": "cpu-d3",
+                    "preset": "8vcpu-32gb",
+                    "capacity_type": "regular",
+                    "autoscaling": {"min_nodes": 1, "max_nodes": 2},
+                    "schedulable_capacity": {
+                        "cpu_millicores": 7000,
+                        "memory_mib": 28672,
+                        "ephemeral_storage_mib": 114688,
+                    },
+                }
+            },
             "scheduling": {"budget_core_resources": True},
             "models": {
-                "selection": "explicit", "enabled": ["altumage", "phenoage"],
-                "image_overrides": {model: entry["record"]["runtime"]["image"]["reference"] for model, entry in entries.items()},
+                "selection": "explicit",
+                "enabled": ["altumage", "phenoage"],
+                "image_overrides": {
+                    model: entry["record"]["runtime"]["image"]["reference"]
+                    for model, entry in entries.items()
+                },
                 "pool_overrides": {"altumage": pool_id},
-                "scaling": {"mode": "keda", "hot": ["altumage", "phenoage"],
-                    "overrides": {"phenoage": {"min_replicas": 1, "max_replicas": 14,
-                        "target_queue_depth": 1, "polling_interval_seconds": 5, "cooldown_seconds": 300}}},
+                "scaling": {
+                    "mode": "keda",
+                    "hot": ["altumage", "phenoage"],
+                    "overrides": {
+                        "phenoage": {
+                            "min_replicas": 1,
+                            "max_replicas": 14,
+                            "target_queue_depth": 1,
+                            "polling_interval_seconds": 5,
+                            "cooldown_seconds": 300,
+                        }
+                    },
+                },
             },
             "dynamic_models": {
-                "enabled": True, "writes_enabled": True, "workload_owner": "controller",
-                "bootstrap_model_ids": ["altumage", "phenoage"], "fresh_install": True,
+                "enabled": True,
+                "writes_enabled": True,
+                "workload_owner": "controller",
+                "bootstrap_model_ids": ["altumage", "phenoage"],
+                "fresh_install": True,
             },
         }
         variable_file = self._write_configuration("aging-native", deployment)
-        contract = self._planned_outputs(variable_file, "aging-native")["deployment_contract"]
+        contract = self._planned_outputs(variable_file, "aging-native")[
+            "deployment_contract"
+        ]
         self.assertEqual(contract["selected_model_ids"], ["altumage", "phenoage"])
         self.assertEqual(set(contract["selected_model_placements"]), {"altumage"})
-        self.assertEqual(contract["selected_model_replica_ceilings"], {"altumage": 2, "phenoage": 14})
-        self.assertEqual(contract["stages"]["workloads"]["model_image_overrides"], deployment["models"]["image_overrides"])
-        self.assertNotIn("phenoage", self.model_profiles["full_catalog"]["canonical_routes"])
+        self.assertEqual(
+            contract["selected_model_replica_ceilings"], {"altumage": 2, "phenoage": 14}
+        )
+        self.assertEqual(
+            contract["stages"]["workloads"]["model_image_overrides"],
+            deployment["models"]["image_overrides"],
+        )
+        self.assertNotIn(
+            "phenoage", self.model_profiles["full_catalog"]["canonical_routes"]
+        )
         workloads = contract["stages"]["workloads"]
-        self.assertEqual(workloads["model_controller"]["bootstrap_model_ids"], ["altumage", "phenoage"])
+        self.assertEqual(
+            workloads["model_controller"]["bootstrap_model_ids"],
+            ["altumage", "phenoage"],
+        )
         self.assertEqual(workloads["hot_model_ids"], ["altumage", "phenoage"])
-        self.assertEqual(workloads["model_scaling_overrides"], deployment["models"]["scaling"]["overrides"])
+        self.assertEqual(
+            workloads["model_scaling_overrides"],
+            deployment["models"]["scaling"]["overrides"],
+        )
 
         # The older database CPU runtime remains static and must not become a
         # controller bootstrap simply because managed CPU Apps now exist.
-        msa = json.loads((DEPLOY_ROOT / "catalog/runtime/deployment-runtimes/msa-search-pdb70-portable-cpu.json").read_text())
+        msa = json.loads(
+            (
+                DEPLOY_ROOT
+                / "catalog/runtime/deployment-runtimes/msa-search-pdb70-portable-cpu.json"
+            ).read_text()
+        )
         deployment["models"]["enabled"].append("msa-search-pdb70")
-        deployment["models"]["image_overrides"]["msa-search-pdb70"] = msa["record"]["runtime"]["image"]["reference"]
+        deployment["models"]["image_overrides"]["msa-search-pdb70"] = msa["record"][
+            "runtime"
+        ]["image"]["reference"]
         deployment["dynamic_models"]["bootstrap_model_ids"].append("msa-search-pdb70")
-        variable_file = self._write_configuration("aging-native-and-static-cpu", deployment)
-        combined = self._planned_outputs(variable_file, "aging-native-and-static-cpu")["deployment_contract"]
-        self.assertEqual(combined["stages"]["workloads"]["model_controller"]["bootstrap_model_ids"], ["altumage", "phenoage"])
-        self.assertEqual(combined["selected_model_replica_ceilings"]["msa-search-pdb70"], 1)
+        variable_file = self._write_configuration(
+            "aging-native-and-static-cpu", deployment
+        )
+        combined = self._planned_outputs(variable_file, "aging-native-and-static-cpu")[
+            "deployment_contract"
+        ]
+        self.assertEqual(
+            combined["stages"]["workloads"]["model_controller"]["bootstrap_model_ids"],
+            ["altumage", "phenoage"],
+        )
+        self.assertEqual(
+            combined["selected_model_replica_ceilings"]["msa-search-pdb70"], 1
+        )
 
     def test_cosmos_manifest_is_gpu_agnostic_and_exact_image_rewrite_is_model_scoped(
         self,
     ) -> None:
         model = json.loads(
             (
-                DEPLOY_ROOT
-                / "catalog"
-                / "runtime"
-                / "models"
-                / "cosmos3-nano.json"
+                DEPLOY_ROOT / "catalog" / "runtime" / "models" / "cosmos3-nano.json"
             ).read_text(encoding="utf-8")
         )
         manifest = next(
@@ -2907,7 +3154,9 @@ class DeploymentContractTests(unittest.TestCase):
             {exact_image},
         )
 
-        mirror = "cr.eu-north1.nebius.cloud/registry/fs2-models/vllm-omni@sha256:" + "1" * 64
+        mirror = (
+            "cr.eu-north1.nebius.cloud/registry/fs2-models/vllm-omni@sha256:" + "1" * 64
+        )
 
         def rewrite(model_id: str, image: str) -> str:
             runtime_images = {
@@ -2915,11 +3164,8 @@ class DeploymentContractTests(unittest.TestCase):
                 "other-model": "example.invalid/other@sha256:" + "2" * 64,
             }
             overrides = {"cosmos3-nano": mirror}
-            is_runtime_image = (
-                image == runtime_images[model_id]
-                or image.startswith(
-                    "registry.example.invalid/k8s-inference/models/"
-                )
+            is_runtime_image = image == runtime_images[model_id] or image.startswith(
+                "registry.example.invalid/k8s-inference/models/"
             )
             return (
                 overrides[model_id]
@@ -2928,7 +3174,9 @@ class DeploymentContractTests(unittest.TestCase):
             )
 
         self.assertEqual(rewrite("cosmos3-nano", exact_image), mirror)
-        adapter = "registry.example.invalid/k8s-inference/sidecars/adapter@sha256:" + "3" * 64
+        adapter = (
+            "registry.example.invalid/k8s-inference/sidecars/adapter@sha256:" + "3" * 64
+        )
         self.assertEqual(rewrite("cosmos3-nano", adapter), adapter)
         self.assertEqual(rewrite("other-model", exact_image), exact_image)
 
@@ -2942,9 +3190,7 @@ class DeploymentContractTests(unittest.TestCase):
             2,
         )
         self.assertGreaterEqual(
-            source.count(
-                '"registry.example.invalid/k8s-inference/models/"'
-            ),
+            source.count('"registry.example.invalid/k8s-inference/models/"'),
             2,
         )
         self.assertNotIn("regexreplace(container.image", source)
@@ -2963,7 +3209,9 @@ class DeploymentContractTests(unittest.TestCase):
             {"nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"},
         )
         self.assertIn("document.placement.required_node_labels", source)
-        self.assertIn("contains(keys(var.model_pool_overrides), document.model_id)", source)
+        self.assertIn(
+            "contains(keys(var.model_pool_overrides), document.model_id)", source
+        )
 
     def test_full_catalog_runtime_images_rewrite_without_sidecar_overreach(
         self,
@@ -2976,13 +3224,9 @@ class DeploymentContractTests(unittest.TestCase):
         runtime_images = {}
         for model_file in catalog["model_files"]:
             model = json.loads(
-                (
-                    DEPLOY_ROOT
-                    / "catalog"
-                    / "runtime"
-                    / "models"
-                    / model_file
-                ).read_text(encoding="utf-8")
+                (DEPLOY_ROOT / "catalog" / "runtime" / "models" / model_file).read_text(
+                    encoding="utf-8"
+                )
             )
             runtime_images[model["model"]["id"]] = model["runtime"]["image"][
                 "reference"
@@ -3014,9 +3258,7 @@ class DeploymentContractTests(unittest.TestCase):
         source_models = {
             path: [
                 model_id
-                for model_id, artifact in self.model_contract[
-                    "model_artifacts"
-                ].items()
+                for model_id, artifact in self.model_contract["model_artifacts"].items()
                 if path in artifact["manifest_paths"]
             ]
             for path in self.model_profiles["full_catalog"]["manifest_paths"]
@@ -3062,8 +3304,7 @@ class DeploymentContractTests(unittest.TestCase):
             any(image.startswith(reserved_prefix) for image in rewritten_images)
         )
         unrelated_sidecar = (
-            "registry.example.invalid/k8s-inference/sidecars/metrics@sha256:"
-            + "4" * 64
+            "registry.example.invalid/k8s-inference/sidecars/metrics@sha256:" + "4" * 64
         )
         self.assertEqual(
             rewrite("cosmos3-nano", unrelated_sidecar),
@@ -3166,24 +3407,34 @@ class DeploymentContractTests(unittest.TestCase):
                 "enabled": ["evo2-40b"],
                 "pool_overrides": {"evo2-40b": "nebius-b300-preemptible-8x"},
                 "runtime_overrides": {
-                    "evo2-40b": {"gpu_count": 2, "compile_cache_abi": "driver-test-sm90"}
+                    "evo2-40b": {
+                        "gpu_count": 2,
+                        "compile_cache_abi": "driver-test-sm90",
+                    }
                 },
             },
             "edge": {"mode": "internal-only"},
         }
         outputs = self._planned_outputs(
-            self._write_configuration("runtime-overrides", deployment), "runtime-overrides"
+            self._write_configuration("runtime-overrides", deployment),
+            "runtime-overrides",
         )
         self.assertEqual(
-            outputs["deployment_contract"]["stages"]["workloads"]["model_runtime_overrides"],
+            outputs["deployment_contract"]["stages"]["workloads"][
+                "model_runtime_overrides"
+            ],
             deployment["models"]["runtime_overrides"],
         )
         deployment["models"]["runtime_overrides"]["evo2-40b"]["gpu_count"] = 0
         result, _ = self._plan_file(
-            self._write_configuration("invalid-runtime-overrides", deployment), "invalid-runtime-overrides"
+            self._write_configuration("invalid-runtime-overrides", deployment),
+            "invalid-runtime-overrides",
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("positive integer GPU counts", " ".join((result.stdout + result.stderr).split()))
+        self.assertIn(
+            "positive integer GPU counts",
+            " ".join((result.stdout + result.stderr).split()),
+        )
 
     def test_pool_override_preserves_scale_from_zero_selector_contract(self) -> None:
         source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(
@@ -3195,7 +3446,9 @@ class DeploymentContractTests(unittest.TestCase):
             ("accelerator.fs2.nebius/pool-id", "var.model_pool_overrides"),
             ("kubernetes.io/arch", "local.selected_queue_pools"),
         ):
-            self.assertRegex(source, re.escape(f'"{label}"') + r"\s*=\s*" + re.escape(expression))
+            self.assertRegex(
+                source, re.escape(f'"{label}"') + r"\s*=\s*" + re.escape(expression)
+            )
         normalized = " ".join(source.split())
         self.assertIn(
             "capacity.scale_from_zero && contains( "
@@ -3211,9 +3464,9 @@ class DeploymentContractTests(unittest.TestCase):
         locals_source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(
             encoding="utf-8"
         )
-        catalog_source = (DEPLOY_ROOT / "stages" / "workloads" / "catalog.tf").read_text(
-            encoding="utf-8"
-        )
+        catalog_source = (
+            DEPLOY_ROOT / "stages" / "workloads" / "catalog.tf"
+        ).read_text(encoding="utf-8")
         control_plane_source = (
             DEPLOY_ROOT / "stages" / "workloads" / "control_plane.tf"
         ).read_text(encoding="utf-8")
@@ -3253,7 +3506,12 @@ class DeploymentContractTests(unittest.TestCase):
         )
         selected = ("cosmos3-nano", "qwen3-8b")
         self.assertEqual(
-            sorted({inventory["routes"][model_id]["service"]["port"] for model_id in selected}),
+            sorted(
+                {
+                    inventory["routes"][model_id]["service"]["port"]
+                    for model_id in selected
+                }
+            ),
             [8000, 8080],
         )
 
@@ -3267,7 +3525,10 @@ class DeploymentContractTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("selected_runtime_ports = [", locals_source)
-        self.assertIn("format(\"%05d\", local.selected_routes[model_id].service.port)", locals_source)
+        self.assertIn(
+            'format("%05d", local.selected_routes[model_id].service.port)',
+            locals_source,
+        )
         self.assertIn("ports = local.selected_runtime_ports", control_plane_source)
         self.assertIn(
             'nodeScalerProvider = local.admin_configuration_enabled ? "nebius-managed-node-group-autoscaler" : ""',
@@ -3277,7 +3538,9 @@ class DeploymentContractTests(unittest.TestCase):
 
     def test_loki_is_scraped_and_publishes_its_grafana_dashboards(self) -> None:
         values = yaml.safe_load(
-            (DEPLOY_ROOT / "stages/foundation/values/loki.yaml").read_text(encoding="utf-8")
+            (DEPLOY_ROOT / "stages/foundation/values/loki.yaml").read_text(
+                encoding="utf-8"
+            )
         )
         self.assertIs(values["monitoring"]["serviceMonitor"]["enabled"], True)
         self.assertIs(values["monitoring"]["dashboards"]["enabled"], True)
@@ -3286,9 +3549,9 @@ class DeploymentContractTests(unittest.TestCase):
         locals_source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(
             encoding="utf-8"
         )
-        catalog_source = (DEPLOY_ROOT / "stages" / "workloads" / "catalog.tf").read_text(
-            encoding="utf-8"
-        )
+        catalog_source = (
+            DEPLOY_ROOT / "stages" / "workloads" / "catalog.tf"
+        ).read_text(encoding="utf-8")
 
         self.assertIn(
             "lean_routes_config_map_digest = sha256(jsonencode(local.lean_routes_config_map_data))",
@@ -3315,13 +3578,15 @@ class DeploymentContractTests(unittest.TestCase):
             catalog_source,
         )
 
-    def test_all_catalog_dependent_immutable_config_maps_are_content_addressed(self) -> None:
+    def test_all_catalog_dependent_immutable_config_maps_are_content_addressed(
+        self,
+    ) -> None:
         locals_source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(
             encoding="utf-8"
         )
-        catalog_source = (DEPLOY_ROOT / "stages" / "workloads" / "catalog.tf").read_text(
-            encoding="utf-8"
-        )
+        catalog_source = (
+            DEPLOY_ROOT / "stages" / "workloads" / "catalog.tf"
+        ).read_text(encoding="utf-8")
 
         for prefix in ("serving_bindings", "platform_contract"):
             self.assertIn(
@@ -3377,12 +3642,8 @@ class DeploymentContractTests(unittest.TestCase):
         ]
         self.assertEqual(contract["selected_model_replica_ceilings"]["qwen3-8b"], 16)
 
-        deployment["models"]["scaling"]["overrides"]["qwen3-8b"][
-            "max_replicas"
-        ] = 17
-        variable_file = self._write_configuration(
-            "replica-over-capacity", deployment
-        )
+        deployment["models"]["scaling"]["overrides"]["qwen3-8b"]["max_replicas"] = 17
+        variable_file = self._write_configuration("replica-over-capacity", deployment)
         result, _ = self._plan_file(variable_file, "replica-over-capacity")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(
@@ -3420,8 +3681,9 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertEqual(contract["selected_accelerator_pool_ids"], ["future-gpu-pool"])
         self.assertEqual(contract["selected_model_ids"], [])
         self.assertEqual(
-            contract["stages"]["infrastructure"]["custom_accelerator_pools"]
-            ["future-gpu-pool"]["platform"],
+            contract["stages"]["infrastructure"]["custom_accelerator_pools"][
+                "future-gpu-pool"
+            ]["platform"],
             "gpu-future-sxm",
         )
 
@@ -3586,20 +3848,22 @@ class DeploymentContractTests(unittest.TestCase):
         )
         values_path = DEPLOY_ROOT / "stages/foundation/values/kueue.yaml"
         values = yaml.safe_load(values_path.read_text(encoding="utf-8"))
-        manager = yaml.safe_load(
-            values["managerConfig"]["controllerManagerConfigYaml"]
-        )
+        manager = yaml.safe_load(values["managerConfig"]["controllerManagerConfigYaml"])
 
         # Helm installs the chart by immutable digest, and the same digest is
         # what the verification provisioner resolves, so both cannot install
         # different bytes. The archive SHA-256 is a recorded identity of that
         # digest's tarball, not a separate thing Helm consumes.
-        foundation_locals = (DEPLOY_ROOT / "stages/foundation/locals.tf").read_text(encoding="utf-8")
+        foundation_locals = (DEPLOY_ROOT / "stages/foundation/locals.tf").read_text(
+            encoding="utf-8"
+        )
         # Helm installs the exact archive the verifier checked, materialized
         # during plan at a content-addressed path under the run root.
         self.assertIn("chart            = local.kueue_chart_archive", releases)
         self.assertIn('data "external" "kueue_chart"', releases)
-        self.assertIn("FS2_KUEUE_CHART_ARCHIVE        = local.kueue_chart_archive", releases)
+        self.assertIn(
+            "FS2_KUEUE_CHART_ARCHIVE        = local.kueue_chart_archive", releases
+        )
         self.assertIn(
             "kueue_chart_archive = data.external.kueue_chart.result.path",
             foundation_locals,
@@ -3619,7 +3883,9 @@ class DeploymentContractTests(unittest.TestCase):
             values["controllerManager"]["manager"]["image"]["tag"],
             "v0.17.8@sha256:cecba825d0b0feab9bed2835efe2eb8d825512f1616c8762ab80c53f2ea6afe6",
         )
-        self.assertNotIn("cecba825d0b0feab9bed2835efe2eb8d825512f1616c8762ab80c53f2ea6afe6", releases)
+        self.assertNotIn(
+            "cecba825d0b0feab9bed2835efe2eb8d825512f1616c8762ab80c53f2ea6afe6", releases
+        )
         self.assertEqual(
             values["controllerManager"]["nodeSelector"],
             {"workload.fs2.nebius/system": "true"},
@@ -3632,33 +3898,68 @@ class DeploymentContractTests(unittest.TestCase):
 
 
 def test_workloads_wires_exact_discovered_api_endpoint_hosts_to_envoy_webhook() -> None:
-    locals_source = (DEPLOY_ROOT / "stages/workloads/locals.tf").read_text(encoding="utf-8")
-    control_plane_source = (DEPLOY_ROOT / "stages/workloads/control_plane.tf").read_text(encoding="utf-8")
-    cluster_contract_source = (DEPLOY_ROOT / "stages/workloads/cluster_contract.tf").read_text(encoding="utf-8")
+    locals_source = (DEPLOY_ROOT / "stages/workloads/locals.tf").read_text(
+        encoding="utf-8"
+    )
+    control_plane_source = (
+        DEPLOY_ROOT / "stages/workloads/control_plane.tf"
+    ).read_text(encoding="utf-8")
+    cluster_contract_source = (
+        DEPLOY_ROOT / "stages/workloads/cluster_contract.tf"
+    ).read_text(encoding="utf-8")
 
     assert "kubernetes_api_endpoint_cidrs = toset([" in locals_source
     assert 'strcontains(ip, ":") ? 128 : 32' in locals_source
-    assert "webhookSourceCidrs = sort(tolist(local.kubernetes_api_endpoint_cidrs))" in control_plane_source
+    assert (
+        "webhookSourceCidrs = sort(tolist(local.kubernetes_api_endpoint_cidrs))"
+        in control_plane_source
+    )
     assert "length(local.kubernetes_api_endpoint_cidrs) >= 1" in cluster_contract_source
     assert "local.kubernetes_api_endpoint_cidrs" in cluster_contract_source
 
 
-def test_control_plane_release_uses_executable_network_policy_transition_boundary() -> None:
-    source = (DEPLOY_ROOT / "stages/workloads/control_plane.tf").read_text(encoding="utf-8")
-    release = source.split('resource "helm_release" "control_plane"', maxsplit=1)[1].split(
-        'resource "terraform_data" "control_plane_network_policy_transition_complete"', maxsplit=1
+def test_control_plane_release_uses_executable_network_policy_transition_boundary() -> (
+    None
+):
+    source = (DEPLOY_ROOT / "stages/workloads/control_plane.tf").read_text(
+        encoding="utf-8"
+    )
+    release = source.split('resource "helm_release" "control_plane"', maxsplit=1)[
+        1
+    ].split(
+        'resource "terraform_data" "control_plane_network_policy_transition_complete"',
+        maxsplit=1,
     )[0]
 
     assert "atomic          = false" in release
     assert "cleanup_on_fail = false" in release
     assert "terraform_data.control_plane_network_policy_transition_stage" in release
-    assert source.index('resource "terraform_data" "control_plane_network_policy_transition_stage"') < source.index(
-        'resource "helm_release" "control_plane"'
-    )
+    assert source.index(
+        'resource "terraform_data" "control_plane_network_policy_transition_stage"'
+    ) < source.index('resource "helm_release" "control_plane"')
     assert 'command     = <<-EOT\n      "$FS2_TRANSITION_SCRIPT" prepare' in source
     assert 'command     = <<-EOT\n      "$FS2_TRANSITION_SCRIPT" complete' in source
     assert source.count('--security-handoff-socket "$FS2_SECURITY_HANDOFF_SOCKET"') == 3
-    assert source.count('--security-handoff-public-key "$FS2_SECURITY_HANDOFF_PUBLIC_KEY"') == 3
+    assert (
+        source.count(
+            '--security-handoff-server-public-key "$FS2_SECURITY_HANDOFF_SERVER_PUBLIC_KEY"'
+        )
+        == 3
+    )
+    assert (
+        source.count(
+            '--security-handoff-client-public-key "$FS2_SECURITY_HANDOFF_CLIENT_PUBLIC_KEY"'
+        )
+        == 3
+    )
+    assert (
+        source.count(
+            '--security-handoff-client-private-key "$FS2_SECURITY_HANDOFF_CLIENT_PRIVATE_KEY"'
+        )
+        == 3
+    )
+    assert "network_policy_security_enforcer.py" in source
+    assert "network-policy-security-handoff-v2.schema.json" in source
     assert "network_policy_boundary_contract.security_handoff" in source
     assert "security_owner_kubeconfig" not in source
     assert "depends_on = [helm_release.control_plane]" in source

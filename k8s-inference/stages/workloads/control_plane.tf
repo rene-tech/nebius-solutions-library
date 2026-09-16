@@ -245,7 +245,9 @@ locals {
   control_plane_network_policy_transition_sha256 = sha256(join("\n", [
     filesha256(local.control_plane_network_policy_transition_script),
     filesha256("${local.fs2_root}/components/control-plane/scripts/network_policy_transition.py"),
-    filesha256("${local.fs2_root}/components/control-plane/contracts/network-policy-security-handoff.schema.json"),
+    filesha256("${local.fs2_root}/components/control-plane/scripts/network_policy_security_enforcer.py"),
+    filesha256("${local.fs2_root}/components/control-plane/scripts/network_policy_security_recovery_approval.py"),
+    filesha256("${local.fs2_root}/components/control-plane/contracts/network-policy-security-handoff-v2.schema.json"),
     filesha256("${local.fs2_root}/stages/foundation/control_plane_network_policy_boundary.tf"),
     filesha256("${local.fs2_root}/charts/control-plane/control-plane.values.yaml"),
     join("\n", [
@@ -273,7 +275,9 @@ resource "terraform_data" "control_plane_network_policy_transition_stage" {
         --chart "$FS2_CHART" \
         --kubeconfig "$FS2_KUBECONFIG" \
         --security-handoff-socket "$FS2_SECURITY_HANDOFF_SOCKET" \
-        --security-handoff-public-key "$FS2_SECURITY_HANDOFF_PUBLIC_KEY" \
+        --security-handoff-server-public-key "$FS2_SECURITY_HANDOFF_SERVER_PUBLIC_KEY" \
+        --security-handoff-client-public-key "$FS2_SECURITY_HANDOFF_CLIENT_PUBLIC_KEY" \
+        --security-handoff-client-private-key "$FS2_SECURITY_HANDOFF_CLIENT_PRIVATE_KEY" \
         --context "$FS2_KUBE_CONTEXT" \
         --values "$FS2_BASE_VALUES" \
         --values-env FS2_CONTROL_PLANE_OVERRIDES \
@@ -283,20 +287,22 @@ resource "terraform_data" "control_plane_network_policy_transition_stage" {
         --values-env FS2_SCIENTIFIC_CHART_OVERRIDES
     EOT
     environment = {
-      FS2_TRANSITION_SCRIPT             = local.control_plane_network_policy_transition_script
-      FS2_RELEASE                       = "fs2-serve-control-plane"
-      FS2_RELEASE_NAMESPACE             = "fs2-system"
-      FS2_CHART                         = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"
-      FS2_KUBECONFIG                    = var.kubeconfig_path
-      FS2_SECURITY_HANDOFF_SOCKET       = local.control_plane_network_policy_security_handoff.socket_path
-      FS2_SECURITY_HANDOFF_PUBLIC_KEY   = local.control_plane_network_policy_security_handoff.public_key
-      FS2_KUBE_CONTEXT                  = var.kube_context
-      FS2_BASE_VALUES                   = "${local.fs2_root}/charts/control-plane/control-plane.values.yaml"
-      FS2_CONTROL_PLANE_OVERRIDES       = yamlencode(local.control_plane_overrides)
-      FS2_ADMIN_CONTROL_PLANE_OVERRIDES = yamlencode(local.admin_control_plane_overrides)
-      FS2_BOOTSTRAP_ACCESS_OVERRIDES    = yamlencode(local.bootstrap_access_overrides)
-      FS2_SCIENTIFIC_ACCESS_OVERRIDES   = yamlencode(local.scientific_access_overrides)
-      FS2_SCIENTIFIC_CHART_OVERRIDES    = yamlencode(local.scientific_chart_overrides)
+      FS2_TRANSITION_SCRIPT                   = local.control_plane_network_policy_transition_script
+      FS2_RELEASE                             = "fs2-serve-control-plane"
+      FS2_RELEASE_NAMESPACE                   = "fs2-system"
+      FS2_CHART                               = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"
+      FS2_KUBECONFIG                          = var.kubeconfig_path
+      FS2_SECURITY_HANDOFF_SOCKET             = local.control_plane_network_policy_security_handoff.socket_path
+      FS2_SECURITY_HANDOFF_SERVER_PUBLIC_KEY  = local.control_plane_network_policy_security_handoff.server_public_key
+      FS2_SECURITY_HANDOFF_CLIENT_PUBLIC_KEY  = local.control_plane_network_policy_security_handoff.client_public_key
+      FS2_SECURITY_HANDOFF_CLIENT_PRIVATE_KEY = local.control_plane_network_policy_security_handoff.client_private_key_path
+      FS2_KUBE_CONTEXT                        = var.kube_context
+      FS2_BASE_VALUES                         = "${local.fs2_root}/charts/control-plane/control-plane.values.yaml"
+      FS2_CONTROL_PLANE_OVERRIDES             = yamlencode(local.control_plane_overrides)
+      FS2_ADMIN_CONTROL_PLANE_OVERRIDES       = yamlencode(local.admin_control_plane_overrides)
+      FS2_BOOTSTRAP_ACCESS_OVERRIDES          = yamlencode(local.bootstrap_access_overrides)
+      FS2_SCIENTIFIC_ACCESS_OVERRIDES         = yamlencode(local.scientific_access_overrides)
+      FS2_SCIENTIFIC_CHART_OVERRIDES          = yamlencode(local.scientific_chart_overrides)
     }
   }
 
@@ -406,14 +412,16 @@ resource "terraform_data" "control_plane_network_policy_transition_complete" {
   triggers_replace = [local.control_plane_network_policy_transition_sha256]
 
   input = {
-    transition_script           = local.control_plane_network_policy_transition_script
-    release                     = local.control_plane_network_policy_release_name
-    release_namespace           = "fs2-system"
-    chart                       = local.control_plane_chart_root
-    kubeconfig                  = var.kubeconfig_path
-    security_handoff_socket     = local.control_plane_network_policy_security_handoff.socket_path
-    security_handoff_public_key = local.control_plane_network_policy_security_handoff.public_key
-    kube_context                = var.kube_context
+    transition_script                   = local.control_plane_network_policy_transition_script
+    release                             = local.control_plane_network_policy_release_name
+    release_namespace                   = "fs2-system"
+    chart                               = local.control_plane_chart_root
+    kubeconfig                          = var.kubeconfig_path
+    security_handoff_socket             = local.control_plane_network_policy_security_handoff.socket_path
+    security_handoff_server_public_key  = local.control_plane_network_policy_security_handoff.server_public_key
+    security_handoff_client_public_key  = local.control_plane_network_policy_security_handoff.client_public_key
+    security_handoff_client_private_key = local.control_plane_network_policy_security_handoff.client_private_key_path
+    kube_context                        = var.kube_context
   }
 
   provisioner "local-exec" {
@@ -425,7 +433,9 @@ resource "terraform_data" "control_plane_network_policy_transition_complete" {
         --chart "$FS2_CHART" \
         --kubeconfig "$FS2_KUBECONFIG" \
         --security-handoff-socket "$FS2_SECURITY_HANDOFF_SOCKET" \
-        --security-handoff-public-key "$FS2_SECURITY_HANDOFF_PUBLIC_KEY" \
+        --security-handoff-server-public-key "$FS2_SECURITY_HANDOFF_SERVER_PUBLIC_KEY" \
+        --security-handoff-client-public-key "$FS2_SECURITY_HANDOFF_CLIENT_PUBLIC_KEY" \
+        --security-handoff-client-private-key "$FS2_SECURITY_HANDOFF_CLIENT_PRIVATE_KEY" \
         --context "$FS2_KUBE_CONTEXT" \
         --values "$FS2_BASE_VALUES" \
         --values-env FS2_CONTROL_PLANE_OVERRIDES \
@@ -435,20 +445,22 @@ resource "terraform_data" "control_plane_network_policy_transition_complete" {
         --values-env FS2_SCIENTIFIC_CHART_OVERRIDES
     EOT
     environment = {
-      FS2_TRANSITION_SCRIPT             = local.control_plane_network_policy_transition_script
-      FS2_RELEASE                       = "fs2-serve-control-plane"
-      FS2_RELEASE_NAMESPACE             = "fs2-system"
-      FS2_CHART                         = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"
-      FS2_KUBECONFIG                    = var.kubeconfig_path
-      FS2_SECURITY_HANDOFF_SOCKET       = local.control_plane_network_policy_security_handoff.socket_path
-      FS2_SECURITY_HANDOFF_PUBLIC_KEY   = local.control_plane_network_policy_security_handoff.public_key
-      FS2_KUBE_CONTEXT                  = var.kube_context
-      FS2_BASE_VALUES                   = "${local.fs2_root}/charts/control-plane/control-plane.values.yaml"
-      FS2_CONTROL_PLANE_OVERRIDES       = yamlencode(local.control_plane_overrides)
-      FS2_ADMIN_CONTROL_PLANE_OVERRIDES = yamlencode(local.admin_control_plane_overrides)
-      FS2_BOOTSTRAP_ACCESS_OVERRIDES    = yamlencode(local.bootstrap_access_overrides)
-      FS2_SCIENTIFIC_ACCESS_OVERRIDES   = yamlencode(local.scientific_access_overrides)
-      FS2_SCIENTIFIC_CHART_OVERRIDES    = yamlencode(local.scientific_chart_overrides)
+      FS2_TRANSITION_SCRIPT                   = local.control_plane_network_policy_transition_script
+      FS2_RELEASE                             = "fs2-serve-control-plane"
+      FS2_RELEASE_NAMESPACE                   = "fs2-system"
+      FS2_CHART                               = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"
+      FS2_KUBECONFIG                          = var.kubeconfig_path
+      FS2_SECURITY_HANDOFF_SOCKET             = local.control_plane_network_policy_security_handoff.socket_path
+      FS2_SECURITY_HANDOFF_SERVER_PUBLIC_KEY  = local.control_plane_network_policy_security_handoff.server_public_key
+      FS2_SECURITY_HANDOFF_CLIENT_PUBLIC_KEY  = local.control_plane_network_policy_security_handoff.client_public_key
+      FS2_SECURITY_HANDOFF_CLIENT_PRIVATE_KEY = local.control_plane_network_policy_security_handoff.client_private_key_path
+      FS2_KUBE_CONTEXT                        = var.kube_context
+      FS2_BASE_VALUES                         = "${local.fs2_root}/charts/control-plane/control-plane.values.yaml"
+      FS2_CONTROL_PLANE_OVERRIDES             = yamlencode(local.control_plane_overrides)
+      FS2_ADMIN_CONTROL_PLANE_OVERRIDES       = yamlencode(local.admin_control_plane_overrides)
+      FS2_BOOTSTRAP_ACCESS_OVERRIDES          = yamlencode(local.bootstrap_access_overrides)
+      FS2_SCIENTIFIC_ACCESS_OVERRIDES         = yamlencode(local.scientific_access_overrides)
+      FS2_SCIENTIFIC_CHART_OVERRIDES          = yamlencode(local.scientific_chart_overrides)
     }
   }
 
@@ -463,18 +475,22 @@ resource "terraform_data" "control_plane_network_policy_transition_complete" {
         --chart "$FS2_CHART" \
         --kubeconfig "$FS2_KUBECONFIG" \
         --security-handoff-socket "$FS2_SECURITY_HANDOFF_SOCKET" \
-        --security-handoff-public-key "$FS2_SECURITY_HANDOFF_PUBLIC_KEY" \
+        --security-handoff-server-public-key "$FS2_SECURITY_HANDOFF_SERVER_PUBLIC_KEY" \
+        --security-handoff-client-public-key "$FS2_SECURITY_HANDOFF_CLIENT_PUBLIC_KEY" \
+        --security-handoff-client-private-key "$FS2_SECURITY_HANDOFF_CLIENT_PRIVATE_KEY" \
         --context "$FS2_KUBE_CONTEXT"
     EOT
     environment = {
-      FS2_TRANSITION_SCRIPT           = self.input.transition_script
-      FS2_RELEASE                     = self.input.release
-      FS2_RELEASE_NAMESPACE           = self.input.release_namespace
-      FS2_CHART                       = self.input.chart
-      FS2_KUBECONFIG                  = self.input.kubeconfig
-      FS2_SECURITY_HANDOFF_SOCKET     = self.input.security_handoff_socket
-      FS2_SECURITY_HANDOFF_PUBLIC_KEY = self.input.security_handoff_public_key
-      FS2_KUBE_CONTEXT                = self.input.kube_context
+      FS2_TRANSITION_SCRIPT                   = self.input.transition_script
+      FS2_RELEASE                             = self.input.release
+      FS2_RELEASE_NAMESPACE                   = self.input.release_namespace
+      FS2_CHART                               = self.input.chart
+      FS2_KUBECONFIG                          = self.input.kubeconfig
+      FS2_SECURITY_HANDOFF_SOCKET             = self.input.security_handoff_socket
+      FS2_SECURITY_HANDOFF_SERVER_PUBLIC_KEY  = self.input.security_handoff_server_public_key
+      FS2_SECURITY_HANDOFF_CLIENT_PUBLIC_KEY  = self.input.security_handoff_client_public_key
+      FS2_SECURITY_HANDOFF_CLIENT_PRIVATE_KEY = self.input.security_handoff_client_private_key
+      FS2_KUBE_CONTEXT                        = self.input.kube_context
     }
   }
 

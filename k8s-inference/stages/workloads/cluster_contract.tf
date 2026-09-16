@@ -161,16 +161,26 @@ resource "terraform_data" "cluster_contract" {
         } &&
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.admission_policy == "fs2-network-policy-boundary" &&
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.admission_binding == "fs2-network-policy-boundary" &&
-        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.schema == "fs2-serve.nebius.ai/network-policy-security-handoff/v1" &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.schema == "fs2-serve.nebius.ai/network-policy-security-handoff/v2" &&
         startswith(data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.socket_path, "/") &&
         !strcontains(data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.socket_path, "..") &&
-        can(regex("^[A-Za-z0-9_-]{43}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.public_key)) &&
-        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.public_key_sha256 == sha256(data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.public_key) &&
+        can(regex("^[A-Za-z0-9_-]{43}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.server_public_key)) &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.server_public_key_sha256 == sha256(data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.server_public_key) &&
+        can(regex("^[A-Za-z0-9_-]{43}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.client_public_key)) &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.client_public_key_sha256 == sha256(data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.client_public_key) &&
+        can(regex("^[A-Za-z0-9_-]{43}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.recovery_public_key)) &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.recovery_public_key_sha256 == sha256(data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.recovery_public_key) &&
+        startswith(data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.client_private_key_path, "/") &&
+        !strcontains(data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.client_private_key_path, "..") &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.peer_uid >= 1 &&
+        floor(data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.peer_uid) == data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.peer_uid &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.peer_gid >= 1 &&
+        floor(data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.peer_gid) == data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.peer_gid &&
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.cluster == {
           api_server_sha256 = sha256(local.selected_api_server)
           kube_system_uid   = var.kube_system_uid
         } &&
-        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.allowed_actions == ["patch-exact-kubernetes-object", "set-admission-recovery"] &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.allowed_actions == ["transition-mutation", "set-admission-recovery"] &&
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.recovery_modes == ["Audit", "Warn", "Deny"] &&
         !data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.delete_allowed,
         false,

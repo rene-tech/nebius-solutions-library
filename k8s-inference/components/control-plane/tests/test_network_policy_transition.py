@@ -20,7 +20,8 @@ SOLUTION_ROOT = CONTROL_ROOT.parents[1]
 CHART = SOLUTION_ROOT / "charts" / "control-plane" / "fs2-serve-control-plane"
 TERRAFORM = SOLUTION_ROOT / "stages" / "workloads" / "control_plane.tf"
 BOUNDARY_TERRAFORM = SOLUTION_ROOT / "stages" / "foundation" / "control_plane_network_policy_boundary.tf"
-HANDOFF_SCHEMA = CONTROL_ROOT / "contracts" / "network-policy-security-handoff.schema.json"
+HANDOFF_SCHEMA = CONTROL_ROOT / "contracts" / "network-policy-security-handoff-v2.schema.json"
+ENFORCER_SCRIPT = CONTROL_ROOT / "scripts" / "network_policy_security_enforcer.py"
 
 
 def _load_transition_module() -> ModuleType:
@@ -148,7 +149,11 @@ def _bare_transition() -> Any:
     transition = object.__new__(TRANSITION.Transition)
     transition.release = "test-release"
     transition.release_namespace = "fs2-system"
-    transition.arguments = type("Arguments", (), {"revision": "7", "timeout": "10m"})()
+    transition.arguments = type(
+        "Arguments",
+        (),
+        {"revision": "7", "timeout": "10m", "recovery_reference": "", "recovery_approval": ""},
+    )()
     transition.holder = "test-holder"
     transition.fence_transitions = 3
     transition.lock = contextlib.nullcontext
@@ -176,6 +181,7 @@ def test_chart_cannot_render_or_own_permanent_boundary() -> None:
 def test_wrapper_delegates_to_state_machine_without_cluster_wide_access() -> None:
     wrapper = WRAPPER.read_text()
     source = SCRIPT.read_text()
+    enforcer = ENFORCER_SCRIPT.read_text()
 
     assert 'exec python3 "${script_dir}/network_policy_transition.py" "$@"' in wrapper
     assert "--all-namespaces" not in source
@@ -183,72 +189,70 @@ def test_wrapper_delegates_to_state_machine_without_cluster_wide_access() -> Non
     assert '"create",\n            "token"' not in source
     assert "SERVICE_ACCOUNT" not in source
     assert 'parser.add_argument("--security-handoff-socket", required=True)' in source
-    assert 'parser.add_argument("--security-handoff-public-key", required=True)' in source
+    assert 'parser.add_argument("--security-handoff-server-public-key", required=True)' in source
+    assert 'parser.add_argument("--security-handoff-client-public-key", required=True)' in source
+    assert 'parser.add_argument("--security-handoff-client-private-key", required=True)' in source
     assert "security_owner_kubeconfig" not in source
-    assert 'action not in {"attest", "patch-exact-kubernetes-object", "set-admission-recovery"}' in source
+    assert 'action not in {"attest", "transition-mutation", "set-admission-recovery"}' in source
     schema = json.loads(HANDOFF_SCHEMA.read_text())
     request_action = schema["$defs"]["request"]["properties"]["action"]["enum"]
-    assert request_action == ["attest", "patch-exact-kubernetes-object", "set-admission-recovery"]
+    assert request_action == ["attest", "transition-mutation", "set-admission-recovery"]
     assert "delete" not in request_action
+    assert "assert_security_owned_file(kubeconfig" in enforcer
+    assert "assert_security_owned_socket_parent(socket_path)" in enforcer
+    assert "security enforcer and rollout peer must use distinct Unix UIDs" in enforcer
+    assert 'arguments.extend([f"--type={patch_type}", "--patch", canonical(patch)])' in enforcer
+    assert '"delete"' not in enforcer.split("class KubectlAPI:", maxsplit=1)[1].split(
+        "def object_evidence", maxsplit=1
+    )[0]
 
 
 def test_signed_handoff_schema_rejects_generic_or_delete_shaped_requests() -> None:
     schema = json.loads(HANDOFF_SCHEMA.read_text())
     validator = Draft202012Validator(schema)
     base = {
-        "schema": "fs2-serve.nebius.ai/network-policy-security-handoff-request/v1",
+        "schema": "fs2-serve.nebius.ai/network-policy-security-handoff-request/v2",
         "operation_id": "b33f7e4c-bf2f-48ec-a0d3-df64f2393880",
+        "client_key_id": "d" * 64,
         "cluster": {"api_server_sha256": "a" * 64, "kube_system_uid": "8af2b70d-25f7-4f0e-9ad0-776abc8a61e2"},
         "release": {"name": "fs2-serve-control-plane", "namespace": "fs2-system"},
         "issued_at": "2026-09-16T16:00:00Z",
         "expires_at": "2026-09-16T16:00:30Z",
     }
-    patch = {
+    request = {
         **base,
-        "action": "patch-exact-kubernetes-object",
+        "action": "transition-mutation",
         "body": {
-            "resource": "networkpolicy",
-            "name": "fs2-serve-control-plane-public-envoy-transition-guard",
-            "namespace": "envoy-gateway-system",
-            "patch_type": "merge",
-            "patch": {"metadata": {"resourceVersion": "17"}},
-            "dry_run": True,
-        },
-    }
-    recovery = {
-        **base,
-        "action": "set-admission-recovery",
-        "body": {
-            "mode": "audit-warn",
-            "recovery_reference": "SEC-1234",
-            "topology_uid": "8af2b70d-25f7-4f0e-9ad0-776abc8a61e2",
-            "topology_sha256": "b" * 64,
-            "receipt": {
+            "operation": "lease-renew",
+            "topology": {
                 "namespace": "fs2-system",
-                "name": "fs2-network-policy-transition",
-                "uid": "52231eb2-e71d-4791-875f-1f72baeb573f",
-                "resource_version": "19",
-                "sha256": "c" * 64,
+                "name": "fs2-network-policy-boundary-topology",
+                "uid": "8af2b70d-25f7-4f0e-9ad0-776abc8a61e2",
+                "resource_version": "18",
+                "sha256": "b" * 64,
             },
-            "lease": {
+            "target": {
+                "api_version": "coordination.k8s.io/v1",
+                "kind": "Lease",
                 "namespace": "fs2-system",
                 "name": "fs2-network-policy-transition",
                 "uid": "e31e7ee2-a6f7-4c76-a48a-c10662a0622e",
                 "resource_version": "21",
-                "holder_identity": "test-holder",
-                "lease_transitions": 3,
+                "state_sha256": "c" * 64,
             },
-            "binding": "fs2-network-policy-boundary",
-            "parameter": {"namespace": "fs2-system", "name": "fs2-network-policy-boundary-parameters"},
-            "delete_allowed": False,
+            "patch_type": "merge",
+            "patch": {"metadata": {"resourceVersion": "17"}},
+            "patch_sha256": "e" * 64,
+            "dry_run": True,
         },
     }
+    envelope = {"signed": request, "signature": "A" * 86}
 
-    assert validator.is_valid(patch)
-    assert validator.is_valid(recovery)
-    assert not validator.is_valid({**patch, "action": "delete"})
-    assert not validator.is_valid({**patch, "body": {**patch["body"], "name": "foreign-policy"}})
-    assert not validator.is_valid({**recovery, "body": {**recovery["body"], "delete_allowed": True}})
+    assert validator.is_valid(envelope)
+    assert not validator.is_valid(request)
+    assert not validator.is_valid({"signed": {**request, "action": "delete"}, "signature": "A" * 86})
+    arbitrary = {**request["body"], "resource": "foreign-policy"}
+    assert not validator.is_valid({"signed": {**request, "body": arbitrary}, "signature": "A" * 86})
 
 
 def test_rollout_identity_cannot_mutate_any_protected_boundary() -> None:
@@ -273,13 +277,23 @@ def test_rollout_identity_cannot_mutate_any_protected_boundary() -> None:
     transition.bootstrap_kubectl = FakeCommand(denied)
     transition.verify_external_iam_boundary(topology)
     assert any(
-        "patch" in call and any("/fs2-network-policy-boundary" in item for item in call)
+        "patch" in call and "--resource-name=fs2-network-policy-boundary" in call
         for call in transition.bootstrap_kubectl.calls
     )
     assert any("proxy-guard" in item for call in transition.bootstrap_kubectl.calls for item in call)
     parameter_name = "fs2-network-policy-boundary-parameters"
     assert any(parameter_name in item for call in transition.bootstrap_kubectl.calls for item in call)
     assert any("deletecollection" in call for call in transition.bootstrap_kubectl.calls)
+    assert any("fs2-network-policy-security-probe" in call for call in transition.bootstrap_kubectl.calls)
+    assert any("system:authenticated" in call for call in transition.bootstrap_kubectl.calls)
+    assert any(
+        call[2] == "bind" and not any(item.startswith("--resource-name=") for item in call)
+        for call in transition.bootstrap_kubectl.calls
+    )
+    assert any(
+        call[2] == "escalate" and not any(item.startswith("--resource-name=") for item in call)
+        for call in transition.bootstrap_kubectl.calls
+    )
     assert any("--subresource=token" in call for call in transition.bootstrap_kubectl.calls)
     assert all(call[:2] == ("auth", "can-i") for call in transition.bootstrap_kubectl.calls)
 
@@ -295,18 +309,27 @@ def test_signed_handoff_must_bind_the_same_cluster_identity() -> None:
     transition = _bare_transition()
     public_key = TRANSITION.base64.urlsafe_b64encode(b"p" * 32).decode().rstrip("=")
     transition.security_handoff_socket = TRANSITION.Path("/run/fs2/security.sock")
-    transition.security_handoff_public_key = public_key
+    transition.security_handoff_server_public_key = public_key
+    transition.security_handoff_client_public_key = public_key
+    transition.security_handoff_client_private_key = TRANSITION.Path("/run/fs2/client.key")
     transition.bootstrap_kubectl = FakeCommand(lambda *_args: _result())
     transition._cluster_identity = lambda _command: ("https://api-one", "uid-one")
     transition._protected_topology = lambda _command: {
         "contract": {
             "security_owner_username": "external-security-owner",
             "security_handoff": {
-                "schema": "fs2-serve.nebius.ai/network-policy-security-handoff/v1",
+                "schema": "fs2-serve.nebius.ai/network-policy-security-handoff/v2",
                 "socket_path": "/run/fs2/security.sock",
-                "public_key": public_key,
-                "public_key_sha256": TRANSITION.sha256_text(public_key),
+                "server_public_key": public_key,
+                "server_public_key_sha256": TRANSITION.sha256_text(public_key),
+                "client_public_key": public_key,
+                "client_public_key_sha256": TRANSITION.sha256_text(public_key),
+                "client_private_key_path": "/run/fs2/client.key",
+                "recovery_public_key_sha256": "e" * 64,
+                "peer_uid": TRANSITION.os.geteuid(),
+                "peer_gid": TRANSITION.os.getegid(),
                 "cluster": {"api_server_sha256": "different", "kube_system_uid": "uid-two"},
+                "allowed_actions": ["transition-mutation", "set-admission-recovery"],
                 "delete_allowed": False,
                 "recovery_modes": ["Audit", "Warn", "Deny"],
             },
@@ -318,30 +341,43 @@ def test_signed_handoff_must_bind_the_same_cluster_identity() -> None:
 
 
 def test_signed_handoff_verifies_request_cluster_expiry_and_ed25519_signature() -> None:
-    private_key = Ed25519PrivateKey.generate()
-    public_key = TRANSITION.base64.urlsafe_b64encode(private_key.public_key().public_bytes_raw()).decode().rstrip("=")
-    cluster = {"api_server_sha256": "a" * 64, "kube_system_uid": "cluster-uid"}
-    handoff = TRANSITION.SecurityHandoff(
-        TRANSITION.Path("/run/fs2/security.sock"),
-        public_key,
-        cluster=cluster,
-        release={"name": "test-release", "namespace": "fs2-system"},
+    server_private_key = Ed25519PrivateKey.generate()
+    server_public_key = (
+        TRANSITION.base64.urlsafe_b64encode(server_private_key.public_key().public_bytes_raw()).decode().rstrip("=")
     )
+    client_private_key = Ed25519PrivateKey.generate()
+    client_public_key = (
+        TRANSITION.base64.urlsafe_b64encode(client_private_key.public_key().public_bytes_raw()).decode().rstrip("=")
+    )
+    cluster = {"api_server_sha256": "a" * 64, "kube_system_uid": "cluster-uid"}
+    handoff = object.__new__(TRANSITION.SecurityHandoff)
+    handoff.socket_path = TRANSITION.Path("/run/fs2/security.sock")
+    handoff.server_public_key = server_private_key.public_key()
+    handoff.server_key_id = TRANSITION.sha256_text(server_public_key)
+    handoff.client_private_key = client_private_key
+    handoff.client_key_id = TRANSITION.sha256_text(client_public_key)
+    handoff.cluster = cluster
+    handoff.release = {"name": "test-release", "namespace": "fs2-system"}
 
-    def exchange(request: dict[str, Any]) -> dict[str, Any]:
+    def exchange(envelope: dict[str, Any]) -> dict[str, Any]:
+        request = envelope["signed"]
+        client_private_key.public_key().verify(
+            TRANSITION.decode_base64url(envelope["signature"], expected_bytes=64),
+            TRANSITION.canonical(request).encode(),
+        )
         issued = TRANSITION.dt.datetime.now(TRANSITION.dt.UTC)
         signed = {
-            "schema": "fs2-serve.nebius.ai/network-policy-security-handoff-response/v1",
+            "schema": "fs2-serve.nebius.ai/network-policy-security-handoff-response/v2",
             "operation_id": request["operation_id"],
             "request_sha256": TRANSITION.sha256_json(request),
             "cluster": cluster,
             "issued_at": issued.isoformat().replace("+00:00", "Z"),
             "expires_at": (issued + TRANSITION.dt.timedelta(seconds=20)).isoformat().replace("+00:00", "Z"),
             "status": "approved",
-            "signer_key_id": handoff.key_id,
+            "signer_key_id": handoff.server_key_id,
             "result": {"attested": True},
         }
-        signature = TRANSITION.base64.urlsafe_b64encode(private_key.sign(TRANSITION.canonical(signed).encode()))
+        signature = TRANSITION.base64.urlsafe_b64encode(server_private_key.sign(TRANSITION.canonical(signed).encode()))
         return {"signed": signed, "signature": signature.decode().rstrip("=")}
 
     handoff._exchange = exchange
@@ -353,7 +389,70 @@ def test_signed_handoff_verifies_request_cluster_expiry_and_ed25519_signature() 
 
 
 def test_protected_command_routes_only_exact_patches_to_signed_handoff() -> None:
-    ordinary = FakeCommand(lambda _arguments, _kwargs: _result(stdout='{"kind":"ConfigMap"}'))
+    topology_contract = {
+        "policy_names": {
+            "proxy_guard": "guard",
+            "controller_guard": "controller-guard",
+            "default_deny": "default-deny",
+        }
+    }
+    topology_resource = {
+        "metadata": {
+            "name": "fs2-network-policy-boundary-topology",
+            "namespace": "fs2-system",
+            "uid": "topology-uid",
+            "resourceVersion": "11",
+        }
+    }
+    receipt = {"phase": "guards-staging", "intent": {"operation": "stage-guards"}}
+    objects = {
+        ("networkpolicy", "guard", "edge-custom"): {
+            "apiVersion": "networking.k8s.io/v1",
+            "kind": "NetworkPolicy",
+            "metadata": {
+                "name": "guard",
+                "namespace": "edge-custom",
+                "uid": "guard-uid",
+                "resourceVersion": "17",
+                "labels": {TRANSITION.BOUNDARY_LABEL: TRANSITION.BOUNDARY_VALUE},
+            },
+            "spec": {},
+        },
+        ("lease", TRANSITION.LEASE_NAME, "fs2-system"): {
+            "apiVersion": "coordination.k8s.io/v1",
+            "kind": "Lease",
+            "metadata": {
+                "name": TRANSITION.LEASE_NAME,
+                "namespace": "fs2-system",
+                "uid": "lease-uid",
+                "resourceVersion": "19",
+                "labels": {TRANSITION.BOUNDARY_LABEL: TRANSITION.BOUNDARY_VALUE},
+            },
+            "spec": {"holderIdentity": "holder", "leaseTransitions": 3},
+        },
+        ("configmap", TRANSITION.RECEIPT_NAME, "fs2-system"): {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {
+                "name": TRANSITION.RECEIPT_NAME,
+                "namespace": "fs2-system",
+                "uid": "receipt-uid",
+                "resourceVersion": "20",
+                "labels": {TRANSITION.BOUNDARY_LABEL: TRANSITION.BOUNDARY_VALUE},
+            },
+            "data": {"receipt.json": TRANSITION.canonical(receipt)},
+        },
+    }
+
+    def ordinary_handler(arguments: tuple[str, ...], _kwargs: dict[str, Any]) -> Any:
+        if arguments[0] != "get":
+            return _result(stdout='{"kind":"ConfigMap"}')
+        resource, name = arguments[1:3]
+        namespace = arguments[arguments.index("--namespace") + 1]
+        resource_object = objects.get((resource, name, namespace), {"kind": "ConfigMap"})
+        return _result(stdout=json.dumps(resource_object))
+
+    ordinary = FakeCommand(ordinary_handler)
 
     class Handoff:
         def __init__(self) -> None:
@@ -381,10 +480,12 @@ def test_protected_command_routes_only_exact_patches_to_signed_handoff() -> None
         ordinary,
         handoff,
         allowed_patch_targets={("networkpolicy", "guard", "edge-custom")},
+        topology={"resource": topology_resource, "contract": topology_contract},
     )
-    assert json.loads(command.run("get", "configmap", "name", "--namespace", "fs2-system", "-o", "json").stdout)[
-        "kind"
-    ] == "ConfigMap"
+    assert (
+        json.loads(command.run("get", "configmap", "name", "--namespace", "fs2-system", "-o", "json").stdout)["kind"]
+        == "ConfigMap"
+    )
     patched = command.run(
         "patch",
         "networkpolicy",
@@ -393,25 +494,17 @@ def test_protected_command_routes_only_exact_patches_to_signed_handoff() -> None
         "edge-custom",
         "--type=merge",
         "--patch",
-        '{"metadata":{"resourceVersion":"17"}}',
+        '{"metadata":{"resourceVersion":"17"},"spec":{}}',
         "--dry-run=server",
         "-o",
         "json",
     )
     assert json.loads(patched.stdout)["kind"] == "NetworkPolicy"
-    assert handoff.calls == [
-        (
-            "patch-exact-kubernetes-object",
-            {
-                "resource": "networkpolicy",
-                "name": "guard",
-                "namespace": "edge-custom",
-                "patch_type": "merge",
-                "patch": {"metadata": {"resourceVersion": "17"}},
-                "dry_run": True,
-            },
-        )
-    ]
+    assert handoff.calls[0][0] == "transition-mutation"
+    assert handoff.calls[0][1]["operation"] == "guard-stage"
+    assert handoff.calls[0][1]["target"]["uid"] == "guard-uid"
+    assert handoff.calls[0][1]["receipt"]["phase"] == "guards-staging"
+    assert handoff.calls[0][1]["dry_run"] is True
     with pytest.raises(TRANSITION.TransitionError, match="signed patch handoff"):
         command.run("delete", "networkpolicy", "guard", "--namespace", "edge-custom")
     with pytest.raises(TRANSITION.TransitionError, match="allowlist"):
@@ -435,7 +528,7 @@ def test_protected_command_routes_only_exact_patches_to_signed_handoff() -> None
             "edge-custom",
             "--type=merge",
             "--patch",
-            '{"metadata":{"resourceVersion":"17"}}',
+            '{"metadata":{"resourceVersion":"17"},"spec":{}}',
         )
 
 
@@ -914,9 +1007,7 @@ def test_release_identity_accepts_successful_helm4_rollback_revision() -> None:
                 return _result(stdout=json.dumps([{"name": "test-release", "revision": "140", "status": "deployed"}]))
             if arguments[0] == "history":
                 return _result(
-                    stdout=json.dumps(
-                        [{"revision": 140, "status": "deployed", "description": "Rollback to 138"}]
-                    )
+                    stdout=json.dumps([{"revision": 140, "status": "deployed", "description": "Rollback to 138"}])
                 )
             if arguments[:2] == ("get", "manifest"):
                 return _result(stdout="manifest")
@@ -1372,24 +1463,36 @@ def test_destroy_resumes_after_deny_mutation_before_commit_receipt() -> None:
 def test_signed_recovery_is_reversible_audit_warn_or_deny_and_never_delete() -> None:
     transition = _bare_transition()
     transition.arguments.recovery_reference = "SEC-1234"
-    transition.live_topology = lambda: {"uid": "topology-uid", "sha256": "a" * 64}
+    transition._recovery_approval = lambda: {"signed": {"approved": True}, "signature": "A" * 86}
+    transition.live_topology = lambda: {
+        "uid": "topology-uid-000000000000",
+        "resource_version": "16",
+        "sha256": "a" * 64,
+    }
     transition.receipt = lambda: (
         {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
             "metadata": {
                 "namespace": "fs2-system",
                 "name": "fs2-network-policy-transition",
-                "uid": "receipt-uid",
+                "uid": "receipt-uid-0000000000000",
                 "resourceVersion": "17",
-            }
+                "labels": {TRANSITION.BOUNDARY_LABEL: TRANSITION.BOUNDARY_VALUE},
+            },
+            "data": {"receipt.json": TRANSITION.canonical({"phase": "active"})},
         },
         {"phase": "active"},
     )
     transition._lease = lambda: {
+        "apiVersion": "coordination.k8s.io/v1",
+        "kind": "Lease",
         "metadata": {
             "namespace": "fs2-system",
             "name": "fs2-network-policy-transition",
-            "uid": "lease-uid",
+            "uid": "lease-uid-000000000000000",
             "resourceVersion": "18",
+            "labels": {TRANSITION.BOUNDARY_LABEL: TRANSITION.BOUNDARY_VALUE},
         },
         "spec": {"holderIdentity": "test-holder", "leaseTransitions": 3},
     }
@@ -1405,6 +1508,8 @@ def test_signed_recovery_is_reversible_audit_warn_or_deny_and_never_delete() -> 
                 "binding": {
                     "metadata": {
                         "name": "fs2-network-policy-boundary",
+                        "uid": "binding-uid-000000000000",
+                        "resourceVersion": "31",
                         "labels": {TRANSITION.BOUNDARY_LABEL: TRANSITION.BOUNDARY_VALUE},
                     },
                     "spec": {
@@ -1416,9 +1521,29 @@ def test_signed_recovery_is_reversible_audit_warn_or_deny_and_never_delete() -> 
                     "metadata": {
                         "namespace": "fs2-system",
                         "name": "fs2-network-policy-boundary-parameters",
+                        "uid": "parameter-uid-0000000000",
+                        "resourceVersion": "32",
                         "labels": {TRANSITION.BOUNDARY_LABEL: TRANSITION.BOUNDARY_VALUE},
                     },
                     "data": {"mode": body["mode"], "delete_allowed": "false"},
+                },
+                "receipt": {
+                    "metadata": {
+                        "uid": "receipt-uid-0000000000000",
+                        "resourceVersion": "33",
+                    },
+                    "data": {
+                        "receipt.json": TRANSITION.canonical(
+                            {
+                                "phase": "active",
+                                "security_recovery": {
+                                    "state": "complete",
+                                    "mode": body["mode"],
+                                    "recovery_reference": body["recovery_reference"],
+                                },
+                            }
+                        )
+                    },
                 },
             }
 
@@ -1431,6 +1556,7 @@ def test_signed_recovery_is_reversible_audit_warn_or_deny_and_never_delete() -> 
     assert all(action == "set-admission-recovery" for action, _body in handoff.calls)
     assert all(body["delete_allowed"] is False for _action, body in handoff.calls)
     assert all(body["lease"]["holder_identity"] == "test-holder" for _action, body in handoff.calls)
+    assert all(body["approval"]["signature"] == "A" * 86 for _action, body in handoff.calls)
 
 
 def test_foundation_security_owner_permanently_owns_boundary_outside_workloads() -> None:
@@ -1452,7 +1578,6 @@ def test_foundation_security_owner_permanently_owns_boundary_outside_workloads()
         assert resource not in control_plane
     assert '"fs2.nebius.ai/network-policy-boundary" = "permanent"' in boundary
     assert "request.userInfo.username == '${local.control_plane_network_policy_security_owner}'" in boundary
-    assert "system:serviceaccount:fs2-system" not in boundary
     assert 'resource "kubernetes_service_account_v1" "control_plane_network_policy_transition"' in boundary
     assert "automount_service_account_token = false" in boundary
     assert 'kind      = "ServiceAccount"' not in boundary
@@ -1460,27 +1585,41 @@ def test_foundation_security_owner_permanently_owns_boundary_outside_workloads()
     assert "permanent boundary objects are never deleted" in boundary
     assert boundary.count("prevent_destroy = true") >= 19
     assert boundary.count("provider = kubernetes.network_policy_security_owner") == 18
-    assert 'ordinary_can "$verb" "$resource/fs2-network-policy-boundary"' in boundary
+    assert 'ordinary_named_can "$verb" "$resource" fs2-network-policy-boundary' in boundary
     assert 'ordinary_can deletecollection "$resource"' in boundary
     assert 'security_can deletecollection "$resource"' in boundary
-    assert 'security_can delete "$resource/fs2-network-policy-boundary"' in boundary
-    assert 'security_can delete "$resource/fs2-network-policy-boundary")" = "no"' in boundary
-    assert 'ordinary_can "$verb" "$resource/$name" --namespace "$namespace"' in boundary
+    assert 'security_named_can delete "$resource" fs2-network-policy-boundary' in boundary
+    assert 'security_named_can delete "$resource" fs2-network-policy-boundary)" = "no"' in boundary
+    assert 'ordinary_named_can "$verb" "$resource" "$name" --namespace "$namespace"' in boundary
     assert "fs2-network-policy-boundary-parameters" in boundary
-    assert 'ordinary_can impersonate "users/$FS2_SECURITY_OWNER_USERNAME"' in boundary
-    assert "serviceaccounts/fs2-network-policy-transition --subresource=token" in boundary
+    assert 'ordinary_named_can impersonate users.authentication.k8s.io "$FS2_SECURITY_OWNER_USERNAME"' in boundary
+    assert "ordinary_named_can create serviceaccounts fs2-network-policy-transition --subresource=token" in boundary
+    assert 'ordinary_can impersonate "$resource"' in boundary
+    assert "ordinary_named_can impersonate groups.authentication.k8s.io system:masters" in boundary
+    assert "ordinary_named_can impersonate groups.authentication.k8s.io system:authenticated" in boundary
+    assert "ordinary_named_can impersonate groups.authentication.k8s.io system:serviceaccounts" in boundary
+    assert "ordinary_named_can impersonate users.authentication.k8s.io fs2-network-policy-security-probe" in boundary
+    assert "ordinary_named_can impersonate serviceaccounts fs2-system:fs2-network-policy-security-probe" in boundary
+    assert "ordinary_named_can impersonate uids.authentication.k8s.io 00000000-0000-4000-8000-000000000000" in boundary
+    assert "ordinary_named_can impersonate userextras.authentication.k8s.io scopes" in boundary
+    assert "ordinary_named_can impersonate userextras.authentication.k8s.io fs2.nebius.ai/security-probe" in boundary
+    assert 'ordinary_can "$verb" "$resource" "$${namespace_args[@]}"' in boundary
+    assert 'ordinary_named_can "$verb" "$resource" "$name"' in boundary
+    assert "security_named_can escalate" in boundary
     assert "get namespace kube-system -o 'jsonpath={.metadata.uid}'" in boundary
     assert 'test "$ordinary_server" = "$security_server"' in boundary
     assert "auth whoami -o json" in boundary
-    assert 'security_can "$verb" "$resource/fs2-network-policy-boundary"' in boundary
+    assert "stat -c '%u' \"$FS2_SECURITY_KUBECONFIG\"" in boundary
+    assert 'test "$(id -u)" != "$FS2_PEER_UID"' in boundary
+    assert 'security_named_can "$verb" "$resource" fs2-network-policy-boundary' in boundary
     assert 'operations  = ["UPDATE", "DELETE"]' in boundary
     assert 'validationActions = ["Deny"]' in boundary
     assert '["Audit", "Warn", "Deny"]' in boundary
     assert re.search(r"delete_allowed\s+= false", boundary)
     assert 'verbs          = ["get", "patch", "update", "delete"]' not in boundary
     assert "resource_names = [" in boundary
-    assert 'resources  = ["pods"]' in boundary
-    assert 'verbs      = ["get", "list"]' in boundary
+    assert 'resources  = ["pods"]' not in boundary
+    assert 'verbs      = ["get", "list"]' not in boundary
     assert 'resources      = ["networkpolicies"]' in boundary
     assert 'resources      = ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]' in boundary
     assert 'kind      = "User"' in boundary
@@ -1501,7 +1640,9 @@ def test_foundation_security_owner_permanently_owns_boundary_outside_workloads()
     assert "cleanup_on_fail = false" in control_plane
     assert "security_owner_kubeconfig" not in control_plane
     assert "--security-handoff-socket" in control_plane
-    assert "--security-handoff-public-key" in control_plane
+    assert "--security-handoff-server-public-key" in control_plane
+    assert "--security-handoff-client-public-key" in control_plane
+    assert "--security-handoff-client-private-key" in control_plane
     assert "stages/workloads/control_plane_network_policy_boundary.tf" not in control_plane
 
 
@@ -1518,7 +1659,7 @@ def test_manual_helm_uninstall_or_replace_cannot_delete_boundary_objects() -> No
         assert name in boundary
     assert 'operations  = ["UPDATE", "DELETE"]' in boundary
     assert "permanent boundary objects are never deleted" in boundary
-    assert 'expression = "request.operation != \'DELETE\'"' in boundary
+    assert "expression = \"request.operation != 'DELETE'\"" in boundary
     assert "decommission-receipt-sha256" not in boundary
     assert 'validationActions = ["Deny"]' in boundary
-    assert 'ignore_changes  = [manifest.spec.validationActions]' in boundary
+    assert "ignore_changes  = [manifest.spec.validationActions]" in boundary

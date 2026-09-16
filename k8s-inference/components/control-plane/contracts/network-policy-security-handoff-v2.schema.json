@@ -1,0 +1,293 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/contracts/network-policy-security-handoff-v2.schema.json",
+  "title": "Authenticated NetworkPolicy security automation handoff",
+  "oneOf": [
+    { "$ref": "#/$defs/requestEnvelope" },
+    { "$ref": "#/$defs/responseEnvelope" }
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" },
+    "uid": { "type": "string", "minLength": 20, "maxLength": 128 },
+    "resourceVersion": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+    "cluster": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_server_sha256", "kube_system_uid"],
+      "properties": {
+        "api_server_sha256": { "$ref": "#/$defs/sha256" },
+        "kube_system_uid": { "$ref": "#/$defs/uid" }
+      }
+    },
+    "topology": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["namespace", "name", "uid", "resource_version", "sha256"],
+      "properties": {
+        "namespace": { "const": "fs2-system" },
+        "name": { "const": "fs2-network-policy-boundary-topology" },
+        "uid": { "$ref": "#/$defs/uid" },
+        "resource_version": { "$ref": "#/$defs/resourceVersion" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "objectEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version", "kind", "namespace", "name", "uid", "resource_version", "state_sha256"
+      ],
+      "properties": {
+        "api_version": { "type": "string", "minLength": 1, "maxLength": 96 },
+        "kind": { "enum": ["ConfigMap", "Lease", "NetworkPolicy"] },
+        "namespace": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$",
+          "maxLength": 253
+        },
+        "uid": { "$ref": "#/$defs/uid" },
+        "resource_version": { "$ref": "#/$defs/resourceVersion" },
+        "state_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "receiptEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version", "kind", "namespace", "name", "uid", "resource_version", "state_sha256",
+        "receipt_sha256", "phase", "intent"
+      ],
+      "properties": {
+        "api_version": { "const": "v1" },
+        "kind": { "const": "ConfigMap" },
+        "namespace": { "const": "fs2-system" },
+        "name": { "const": "fs2-network-policy-transition" },
+        "uid": { "$ref": "#/$defs/uid" },
+        "resource_version": { "$ref": "#/$defs/resourceVersion" },
+        "state_sha256": { "$ref": "#/$defs/sha256" },
+        "receipt_sha256": { "$ref": "#/$defs/sha256" },
+        "phase": { "type": "string", "minLength": 3, "maxLength": 64 },
+        "intent": { "type": ["object", "null"] }
+      }
+    },
+    "leaseEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version", "kind", "namespace", "name", "uid", "resource_version", "state_sha256",
+        "holder_identity", "lease_transitions"
+      ],
+      "properties": {
+        "api_version": { "const": "coordination.k8s.io/v1" },
+        "kind": { "const": "Lease" },
+        "namespace": { "const": "fs2-system" },
+        "name": { "const": "fs2-network-policy-transition" },
+        "uid": { "$ref": "#/$defs/uid" },
+        "resource_version": { "$ref": "#/$defs/resourceVersion" },
+        "state_sha256": { "$ref": "#/$defs/sha256" },
+        "holder_identity": { "type": "string", "minLength": 3, "maxLength": 253 },
+        "lease_transitions": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "recoveryObjectEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_version", "kind", "namespace", "name", "uid", "resource_version", "state_sha256",
+        "spec", "data"
+      ],
+      "properties": {
+        "api_version": { "type": "string", "minLength": 1, "maxLength": 96 },
+        "kind": { "enum": ["ConfigMap", "ValidatingAdmissionPolicyBinding"] },
+        "namespace": { "type": "string", "maxLength": 63 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 253 },
+        "uid": { "$ref": "#/$defs/uid" },
+        "resource_version": { "$ref": "#/$defs/resourceVersion" },
+        "state_sha256": { "$ref": "#/$defs/sha256" },
+        "spec": { "type": ["object", "null"] },
+        "data": { "type": ["object", "null"] }
+      }
+    },
+    "recoveryApproval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signed", "signature"],
+      "properties": {
+        "signed": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema", "mode", "recovery_reference", "cluster", "topology_uid", "topology_sha256",
+            "receipt_uid", "receipt_resource_version", "receipt_sha256", "binding", "parameter",
+            "issued_at", "expires_at", "signer_key_id"
+          ],
+          "properties": {
+            "schema": { "const": "fs2-serve.nebius.ai/network-policy-recovery-approval/v2" },
+            "mode": { "enum": ["audit-warn", "deny"] },
+            "recovery_reference": { "type": "string", "pattern": "^(SEC|INC|CHG)-[1-9][0-9]{2,15}$" },
+            "cluster": { "$ref": "#/$defs/cluster" },
+            "topology_uid": { "$ref": "#/$defs/uid" },
+            "topology_sha256": { "$ref": "#/$defs/sha256" },
+            "receipt_uid": { "$ref": "#/$defs/uid" },
+            "receipt_resource_version": { "$ref": "#/$defs/resourceVersion" },
+            "receipt_sha256": { "$ref": "#/$defs/sha256" },
+            "binding": { "$ref": "#/$defs/recoveryObjectEvidence" },
+            "parameter": { "$ref": "#/$defs/recoveryObjectEvidence" },
+            "issued_at": { "type": "string", "format": "date-time" },
+            "expires_at": { "type": "string", "format": "date-time" },
+            "signer_key_id": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "signature": { "$ref": "#/$defs/signature" }
+      }
+    },
+    "transitionMutationBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "topology", "target", "patch_type", "patch", "patch_sha256", "dry_run"],
+      "properties": {
+        "operation": {
+          "enum": [
+            "lease-acquire", "lease-renew", "lease-release", "receipt-write",
+            "guard-stage", "deny-relax", "deny-activate"
+          ]
+        },
+        "topology": { "$ref": "#/$defs/topology" },
+        "target": { "$ref": "#/$defs/objectEvidence" },
+        "lease": { "$ref": "#/$defs/leaseEvidence" },
+        "receipt": { "$ref": "#/$defs/receiptEvidence" },
+        "patch_type": { "enum": ["json", "merge"] },
+        "patch": {
+          "oneOf": [
+            { "type": "object", "minProperties": 1, "maxProperties": 2 },
+            { "type": "array", "minItems": 1, "maxItems": 8, "items": { "type": "object" } }
+          ]
+        },
+        "patch_sha256": { "$ref": "#/$defs/sha256" },
+        "dry_run": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "operation": { "pattern": "^lease-" } }, "required": ["operation"] },
+          "then": { "not": { "anyOf": [{ "required": ["lease"] }, { "required": ["receipt"] }] } },
+          "else": { "required": ["lease", "receipt"] }
+        }
+      ]
+    },
+    "recoveryBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode", "recovery_reference", "topology", "receipt", "lease", "binding", "parameter",
+        "approval", "delete_allowed"
+      ],
+      "properties": {
+        "mode": { "enum": ["audit-warn", "deny"] },
+        "recovery_reference": { "type": "string", "pattern": "^(SEC|INC|CHG)-[1-9][0-9]{2,15}$" },
+        "topology": { "$ref": "#/$defs/topology" },
+        "receipt": { "$ref": "#/$defs/receiptEvidence" },
+        "lease": { "$ref": "#/$defs/leaseEvidence" },
+        "binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": { "name": { "const": "fs2-network-policy-boundary" } }
+        },
+        "parameter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["namespace", "name"],
+          "properties": {
+            "namespace": { "const": "fs2-system" },
+            "name": { "const": "fs2-network-policy-boundary-parameters" }
+          }
+        },
+        "approval": { "$ref": "#/$defs/recoveryApproval" },
+        "delete_allowed": { "const": false }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema", "operation_id", "client_key_id", "action", "cluster", "release",
+        "issued_at", "expires_at", "body"
+      ],
+      "properties": {
+        "schema": { "const": "fs2-serve.nebius.ai/network-policy-security-handoff-request/v2" },
+        "operation_id": { "type": "string", "format": "uuid" },
+        "client_key_id": { "$ref": "#/$defs/sha256" },
+        "action": { "enum": ["attest", "transition-mutation", "set-admission-recovery"] },
+        "cluster": { "$ref": "#/$defs/cluster" },
+        "release": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "namespace"],
+          "properties": {
+            "name": { "const": "fs2-serve-control-plane" },
+            "namespace": { "const": "fs2-system" }
+          }
+        },
+        "issued_at": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "body": { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "action": { "const": "attest" } }, "required": ["action"] },
+          "then": { "properties": { "body": { "type": "object", "maxProperties": 0 } } }
+        },
+        {
+          "if": { "properties": { "action": { "const": "transition-mutation" } }, "required": ["action"] },
+          "then": { "properties": { "body": { "$ref": "#/$defs/transitionMutationBody" } } }
+        },
+        {
+          "if": { "properties": { "action": { "const": "set-admission-recovery" } }, "required": ["action"] },
+          "then": { "properties": { "body": { "$ref": "#/$defs/recoveryBody" } } }
+        }
+      ]
+    },
+    "requestEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signed", "signature"],
+      "properties": {
+        "signed": { "$ref": "#/$defs/request" },
+        "signature": { "$ref": "#/$defs/signature" }
+      }
+    },
+    "responseEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signed", "signature"],
+      "properties": {
+        "signed": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema", "operation_id", "request_sha256", "cluster", "issued_at", "expires_at",
+            "status", "signer_key_id", "result"
+          ],
+          "properties": {
+            "schema": { "const": "fs2-serve.nebius.ai/network-policy-security-handoff-response/v2" },
+            "operation_id": { "type": "string", "format": "uuid" },
+            "request_sha256": { "$ref": "#/$defs/sha256" },
+            "cluster": { "$ref": "#/$defs/cluster" },
+            "issued_at": { "type": "string", "format": "date-time" },
+            "expires_at": { "type": "string", "format": "date-time" },
+            "status": { "const": "approved" },
+            "signer_key_id": { "$ref": "#/$defs/sha256" },
+            "result": { "type": "object" }
+          }
+        },
+        "signature": { "$ref": "#/$defs/signature" }
+      }
+    }
+  }
+}

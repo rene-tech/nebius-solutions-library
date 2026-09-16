@@ -84,9 +84,16 @@
         "reactivate:fs2-serve-control-plane-envoy-default-deny"
       ],
       "namespace_source": "protected-live-fs2-network-policy-boundary-topology-ConfigMap",
-      "state": "renewed-namespaced-Lease-fence-and-v3-ConfigMap-receipt",
-      "mutation_identity": "system:serviceaccount:fs2-system:fs2-network-policy-transition",
+      "state": "renewed-namespaced-Lease-fence-v3-ConfigMap-receipt-and-durable-recovery-intent",
+      "mutation_identity": "external-security-enforcer-with-pinned-client-request-and-server-response-Ed25519-keys",
       "security_owner_identity": "protected-live-topology-external-username",
+      "security_handoff": {
+        "schema": "fs2-serve.nebius.ai/network-policy-security-handoff-request/v2",
+        "peer_authentication": "SO_PEERCRED-exact-UID-and-GID-plus-pinned-client-signature",
+        "mutation_scope": "semantic-exact-resource-transition-operations-with-live-UID-resourceVersion-state-and-Lease-fence",
+        "recovery_authorization": "separate-pinned-key-exact-mode-governed-reference-and-durable-original-approval-binding",
+        "delete_allowed": false
+      },
       "deletion_protection": "external-security-owner-IAM-plus-Terraform-prevent_destroy-and-security-owner-decommission-receipt",
       "pod_discovery": "namespaced-server-pagination-limit-100-max-10-pages"
     },
