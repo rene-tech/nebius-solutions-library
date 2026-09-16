@@ -65,8 +65,14 @@ class UserStorageService:
                 return
             owner = user.principal_id if policy.mode == "user" else ""
             bucket = await self.repository.bucket(user.tenant_id, owner)
-            if bucket is None or bucket["quota_bytes"] != policy.quota_bytes:
-                bucket = await self.provider.ensure_bucket(user.tenant_id, owner, policy.quota_bytes)
+            if (
+                bucket is None
+                or bucket["quota_bytes"] != policy.quota_bytes
+                or bucket["bucket_name"] != self.provider.bucket_name(user.tenant_id, owner)
+            ):
+                bucket = await self.provider.ensure_bucket(
+                    user.tenant_id, owner, policy.quota_bytes, existing=bucket,
+                )
                 await self.repository.save_bucket(user.tenant_id, owner, bucket)
             if credential is None:
                 value = await self.provider.ensure_credentials(user.tenant_id, user.principal_id, bucket["group_id"])

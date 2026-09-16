@@ -97,11 +97,14 @@ class Provider:
     def __init__(self):
         self.bucket_calls, self.key_calls, self.enabled_calls = [], [], []
 
-    async def ensure_bucket(self, tenant, owner, quota):
+    def bucket_name(self, tenant, owner):
+        return f"bucket-{tenant}-{owner}"
+
+    async def ensure_bucket(self, tenant, owner, quota, *, existing=None):
         self.bucket_calls.append((tenant, owner, quota))
         return dict(
             bucket_id=f"b-{tenant}-{owner}",
-            bucket_name=f"bucket-{tenant}-{owner}",
+            bucket_name=self.bucket_name(tenant, owner),
             group_id=f"g-{tenant}-{owner}",
             endpoint="https://storage.example.test",
             region="test",
@@ -179,6 +182,18 @@ async def test_quota_update_preserves_identity_and_mode_change_requires_migratio
     assert len(env.provider.key_calls) == 1
     with pytest.raises(ConflictError):
         await env.service.configure("customer-a", StoragePolicy(mode="user"))
+
+
+async def test_naming_migration_preserves_bucket_identity_and_user_credentials(env):
+    await env.service.ensure(user())
+    old = dict(env.repository.buckets["customer-a", ""])
+    env.provider.bucket_name = lambda tenant, owner: "fs2-customer-a-identity"
+    await env.service.ensure(user())
+    current = env.repository.buckets["customer-a", ""]
+    assert current["bucket_id"] == old["bucket_id"]
+    assert current["group_id"] == old["group_id"]
+    assert current["bucket_name"] == "fs2-customer-a-identity"
+    assert len(env.provider.key_calls) == 1
 
 
 async def test_failed_key_creation_retries_saved_bucket_and_other_users_continue(env):

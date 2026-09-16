@@ -61,7 +61,9 @@ class PostgresUserStorageRepository:
             """INSERT INTO fs2_storage_buckets
             (tenant_id,owner_key,bucket_id,bucket_name,group_id,endpoint,region,quota_bytes)
             VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(tenant_id,owner_key)
-            DO UPDATE SET quota_bytes=excluded.quota_bytes""",
+            DO UPDATE SET quota_bytes=excluded.quota_bytes,bucket_name=excluded.bucket_name
+            WHERE fs2_storage_buckets.bucket_id=excluded.bucket_id
+            AND fs2_storage_buckets.group_id=excluded.group_id""",
             tenant,
             owner,
             bucket["bucket_id"],

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import re
+import unicodedata
 from typing import Any
 
 from grpc import StatusCode  # type: ignore[import-untyped]
@@ -42,6 +44,22 @@ class NebiusUserStorage:
         digest = hashlib.sha256(f"{self.project_id}\0{tenant}\0{owner}".encode()).hexdigest()[:24]
         return f"{self.prefix}-{kind}-{digest}"
 
+    def bucket_name(self, tenant: str, owner: str) -> str:
+        """Readable S3 name; the raw identity hash disambiguates slugs/truncation.
+
+        IAM names and ownership labels deliberately remain stable across the
+        naming migration. A shared tenant bucket never includes a user name.
+        """
+        def slug(value: str, limit: int, fallback: str) -> str:
+            ascii_value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
+            return re.sub(r"[^a-z0-9]+", "-", ascii_value).strip("-")[:limit].rstrip("-") or fallback
+
+        digest = hashlib.sha256(f"{self.project_id}\0{tenant}\0{owner}".encode()).hexdigest()[:16]
+        parts = ["fs2", slug(tenant, 20 if owner else 42, "tenant")]
+        if owner:
+            parts.append(slug(owner, 21, "user"))
+        return "-".join([*parts, digest])
+
     @staticmethod
     async def _operation(request: Any) -> str:
         operation = await request
@@ -75,8 +93,11 @@ class NebiusUserStorage:
     def _metadata(parent: str, name: str) -> ResourceMetadata:
         return ResourceMetadata(parent_id=parent, name=name, labels={"fs2-storage-owner": name})
 
-    async def ensure_bucket(self, tenant: str, owner: str, quota: int) -> dict[str, Any]:
+    async def ensure_bucket(
+        self, tenant: str, owner: str, quota: int, *, existing: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         name = self.name("bucket", tenant, owner)
+        readable_name = self.bucket_name(tenant, owner)
         group = await self._named(
             self.groups,
             iam.GetGroupByNameRequest(parent_id=self.project_id, name=name),
@@ -92,18 +113,40 @@ class NebiusUserStorage:
                 )
             ]
         )
-        bucket = await self._named(
-            self.buckets,
-            storage.GetBucketByNameRequest(parent_id=self.project_id, name=name),
-            storage.CreateBucketRequest(
-                metadata=self._metadata(self.project_id, name),
-                spec=storage.BucketSpec(max_size_bytes=quota, bucket_policy=policy),
-            ),
-            name,
-        )
+        bucket = None
+        if existing is not None:
+            # Never create a replacement for an existing bucket. Preserve its
+            # objects, IAM group and credentials, including after a rename retry.
+            bucket = await self.buckets.get(storage.GetBucketRequest(id=existing["bucket_id"]))
+        else:
+            # Adopt a legacy create that succeeded before the DB step completed.
+            try:
+                bucket = await self.buckets.get_by_name(
+                    storage.GetBucketByNameRequest(parent_id=self.project_id, name=name)
+                )
+            except RequestError as exc:
+                if exc.status.code != StatusCode.NOT_FOUND:
+                    raise
+        if bucket is None:
+            metadata = self._metadata(self.project_id, name)
+            metadata.name = readable_name
+            bucket = await self._named(
+                self.buckets,
+                storage.GetBucketByNameRequest(parent_id=self.project_id, name=readable_name),
+                storage.CreateBucketRequest(
+                    metadata=metadata,
+                    spec=storage.BucketSpec(max_size_bytes=quota, bucket_policy=policy),
+                ),
+                name,
+            )
+        if bucket.metadata.labels.get("fs2-storage-owner") != name:
+            raise ValueError("existing bucket is not owned by this customer-storage controller")
+        if existing is not None and existing["group_id"] != group.metadata.id:
+            raise ValueError("existing bucket IAM group identity changed")
         # Preserve unrelated bucket settings and use resource-version checking.
-        if bucket.spec.max_size_bytes != quota:
+        if bucket.spec.max_size_bytes != quota or bucket.metadata.name != readable_name:
             bucket.spec.max_size_bytes = quota
+            bucket.metadata.name = readable_name
             await self._operation(
                 self.buckets.update(
                     storage.UpdateBucketRequest(
@@ -114,7 +157,7 @@ class NebiusUserStorage:
             )
         return {
             "bucket_id": bucket.metadata.id,
-            "bucket_name": name,
+            "bucket_name": bucket.metadata.name,
             "group_id": group.metadata.id,
             "endpoint": f"https://storage.{self.region}.nebius.cloud",
             "region": self.region,
