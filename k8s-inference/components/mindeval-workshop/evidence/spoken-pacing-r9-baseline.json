@@ -1,0 +1,29 @@
+{
+  "release": "r9",
+  "image_digest": "sha256:377451e2a4296b7713aec33fb4ad6e2fd9bc49dec6291866bc4b6ca7e5a6261c",
+  "run_id": "33c26d98-4ac6-42ef-a3df-0b00f4e32629",
+  "source": "retained workshop report plus ordinary owner-authenticated GET /v1/operations/{id}",
+  "operation_reads_date_utc": "2026-09-16",
+  "source_report_sha256": "9193ba47f2b7b9075c6cbde062a48384db2a9dabc8b341ba52d51821c11b47a4",
+  "model_id": "magpie-tts-multilingual-357m",
+  "model_revision": "dynamic:sha256:3477e7530b0b292545dc3d535dc48b0679f0cefa18e66206ca2299093d6756ac",
+  "all_operation_http_status": 200,
+  "all_operation_status": "succeeded",
+  "all_modality_usage_reported": true,
+  "each_operation_estimated_gpu_seconds": 10800.0,
+  "each_operation_reserved_gpu_seconds_after_completion": 0.0,
+  "segments": [
+    {"turn_index": 1, "role": "clinician", "operation_id": "87003e65-87e1-4a3e-b940-f3ab9e57748a", "input_characters": 302, "audio_seconds": 17.368526077097506, "started_at": "2026-09-16T18:04:49.186824Z", "completed_at": "2026-09-16T18:05:02.105451Z", "running_seconds": 12.918627},
+    {"turn_index": 2, "role": "patient", "operation_id": "23b5d4cd-c096-414a-8261-6fad1ebb8384", "input_characters": 660, "audio_seconds": 38.26648526077098, "started_at": "2026-09-16T18:05:43.438813Z", "completed_at": "2026-09-16T18:06:10.465420Z", "running_seconds": 27.026607},
+    {"turn_index": 3, "role": "clinician", "operation_id": "4ea8d50e-20dc-4367-a632-652c7730d522", "input_characters": 821, "audio_seconds": 45.27891156462585, "started_at": "2026-09-16T18:06:43.939981Z", "completed_at": "2026-09-16T18:07:14.882985Z", "running_seconds": 30.943004},
+    {"turn_index": 3, "role": "clinician", "operation_id": "ea419417-8e26-40ab-b631-95076fa3ae4b", "input_characters": 1024, "audio_seconds": 56.888888888888886, "started_at": "2026-09-16T18:07:37.274216Z", "completed_at": "2026-09-16T18:08:17.297051Z", "running_seconds": 40.022835},
+    {"turn_index": 3, "role": "clinician", "operation_id": "2df14ac1-9df9-482c-9bd0-5c8c4408a8fc", "input_characters": 386, "audio_seconds": 19.783401360544218, "started_at": "2026-09-16T18:08:39.042747Z", "completed_at": "2026-09-16T18:08:52.499023Z", "running_seconds": 13.456276},
+    {"turn_index": 4, "role": "patient", "operation_id": "44aec35a-88dc-4e8b-a051-2e2634b385d7", "input_characters": 722, "audio_seconds": 39.05596371882086, "started_at": "2026-09-16T18:09:14.972484Z", "completed_at": "2026-09-16T18:09:42.461948Z", "running_seconds": 27.489464}
+  ],
+  "total_retained_audio_seconds": 216.6421768707483,
+  "summed_operation_running_seconds": 151.856813,
+  "interpretation": "Ordinary operation started-to-completed wall time, not measured exclusive physical GPU occupancy. Fixed estimated_gpu_seconds values are not used as actual usage duration. Retained-segment comparison excludes the initial deliberately interrupted attempt. Different generated replies and concurrent load prevent a controlled causal r9/r10 performance claim.",
+  "functional_completion_passed": true,
+  "seamless_live_passed": false,
+  "live_gap_reason_captured": false
+}

@@ -1,0 +1,152 @@
+{
+  "run_id": "0783b3d4-45d7-4e10-9260-9d0a83dea83e",
+  "release": "r10",
+  "image_digest": "sha256:987feef5dc66883351dfae377878f02e233dca5af96004a7453662f0ab6c3392",
+  "source_report_sha256": "87bdac8d128e052c4fa822a21e5e5e2a8b6be4cac67d84efdac8bdfd10cf8b2c",
+  "collected_at": "2026-09-16T18:41:14.642104+00:00",
+  "status": "completed",
+  "turns": [
+    {
+      "turn_index": 1,
+      "role": "clinician",
+      "voice": "Jason",
+      "audio_seconds": 11.00625850340136,
+      "first_audio_seconds": 2.2459511919878423,
+      "roundtrip_seconds": 15.654916831990704,
+      "chunk_pacing_seconds": 8.850998317240737,
+      "max_lead_seconds": 0.499976766994223,
+      "live_chunks": 237,
+      "text_completion_latency_ms": 857.25
+    },
+    {
+      "turn_index": 2,
+      "role": "patient",
+      "voice": "Sofia",
+      "audio_seconds": 53.54521541950113,
+      "first_audio_seconds": 2.316267724032514,
+      "roundtrip_seconds": 62.331134015112184,
+      "chunk_pacing_seconds": 45.64239225164056,
+      "max_lead_seconds": 0.4999697906896472,
+      "live_chunks": 1153,
+      "text_completion_latency_ms": 9703.362
+    },
+    {
+      "turn_index": 3,
+      "role": "clinician",
+      "voice": "Jason",
+      "audio_seconds": 103.74675736961451,
+      "first_audio_seconds": 3.0969698949484155,
+      "roundtrip_seconds": 260.6275838459842,
+      "chunk_pacing_seconds": 89.44144507846795,
+      "max_lead_seconds": 0.4999789053108543,
+      "live_chunks": 2234,
+      "text_completion_latency_ms": 13963.188
+    },
+    {
+      "turn_index": 4,
+      "role": "patient",
+      "voice": "Sofia",
+      "audio_seconds": 69.0097052154195,
+      "first_audio_seconds": 2.520048059988767,
+      "roundtrip_seconds": 82.45533052308019,
+      "chunk_pacing_seconds": 60.148972504772246,
+      "max_lead_seconds": 0.4999771626899019,
+      "live_chunks": 1486,
+      "text_completion_latency_ms": 4651.132
+    }
+  ],
+  "operations": [
+    {
+      "turn_index": 1,
+      "segment_index": 0,
+      "id": "9e3f5469-1494-49d6-9bb4-424db7654f95",
+      "input_characters": 200,
+      "audio_seconds": 11.00625850340136,
+      "accepted_at": "2026-09-16T18:32:22.282702Z",
+      "started_at": "2026-09-16T18:32:22.478736Z",
+      "completed_at": "2026-09-16T18:32:30.513720Z",
+      "admission_queue_seconds": 0.196034,
+      "running_seconds": 8.034984,
+      "segment_retained_at": "2026-09-16T18:32:37.369773+00:00"
+    },
+    {
+      "turn_index": 2,
+      "segment_index": 0,
+      "id": "ca7bef3f-9cd3-4aa4-92cf-06678c1876f5",
+      "input_characters": 955,
+      "audio_seconds": 53.54521541950113,
+      "accepted_at": "2026-09-16T18:32:47.725333Z",
+      "started_at": "2026-09-16T18:32:48.056926Z",
+      "completed_at": "2026-09-16T18:33:24.072097Z",
+      "admission_queue_seconds": 0.331593,
+      "running_seconds": 36.015171,
+      "segment_retained_at": "2026-09-16T18:33:49.501577+00:00"
+    },
+    {
+      "turn_index": 3,
+      "segment_index": 0,
+      "id": "94362195-3e40-460e-97c6-2597034cb6b0",
+      "input_characters": 961,
+      "audio_seconds": 59.2108843537415,
+      "accepted_at": "2026-09-16T18:34:07.404436Z",
+      "started_at": "2026-09-16T18:34:08.130322Z",
+      "completed_at": "2026-09-16T18:34:47.837840Z",
+      "admission_queue_seconds": 0.725886,
+      "running_seconds": 39.707518,
+      "segment_retained_at": "2026-09-16T18:35:15.158874+00:00"
+    },
+    {
+      "turn_index": 3,
+      "segment_index": 1,
+      "id": "34404947-bbed-4b27-979e-e709786e108b",
+      "input_characters": 826,
+      "audio_seconds": 44.535873015873015,
+      "accepted_at": "2026-09-16T18:35:16.514951Z",
+      "started_at": "2026-09-16T18:35:16.890130Z",
+      "completed_at": "2026-09-16T18:35:46.099288Z",
+      "admission_queue_seconds": 0.375179,
+      "running_seconds": 29.209158,
+      "segment_retained_at": "2026-09-16T18:38:27.349146+00:00"
+    },
+    {
+      "turn_index": 4,
+      "segment_index": 0,
+      "id": "4f9b0f5b-3864-4d93-a161-6812bc8b87b5",
+      "input_characters": 990,
+      "audio_seconds": 53.91673469387755,
+      "accepted_at": "2026-09-16T18:38:32.704926Z",
+      "started_at": "2026-09-16T18:38:32.927504Z",
+      "completed_at": "2026-09-16T18:39:09.820921Z",
+      "admission_queue_seconds": 0.222578,
+      "running_seconds": 36.893417,
+      "segment_retained_at": "2026-09-16T18:39:34.209497+00:00"
+    },
+    {
+      "turn_index": 4,
+      "segment_index": 1,
+      "id": "f5ee9327-209a-4a38-a8b4-88101593874a",
+      "input_characters": 264,
+      "audio_seconds": 15.09297052154195,
+      "accepted_at": "2026-09-16T18:39:35.358427Z",
+      "started_at": "2026-09-16T18:39:35.927683Z",
+      "completed_at": "2026-09-16T18:39:47.001135Z",
+      "admission_queue_seconds": 0.569256,
+      "running_seconds": 11.073452,
+      "segment_retained_at": "2026-09-16T18:39:54.667316+00:00"
+    }
+  ],
+  "all_operation_http_status": 200,
+  "all_operation_status": "succeeded",
+  "all_modality_usage_reported": true,
+  "tts_model": "magpie-tts-multilingual-357m",
+  "tts_revision": "dynamic:sha256:3477e7530b0b292545dc3d535dc48b0679f0cefa18e66206ca2299093d6756ac",
+  "each_tts_operation_estimated_gpu_seconds": 10800,
+  "each_tts_operation_reserved_gpu_seconds_after_completion": 0,
+  "summary": {
+    "total_audio_seconds": 237.30793650793652,
+    "summed_tts_operation_running_seconds": 160.9337,
+    "summed_tts_admission_queue_seconds": 2.420526,
+    "max_producer_lead_seconds": 0.4999789053108543
+  },
+  "interpretation": "Ordinary operation wall time is not exclusive GPU occupancy. Fixed estimated_gpu_seconds is not measured utilization. Post-TTS-to-retention includes transport delivery, pacing, ASR admission/execution/polling and retention. Compare r9/r10 descriptively only: generated replies and concurrent load differ. Initial deliberately interrupted attempt is excluded."
+}
