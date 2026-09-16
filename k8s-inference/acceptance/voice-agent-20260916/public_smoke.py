@@ -184,8 +184,15 @@ def main(args):
                     if args.mcp:
                         from public_mcp import run as mcp_run
 
-                        receipt["typed_mcp"] = asyncio.run(
-                            mcp_run(args.origin, key, args.english)
+                        receipt["typed_mcp"] = {}
+                        asyncio.run(
+                            mcp_run(
+                                args.origin,
+                                key,
+                                args.english,
+                                receipt["typed_mcp"],
+                                args.mcp_model,
+                            )
                         )
                 else:
                     denied = client.post(
@@ -221,4 +228,5 @@ if __name__ == "__main__":
         parser.add_argument("--" + key, required=True)
     parser.add_argument("--voice", action="store_true")
     parser.add_argument("--mcp", action="store_true")
+    parser.add_argument("--mcp-model", choices=VOICE_MODELS, action="append")
     main(parser.parse_args())

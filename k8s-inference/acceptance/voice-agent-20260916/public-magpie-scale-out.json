@@ -1,0 +1,623 @@
+{
+  "model": "magpie-tts-multilingual-357m",
+  "key_revoked": true,
+  "scale_applied_during_established_session": true,
+  "scale": {
+    "mode": "scale",
+    "results": [
+      {
+        "model": "magpie-tts-multilingual-357m",
+        "proposal": {
+          "name": "magpie-tts-multilingual-357m",
+          "namespace": "fs2-models",
+          "base_etag": "sha256:3477e7530b0b292545dc3d535dc48b0679f0cefa18e66206ca2299093d6756ac",
+          "spec": {
+            "modelRef": "magpie-tts-multilingual-357m",
+            "app": null,
+            "tenantId": "tenant-e00f3wdfzwfjgbcyfv",
+            "lifecycle": {
+              "desiredState": "Enabled"
+            },
+            "artifact": {
+              "revision": "19806879b16d3f2ccf28fb112b1bcd16a3c7923e",
+              "manifestDigest": "sha256:eac965fec8b4a4383a12918fd2729493211d126f53e77ef78db00d33db5f5cc1",
+              "storageRef": null
+            },
+            "runtime": {
+              "profile": "custom",
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead",
+              "templateRef": {
+                "name": "magpie-tts-multilingual-357m.legacy-v1",
+                "digest": "sha256:687b113deacd65af5a5ae1748ae4bf17c15ca5939d12790a8a2ad2dca14f7040"
+              }
+            },
+            "placement": {
+              "poolRefs": [
+                "l40s-1x"
+              ],
+              "acceleratorsPerReplica": 1,
+              "topologyPolicy": "SingleNode"
+            },
+            "availability": {
+              "minReplicas": 2,
+              "maxReplicas": 2,
+              "idleSeconds": 300,
+              "targetQueueDepth": 1,
+              "pollingIntervalSeconds": 5,
+              "cooldownSeconds": 300,
+              "startupTimeoutSeconds": null,
+              "warmWindows": []
+            },
+            "cache": {
+              "tier": "Disabled",
+              "snapshotPreference": "Never",
+              "snapshotRef": null,
+              "mechanism": null
+            },
+            "queue": {
+              "localQueue": "inference-models",
+              "priorityClass": "standard",
+              "maxQueueSeconds": 7200
+            },
+            "rollout": {
+              "strategy": "Rolling",
+              "maxUnavailable": 0,
+              "maxSurge": 1,
+              "progressDeadlineSeconds": 7200
+            },
+            "exposure": {
+              "openAI": false,
+              "openAIAliases": [],
+              "mcp": true,
+              "mcpToolName": "infer_magpie_tts_multilingual_357m"
+            },
+            "policy": {
+              "visibility": "Tenant",
+              "policyRef": "tenant-default.v1",
+              "allowedPrincipalIds": [],
+              "ratePolicyRef": null
+            },
+            "adoption": {
+              "mode": "None",
+              "receiptRef": null
+            },
+            "fastStart": {
+              "mode": "Fixed",
+              "level": "Off",
+              "minimumLevel": null,
+              "maximumLevel": null,
+              "fallbackPolicy": "AllowLowerLevel"
+            }
+          }
+        },
+        "preview": {
+          "schema_version": "fs2-serve.nebius.ai/model-deployment-render-preview/v1",
+          "preview_id": "c253f38f-e40c-4547-b5c1-2331dfb4f1d1",
+          "name": "magpie-tts-multilingual-357m",
+          "namespace": "fs2-models",
+          "base_etag": "sha256:3477e7530b0b292545dc3d535dc48b0679f0cefa18e66206ca2299093d6756ac",
+          "proposed_etag": "sha256:c9b1e71dbe6fb5d08384e0c58f68ce16817f2cc087f307ee21c683395a52dba9",
+          "decision": {
+            "disposition": "accepted",
+            "specDigest": "sha256:c9b1e71dbe6fb5d08384e0c58f68ce16817f2cc087f307ee21c683395a52dba9",
+            "issues": [],
+            "terraformInputs": [],
+            "admittedPoolRef": "l40s-1x",
+            "fastStart": {
+              "mode": "Fixed",
+              "fallbackPolicy": "AllowLowerLevel",
+              "requestedLevel": "Off",
+              "minimumLevel": null,
+              "maximumLevel": null,
+              "qualifiedLevel": "Off",
+              "assignedLevel": "Off",
+              "requestedTargetSeconds": null,
+              "targetSeconds": null,
+              "qualification": {
+                "state": "NoTarget",
+                "reason": "NoFastStartTarget",
+                "message": "assigned level Off has no startup-time target (l40s-1x: no compatible model-start p95)"
+              },
+              "modelStart": null,
+              "capacityWait": null,
+              "endToEnd": null,
+              "selectedIdentityDigest": null,
+              "pools": [
+                {
+                  "poolRef": "l40s-1x",
+                  "acceleratorClass": "nvidia-l40s-48gb",
+                  "qualifiedLevel": "Off",
+                  "reason": "NoCurrentRuntimeEvidence",
+                  "mechanisms": [],
+                  "selectedMechanism": null,
+                  "selectedCompatibilityTupleDigest": null,
+                  "selectedIdentityDigest": null,
+                  "receiptDigests": [],
+                  "modelStart": null,
+                  "capacityWait": null,
+                  "endToEnd": null,
+                  "paths": [],
+                  "retainedPaths": []
+                }
+              ]
+            },
+            "fastStartMechanism": {
+              "mechanism": "conventional",
+              "source": "Default",
+              "renderable": true,
+              "reason": "ConventionalDefault"
+            }
+          },
+          "render": {
+            "renderer": "legacy-manifest-v1",
+            "specDigest": "sha256:c9b1e71dbe6fb5d08384e0c58f68ce16817f2cc087f307ee21c683395a52dba9",
+            "renderDigest": "sha256:ce5b08b125c4d0b863340a9748b99fadddcbf879984520f5d6e2590cd429e1fd",
+            "resources": [
+              {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "namespace": "fs2-models",
+                "name": "magpie-tts-multilingual-357m",
+                "manifest": {
+                  "apiVersion": "apps/v1",
+                  "kind": "Deployment",
+                  "metadata": {
+                    "labels": {
+                      "app.kubernetes.io/component": "model-runtime",
+                      "app.kubernetes.io/name": "magpie-tts-multilingual-357m",
+                      "app.kubernetes.io/part-of": "fs2-serve",
+                      "fs2-serve.nebius.ai/model-id": "magpie-tts-multilingual-357m",
+                      "fs2.voice/model": "magpie-tts-multilingual-357m",
+                      "workload.fs2.nebius/owner": "voice-agent-20260916",
+                      "app.kubernetes.io/managed-by": "fs2-model-controller",
+                      "fs2-serve.nebius.ai/model-deployment": "magpie-tts-multilingual-357m",
+                      "kueue.x-k8s.io/queue-name": "inference-models",
+                      "kueue.x-k8s.io/priority-class": "standard",
+                      "fs2-serve.nebius.ai/workload-role": "hot-l40s-1x"
+                    },
+                    "name": "magpie-tts-multilingual-357m",
+                    "namespace": "fs2-models",
+                    "annotations": {
+                      "fs2-serve.nebius.ai/spec-digest": "sha256:c9b1e71dbe6fb5d08384e0c58f68ce16817f2cc087f307ee21c683395a52dba9",
+                      "fs2-serve.nebius.ai/effective-hot-floor": "2",
+                      "fs2-serve.nebius.ai/workload-pool-ref": "l40s-1x",
+                      "fs2-serve.nebius.ai/workload-role": "hot",
+                      "fs2-serve.nebius.ai/workload-segment-capacity": "2",
+                      "fs2-serve.nebius.ai/workload-segment-offset": "0"
+                    }
+                  },
+                  "spec": {
+                    "replicas": 2,
+                    "selector": {
+                      "matchLabels": {
+                        "app.kubernetes.io/name": "magpie-tts-multilingual-357m"
+                      }
+                    },
+                    "strategy": {
+                      "type": "RollingUpdate",
+                      "rollingUpdate": {
+                        "maxUnavailable": 0,
+                        "maxSurge": 1
+                      }
+                    },
+                    "template": {
+                      "metadata": {
+                        "labels": {
+                          "app.kubernetes.io/component": "model-runtime",
+                          "app.kubernetes.io/name": "magpie-tts-multilingual-357m",
+                          "app.kubernetes.io/part-of": "fs2-serve",
+                          "fs2-serve.nebius.ai/model-id": "magpie-tts-multilingual-357m",
+                          "fs2.voice/model": "magpie-tts-multilingual-357m",
+                          "workload.fs2.nebius/owner": "voice-agent-20260916",
+                          "app.kubernetes.io/managed-by": "fs2-model-controller",
+                          "fs2-serve.nebius.ai/model-deployment": "magpie-tts-multilingual-357m"
+                        },
+                        "annotations": {
+                          "fs2-serve.nebius.ai/spec-digest": "sha256:c9b1e71dbe6fb5d08384e0c58f68ce16817f2cc087f307ee21c683395a52dba9",
+                          "fs2-serve.nebius.ai/effective-hot-floor": "2",
+                          "fs2-serve.nebius.ai/workload-pool-ref": "l40s-1x",
+                          "fs2-serve.nebius.ai/workload-role": "hot",
+                          "fs2-serve.nebius.ai/workload-segment-capacity": "2",
+                          "fs2-serve.nebius.ai/workload-segment-offset": "0"
+                        }
+                      },
+                      "spec": {
+                        "automountServiceAccountToken": false,
+                        "containers": [
+                          {
+                            "env": [
+                              {
+                                "name": "FS2_VOICE_MODEL",
+                                "value": "magpie-tts-multilingual-357m"
+                              },
+                              {
+                                "name": "OMP_NUM_THREADS",
+                                "value": "2"
+                              },
+                              {
+                                "name": "FS2_SPEECH_ARTIFACT_HOSTS",
+                                "valueFrom": {
+                                  "configMapKeyRef": {
+                                    "key": "artifact-hosts",
+                                    "name": "fs2-speech-runtime-settings"
+                                  }
+                                }
+                              }
+                            ],
+                            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead",
+                            "imagePullPolicy": "IfNotPresent",
+                            "lifecycle": {
+                              "preStop": {
+                                "exec": {
+                                  "command": [
+                                    "python",
+                                    "-c",
+                                    "import json,time,urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/drain',method='POST'),timeout=5); deadline=time.monotonic()+1850; exec(\"while time.monotonic()<deadline:\\n try:\\n  r=urllib.request.urlopen('http://127.0.0.1:8000/metrics',timeout=5).read().decode()\\n  if 'fs2_voice_occupied 0.0' in r: break\\n except Exception: break\\n time.sleep(1)\"); time.sleep(5)"
+                                  ]
+                                }
+                              }
+                            },
+                            "livenessProbe": {
+                              "failureThreshold": 5,
+                              "httpGet": {
+                                "path": "/healthz",
+                                "port": "http"
+                              },
+                              "periodSeconds": 30
+                            },
+                            "name": "voice",
+                            "ports": [
+                              {
+                                "containerPort": 8000,
+                                "name": "http"
+                              }
+                            ],
+                            "readinessProbe": {
+                              "httpGet": {
+                                "path": "/readyz",
+                                "port": "http"
+                              },
+                              "periodSeconds": 3
+                            },
+                            "resources": {
+                              "limits": {
+                                "cpu": "4",
+                                "ephemeral-storage": "32Gi",
+                                "memory": "32Gi",
+                                "nvidia.com/gpu": "1"
+                              },
+                              "requests": {
+                                "cpu": "2",
+                                "ephemeral-storage": "16Gi",
+                                "memory": "16Gi",
+                                "nvidia.com/gpu": "1"
+                              }
+                            },
+                            "startupProbe": {
+                              "failureThreshold": 180,
+                              "httpGet": {
+                                "path": "/readyz",
+                                "port": "http"
+                              },
+                              "periodSeconds": 5
+                            },
+                            "volumeMounts": [
+                              {
+                                "mountPath": "/cache",
+                                "name": "cache"
+                              }
+                            ]
+                          }
+                        ],
+                        "nodeSelector": {
+                          "accelerator.fs2.nebius/class": "nvidia-l40s-48gb",
+                          "accelerator.fs2.nebius/pool-id": "l40s-1x",
+                          "capacity.fs2.nebius/gpu-count": "1",
+                          "capacity.fs2.nebius/type": "regular",
+                          "local-nvme.fs2.nebius/eligible": "false",
+                          "snapshot.fs2.nebius/eligible": "false",
+                          "topology.fs2.nebius/scope": "standalone",
+                          "workload.fs2.nebius/gpu": "true"
+                        },
+                        "securityContext": {
+                          "fsGroup": 10001,
+                          "runAsGroup": 10001,
+                          "runAsUser": 10001
+                        },
+                        "terminationGracePeriodSeconds": 1900,
+                        "tolerations": [
+                          {
+                            "effect": "NoSchedule",
+                            "key": "dedicated",
+                            "operator": "Equal",
+                            "value": "fs2-inference"
+                          }
+                        ],
+                        "volumes": [
+                          {
+                            "emptyDir": {
+                              "sizeLimit": "16Gi"
+                            },
+                            "name": "cache"
+                          }
+                        ]
+                      }
+                    },
+                    "progressDeadlineSeconds": 7200
+                  }
+                },
+                "digest": "sha256:d02c2bdcf94da2210f503dcfc27c7ba4316b50dcde97c5f61d7b2bfe2d7a3311",
+                "fieldManager": "fs2-model-controller",
+                "forceConflicts": false
+              },
+              {
+                "apiVersion": "v1",
+                "kind": "ConfigMap",
+                "namespace": "fs2-models",
+                "name": "fs2-model-publication-magpie-tts-multilingual-357m",
+                "manifest": {
+                  "apiVersion": "v1",
+                  "kind": "ConfigMap",
+                  "metadata": {
+                    "name": "fs2-model-publication-magpie-tts-multilingual-357m",
+                    "namespace": "fs2-models",
+                    "labels": {
+                      "app.kubernetes.io/managed-by": "fs2-model-controller",
+                      "app.kubernetes.io/part-of": "fs2-serve",
+                      "app.kubernetes.io/component": "model-runtime",
+                      "fs2-serve.nebius.ai/model-deployment": "magpie-tts-multilingual-357m",
+                      "fs2-serve.nebius.ai/model-id": "magpie-tts-multilingual-357m",
+                      "fs2-serve.nebius.ai/component": "publication-intent"
+                    },
+                    "annotations": {
+                      "fs2-serve.nebius.ai/spec-digest": "sha256:c9b1e71dbe6fb5d08384e0c58f68ce16817f2cc087f307ee21c683395a52dba9",
+                      "fs2-serve.nebius.ai/effective-hot-floor": "2"
+                    }
+                  },
+                  "data": {
+                    "schema": "fs2-serve.nebius.ai/model-publication-intent/v1",
+                    "model_id": "magpie-tts-multilingual-357m",
+                    "tenant_id": "tenant-e00f3wdfzwfjgbcyfv",
+                    "openai": "false",
+                    "openai_aliases_json": "[]",
+                    "mcp": "true",
+                    "mcp_tool_name": "infer_magpie_tts_multilingual_357m",
+                    "policy_ref": "tenant-default.v1",
+                    "readiness_gate": "ModelDeployment/Ready=True"
+                  }
+                },
+                "digest": "sha256:491fcef96760c653a30b6cf9364d7d8c7b907ca4d77dd2f1e512c8b7e4873627",
+                "fieldManager": "fs2-model-controller",
+                "forceConflicts": false
+              },
+              {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "namespace": "fs2-models",
+                "name": "magpie-tts-multilingual-357m",
+                "manifest": {
+                  "apiVersion": "v1",
+                  "kind": "Service",
+                  "metadata": {
+                    "labels": {
+                      "app.kubernetes.io/component": "model-runtime",
+                      "app.kubernetes.io/name": "magpie-tts-multilingual-357m",
+                      "app.kubernetes.io/part-of": "fs2-serve",
+                      "fs2-serve.nebius.ai/model-id": "magpie-tts-multilingual-357m",
+                      "fs2.voice/model": "magpie-tts-multilingual-357m",
+                      "workload.fs2.nebius/owner": "voice-agent-20260916",
+                      "app.kubernetes.io/managed-by": "fs2-model-controller",
+                      "fs2-serve.nebius.ai/model-deployment": "magpie-tts-multilingual-357m"
+                    },
+                    "name": "magpie-tts-multilingual-357m",
+                    "namespace": "fs2-models",
+                    "annotations": {
+                      "fs2-serve.nebius.ai/spec-digest": "sha256:c9b1e71dbe6fb5d08384e0c58f68ce16817f2cc087f307ee21c683395a52dba9",
+                      "fs2-serve.nebius.ai/effective-hot-floor": "2"
+                    }
+                  },
+                  "spec": {
+                    "ports": [
+                      {
+                        "name": "http",
+                        "port": 8000,
+                        "targetPort": "http"
+                      }
+                    ],
+                    "selector": {
+                      "app.kubernetes.io/name": "magpie-tts-multilingual-357m"
+                    }
+                  }
+                },
+                "digest": "sha256:515806850a9ded0a966548b46b254c58eaf74d29ec7aa5fdb765ac8690e4a5dd",
+                "fieldManager": "fs2-model-controller",
+                "forceConflicts": false
+              }
+            ],
+            "endpoint": {
+              "namespace": "fs2-models",
+              "serviceName": "magpie-tts-multilingual-357m",
+              "servicePort": 8000
+            }
+          },
+          "created_at": "2026-09-16T17:55:43.452002Z",
+          "expires_at": "2026-09-16T18:10:43.452002Z",
+          "mutation_supported": true,
+          "blocked_actions": []
+        },
+        "apply_status": 200,
+        "apply": {
+          "meta": {
+            "schema_version": "fs2.admin-api/v1",
+            "generated_at": "2026-09-16T17:55:43.608631Z",
+            "context": {
+              "project": "project-e00rene",
+              "cluster": "k8s-inference-h100",
+              "region": "eu-north1",
+              "from_at": "2026-09-16T16:55:43.608583Z",
+              "to_at": "2026-09-16T17:55:43.608583Z",
+              "timezone": "UTC"
+            },
+            "sources": [
+              {
+                "id": "postgresql",
+                "state": "available",
+                "observed_at": "2026-09-16T17:55:43.608631Z",
+                "age_seconds": 0.0,
+                "reason": null
+              }
+            ],
+            "warnings": []
+          },
+          "data": {
+            "revision": {
+              "namespace": "fs2-models",
+              "name": "magpie-tts-multilingual-357m",
+              "tenant_id": "tenant-e00f3wdfzwfjgbcyfv",
+              "revision": 2,
+              "etag": "sha256:c9b1e71dbe6fb5d08384e0c58f68ce16817f2cc087f307ee21c683395a52dba9",
+              "spec": {
+                "modelRef": "magpie-tts-multilingual-357m",
+                "app": null,
+                "tenantId": "tenant-e00f3wdfzwfjgbcyfv",
+                "lifecycle": {
+                  "desiredState": "Enabled"
+                },
+                "artifact": {
+                  "revision": "19806879b16d3f2ccf28fb112b1bcd16a3c7923e",
+                  "manifestDigest": "sha256:eac965fec8b4a4383a12918fd2729493211d126f53e77ef78db00d33db5f5cc1",
+                  "storageRef": null
+                },
+                "runtime": {
+                  "profile": "custom",
+                  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead",
+                  "templateRef": {
+                    "name": "magpie-tts-multilingual-357m.legacy-v1",
+                    "digest": "sha256:687b113deacd65af5a5ae1748ae4bf17c15ca5939d12790a8a2ad2dca14f7040"
+                  }
+                },
+                "placement": {
+                  "poolRefs": [
+                    "l40s-1x"
+                  ],
+                  "acceleratorsPerReplica": 1,
+                  "topologyPolicy": "SingleNode"
+                },
+                "availability": {
+                  "minReplicas": 2,
+                  "maxReplicas": 2,
+                  "idleSeconds": 300,
+                  "targetQueueDepth": 1,
+                  "pollingIntervalSeconds": 5,
+                  "cooldownSeconds": 300,
+                  "startupTimeoutSeconds": null,
+                  "warmWindows": []
+                },
+                "cache": {
+                  "tier": "Disabled",
+                  "snapshotPreference": "Never",
+                  "snapshotRef": null,
+                  "mechanism": null
+                },
+                "queue": {
+                  "localQueue": "inference-models",
+                  "priorityClass": "standard",
+                  "maxQueueSeconds": 7200
+                },
+                "rollout": {
+                  "strategy": "Rolling",
+                  "maxUnavailable": 0,
+                  "maxSurge": 1,
+                  "progressDeadlineSeconds": 7200
+                },
+                "exposure": {
+                  "openAI": false,
+                  "openAIAliases": [],
+                  "mcp": true,
+                  "mcpToolName": "infer_magpie_tts_multilingual_357m"
+                },
+                "policy": {
+                  "visibility": "Tenant",
+                  "policyRef": "tenant-default.v1",
+                  "allowedPrincipalIds": [],
+                  "ratePolicyRef": null
+                },
+                "adoption": {
+                  "mode": "None",
+                  "receiptRef": null
+                },
+                "fastStart": {
+                  "mode": "Fixed",
+                  "level": "Off",
+                  "minimumLevel": null,
+                  "maximumLevel": null,
+                  "fallbackPolicy": "AllowLowerLevel"
+                }
+              },
+              "action": "update",
+              "created_at": "2026-09-16T17:55:43.562865Z",
+              "created_by": "bootstrap-admin",
+              "previous_revision": 1
+            },
+            "idempotent_replay": false,
+            "projection": "applied",
+            "receipt": {
+              "namespace": "fs2-models",
+              "name": "magpie-tts-multilingual-357m",
+              "uid": "fb0a45dd-4507-4b5f-b599-6e9b49434a50",
+              "resource_version": "45398231",
+              "generation": 2,
+              "spec_digest": "sha256:c9b1e71dbe6fb5d08384e0c58f68ce16817f2cc087f307ee21c683395a52dba9"
+            },
+            "reason": null
+          }
+        }
+      }
+    ],
+    "previous_availability": {
+      "minReplicas": 1,
+      "maxReplicas": 2,
+      "idleSeconds": 300,
+      "targetQueueDepth": 1,
+      "pollingIntervalSeconds": 5,
+      "cooldownSeconds": 300,
+      "startupTimeoutSeconds": null,
+      "warmWindows": []
+    },
+    "status": "applied"
+  },
+  "timing": {
+    "scale_started_monotonic": 8133914.918318673,
+    "scale_applied_monotonic": 8133916.776437142,
+    "existing_session_completed_monotonic": 8133920.646555528
+  },
+  "measurements": [
+    {
+      "voice": "Sofia",
+      "started_monotonic": 8133911.119339729,
+      "first_audio_monotonic": 8133914.918301267,
+      "done": {
+        "type": "audio.done",
+        "operation_id": "afa977e8-9d31-4114-817e-ff879922343f",
+        "samples": 233472,
+        "chunks": 108,
+        "sample_rate_hz": 22050,
+        "duration_seconds": 10.588299319727891,
+        "result_path": "/v1/operations/afa977e8-9d31-4114-817e-ff879922343f/result"
+      },
+      "done_monotonic": 8133920.155980848,
+      "first_audio_seconds": 3.7989615378901362,
+      "elapsed_seconds": 9.036641119048,
+      "audio_seconds": 10.588299319727891,
+      "artifact": {
+        "artifact_id": "6dad6c6a-90bd-4fcb-be1b-33d6d3e9fcc4",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "134a7c3bd1cf1c16f1db8ff37a95cd465a31968b422e6f6a12f975682572e80c",
+        "size_bytes": 466988
+      },
+      "stream_matches_durable_wav": true
+    }
+  ],
+  "status": "passed"
+}

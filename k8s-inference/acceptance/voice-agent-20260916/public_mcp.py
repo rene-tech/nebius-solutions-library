@@ -22,8 +22,10 @@ def data(result):
     return result.structured_content
 
 
-async def run(origin, key, fixture):
-    receipt = {"measurements": []}
+async def run(origin, key, fixture, receipt=None, models=None):
+    if receipt is None:
+        receipt = {}
+    receipt["measurements"] = []
     content = Path(fixture).read_bytes()
     async with (
         httpx2.AsyncClient(
@@ -45,7 +47,7 @@ async def run(origin, key, fixture):
         ) as client,
     ):
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
-        for model in VOICE_MODELS:
+        for model in models or VOICE_MODELS:
             view = data(
                 await client.call_tool(
                     "get_model_schema", {"model_id": model, "protocol": "native"}
@@ -122,6 +124,7 @@ async def run(origin, key, fixture):
                             "get_operation", {"operation_id": operation["id"]}
                         )
                     )
+            row["operation"] = operation
             assert operation["status"] == "succeeded", operation["status"]
             result = data(
                 await client.call_tool(
@@ -144,9 +147,21 @@ async def run(origin, key, fixture):
                     assert wav.getframerate() == 22050 and wav.getnframes() > 0
                     row["audio_seconds"] = wav.getnframes() / wav.getframerate()
                 row["complete_wav_verified"] = True
+                direction, seconds = "output", row["audio_seconds"]
             else:
                 assert result["events"]
                 if model.startswith("parakeet"):
                     assert result["text"].strip()
+                direction, seconds = "input", result["audio_seconds"]
+            usage = operation["modality_usage"]
+            assert operation["modality_usage_reported"]
+            assert any(
+                item["modality"] == "audio"
+                and item["direction"] == direction
+                and item["unit"] == "seconds"
+                and abs(item["amount"] - seconds) < 1e-9
+                for item in usage
+            )
+            row["measured_audio_usage_verified"] = True
     receipt["session_closed"] = True
     return receipt

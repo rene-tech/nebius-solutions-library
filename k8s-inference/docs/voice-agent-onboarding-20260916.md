@@ -84,6 +84,16 @@ editing or broad template ownership override is used. A real disposable paused
 Deployment verified forward and reverse ownership with zero Pods/GPUs and was
 deleted; see `replica-handoff-results.json` and regression tests.
 
+The first public typed-MCP Magpie call exposed a separate generic adapter
+assumption that all native results are JSON. The scoped fix validates only the
+pinned local Magpie native result as a complete nonempty mono PCM16/22050Hz WAV,
+then uses the existing tenant-owned output artifact pipeline and measured audio
+duration accounting. Wrong-rate, malformed/truncated WAVs and HTTP200 JSON error
+bodies fail; non-Magpie native JSON and provider contracts are unchanged.
+Runtime/schema/speech-capacity/artifact regression suite: 96 passed, including
+16 new voice-native cases. Public requalification follows the manager's build;
+the earlier failed MCP operation is not counted as a success.
+
 ## Evidence and limits
 
 `acceptance/voice-agent-20260916/native-results.json` records two distinct real
@@ -111,6 +121,10 @@ snapshots are not inferred from the L40S measurements.
 Initial full control-plane suite: 2031 passed, 102 skipped. Additional native/input
 catalog tests: 84 passed; registration/legacy profile tests: 15 passed;
 deployment storage/model coverage: 2 passed; resident runtime lifecycle: 13 passed.
+Final manager-owned integrated CP suite: 2101 passed, 102 skipped; scoped
+controller/ownership regression suite: 54 passed. The manager updated the
+existing exact-route-set test to include `/v1/voice` without weakening its
+long-lived route timeout assertions.
 
 | Resident L40S worker | First output, three warm runs | End-to-end RTF, three runs | Sampled peak GPU memory |
 | --- | --- | --- | --- |
@@ -155,6 +169,16 @@ cached restart measurements and is not new-node provisioning time.
 The independent public Pipecat reference also completed Jason/Sofia synthesis,
 PCM frame delivery, complete WAV preservation, Nemotron transcription and
 RTVI events; its own evidence belongs to the gateway acceptance directory.
+
+`public-parakeet-concurrency.json` and `public-sortformer-concurrency.json`
+record simultaneous public clients on distinct managed backend IDs.
+`public-sortformer-scale-out.json` records the ordinary fixed-two admin apply
+after a real first speaker event; the existing stream completed. The separate
+`managed-two-replica-cohort.json` proves both Apps actually reached two Ready
+workers and retained canonical Service selection. `public-parakeet-drain.json`
+then records graceful deletion of only the Pod serving one admitted session:
+that session finished, the sibling accepted and completed another, and the
+replacement became Ready. Actual node loss/cloud preemption was not tested.
 
 Raw GPU samples and exact Pod/node/image/startup provenance are retained in
 `runtime-provenance.json` and three CSV files. GPU means include idle periods and
