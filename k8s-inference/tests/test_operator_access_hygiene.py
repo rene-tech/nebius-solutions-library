@@ -317,6 +317,14 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             updated["resource_changes"][0]["change"]["actions"] = ["update"]
             with self.assertRaisesRegex(GUARD.GuardError, "update"):
                 GUARD.inspect_plan(updated, identity_receipt=receipt)
+
+            omitted = json.loads(json.dumps(plan))
+            omitted["resource_changes"] = []
+            with self.assertRaisesRegex(GUARD.GuardError, "omitted"):
+                GUARD.inspect_plan(omitted, identity_receipt=receipt)
+
+            with self.assertRaisesRegex(GUARD.GuardError, "change inventory"):
+                GUARD.inspect_plan({"prior_state": state}, identity_receipt=receipt)
         for address in (
             "random_id.bootstrap_access_token_id",
             "random_id.scientific_access_token_id[0]",
@@ -392,16 +400,42 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             manifest = GUARD.write_artifact_manifest(
                 root, base / "artifacts.receipt.json"
             )
+            disposition = GUARD.write_disposition_receipt(
+                manifest,
+                {
+                    "schema": "fs2-serve.nebius.ai/run-root-artifact-disposition-input/v1",
+                    "artifacts": [
+                        {
+                            "path": item["path"],
+                            "sha256": item["sha256"],
+                            "action": "encrypted-rewrap",
+                            "evidence_id": "audit-receipt-0001",
+                        }
+                        for item in manifest["artifacts"]
+                    ],
+                },
+                base / "dispositions.receipt.json",
+            )
             self.assertEqual(
                 GUARD.inspect_run_root(root, retired=False)["plaintext_artifacts"], 1
             )
             with self.assertRaises(GUARD.GuardError):
-                GUARD.inspect_run_root(root, retired=True, artifact_manifest=manifest)
+                GUARD.inspect_run_root(
+                    root,
+                    retired=True,
+                    artifact_manifest=manifest,
+                    disposition_receipt=disposition,
+                )
             state.unlink()
+            with self.assertRaisesRegex(GUARD.GuardError, "disposition"):
+                GUARD.inspect_run_root(root, retired=True, artifact_manifest=manifest)
             self.assertEqual(
-                GUARD.inspect_run_root(root, retired=True, artifact_manifest=manifest)[
-                    "plaintext_artifacts"
-                ],
+                GUARD.inspect_run_root(
+                    root,
+                    retired=True,
+                    artifact_manifest=manifest,
+                    disposition_receipt=disposition,
+                )["plaintext_artifacts"],
                 0,
             )
             with self.assertRaisesRegex(GUARD.GuardError, "manifest"):
@@ -434,16 +468,49 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 root, base / "artifacts.receipt.json"
             )
             self.assertEqual(len(manifest["artifacts"]), 4)
-            with self.assertRaises(GUARD.GuardError):
-                GUARD.inspect_run_root(root, retired=True, artifact_manifest=manifest)
+            disposition_input = {
+                "schema": "fs2-serve.nebius.ai/run-root-artifact-disposition-input/v1",
+                "artifacts": [
+                    {
+                        "path": item["path"],
+                        "sha256": item["sha256"],
+                        "action": "secure-retire",
+                        "evidence_id": f"retirement-{index:04d}",
+                    }
+                    for index, item in enumerate(manifest["artifacts"])
+                ],
+            }
+            disposition = GUARD.write_disposition_receipt(
+                manifest,
+                disposition_input,
+                base / "dispositions.receipt.json",
+            )
+            with self.assertRaisesRegex(GUARD.GuardError, "not retired"):
+                GUARD.inspect_run_root(
+                    root,
+                    retired=True,
+                    artifact_manifest=manifest,
+                    disposition_receipt=disposition,
+                )
             for path in root.iterdir():
                 path.unlink()
             self.assertEqual(
-                GUARD.inspect_run_root(root, retired=True, artifact_manifest=manifest)[
-                    "total_artifacts"
-                ],
+                GUARD.inspect_run_root(
+                    root,
+                    retired=True,
+                    artifact_manifest=manifest,
+                    disposition_receipt=disposition,
+                )["total_artifacts"],
                 0,
             )
+            incomplete = json.loads(json.dumps(disposition_input))
+            incomplete["artifacts"].pop()
+            with self.assertRaisesRegex(GUARD.GuardError, "exactly cover"):
+                GUARD.write_disposition_receipt(
+                    manifest,
+                    incomplete,
+                    base / "incomplete.receipt.json",
+                )
 
     def test_versioned_pat_ids_cannot_be_reused_across_generation_or_audience(
         self,
@@ -957,7 +1024,10 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             self.assertTrue(verified["verification"]["inventory_allowed"])
             self.assertTrue(verified["verification"]["create_pods_denied"])
             self.assertTrue(verified["verification"]["read_secrets_denied"])
-            self.assertEqual(verified["verification"]["negative_probe_count"], 9)
+            self.assertEqual(
+                verified["verification"]["negative_probe_count"],
+                len(HANDOFF.negative_authorization_probes()),
+            )
             self.assertEqual(verified["verification"]["authorization_rule_count"], 2)
             self.assertEqual(
                 verified["verification"]["approved_egress_cidrs"], ["192.0.2.8/32"]
@@ -1065,6 +1135,21 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 self.assertRaisesRegex(HANDOFF.HandoffError, expected),
             ):
                 HANDOFF.require_viewer_rules(HANDOFF.authorization_rules(rules))
+
+        HANDOFF.require_viewer_rules(
+            HANDOFF.authorization_rules(
+                "selfsubjectaccessreviews.authorization.k8s.io [] [] [create]\n"
+                "selfsubjectrulesreviews.authorization.k8s.io [] [] [create]\n"
+                "selfsubjectreviews.authentication.k8s.io [] [] [create]\n"
+                "pods [] [] [get list watch]\n"
+            )
+        )
+        with self.assertRaisesRegex(HANDOFF.HandoffError, "mutation"):
+            HANDOFF.require_viewer_rules(
+                HANDOFF.authorization_rules(
+                    "selfsubjectaccessreviews.authorization.k8s.io [] [] [create update]\n"
+                )
+            )
 
 
 if __name__ == "__main__":

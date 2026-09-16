@@ -25,6 +25,15 @@ class HandoffError(RuntimeError):
     pass
 
 
+SAFE_SELF_REVIEW_MUTATIONS = frozenset(
+    {
+        "selfsubjectaccessreviews.authorization.k8s.io",
+        "selfsubjectrulesreviews.authorization.k8s.io",
+        "selfsubjectreviews.authentication.k8s.io",
+    }
+)
+
+
 def utc_now() -> datetime:
     return datetime.now(UTC).replace(microsecond=0)
 
@@ -272,7 +281,10 @@ def require_viewer_rules(rules: list[dict[str, Any]]) -> None:
     for rule in rules:
         verbs = set(rule["verbs"])
         resource = rule["resource"]
-        if verbs & mutation_verbs:
+        observed_mutations = verbs & mutation_verbs
+        if observed_mutations and not (
+            resource in SAFE_SELF_REVIEW_MUTATIONS and observed_mutations == {"create"}
+        ):
             raise HandoffError(
                 "viewer authorization inventory contains mutation access"
             )
@@ -280,6 +292,70 @@ def require_viewer_rules(rules: list[dict[str, Any]]) -> None:
             raise HandoffError(
                 "viewer authorization inventory contains Secret read access"
             )
+
+
+def negative_authorization_probes() -> dict[str, list[str]]:
+    """Enumerate durable mutation, escalation, impersonation, and Secret checks."""
+
+    probes: dict[str, list[str]] = {}
+    namespaced_resources = (
+        "pods",
+        "deployments.apps",
+        "statefulsets.apps",
+        "daemonsets.apps",
+        "replicasets.apps",
+        "jobs.batch",
+        "cronjobs.batch",
+        "configmaps",
+        "services",
+        "persistentvolumeclaims",
+        "roles.rbac.authorization.k8s.io",
+        "rolebindings.rbac.authorization.k8s.io",
+    )
+    mutations = ("create", "update", "patch", "delete", "deletecollection")
+    for resource in namespaced_resources:
+        for verb in mutations:
+            probes[f"{verb}_{resource}"] = [verb, resource, "--all-namespaces"]
+    for resource in (
+        "clusterroles.rbac.authorization.k8s.io",
+        "clusterrolebindings.rbac.authorization.k8s.io",
+    ):
+        for verb in mutations:
+            probes[f"{verb}_{resource}"] = [verb, resource]
+    for resource in ("pods/exec", "pods/attach", "pods/portforward"):
+        probes[f"create_{resource}"] = ["create", resource, "--all-namespaces"]
+    probes["escalate_roles"] = [
+        "escalate",
+        "roles.rbac.authorization.k8s.io",
+        "--all-namespaces",
+    ]
+    probes["bind_roles"] = [
+        "bind",
+        "roles.rbac.authorization.k8s.io",
+        "--all-namespaces",
+    ]
+    probes["escalate_clusterroles"] = [
+        "escalate",
+        "clusterroles.rbac.authorization.k8s.io",
+    ]
+    probes["bind_clusterroles"] = [
+        "bind",
+        "clusterroles.rbac.authorization.k8s.io",
+    ]
+    for resource in ("users", "groups", "serviceaccounts"):
+        probes[f"impersonate_{resource}"] = ["impersonate", resource]
+    for verb in (
+        "get",
+        "list",
+        "watch",
+        "create",
+        "update",
+        "patch",
+        "delete",
+        "deletecollection",
+    ):
+        probes[f"{verb}_secrets"] = [verb, "secrets", "--all-namespaces"]
+    return probes
 
 
 def read_auth_key_ids(args: argparse.Namespace, project_id: str) -> set[str]:
@@ -558,24 +634,7 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
     require_viewer_rules(rules)
 
     denials: dict[str, bool] = {}
-    for label, request in {
-        "create_pods": ["create", "pods", "--all-namespaces"],
-        "update_pods": ["update", "pods", "--all-namespaces"],
-        "patch_deployments": ["patch", "deployments.apps", "--all-namespaces"],
-        "delete_pods": ["delete", "pods", "--all-namespaces"],
-        "create_rolebindings": [
-            "create",
-            "rolebindings.rbac.authorization.k8s.io",
-            "--all-namespaces",
-        ],
-        "create_clusterrolebindings": [
-            "create",
-            "clusterrolebindings.rbac.authorization.k8s.io",
-        ],
-        "read_secrets": ["get", "secrets", "--all-namespaces"],
-        "list_secrets": ["list", "secrets", "--all-namespaces"],
-        "watch_secrets": ["watch", "secrets", "--all-namespaces"],
-    }.items():
+    for label, request in negative_authorization_probes().items():
         result = run(
             [args.kubectl, "--kubeconfig", str(kubeconfig), "auth", "can-i", *request],
             capture=True,
@@ -623,8 +682,8 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
     receipt["verification"] = {
         "verified_at": utc_now().isoformat().replace("+00:00", "Z"),
         "inventory_allowed": True,
-        "create_pods_denied": True,
-        "read_secrets_denied": True,
+        "create_pods_denied": denials["create_pods"],
+        "read_secrets_denied": denials["get_secrets"],
         "authorization_rule_count": len(rules),
         "authorization_rules_sha256": hashlib.sha256(
             json.dumps(rules, sort_keys=True, separators=(",", ":")).encode()

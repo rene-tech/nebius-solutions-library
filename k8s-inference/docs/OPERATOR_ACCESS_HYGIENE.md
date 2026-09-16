@@ -195,20 +195,29 @@ encrypted, access-logged state/escrow target:
 2. prove a no-op plan against the remote state and run the protected-address
    plan guard;
 3. capture the exact pre-retirement inventory outside the run root, retain the
-   encrypted version needed for rollback, and securely retire every
-   local state, backup, `*.tfplan`, `*.plan.json`, admin-cookie, scoped
-   credential export, expired credential handoff, and unknown artifact;
-4. run the absence canary:
+   encrypted version needed for rollback, and securely retire every local
+   state, backup, `*.tfplan`, `*.plan.json`, admin-cookie, scoped credential
+   export, expired credential handoff, and unknown artifact;
+4. prepare an owner-only disposition input with every manifest `path` and
+   `sha256`, its action (`encrypted-rewrap` or `secure-retire`), and a
+   whitespace-free audit/deletion `evidence_id`; capture the write-once
+   disposition receipt, then run the absence canary:
 
    ```bash
    scripts/secret_migration_guard.py capture-run-root "$RUN_ROOT" \
      "$ENCRYPTED_RECEIPT_DIR/run-root-artifacts.receipt.json"
+   scripts/secret_migration_guard.py capture-disposition \
+     "$ENCRYPTED_RECEIPT_DIR/run-root-artifacts.receipt.json" \
+     "$ENCRYPTED_RECEIPT_DIR/run-root-dispositions.input.json" \
+     "$ENCRYPTED_RECEIPT_DIR/run-root-dispositions.receipt.json"
    scripts/secret_migration_guard.py run-root "$RUN_ROOT" --retired \
-     --artifact-manifest "$ENCRYPTED_RECEIPT_DIR/run-root-artifacts.receipt.json"
+     --artifact-manifest "$ENCRYPTED_RECEIPT_DIR/run-root-artifacts.receipt.json" \
+     --disposition-receipt "$ENCRYPTED_RECEIPT_DIR/run-root-dispositions.receipt.json"
    ```
 
-The manifest is value-free and binds every known and unknown file by relative
-path and SHA-256. Retirement succeeds only when the local run root contains
+The receipts are value-free and bind every known and unknown file by relative
+path and SHA-256 to its external audit evidence. Retirement succeeds only when
+the disposition exactly covers the manifest and the local run root contains
 zero files. During migration, omit `--retired`; the guard reports known,
 unknown, and total counts without printing file content.
 
