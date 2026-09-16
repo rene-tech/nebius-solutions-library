@@ -39,6 +39,9 @@ locals {
     activation = {
       username = "fs2_serve_activation_login"
     }
+    storage = {
+      username = "fs2_serve_storage_login"
+    }
     restore_verifier = {
       username = "fs2_serve_restore_verifier_login"
     }
@@ -70,6 +73,11 @@ locals {
       namespace   = "fs2-system"
       secret_name = "fs2-serve-database-activation"
       account     = "activation"
+    }
+    storage = {
+      namespace   = "fs2-system"
+      secret_name = "fs2-serve-database-storage"
+      account     = "storage"
     }
     restore_verifier = {
       namespace   = "fs2-system"
@@ -276,6 +284,31 @@ resource "kubernetes_secret_v1" "storage_keyring" {
     prevent_destroy = true
   }
   depends_on = [terraform_data.cluster_contract, terraform_data.credential_migration_gate]
+}
+
+resource "kubernetes_secret_v1" "storage_keyring" {
+  metadata {
+    name      = "fs2-serve-storage-keyring"
+    namespace = "fs2-system"
+    labels    = local.common_labels
+  }
+  type = "Opaque"
+  data = {
+    # payload-v1 remains available only until the storage rotation/re-encryption
+    # inventory reports zero rows on that SAI-10 generation.
+    "keyring.json" = jsonencode({
+      active_key_id = "storage-v1"
+      keys = {
+        "payload-v1" = base64encode(random_password.key_material["payload"].result)
+        "storage-v1" = base64encode(random_password.key_material["storage"].result)
+      }
+    })
+    "name-keyring.json" = jsonencode({
+      active_key_id = "storage-name-v1"
+      keys          = { "storage-name-v1" = base64encode(random_password.key_material["storage_name"].result) }
+    })
+  }
+  depends_on = [terraform_data.cluster_contract]
 }
 
 resource "kubernetes_secret_v1" "ledger_keyring" {

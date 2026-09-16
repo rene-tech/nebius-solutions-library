@@ -39,8 +39,8 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
         "first_migration_version": "0001_initial.sql",
         "last_migration_version": "0032_user_storage_security.sql",
         "migration_count": 32,
-        "migration_set_sha256": "6f4017391de80017ca579e6363d1dce72903e6e568a3901d889359d58e4f27a6",
-        "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
+        "migration_set_sha256": "ea736796a505c56573d4ebd248a0e1848f8ee0358159e32cf007ab06382da741",
+        "namespace_role_ownership_sha256": "02a91557f23468b3c943575a2295f8fdd710575ffd438e466a7df5214d5dc3b0",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
     assert len(migrations) == receipt["migration_count"]
@@ -73,6 +73,10 @@ def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -
     assert wait_source.count("fs2_scientific_batches','scheduling_digest','UPDATE'") == 2
     assert "SELECT,INSERT" not in wait_source
     assert "database schema runtime privileges are incomplete" in wait_source
+    assert "fs2_consume_user_storage_disclosure(text,text,text,uuid)" in wait_source
+    assert "fs2_user_storage','secret_ciphertext','SELECT'" in wait_source
+    assert "fs2_serve_storage" in wait_source
+    assert "fs2_operations','SELECT'" in wait_source
 
 
 def _updated_columns(source: str, table: str) -> set[str]:
@@ -201,14 +205,17 @@ def test_namespace_secret_and_role_ownership_is_one_closed_cross_lane_contract()
         "migrations": ("fs2-system", "fs2-serve-database-migrations", "url"),
         "reporting": ("fs2-observability", "fs2-serve-database-reporting", "url"),
         "runtime": ("fs2-system", "fs2-serve-database", "url"),
+        "storage": ("fs2-system", "fs2-serve-database-storage", "url"),
     }
     assert {role["name"] for role in ownership["database_group_roles"]} == {
         "fs2_serve_activation",
         "fs2_serve_maintenance",
         "fs2_serve_reporting",
         "fs2_serve_runtime",
+        "fs2_serve_storage",
     }
     assert all(not role["login"] for role in ownership["database_group_roles"])
     assert secrets["runtime"]["consumer_owners"] == ["fs2-serve-control-plane-gateway"]
     assert secrets["maintenance"]["consumer_owners"] == ["fs2-serve-control-plane-maintenance"]
+    assert secrets["storage"]["consumer_owners"] == ["fs2-serve-control-plane-storage-reconciler"]
     assert ownership["schema_migration_owner"]["ownership"] == "sole-ddl-and-grant-owner"

@@ -238,6 +238,44 @@ class PostgresUserRepository:
         return usage
 
 
+class StorageUserRepository:
+    """Configured-user inventory for the isolated storage reconciler.
+
+    The storage database role has no access to operations, tokens, audit rows,
+    results, or payloads. Storage is provisioned only for explicit users.
+    """
+
+    def __init__(self, pool: Any) -> None:
+        self.pool = pool
+
+    @staticmethod
+    def _user(row: Any) -> InferenceUser:
+        return InferenceUser.model_validate({**dict(row), "source": "configured"})
+
+    async def configured(self, tenant_id: str, principal_id: str) -> InferenceUser | None:
+        row = await self.pool.fetchrow(
+            """SELECT id,tenant_id,principal_id,display_name,kind,team,enabled,
+            academic_eligible,app_ids,created_at,updated_at FROM fs2_inference_users
+            WHERE tenant_id=$1 AND principal_id=$2""",
+            tenant_id,
+            principal_id,
+        )
+        return self._user(row) if row else None
+
+    async def list(self, tenant_id: str | None) -> list[InferenceUser]:
+        rows = await self.pool.fetch(
+            """SELECT id,tenant_id,principal_id,display_name,kind,team,enabled,
+            academic_eligible,app_ids,created_at,updated_at FROM fs2_inference_users
+            WHERE ($1::text IS NULL OR tenant_id=$1) ORDER BY tenant_id,display_name,id""",
+            tenant_id,
+        )
+        return [self._user(row) for row in rows]
+
+    async def keys(self, tenant_id: str, principal_id: str) -> list[TokenView]:
+        del tenant_id, principal_id
+        return []
+
+
 class MemoryUserRepository:
     """Development/test adapter over the same real in-memory operation store."""
 

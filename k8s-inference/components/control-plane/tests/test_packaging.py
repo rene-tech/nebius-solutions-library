@@ -319,7 +319,15 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
     assert dockerfile.count("WORKDIR /workspace/k8s-inference/components/control-plane") == 2
     assert "COPY k8s-inference/components/control-plane/migrations ./migrations" in dockerfile
     assert "Settings.model_fields['migrations_dir'].default" in dockerfile
-    assert "migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 31" in dockerfile
+    release_contract = json.loads((CONTROL_ROOT / "contracts/postgresql-release-contract.json").read_text())
+    receipt = release_contract["required_release_receipt_inputs"]
+    assert receipt["migration_count"] == 32
+    assert receipt["last_migration_version"] == "0032_user_storage_security.sql"
+    assert "validate_migration_set(migration_dir)" in dockerfile
+    assert "build_postgresql_release_contract(migration_dir)" in dockerfile
+    assert "len(manifest) == len(EXPECTED_MIGRATIONS) == receipt['migration_count']" in dockerfile
+    assert "EXPECTED_MIGRATIONS[-1][0] == receipt['last_migration_version']" in dockerfile
+    assert "== 31" not in dockerfile
     assert "store.migrate" not in inspect.getsource(cli.build_runtime)
     assert "store.migrate" not in inspect.getsource(cli.maintain)
     assert "PostgresStore.migrate_database" in inspect.getsource(cli.migrate)

@@ -18,6 +18,7 @@ def naming_provider():
     provider.project_id = "project-test"
     provider.prefix = "fs2-data"
     provider.region = "eu-north1"
+    provider.key_ttl_days = 90
     provider.name_hasher = KeyedHasher(active_key_id="test", keys={"test": b"x" * 32})
     return provider
 
@@ -54,6 +55,14 @@ def test_bucket_names_are_bounded_and_slug_collisions_are_disambiguated():
     assert provider.bucket_name("tenant", "alice") != old
 
 
+def test_s3_expiry_must_be_future_and_within_configured_ttl():
+    provider = naming_provider()
+    assert provider._require_bounded_expiry(datetime.now(UTC) + timedelta(days=89))
+    for invalid in (None, datetime.now(UTC) - timedelta(seconds=1), datetime.now(UTC) + timedelta(days=91)):
+        with pytest.raises(RuntimeError, match="expiry"):
+            provider._require_bounded_expiry(invalid)
+
+
 async def test_existing_bucket_quota_change_preserves_immutable_name_and_iam_identity():
     provider = naming_provider()
     legacy = provider.name("bucket", "kopra", "")
@@ -83,6 +92,10 @@ async def test_existing_bucket_quota_change_preserves_immutable_name_and_iam_ide
     assert request.metadata.labels["fs2-storage-owner"] == legacy
     assert request.metadata.name == legacy
     assert request.spec.max_size_bytes == 6_000_000_000
+    assert len(request.spec.bucket_policy.rules) == 1
+    assert request.spec.bucket_policy.rules[0].group_id == "group-same"
+    assert list(request.spec.bucket_policy.rules[0].paths) == ["*"]
+    assert list(request.spec.bucket_policy.rules[0].roles) == ["storage.object-editor"]
     assert result["bucket_id"] == "bucket-same"
     assert result["group_id"] == "group-same"
     # A crash between cloud quota update and DB update adopts the same identity.
@@ -100,12 +113,14 @@ async def test_membership_has_no_name_and_explicit_key_is_recovered():
     provider = object.__new__(NebiusUserStorage)
     provider.project_id = "project-test"
     provider.prefix = "fs2-data"
+    provider.key_ttl_days = 90
     provider.accounts = SimpleNamespace()
     provider._named = AsyncMock(return_value=SimpleNamespace(metadata=SimpleNamespace(id="sa-alice")))
     provider._operation = AsyncMock(return_value="membership-alice")
     provider.memberships = SimpleNamespace(
         list_members=AsyncMock(return_value=SimpleNamespace(memberships=[], next_page_token="")),
         create=Mock(),
+        delete=Mock(),
     )
     name = provider.name("user", "tenant-a", "alice")
     provider.keys = SimpleNamespace(
@@ -120,7 +135,16 @@ async def test_membership_has_no_name_and_explicit_key_is_recovered():
                 next_page_token="",
             )
         ),
+        get=AsyncMock(
+            side_effect=[
+                SimpleNamespace(status=SimpleNamespace(state=SimpleNamespace(name="ACTIVE"))),
+                SimpleNamespace(status=SimpleNamespace(state=SimpleNamespace(name="ACTIVE"))),
+                SimpleNamespace(status=SimpleNamespace(state=SimpleNamespace(name="INACTIVE"))),
+            ]
+        ),
         get_secret=AsyncMock(return_value=SimpleNamespace(aws_access_key_id="public-id", secret="test-secret")),
+        activate=Mock(),
+        deactivate=Mock(),
     )
     result = await provider.ensure_credentials("tenant-a", "alice", "group-a")
     request = provider.memberships.create.call_args.args[0]
@@ -128,7 +152,79 @@ async def test_membership_has_no_name_and_explicit_key_is_recovered():
     assert not request.metadata.name
     assert request.spec.member_id == "sa-alice"
     assert result["secret_access_key"] == "test-secret"
+    assert result["provider_state"] == "ACTIVE"
     assert provider.keys.get_secret.call_args.args[0].id == "key-alice"
+
+
+async def test_exact_membership_removes_every_unexpected_principal():
+    provider = object.__new__(NebiusUserStorage)
+    expected = SimpleNamespace(
+        metadata=SimpleNamespace(id="membership-expected"),
+        spec=SimpleNamespace(member_id="sa-alice"),
+    )
+    unexpected = SimpleNamespace(
+        metadata=SimpleNamespace(id="membership-unexpected"),
+        spec=SimpleNamespace(member_id="sa-mallory"),
+    )
+    provider._operation = AsyncMock(return_value="membership-operation")
+    provider.memberships = SimpleNamespace(
+        list_members=AsyncMock(
+            side_effect=[
+                SimpleNamespace(memberships=[unexpected], next_page_token=""),
+                SimpleNamespace(memberships=[expected, unexpected], next_page_token=""),
+            ]
+        ),
+        create=Mock(),
+        delete=Mock(),
+    )
+
+    await provider.ensure_identity_access("group-a", "sa-alice")
+    assert provider.memberships.create.call_args.args[0].spec.member_id == "sa-alice"
+    assert provider.memberships.delete.call_args.args[0].id == "membership-unexpected"
+
+    provider.memberships.create.reset_mock()
+    provider.memberships.delete.reset_mock()
+    await provider.ensure_identity_access("group-a", "sa-alice")
+    provider.memberships.create.assert_not_called()
+    assert provider.memberships.delete.call_args.args[0].id == "membership-unexpected"
+
+
+async def test_expired_existing_key_is_replaced_inactive_and_retained_as_predecessor():
+    provider = object.__new__(NebiusUserStorage)
+    provider.project_id = "project-test"
+    provider.prefix = "fs2-data"
+    provider.accounts = SimpleNamespace()
+    provider._named = AsyncMock(return_value=SimpleNamespace(metadata=SimpleNamespace(id="sa-alice")))
+    provider.ensure_identity_access = AsyncMock()
+    name = provider.name("user", "tenant-a", "alice")
+    expired = SimpleNamespace(
+        metadata=SimpleNamespace(name=name, id="key-expired"),
+        spec=SimpleNamespace(expires_at=datetime.now(UTC) - timedelta(seconds=1)),
+    )
+    provider.keys = SimpleNamespace(
+        list_by_account=AsyncMock(return_value=SimpleNamespace(items=[expired], next_page_token=""))
+    )
+    replacement = {
+        "service_account_id": "sa-alice",
+        "access_key_resource_id": "key-new",
+        "access_key_id": "public-new",
+        "secret_access_key": "secret-new",
+        "expires_at": datetime.now(UTC) + timedelta(days=90),
+        "provider_state": "INACTIVE",
+    }
+    provider.prepare_rotation = AsyncMock(return_value=replacement)
+    provider.key_state = AsyncMock(return_value="EXPIRED")
+
+    result = await provider.ensure_credentials("tenant-a", "alice", "group-a")
+
+    assert result["access_key_resource_id"] == "key-new"
+    assert result["provider_state"] == "INACTIVE"
+    assert result["previous_access_key_resource_id"] == "key-expired"
+    previous = provider.prepare_rotation.call_args.args[3]
+    assert previous == {
+        "service_account_id": "sa-alice",
+        "access_key_resource_id": "key-expired",
+    }
 
 
 async def test_completed_failed_operation_is_not_reported_as_success():

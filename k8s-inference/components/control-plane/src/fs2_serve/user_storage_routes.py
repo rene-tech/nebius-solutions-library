@@ -51,15 +51,11 @@ def user_storage_router(
         current = storage()
         if (await current.policy(identity.tenant_id)).mode == "disabled":
             raise HTTPException(403, "customer storage is disabled for this tenant")
-        result = await current.repository.disclose(identity.tenant_id, identity.principal_id)
-        await audit.append_audit_event(
+        result = await current.repository.disclose(
+            identity.tenant_id,
+            identity.principal_id,
             actor=identity.principal_id,
-            tenant_id=identity.tenant_id,
             token_id=identity.token_id,
-            action="storage.credentials.disclose",
-            target_type="user_storage",
-            target_id=identity.principal_id,
-            outcome="succeeded",
         )
         return JSONResponse(result.model_dump(mode="json"), headers={"Cache-Control": "no-store"})
 
@@ -113,15 +109,11 @@ def user_storage_router(
         user = await users._get(identity, user_id, OperatorRole.ADMIN)
         if not user.enabled or (await storage().policy(user.tenant_id)).mode == "disabled":
             raise HTTPException(403, "customer storage is disabled")
-        result = await storage().repository.disclose(user.tenant_id, user.principal_id)
-        await audit.append_audit_event(
+        result = await storage().repository.disclose(
+            user.tenant_id,
+            user.principal_id,
             actor=identity.subject,
-            tenant_id=user.tenant_id,
             token_id=None,
-            action="storage.credentials.disclose",
-            target_type="user_storage",
-            target_id=user.principal_id,
-            outcome="succeeded",
         )
         return JSONResponse(envelope(result).model_dump(mode="json"), headers={"Cache-Control": "no-store"})
 

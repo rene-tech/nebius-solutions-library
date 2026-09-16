@@ -123,6 +123,14 @@ app.kubernetes.io/component: model-controller
       key: {{ .Values.secrets.maintenanceDatabase.key }}
 {{- end -}}
 
+{{- define "fs2-serve.storageDatabaseEnv" -}}
+- name: FS2_DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.customerStorage.databaseSecretName }}
+      key: url
+{{- end -}}
+
 {{- define "fs2-serve.scientificArtifactsEnv" -}}
 {{- if .Values.scientificArtifacts.enabled }}
 - name: FS2_SCIENTIFIC_ARTIFACTS_ENABLED
@@ -476,6 +484,43 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.migration.maintenanceDatabaseRole | quote }}
 - name: FS2_ACTIVATION_DATABASE_ROLE
   value: {{ .Values.migration.activationDatabaseRole | quote }}
+- name: FS2_STORAGE_DATABASE_ROLE
+  value: {{ .Values.migration.storageDatabaseRole | quote }}
+{{- end -}}
+
+{{- define "fs2-serve.storageCryptoEnv" -}}
+- name: FS2_USER_STORAGE_KEYRING_FILE
+  value: /var/run/secrets/fs2-serve/customer-storage-crypto/keyring.json
+- name: FS2_USER_STORAGE_NAME_KEYRING_FILE
+  value: /var/run/secrets/fs2-serve/customer-storage-crypto/name-keyring.json
+{{- end -}}
+
+{{- define "fs2-serve.storageCryptoVolumeMount" -}}
+- name: customer-storage-crypto
+  mountPath: /var/run/secrets/fs2-serve/customer-storage-crypto
+  readOnly: true
+{{- end -}}
+
+{{- define "fs2-serve.storageCryptoVolume" -}}
+- name: customer-storage-crypto
+  secret:
+    secretName: {{ .Values.customerStorage.cryptoSecretName }}
+    defaultMode: 0400
+    items:
+      - key: keyring.json
+        path: keyring.json
+      - key: name-keyring.json
+        path: name-keyring.json
+{{- end -}}
+
+{{- define "fs2-serve.storageCipherVolume" -}}
+- name: customer-storage-crypto
+  secret:
+    secretName: {{ .Values.customerStorage.cryptoSecretName }}
+    defaultMode: 0400
+    items:
+      - key: keyring.json
+        path: keyring.json
 {{- end -}}
 
 {{- define "fs2-serve.schemaWaitEnv" -}}
@@ -515,6 +560,9 @@ app.kubernetes.io/component: model-controller
 {{ include "fs2-serve.cryptoVolumeMounts" . }}
 {{- if .Values.customerStorageCredentials.enabled }}
 {{ include "fs2-serve.storageCryptoVolumeMounts" . }}
+{{- end }}
+{{- if .Values.customerStorage.enabled }}
+{{ include "fs2-serve.storageCryptoVolumeMount" . }}
 {{- end }}
 {{- include "fs2-serve.scientificArtifactsVolumeMounts" . }}
 {{ include "fs2-serve.databaseCaVolumeMount" . }}
@@ -621,6 +669,9 @@ app.kubernetes.io/component: model-controller
 {{ include "fs2-serve.cryptoVolumes" . }}
 {{- if .Values.customerStorageCredentials.enabled }}
 {{ include "fs2-serve.storageCryptoVolumes" . }}
+{{- end }}
+{{- if .Values.customerStorage.enabled }}
+{{ include "fs2-serve.storageCipherVolume" . }}
 {{- end }}
 {{- include "fs2-serve.scientificArtifactsVolumes" . }}
 {{ include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) }}

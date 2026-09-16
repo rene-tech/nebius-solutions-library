@@ -619,6 +619,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     )
     runtime.tokens.principal_policy = users_service.constrain_principal
     if runtime.settings.user_storage_enabled:
+        from .crypto import PayloadCipher
         from .user_storage import UserStorageService
         from .user_storage_models import StoragePolicy
         from .user_storage_repository import PostgresUserStorageRepository
@@ -626,9 +627,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         settings = runtime.settings
         if pool is None:
             raise ValueError("customer storage requires PostgreSQL")
-        storage_cipher = getattr(runtime.store, "cipher", None)
-        if storage_cipher is None:
-            raise ValueError("customer storage requires the existing payload cipher")
+        storage_cipher = PayloadCipher.from_file(settings.user_storage_keyring_file)
         users_service.storage = UserStorageService(
             PostgresUserStorageRepository(pool, storage_cipher),
             None,
@@ -639,6 +638,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             excluded_tenants=settings.user_storage_excluded_tenants,
             poll_seconds=settings.user_storage_poll_seconds,
             action_timeout_seconds=settings.user_storage_action_timeout_seconds,
+            rotation_window_days=settings.user_storage_rotation_window_days,
         )
     observations = AppObservabilityService(
         kubernetes=getattr(admin_read.capacity_adapter, "reader", None),

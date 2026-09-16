@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -192,6 +193,11 @@ class NebiusUserStorage:
         if bucket.spec.versioning_policy != storage.VersioningPolicy.ENABLED:
             bucket.spec.versioning_policy = storage.VersioningPolicy.ENABLED
             needs_update = True
+        if repr(bucket.spec.bucket_policy.rules) != repr(policy.rules):
+            # The managed bucket has one exact editor group. Preserve no
+            # unreviewed group, principal, role, or path grant.
+            bucket.spec.bucket_policy = policy
+            needs_update = True
         managed_lifecycle = self.lifecycle()
         managed_ids = {rule.id for rule in managed_lifecycle.rules}
         current_lifecycle = bucket.spec.lifecycle_configuration
@@ -219,6 +225,48 @@ class NebiusUserStorage:
             "quota_bytes": quota,
         }
 
+    async def ensure_identity_access(self, group_id: str, account_id: str) -> None:
+        """Enforce exactly one permitted service account in a per-user group."""
+
+        page_token = ""
+        memberships: list[Any] = []
+        while True:
+            page = await self.memberships.list_members(
+                iam.ListGroupMembershipsRequest(parent_id=group_id, page_size=100, page_token=page_token)
+            )
+            memberships.extend(page.memberships)
+            page_token = page.next_page_token
+            if not page_token:
+                break
+        expected = [item for item in memberships if item.spec.member_id == account_id]
+        if len(expected) > 1:
+            raise RuntimeError("customer storage IAM group has duplicate expected memberships")
+        if not expected:
+            await self._operation(
+                self.memberships.create(
+                    iam.CreateGroupMembershipRequest(
+                        metadata=ResourceMetadata(parent_id=group_id),
+                        spec=iam.GroupMembershipSpec(member_id=account_id),
+                    )
+                )
+            )
+        for unexpected in memberships:
+            if unexpected.spec.member_id != account_id:
+                await self._operation(
+                    self.memberships.delete(iam.DeleteGroupMembershipRequest(id=unexpected.metadata.id))
+                )
+
+    async def key_state(self, key_id: str) -> str:
+        key = await self.keys.get(keys.GetAccessKeyRequest(id=key_id))
+        state = key.status.state
+        return state.name if hasattr(state, "name") else str(state).rsplit(".", maxsplit=1)[-1]
+
+    def _require_bounded_expiry(self, value: datetime | None) -> datetime:
+        now = datetime.now(UTC)
+        if value is None or value <= now or value > now + timedelta(days=self.key_ttl_days, minutes=5):
+            raise RuntimeError("managed S3 key expiry is missing, expired, or exceeds the configured TTL")
+        return value
+
     async def ensure_credentials(self, tenant: str, principal: str, group_id: str) -> dict[str, Any]:
         name = self.name("user", tenant, principal)
         account = await self._named(
@@ -230,31 +278,7 @@ class NebiusUserStorage:
             ),
             name,
         )
-        page_token = ""
-        member_found = False
-        while True:
-            membership_page = await self.memberships.list_members(
-                iam.ListGroupMembershipsRequest(
-                    parent_id=group_id,
-                    page_size=100,
-                    page_token=page_token,
-                )
-            )
-            member_found |= any(item.spec.member_id == account.metadata.id for item in membership_page.memberships)
-            page_token = membership_page.next_page_token
-            if not page_token:
-                break
-        if not member_found:
-            await self._operation(
-                self.memberships.create(
-                    iam.CreateGroupMembershipRequest(
-                        # IAM group memberships do not support resource names.
-                        # Their stable identity is the group/member pair above.
-                        metadata=ResourceMetadata(parent_id=group_id),
-                        spec=iam.GroupMembershipSpec(member_id=account.metadata.id),
-                    )
-                )
-            )
+        await self.ensure_identity_access(group_id, account.metadata.id)
         identity = iam.Account(service_account=iam.Account__ServiceAccount(id=account.metadata.id))
         page_token = ""
         existing: list[keys.AccessKey] = []
@@ -271,13 +295,19 @@ class NebiusUserStorage:
             if not page_token:
                 break
         expires_at: datetime | None = None
+        provider_state = "INACTIVE"
         if existing:
             existing.sort(key=lambda item: (item.spec.expires_at or datetime.min.replace(tzinfo=UTC)), reverse=True)
             key_id = existing[0].metadata.id
             for stale in existing[1:]:
                 await self.set_enabled(stale.metadata.id, False)
-            if existing[0].spec.expires_at is None or existing[0].spec.expires_at <= datetime.now(UTC):
-                return await self.rotate_credentials(
+            state = await self.key_state(key_id)
+            if (
+                existing[0].spec.expires_at is None
+                or existing[0].spec.expires_at <= datetime.now(UTC)
+                or state == "EXPIRED"
+            ):
+                replacement = await self.prepare_rotation(
                     tenant,
                     principal,
                     group_id,
@@ -286,6 +316,11 @@ class NebiusUserStorage:
                         "access_key_resource_id": key_id,
                     },
                 )
+                replacement["previous_access_key_resource_id"] = key_id
+                return replacement
+            if state not in {"ACTIVE", "INACTIVE"}:
+                raise RuntimeError("existing managed S3 key is not adoptable")
+            provider_state = state
         else:
             expires_at = datetime.now(UTC) + timedelta(days=self.key_ttl_days)
             key_id = await self._operation(
@@ -304,17 +339,23 @@ class NebiusUserStorage:
         secret = await self.keys.get_secret(keys.GetAccessKeySecretRequest(id=key_id))
         key = next((item for item in existing if item.metadata.id == key_id), None)
         expires_at = key.spec.expires_at if key is not None else expires_at
-        if expires_at is None:
-            raise RuntimeError("managed S3 key is missing its required expiry")
+        expires_at = self._require_bounded_expiry(expires_at)
+        if not existing:
+            if await self.key_state(key_id) == "ACTIVE":
+                await self.set_enabled(key_id, False)
+            provider_state = await self.key_state(key_id)
+            if provider_state != "INACTIVE":
+                raise RuntimeError("new managed S3 key did not become inactive before persistence")
         return {
             "service_account_id": account.metadata.id,
             "access_key_resource_id": key_id,
             "access_key_id": secret.aws_access_key_id,
             "secret_access_key": secret.secret,
             "expires_at": expires_at,
+            "provider_state": provider_state,
         }
 
-    async def rotate_credentials(
+    async def prepare_rotation(
         self,
         tenant: str,
         principal: str,
@@ -324,10 +365,20 @@ class NebiusUserStorage:
         name = self.name("user", tenant, principal)
         account_id = previous["service_account_id"]
         identity = iam.Account(service_account=iam.Account__ServiceAccount(id=account_id))
-        rotation_name = f"{name}-r-{hashlib.sha256(previous['access_key_resource_id'].encode()).hexdigest()[:8]}"
+        started_at = previous.get("requested_at") or previous.get("rotation_started_at") or "adoption"
+        rotation_identity = f"{previous['access_key_resource_id']}\0{started_at}"
+        rotation_name = f"{name}-r-{hashlib.sha256(rotation_identity.encode()).hexdigest()[:8]}"
         expires_at: datetime | None = datetime.now(UTC) + timedelta(days=self.key_ttl_days)
-        page = await self.keys.list_by_account(keys.ListAccessKeysByAccountRequest(account=identity, page_size=100))
-        replacement = next((item for item in page.items if item.metadata.name == rotation_name), None)
+        page_token = ""
+        replacement = None
+        while True:
+            page = await self.keys.list_by_account(
+                keys.ListAccessKeysByAccountRequest(account=identity, page_size=100, page_token=page_token)
+            )
+            replacement = next((item for item in page.items if item.metadata.name == rotation_name), replacement)
+            page_token = page.next_page_token
+            if not page_token:
+                break
         key_id = (
             replacement.metadata.id
             if replacement is not None
@@ -347,16 +398,31 @@ class NebiusUserStorage:
         )
         if replacement is not None:
             expires_at = replacement.spec.expires_at
-        if expires_at is None:
-            raise RuntimeError("replacement S3 key is missing its required expiry")
-        secret = await self.keys.get_secret(keys.GetAccessKeySecretRequest(id=key_id))
-        await self.set_enabled(previous["access_key_resource_id"], False)
+            state = await self.key_state(key_id)
+            if state not in {"ACTIVE", "INACTIVE"}:
+                raise RuntimeError("existing replacement S3 key is not reusable")
+        expires_at = self._require_bounded_expiry(expires_at)
+        try:
+            secret = await self.keys.get_secret(keys.GetAccessKeySecretRequest(id=key_id))
+            # A replacement remains inactive until its secret is durably
+            # encrypted in PostgreSQL. The current key is untouched here.
+            if await self.key_state(key_id) == "ACTIVE":
+                await self.set_enabled(key_id, False)
+            if await self.key_state(key_id) != "INACTIVE":
+                raise RuntimeError("replacement S3 key did not become inactive before persistence")
+        except BaseException:
+            # Best-effort compensation for provider/transport failures. A hard
+            # process loss is recovered by the deterministic name on retry.
+            with suppress(Exception):
+                await self.set_enabled(key_id, False)
+            raise
         return {
             "service_account_id": account_id,
             "access_key_resource_id": key_id,
             "access_key_id": secret.aws_access_key_id,
             "secret_access_key": secret.secret,
             "expires_at": expires_at,
+            "provider_state": "INACTIVE",
         }
 
     async def set_enabled(self, key_id: str, enabled: bool) -> None:

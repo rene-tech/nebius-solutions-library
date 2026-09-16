@@ -81,11 +81,14 @@ class Settings(BaseSettings):
     user_storage_region: str = ""
     user_storage_resource_credentials_file: Path | None = None
     user_storage_iam_credentials_file: Path | None = None
+    user_storage_keyring_file: Path = Path("/var/run/secrets/fs2-serve/customer-storage-crypto/keyring.json")
+    user_storage_name_keyring_file: Path = Path("/var/run/secrets/fs2-serve/customer-storage-crypto/name-keyring.json")
     user_storage_default_mode: Literal["tenant", "user"] = "user"
     user_storage_quota_bytes: int = Field(default=5_000_000_000, gt=0)
     user_storage_excluded_tenants: tuple[str, ...] = ()
     user_storage_poll_seconds: float = Field(default=60, ge=5)
     user_storage_key_ttl_days: int = Field(default=90, ge=1, le=365)
+    user_storage_rotation_window_days: int = Field(default=14, ge=1, le=364)
     user_storage_action_timeout_seconds: float = Field(default=30, ge=1, le=120)
     route_attestors_file: Path | None = Path("/var/run/secrets/fs2-serve/attestors/route-attestors.json")
     admin_token_file: Path = Path("/var/run/secrets/fs2-serve/admin-token")
@@ -318,6 +321,9 @@ class Settings(BaseSettings):
     activation_database_role: str = Field(
         default="fs2_serve_activation", min_length=1, max_length=63, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$"
     )
+    storage_database_role: str = Field(
+        default="fs2_serve_storage", min_length=1, max_length=63, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$"
+    )
     sync_wait_seconds: float = Field(default=2.0, ge=0, le=30)
     max_sync_wait_seconds: float = Field(default=30.0, ge=0, le=120)
     max_sync_waiters: int = Field(default=32, ge=1, le=1024)
@@ -378,6 +384,8 @@ class Settings(BaseSettings):
             raise ValueError("authorization_server_url must use HTTPS")
         if self.sync_wait_seconds > self.max_sync_wait_seconds:
             raise ValueError("sync_wait_seconds cannot exceed max_sync_wait_seconds")
+        if self.user_storage_rotation_window_days >= self.user_storage_key_ttl_days:
+            raise ValueError("user storage rotation window must be shorter than the key TTL")
         if self.wait_poll_initial_seconds > self.wait_poll_max_seconds:
             raise ValueError("wait_poll_initial_seconds cannot exceed wait_poll_max_seconds")
         if self.max_sync_waiters < self.worker_concurrency:
@@ -402,9 +410,10 @@ class Settings(BaseSettings):
             self.runtime_database_role,
             self.maintenance_database_role,
             self.activation_database_role,
+            self.storage_database_role,
         }
-        if len(database_roles) != 4:
-            raise ValueError("reporting, runtime, maintenance, and activation database roles must differ")
+        if len(database_roles) != 5:
+            raise ValueError("reporting, runtime, maintenance, activation, and storage database roles must differ")
         context_identity = (self.admin_context_project, self.admin_context_cluster, self.admin_context_region)
         if any(value is not None for value in context_identity) and not all(
             value is not None for value in context_identity
