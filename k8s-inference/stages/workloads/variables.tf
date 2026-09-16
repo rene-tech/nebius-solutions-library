@@ -29,7 +29,9 @@ variable "pod_security_rollout_phase" {
     condition = contains([
       "prepare",
       "migrate-reference-data",
+      "cleanup-legacy-resources",
       "enforce",
+      "rollback-remove-enforcement",
       "rollback-restore-host-agents",
       "rollback-remove-exception",
     ], var.pod_security_rollout_phase)
@@ -37,43 +39,58 @@ variable "pod_security_rollout_phase" {
   }
 }
 
-variable "pod_security_host_agent_readiness_receipt_sha256" {
-  description = "Non-secret digest of readiness evidence captured after all host agents move to the exception namespace."
+variable "pod_security_version" {
+  description = "Exact reviewed Kubernetes minor pinned on every PSA enforce, audit, and warn label."
   type        = string
-  default     = null
-  nullable    = true
-
+  default     = "v1.35"
   validation {
-    condition     = var.pod_security_host_agent_readiness_receipt_sha256 == null || can(regex("^[a-f0-9]{64}$", var.pod_security_host_agent_readiness_receipt_sha256))
-    error_message = "pod_security_host_agent_readiness_receipt_sha256 must be a lowercase SHA-256 digest."
+    condition     = can(regex("^v1\\.[0-9]{1,2}$", var.pod_security_version))
+    error_message = "pod_security_version must pin one Kubernetes v1 minor."
   }
 }
 
-variable "pod_security_host_agent_restore_receipt_sha256" {
-  description = "Non-secret digest of readiness evidence captured after host agents are restored to their original namespaces."
-  type        = string
-  default     = null
-  nullable    = true
+variable "pod_security_rollout_receipt" {
+  description = "Paths and reviewed Ed25519 public-key digest for the canonical rollout receipt chain."
+  type = object({
+    bundle_path       = optional(string)
+    public_key_path   = optional(string)
+    public_key_sha256 = optional(string)
+    deployment_nonce  = optional(string)
+  })
+  default = {}
+}
 
-  validation {
-    condition     = var.pod_security_host_agent_restore_receipt_sha256 == null || can(regex("^[a-f0-9]{64}$", var.pod_security_host_agent_restore_receipt_sha256))
-    error_message = "pod_security_host_agent_restore_receipt_sha256 must be a lowercase SHA-256 digest."
-  }
+variable "pod_security_exception_manager_usernames" {
+  description = "Exact exception-namespace rollout usernames; included in the signed admission-contract identity."
+  type        = set(string)
+  default     = []
 }
 
 variable "pod_security_existing_scientific_namespaces" {
   description = "Existing externally owned scientific namespaces that receive only the three PSA labels during the enforce phase."
   type        = set(string)
-  default     = []
+  default = [
+    "fs2-bioir-boltz2",
+    "fs2-bioir-coverage",
+    "fs2-bioir-openfold",
+    "fs2-bioir-protenix",
+    "fs2-bioir-snapshot",
+  ]
 
   validation {
-    condition = alltrue([
+    condition = var.pod_security_existing_scientific_namespaces == toset([
+      "fs2-bioir-boltz2",
+      "fs2-bioir-coverage",
+      "fs2-bioir-openfold",
+      "fs2-bioir-protenix",
+      "fs2-bioir-snapshot",
+      ]) && alltrue([
       for namespace in var.pod_security_existing_scientific_namespaces :
       startswith(namespace, "fs2-") &&
       length(namespace) <= 63 &&
       can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", namespace))
     ])
-    error_message = "pod_security_existing_scientific_namespaces must contain bounded fs2-* DNS labels."
+    error_message = "pod_security_existing_scientific_namespaces must equal the frozen five-namespace fs2-bioir inventory."
   }
 }
 
@@ -188,14 +205,7 @@ variable "reference_data" {
       secret_reference_id = string
       revision            = number
     }))
-    csi_migration_receipt = optional(object({
-      schema             = string
-      claim_name         = string
-      source_tree_sha256 = string
-      target_tree_sha256 = string
-      receipt_sha256     = string
-    }))
-    csi_readiness_receipt_sha256 = optional(string)
+    expected_tree_sha256 = optional(string)
   })
   default = {
     enabled   = false
@@ -236,10 +246,9 @@ variable "reference_data" {
       backoff_limit           = 2
       threads                 = 16
     }
-    storage_contract             = null
-    object_storage_access        = null
-    csi_migration_receipt        = null
-    csi_readiness_receipt_sha256 = null
+    storage_contract      = null
+    object_storage_access = null
+    expected_tree_sha256  = null
   }
 
   validation {

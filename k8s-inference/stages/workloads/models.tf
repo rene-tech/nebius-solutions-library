@@ -55,7 +55,8 @@ resource "kubernetes_manifest" "model" {
     terraform_data.cpu_model_runtime_contract,
     kubernetes_secret_v1.ngc_api_key,
     kubernetes_secret_v1.nvcrio_cred,
-    helm_release.dcgm_exporter,
+    helm_release.dcgm_exporter_legacy,
+    helm_release.dcgm_exporter_exception,
   ]
 }
 

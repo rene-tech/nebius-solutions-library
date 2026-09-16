@@ -1,6 +1,14 @@
 locals {
   csi_storage_enabled = var.pod_security_rollout_phase != "prepare"
-  runtime_mount_path  = "/reference-data"
+  required_rollout_terminal = {
+    "migrate-reference-data"       = "exception-ready"
+    "cleanup-legacy-resources"     = "reference-data-ready"
+    "enforce"                      = "baseline-ready"
+    "rollback-remove-enforcement"  = "baseline-enforced"
+    "rollback-restore-host-agents" = "enforcement-removed"
+    "rollback-remove-exception"    = "host-agents-restored"
+  }
+  runtime_mount_path = "/reference-data"
   # The private plane label always admits the reference-data namespace itself.
   # Any additional namespace is named explicitly, so the selector stays a
   # closed list rather than an open label match.
@@ -388,8 +396,7 @@ resource "terraform_data" "region_contract" {
     pipeline_pod_template = local.pipeline_pod_template
     handoff_contract      = local.handoff_contract
     raw_input_capacity    = local.raw_input_capacity
-    csi_migration_receipt = var.csi_migration_receipt
-    csi_readiness_receipt = var.csi_readiness_receipt_sha256
+    rollout_verification  = var.pod_security_rollout_verification
   }
   lifecycle {
     precondition {
@@ -398,17 +405,14 @@ resource "terraform_data" "region_contract" {
     }
     precondition {
       condition = (
-        var.pod_security_rollout_phase == "prepare" ||
-        var.csi_migration_receipt != null
+        var.pod_security_rollout_phase == "prepare" || (
+          var.pod_security_rollout_verification.phase == var.pod_security_rollout_phase &&
+          var.pod_security_rollout_verification.terminal_state == local.required_rollout_terminal[var.pod_security_rollout_phase] &&
+          can(regex("^[a-f0-9]{64}$", var.pod_security_rollout_verification.bundle_sha256)) &&
+          var.pod_security_rollout_verification.transition_count >= 1
+        )
       )
-      error_message = "Switching reference data to CSI requires a verified source/target content-identity migration receipt."
-    }
-    precondition {
-      condition = (
-        var.pod_security_rollout_phase != "enforce" ||
-        var.csi_readiness_receipt_sha256 != null
-      )
-      error_message = "Baseline enforcement requires a readiness receipt captured after the CSI-mounted status and read-only application probes pass."
+      error_message = "Switching reference data or changing PSA state requires the exact phase output of the canonical signed rollout gate; digest-shaped strings are not authority."
     }
     precondition {
       condition = (
@@ -464,11 +468,14 @@ resource "kubernetes_namespace_v1" "reference_data" {
   metadata {
     name = var.namespace
     labels = merge(local.common_labels, {
-      "kubernetes.io/metadata.name"        = var.namespace
-      "reference-data.fs2.nebius.ai/plane" = "private"
-      "pod-security.kubernetes.io/enforce" = var.pod_security_rollout_phase == "enforce" ? "baseline" : "privileged"
-      "pod-security.kubernetes.io/audit"   = "restricted"
-      "pod-security.kubernetes.io/warn"    = "restricted"
+      "kubernetes.io/metadata.name"                = var.namespace
+      "reference-data.fs2.nebius.ai/plane"         = "private"
+      "pod-security.kubernetes.io/enforce"         = var.pod_security_rollout_phase == "enforce" ? "baseline" : "privileged"
+      "pod-security.kubernetes.io/enforce-version" = var.pod_security_version
+      "pod-security.kubernetes.io/audit"           = "restricted"
+      "pod-security.kubernetes.io/audit-version"   = var.pod_security_version
+      "pod-security.kubernetes.io/warn"            = "restricted"
+      "pod-security.kubernetes.io/warn-version"    = var.pod_security_version
     })
     annotations = var.pod_security_rollout_phase == "prepare" ? {
       "security.fs2.nebius.ai/pod-security-exception" = "reference-data-host-path"
@@ -496,6 +503,18 @@ resource "kubernetes_persistent_volume_claim_v1" "reference_data" {
   }
 
   wait_until_bound = false
+
+  lifecycle {
+    prevent_destroy = true
+
+    precondition {
+      condition = (
+        var.filesystem_claim.storage_class == "fs2-reference-data-retained-sc" &&
+        var.filesystem_claim.size_gib <= var.filesystem_claim.capacity_gib
+      )
+      error_message = "The retained reference-data PVC must use its dedicated Retain StorageClass and fit the dedicated filesystem capacity."
+    }
+  }
 }
 
 resource "kubernetes_service_account_v1" "reference_data" {

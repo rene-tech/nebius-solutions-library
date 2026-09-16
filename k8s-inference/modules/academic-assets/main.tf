@@ -56,9 +56,12 @@ locals {
   }
 
   pod_security_labels = var.pod_security_enforcement_enabled ? {
-    "pod-security.kubernetes.io/enforce" = "baseline"
-    "pod-security.kubernetes.io/audit"   = "restricted"
-    "pod-security.kubernetes.io/warn"    = "restricted"
+    "pod-security.kubernetes.io/enforce"         = "baseline"
+    "pod-security.kubernetes.io/enforce-version" = var.pod_security_version
+    "pod-security.kubernetes.io/audit"           = "restricted"
+    "pod-security.kubernetes.io/audit-version"   = var.pod_security_version
+    "pod-security.kubernetes.io/warn"            = "restricted"
+    "pod-security.kubernetes.io/warn-version"    = var.pod_security_version
   } : {}
 }
 

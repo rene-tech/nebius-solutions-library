@@ -28,6 +28,12 @@ def main() -> None:
     parser.add_argument("--activation-script", default="/opt/fs2/activate.sh")
     parser.add_argument("--runtime-script")
     args = parser.parse_args()
+    if args.mode in {"donor", "restore"}:
+        parser.error(
+            "SAI-07 retired privileged snapshot Pod recreation. A successor requires a "
+            "separately reviewed admission-constrained exception namespace; do not target "
+            "Baseline-enforced scientific namespaces."
+        )
     if not args.source_in_image and not args.source_configmap:
         parser.error("set --source-in-image or provide --source-configmap")
     source_root = "/opt/fs2/snapshot" if args.source_in_image else "/snapshot-source"

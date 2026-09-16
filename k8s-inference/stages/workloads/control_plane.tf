@@ -170,9 +170,10 @@ locals {
     # Publish exact kubelet Pod -> GPU UUID observations for the lifecycle
     # ledger. This is GPU-model agnostic and schedules only on Nebius GPU nodes.
     runtimeAttribution = {
-      enabled            = true
-      daemonSetNamespace = local.gpu_observer_namespace
-      namespaces         = local.runtime_attribution_namespaces
+      enabled                       = true
+      daemonSetNamespace            = local.gpu_observer_namespace
+      additionalDaemonSetNamespaces = local.gpu_observer_additional_namespaces
+      namespaces                    = local.runtime_attribution_namespaces
     }
     modelController = {
       enabled                             = var.model_controller.enabled
@@ -273,6 +274,7 @@ resource "helm_release" "control_plane" {
   }
 
   depends_on = [
+    terraform_data.pod_security_rollout_contract,
     kubernetes_manifest.model_deployment_crd,
     kubernetes_manifest.control_database,
     kubernetes_secret_v1.database_consumer,

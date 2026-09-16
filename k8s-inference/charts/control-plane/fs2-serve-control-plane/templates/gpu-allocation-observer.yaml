@@ -2,6 +2,7 @@
 {{- $name := printf "%s-gpu-observer" (include "fs2-serve.fullname" .) }}
 {{- $serviceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "gpu-observer") }}
 {{- $daemonSetNamespace := .Values.runtimeAttribution.daemonSetNamespace }}
+{{- $daemonSetNamespaces := uniq (concat (list $daemonSetNamespace) .Values.runtimeAttribution.additionalDaemonSetNamespaces) }}
 {{- $namespaces := .Values.runtimeAttribution.namespaces }}
 {{- if eq (len $namespaces) 0 }}
 {{- $namespaces = list .Values.runtimeAttribution.modelNamespace }}
@@ -34,11 +35,15 @@ roleRef:
   kind: Role
   name: {{ $name }}
 subjects:
+{{- range $observerNamespace := $daemonSetNamespaces }}
   - kind: ServiceAccount
     name: {{ $serviceAccount }}
-    namespace: {{ $daemonSetNamespace }}
+    namespace: {{ $observerNamespace }}
+{{- end }}
 ---
 {{- end }}
+{{- range $daemonSetNamespace := $daemonSetNamespaces }}
+{{- with $ }}
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -135,4 +140,7 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+---
+{{- end }}
+{{- end }}
 {{- end }}

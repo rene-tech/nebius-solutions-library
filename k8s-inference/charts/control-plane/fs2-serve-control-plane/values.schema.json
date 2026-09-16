@@ -944,6 +944,7 @@
       "required": [
         "enabled",
         "daemonSetNamespace",
+        "additionalDaemonSetNamespaces",
         "modelNamespace",
         "namespaces",
         "kubernetesApiUrl",
@@ -957,7 +958,13 @@
       "properties": {
         "enabled": {"type": "boolean"},
         "daemonSetNamespace": {
-          "const": "fs2-node-observability"
+          "enum": ["fs2-node-observability", "fs2-system"]
+        },
+        "additionalDaemonSetNamespaces": {
+          "type": "array",
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["fs2-node-observability", "fs2-system"]}
         },
         "modelNamespace": {"$ref": "#/$defs/dnsName"},
         "namespaces": {

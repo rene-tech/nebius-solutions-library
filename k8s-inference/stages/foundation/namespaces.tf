@@ -7,6 +7,7 @@ resource "kubernetes_namespace_v1" "platform" {
       local.common_labels,
       { "kubernetes.io/metadata.name" = each.value },
       lookup(local.pod_security_labels, each.value, {}),
+      lookup(local.pod_security_exception_labels, each.value, {}),
     )
     annotations = lookup(local.pod_security_annotations, each.value, {})
   }

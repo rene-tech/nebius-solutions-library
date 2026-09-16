@@ -148,9 +148,12 @@ resource "kubernetes_namespace_v1" "modelexpress" {
       local.common_labels,
       { "kubernetes.io/metadata.name" = var.model_express.namespace },
       var.pod_security_rollout_phase == "enforce" ? {
-        "pod-security.kubernetes.io/enforce" = "baseline"
-        "pod-security.kubernetes.io/audit"   = "restricted"
-        "pod-security.kubernetes.io/warn"    = "restricted"
+        "pod-security.kubernetes.io/enforce"         = "baseline"
+        "pod-security.kubernetes.io/enforce-version" = var.pod_security_version
+        "pod-security.kubernetes.io/audit"           = "restricted"
+        "pod-security.kubernetes.io/audit-version"   = var.pod_security_version
+        "pod-security.kubernetes.io/warn"            = "restricted"
+        "pod-security.kubernetes.io/warn-version"    = var.pod_security_version
       } : {},
     )
   }

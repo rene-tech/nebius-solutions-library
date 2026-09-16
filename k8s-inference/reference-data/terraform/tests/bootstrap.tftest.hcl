@@ -82,7 +82,7 @@ run "fresh_empty_volume_status_rollout_is_service_ready" {
   }
 }
 
-run "csi_switch_requires_a_verified_migration_receipt" {
+run "csi_switch_requires_the_signed_prior_phase_gate" {
   command = plan
 
   variables {
@@ -96,17 +96,16 @@ run "csi_switch_requires_a_verified_migration_receipt" {
   expect_failures = [terraform_data.region_contract]
 }
 
-run "verified_csi_phase_mounts_the_rwx_claim_before_baseline_enforcement" {
+run "exception_ready_gate_mounts_the_rwx_claim_before_baseline_enforcement" {
   command = plan
 
   variables {
     pod_security_rollout_phase = "migrate-reference-data"
-    csi_migration_receipt = {
-      schema             = "fs2-serve.nebius.ai/reference-data-csi-migration/v1"
-      claim_name         = "fs2-reference-data-rwx"
-      source_tree_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      target_tree_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      receipt_sha256     = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    pod_security_rollout_verification = {
+      phase            = "migrate-reference-data"
+      terminal_state   = "exception-ready"
+      bundle_sha256    = sha256("unit-test-signed-exception-ready-bundle")
+      transition_count = 1
     }
   }
 
@@ -122,7 +121,7 @@ run "verified_csi_phase_mounts_the_rwx_claim_before_baseline_enforcement" {
     condition = (
       length(kubernetes_persistent_volume_claim_v1.reference_data.spec[0].access_modes) == 1 &&
       contains(kubernetes_persistent_volume_claim_v1.reference_data.spec[0].access_modes, "ReadWriteMany") &&
-      kubernetes_persistent_volume_claim_v1.reference_data.spec[0].storage_class_name == "csi-mounted-fs-path-sc" &&
+      kubernetes_persistent_volume_claim_v1.reference_data.spec[0].storage_class_name == "fs2-reference-data-retained-sc" &&
       kubernetes_namespace_v1.reference_data.metadata[0].labels["pod-security.kubernetes.io/enforce"] == "privileged" &&
       kubernetes_namespace_v1.reference_data.metadata[0].annotations["security.fs2.nebius.ai/pod-security-exception"] == "reference-data-csi-verification"
     )
@@ -144,17 +143,16 @@ run "verified_csi_phase_mounts_the_rwx_claim_before_baseline_enforcement" {
   }
 }
 
-run "baseline_enforcement_refuses_missing_csi_readiness_evidence" {
+run "baseline_enforcement_refuses_a_non_baseline_ready_gate" {
   command = plan
 
   variables {
     pod_security_rollout_phase = "enforce"
-    csi_migration_receipt = {
-      schema             = "fs2-serve.nebius.ai/reference-data-csi-migration/v1"
-      claim_name         = "fs2-reference-data-rwx"
-      source_tree_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      target_tree_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      receipt_sha256     = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    pod_security_rollout_verification = {
+      phase            = "enforce"
+      terminal_state   = "reference-data-ready"
+      bundle_sha256    = sha256("unit-test-incomplete-signed-bundle")
+      transition_count = 2
     }
   }
 
@@ -165,19 +163,17 @@ run "baseline_enforcement_refuses_missing_csi_readiness_evidence" {
   expect_failures = [terraform_data.region_contract]
 }
 
-run "baseline_enforcement_follows_verified_csi_readiness" {
+run "baseline_enforcement_follows_the_signed_baseline_ready_gate" {
   command = plan
 
   variables {
     pod_security_rollout_phase = "enforce"
-    csi_migration_receipt = {
-      schema             = "fs2-serve.nebius.ai/reference-data-csi-migration/v1"
-      claim_name         = "fs2-reference-data-rwx"
-      source_tree_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      target_tree_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      receipt_sha256     = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    pod_security_rollout_verification = {
+      phase            = "enforce"
+      terminal_state   = "baseline-ready"
+      bundle_sha256    = sha256("unit-test-signed-baseline-ready-bundle")
+      transition_count = 4
     }
-    csi_readiness_receipt_sha256 = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
   }
 
   plan_options {

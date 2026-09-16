@@ -4,6 +4,16 @@ variable "pod_security_enforcement_enabled" {
   default     = false
 }
 
+variable "pod_security_version" {
+  description = "Exact reviewed Kubernetes minor pinned on PSA labels."
+  type        = string
+  default     = "v1.35"
+  validation {
+    condition     = can(regex("^v1\\.[0-9]{1,2}$", var.pod_security_version))
+    error_message = "pod_security_version must pin one Kubernetes v1 minor."
+  }
+}
+
 variable "academic_assets" {
   description = <<-EOT
     Tenant-private delivery of licensed academic assets.

@@ -1,9 +1,11 @@
 locals {
-  node_agents_use_exception_namespace = contains([
+  node_agents_use_exception_namespace = var.pod_security_rollout_phase != "rollback-remove-exception"
+  legacy_host_agents_enabled = contains([
     "prepare",
-    "migrate-reference-data",
-    "enforce",
+    "rollback-restore-host-agents",
+    "rollback-remove-exception",
   ], var.pod_security_rollout_phase)
+  exception_host_agents_enabled = var.pod_security_rollout_phase != "rollback-remove-exception"
   node_observability_namespace = (
     local.node_agents_use_exception_namespace ?
     "fs2-node-observability" :
@@ -14,6 +16,10 @@ locals {
     "fs2-node-observability" :
     "fs2-system"
   )
+  gpu_observer_additional_namespaces = contains([
+    "prepare",
+    "rollback-restore-host-agents",
+  ], var.pod_security_rollout_phase) ? ["fs2-system"] : []
   # The foundation contract exposes either the fresh run-scoped Grafana
   # Service or the retained Service override. Both share the same Helm release
   # prefix as Loki, so this keeps the selector exact without a topology flag or
@@ -192,11 +198,11 @@ resource "kubernetes_network_policy_v1" "grafana_observability_egress" {
   depends_on = [terraform_data.cluster_contract]
 }
 
-resource "helm_release" "dcgm_exporter" {
-  count = var.deployment_profile == "full_catalog" ? 1 : 0
+resource "helm_release" "dcgm_exporter_legacy" {
+  count = var.deployment_profile == "full_catalog" && local.legacy_host_agents_enabled ? 1 : 0
 
   name             = "fs2-dcgm-exporter"
-  namespace        = local.node_observability_namespace
+  namespace        = "fs2-observability"
   repository       = "https://nvidia.github.io/dcgm-exporter/helm-charts"
   chart            = "dcgm-exporter"
   version          = "4.8.3"
@@ -211,7 +217,7 @@ resource "helm_release" "dcgm_exporter" {
   values = [
     file("${path.module}/values/dcgm-exporter.yaml"),
     yamlencode({
-      imagePullSecrets = [{ name = kubernetes_secret_v1.dcgm_exporter_nvcrio[0].metadata[0].name }]
+      imagePullSecrets = [{ name = kubernetes_secret_v1.dcgm_exporter_nvcrio_legacy[0].metadata[0].name }]
       arguments        = local.dcgm_cadence_profile.helmValues.arguments
       config           = local.dcgm_cadence_profile.helmValues.config
       serviceMonitor = merge(
@@ -223,6 +229,44 @@ resource "helm_release" "dcgm_exporter" {
 
   depends_on = [
     terraform_data.cluster_contract,
-    kubernetes_secret_v1.dcgm_exporter_nvcrio,
+    kubernetes_secret_v1.dcgm_exporter_nvcrio_legacy,
+  ]
+}
+
+moved {
+  from = helm_release.dcgm_exporter
+  to   = helm_release.dcgm_exporter_legacy[0]
+}
+
+resource "helm_release" "dcgm_exporter_exception" {
+  count = var.deployment_profile == "full_catalog" && local.exception_host_agents_enabled ? 1 : 0
+
+  name             = "fs2-dcgm-exporter-psa"
+  namespace        = "fs2-node-observability"
+  repository       = "https://nvidia.github.io/dcgm-exporter/helm-charts"
+  chart            = "dcgm-exporter"
+  version          = "4.8.3"
+  create_namespace = false
+  atomic           = true
+  cleanup_on_fail  = true
+  wait             = true
+  timeout          = 900
+
+  values = [
+    file("${path.module}/values/dcgm-exporter.yaml"),
+    yamlencode({
+      imagePullSecrets = [{ name = kubernetes_secret_v1.dcgm_exporter_nvcrio_exception[0].metadata[0].name }]
+      arguments        = local.dcgm_cadence_profile.helmValues.arguments
+      config           = local.dcgm_cadence_profile.helmValues.config
+      serviceMonitor = merge(
+        local.dcgm_cadence_profile.helmValues.serviceMonitor,
+        { additionalLabels = { release = "fs2-${var.run_id}-monitoring" } },
+      )
+    }),
+  ]
+
+  depends_on = [
+    terraform_data.pod_security_rollout_contract,
+    kubernetes_secret_v1.dcgm_exporter_nvcrio_exception,
   ]
 }

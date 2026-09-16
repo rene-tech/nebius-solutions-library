@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
-"""Isolated exact-image workers for models served as scientific batch jobs."""
+"""Retained historical batch launcher; recreation is blocked after SAI-07.
+
+The measured evidence remains reproducible as source, but its hostPath launch
+contract is intentionally not executable in a Baseline-enforced namespace.
+A future runnable successor must consume a namespace-local, retained CSI claim
+and pass the signed pre-enforcement inventory gate.
+"""
 import argparse,json,subprocess,time
 from control import K,ROOT,k,save
+raise SystemExit(
+    "SAI-07: this historical hostPath launcher is non-recreatable; use a reviewed CSI successor"
+)
 p=argparse.ArgumentParser();p.add_argument('model',choices=['rfdiffusion','proteina-complexa']);p.add_argument('--node',required=True);a=p.parse_args()
 mapping=json.loads(json.loads((ROOT/'inventory/fs2-r927c465c6d-scientific-execution-88c83daa474b.json').read_text())['execution-map.json'])
 model=next(m for m in mapping['models'] if m['model_id']==a.model)

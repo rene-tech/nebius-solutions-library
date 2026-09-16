@@ -304,7 +304,8 @@ resource "helm_release" "monitoring" {
     yamlencode({
       fullnameOverride = "fs2-${var.run_id}-monitoring"
       "prometheus-node-exporter" = {
-        namespaceOverride = kubernetes_namespace_v1.platform[local.node_observability_namespace].metadata[0].name
+        enabled           = local.legacy_host_agents_enabled
+        namespaceOverride = "fs2-observability"
       }
       alertmanager = {
         enabled = var.alertmanager.enabled
@@ -457,8 +458,37 @@ resource "helm_release" "monitoring" {
   ]
 
   depends_on = [
+    helm_release.node_exporter_exception,
     terraform_data.kueue_deployment_admission_ready,
     kubernetes_secret_v1.grafana_admin,
+  ]
+}
+
+resource "helm_release" "node_exporter_exception" {
+  count = local.exception_host_agents_enabled ? 1 : 0
+
+  name             = "fs2-node-exporter-psa"
+  namespace        = kubernetes_namespace_v1.platform["fs2-node-observability"].metadata[0].name
+  repository       = "https://prometheus-community.github.io/helm-charts"
+  chart            = "prometheus-node-exporter"
+  version          = "4.56.1"
+  create_namespace = false
+  atomic           = true
+  cleanup_on_fail  = true
+  wait             = true
+  timeout          = 900
+
+  values = [yamlencode({
+    fullnameOverride = "fs2-node-exporter"
+    serviceMonitor = {
+      enabled          = true
+      additionalLabels = { release = "fs2-${var.run_id}-monitoring" }
+    }
+  })]
+
+  depends_on = [
+    kubernetes_manifest.node_observability_pod_binding,
+    kubernetes_manifest.node_observability_daemonset_binding,
   ]
 }
 
@@ -525,9 +555,11 @@ resource "helm_release" "otel_gateway" {
   ]
 }
 
-resource "helm_release" "otel_node" {
+resource "helm_release" "otel_node_legacy" {
+  count = local.legacy_host_agents_enabled ? 1 : 0
+
   name             = "fs2-${var.run_id}-otel-node"
-  namespace        = kubernetes_namespace_v1.platform[local.node_observability_namespace].metadata[0].name
+  namespace        = kubernetes_namespace_v1.platform["fs2-observability"].metadata[0].name
   repository       = "https://open-telemetry.github.io/opentelemetry-helm-charts"
   chart            = "opentelemetry-collector"
   version          = local.chart_versions.opentelemetry
@@ -540,4 +572,32 @@ resource "helm_release" "otel_node" {
   values = [file("${path.module}/values/otel-node.yaml")]
 
   depends_on = [helm_release.otel_gateway]
+}
+
+moved {
+  from = helm_release.otel_node
+  to   = helm_release.otel_node_legacy[0]
+}
+
+resource "helm_release" "otel_node_exception" {
+  count = local.exception_host_agents_enabled ? 1 : 0
+
+  name             = "fs2-${var.run_id}-otel-node-psa"
+  namespace        = kubernetes_namespace_v1.platform["fs2-node-observability"].metadata[0].name
+  repository       = "https://open-telemetry.github.io/opentelemetry-helm-charts"
+  chart            = "opentelemetry-collector"
+  version          = local.chart_versions.opentelemetry
+  create_namespace = false
+  atomic           = true
+  cleanup_on_fail  = true
+  wait             = true
+  timeout          = 900
+
+  values = [file("${path.module}/values/otel-node.yaml")]
+
+  depends_on = [
+    helm_release.otel_gateway,
+    kubernetes_manifest.node_observability_pod_binding,
+    kubernetes_manifest.node_observability_daemonset_binding,
+  ]
 }

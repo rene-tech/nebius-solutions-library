@@ -107,6 +107,7 @@ module "academic_assets" {
 
   academic_assets                  = var.academic_assets
   pod_security_enforcement_enabled = var.pod_security_rollout_phase == "enforce"
+  pod_security_version             = var.pod_security_version
 }
 
 # Publishes what the chart will receive, so the projection is assertable without

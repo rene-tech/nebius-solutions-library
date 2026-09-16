@@ -49,10 +49,25 @@ variable "deployment" {
     }), {})
 
     pod_security = optional(object({
-      rollout_phase                       = optional(string, "prepare")
-      existing_scientific_namespaces      = optional(set(string), [])
-      host_agent_readiness_receipt_sha256 = optional(string)
-      host_agent_restore_receipt_sha256   = optional(string)
+      rollout_phase = optional(string, "prepare")
+      existing_scientific_namespaces = optional(set(string), [
+        "fs2-bioir-boltz2",
+        "fs2-bioir-coverage",
+        "fs2-bioir-openfold",
+        "fs2-bioir-protenix",
+        "fs2-bioir-snapshot",
+      ])
+      receipt = optional(object({
+        bundle_path       = optional(string)
+        public_key_path   = optional(string)
+        public_key_sha256 = optional(string)
+        deployment_nonce  = optional(string)
+      }), {})
+      # Exact authenticated Kubernetes usernames allowed to create/update the
+      # four reviewed host-agent DaemonSets.  Namespace RBAC is additive, so
+      # the admission policy enforces this identity boundary even if a future
+      # cluster role is accidentally widened.
+      exception_manager_usernames = optional(set(string), [])
     }), {})
 
     accelerator_pool_capacity = optional(map(object({
@@ -522,14 +537,9 @@ variable "deployment" {
           backoff_limit           = optional(number, 2)
           threads                 = optional(number, 16)
         }), {})
-        csi_migration_receipt = optional(object({
-          schema             = string
-          claim_name         = string
-          source_tree_sha256 = string
-          target_tree_sha256 = string
-          receipt_sha256     = string
-        }))
-        csi_readiness_receipt_sha256 = optional(string)
+        # Measured source-tree identity that the signed rollout receipt binds.
+        # This value is an expectation, never authority on its own.
+        expected_tree_sha256 = optional(string)
       }), {})
 
       # Dedicated result store for the staged scientific batch controller. It is
@@ -721,7 +731,9 @@ variable "deployment" {
       contains([
         "prepare",
         "migrate-reference-data",
+        "cleanup-legacy-resources",
         "enforce",
+        "rollback-remove-enforcement",
         "rollback-restore-host-agents",
         "rollback-remove-exception",
       ], var.deployment.pod_security.rollout_phase) &&
@@ -730,45 +742,69 @@ variable "deployment" {
         startswith(namespace, "fs2-") &&
         length(namespace) <= 63 &&
         can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", namespace))
+      ]) &&
+      var.deployment.pod_security.existing_scientific_namespaces == toset([
+        "fs2-bioir-boltz2",
+        "fs2-bioir-coverage",
+        "fs2-bioir-openfold",
+        "fs2-bioir-protenix",
+        "fs2-bioir-snapshot",
       ])
     )
-    error_message = "pod_security requires a valid rollout phase and bounded fs2-* scientific namespaces."
+    error_message = "pod_security requires a valid ordered phase and the exact frozen five-namespace fs2-bioir inventory."
   }
 
   validation {
     condition = (
-      !contains(["migrate-reference-data", "enforce"], var.deployment.pod_security.rollout_phase) ||
-      try(can(regex("^[a-f0-9]{64}$", var.deployment.pod_security.host_agent_readiness_receipt_sha256)), false)
-      ) && (
-      var.deployment.pod_security.rollout_phase != "rollback-remove-exception" ||
-      try(can(regex("^[a-f0-9]{64}$", var.deployment.pod_security.host_agent_restore_receipt_sha256)), false)
-    )
-    error_message = "Advancing PSA requires the host-agent move readiness receipt; removing the exception requires the restore readiness receipt."
-  }
-
-  validation {
-    condition = (
-      !var.deployment.storage.reference_data.enabled ||
-      var.deployment.pod_security.rollout_phase == "prepare" ||
+      var.deployment.pod_security.rollout_phase == "rollback-remove-exception" ||
       try(
-        var.deployment.storage.reference_data.csi_migration_receipt.schema == "fs2-serve.nebius.ai/reference-data-csi-migration/v1" &&
-        var.deployment.storage.reference_data.csi_migration_receipt.claim_name == "fs2-reference-data-rwx" &&
-        can(regex("^[a-f0-9]{64}$", var.deployment.storage.reference_data.csi_migration_receipt.source_tree_sha256)) &&
-        var.deployment.storage.reference_data.csi_migration_receipt.source_tree_sha256 == var.deployment.storage.reference_data.csi_migration_receipt.target_tree_sha256 &&
-        can(regex("^[a-f0-9]{64}$", var.deployment.storage.reference_data.csi_migration_receipt.receipt_sha256)),
+        length(var.deployment.pod_security.exception_manager_usernames) > 0 &&
+        alltrue([
+          for username in var.deployment.pod_security.exception_manager_usernames :
+          length(username) <= 253 && can(regex("^[A-Za-z0-9][A-Za-z0-9:._@/-]*$", username))
+        ]),
         false,
       )
     )
-    error_message = "Reference-data CSI and PSA phases require a content-identity migration receipt for fs2-reference-data-rwx."
+    error_message = "Every phase that owns the host-agent exception namespace requires at least one exact bounded admission-manager username."
   }
 
   validation {
     condition = (
-      !var.deployment.storage.reference_data.enabled ||
-      var.deployment.pod_security.rollout_phase != "enforce" ||
-      try(can(regex("^[a-f0-9]{64}$", var.deployment.storage.reference_data.csi_readiness_receipt_sha256)), false)
+      var.deployment.pod_security.rollout_phase == "prepare" || try(
+        startswith(var.deployment.pod_security.receipt.bundle_path, "/") &&
+        !strcontains(var.deployment.pod_security.receipt.bundle_path, "..") &&
+        startswith(var.deployment.pod_security.receipt.public_key_path, "/") &&
+        !strcontains(var.deployment.pod_security.receipt.public_key_path, "..") &&
+        can(regex("^[a-f0-9]{64}$", var.deployment.pod_security.receipt.public_key_sha256)) &&
+        can(regex("^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$", var.deployment.pod_security.receipt.deployment_nonce)),
+        false,
+      )
     )
-    error_message = "Reference-data baseline enforcement requires a non-secret readiness receipt captured after the CSI-mounted status and access probes pass."
+    error_message = "Every phase after prepare requires absolute safe receipt/key paths, a reviewed key digest, and a bounded deployment nonce."
+  }
+
+  validation {
+    condition = (
+      var.deployment.pod_security.rollout_phase == "prepare" ||
+      try(
+        var.deployment.storage.reference_data.enabled &&
+        var.deployment.storage.reference_data.lifecycle.retention_mode == "retain" &&
+        var.deployment.storage.reference_data.filesystem.forbid_deletion &&
+        var.deployment.storage.reference_data.filesystem.size_gib >= 1611 &&
+        can(regex("^[a-f0-9]{64}$", var.deployment.storage.reference_data.expected_tree_sha256)),
+        false,
+      )
+    )
+    error_message = "Every post-prepare phase requires the retained deletion-forbidden reference-data filesystem and a measured content identity bound by the signed receipt."
+  }
+
+  validation {
+    condition = (
+      var.deployment.pod_security.rollout_phase != "enforce" ||
+      try(var.deployment.storage.reference_data.enabled, false)
+    )
+    error_message = "Reference-data must be enabled before baseline enforcement; readiness is accepted only from the signed rollout chain."
   }
 
   validation {

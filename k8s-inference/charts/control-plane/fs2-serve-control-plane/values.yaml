@@ -229,6 +229,9 @@ runtimeAttribution:
   # Host-integrated observers live outside baseline-enforced application
   # namespaces. This namespace is Terraform-owned and explicitly audited.
   daemonSetNamespace: fs2-node-observability
+  # During a signed migration or rollback readiness phase the old and new
+  # DaemonSets coexist. Empty is the steady state.
+  additionalDaemonSetNamespaces: []
   # `modelNamespace` is retained as the fallback for older values files.
   # New callers pass the complete, bounded namespace set through `namespaces`.
   modelNamespace: fs2-models

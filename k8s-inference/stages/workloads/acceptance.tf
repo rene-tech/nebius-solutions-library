@@ -280,7 +280,10 @@ resource "kubernetes_job_v1" "gpu_observability_acceptance" {
   wait_for_completion = true
   timeouts { create = "20m" }
 
-  depends_on = [helm_release.dcgm_exporter]
+  depends_on = [
+    helm_release.dcgm_exporter_legacy,
+    helm_release.dcgm_exporter_exception,
+  ]
 }
 
 resource "kubernetes_manifest" "kueue_admission_acceptance" {

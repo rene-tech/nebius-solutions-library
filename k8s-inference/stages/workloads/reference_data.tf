@@ -21,14 +21,17 @@ module "reference_data" {
   namespace                   = var.reference_data.namespace
   shared_filesystem_host_path = try(var.reference_data.storage_contract.filesystem.host_path, "/mnt/fs2-reference-data/data")
   pod_security_rollout_phase  = var.pod_security_rollout_phase
+  pod_security_version        = var.pod_security_version
   filesystem_claim = {
     name          = "fs2-reference-data-rwx"
-    storage_class = "csi-mounted-fs-path-sc"
-    size_gib      = try(var.reference_data.storage_contract.filesystem.size_gib, 2048)
+    storage_class = "fs2-reference-data-retained-sc"
+    # The request is the measured minimum dataset capacity and may not exceed
+    # the exact retained filesystem advertised by infrastructure.
+    size_gib     = 1611
+    capacity_gib = try(var.reference_data.storage_contract.filesystem.size_gib, 0)
   }
-  csi_migration_receipt        = var.reference_data.csi_migration_receipt
-  csi_readiness_receipt_sha256 = var.reference_data.csi_readiness_receipt_sha256
-  cpu_pool                     = var.reference_data.storage_contract.cpu_pool
+  pod_security_rollout_verification = module.pod_security_rollout_gate.verification
+  cpu_pool                          = var.reference_data.storage_contract.cpu_pool
   # The reference CPU ClusterQueue must admit every namespace to which this
   # stage publishes a LocalQueue. That includes both licensed raw-data stages
   # and model-owned preprocessing stages in the scientific workload namespace.
@@ -51,6 +54,40 @@ module "reference_data" {
   service_monitor_enabled = var.reference_data.status.service_monitor_enabled
   pipeline                = var.reference_data.pipeline
   preprocess              = var.reference_data.preprocess
+
+  depends_on = [
+    helm_release.reference_data_csi,
+    terraform_data.pod_security_rollout_contract,
+  ]
+}
+
+resource "kubernetes_config_map_v1" "reference_data_retained_context" {
+  count = var.reference_data.enabled ? 1 : 0
+
+  metadata {
+    name      = "fs2-reference-data-retained-context"
+    namespace = "fs2-system"
+    labels    = local.common_labels
+  }
+  immutable = true
+  data = {
+    "context.json" = jsonencode({
+      pvc = module.reference_data[0].retained_claim_context
+      storage = {
+        filesystem_id   = var.reference_data.storage_contract.filesystem.id
+        capacity_gib    = var.reference_data.storage_contract.filesystem.size_gib
+        claim_size_gib  = module.reference_data[0].retained_claim_context.requested_gib
+        forbid_deletion = var.reference_data.storage_contract.filesystem.forbid_deletion
+        retention_mode  = var.reference_data.storage_contract.lifecycle.retention_mode
+      }
+    })
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [terraform_data.pod_security_rollout_contract]
 }
 
 resource "terraform_data" "reference_data_contract" {
@@ -70,6 +107,8 @@ resource "terraform_data" "reference_data_contract" {
         var.reference_data.storage_contract.cpu_pool.node_labels["capacity.fs2.nebius/pool"] == "reference-data" &&
         var.reference_data.storage_contract.cpu_pool.taint.effect == "NoSchedule" &&
         var.reference_data.storage_contract.filesystem.size_gib >= 1611 &&
+        var.reference_data.storage_contract.filesystem.forbid_deletion &&
+        var.reference_data.storage_contract.lifecycle.retention_mode == "retain" &&
         var.reference_data.storage_contract.object_storage.max_size_gib >= 1611 &&
         var.reference_data.storage_contract.object_storage.versioning_policy == "ENABLED" &&
         !var.reference_data.storage_contract.public_msa_default

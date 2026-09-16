@@ -106,7 +106,7 @@ variable "shared_filesystem_host_path" {
     eligible GPU nodes. It must be pre-created and writable by uid/gid 1000.
   EOT
   type        = string
-  default     = "/mnt/fs2cache/csi-mounted-fs-path-data/reference-data"
+  default     = "/mnt/fs2-reference-data/data"
   validation {
     condition     = startswith(var.shared_filesystem_host_path, "/mnt/") && !strcontains(var.shared_filesystem_host_path, "..")
     error_message = "shared_filesystem_host_path must be an absolute safe path below /mnt."
@@ -122,7 +122,9 @@ variable "pod_security_rollout_phase" {
     condition = contains([
       "prepare",
       "migrate-reference-data",
+      "cleanup-legacy-resources",
       "enforce",
+      "rollback-remove-enforcement",
       "rollback-restore-host-agents",
       "rollback-remove-exception",
     ], var.pod_security_rollout_phase)
@@ -130,14 +132,25 @@ variable "pod_security_rollout_phase" {
   }
 }
 
+variable "pod_security_version" {
+  description = "Exact reviewed Kubernetes minor pinned on every PSA label."
+  type        = string
+  default     = "v1.35"
+  validation {
+    condition     = can(regex("^v1\\.[0-9]{1,2}$", var.pod_security_version))
+    error_message = "pod_security_version must pin one Kubernetes v1 minor."
+  }
+}
+
 variable "filesystem_claim" {
   description = "RWX CSI claim that receives the migrated reference-data tree before baseline enforcement."
   type = object({
     name          = optional(string, "fs2-reference-data-rwx")
-    storage_class = optional(string, "csi-mounted-fs-path-sc")
+    storage_class = optional(string, "fs2-reference-data-retained-sc")
     size_gib      = number
+    capacity_gib  = number
   })
-  default = { size_gib = 2048 }
+  default = { size_gib = 1611, capacity_gib = 2048 }
 
   validation {
     condition = (
@@ -145,45 +158,28 @@ variable "filesystem_claim" {
       can(regex("^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$", var.filesystem_claim.storage_class)) &&
       floor(var.filesystem_claim.size_gib) == var.filesystem_claim.size_gib &&
       var.filesystem_claim.size_gib >= 1611 &&
-      var.filesystem_claim.size_gib <= 65536
+      floor(var.filesystem_claim.capacity_gib) == var.filesystem_claim.capacity_gib &&
+      var.filesystem_claim.capacity_gib >= 1611 &&
+      var.filesystem_claim.size_gib <= var.filesystem_claim.capacity_gib &&
+      var.filesystem_claim.capacity_gib <= 65536
     )
-    error_message = "filesystem_claim requires DNS-safe names and a whole 1611-65536 GiB size."
+    error_message = "filesystem_claim requires the dedicated retained class and a whole 1611-65536 GiB capacity that is at least the requested size."
   }
 }
 
-variable "csi_migration_receipt" {
-  description = "Non-secret content-identity receipt captured after the legacy tree is copied and verified on the RWX claim."
+variable "pod_security_rollout_verification" {
+  description = "Output of the canonical signed rollout-gate module in the owning workloads stage."
   type = object({
-    schema             = string
-    claim_name         = string
-    source_tree_sha256 = string
-    target_tree_sha256 = string
-    receipt_sha256     = string
+    phase            = string
+    terminal_state   = string
+    bundle_sha256    = optional(string)
+    transition_count = number
   })
-  default  = null
-  nullable = true
-
-  validation {
-    condition = var.csi_migration_receipt == null || (
-      var.csi_migration_receipt.schema == "fs2-serve.nebius.ai/reference-data-csi-migration/v1" &&
-      var.csi_migration_receipt.claim_name == var.filesystem_claim.name &&
-      can(regex("^[a-f0-9]{64}$", var.csi_migration_receipt.source_tree_sha256)) &&
-      var.csi_migration_receipt.source_tree_sha256 == var.csi_migration_receipt.target_tree_sha256 &&
-      can(regex("^[a-f0-9]{64}$", var.csi_migration_receipt.receipt_sha256))
-    )
-    error_message = "csi_migration_receipt must bind this claim and equal verified source/target tree SHA-256 identities."
-  }
-}
-
-variable "csi_readiness_receipt_sha256" {
-  description = "Non-secret digest of the Bound-claim, Ready-status, and read-only application access evidence captured after switching to CSI."
-  type        = string
-  default     = null
-  nullable    = true
-
-  validation {
-    condition     = var.csi_readiness_receipt_sha256 == null || can(regex("^[a-f0-9]{64}$", var.csi_readiness_receipt_sha256))
-    error_message = "csi_readiness_receipt_sha256 must be a lowercase SHA-256 digest."
+  default = {
+    phase            = "prepare"
+    terminal_state   = "unmanaged"
+    bundle_sha256    = null
+    transition_count = 0
   }
 }
 

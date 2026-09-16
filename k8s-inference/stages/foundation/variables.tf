@@ -40,7 +40,9 @@ variable "pod_security_rollout_phase" {
     condition = contains([
       "prepare",
       "migrate-reference-data",
+      "cleanup-legacy-resources",
       "enforce",
+      "rollback-remove-enforcement",
       "rollback-restore-host-agents",
       "rollback-remove-exception",
     ], var.pod_security_rollout_phase)
@@ -48,27 +50,58 @@ variable "pod_security_rollout_phase" {
   }
 }
 
-variable "pod_security_host_agent_readiness_receipt_sha256" {
-  description = "Non-secret digest of the readiness evidence captured after all host agents move to the exception namespace."
+variable "pod_security_version" {
+  description = "Exact reviewed Kubernetes minor pinned on every PSA enforce, audit, and warn label."
   type        = string
-  default     = null
-  nullable    = true
-
+  default     = "v1.35"
   validation {
-    condition     = var.pod_security_host_agent_readiness_receipt_sha256 == null || can(regex("^[a-f0-9]{64}$", var.pod_security_host_agent_readiness_receipt_sha256))
-    error_message = "pod_security_host_agent_readiness_receipt_sha256 must be a lowercase SHA-256 digest."
+    condition     = can(regex("^v1\\.[0-9]{1,2}$", var.pod_security_version))
+    error_message = "pod_security_version must pin one Kubernetes v1 minor."
   }
 }
 
-variable "pod_security_host_agent_restore_receipt_sha256" {
-  description = "Non-secret digest of readiness evidence captured after host agents are restored to their original namespaces."
-  type        = string
-  default     = null
-  nullable    = true
+variable "pod_security_rollout_receipt" {
+  description = "Paths and reviewed Ed25519 public-key digest for the canonical rollout receipt chain."
+  type = object({
+    bundle_path       = optional(string)
+    public_key_path   = optional(string)
+    public_key_sha256 = optional(string)
+    deployment_nonce  = optional(string)
+  })
+  default = {}
+}
+
+variable "pod_security_dataset" {
+  description = "Exact retained dataset identity expected in the signed rollout receipt."
+  type = object({
+    id          = string
+    revision    = string
+    tree_sha256 = string
+  })
+  default = {
+    id          = "prepare"
+    revision    = "prepare"
+    tree_sha256 = ""
+  }
+}
+
+variable "pod_security_exception_manager_usernames" {
+  description = "Exact authenticated usernames allowed by admission to create or update reviewed exception DaemonSets."
+  type        = set(string)
+  default     = []
 
   validation {
-    condition     = var.pod_security_host_agent_restore_receipt_sha256 == null || can(regex("^[a-f0-9]{64}$", var.pod_security_host_agent_restore_receipt_sha256))
-    error_message = "pod_security_host_agent_restore_receipt_sha256 must be a lowercase SHA-256 digest."
+    condition = (
+      var.pod_security_rollout_phase == "rollback-remove-exception" ||
+      (
+        length(var.pod_security_exception_manager_usernames) > 0 &&
+        alltrue([
+          for username in var.pod_security_exception_manager_usernames :
+          length(username) <= 253 && can(regex("^[A-Za-z0-9][A-Za-z0-9:._@/-]*$", username))
+        ])
+      )
+    )
+    error_message = "The exception namespace requires at least one exact bounded admission-manager username."
   }
 }
 

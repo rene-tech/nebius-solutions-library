@@ -105,12 +105,14 @@ locals {
     "fs2.nebius.ai/run-id"         = var.run_id
   }
 
-  node_agents_use_exception_namespace = contains([
-    "prepare",
-    "migrate-reference-data",
-    "enforce",
-  ], var.pod_security_rollout_phase)
+  node_agents_use_exception_namespace  = var.pod_security_rollout_phase != "rollback-remove-exception"
   node_observability_exception_enabled = var.pod_security_rollout_phase != "rollback-remove-exception"
+  legacy_host_agents_enabled = contains([
+    "prepare",
+    "rollback-restore-host-agents",
+    "rollback-remove-exception",
+  ], var.pod_security_rollout_phase)
+  exception_host_agents_enabled = var.pod_security_rollout_phase != "rollback-remove-exception"
   node_observability_namespace = (
     local.node_agents_use_exception_namespace ?
     "fs2-node-observability" :
@@ -124,23 +126,35 @@ locals {
       "fs2-observability",
       "fs2-system",
       ]) : namespace => tomap({
-      "pod-security.kubernetes.io/enforce" = "baseline"
-      "pod-security.kubernetes.io/audit"   = "restricted"
-      "pod-security.kubernetes.io/warn"    = "restricted"
+      "pod-security.kubernetes.io/enforce"         = "baseline"
+      "pod-security.kubernetes.io/enforce-version" = var.pod_security_version
+      "pod-security.kubernetes.io/audit"           = "restricted"
+      "pod-security.kubernetes.io/audit-version"   = var.pod_security_version
+      "pod-security.kubernetes.io/warn"            = "restricted"
+      "pod-security.kubernetes.io/warn-version"    = var.pod_security_version
     })
   } : tomap({})
 
   pod_security_labels = merge(local.pod_security_application_labels, local.node_observability_exception_enabled ? {
     "fs2-node-observability" = tomap({
-      "pod-security.kubernetes.io/enforce" = "privileged"
-      "pod-security.kubernetes.io/audit"   = "restricted"
-      "pod-security.kubernetes.io/warn"    = "restricted"
+      "pod-security.kubernetes.io/enforce"         = "privileged"
+      "pod-security.kubernetes.io/enforce-version" = var.pod_security_version
+      "pod-security.kubernetes.io/audit"           = "restricted"
+      "pod-security.kubernetes.io/audit-version"   = var.pod_security_version
+      "pod-security.kubernetes.io/warn"            = "restricted"
+      "pod-security.kubernetes.io/warn-version"    = var.pod_security_version
     })
   } : tomap({}))
 
   pod_security_annotations = local.node_observability_exception_enabled ? {
     "fs2-node-observability" = tomap({
       "security.fs2.nebius.ai/pod-security-exception" = "node-observability-host-integration"
+    })
+  } : tomap({})
+
+  pod_security_exception_labels = local.node_observability_exception_enabled ? {
+    "fs2-node-observability" = tomap({
+      "security.fs2.nebius.ai/host-agent-only" = "true"
     })
   } : tomap({})
 

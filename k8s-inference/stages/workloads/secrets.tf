@@ -198,12 +198,12 @@ resource "kubernetes_secret_v1" "nvcrio_cred" {
   depends_on = [terraform_data.cluster_contract]
 }
 
-resource "kubernetes_secret_v1" "dcgm_exporter_nvcrio" {
-  count = local.dcgm_nvcr_credentials_required ? 1 : 0
+resource "kubernetes_secret_v1" "dcgm_exporter_nvcrio_legacy" {
+  count = local.dcgm_nvcr_credentials_required && local.legacy_host_agents_enabled ? 1 : 0
 
   metadata {
     name      = "fs2-dcgm-exporter-nvcrio"
-    namespace = local.node_observability_namespace
+    namespace = "fs2-observability"
     labels    = local.common_labels
   }
   type = "kubernetes.io/dockerconfigjson"
@@ -211,4 +211,24 @@ resource "kubernetes_secret_v1" "dcgm_exporter_nvcrio" {
     ".dockerconfigjson" = var.nvcrio_dockerconfigjson
   }
   depends_on = [terraform_data.cluster_contract]
+}
+
+moved {
+  from = kubernetes_secret_v1.dcgm_exporter_nvcrio
+  to   = kubernetes_secret_v1.dcgm_exporter_nvcrio_legacy[0]
+}
+
+resource "kubernetes_secret_v1" "dcgm_exporter_nvcrio_exception" {
+  count = local.dcgm_nvcr_credentials_required && local.exception_host_agents_enabled ? 1 : 0
+
+  metadata {
+    name      = "fs2-dcgm-exporter-nvcrio"
+    namespace = "fs2-node-observability"
+    labels    = local.common_labels
+  }
+  type = "kubernetes.io/dockerconfigjson"
+  data = {
+    ".dockerconfigjson" = var.nvcrio_dockerconfigjson
+  }
+  depends_on = [terraform_data.pod_security_rollout_contract]
 }

@@ -17,6 +17,18 @@ output "storage_contract" {
   }
 }
 
+output "retained_claim_context" {
+  description = "Non-secret immutable identity of the retained RWX claim used by signed PSA rollout receipts."
+  value = {
+    namespace     = kubernetes_persistent_volume_claim_v1.reference_data.metadata[0].namespace
+    name          = kubernetes_persistent_volume_claim_v1.reference_data.metadata[0].name
+    uid           = kubernetes_persistent_volume_claim_v1.reference_data.metadata[0].uid
+    storage_class = kubernetes_persistent_volume_claim_v1.reference_data.spec[0].storage_class_name
+    requested_gib = var.filesystem_claim.size_gib
+    capacity_gib  = var.filesystem_claim.capacity_gib
+  }
+}
+
 output "object_storage_secret_name" {
   description = "Non-secret, immutable credential Secret name derived from the current access-key identity and revision."
   value       = local.credentials_secret
