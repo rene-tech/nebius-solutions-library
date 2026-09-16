@@ -1,0 +1,55 @@
+{
+  "recorded_at": "2026-09-16 18:01:44 UTC",
+  "context": "fs2-storage-h100",
+  "namespace": "fs2-system",
+  "deployments": [
+    {
+      "name": "fs2-mindeval-workshop",
+      "generation": 7,
+      "observed_generation": 7,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-mindeval-workshop@sha256:377451e2a4296b7713aec33fb4ad6e2fd9bc49dec6291866bc4b6ca7e5a6261c",
+      "replicas": 2,
+      "updated": 2,
+      "available": 2
+    },
+    {
+      "name": "fs2-mindeval-gateway",
+      "generation": 1,
+      "observed_generation": 1,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/mindeval-gateway@sha256:4d7c32408cdc7a8bb5df55b73408146d6fe5aee759927f9211790b0874ef2db7",
+      "replicas": 1,
+      "updated": 1,
+      "available": 1
+    },
+    {
+      "name": "fs2-serve-control-plane",
+      "generation": 249,
+      "observed_generation": 249,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:d0b3b02e201d8dc34ca7368e8ad34fece02e15841595de8bb970748c3dc300d6",
+      "replicas": 3,
+      "updated": 3,
+      "available": 3
+    }
+  ],
+  "releases": [
+    {
+      "name": "fs2-mindeval-workshop",
+      "namespace": "fs2-system",
+      "revision": "7",
+      "updated": "2026-09-16 18:00:21.364356597 +0000 UTC",
+      "status": "deployed",
+      "chart": "mindeval-workshop-0.1.0",
+      "app_version": "1"
+    },
+    {
+      "name": "fs2-serve-control-plane",
+      "namespace": "fs2-system",
+      "revision": "138",
+      "updated": "2026-09-16 17:56:23.584464155 +0000 UTC",
+      "status": "deployed",
+      "chart": "fs2-serve-control-plane-0.5.0",
+      "app_version": "0.1.0"
+    }
+  ],
+  "verification": "read-only live Kubernetes Deployment specs and Helm release states"
+}

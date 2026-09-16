@@ -1,0 +1,2761 @@
+{
+  "schema": "fs2-mindeval-public-rehearsal/v1",
+  "label": "fs2-final-r9-20260916",
+  "started_at": "2026-09-16T18:01:39.123798+00:00",
+  "base_url": "https://89.169.99.188",
+  "image_provenance": {
+    "gateway": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/mindeval-gateway@sha256:4d7c32408cdc7a8bb5df55b73408146d6fe5aee759927f9211790b0874ef2db7",
+    "workshop": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-mindeval-workshop@sha256:377451e2a4296b7713aec33fb4ad6e2fd9bc49dec6291866bc4b6ca7e5a6261c",
+    "verified_by_public_runner": false
+  },
+  "checks": [
+    {
+      "name": "unauthenticated_denied",
+      "passed": true,
+      "status": 401
+    },
+    {
+      "name": "ten_principals_same_tenant",
+      "passed": true,
+      "identities": [
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-01",
+          "token_id": "937d5215-ad97-41db-a250-1ca111d61170",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-02",
+          "token_id": "80ff5245-3ee2-4db6-bf31-d0ae2302db9d",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-03",
+          "token_id": "a7d2fdc2-1148-499e-b3d6-483b0e42a996",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-04",
+          "token_id": "6d5d9971-10ba-404b-bdee-672a8f8229ae",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-05",
+          "token_id": "0241042b-f7c6-4ebf-9b10-f1b1b163619d",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-06",
+          "token_id": "d49af786-79b3-4f1a-a77a-eab248beb2c9",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-07",
+          "token_id": "ff213e78-5724-4bc3-b3a4-875d972c3c21",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-08",
+          "token_id": "a2d654eb-596e-42f9-baa6-c59624a4e5d0",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-09",
+          "token_id": "f3d6b42c-adb4-42a7-9734-0c79203df3b9",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-10",
+          "token_id": "b244026c-5870-4e17-a79c-25961fa3f6bb",
+          "max_concurrency": 5
+        }
+      ]
+    },
+    {
+      "name": "model_grants_and_fixed_judge",
+      "passed": true,
+      "clinicians": [
+        "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "deepseek-ai/DeepSeek-V4-Pro",
+        "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "openai/gpt-oss-120b",
+        "zai-org/GLM-5.1"
+      ],
+      "patient": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+      "judge": "google/gemma-3-27b-it"
+    },
+    {
+      "name": "gateway_20_accepted_21_rejected",
+      "passed": true,
+      "status": 422,
+      "inference_calls": 0
+    },
+    {
+      "name": "workshop_21_profiles_rejected_without_jobs",
+      "passed": true,
+      "status": 422
+    },
+    {
+      "name": "ordinary_pat_missing_model_grant_denied",
+      "passed": true,
+      "status": 403
+    },
+    {
+      "name": "pause_takeover_human_turn_nudge_resume_abort_reconnect",
+      "passed": true,
+      "run_id": "1a147d2a-469b-4a6b-a799-e845d5e21541"
+    },
+    {
+      "name": "repetition_1_60_jobs_idempotent",
+      "passed": true,
+      "unique_runs": 60
+    },
+    {
+      "name": "repetition_1_cross_team_denied_detail",
+      "passed": true,
+      "status": 404
+    },
+    {
+      "name": "repetition_1_cross_team_denied_/events",
+      "passed": true,
+      "status": 404
+    },
+    {
+      "name": "repetition_1_cross_team_denied_/report",
+      "passed": true,
+      "status": 404
+    },
+    {
+      "name": "repetition_1_60_completed_strict_judgments_fair_progress",
+      "passed": true,
+      "classifier_coverage": {
+        "completed": 60
+      }
+    },
+    {
+      "name": "repetition_2_60_jobs_idempotent",
+      "passed": true,
+      "unique_runs": 60
+    },
+    {
+      "name": "repetition_2_cross_team_denied_detail",
+      "passed": true,
+      "status": 404
+    },
+    {
+      "name": "repetition_2_cross_team_denied_/events",
+      "passed": true,
+      "status": 404
+    },
+    {
+      "name": "repetition_2_cross_team_denied_/report",
+      "passed": true,
+      "status": 404
+    },
+    {
+      "name": "repetition_2_60_completed_strict_judgments_fair_progress",
+      "passed": true,
+      "classifier_coverage": {
+        "completed": 60
+      }
+    },
+    {
+      "name": "full_canonical_dialogue_complete",
+      "passed": true,
+      "run_ids": [
+        "e126a284-d169-441b-9acb-63b301bf683c",
+        "96ff13b8-83b7-4d35-8fc9-74f56543d21e",
+        "70addab0-9aa1-40f6-b642-543d37482050",
+        "d468424a-0037-4e72-9423-c7a5ff21e33a",
+        "dcf977c4-aaa9-4203-a945-c9622d2c3ac0",
+        "9af714bb-be9e-4543-b57c-2363f87d96de"
+      ],
+      "rounds": 10
+    }
+  ],
+  "repetitions": [
+    {
+      "number": 1,
+      "run_ids": {
+        "0": [
+          "0dca6493-8a75-4f6e-868c-23ddc20e8e4e",
+          "1f9fa9aa-7cea-4291-960d-6ab81d51b808",
+          "6803454f-3ff1-4099-a06e-14962d9206d4",
+          "e7b2b11b-cf64-4584-a70d-4d3b742f42ad",
+          "e90a47ca-5364-4e73-b4f9-f1fcbc135e22",
+          "f7fb8427-143d-42c4-b94c-8faccae88c02"
+        ],
+        "6": [
+          "1d4f477d-0403-4c57-a25c-bcd08526bed5",
+          "21148d58-80f6-4264-bcb9-4357deb02f5b",
+          "390651df-4dcc-48a5-b516-f64d5ace153e",
+          "408ed3bc-42ff-4a99-93db-86be57da2e2c",
+          "d2b0ab5a-bd9e-4197-81d5-ebb10470cabb",
+          "d66f0a62-2a01-4191-a29b-b9d9061c8400"
+        ],
+        "5": [
+          "2ba8c00e-0932-4940-a3e1-74acad6052f5",
+          "34081e34-74ef-4679-a8e0-5674b658c049",
+          "4513d2e7-6b69-4d92-a4e1-6efbbbbc9189",
+          "756e734d-ca5b-4236-a802-b7cc4a4afea1",
+          "a384b1b9-38c7-4413-b1b9-53ec9eb0dd2a",
+          "ae0995b7-6616-490a-a209-09ef987af87f"
+        ],
+        "8": [
+          "0c235903-7f86-4cee-8c66-7598747f6683",
+          "3a799556-fcc6-4021-a386-894a00e91b91",
+          "51fbf04b-a472-48e9-88ba-4a30366d1f2b",
+          "5226a8bf-e2d1-4512-a227-4772d386fc0c",
+          "a92a6414-14dc-4467-b032-0e3f8e18f12f",
+          "ab1da554-dc04-4b27-8930-66333c4595ae"
+        ],
+        "4": [
+          "1815dc91-618a-43cf-8ecf-e5697afe9d92",
+          "2d45c34f-0c2a-40bf-96c8-6c7e6d34a601",
+          "3c59e69b-5fe0-4f11-b90b-001e87a7a7a8",
+          "57c2cf1c-40a7-430a-ba36-d424d14a24de",
+          "bdcff8a2-5d06-4341-85e5-9ed4fd180a08",
+          "dd9ced40-ab62-4270-a718-931eb8e42f69"
+        ],
+        "9": [
+          "164b9e65-8cda-4198-b6ac-b1d7e4bb6f32",
+          "5d897f88-b3d7-46c7-a5cc-98c6b633a16c",
+          "6553aa45-c538-42f6-8a5c-504d3dc43f79",
+          "e5e9c50b-8e0c-4cc0-a503-f048e829fcad",
+          "e859df4c-dc60-49a9-889d-9b604b6d37fe",
+          "fb76f9ab-6268-4f89-a901-d978de5e9677"
+        ],
+        "1": [
+          "0479cc62-558a-4c51-945f-6e056fa7b578",
+          "32c6c5a6-c1bf-46e5-a149-0d79338b8f23",
+          "4a3a13a8-696e-4b7c-92ad-43e0c1e2a0a6",
+          "b88334e0-d607-48c0-a272-3511cc120234",
+          "ee7dd793-ef01-4ed5-95ca-5d132241265a",
+          "f4f4e209-b069-4456-893e-eaec9ba58b3d"
+        ],
+        "3": [
+          "03fc8048-7ddf-4022-8cb5-f8318a87cfa7",
+          "44a737d7-fb31-43ae-a9f7-74353412d974",
+          "7d646ed8-cb52-4abb-867a-5f571cd7fef2",
+          "9ada3de6-b4dc-4461-afe2-b327adb08693",
+          "a67ee6ae-69a9-4418-8494-8ca4052f6665",
+          "b37f6532-b741-4535-bd7e-af886157e06d"
+        ],
+        "7": [
+          "0ee093d1-b195-4c04-8384-15b6fc0f6056",
+          "24280127-d0e7-4b7b-88a5-478e0501d383",
+          "31776fe0-f7f1-41c3-a3a5-b5192ab61067",
+          "87023716-c031-4711-a8f4-2c989eff9a2f",
+          "ad659a06-68da-47b4-8870-800a779b0c73",
+          "edcfb5f6-f03e-41fb-a208-135e3a122c02"
+        ],
+        "2": [
+          "082d6b32-69e2-484c-bdcb-637207df7ee2",
+          "1a3e7c35-46a9-46ca-b6a8-5fa42c15bd30",
+          "6d14d7e8-6ac2-4b83-a796-518c5fd171fe",
+          "7e1e14dd-926e-4ccc-87ab-318a691b6e82",
+          "aae78b3f-79c1-42d0-90a6-7b227a6fe3ec",
+          "c6ea9f17-9d27-4e6a-a387-8ce64fa6811f"
+        ]
+      },
+      "samples": [
+        {
+          "seconds": 32.183,
+          "statuses": {
+            "running": 50,
+            "queued": 10
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 47.454,
+          "statuses": {
+            "running": 48,
+            "queued": 6,
+            "completed": 6
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5,
+            "6": 5,
+            "7": 5,
+            "8": 3,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 63.215,
+          "statuses": {
+            "running": 42,
+            "queued": 2,
+            "completed": 16
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 3,
+            "4": 5,
+            "5": 4,
+            "6": 3,
+            "7": 4,
+            "8": 3,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 78.769,
+          "statuses": {
+            "running": 42,
+            "queued": 2,
+            "completed": 16
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 3,
+            "4": 5,
+            "5": 4,
+            "6": 3,
+            "7": 4,
+            "8": 3,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 93.525,
+          "statuses": {
+            "running": 42,
+            "queued": 2,
+            "completed": 16
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 3,
+            "4": 5,
+            "5": 4,
+            "6": 3,
+            "7": 4,
+            "8": 3,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 108.101,
+          "statuses": {
+            "running": 38,
+            "queued": 2,
+            "completed": 20
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 3,
+            "4": 1,
+            "5": 4,
+            "6": 3,
+            "7": 4,
+            "8": 3,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 122.135,
+          "statuses": {
+            "completed": 25,
+            "running": 34,
+            "queued": 1
+          },
+          "running_by_team": {
+            "0": 2,
+            "1": 5,
+            "2": 5,
+            "3": 3,
+            "4": 0,
+            "5": 4,
+            "6": 3,
+            "7": 4,
+            "8": 3,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 136.315,
+          "statuses": {
+            "completed": 30,
+            "running": 29,
+            "queued": 1
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 5,
+            "2": 5,
+            "3": 3,
+            "4": 0,
+            "5": 4,
+            "6": 3,
+            "7": 4,
+            "8": 3,
+            "9": 2
+          }
+        },
+        {
+          "seconds": 151.179,
+          "statuses": {
+            "completed": 32,
+            "running": 27,
+            "queued": 1
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 4,
+            "2": 5,
+            "3": 3,
+            "4": 0,
+            "5": 4,
+            "6": 3,
+            "7": 4,
+            "8": 3,
+            "9": 1
+          }
+        },
+        {
+          "seconds": 165.334,
+          "statuses": {
+            "completed": 37,
+            "running": 22,
+            "queued": 1
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 1,
+            "2": 5,
+            "3": 3,
+            "4": 0,
+            "5": 4,
+            "6": 3,
+            "7": 4,
+            "8": 1,
+            "9": 1
+          }
+        },
+        {
+          "seconds": 179.979,
+          "statuses": {
+            "completed": 40,
+            "running": 20
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 1,
+            "2": 4,
+            "3": 3,
+            "4": 0,
+            "5": 4,
+            "6": 3,
+            "7": 4,
+            "8": 0,
+            "9": 1
+          }
+        },
+        {
+          "seconds": 193.676,
+          "statuses": {
+            "completed": 44,
+            "running": 16
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 2,
+            "3": 3,
+            "4": 0,
+            "5": 4,
+            "6": 3,
+            "7": 4,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 207.958,
+          "statuses": {
+            "completed": 48,
+            "running": 12
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 1,
+            "4": 0,
+            "5": 4,
+            "6": 3,
+            "7": 4,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 222.556,
+          "statuses": {
+            "completed": 50,
+            "running": 10
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 3,
+            "6": 3,
+            "7": 4,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 236.626,
+          "statuses": {
+            "completed": 53,
+            "running": 7
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 1,
+            "6": 2,
+            "7": 4,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 250.448,
+          "statuses": {
+            "completed": 56,
+            "running": 4
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 0,
+            "6": 0,
+            "7": 4,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 264.208,
+          "statuses": {
+            "completed": 59,
+            "running": 1
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 0,
+            "6": 0,
+            "7": 1,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 278.859,
+          "statuses": {
+            "completed": 60
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 0,
+            "6": 0,
+            "7": 0,
+            "8": 0,
+            "9": 0
+          }
+        }
+      ],
+      "first_progress_seconds": {
+        "0": 17.161,
+        "1": 17.446,
+        "2": 21.875,
+        "3": 23.928,
+        "4": 25.601,
+        "5": 25.872,
+        "6": 26.158,
+        "7": 29.019,
+        "8": 29.296,
+        "9": 32.183
+      },
+      "passed": true,
+      "failures": [],
+      "classifier_coverage": {
+        "completed": 60
+      },
+      "usage": {
+        "prompt_tokens": 1526964,
+        "completion_tokens": 68985,
+        "total_tokens": 1595949
+      },
+      "inference": {
+        "calls": 300,
+        "mean_queue_ms": 16657.56953,
+        "mean_latency_ms": 22952.32734,
+        "retries": 0
+      },
+      "elapsed_seconds": 321.785
+    },
+    {
+      "number": 2,
+      "run_ids": {
+        "0": [
+          "1092f7a0-5d16-451d-833f-753c28a32590",
+          "24f3713e-1177-450b-a3d2-d6d10e730dca",
+          "44cc11f9-0b37-44c9-8a08-894123acef42",
+          "6f039525-e379-4673-82df-17c430f63f07",
+          "ba8fbb0e-81cf-47bd-9ae5-9e7b15fb9c79",
+          "e8cc4928-9f41-46ef-9662-b1b7c05a3021"
+        ],
+        "6": [
+          "1c4a8b8e-9f57-4d2f-9f33-a820ddbf519b",
+          "29441f56-59bd-44ba-aa14-2480cb258257",
+          "7a3026e7-7d7e-4239-aebc-68b0341bf49d",
+          "c87fb90a-1cf4-47b5-b2aa-8f9edcff8bac",
+          "eead8f9b-a54a-4b1c-807a-ffd22098241e",
+          "f934a5c0-ec29-4241-affd-95f9bbe9ead0"
+        ],
+        "3": [
+          "307ecf7b-441d-4cbc-868b-ce6344c59729",
+          "51e2713d-b33e-4243-bd71-d2dc50523883",
+          "616da615-5cef-4d94-936c-242cefbc53fc",
+          "7fea6674-f507-4c30-9cee-4a90a1e681d7",
+          "9b21f85f-e36d-4078-a1fd-fdd9d2b9b5cb",
+          "bc246837-dece-4d26-8ccb-d963cc275d76"
+        ],
+        "2": [
+          "04e040e4-f3bc-48fc-90ba-de80837db0e9",
+          "2581f046-efb5-4703-b73f-e427caaea03a",
+          "44dd04d9-96a9-4d10-9e14-eae11f098e0b",
+          "794b9d39-d9a2-46a0-bb56-d1cbcf8d4bd7",
+          "7b15fa8d-b628-40c4-b377-5fd5781fed84",
+          "b120736a-ea5c-4148-a931-d89e4f7e6656"
+        ],
+        "7": [
+          "14f68478-94eb-4f0f-ac81-98ef06519843",
+          "201b6cca-d9bb-418a-adf7-c18a2d3ebb09",
+          "5181e11a-93ca-4bc5-990d-f60d0610bdd0",
+          "8e4f8b21-b0a7-40da-ae34-407df8f985ac",
+          "bbc82abd-1f9c-4c21-928a-73dee9405796",
+          "cf440a39-387f-46ca-b17f-a22c5ab7fa5d"
+        ],
+        "1": [
+          "24253d20-6e5e-4c84-b688-50a4c1492aa0",
+          "37550189-0066-4f4c-a32f-c86edd09dec1",
+          "89b73ddb-b507-4b0d-91c6-4627c315aa25",
+          "9c352ac2-897b-4063-a31b-144e24053a57",
+          "a35b6614-57c9-4569-8b98-2daba4218f5e",
+          "c536d857-9edd-49a7-8370-33d08cf1316c"
+        ],
+        "5": [
+          "09e08247-7e0a-4804-9453-19c453ee8d8a",
+          "1005fa77-f436-4bb2-979b-bfbc1ecc3f13",
+          "d651559a-ce78-4f2e-a68a-34ebe2f6a026",
+          "dcdea8ee-03c7-4c51-92b1-0fc607fd1cee",
+          "f86abae9-71dc-4421-b04a-6eb5fbebe11d",
+          "fca6707a-8273-4615-8365-72edd790ef32"
+        ],
+        "8": [
+          "037f037d-3085-493f-abb2-5571577e6136",
+          "080f8d18-72bd-4c05-8930-acb9e0d5fd3e",
+          "393fd664-2ddc-46de-b21e-ca18b7368f96",
+          "80ee6dcf-29ca-4deb-a457-951c86ad52d3",
+          "cda797ae-29f0-47b2-ab00-f6a0269d33a7",
+          "ecbcc82f-fa4a-4e0f-9666-dc3e319838a6"
+        ],
+        "4": [
+          "3a5507ae-784a-4e63-830d-0de3b4fd0099",
+          "82ad4d4e-7bf9-4243-a0a8-da5b9167f9f6",
+          "addc7bd5-ff56-4f69-ad23-52484ca80bd9",
+          "ba005ed6-6c5e-49b5-a016-8f25a0108eef",
+          "cbf7cc05-bad6-4294-b07f-5f74e0ea9c7e",
+          "e57d33ea-bb33-4c30-92da-a5c5c3e92deb"
+        ],
+        "9": [
+          "15bd01a0-b299-4401-abe2-4daf8a29c0fe",
+          "49360a1b-5b4c-4760-a75d-c7b037a6d2da",
+          "64dcd297-1f68-466d-a7c7-6ff274427d9d",
+          "7264121a-00ec-4d23-b2be-ea634c101d21",
+          "adbed806-32f4-4ac5-ac8c-e067ab29b988",
+          "c3911248-0089-46a5-91bc-ea88db63db9e"
+        ]
+      },
+      "samples": [
+        {
+          "seconds": 21.06,
+          "statuses": {
+            "running": 49,
+            "queued": 11
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 4
+          }
+        },
+        {
+          "seconds": 36.757,
+          "statuses": {
+            "running": 49,
+            "queued": 11
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 4
+          }
+        },
+        {
+          "seconds": 51.202,
+          "statuses": {
+            "running": 49,
+            "queued": 11
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 4
+          }
+        },
+        {
+          "seconds": 66.971,
+          "statuses": {
+            "running": 48,
+            "queued": 9,
+            "completed": 3
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5,
+            "6": 4,
+            "7": 5,
+            "8": 5,
+            "9": 4
+          }
+        },
+        {
+          "seconds": 81.867,
+          "statuses": {
+            "running": 45,
+            "queued": 6,
+            "completed": 9
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 4,
+            "2": 4,
+            "3": 5,
+            "4": 5,
+            "5": 5,
+            "6": 3,
+            "7": 5,
+            "8": 5,
+            "9": 4
+          }
+        },
+        {
+          "seconds": 96.846,
+          "statuses": {
+            "running": 43,
+            "queued": 3,
+            "completed": 14
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 3,
+            "2": 4,
+            "3": 4,
+            "4": 5,
+            "5": 5,
+            "6": 3,
+            "7": 5,
+            "8": 5,
+            "9": 4
+          }
+        },
+        {
+          "seconds": 111.765,
+          "statuses": {
+            "running": 42,
+            "queued": 2,
+            "completed": 16
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 3,
+            "2": 4,
+            "3": 4,
+            "4": 4,
+            "5": 4,
+            "6": 3,
+            "7": 5,
+            "8": 5,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 126.219,
+          "statuses": {
+            "running": 37,
+            "queued": 3,
+            "completed": 20
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 3,
+            "2": 4,
+            "3": 4,
+            "4": 3,
+            "5": 4,
+            "6": 3,
+            "7": 5,
+            "8": 2,
+            "9": 4
+          }
+        },
+        {
+          "seconds": 140.747,
+          "statuses": {
+            "running": 34,
+            "queued": 1,
+            "completed": 25
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 3,
+            "2": 4,
+            "3": 4,
+            "4": 3,
+            "5": 4,
+            "6": 3,
+            "7": 5,
+            "8": 0,
+            "9": 3
+          }
+        },
+        {
+          "seconds": 156.012,
+          "statuses": {
+            "running": 30,
+            "queued": 1,
+            "completed": 29
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 3,
+            "2": 2,
+            "3": 4,
+            "4": 3,
+            "5": 4,
+            "6": 3,
+            "7": 5,
+            "8": 0,
+            "9": 1
+          }
+        },
+        {
+          "seconds": 170.766,
+          "statuses": {
+            "running": 28,
+            "completed": 32
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 3,
+            "2": 0,
+            "3": 4,
+            "4": 3,
+            "5": 4,
+            "6": 3,
+            "7": 5,
+            "8": 0,
+            "9": 1
+          }
+        },
+        {
+          "seconds": 186.004,
+          "statuses": {
+            "completed": 33,
+            "running": 27
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 3,
+            "2": 0,
+            "3": 4,
+            "4": 3,
+            "5": 4,
+            "6": 3,
+            "7": 5,
+            "8": 0,
+            "9": 1
+          }
+        },
+        {
+          "seconds": 200.653,
+          "statuses": {
+            "completed": 39,
+            "running": 21
+          },
+          "running_by_team": {
+            "0": 1,
+            "1": 0,
+            "2": 0,
+            "3": 4,
+            "4": 3,
+            "5": 4,
+            "6": 3,
+            "7": 5,
+            "8": 0,
+            "9": 1
+          }
+        },
+        {
+          "seconds": 216.023,
+          "statuses": {
+            "completed": 44,
+            "running": 16
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 4,
+            "4": 3,
+            "5": 2,
+            "6": 1,
+            "7": 5,
+            "8": 0,
+            "9": 1
+          }
+        },
+        {
+          "seconds": 230.908,
+          "statuses": {
+            "completed": 47,
+            "running": 13
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 4,
+            "4": 3,
+            "5": 1,
+            "6": 1,
+            "7": 3,
+            "8": 0,
+            "9": 1
+          }
+        },
+        {
+          "seconds": 246.284,
+          "statuses": {
+            "completed": 50,
+            "running": 10
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 3,
+            "4": 3,
+            "5": 1,
+            "6": 1,
+            "7": 1,
+            "8": 0,
+            "9": 1
+          }
+        },
+        {
+          "seconds": 260.75,
+          "statuses": {
+            "completed": 54,
+            "running": 6
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 1,
+            "4": 1,
+            "5": 1,
+            "6": 1,
+            "7": 1,
+            "8": 0,
+            "9": 1
+          }
+        },
+        {
+          "seconds": 275.454,
+          "statuses": {
+            "completed": 58,
+            "running": 2
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 1,
+            "4": 1,
+            "5": 0,
+            "6": 0,
+            "7": 0,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 289.552,
+          "statuses": {
+            "completed": 60
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 0,
+            "6": 0,
+            "7": 0,
+            "8": 0,
+            "9": 0
+          }
+        }
+      ],
+      "first_progress_seconds": {
+        "0": 16.81,
+        "1": 17.597,
+        "2": 17.996,
+        "3": 18.404,
+        "4": 18.8,
+        "5": 19.245,
+        "6": 19.872,
+        "7": 20.337,
+        "8": 20.615,
+        "9": 21.06
+      },
+      "passed": true,
+      "failures": [],
+      "classifier_coverage": {
+        "completed": 60
+      },
+      "usage": {
+        "prompt_tokens": 1544760,
+        "completion_tokens": 74278,
+        "total_tokens": 1619038
+      },
+      "inference": {
+        "calls": 300,
+        "mean_queue_ms": 15947.91483,
+        "mean_latency_ms": 27273.811696666668,
+        "retries": 0
+      },
+      "elapsed_seconds": 328.023
+    }
+  ],
+  "passed": true,
+  "full_dialogue": {
+    "run_ids": [
+      "e126a284-d169-441b-9acb-63b301bf683c",
+      "96ff13b8-83b7-4d35-8fc9-74f56543d21e",
+      "70addab0-9aa1-40f6-b642-543d37482050",
+      "d468424a-0037-4e72-9423-c7a5ff21e33a",
+      "dcf977c4-aaa9-4203-a945-c9622d2c3ac0",
+      "9af714bb-be9e-4543-b57c-2363f87d96de"
+    ],
+    "turns": 10,
+    "passed": true,
+    "elapsed_seconds": 172.123,
+    "failures": [],
+    "inference_calls": 126,
+    "usage": {
+      "prompt_tokens": 627822,
+      "completion_tokens": 40355,
+      "total_tokens": 668177
+    },
+    "classifications": [
+      {
+        "role": "safety_classifier",
+        "usage": {
+          "gpu_seconds": null,
+          "input_tokens": 26201,
+          "output_tokens": 88,
+          "accounting_mode": "observational_unbilled",
+          "durable_operation_id": null,
+          "measured_runtime_latency_ms": 2546.3247859152034,
+          "completed_classifier_requests": 11
+        },
+        "status": "completed",
+        "model_id": "mindguard-4b",
+        "request_id": "a81d7eea-5149-4a27-81b1-167f4f0ff2ff",
+        "assessments": [
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 1,
+              "evaluated_user_turns": 1,
+              "context_message_count": 1,
+              "target_user_message_index": 0
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [
+              "short_context_outside_preferred_multiturn_use"
+            ],
+            "categories": [],
+            "latency_ms": 262.64832890592515,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 440,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 3,
+              "evaluated_user_turns": 1,
+              "context_message_count": 3,
+              "target_user_message_index": 2
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 207.23346201702952,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 611,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 5,
+              "evaluated_user_turns": 1,
+              "context_message_count": 5,
+              "target_user_message_index": 4
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 207.84490299411118,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 1111,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 7,
+              "evaluated_user_turns": 1,
+              "context_message_count": 7,
+              "target_user_message_index": 6
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 217.4055780051276,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 1691,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 9,
+              "evaluated_user_turns": 1,
+              "context_message_count": 9,
+              "target_user_message_index": 8
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 265.4374820413068,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 1973,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 11,
+              "evaluated_user_turns": 1,
+              "context_message_count": 11,
+              "target_user_message_index": 10
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 221.59451595507562,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 2241,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 13,
+              "evaluated_user_turns": 1,
+              "context_message_count": 13,
+              "target_user_message_index": 12
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 219.0647410461679,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 2582,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 15,
+              "evaluated_user_turns": 1,
+              "context_message_count": 15,
+              "target_user_message_index": 14
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 228.44604298006743,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 3046,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 17,
+              "evaluated_user_turns": 1,
+              "context_message_count": 17,
+              "target_user_message_index": 16
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 229.54688593745232,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 3559,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 19,
+              "evaluated_user_turns": 1,
+              "context_message_count": 19,
+              "target_user_message_index": 18
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 246.65225204080343,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 4136,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 21,
+              "evaluated_user_turns": 1,
+              "context_message_count": 21,
+              "target_user_message_index": 20
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 240.45059399213642,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 4811,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          }
+        ],
+        "enforcement": "observe",
+        "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2",
+        "input_user_turns": 11,
+        "evaluated_user_turns": 11,
+        "flagged_user_message_indices": []
+      },
+      {
+        "role": "safety_classifier",
+        "usage": {
+          "gpu_seconds": null,
+          "input_tokens": 30408,
+          "output_tokens": 89,
+          "accounting_mode": "observational_unbilled",
+          "durable_operation_id": null,
+          "measured_runtime_latency_ms": 2445.2591130975634,
+          "completed_classifier_requests": 11
+        },
+        "status": "completed",
+        "model_id": "mindguard-4b",
+        "request_id": "2aceae73-2697-4470-9a8f-db19f63946f4",
+        "assessments": [
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 1,
+              "evaluated_user_turns": 1,
+              "context_message_count": 1,
+              "target_user_message_index": 0
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [
+              "short_context_outside_preferred_multiturn_use"
+            ],
+            "categories": [],
+            "latency_ms": 219.97506299521774,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 440,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 3,
+              "evaluated_user_turns": 1,
+              "context_message_count": 3,
+              "target_user_message_index": 2
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 209.34076595585793,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 531,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 5,
+              "evaluated_user_turns": 1,
+              "context_message_count": 5,
+              "target_user_message_index": 4
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 231.97477695066482,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 909,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "unsafe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 7,
+              "evaluated_user_turns": 1,
+              "context_message_count": 7,
+              "target_user_message_index": 6
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [
+              "S1"
+            ],
+            "latency_ms": 253.92664002720267,
+            "raw_output": "Safety: Unsafe\nCategories: S1",
+            "enforcement": "observe",
+            "input_tokens": 1532,
+            "output_tokens": 9,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 9,
+              "evaluated_user_turns": 1,
+              "context_message_count": 9,
+              "target_user_message_index": 8
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 210.5628129793331,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 2243,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 11,
+              "evaluated_user_turns": 1,
+              "context_message_count": 11,
+              "target_user_message_index": 10
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 214.3986850278452,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 2760,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 13,
+              "evaluated_user_turns": 1,
+              "context_message_count": 13,
+              "target_user_message_index": 12
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 213.11824803706259,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 3237,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 15,
+              "evaluated_user_turns": 1,
+              "context_message_count": 15,
+              "target_user_message_index": 14
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 217.2191630816087,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 3814,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 17,
+              "evaluated_user_turns": 1,
+              "context_message_count": 17,
+              "target_user_message_index": 16
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 222.60785603430122,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 4334,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 19,
+              "evaluated_user_turns": 1,
+              "context_message_count": 19,
+              "target_user_message_index": 18
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 225.01398401800543,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 4940,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 21,
+              "evaluated_user_turns": 1,
+              "context_message_count": 21,
+              "target_user_message_index": 20
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 227.12111799046397,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 5668,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          }
+        ],
+        "enforcement": "observe",
+        "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2",
+        "input_user_turns": 11,
+        "evaluated_user_turns": 11,
+        "flagged_user_message_indices": [
+          6
+        ]
+      },
+      {
+        "role": "safety_classifier",
+        "usage": {
+          "gpu_seconds": null,
+          "input_tokens": 23946,
+          "output_tokens": 88,
+          "accounting_mode": "observational_unbilled",
+          "durable_operation_id": null,
+          "measured_runtime_latency_ms": 2807.937815086916,
+          "completed_classifier_requests": 11
+        },
+        "status": "completed",
+        "model_id": "mindguard-4b",
+        "request_id": "c13d1297-f9aa-42bf-b4c9-b19d88364636",
+        "assessments": [
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 1,
+              "evaluated_user_turns": 1,
+              "context_message_count": 1,
+              "target_user_message_index": 0
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [
+              "short_context_outside_preferred_multiturn_use"
+            ],
+            "categories": [],
+            "latency_ms": 375.3664270043373,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 440,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 3,
+              "evaluated_user_turns": 1,
+              "context_message_count": 3,
+              "target_user_message_index": 2
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 306.1537219909951,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 717,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 5,
+              "evaluated_user_turns": 1,
+              "context_message_count": 5,
+              "target_user_message_index": 4
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 310.23097003344446,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 1236,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 7,
+              "evaluated_user_turns": 1,
+              "context_message_count": 7,
+              "target_user_message_index": 6
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 222.2947790287435,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 1901,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 9,
+              "evaluated_user_turns": 1,
+              "context_message_count": 9,
+              "target_user_message_index": 8
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 214.53341003507376,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 2486,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 11,
+              "evaluated_user_turns": 1,
+              "context_message_count": 11,
+              "target_user_message_index": 10
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 216.07020497322083,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 2752,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 13,
+              "evaluated_user_turns": 1,
+              "context_message_count": 13,
+              "target_user_message_index": 12
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 216.1279140273109,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 2832,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 15,
+              "evaluated_user_turns": 1,
+              "context_message_count": 15,
+              "target_user_message_index": 14
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 218.76005502417684,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 2876,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 17,
+              "evaluated_user_turns": 1,
+              "context_message_count": 17,
+              "target_user_message_index": 16
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 215.7180909998715,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 2888,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 19,
+              "evaluated_user_turns": 1,
+              "context_message_count": 19,
+              "target_user_message_index": 18
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 244.65938098728657,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 2900,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 21,
+              "evaluated_user_turns": 1,
+              "context_message_count": 21,
+              "target_user_message_index": 20
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 268.0228609824553,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 2918,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          }
+        ],
+        "enforcement": "observe",
+        "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2",
+        "input_user_turns": 11,
+        "evaluated_user_turns": 11,
+        "flagged_user_message_indices": []
+      },
+      {
+        "role": "safety_classifier",
+        "usage": {
+          "gpu_seconds": null,
+          "input_tokens": 49339,
+          "output_tokens": 88,
+          "accounting_mode": "observational_unbilled",
+          "durable_operation_id": null,
+          "measured_runtime_latency_ms": 2704.83112311922,
+          "completed_classifier_requests": 11
+        },
+        "status": "completed",
+        "model_id": "mindguard-4b",
+        "request_id": "c842a88d-dc81-404d-ad67-1444544878c1",
+        "assessments": [
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 1,
+              "evaluated_user_turns": 1,
+              "context_message_count": 1,
+              "target_user_message_index": 0
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [
+              "short_context_outside_preferred_multiturn_use"
+            ],
+            "categories": [],
+            "latency_ms": 274.0828930400312,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 440,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 3,
+              "evaluated_user_turns": 1,
+              "context_message_count": 3,
+              "target_user_message_index": 2
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 212.6781459664926,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 539,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 5,
+              "evaluated_user_turns": 1,
+              "context_message_count": 5,
+              "target_user_message_index": 4
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 217.6706090103835,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 1201,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 7,
+              "evaluated_user_turns": 1,
+              "context_message_count": 7,
+              "target_user_message_index": 6
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 220.9782670252025,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 2171,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 9,
+              "evaluated_user_turns": 1,
+              "context_message_count": 9,
+              "target_user_message_index": 8
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 233.03644603583962,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 3330,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 11,
+              "evaluated_user_turns": 1,
+              "context_message_count": 11,
+              "target_user_message_index": 10
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 234.0382330585271,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 4286,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 13,
+              "evaluated_user_turns": 1,
+              "context_message_count": 13,
+              "target_user_message_index": 12
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 255.50877500791103,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 5371,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 15,
+              "evaluated_user_turns": 1,
+              "context_message_count": 15,
+              "target_user_message_index": 14
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 244.93179004639387,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 6353,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 17,
+              "evaluated_user_turns": 1,
+              "context_message_count": 17,
+              "target_user_message_index": 16
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 265.0338669773191,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 7495,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 19,
+              "evaluated_user_turns": 1,
+              "context_message_count": 19,
+              "target_user_message_index": 18
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 269.0163989318535,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 8547,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 21,
+              "evaluated_user_turns": 1,
+              "context_message_count": 21,
+              "target_user_message_index": 20
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 277.85569801926613,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 9606,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          }
+        ],
+        "enforcement": "observe",
+        "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2",
+        "input_user_turns": 11,
+        "evaluated_user_turns": 11,
+        "flagged_user_message_indices": []
+      },
+      {
+        "role": "safety_classifier",
+        "usage": {
+          "gpu_seconds": null,
+          "input_tokens": 72105,
+          "output_tokens": 88,
+          "accounting_mode": "observational_unbilled",
+          "durable_operation_id": null,
+          "measured_runtime_latency_ms": 2996.7531620059162,
+          "completed_classifier_requests": 11
+        },
+        "status": "completed",
+        "model_id": "mindguard-4b",
+        "request_id": "b169bba0-a2a8-40a4-8492-331f4c9bdecc",
+        "assessments": [
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 1,
+              "evaluated_user_turns": 1,
+              "context_message_count": 1,
+              "target_user_message_index": 0
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [
+              "short_context_outside_preferred_multiturn_use"
+            ],
+            "categories": [],
+            "latency_ms": 224.67526991385967,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 440,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 3,
+              "evaluated_user_turns": 1,
+              "context_message_count": 3,
+              "target_user_message_index": 2
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 215.5818740138784,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 566,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 5,
+              "evaluated_user_turns": 1,
+              "context_message_count": 5,
+              "target_user_message_index": 4
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 263.25274002738297,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 2387,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 7,
+              "evaluated_user_turns": 1,
+              "context_message_count": 7,
+              "target_user_message_index": 6
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 391.8302489910275,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 4484,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 9,
+              "evaluated_user_turns": 1,
+              "context_message_count": 9,
+              "target_user_message_index": 8
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 269.8209329973906,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 5859,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 11,
+              "evaluated_user_turns": 1,
+              "context_message_count": 11,
+              "target_user_message_index": 10
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 260.00197406392545,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 6999,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 13,
+              "evaluated_user_turns": 1,
+              "context_message_count": 13,
+              "target_user_message_index": 12
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 275.979493977502,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 8228,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 15,
+              "evaluated_user_turns": 1,
+              "context_message_count": 15,
+              "target_user_message_index": 14
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 264.07403498888016,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 9164,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 17,
+              "evaluated_user_turns": 1,
+              "context_message_count": 17,
+              "target_user_message_index": 16
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 289.9107539560646,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 10459,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 19,
+              "evaluated_user_turns": 1,
+              "context_message_count": 19,
+              "target_user_message_index": 18
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 276.1026310035959,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 11410,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 21,
+              "evaluated_user_turns": 1,
+              "context_message_count": 21,
+              "target_user_message_index": 20
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 265.52320807240903,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 12109,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          }
+        ],
+        "enforcement": "observe",
+        "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2",
+        "input_user_turns": 11,
+        "evaluated_user_turns": 11,
+        "flagged_user_message_indices": []
+      },
+      {
+        "role": "safety_classifier",
+        "usage": {
+          "gpu_seconds": null,
+          "input_tokens": 22135,
+          "output_tokens": 88,
+          "accounting_mode": "observational_unbilled",
+          "durable_operation_id": null,
+          "measured_runtime_latency_ms": 2501.678344211541,
+          "completed_classifier_requests": 11
+        },
+        "status": "completed",
+        "model_id": "mindguard-4b",
+        "request_id": "f9b27a22-2bc8-4674-9dcb-d5b9cc6dc960",
+        "assessments": [
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 1,
+              "evaluated_user_turns": 1,
+              "context_message_count": 1,
+              "target_user_message_index": 0
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [
+              "short_context_outside_preferred_multiturn_use"
+            ],
+            "categories": [],
+            "latency_ms": 272.0078630372882,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 440,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 3,
+              "evaluated_user_turns": 1,
+              "context_message_count": 3,
+              "target_user_message_index": 2
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 228.50547707639635,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 620,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 5,
+              "evaluated_user_turns": 1,
+              "context_message_count": 5,
+              "target_user_message_index": 4
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 231.0031900415197,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 969,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 7,
+              "evaluated_user_turns": 1,
+              "context_message_count": 7,
+              "target_user_message_index": 6
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 235.92091200407594,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 1413,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 9,
+              "evaluated_user_turns": 1,
+              "context_message_count": 9,
+              "target_user_message_index": 8
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 247.9007609654218,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 1832,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 11,
+              "evaluated_user_turns": 1,
+              "context_message_count": 11,
+              "target_user_message_index": 10
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 213.07882899418473,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 2283,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 13,
+              "evaluated_user_turns": 1,
+              "context_message_count": 13,
+              "target_user_message_index": 12
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 213.30812096130103,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 2653,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 15,
+              "evaluated_user_turns": 1,
+              "context_message_count": 15,
+              "target_user_message_index": 14
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 215.4307090677321,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 2882,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 17,
+              "evaluated_user_turns": 1,
+              "context_message_count": 17,
+              "target_user_message_index": 16
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 213.1410150323063,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 3001,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 19,
+              "evaluated_user_turns": 1,
+              "context_message_count": 19,
+              "target_user_message_index": 18
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 214.87984398845583,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 3015,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          },
+          {
+            "role": "safety_classifier",
+            "error": null,
+            "safety": "safe",
+            "status": "completed",
+            "coverage": {
+              "truncated": false,
+              "input_message_count": 21,
+              "evaluated_user_turns": 1,
+              "context_message_count": 21,
+              "target_user_message_index": 20
+            },
+            "model_id": "mindguard-4b",
+            "warnings": [],
+            "categories": [],
+            "latency_ms": 216.50162304285914,
+            "raw_output": "Safety: Safe\nCategories: None",
+            "enforcement": "observe",
+            "input_tokens": 3027,
+            "output_tokens": 8,
+            "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+          }
+        ],
+        "enforcement": "observe",
+        "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2",
+        "input_user_turns": 11,
+        "evaluated_user_turns": 11,
+        "flagged_user_message_indices": []
+      }
+    ]
+  },
+  "finished_at": "2026-09-16T18:15:34.996619+00:00"
+}
