@@ -239,6 +239,7 @@ resource "helm_release" "control_plane" {
     yamlencode(local.admin_control_plane_overrides),
     yamlencode(local.bootstrap_access_overrides),
     yamlencode(local.scientific_access_overrides),
+    yamlencode(local.website_access_overrides),
     yamlencode(local.scientific_chart_overrides),
   ]
 
@@ -283,6 +284,7 @@ resource "helm_release" "control_plane" {
     kubernetes_secret_v1.admin,
     kubernetes_secret_v1.bootstrap_access,
     kubernetes_secret_v1.scientific_access,
+    kubernetes_secret_v1.website_access,
     kubernetes_secret_v1.scientific_artifact_store,
     kubernetes_persistent_volume_claim_v1.scientific_runtime_cache,
     kubernetes_persistent_volume_claim_v1.scientific_runtime_cache_additional,

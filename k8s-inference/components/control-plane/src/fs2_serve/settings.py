@@ -431,9 +431,12 @@ class Settings(BaseSettings):
             raise ValueError("scientific batch Kubernetes API URL must use HTTPS")
         if self.scientific_batch_enabled and not self.scientific_artifacts_enabled:
             raise ValueError("scientific batch requires the canonical artifact service")
-        required_bootstrap_scopes = {Scope.CATALOG_READ, Scope.INFERENCE_INVOKE, Scope.MCP_INVOKE}
-        if not required_bootstrap_scopes.issubset(self.bootstrap_access_scopes):
-            raise ValueError("bootstrap access requires catalog.read, inference.invoke, and mcp.invoke")
+        # The same idempotent bootstrap command provisions multiple bounded
+        # identities. Chart-level contracts require the general and academic
+        # clients to retain their invoke scopes, while the public website is
+        # intentionally catalog-only.
+        if Scope.CATALOG_READ not in self.bootstrap_access_scopes:
+            raise ValueError("bootstrap access requires catalog.read")
         return self
 
     def public_transport_allowlists(self) -> tuple[tuple[str, ...], tuple[str, ...]]:

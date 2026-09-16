@@ -195,6 +195,30 @@ scientificAccess:
       cpu: 500m
       memory: 512Mi
 
+# A website-only PAT for the public Scientific AI catalog. This identity is
+# deliberately incapable of inference, MCP, or operation access. Keep the
+# policy exact: both the schema and template reject broader scopes or a higher
+# concurrency value.
+websiteAccess:
+  enabled: false
+  secretName: ""
+  tokenKey: token
+  principalId: terraform-scientific-ai-website
+  tenantId: ""
+  name: Terraform Scientific AI website catalog
+  scopes:
+    - catalog.read
+  models: ["*"]
+  maxConcurrency: 1
+  activeDeadlineSeconds: 300
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
 serviceAccounts:
   runtime:
     create: true

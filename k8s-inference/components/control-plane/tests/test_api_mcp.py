@@ -185,6 +185,7 @@ def issue(
     scopes: list[str],
     tenant: str = "tenant-a",
     models: list[str] | None = None,
+    max_concurrency: int = 4,
 ) -> str:
     response = client.post(
         "/admin/v1/tokens",
@@ -194,7 +195,7 @@ def issue(
             "tenant_id": tenant,
             "scopes": scopes,
             "models": models or ["qwen3-8b"],
-            "max_concurrency": 4,
+            "max_concurrency": max_concurrency,
         },
     )
     assert response.status_code == 200, response.text
@@ -380,6 +381,33 @@ def test_openai_chat_fails_closed_for_zero_or_ambiguous_policy_operations(
 
     assert response.status_code == 503
     assert response.json() == {"error": {"type": "route_unavailable", "message": "model route is unavailable"}}
+    assert not runtime.store.operations  # type: ignore[attr-defined]
+
+
+def test_website_catalog_only_key_can_list_models_but_cannot_invoke(registry, cipher, hasher) -> None:
+    runtime = build_runtime(registry, cipher, hasher)
+    with TestClient(create_app(runtime)) as client:
+        token = issue(
+            client,
+            principal="terraform-scientific-ai-website",
+            tenant="tenant-academic",
+            scopes=["catalog.read"],
+            models=["*"],
+            max_concurrency=1,
+        )
+        auth = {"authorization": f"Bearer {token}"}
+
+        catalog = client.get("/v1/models", headers=auth)
+        denied = client.post(
+            "/v1/chat/completions",
+            headers={**auth, "idempotency-key": "website-must-not-invoke-0001"},
+            json={"model": "qwen3-8b", "messages": [{"role": "user", "content": "bounded fixture"}]},
+        )
+
+    assert catalog.status_code == 200
+    assert [model["id"] for model in catalog.json()["data"]] == ["qwen3-8b"]
+    assert denied.status_code == 403
+    assert denied.json()["error"]["type"] == "permission_denied"
     assert not runtime.store.operations  # type: ignore[attr-defined]
 
 

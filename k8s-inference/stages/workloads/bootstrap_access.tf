@@ -59,6 +59,32 @@ locals {
       maxConcurrency = 32
     }
   }
+
+  # The public website reads the same tenant-filtered catalog but must never
+  # inherit the academic client's invoke or operation privileges. The distinct
+  # token also permits independent rotation without disrupting customers.
+  website_access_enabled     = var.academic_assets.enabled
+  website_access_secret_name = "fs2-serve-website-access"
+  website_access_principal   = "terraform-scientific-ai-website"
+  website_access_tenant_id   = var.academic_assets.tenant_id
+  website_access_models      = ["*"]
+  website_access_scopes      = ["catalog.read"]
+  website_access_token = local.website_access_enabled ? sensitive(
+    "fs2_pat_${random_id.website_access_token_id[0].hex}_${random_password.website_access_token_secret[0].result}"
+  ) : null
+  website_access_overrides = {
+    websiteAccess = {
+      enabled        = local.website_access_enabled
+      secretName     = local.website_access_secret_name
+      tokenKey       = "token"
+      principalId    = local.website_access_principal
+      tenantId       = local.website_access_tenant_id
+      name           = "Terraform Scientific AI website catalog"
+      scopes         = local.website_access_scopes
+      models         = local.website_access_models
+      maxConcurrency = 1
+    }
+  }
 }
 
 resource "random_id" "bootstrap_access_token_id" {
@@ -97,6 +123,27 @@ resource "random_password" "scientific_access_token_secret" {
   }
 }
 
+resource "random_id" "website_access_token_id" {
+  count       = local.website_access_enabled ? 1 : 0
+  byte_length = 16
+  keepers = {
+    cluster_id = var.cluster_id
+    tenant_id  = local.website_access_tenant_id
+    principal  = local.website_access_principal
+  }
+}
+
+resource "random_password" "website_access_token_secret" {
+  count   = local.website_access_enabled ? 1 : 0
+  length  = 48
+  special = false
+  keepers = {
+    cluster_id = var.cluster_id
+    tenant_id  = local.website_access_tenant_id
+    principal  = local.website_access_principal
+  }
+}
+
 resource "kubernetes_secret_v1" "bootstrap_access" {
   metadata {
     name      = local.bootstrap_access_secret_name
@@ -128,6 +175,25 @@ resource "kubernetes_secret_v1" "scientific_access" {
   type = "Opaque"
   data = {
     token = local.scientific_access_token
+  }
+
+  depends_on = [terraform_data.cluster_contract]
+}
+
+resource "kubernetes_secret_v1" "website_access" {
+  count = local.website_access_enabled ? 1 : 0
+
+  metadata {
+    name      = local.website_access_secret_name
+    namespace = "fs2-system"
+    labels = merge(local.common_labels, {
+      "fs2.nebius.ai/credential-purpose" = "scientific-ai-website-catalog"
+    })
+  }
+
+  type = "Opaque"
+  data = {
+    token = local.website_access_token
   }
 
   depends_on = [terraform_data.cluster_contract]

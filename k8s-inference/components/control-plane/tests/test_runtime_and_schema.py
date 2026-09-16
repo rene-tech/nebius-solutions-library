@@ -8,7 +8,7 @@ import httpx
 import pytest
 from conftest import CONTROL_ROOT
 
-from fs2_serve.models import ClaimedOperation, OperationStatus, RuntimeIdentity, TerminalAccounting
+from fs2_serve.models import ClaimedOperation, OperationStatus, RuntimeIdentity, Scope, TerminalAccounting
 from fs2_serve.runtime import ActivationError, RuntimeClient, RuntimeOperationError
 from fs2_serve.settings import Settings
 from fs2_serve.telemetry import Metrics
@@ -541,6 +541,18 @@ def test_settings_require_coherent_wait_poll_and_concurrency_bounds() -> None:
         Settings(wait_poll_initial_seconds=0.6, wait_poll_max_seconds=0.5)
     with pytest.raises(ValueError, match="max_sync_waiters"):
         Settings(worker_concurrency=5, max_sync_waiters=4)
+
+
+def test_bootstrap_settings_accept_catalog_only_identity_but_require_catalog_scope() -> None:
+    settings = Settings(
+        bootstrap_access_scopes={Scope.CATALOG_READ},
+        bootstrap_access_max_concurrency=1,
+    )
+    assert settings.bootstrap_access_scopes == {Scope.CATALOG_READ}
+    assert settings.bootstrap_access_max_concurrency == 1
+
+    with pytest.raises(ValueError, match="requires catalog.read"):
+        Settings(bootstrap_access_scopes={Scope.INFERENCE_INVOKE})
 
 
 @pytest.mark.parametrize(

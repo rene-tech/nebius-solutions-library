@@ -65,6 +65,11 @@ app.kubernetes.io/component: bootstrap-access
 app.kubernetes.io/component: bootstrap-scientific-access
 {{- end -}}
 
+{{- define "fs2-serve.websiteAccessSelectorLabels" -}}
+{{ include "fs2-serve.selectorLabels" . }}
+app.kubernetes.io/component: bootstrap-website-access
+{{- end -}}
+
 {{- define "fs2-serve.modelControllerSelectorLabels" -}}
 {{ include "fs2-serve.selectorLabels" . }}
 app.kubernetes.io/component: model-controller

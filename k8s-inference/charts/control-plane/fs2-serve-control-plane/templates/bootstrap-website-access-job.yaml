@@ -1,0 +1,114 @@
+{{- if .Values.websiteAccess.enabled }}
+{{- $secretName := required "websiteAccess.secretName is required when enabled" .Values.websiteAccess.secretName }}
+{{- $tenantId := required "websiteAccess.tenantId is required when enabled" .Values.websiteAccess.tenantId }}
+{{- if not (regexMatch "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$" $secretName) }}
+{{- fail "websiteAccess.secretName must be a DNS label" }}
+{{- end }}
+{{- if not (deepEqual .Values.websiteAccess.scopes (list "catalog.read")) }}
+{{- fail "websiteAccess.scopes must be exactly catalog.read" }}
+{{- end }}
+{{- if lt (len .Values.websiteAccess.models) 1 }}
+{{- fail "websiteAccess.models must contain at least one model" }}
+{{- end }}
+{{- if ne (int .Values.websiteAccess.maxConcurrency) 1 }}
+{{- fail "websiteAccess.maxConcurrency must be exactly 1" }}
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-bootstrap-website-access
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bootstrap-website-access
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "7"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: {{ .Values.websiteAccess.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-serve.websiteAccessSelectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "bootstrap") }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: bootstrap-website-access
+          image: {{ include "fs2-serve.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["bootstrap-access"]
+          env:
+            {{- include "fs2-serve.databaseEnv" . | nindent 12 }}
+            {{- include "fs2-serve.cryptoEnv" . | nindent 12 }}
+            - name: FS2_SCHEMA_WAIT_SECONDS
+              value: {{ .Values.config.schemaWaitSeconds | quote }}
+            - name: FS2_TOKEN_PEPPER_FILE
+              value: /var/run/secrets/fs2-serve/token-pepper
+            - name: FS2_BOOTSTRAP_ACCESS_TOKEN_FILE
+              value: /var/run/secrets/fs2-serve/website-access-token
+            - name: FS2_BOOTSTRAP_ACCESS_PRINCIPAL_ID
+              value: {{ .Values.websiteAccess.principalId | quote }}
+            - name: FS2_BOOTSTRAP_ACCESS_TENANT_ID
+              value: {{ $tenantId | quote }}
+            - name: FS2_BOOTSTRAP_ACCESS_NAME
+              value: {{ .Values.websiteAccess.name | quote }}
+            - name: FS2_BOOTSTRAP_ACCESS_SCOPES
+              value: {{ .Values.websiteAccess.scopes | toJson | quote }}
+            - name: FS2_BOOTSTRAP_ACCESS_MODELS
+              value: {{ .Values.websiteAccess.models | toJson | quote }}
+            - name: FS2_BOOTSTRAP_ACCESS_MAX_CONCURRENCY
+              value: {{ .Values.websiteAccess.maxConcurrency | quote }}
+          volumeMounts:
+            {{- include "fs2-serve.cryptoVolumeMounts" . | nindent 12 }}
+            {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 12 }}
+            - name: token-pepper
+              mountPath: /var/run/secrets/fs2-serve/token-pepper
+              subPath: token-pepper.json
+              readOnly: true
+            - name: website-access-token
+              mountPath: /var/run/secrets/fs2-serve/website-access-token
+              subPath: {{ .Values.websiteAccess.tokenKey }}
+              readOnly: true
+          resources:
+            {{- toYaml .Values.websiteAccess.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        {{- include "fs2-serve.cryptoVolumes" . | nindent 8 }}
+        {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) | nindent 8 }}
+        - name: token-pepper
+          secret:
+            secretName: {{ .Values.secrets.tokenPepper.name }}
+            defaultMode: 0400
+            items:
+              - key: {{ .Values.secrets.tokenPepper.key }}
+                path: token-pepper.json
+        - name: website-access-token
+          secret:
+            secretName: {{ $secretName }}
+            defaultMode: 0400
+            items:
+              - key: {{ .Values.websiteAccess.tokenKey }}
+                path: {{ .Values.websiteAccess.tokenKey }}
+{{- end }}
