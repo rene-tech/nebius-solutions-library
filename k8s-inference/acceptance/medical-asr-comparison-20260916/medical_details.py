@@ -18,7 +18,8 @@ from score_medical import alignment, words
 HESITATIONS = {"um", "uh", "erm", "er", "hmm", "hm", "mm", "mhm", "uhh", "ah"}
 TERMS = {"diarrhea", "blood", "vomiting", "fever", "feverish", "inhaler", "inhalers",
          "dioralyte", "paracetamol", "steroid", "steroids", "antihistamines", "loratadine",
-         "emollients", "allergies", "eczema", "asthma", "tablets"}
+         "emollients", "allergies", "eczema", "asthma", "tablets", "gastroenteritis",
+         "fexofenadine", "piriton"}
 COUNTS = {"one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
           "fourteen", "once", "twice"}
 NEGATIONS = {"no", "not", "never", "haven't", "don't", "hasn't", "doesn't", "wasn't", "didn't"}
