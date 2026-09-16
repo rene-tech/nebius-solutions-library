@@ -283,9 +283,13 @@ data:
             "token": False,
         }
         try:
-            return Path(snapshot_download(**arguments, local_files_only=True)), "huggingface-local-cache"
-        except Exception:
-            return Path(snapshot_download(**arguments)), "huggingface-download"
+            return Path(snapshot_download(**arguments, local_files_only=True)), "offline-prestaged-huggingface-cache"
+        except Exception as error:
+            raise RuntimeError(
+                "offline cold-cache preflight failed: the exact pinned Hugging Face "
+                "snapshot is absent; stage the reviewed acquisition plan into this "
+                "PVC before creating the runtime Pod"
+            ) from error
 
 
     def main() -> int:
@@ -426,8 +430,10 @@ metadata:
     app.kubernetes.io/name: qwen3-8b
     app.kubernetes.io/part-of: fs2-serve
     app.kubernetes.io/version: b968826d9c46dd6066d109eabc6255188de91218
+    fs2-serve.nebius.ai/model-id: qwen3-8b
   annotations:
     fs2.nebius/cache-content-path: /models/qwen3-8b/sha256/5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d/payload
+    fs2.nebius/cold-cache-preflight: offline-prestaged-required
     fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
     fs2.nebius/localization-receipt-schema: fs2-serve.nebius.ai/shared-cache-localization-receipt/v2
     fs2.nebius/model-content-digest: sha256:5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d
@@ -444,6 +450,7 @@ spec:
       labels: *labels
       annotations:
         fs2.nebius/cache-content-path: /models/qwen3-8b/sha256/5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d/payload
+        fs2.nebius/cold-cache-preflight: offline-prestaged-required
         fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
         fs2.nebius/localization-receipt-schema: fs2-serve.nebius.ai/shared-cache-localization-receipt/v2
         fs2.nebius/model-content-digest: sha256:5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d
@@ -476,6 +483,8 @@ spec:
             - {name: FS2_LEGACY_PAYLOAD_ROOT, value: /models/qwen3-8b}
             - {name: FS2_LOCALIZATION_WORKERS, value: "16"}
             - {name: HF_HUB_DISABLE_TELEMETRY, value: "1"}
+            - {name: HF_HUB_OFFLINE, value: "1"}
+            - {name: TRANSFORMERS_OFFLINE, value: "1"}
             - {name: HF_HOME, value: /models/.cache/huggingface}
           resources:
             requests: {cpu: "4", memory: 8Gi, ephemeral-storage: 4Gi}

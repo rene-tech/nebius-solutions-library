@@ -1181,6 +1181,23 @@ def test_modelexpress_external_coordinator_requires_and_renders_an_explicit_cidr
         ModelExpressQualification.model_validate(invalid)
 
 
+@pytest.mark.parametrize("cidr", ["0.0.0.0/0", "::/0"])
+def test_modelexpress_external_coordinator_rejects_default_route_cidrs(cidr: str) -> None:
+    candidate = modelexpress_qualification("pool-a").model_dump(mode="json", by_alias=True)
+    candidate.update(
+        {
+            "deploymentMode": "external",
+            "endpoint": "modelexpress.example.test:8443",
+            "coordinatorNetworkType": "ip-blocks",
+            "coordinatorNamespace": None,
+            "coordinatorPodLabels": {},
+            "coordinatorCidrs": [cidr],
+        }
+    )
+    with pytest.raises(ValidationError, match="must not include an IPv4 or IPv6 default route"):
+        ModelExpressQualification.model_validate(candidate)
+
+
 def test_reserved_hot_and_preemptible_burst_are_disjoint_bounded_segments() -> None:
     infrastructure = reserved_and_preemptible_envelope()
     spec = model_spec().model_copy(

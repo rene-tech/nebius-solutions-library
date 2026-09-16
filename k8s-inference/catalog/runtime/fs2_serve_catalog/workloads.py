@@ -563,6 +563,10 @@ def render_kserve_standard_workload(
         raise CatalogError("KServe custom predictor is not the NIM Operator adapter")
     if value["interface"]["execution_mode"] != "http":
         raise CatalogError("KServe HTTP adapter cannot serve a batch-only model")
+    raise CatalogError(
+        "KServe operator child Pod NetworkPolicy selector is unqualified; "
+        "use the native adapter until an exact propagated-label contract is proven"
+    )
     metadata = _metadata(record, backend_capability)
     annotations = dict(metadata["annotations"])
     annotations["serving.kserve.io/deploymentMode"] = "Standard"
@@ -614,6 +618,10 @@ def render_nim_operator_cache(
         raise CatalogError("NIMCache adapter requires an exact NIM record and owner")
     if llm_engine not in {None, "vllm", "sglang"}:
         raise CatalogError("NIMCache LLM engine is outside the Operator contract")
+    raise CatalogError(
+        "NIM Operator child Pod NetworkPolicy selector is unqualified; "
+        "the adapter remains disabled until exact propagated labels are proven"
+    )
     prerequisites.require([NGC_PULL_SECRET, NGC_RUNTIME_SECRET, SHARED_CACHE_PVC])
     pull_secret = prerequisites.resource(NGC_PULL_SECRET)
     runtime_secret = prerequisites.resource(NGC_RUNTIME_SECRET)
@@ -682,6 +690,10 @@ def render_nim_operator_service(
         raise CatalogError("NIMService cache identity differs from the exact model record")
     if not isinstance(profile, str) or len(profile) > 256:
         raise CatalogError("NIM profile must be bounded text")
+    raise CatalogError(
+        "NIM Operator child Pod NetworkPolicy selector is unqualified; "
+        "the adapter remains disabled until exact propagated labels are proven"
+    )
     prerequisites.require([NGC_PULL_SECRET, NGC_RUNTIME_SECRET, SHARED_CACHE_PVC])
     pull_secret = prerequisites.resource(NGC_PULL_SECRET)
     runtime_secret = prerequisites.resource(NGC_RUNTIME_SECRET)

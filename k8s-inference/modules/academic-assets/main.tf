@@ -76,6 +76,88 @@ resource "kubernetes_namespace_v1" "academic_assets" {
 # Scientific Jobs opt in to their exact control-plane/object-store egress
 # policies. Everything else in the licensed-assets namespace is isolated by
 # default in both directions, including ad-hoc Pods and stale workload labels.
+resource "kubernetes_network_policy_v1" "academic_scientific_workloads" {
+  count = local.execution_enabled ? 1 : 0
+
+  metadata {
+    name      = "academic-scientific-workloads"
+    namespace = var.academic_assets.namespace
+    labels    = local.common_labels
+  }
+
+  spec {
+    pod_selector {
+      match_expressions {
+        key      = "fs2.nebius.ai/workload-id"
+        operator = "Exists"
+      }
+    }
+    policy_types = ["Egress"]
+
+    # Job and every replicated JobSet child copy the workload-id label to their
+    # Pod template. DNS remains limited to the cluster DNS Pods.
+    egress {
+      to {
+        namespace_selector {
+          match_labels = { "kubernetes.io/metadata.name" = "kube-system" }
+        }
+        pod_selector {
+          match_expressions {
+            key      = "k8s-app"
+            operator = "In"
+            values   = ["coredns", "kube-dns"]
+          }
+        }
+      }
+      ports {
+        protocol = "UDP"
+        port     = "53"
+      }
+      ports {
+        protocol = "TCP"
+        port     = "53"
+      }
+    }
+
+    # Materialize/collect callbacks target only the internal control-plane API.
+    egress {
+      to {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = var.academic_network_policy.internal_api_namespace
+          }
+        }
+        pod_selector {
+          match_labels = var.academic_network_policy.internal_api_pod_labels
+        }
+      }
+      ports {
+        protocol = "TCP"
+        port     = tostring(var.academic_network_policy.internal_api_port)
+      }
+    }
+
+    # Presigned artifact access is restricted to the stage-configured exact
+    # object-store addresses. No Internet-wide route is accepted by the input.
+    dynamic "egress" {
+      for_each = sort(tolist(var.academic_network_policy.object_store_cidrs))
+      content {
+        to {
+          ip_block {
+            cidr = egress.value
+          }
+        }
+        ports {
+          protocol = "TCP"
+          port     = "443"
+        }
+      }
+    }
+  }
+
+  depends_on = [kubernetes_namespace_v1.academic_assets]
+}
+
 resource "kubernetes_network_policy_v1" "academic_default_deny" {
   count = local.enabled ? 1 : 0
 
@@ -90,7 +172,12 @@ resource "kubernetes_network_policy_v1" "academic_default_deny" {
     policy_types = ["Ingress", "Egress"]
   }
 
-  depends_on = [kubernetes_namespace_v1.academic_assets]
+  # Create the selected-workload allow path before closing the namespace and
+  # destroy the deny before removing the allow path during rollback.
+  depends_on = [
+    kubernetes_namespace_v1.academic_assets,
+    kubernetes_network_policy_v1.academic_scientific_workloads,
+  ]
 }
 
 # --- runtime claim: retained -------------------------------------------------

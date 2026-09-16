@@ -106,6 +106,16 @@ module "academic_assets" {
   source = "../../modules/academic-assets"
 
   academic_assets = var.academic_assets
+  academic_network_policy = {
+    internal_api_namespace = "fs2-system"
+    internal_api_pod_labels = {
+      "app.kubernetes.io/name"      = "fs2-serve-control-plane"
+      "app.kubernetes.io/instance"  = "fs2-serve-control-plane"
+      "app.kubernetes.io/component" = "gateway"
+    }
+    internal_api_port  = 8080
+    object_store_cidrs = toset(var.scientific_artifacts.egress_cidrs)
+  }
 }
 
 # Publishes what the chart will receive, so the projection is assertable without

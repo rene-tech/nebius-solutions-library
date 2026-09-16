@@ -69,6 +69,15 @@ class SharedCacheLocalizationTests(unittest.TestCase):
                 },
                 policy["spec"]["podSelector"]["matchLabels"],
             )
+            deployment = next(
+                item for item in documents(filename) if item["kind"] == "Deployment"
+            )
+            pod_labels = deployment["spec"]["template"]["metadata"]["labels"]
+            self.assertLessEqual(
+                policy["spec"]["podSelector"]["matchLabels"].items(),
+                pod_labels.items(),
+                "the committed policy selector must match the actual Pod template",
+            )
             self.assertEqual(["Ingress", "Egress"], policy["spec"]["policyTypes"])
             self.assertEqual(
                 {
@@ -93,6 +102,62 @@ class SharedCacheLocalizationTests(unittest.TestCase):
                 policy["spec"]["egress"][0]["to"][0]["podSelector"]["matchExpressions"],
             )
             self.assertNotIn("ipBlock", json.dumps(policy["spec"]))
+
+    def test_empty_cache_fails_offline_preflight_without_a_network_fallback(self) -> None:
+        for filename in ("qwen3-8b.yaml", "cosmos3-nano.yaml"):
+            config = localization_config(filename)
+            script = config["data"]["localize.py"]
+            deployment = next(
+                item for item in documents(filename) if item["kind"] == "Deployment"
+            )
+            pod_template = deployment["spec"]["template"]
+            self.assertEqual(
+                "offline-prestaged-required",
+                pod_template["metadata"]["annotations"][
+                    "fs2.nebius/cold-cache-preflight"
+                ],
+            )
+            localizer = next(
+                item
+                for item in pod_template["spec"]["initContainers"]
+                if item["name"] == "localize-model"
+            )
+            localizer_environment = {
+                item["name"]: item["value"] for item in localizer["env"]
+            }
+            self.assertEqual("1", localizer_environment["HF_HUB_OFFLINE"])
+            self.assertEqual("1", localizer_environment["TRANSFORMERS_OFFLINE"])
+            calls: list[dict[str, object]] = []
+
+            def offline_miss(**kwargs: object) -> str:
+                calls.append(dict(kwargs))
+                raise FileNotFoundError("synthetic empty cache")
+
+            fake_huggingface = types.ModuleType("huggingface_hub")
+            fake_huggingface.snapshot_download = offline_miss
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                lock_path = root / "model.lock.json"
+                lock_path.write_text(config["data"]["model.lock.json"], encoding="utf-8")
+                environment = {
+                    "FS2_MODEL_LOCK_PATH": str(lock_path),
+                    "FS2_CACHE_ROOT": str(root / "cache"),
+                    "FS2_HF_CACHE_ROOT": str(root / "huggingface"),
+                    "FS2_CACHE_LOCK_TIMEOUT_SECONDS": "1",
+                }
+                namespace: dict[str, object] = {"__name__": "offline_localizer_under_test"}
+                with patch.dict(os.environ, environment, clear=False), patch.dict(
+                    sys.modules, {"huggingface_hub": fake_huggingface}
+                ):
+                    exec(script, namespace)
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        "offline cold-cache preflight failed",
+                    ):
+                        namespace["main"]()
+
+            self.assertEqual(1, len(calls), filename)
+            self.assertIs(True, calls[0].get("local_files_only"), filename)
 
     def test_qwen_and_cosmos_bind_exact_content_addresses(self) -> None:
         expected = {

@@ -187,3 +187,43 @@ variable "academic_assets" {
     error_message = "An installed tree must not be labelled with the digest or size of the archive it came from."
   }
 }
+
+variable "academic_network_policy" {
+  description = "Exact destinations academic scientific Job and JobSet Pods may reach after the namespace default deny is enabled."
+  type = object({
+    internal_api_namespace = optional(string, "fs2-system")
+    internal_api_pod_labels = optional(map(string), {
+      "app.kubernetes.io/name"      = "fs2-serve-control-plane"
+      "app.kubernetes.io/instance"  = "fs2-serve-control-plane"
+      "app.kubernetes.io/component" = "gateway"
+    })
+    internal_api_port  = optional(number, 8080)
+    object_store_cidrs = optional(set(string), [])
+  })
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = (
+      length(var.academic_network_policy.internal_api_namespace) <= 63 &&
+      can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.academic_network_policy.internal_api_namespace)) &&
+      length(var.academic_network_policy.internal_api_pod_labels) > 0 &&
+      alltrue([
+        for key, value in var.academic_network_policy.internal_api_pod_labels :
+        length(key) <= 253 && length(value) <= 63 && length(value) > 0
+      ]) &&
+      floor(var.academic_network_policy.internal_api_port) == var.academic_network_policy.internal_api_port &&
+      var.academic_network_policy.internal_api_port >= 1 &&
+      var.academic_network_policy.internal_api_port <= 65535
+    )
+    error_message = "academic_network_policy requires a Kubernetes-safe API namespace, at least one bounded Pod label, and one TCP port."
+  }
+
+  validation {
+    condition = alltrue([
+      for cidr in var.academic_network_policy.object_store_cidrs :
+      can(cidrhost(cidr, 0)) && (endswith(cidr, "/32") || endswith(cidr, "/128"))
+    ])
+    error_message = "academic_network_policy object-store destinations must be exact IPv4 /32 or IPv6 /128 CIDRs; default routes are forbidden."
+  }
+}

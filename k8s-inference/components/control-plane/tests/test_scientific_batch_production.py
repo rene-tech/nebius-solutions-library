@@ -67,6 +67,7 @@ from fs2_serve.scientific_batch.kubernetes import (
     PODSET_ENVELOPE_ANNOTATION,
     PODSET_ENVELOPE_DIGEST_ANNOTATION,
     ROUTE_NAMESPACE_ANNOTATION,
+    WORKLOAD_LABEL,
     WORKLOAD_NAMESPACE_ANNOTATION,
     HttpScientificBatchCluster,
     ScientificKubernetesError,
@@ -2155,6 +2156,86 @@ class JobRenderer:
             "metadata": {"name": resource.name, "namespace": resource.namespace},
             "spec": spec,
         }
+
+
+@pytest.mark.parametrize("kind", [WorkloadKind.JOB, WorkloadKind.JOB_SET])
+def test_academic_network_policy_selector_matches_every_job_child_pod(
+    kind: WorkloadKind,
+    tmp_path: Path,
+) -> None:
+    """The Terraform allow policy selects both Job and every JobSet child Pod."""
+
+    plan = ScientificBatchPlan((ScientificStagePlan(stage_id="inference"),))
+    snapshot = SchedulingContractResolver(scheduling_with_academic_route()).freeze(
+        service_class="customer-batch",
+        model_id="alphafold3",
+        tenant_id=ACADEMIC_TENANT_ID,
+        profile={
+            **profile_value(),
+            "model_id": "alphafold3",
+            "workload": {
+                **profile_value()["workload"],
+                "stages": [
+                    {
+                        **profile_value()["workload"]["stages"][0],
+                        "id": "inference",
+                    }
+                ],
+            },
+        },
+        plan=plan,
+        workload_namespace="fs2-academic-poc",
+    )
+    workload_id = uuid4()
+    resource = WorkloadResource(
+        operation_id=uuid4(),
+        batch_id=uuid4(),
+        workload_id=workload_id,
+        attempt_id=uuid4(),
+        stage_id="inference",
+        shard_id=None if kind is WorkloadKind.JOB_SET else "main",
+        attempt_number=1,
+        tenant_id=ACADEMIC_TENANT_ID,
+        model_id="alphafold3",
+        variant_id="upstream-v3-0-4",
+        input_artifact_id=uuid4(),
+        service_class=ServiceClass.CUSTOMER_BATCH,
+        scheduling_snapshot_digest=snapshot.digest,
+        namespace="fs2-academic-poc",
+        route_namespace="fs2-academic-poc",
+        name=f"academic-selector-{str(kind).lower()}",
+        kind=kind,
+        scheduling=snapshot.stage("inference"),
+        gang_size=2 if kind is WorkloadKind.JOB_SET else None,
+    )
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(500)),
+        base_url="https://kubernetes.test",
+    )
+    cluster = HttpScientificBatchCluster(
+        base_url="https://kubernetes.test",
+        token_file=tmp_path / "unused-token",
+        ca_file=tmp_path / "unused-ca.crt",
+        controller_id="selector-contract",
+        fence=Fence(),
+        renderer=JobRenderer(),
+        writes_enabled=False,
+        client=client,
+    )
+    try:
+        manifest = cluster._prepare(resource, controller_fence=1)
+    finally:
+        asyncio.run(client.aclose())
+
+    if kind is WorkloadKind.JOB:
+        pod_templates = [manifest["spec"]["template"]]
+    else:
+        pod_templates = [
+            replicated_job["template"]["spec"]["template"] for replicated_job in manifest["spec"]["replicatedJobs"]
+        ]
+    assert pod_templates
+    for template in pod_templates:
+        assert template["metadata"]["labels"][WORKLOAD_LABEL] == str(workload_id)
 
 
 @pytest.mark.asyncio

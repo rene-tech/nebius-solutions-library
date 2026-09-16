@@ -1008,7 +1008,7 @@ class KubernetesAdapterTests(unittest.TestCase):
                 backend_capability=sfs_capability,
             )
 
-    def test_native_kserve_and_nimcache_adapters_preserve_boundaries(self) -> None:
+    def test_native_adapter_isolated_and_operator_child_adapters_fail_closed(self) -> None:
         cxr = self.catalog.model("nv-reason-cxr-3b")
         capability = self.capability(cxr)
         uri = "sfs://fs2-cache/mnt/fs2-serve-cache/models/nv-reason-cxr-3b/sha256/" + self.digest("cxr-content")
@@ -1061,60 +1061,30 @@ class KubernetesAdapterTests(unittest.TestCase):
                 "matchLabels"
             ]["app.kubernetes.io/component"],
         )
-        kserve = render_kserve_standard_workload(
-            cxr,
-            prerequisites=self.prerequisites,
-            namespace="fs2-models",
-            artifact_uri=uri,
-            backend_capability=capability,
-        )
-        self.assertEqual("Standard", kserve["metadata"]["annotations"]["serving.kserve.io/deploymentMode"])
-        predictor = kserve["spec"]["predictor"]
-        cxr_container = predictor["containers"][0]
-        self.assertNotIn("command", cxr_container)
-        self.assertEqual("/mnt/fs2-serve-cache/models/nv-reason-cxr-3b/sha256/" + self.digest("cxr-content"), cxr_container["args"][1])
-        self.assertNotIn("nvidia/NV-Reason-CXR-3B", cxr_container["args"])
-        self.assertEqual("nv-reason-cxr-3b", cxr_container["args"][3])
-        self.assertTrue(predictor["securityContext"]["runAsNonRoot"])
-        self.assertTrue(cxr_container["securityContext"]["allowPrivilegeEscalation"] is False)
+        with self.assertRaisesRegex(
+            CatalogError,
+            "KServe operator child Pod NetworkPolicy selector is unqualified",
+        ):
+            render_kserve_standard_workload(
+                cxr,
+                prerequisites=self.prerequisites,
+                namespace="fs2-models",
+                artifact_uri=uri,
+                backend_capability=capability,
+            )
         boltz = self.catalog.model("boltz2")
         nim_capability = self.capability(boltz, storage_mode="nimcache-pvc")
-        cache = render_nim_operator_cache(
-            boltz,
-            prerequisites=self.prerequisites,
-            namespace="fs2-models",
-            backend_capability=nim_capability,
-        )
-        self.assertFalse(cache["spec"]["storage"]["pvc"]["create"])
-        self.assertEqual([GPU_TOLERATION], cache["spec"]["tolerations"])
-        self.assertEqual(
-            nim_capability.runtime_tuple_digest,
-            cache["metadata"]["annotations"][
-                "fs2-serve.nebius.ai/runtime-tuple-digest"
-            ],
-        )
-        self.assertEqual(
-            "nim-operator-nimcache",
-            cache["metadata"]["annotations"]["fs2-serve.nebius.ai/cache-owner"],
-        )
-        service = render_nim_operator_service(
-            boltz,
-            prerequisites=self.prerequisites,
-            namespace="fs2-models",
-            backend_capability=nim_capability,
-        )
-        self.assertEqual("NIMService", service["kind"])
-        self.assertEqual(0, service["spec"]["replicas"])
-        self.assertEqual(
-            "fs2-model-activation-controller",
-            service["metadata"]["annotations"][
-                "fs2-serve.nebius.ai/replica-field-owner"
-            ],
-        )
-        self.assertEqual("Always", service["spec"]["image"]["pullPolicy"])
-        self.assertEqual([GPU_TOLERATION], service["spec"]["tolerations"])
-        self.assertIn("disabled-pending-pod-imageid", json.dumps(service))
-        self.assertNotIn("hostPath", json.dumps(service))
+        for renderer in (render_nim_operator_cache, render_nim_operator_service):
+            with self.subTest(renderer=renderer.__name__), self.assertRaisesRegex(
+                CatalogError,
+                "NIM Operator child Pod NetworkPolicy selector is unqualified",
+            ):
+                renderer(
+                    boltz,
+                    prerequisites=self.prerequisites,
+                    namespace="fs2-models",
+                    backend_capability=nim_capability,
+                )
         with self.assertRaisesRegex(CatalogError, "cache identity differs"):
             render_nim_operator_service(
                 boltz,

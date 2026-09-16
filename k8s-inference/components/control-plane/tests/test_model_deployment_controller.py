@@ -5,6 +5,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import httpx
 import pytest
@@ -25,6 +26,7 @@ from fs2_serve.fast_start_policy import FastStartHistoryWindow
 from fs2_serve.model_deployment import (
     FIELD_MANAGER,
     FINALIZER,
+    AppDeploymentIdentity,
     CacheTier,
     DesiredState,
     DrainObservation,
@@ -573,6 +575,120 @@ async def test_controller_hands_off_every_bounded_burst_segment_and_aggregates_s
         ("reserved-h100", "burst"),
         ("preemptible-h100", "burst"),
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pool_layout", ["single", "multi"])
+async def test_app_runtime_network_policy_names_cover_full_controller_lifecycle(pool_layout: str) -> None:
+    """SAI-07 must allow every segmented SAI-03 App policy identity."""
+
+    app_id = UUID("12345678-1234-5678-9234-567812345678")
+    public_model_id = f"app-{app_id.hex}"
+    if pool_layout == "single":
+        infrastructure = envelope()
+        pool_refs = ["pool-a"]
+        availability = model_spec().availability.model_copy(update={"min_replicas": 0, "max_replicas": 4})
+    else:
+        infrastructure = reserved_and_preemptible_envelope()
+        pool_refs = ["reserved-h100", "preemptible-h100"]
+        availability = model_spec().availability.model_copy(update={"min_replicas": 1, "max_replicas": 4})
+    spec = model_spec().model_copy(
+        update={
+            "app": AppDeploymentIdentity(
+                app_id=app_id,
+                public_model_id=public_model_id,
+            ),
+            "placement": model_spec().placement.model_copy(update={"pool_refs": pool_refs}),
+            "availability": availability,
+            "exposure": model_spec().exposure.model_copy(
+                update={
+                    "open_ai_aliases": [],
+                    "mcp_tool_name": f"app_{app_id.hex}",
+                }
+            ),
+        }
+    )
+    raw = model_object()
+    raw["metadata"]["name"] = public_model_id
+    raw["spec"] = spec.model_dump(mode="json", by_alias=True)
+    api = FakeApi(raw)
+    subject = ModelDeploymentController(
+        api=api,
+        envelope=infrastructure,
+        renderer=renderer(),
+        namespace="fs2-models",
+        holder_identity="fs2-system/controller:pod-uid",
+        prometheus_server_address="http://prometheus:9090",
+        writes_enabled=True,
+        active_operations=ZeroActiveOperations(),
+        queue_capacity=2,
+        worker_count=1,
+        poll_seconds=0.01,
+    )
+    key = ModelKey(namespace="fs2-models", name=public_model_id)
+
+    assert (await subject.reconcile(key, fence())).action == "finalizer-added"
+    assert (await subject.reconcile(key, fence())).action == "autoscaler-bootstrap"
+    assert (await subject.reconcile(key, fence())).action == "autoscaler-handoff"
+
+    deployments = {item.observed.name: item for item in api.resources.values() if item.observed.kind == "Deployment"}
+    policies = {item.observed.name: item for item in api.resources.values() if item.observed.kind == "NetworkPolicy"}
+    assert policies.keys() == {f"fs2-runtime-{name}" for name in deployments}
+    assert all(name.startswith(f"fs2-runtime-{public_model_id}-") for name in policies)
+    if pool_layout == "single":
+        assert len(policies) == 1
+        assert next(iter(policies)).endswith("-burst-pool-a")
+    else:
+        assert len(policies) == 3
+        assert any("-hot-reserved-h100" in name for name in policies)
+        assert any("-burst-preemptible-h100" in name for name in policies)
+        assert any("-burst-reserved-h100" in name for name in policies)
+
+    original_policy_digests = {name: item.observed.digest for name, item in policies.items()}
+    updated = spec.model_copy(
+        update={"policy": spec.policy.model_copy(update={"allowed_principal_ids": ["principal-updated"]})}
+    )
+    api.model["spec"] = updated.model_dump(mode="json", by_alias=True)
+    api.model["metadata"]["generation"] = 2
+    api.model["metadata"]["resourceVersion"] = "2"
+    for _ in range(3):
+        await subject.reconcile(key, fence())
+    updated_policies = {
+        item.observed.name: item for item in api.resources.values() if item.observed.kind == "NetworkPolicy"
+    }
+    assert updated_policies.keys() == policies.keys()
+    assert all(updated_policies[name].observed.digest != original_policy_digests[name] for name in updated_policies)
+
+    stale = next(iter(updated_policies.values())).model_copy(deep=True)
+    stale_name = f"fs2-runtime-{public_model_id}-hot-retired-pool"
+    stale.observed = stale.observed.model_copy(update={"name": stale_name})
+    stale.raw["metadata"]["name"] = stale_name
+    api.resources[stale.observed.identity] = stale
+    api.calls.clear()
+    result = await subject.reconcile(key, fence())
+    assert result.action.endswith("delete-first")
+    assert ("delete", stale.observed.identity) in api.calls
+    assert stale.observed.identity not in api.resources
+
+    draining = updated.model_copy(
+        update={
+            "lifecycle": LifecycleSpec(desired_state=DesiredState.DRAINING),
+            "availability": updated.availability.model_copy(update={"min_replicas": 0}),
+        }
+    )
+    api.model["spec"] = draining.model_dump(mode="json", by_alias=True)
+    api.model["metadata"]["generation"] = 3
+    api.model["metadata"]["resourceVersion"] = "3"
+    await subject.reconcile(key, fence())
+    await subject.reconcile(key, fence())
+    api.model["metadata"]["deletionTimestamp"] = "2026-09-16T18:00:00Z"
+    for _ in range(8):
+        result = await subject.reconcile(key, fence())
+        if result.action == "finalizer-removed":
+            break
+    assert result.action == "finalizer-removed"
+    assert FINALIZER not in api.model["metadata"]["finalizers"]
+    assert not api.resources
 
 
 @pytest.mark.asyncio

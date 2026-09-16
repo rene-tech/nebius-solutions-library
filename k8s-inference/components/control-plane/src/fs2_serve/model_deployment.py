@@ -723,9 +723,12 @@ class ModelExpressQualification(KubernetesModel):
         elif self.coordinator_namespace is not None or self.coordinator_pod_labels or not self.coordinator_cidrs:
             raise ValueError("ModelExpress IP-block coordinator route is incomplete")
         try:
-            normalized_cidrs = [str(ip_network(cidr, strict=True)) for cidr in self.coordinator_cidrs]
+            networks = [ip_network(cidr, strict=True) for cidr in self.coordinator_cidrs]
         except ValueError:
             raise ValueError("ModelExpress coordinator CIDR must be a canonical network") from None
+        if any(network.prefixlen == 0 for network in networks):
+            raise ValueError("ModelExpress coordinator CIDRs must not include an IPv4 or IPv6 default route")
+        normalized_cidrs = [str(network) for network in networks]
         if len(normalized_cidrs) != len(set(normalized_cidrs)):
             raise ValueError("ModelExpress coordinator CIDRs must be unique")
         return self

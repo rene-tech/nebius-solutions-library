@@ -8,6 +8,17 @@
 mock_provider "kubernetes" {}
 
 variables {
+  academic_network_policy = {
+    internal_api_namespace = "fs2-system"
+    internal_api_pod_labels = {
+      "app.kubernetes.io/name"      = "fs2-serve-control-plane"
+      "app.kubernetes.io/instance"  = "fs2-serve-control-plane"
+      "app.kubernetes.io/component" = "gateway"
+    }
+    internal_api_port  = 8080
+    object_store_cidrs = ["203.0.113.10/32", "2001:db8::10/128"]
+  }
+
   academic_assets = {
     enabled        = true
     project_id     = "project-test"
@@ -81,6 +92,28 @@ run "retained_selects_only_the_guarded_claim" {
       toset(kubernetes_network_policy_v1.academic_default_deny[0].spec[0].policy_types) == toset(["Ingress", "Egress"])
     )
     error_message = "An enabled academic namespace must be Terraform-owned and default-denied in both directions."
+  }
+
+  assert {
+    condition = (
+      length(kubernetes_network_policy_v1.academic_scientific_workloads) == 1 &&
+      kubernetes_network_policy_v1.academic_scientific_workloads[0].metadata[0].name == "academic-scientific-workloads" &&
+      kubernetes_network_policy_v1.academic_scientific_workloads[0].spec[0].pod_selector[0].match_expressions[0].key == "fs2.nebius.ai/workload-id" &&
+      kubernetes_network_policy_v1.academic_scientific_workloads[0].spec[0].pod_selector[0].match_expressions[0].operator == "Exists" &&
+      length(kubernetes_network_policy_v1.academic_scientific_workloads[0].spec[0].egress) == 4
+    )
+    error_message = "Academic Job and JobSet child Pods need a pre-deny allow policy for DNS, the exact internal API, and every configured object-store CIDR."
+  }
+
+  assert {
+    condition = (
+      kubernetes_network_policy_v1.academic_scientific_workloads[0].spec[0].egress[1].to[0].namespace_selector[0].match_labels["kubernetes.io/metadata.name"] == "fs2-system" &&
+      kubernetes_network_policy_v1.academic_scientific_workloads[0].spec[0].egress[1].to[0].pod_selector[0].match_labels["app.kubernetes.io/component"] == "gateway" &&
+      kubernetes_network_policy_v1.academic_scientific_workloads[0].spec[0].egress[1].ports[0].port == "8080" &&
+      kubernetes_network_policy_v1.academic_scientific_workloads[0].spec[0].egress[2].to[0].ip_block[0].cidr == "2001:db8::10/128" &&
+      kubernetes_network_policy_v1.academic_scientific_workloads[0].spec[0].egress[3].to[0].ip_block[0].cidr == "203.0.113.10/32"
+    )
+    error_message = "Academic egress destinations must stay exact and deterministically ordered."
   }
 }
 
@@ -199,6 +232,7 @@ run "disabled_creates_nothing" {
       length(kubernetes_persistent_volume_claim_v1.academic_assets_runtime_retained) == 0 &&
       length(kubernetes_persistent_volume_claim_v1.academic_assets_runtime_disposable) == 0 &&
       length(kubernetes_network_policy_v1.academic_default_deny) == 0 &&
+      length(kubernetes_network_policy_v1.academic_scientific_workloads) == 0 &&
       length(kubernetes_network_policy_v1.academic_offline_validation) == 0
     )
     error_message = "Disabling the feature must create no academic resources at all."
@@ -208,6 +242,18 @@ run "disabled_creates_nothing" {
     condition     = output.managed_addresses.runtime_claim == null
     error_message = "There is no managed claim to adopt when the feature is disabled."
   }
+}
+
+run "scientific_workload_policy_rejects_internet_wide_object_store_routes" {
+  command = plan
+
+  variables {
+    academic_network_policy = merge(var.academic_network_policy, {
+      object_store_cidrs = ["0.0.0.0/0", "::/0"]
+    })
+  }
+
+  expect_failures = [var.academic_network_policy]
 }
 
 run "delivery_invariants_are_reported_to_consumers" {

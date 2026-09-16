@@ -60,6 +60,13 @@ output "academic_assets" {
 
     offline_validation_egress_denied = length(kubernetes_network_policy_v1.academic_offline_validation) > 0
     default_deny_enforced            = length(kubernetes_network_policy_v1.academic_default_deny) > 0
+    scientific_workload_egress = {
+      enforced           = length(kubernetes_network_policy_v1.academic_scientific_workloads) > 0
+      policy_name        = try(one(kubernetes_network_policy_v1.academic_scientific_workloads[*].metadata[0].name), null)
+      internal_api       = "${var.academic_network_policy.internal_api_namespace}:${var.academic_network_policy.internal_api_port}"
+      object_store_cidrs = sort(tolist(var.academic_network_policy.object_store_cidrs))
+      pod_selector_label = "fs2.nebius.ai/workload-id"
+    }
 
     # A consuming pod reads licensed bytes by joining the asset group; it never
     # needs to run as the staging uid and the bytes are never world-readable.
@@ -119,13 +126,14 @@ output "academic_assets" {
 output "managed_addresses" {
   description = "Terraform addresses of the selected claims, for adoption of already-populated storage."
   value = {
-    namespace           = local.enabled ? "kubernetes_namespace_v1.academic_assets[0]" : null
-    runtime_claim       = local.runtime_address
-    legacy_claim        = local.legacy_address
-    network_policy      = length(kubernetes_network_policy_v1.academic_offline_validation) > 0 ? "kubernetes_network_policy_v1.academic_offline_validation[0]" : null
-    default_deny_policy = local.enabled ? "kubernetes_network_policy_v1.academic_default_deny[0]" : null
-    local_queue         = local.execution_enabled ? "kubernetes_manifest.academic_local_queue[\"${var.academic_assets.execution.local_queue}\"]" : null
-    local_queue_binding = local.execution_enabled ? "terraform_data.academic_local_queue_binding[\"${var.academic_assets.execution.local_queue}\"]" : null
-    module_prefix       = "module.academic_assets"
+    namespace                  = local.enabled ? "kubernetes_namespace_v1.academic_assets[0]" : null
+    runtime_claim              = local.runtime_address
+    legacy_claim               = local.legacy_address
+    network_policy             = length(kubernetes_network_policy_v1.academic_offline_validation) > 0 ? "kubernetes_network_policy_v1.academic_offline_validation[0]" : null
+    default_deny_policy        = local.enabled ? "kubernetes_network_policy_v1.academic_default_deny[0]" : null
+    scientific_workload_policy = local.execution_enabled ? "kubernetes_network_policy_v1.academic_scientific_workloads[0]" : null
+    local_queue                = local.execution_enabled ? "kubernetes_manifest.academic_local_queue[\"${var.academic_assets.execution.local_queue}\"]" : null
+    local_queue_binding        = local.execution_enabled ? "terraform_data.academic_local_queue_binding[\"${var.academic_assets.execution.local_queue}\"]" : null
+    module_prefix              = "module.academic_assets"
   }
 }
