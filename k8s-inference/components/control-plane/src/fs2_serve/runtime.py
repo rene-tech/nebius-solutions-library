@@ -22,13 +22,12 @@ from .registry import OperationalModel, ProbeSpec
 from .request_debug import (
     DebugCapturePolicy,
     DebugExchange,
+    DebugPersistQueue,
     DebugStore,
     body_credential_prefixes,
     bounded_body_capture,
     capture_store_limit,
     credential_values,
-    offload_capture,
-    persist_debug_exchange,
     redact_headers,
     redact_query,
     redact_response_headers,
@@ -305,31 +304,10 @@ class RuntimeClient:
         # Fail-closed default: capture nothing unless production injects a scoped,
         # time-bounded policy from settings.
         self.debug_capture_policy = debug_capture_policy or DebugCapturePolicy()
-        # Detached background tasks that build + persist debug captures OFF the customer
-        # critical path (see _schedule_capture_persist). Held so they are not GC'd mid-flight.
-        self._capture_tasks: set[asyncio.Task[None]] = set()
-
-    def _schedule_capture_persist(self, capture: _UpstreamCapture) -> None:
-        """Build (off-loop) and persist a debug capture in a DETACHED background task, so a
-        slow or large upstream error response never adds latency to the customer request. The
-        customer path neither drains the unread body nor awaits sanitize/persist."""
-        store = self.debug_store
-        if store is None:
-            return
-
-        async def _run() -> None:
-            try:
-                built = await offload_capture(capture.exchange)
-                if built is not None:
-                    await persist_debug_exchange(store, built)
-            except Exception as error:
-                # Debug serialization/storage failures never affect inference, and never put
-                # payloads or raw exception text in logs — only the exception's type name.
-                _LOGGER.warning("request debug capture failed error_type=%s", type(error).__name__)
-
-        task = asyncio.create_task(_run())
-        self._capture_tasks.add(task)
-        task.add_done_callback(self._capture_tasks.discard)
+        # Persist debug captures OFF the customer critical path through a BOUNDED, non-blocking
+        # queue: the request path only enqueues and returns; a burst is dropped, not queued
+        # without bound (memory/DoS-safe). None when capture is disabled.
+        self._persist_queue = DebugPersistQueue(debug_store) if debug_store is not None else None
 
     @asynccontextmanager
     async def _debug_stream(
@@ -376,16 +354,17 @@ class RuntimeClient:
             capture.failed(error)
             raise
         finally:
-            # Persist OFF the customer critical path: schedule a detached background task and
-            # return immediately — never await sanitize/persist here (see _schedule_capture_persist).
-            self._schedule_capture_persist(capture)
+            # Persist OFF the customer critical path: enqueue on the bounded queue and return
+            # immediately — never await sanitize/persist here. A full queue drops (overload shed).
+            if self._persist_queue is not None:
+                self._persist_queue.submit(capture.exchange)
 
     async def close(self) -> None:
-        # Drain any in-flight detached capture-persist tasks on shutdown (best-effort), so a
-        # capture is not lost and no pending task is destroyed mid-flight. They never block a
-        # live request; this only waits at teardown.
-        if self._capture_tasks:
-            await asyncio.gather(*self._capture_tasks, return_exceptions=True)
+        # Drain + stop the bounded capture-persist queue on shutdown (best-effort), so a queued
+        # capture is not lost and the worker is not left pending. This only waits at teardown; it
+        # never blocks a live request.
+        if self._persist_queue is not None:
+            await self._persist_queue.aclose()
         actions = [self.federation.close()]
         if self._owns_client:
             actions.append(self.client.aclose())

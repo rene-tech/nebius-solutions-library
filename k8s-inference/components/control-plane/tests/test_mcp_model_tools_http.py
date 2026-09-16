@@ -466,6 +466,8 @@ def test_mcp_failure_classifiers_are_fixed_categories_and_coarse_code_buckets():
     assert _CODE_CATEGORY["runtime_protocol_error"] == _CAT_OUTPUT  # wrong/undecodable upstream output
     assert _CODE_CATEGORY["artifact_not_found"] == _CAT_ROUTE  # artifact not-found is not output-contract
     assert _CODE_CATEGORY["artifact_verification_failed"] == _CAT_OUTPUT
+    # Caller-side policy validation (media type / size / handle TTL) is a request error, not output.
+    assert _CODE_CATEGORY["artifact_policy_rejected"] == _CAT_INVALID
     assert _CODE_CATEGORY["artifact_content_too_large"] == _CAT_INVALID
     assert set(_CODE_CATEGORY.values()) <= {_CAT_INVALID, _CAT_ROUTE, _CAT_TOOL, _CAT_OUTPUT, _CAT_INTERNAL}
     assert "unmapped_code_xyz" not in _CODE_CATEGORY  # falls through to unknown at the call site

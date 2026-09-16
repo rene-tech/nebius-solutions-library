@@ -55,15 +55,38 @@ def native(registry):
     return replace(model, gateway=replace(model.gateway, binding=binding))
 
 
+class _CapturingRuntime:
+    """Test-only wrapper: capture is persisted OFF the customer path via a bounded background
+    queue, so it is not in the sink synchronously after invoke. This wrapper DRAINS that queue
+    after each invoke (in a finally, so it also drains after a raised failure) so a synchronous
+    assertion on the sink sees the capture. The real RuntimeClient.invoke never drains — that
+    explicit drain is test/shutdown-only."""
+
+    def __init__(self, client: RuntimeClient) -> None:
+        self._client = client
+
+    async def invoke(self, *args, **kwargs):
+        try:
+            return await self._client.invoke(*args, **kwargs)
+        finally:
+            if self._client._persist_queue is not None:
+                await self._client._persist_queue.drain()
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
+
+
 def runtime(client, sink, *, maximum=4096, federation=None):
-    return RuntimeClient(
-        activation_timeout_seconds=2,
-        runtime_timeout_seconds=2,
-        max_response_bytes=maximum,
-        client=client,
-        debug_store=sink,
-        federation=federation,
-        debug_capture_policy=_CAPTURE_POLICY,
+    return _CapturingRuntime(
+        RuntimeClient(
+            activation_timeout_seconds=2,
+            runtime_timeout_seconds=2,
+            max_response_bytes=maximum,
+            client=client,
+            debug_store=sink,
+            federation=federation,
+            debug_capture_policy=_CAPTURE_POLICY,
+        )
     )
 
 
@@ -475,6 +498,7 @@ async def test_upstream_bounded_response_does_not_store_a_boundary_credential(re
             debug_capture_policy=_CAPTURE_POLICY,
         )
         await runtime_client.invoke(registry.get("qwen3-8b"), claimed(registry), request_body)
+        await runtime_client._persist_queue.drain()  # tests only: persist is off the request path
     exchange = sink.exchanges[0]
     # A 400 rejection body is never drained off the customer path, so it is unread and
     # withheld; the echoed credential is never stored (the request copy is credential-redacted).
@@ -509,9 +533,10 @@ async def test_upstream_request_body_is_captured_bounded_not_whole(registry) -> 
             debug_capture_policy=_CAPTURE_POLICY,
         )
         await runtime_client.invoke(registry.get("qwen3-8b"), claimed(registry), big_request)
+        await runtime_client._persist_queue.drain()  # tests only: persist is off the request path
     exchange = sink.exchanges[0]
     assert exchange.request_body.observed_bytes == len(big_request)  # true length reported
-    assert exchange.request_body.truncated  # stored as a bounded prefix
+    assert exchange.request_body.truncated  # over the cap -> withheld (never a stored prefix)
     assert len(_stored(exchange.request_body)) <= cap  # never the whole request body
 
 
@@ -540,6 +565,7 @@ async def test_upstream_response_suppressed_when_request_tail_uninspected(regist
             debug_capture_policy=_CAPTURE_POLICY,
         )
         await runtime_client.invoke(registry.get("qwen3-8b"), claimed(registry), big_request)
+        await runtime_client._persist_queue.drain()  # tests only: persist is off the request path
     exchange = sink.exchanges[0]
     assert secret not in exchange.model_dump_json()  # not echoed anywhere in the row
     assert _stored(exchange.response_body) == b"[REDACTED]"  # response body withheld

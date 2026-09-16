@@ -130,13 +130,17 @@ async def capture(
 
     if telemetry_store is not None:
         app = RequestTelemetryMiddleware(app, store=telemetry_store)
-    await DebugCaptureMiddleware(
+    middleware = DebugCaptureMiddleware(
         app,
         store=store,
         persist_timeout_seconds=0.05,
         max_body_bytes=max_body_bytes,
         policy=policy or _TEST_POLICY,
-    )(scope, receive, send)
+    )
+    await middleware(scope, receive, send)
+    # Capture persists OFF the request path via a bounded queue; drain it here (tests only) so a
+    # synchronous assertion on the store sees the capture. The middleware itself never awaits it.
+    await middleware.drain()
     return store, outgoing, scope
 
 
@@ -1395,3 +1399,25 @@ async def test_retention_preflight_is_payload_free_and_preserves_within_ttl():
     # Payload-free: the serialized snapshot carries no body/header/payload content.
     dumped = preflight.model_dump_json()
     assert "sequence" not in dumped and "REDACTED" not in dumped and "response" not in dumped
+
+
+async def test_persist_queue_is_bounded_nonblocking_and_drops_on_overload():
+    """SAI-01: debug persistence is OFF the request path via a bounded, non-blocking queue.
+    submit() never blocks; when the bounded queue is full the capture is DROPPED (overload
+    shed, counted), so a burst cannot grow memory without bound. drain()/aclose() (tests/
+    shutdown only) then persist exactly the accepted captures."""
+    from fs2_serve.request_debug import DebugPersistQueue
+
+    store = InMemoryDebugStore()
+    queue = DebugPersistQueue(store, maxsize=2)
+
+    def builder() -> DebugExchange:
+        return row(id=uuid4())
+
+    # Submit a burst WITHOUT yielding to the loop, so the worker cannot drain between submits:
+    # the bounded queue accepts maxsize and drops the rest (non-blocking, never raises).
+    accepted = sum(1 for _ in range(5) if queue.submit(builder))
+    assert accepted == 2 and queue.dropped == 3
+    await queue.drain()  # tests/shutdown only
+    assert len(store.exchanges) == 2  # only the accepted (non-dropped) captures persisted
+    await queue.aclose()

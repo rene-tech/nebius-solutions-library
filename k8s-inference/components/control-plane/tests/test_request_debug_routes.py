@@ -73,6 +73,9 @@ def test_malformed_authenticated_payload_is_captured_without_a_run_or_auth_secre
         )
         assert response.status_code in {400, 422}
         assert client.get("/admin/api/v1/requests").status_code == 401
+        # Capture persists OFF the request path via a bounded queue; drain it in the app loop
+        # (tests only) so the assertion below sees it. The request path itself never awaits it.
+        client.portal.call(runtime.request_debug_persist_queue.drain)
         assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
         listing = client.get("/admin/api/v1/requests")
         assert listing.status_code == 200, listing.text
@@ -119,6 +122,8 @@ def test_denied_http_invoke_is_not_attributed_to_the_requested_model(registry, c
             headers={"authorization": f"Bearer {token.token}", "Idempotency-Key": "k" * 20},
         )
         assert denied.status_code in {401, 403}
+        # Drain the off-path capture queue in the app loop (tests only) before asserting.
+        client.portal.call(runtime.request_debug_persist_queue.drain)
         assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
         for item in client.get("/admin/api/v1/requests").json()["data"]["items"]:
             assert item["model_id"] != "qwen3-8b"  # denied request not attributed to the requested model

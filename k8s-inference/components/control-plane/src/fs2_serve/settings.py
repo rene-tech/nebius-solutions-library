@@ -249,9 +249,10 @@ class Settings(BaseSettings):
     authorization_server_url: str = "https://identity.example.invalid"
     max_request_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=256 * 1024 * 1024)
     max_response_bytes: int = Field(default=128 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
-    # Opt-in full customer transport/upstream capture for evaluation debugging.
-    # Off by default: enabling it captures complete customer payloads, so it must
-    # stay a deliberate, time-bounded operator choice rather than a standing state.
+    # Opt-in customer transport/upstream capture for evaluation debugging. Off by default:
+    # even though the request body is stored credential-REDACTED and the response body is
+    # WITHHELD entirely (never stored), enabling it records customer request content, so it
+    # must stay a deliberate, tenant-scoped, time-bounded operator choice, not a standing state.
     request_debug_enabled: bool = False
     # Hard ceiling on the stored size of each captured request/response body, and the
     # upper bound on the bytes the sanitizer ever processes for one body. It is

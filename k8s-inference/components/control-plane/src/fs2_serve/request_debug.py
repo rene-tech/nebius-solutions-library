@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import json
 import logging
 import re
@@ -940,6 +941,67 @@ async def offload_capture(builder: Callable[[], _T]) -> _T | None:
         return await asyncio.to_thread(builder)
 
 
+class DebugPersistQueue:
+    """Bounded, non-blocking background persistence for debug captures.
+
+    The request/failure path ONLY enqueues a build closure and returns immediately — it never
+    awaits sanitization or storage, so capture cannot add latency to a customer request (public,
+    MCP, or upstream). A single worker task drains the queue off-path: it sanitizes each capture
+    off the event loop (offload_capture) and persists it. The queue is BOUNDED — when it is full a
+    capture is DROPPED (overload shed, counted in ``dropped``), so a burst can neither block the
+    request path nor grow memory without bound (each queued closure holds only a bounded buffer).
+    ``drain``/``aclose`` are for TESTS and SHUTDOWN only; they must never be called on a request.
+    """
+
+    def __init__(self, store: DebugStore, *, maxsize: int = 256, persist_timeout_seconds: float = 2.0) -> None:
+        self._store = store
+        self._queue: asyncio.Queue[Callable[[], DebugExchange | None]] = asyncio.Queue(maxsize=max(1, maxsize))
+        self._worker: asyncio.Task[None] | None = None
+        self._persist_timeout_seconds = persist_timeout_seconds
+        self.dropped = 0
+
+    def submit(self, builder: Callable[[], DebugExchange | None]) -> bool:
+        """Enqueue a capture builder for background persistence. Non-blocking: returns False and
+        counts a drop if the bounded queue is full — it never blocks or awaits the caller."""
+        self._ensure_worker()
+        try:
+            self._queue.put_nowait(builder)
+            return True
+        except asyncio.QueueFull:
+            self.dropped += 1
+            return False
+
+    def _ensure_worker(self) -> None:
+        if self._worker is None or self._worker.done():
+            self._worker = asyncio.create_task(self._run())
+
+    async def _run(self) -> None:
+        while True:
+            builder = await self._queue.get()
+            try:
+                built = await offload_capture(builder)
+                if built is not None:
+                    await persist_debug_exchange(self._store, built, self._persist_timeout_seconds)
+            except Exception as error:
+                LOGGER.warning("request debug capture failed error_type=%s", type(error).__name__)
+            finally:
+                self._queue.task_done()
+
+    async def drain(self) -> None:
+        """Wait for all queued captures to be processed. TESTS/SHUTDOWN ONLY — never on a request."""
+        await self._queue.join()
+
+    async def aclose(self) -> None:
+        """Drain, then stop the worker. Shutdown only."""
+        await self.drain()
+        worker = self._worker
+        self._worker = None
+        if worker is not None:
+            worker.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await worker
+
+
 async def persist_debug_exchange(
     store: DebugStore,
     exchange: DebugExchange,
@@ -1044,16 +1106,25 @@ class DebugCaptureMiddleware:
         persist_timeout_seconds: float = 2.0,
         max_body_bytes: int | None = None,
         policy: DebugCapturePolicy | None = None,
+        persist_queue: DebugPersistQueue | None = None,
     ) -> None:
         self.app, self.store = app, store
         self.persist_timeout_seconds = persist_timeout_seconds
         self.max_body_bytes = max_body_bytes
         self.policy = policy or _DISABLED_POLICY
+        # Capture is persisted OFF the request path through a bounded, non-blocking queue: the
+        # response is never delayed by sanitize/persist, and a burst is dropped, not queued
+        # without bound. A caller may pass a shared queue (e.g. to drain it at shutdown/in tests).
+        self.persist_queue = persist_queue or DebugPersistQueue(store, persist_timeout_seconds=persist_timeout_seconds)
 
     def _store_limit(self) -> int | None:
         # Buffer the store cap plus a fixed overlap: enough to redact a credential
         # straddling the cap before truncation, but never the whole payload.
         return capture_store_limit(self.max_body_bytes)
+
+    async def drain(self) -> None:
+        """Wait for queued captures to persist. TESTS/SHUTDOWN ONLY — never on the request path."""
+        await self.persist_queue.drain()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
@@ -1254,9 +1325,10 @@ class DebugCaptureMiddleware:
                             response_body=response_body,
                         )
 
-                    exchange = await offload_capture(build_exchange)
-                    if exchange is not None:  # None => overload-withheld (load shed)
-                        await persist_debug_exchange(self.store, exchange, self.persist_timeout_seconds)
+                    # Enqueue for OFF-PATH persistence and return immediately — never await
+                    # sanitize/persist here, so the client response is never delayed. A full
+                    # bounded queue drops the capture (overload shed).
+                    self.persist_queue.submit(build_exchange)
             except Exception as error:
                 LOGGER.warning(
                     "request debug capture failed request_id=%s error_type=%s", request_id, type(error).__name__

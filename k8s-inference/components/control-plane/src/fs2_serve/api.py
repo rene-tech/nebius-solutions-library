@@ -105,7 +105,13 @@ from .models import (
     TokenView,
 )
 from .registry import OperationalModel, Registry, RegistryError
-from .request_debug import DebugCaptureMiddleware, DebugStore, InMemoryDebugStore, PostgresDebugStore
+from .request_debug import (
+    DebugCaptureMiddleware,
+    DebugPersistQueue,
+    DebugStore,
+    InMemoryDebugStore,
+    PostgresDebugStore,
+)
 from .request_debug_routes import request_debug_router
 from .request_telemetry import InMemoryRequestTelemetryStore, PostgresRequestTelemetryStore, RequestTelemetryMiddleware
 from .route_revalidation import RouteRevalidator
@@ -253,6 +259,9 @@ class AppRuntime:
     snapshot_capabilities: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     serving_snapshot_bundles: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     request_debug_store: DebugStore | None = None
+    # The bounded, off-path debug-capture persist queue, set by create_app when capture is
+    # enabled. Held so it can be drained at shutdown or in tests (never on the request path).
+    request_debug_persist_queue: DebugPersistQueue | None = None
 
     async def revalidate_routes(self) -> bool:
         if self.route_revalidator is not None and not await self.route_revalidator.refresh():
@@ -615,11 +624,15 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         allowed_origins=allowed_origins,
     )
     if runtime.settings.request_debug_enabled:
+        # One shared bounded queue: the middleware persists off the request path through it, and
+        # the runtime holds it so shutdown/tests can drain it (never the request path).
+        runtime.request_debug_persist_queue = DebugPersistQueue(debug_store)
         app.add_middleware(
             DebugCaptureMiddleware,
             store=debug_store,
             max_body_bytes=runtime.settings.request_debug_max_body_bytes,
             policy=runtime.settings.debug_capture_policy(),
+            persist_queue=runtime.request_debug_persist_queue,
         )
 
     @app.middleware("http")

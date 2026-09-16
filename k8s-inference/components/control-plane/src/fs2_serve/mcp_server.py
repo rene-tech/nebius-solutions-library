@@ -204,7 +204,8 @@ _CODE_CATEGORY = {
     "artifact_conflict": _CAT_TOOL,
     "stale_artifact_attempt": _CAT_TOOL,
     "artifact_verification_failed": _CAT_OUTPUT,
-    "artifact_policy_rejected": _CAT_OUTPUT,
+    # Caller-side policy validation (media type / size / handle TTL), not model output.
+    "artifact_policy_rejected": _CAT_INVALID,
     "artifact_content_too_large": _CAT_INVALID,
     "scientific_result_terminal": _CAT_TOOL,
 }

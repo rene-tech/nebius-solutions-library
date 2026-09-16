@@ -1,4 +1,15 @@
 /** Actual retained exchanges, separate from logical operations and their results. */
+
+/** Fixed server-origin MCP failure classification (mirrors the backend Literal enums). */
+export type MCPFailureCategory =
+  | "invalid_request"
+  | "route_unavailable"
+  | "tool_execution_failure"
+  | "output_contract_failure"
+  | "internal_failure"
+  | "unknown";
+export type MCPErrorCodeBucket = "jsonrpc_client" | "jsonrpc_server" | "tool" | "unknown";
+
 export interface DebugBody {
   encoding: "utf-8" | "base64";
   data: string;
@@ -66,8 +77,8 @@ export interface DebugExchange extends Omit<
    * (jsonrpc_client / jsonrpc_server / tool / unknown), never a raw or verbatim code.
    * Detail-only, optional so older exchanges parse.
    */
-  mcp_failure_category?: string | null;
-  mcp_error_code?: string | null;
+  mcp_failure_category?: MCPFailureCategory | null;
+  mcp_error_code?: MCPErrorCodeBucket | null;
   query_string: string;
   request_headers: [string, string][];
   response_headers: [string, string][];

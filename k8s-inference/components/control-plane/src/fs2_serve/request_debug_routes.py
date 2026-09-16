@@ -31,7 +31,8 @@ def request_debug_router(
         identity = getattr(request.state, "operator_principal", None)
         if not isinstance(identity, OperatorPrincipal):
             raise AdminProblemError(401, "operator_session_required", "operator session is required")
-        # Captured exchanges hold complete customer inputs/outputs, so reads
+        # Captured exchanges hold the credential-redacted customer request plus typed metadata
+        # (response bodies are withheld), which is still sensitive customer data, so reads
         # require ADMIN rather than the lowest operator role. Tenant scoping is
         # preserved: a tenant-scoped admin still sees only their own captures.
         tenant = await access.authorize(identity, OperatorRole.ADMIN, action="request.debug.read")
