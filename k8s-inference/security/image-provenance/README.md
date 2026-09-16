@@ -368,10 +368,20 @@ Existing Pods are never affected by the policies; only new admissions are.
   rule, and NO in-cluster VAP or webhook can make the provenance policy
   objects non-removable (a webhook configuration is equally exempt and
   fail-open besides). The NON-REMOVABLE guarantee is exclusively the
-  owner-approved EXTERNAL control: provider-held apiserver/static admission
-  configuration, IAM/RBAC without admissionregistration write or
-  impersonation grants for humans and the release identity, and out-of-band
-  WORM anchoring. In-cluster, the truthful posture is: the guard DENIES
+  owner-approved EXTERNAL control (decision #4, confirmed 2026-09-16:
+  designed and evidenced in source now, EXECUTED only at a separately
+  authorized rollout window, reversibly, with no deletion): provider-held
+  apiserver/static admission configuration, IAM/RBAC identity-path closure,
+  and out-of-band WORM anchoring. The IAM proof must cover the owner's
+  COMPLETE identity-path list for humans and the release identity — no
+  admissionregistration or protected-parameter write/delete, and none of
+  `impersonate`, ServiceAccount TOKEN creation (`serviceaccounts/token`),
+  secrets access to stored SA credentials, RBAC `bind`, or RBAC `escalate`
+  — because any one of those verbs reaches the security identity
+  indirectly and voids the boundary. The security automation consumes a
+  SIGNED, BOUNDED handoff (the rendered artifacts plus, for enforcement
+  changes, the owner-signed recovery authorization), and recovery is ONLY
+  the reversible Audit/Warn <-> Deny toggle — never deletion. In-cluster, the truthful posture is: the guard DENIES
   non-security writes to the two parameter ConfigMaps (ordinary resources
   admission fully evaluates; the ConfigMaps are DERIVED STATE, never
   authority — the renderer verifies live guard-params content against the
