@@ -924,6 +924,7 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     model_role = named[("Role", "fs2-serve-control-plane-model-controller-models")]
     assert model_role["metadata"]["namespace"] == "fs2-models"
     assert all("secrets" not in rule["resources"] for rule in model_role["rules"])
+    assert all("networkpolicies" not in rule["resources"] for rule in model_role["rules"])
     assert {
         "apiGroups": ["autoscaling"],
         "resources": ["horizontalpodautoscalers"],

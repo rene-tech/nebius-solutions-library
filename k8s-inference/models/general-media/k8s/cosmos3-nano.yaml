@@ -1335,6 +1335,7 @@ metadata:
     app.kubernetes.io/part-of: fs2-serve
     app.kubernetes.io/version: 7a312c868bcce8e40b3eb40861300a9d0ba3fde1
     fs2-serve.nebius.ai/model-id: cosmos3-nano
+    fs2-serve.nebius.ai/network-profile: gateway-dns-tcp-8080-v1
   annotations:
     fs2.nebius/cache-content-path: /model-cache/cosmos3-nano/sha256/dfa7b03382ba78d7f80703652706c3cfa777cefac48634df49345c4302af2c95/payload
     fs2.nebius/cold-cache-preflight: offline-prestaged-required
@@ -1362,6 +1363,7 @@ spec:
         app.kubernetes.io/part-of: fs2-serve
         app.kubernetes.io/version: 7a312c868bcce8e40b3eb40861300a9d0ba3fde1
         fs2-serve.nebius.ai/model-id: cosmos3-nano
+        fs2-serve.nebius.ai/network-profile: gateway-dns-tcp-8080-v1
       annotations:
         fs2.nebius/cache-content-path: /model-cache/cosmos3-nano/sha256/dfa7b03382ba78d7f80703652706c3cfa777cefac48634df49345c4302af2c95/payload
         fs2.nebius/cold-cache-preflight: offline-prestaged-required

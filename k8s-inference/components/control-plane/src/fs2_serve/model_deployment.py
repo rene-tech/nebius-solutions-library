@@ -75,6 +75,7 @@ FIELD_MANAGER = "fs2-model-controller"
 SPEC_DIGEST_ANNOTATION = "fs2-serve.nebius.ai/spec-digest"
 MODEL_DEPLOYMENT_LABEL = "fs2-serve.nebius.ai/model-deployment"
 MODEL_ID_LABEL = "fs2-serve.nebius.ai/model-id"
+NETWORK_PROFILE_LABEL = "fs2-serve.nebius.ai/network-profile"
 KUEUE_QUEUE_LABEL = "kueue.x-k8s.io/queue-name"
 KUEUE_PRIORITY_LABEL = "kueue.x-k8s.io/priority-class"
 EFFECTIVE_HOT_FLOOR_ANNOTATION = "fs2-serve.nebius.ai/effective-hot-floor"
@@ -726,8 +727,11 @@ class ModelExpressQualification(KubernetesModel):
             networks = [ip_network(cidr, strict=True) for cidr in self.coordinator_cidrs]
         except ValueError:
             raise ValueError("ModelExpress coordinator CIDR must be a canonical network") from None
-        if any(network.prefixlen == 0 for network in networks):
-            raise ValueError("ModelExpress coordinator CIDRs must not include an IPv4 or IPv6 default route")
+        if any(
+            (network.version == 4 and network.prefixlen != 32) or (network.version == 6 and network.prefixlen != 128)
+            for network in networks
+        ):
+            raise ValueError("ModelExpress coordinator CIDRs must be exact IPv4 /32 or IPv6 /128 hosts")
         normalized_cidrs = [str(network) for network in networks]
         if len(normalized_cidrs) != len(set(normalized_cidrs)):
             raise ValueError("ModelExpress coordinator CIDRs must be unique")
@@ -1801,6 +1805,7 @@ class LegacyTemplateBundle(KubernetesModel):
     runtime_container_name: str = Field(min_length=1, max_length=253, pattern=DNS_LABEL_PATTERN)
     primary_service_name: str = Field(min_length=1, max_length=63, pattern=DNS_LABEL_PATTERN)
     primary_service_port: int = Field(ge=1, le=65535)
+    runtime_egress_mode: Literal["dns", "none"] = "dns"
     resources: list[dict[str, Any]] = Field(min_length=1, max_length=255)
 
 
@@ -1883,16 +1888,38 @@ def _modelexpress_transfer_identity(
     return f"fs2:sha256:{digest_hex}", label
 
 
-def _modelexpress_peer_ports(accelerators_per_replica: int) -> list[dict[str, Any]]:
-    """Pin and allow the bounded upstream v0.5.1 per-device listener ranges."""
+def _runtime_network_profile(
+    *,
+    service_port: int,
+    egress_mode: Literal["dns", "none"],
+    qualification: ModelExpressQualification | None,
+    pool: PoolEnvelope,
+    accelerators_per_replica: int,
+) -> str:
+    """Return one finite Terraform-owned runtime network-policy profile.
 
-    ports: list[dict[str, Any]] = []
-    for base_port in (5555, 6555):
-        item: dict[str, Any] = {"protocol": "TCP", "port": base_port}
-        if accelerators_per_replica > 1:
-            item["endPort"] = base_port + accelerators_per_replica - 1
-        ports.append(item)
-    return ports
+    Ordinary and mounted-content profiles are bounded by the serving port.
+    ModelExpress profiles bind the exact reviewed qualification, accelerator,
+    backend, service port and device count.  Apps may create unbounded resource
+    names, but can only select one of these finite, non-permissive profiles.
+    """
+
+    if qualification is None:
+        mode = "dns" if egress_mode == "dns" else "zero-egress"
+        return f"gateway-{mode}-tcp-{service_port}-v1"
+    transport = qualification.pool_transports[pool.pool_id]
+    digest = hashlib.sha256(
+        canonical_json(
+            {
+                "acceleratorClass": pool.accelerator_class,
+                "acceleratorsPerReplica": accelerators_per_replica,
+                "configDigest": qualification.config_digest,
+                "nixlBackend": transport.nixl_backend,
+                "servicePort": service_port,
+            }
+        )
+    ).hexdigest()
+    return f"mx-{digest[:60]}"
 
 
 def _metric_name(model_ref: str) -> str:
@@ -2327,133 +2354,6 @@ def _configure_modelexpress_container(
     return transfer_group
 
 
-def _runtime_network_policy(
-    *,
-    context: RenderContext,
-    qualification: ModelExpressQualification | None,
-    segment_identity: str,
-    workload_name: str,
-    transfer_group: str | None,
-    accelerators_per_replica: int,
-    service_port: int,
-    runtime_selector: Mapping[str, str],
-    labels: Mapping[str, str],
-    annotations: Mapping[str, str],
-    owner_references: Sequence[Mapping[str, Any]],
-) -> dict[str, Any]:
-    """Isolate one rendered runtime and add only qualified ModelExpress flows.
-
-    Every runtime accepts serving traffic only from the canonical control-plane
-    gateway Pods and can resolve DNS only through cluster DNS. ModelExpress is
-    an optional, narrowly qualified exception for same-group peer listeners and
-    its exact coordinator; it never grants general Internet egress.
-    """
-
-    ingress: list[dict[str, Any]] = [
-        {
-            "from": [
-                {
-                    "namespaceSelector": {
-                        "matchLabels": {"kubernetes.io/metadata.name": "fs2-system"},
-                    },
-                    "podSelector": {
-                        "matchLabels": {
-                            "app.kubernetes.io/name": "fs2-serve-control-plane",
-                            "app.kubernetes.io/instance": "fs2-serve-control-plane",
-                            "app.kubernetes.io/component": "gateway",
-                        }
-                    },
-                }
-            ],
-            "ports": [{"protocol": "TCP", "port": service_port}],
-        }
-    ]
-    egress: list[dict[str, Any]] = [
-        {
-            "to": [
-                {
-                    "namespaceSelector": {
-                        "matchLabels": {"kubernetes.io/metadata.name": "kube-system"},
-                    },
-                    "podSelector": {
-                        "matchExpressions": [
-                            {
-                                "key": "k8s-app",
-                                "operator": "In",
-                                "values": ["coredns", "kube-dns"],
-                            }
-                        ]
-                    },
-                }
-            ],
-            "ports": [
-                {"protocol": "UDP", "port": 53},
-                {"protocol": "TCP", "port": 53},
-            ],
-        }
-    ]
-
-    if qualification is not None:
-        if transfer_group is None:
-            raise ValueError("ModelExpress runtime policy requires an exact transfer group")
-        peer_selector = {MODEL_EXPRESS_TRANSFER_GROUP_LABEL: transfer_group}
-        ingress.append(
-            {
-                "from": [{"podSelector": {"matchLabels": peer_selector}}],
-                "ports": _modelexpress_peer_ports(accelerators_per_replica),
-            }
-        )
-        egress.append(
-            {
-                "to": [{"podSelector": {"matchLabels": peer_selector}}],
-                "ports": _modelexpress_peer_ports(accelerators_per_replica),
-            }
-        )
-        coordinator_port = int(qualification.endpoint.rsplit(":", 1)[1])
-        if qualification.coordinator_network_type == "pod-selector":
-            assert qualification.coordinator_namespace is not None
-            coordinator_peers: list[dict[str, Any]] = [
-                {
-                    "namespaceSelector": {
-                        "matchLabels": {
-                            "kubernetes.io/metadata.name": qualification.coordinator_namespace,
-                        }
-                    },
-                    "podSelector": {
-                        "matchLabels": dict(qualification.coordinator_pod_labels),
-                    },
-                }
-            ]
-        else:
-            coordinator_peers = [{"ipBlock": {"cidr": cidr}} for cidr in qualification.coordinator_cidrs]
-        egress.append(
-            {
-                "to": coordinator_peers,
-                "ports": [{"protocol": "TCP", "port": coordinator_port}],
-            }
-        )
-
-    manifest: dict[str, Any] = {
-        "apiVersion": "networking.k8s.io/v1",
-        "kind": "NetworkPolicy",
-        "metadata": {
-            "name": _derived_name("fs2-runtime-", workload_name),
-            "namespace": context.namespace,
-            "labels": {**labels, WORKLOAD_ROLE_LABEL: segment_identity},
-            "annotations": dict(annotations),
-        },
-        "spec": {
-            "podSelector": {"matchLabels": dict(runtime_selector)},
-            "policyTypes": ["Ingress", "Egress"],
-            "ingress": ingress,
-            "egress": egress,
-        },
-    }
-    if owner_references:
-        manifest["metadata"]["ownerReferences"] = [dict(item) for item in owner_references]
-    return manifest
-
-
 def _validate_serving_snapshot_selection(
     spec: ModelDeploymentSpec,
     bundle: ServingSnapshotBundle,
@@ -2803,6 +2703,15 @@ class LegacyManifestRenderer:
                     **pod_metadata.get("labels", {}),
                     MODEL_EXPRESS_TRANSFER_GROUP_LABEL: transfer_group,
                 }
+            network_profile = _runtime_network_profile(
+                service_port=bundle.primary_service_port,
+                egress_mode=bundle.runtime_egress_mode,
+                qualification=context.model_express,
+                pool=segment.pool,
+                accelerators_per_replica=spec.placement.accelerators_per_replica,
+            )
+            workload_metadata["labels"][NETWORK_PROFILE_LABEL] = network_profile
+            pod_metadata["labels"][NETWORK_PROFILE_LABEL] = network_profile
             if mechanism is not None and mechanism in DECLARED_MECHANISMS:
                 declaration = context.mechanism_declaration(mechanism)
                 if declaration is None:
@@ -2873,29 +2782,6 @@ class LegacyManifestRenderer:
             else:
                 deployment_spec["replicas"] = segment.fixed_replicas
             rendered.append(workload)
-
-            policy_selector = {
-                MODEL_DEPLOYMENT_LABEL: bounded_label_value(context.name),
-            }
-            for selector_label in (WORKLOAD_ROLE_LABEL, MODEL_EXPRESS_TRANSFER_GROUP_LABEL):
-                selector_value = pod_metadata.get("labels", {}).get(selector_label)
-                if selector_value is not None:
-                    policy_selector[selector_label] = selector_value
-            rendered.append(
-                _runtime_network_policy(
-                    context=context,
-                    qualification=context.model_express,
-                    segment_identity=segment_identity,
-                    workload_name=workload_name,
-                    transfer_group=transfer_group,
-                    accelerators_per_replica=spec.placement.accelerators_per_replica,
-                    service_port=bundle.primary_service_port,
-                    runtime_selector=policy_selector,
-                    labels=labels,
-                    annotations=annotations,
-                    owner_references=owner_references,
-                )
-            )
 
             if not segment.autoscaled:
                 continue

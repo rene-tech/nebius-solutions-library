@@ -1055,6 +1055,13 @@ class KubernetesAdapterTests(unittest.TestCase):
         )
         self.assertEqual([], native["items"][2]["spec"]["egress"])
         self.assertEqual(["Ingress", "Egress"], native["items"][2]["spec"]["policyTypes"])
+        runtime_labels = native_deployment["spec"]["template"]["metadata"]["labels"]
+        policy_selector = native["items"][2]["spec"]["podSelector"]["matchLabels"]
+        self.assertLessEqual(policy_selector.items(), runtime_labels.items())
+        self.assertEqual(
+            "gateway-zero-egress-tcp-8000-v1",
+            runtime_labels["fs2-serve.nebius.ai/network-profile"],
+        )
         self.assertEqual(
             "gateway",
             native["items"][2]["spec"]["ingress"][0]["from"][0]["podSelector"][

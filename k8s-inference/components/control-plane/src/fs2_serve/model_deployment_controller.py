@@ -293,9 +293,6 @@ RESOURCE_ENDPOINTS = {
     ("apps/v1", "DaemonSet"): ResourceEndpoint("apps/v1", "DaemonSet", "daemonsets"),
     ("apps/v1", "Deployment"): ResourceEndpoint("apps/v1", "Deployment", "deployments"),
     ("keda.sh/v1alpha1", "ScaledObject"): ResourceEndpoint("keda.sh/v1alpha1", "ScaledObject", "scaledobjects"),
-    ("networking.k8s.io/v1", "NetworkPolicy"): ResourceEndpoint(
-        "networking.k8s.io/v1", "NetworkPolicy", "networkpolicies"
-    ),
 }
 HPA_ENDPOINT = ResourceEndpoint("autoscaling/v2", "HorizontalPodAutoscaler", "horizontalpodautoscalers")
 POD_ENDPOINT = ResourceEndpoint("v1", "Pod", "pods")

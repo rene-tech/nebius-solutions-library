@@ -222,12 +222,12 @@ run "disabled_academic_config_is_projected_as_disabled" {
   }
 }
 
-run "model_namespace_is_default_denied_after_catalog_runtime_allow_policies" {
+run "model_namespace_is_default_denied_after_finite_runtime_profiles" {
   command = plan
 
   plan_options {
     target = [
-      kubernetes_network_policy_v1.model_runtime_bootstrap,
+      kubernetes_network_policy_v1.model_runtime_base_profile,
       kubernetes_network_policy_v1.model_namespace_default_deny,
     ]
   }
@@ -243,11 +243,12 @@ run "model_namespace_is_default_denied_after_catalog_runtime_allow_policies" {
 
   assert {
     condition = (
-      kubernetes_network_policy_v1.model_runtime_bootstrap["qwen3-8b"].metadata[0].namespace == "fs2-models" &&
-      kubernetes_network_policy_v1.model_runtime_bootstrap["qwen3-8b"].spec[0].pod_selector[0].match_labels["fs2-serve.nebius.ai/model-id"] == "qwen3-8b" &&
-      toset(kubernetes_network_policy_v1.model_runtime_bootstrap["qwen3-8b"].spec[0].policy_types) == toset(["Ingress", "Egress"])
+      kubernetes_network_policy_v1.model_runtime_base_profile["gateway-zero-egress-tcp-8000-v1"].metadata[0].namespace == "fs2-models" &&
+      kubernetes_network_policy_v1.model_runtime_base_profile["gateway-zero-egress-tcp-8000-v1"].spec[0].pod_selector[0].match_labels["fs2-serve.nebius.ai/network-profile"] == "gateway-zero-egress-tcp-8000-v1" &&
+      toset(kubernetes_network_policy_v1.model_runtime_base_profile["gateway-zero-egress-tcp-8000-v1"].spec[0].policy_types) == toset(["Ingress", "Egress"]) &&
+      length(kubernetes_network_policy_v1.model_runtime_base_profile["gateway-zero-egress-tcp-8000-v1"].spec[0].egress) == 0
     )
-    error_message = "Every selected catalog runtime needs a Terraform bootstrap policy before default deny."
+    error_message = "Mounted-content runtimes need a finite Terraform profile with gateway ingress and true zero egress."
   }
 }
 

@@ -231,6 +231,122 @@ run "managed_default_cache_renders_without_storage_class" {
   }
 }
 
+run "modelexpress_uses_one_finite_terraform_owned_network_profile" {
+  command = plan
+
+  plan_options {
+    target = [kubernetes_network_policy_v1.model_runtime_modelexpress_profile]
+  }
+
+  assert {
+    condition = (
+      length(kubernetes_network_policy_v1.model_runtime_modelexpress_profile) == 1 &&
+      startswith(one(values(kubernetes_network_policy_v1.model_runtime_modelexpress_profile)).metadata[0].name, "fs2-runtime-profile-mx-") &&
+      one(values(kubernetes_network_policy_v1.model_runtime_modelexpress_profile)).spec[0].pod_selector[0].match_labels["fs2-serve.nebius.ai/network-profile"] == "mx-${substr(sha256(jsonencode({
+        acceleratorClass       = local.selected_queue_pools["nebius-b300-preemptible-1x"].accelerator_class
+        acceleratorsPerReplica = local.profile_contract.model_autoscaling_targets["qwen3-8b"].gpu_count
+        configDigest           = local.model_controller_modelexpress_bindings["qwen3-8b"].configDigest
+        nixlBackend            = local.model_controller_modelexpress_bindings["qwen3-8b"].poolTransports["nebius-b300-preemptible-1x"].nixlBackend
+        servicePort            = local.selected_routes["qwen3-8b"].service.port
+      })), 0, 60)}" &&
+      length(one(values(kubernetes_network_policy_v1.model_runtime_modelexpress_profile)).spec[0].ingress) == 2 &&
+      length(one(values(kubernetes_network_policy_v1.model_runtime_modelexpress_profile)).spec[0].egress) == 3
+    )
+    error_message = "ModelExpress must reuse one finite Terraform-owned profile rather than an App-named policy."
+  }
+}
+
+run "external_modelexpress_accepts_an_exact_ipv6_host" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.modelexpress_contract]
+  }
+
+  variables {
+    model_express = merge(var.model_express, {
+      deployment_mode = "external"
+      server_image     = null
+      external_network = {
+        coordinator_namespace  = null
+        coordinator_pod_labels = {}
+        coordinator_cidrs      = ["2001:db8::10/128"]
+      }
+    })
+  }
+
+  assert {
+    condition     = terraform_data.modelexpress_contract[0].input.deployment_mode == "external"
+    error_message = "An exact IPv6 /128 coordinator host must remain admissible."
+  }
+}
+
+run "external_modelexpress_rejects_equivalent_ipv4_default_route_pair" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.modelexpress_contract]
+  }
+
+  variables {
+    model_express = merge(var.model_express, {
+      deployment_mode = "external"
+      server_image     = null
+      external_network = {
+        coordinator_namespace  = null
+        coordinator_pod_labels = {}
+        coordinator_cidrs      = ["0.0.0.0/1", "128.0.0.0/1"]
+      }
+    })
+  }
+
+  expect_failures = [var.model_express]
+}
+
+run "external_modelexpress_rejects_ipv6_32_route" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.modelexpress_contract]
+  }
+
+  variables {
+    model_express = merge(var.model_express, {
+      deployment_mode = "external"
+      server_image     = null
+      external_network = {
+        coordinator_namespace  = null
+        coordinator_pod_labels = {}
+        coordinator_cidrs      = ["2001:db8::/32"]
+      }
+    })
+  }
+
+  expect_failures = [var.model_express]
+}
+
+run "external_modelexpress_rejects_ipv6_64_route" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.modelexpress_contract]
+  }
+
+  variables {
+    model_express = merge(var.model_express, {
+      deployment_mode = "external"
+      server_image     = null
+      external_network = {
+        coordinator_namespace  = null
+        coordinator_pod_labels = {}
+        coordinator_cidrs      = ["2001:db8::/64"]
+      }
+    })
+  }
+
+  expect_failures = [var.model_express]
+}
+
 run "disabled_pvc_renders_writable_ephemeral_cache" {
   command = plan
 

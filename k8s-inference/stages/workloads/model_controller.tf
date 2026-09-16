@@ -1080,7 +1080,10 @@ locals {
       runtimeContainerName = local.model_controller_runtime_container_names[model_id]
       primaryServiceName   = local.inventory.routes[model_id].service.name
       primaryServicePort   = local.inventory.routes[model_id].service.port
-      resources            = local.model_controller_bundle_resources[model_id]
+      runtimeEgressMode = (
+        contains(local.model_runtime_zero_egress_model_ids, model_id) ? "none" : "dns"
+      )
+      resources = local.model_controller_bundle_resources[model_id]
     }
   ]
   model_controller_cpu_configuration = {

@@ -431,6 +431,7 @@ metadata:
     app.kubernetes.io/part-of: fs2-serve
     app.kubernetes.io/version: b968826d9c46dd6066d109eabc6255188de91218
     fs2-serve.nebius.ai/model-id: qwen3-8b
+    fs2-serve.nebius.ai/network-profile: gateway-zero-egress-tcp-8000-v1
   annotations:
     fs2.nebius/cache-content-path: /models/qwen3-8b/sha256/5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d/payload
     fs2.nebius/cold-cache-preflight: offline-prestaged-required
@@ -574,16 +575,4 @@ spec:
               app.kubernetes.io/component: gateway
       ports:
         - {port: 8000, protocol: TCP}
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchExpressions:
-              - key: k8s-app
-                operator: In
-                values: [coredns, kube-dns]
-      ports:
-        - {port: 53, protocol: UDP}
-        - {port: 53, protocol: TCP}
+  egress: []

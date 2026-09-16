@@ -28,6 +28,12 @@ REPLICA_FIELD_MANAGER = "fs2-model-activation-controller"
 REPLICA_OWNERSHIP_SCHEMA = "fs2-serve.nebius.ai/replica-field-ownership/v1"
 MOUNTED_CONTENT_MODELS = frozenset({"qwen3-8b", "glm-5-2-fp8", "nv-reason-cxr-3b"})
 RUNTIME_NETWORK_POLICY_SCHEMA = "fs2-serve.nebius.ai/runtime-startup-network-policy/v1"
+RUNTIME_NETWORK_PROFILE_LABEL = "fs2-serve.nebius.ai/network-profile"
+
+
+def runtime_network_profile(record: ModelRecord, *, service_port: int = 8000) -> str:
+    mode = "zero-egress" if record.model_id in MOUNTED_CONTENT_MODELS else "dns"
+    return f"gateway-{mode}-tcp-{service_port}-v1"
 
 
 def replica_field_ownership(api_version: str, kind: str) -> dict[str, Any]:
@@ -319,7 +325,9 @@ def _metadata(record: ModelRecord, capability: BackendCapability) -> dict[str, A
             "app.kubernetes.io/name": record.model_id,
             "app.kubernetes.io/part-of": "fs2-serve",
             "app.kubernetes.io/managed-by": "fs2-serve-models",
+            "app.kubernetes.io/component": "model-runtime",
             "fs2-serve.nebius.ai/model-id": record.model_id,
+            RUNTIME_NETWORK_PROFILE_LABEL: runtime_network_profile(record),
         },
         "annotations": {
             "fs2-serve.nebius.ai/model-digest": record.digest,
@@ -445,7 +453,10 @@ def render_runtime_network_policy(
         },
         "spec": {
             "podSelector": {
-                "matchLabels": {"fs2-serve.nebius.ai/model-id": record.model_id}
+                "matchLabels": {
+                    "app.kubernetes.io/component": "model-runtime",
+                    RUNTIME_NETWORK_PROFILE_LABEL: runtime_network_profile(record),
+                }
             },
             "policyTypes": ["Ingress", "Egress"],
             "ingress": [

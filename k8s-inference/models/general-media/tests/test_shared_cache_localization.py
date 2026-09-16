@@ -53,11 +53,14 @@ def localization_config(name: str) -> dict[str, object]:
 
 
 class SharedCacheLocalizationTests(unittest.TestCase):
-    def test_static_runtime_policies_allow_only_gateway_ingress_and_cluster_dns(
+    def test_static_runtime_policies_match_pods_and_preserve_egress_profiles(
         self,
     ) -> None:
-        expected_ports = {"qwen3-8b.yaml": 8000, "cosmos3-nano.yaml": 8080}
-        for filename, service_port in expected_ports.items():
+        expected = {
+            "qwen3-8b.yaml": (8000, "gateway-zero-egress-tcp-8000-v1"),
+            "cosmos3-nano.yaml": (8080, "gateway-dns-tcp-8080-v1"),
+        }
+        for filename, (service_port, network_profile) in expected.items():
             policy = next(
                 item for item in documents(filename) if item["kind"] == "NetworkPolicy"
             )
@@ -73,6 +76,7 @@ class SharedCacheLocalizationTests(unittest.TestCase):
                 item for item in documents(filename) if item["kind"] == "Deployment"
             )
             pod_labels = deployment["spec"]["template"]["metadata"]["labels"]
+            self.assertEqual(network_profile, pod_labels["fs2-serve.nebius.ai/network-profile"])
             self.assertLessEqual(
                 policy["spec"]["podSelector"]["matchLabels"].items(),
                 pod_labels.items(),
@@ -91,16 +95,21 @@ class SharedCacheLocalizationTests(unittest.TestCase):
                 [{"port": service_port, "protocol": "TCP"}],
                 policy["spec"]["ingress"][0]["ports"],
             )
-            self.assertEqual(
-                [
-                    {
-                        "key": "k8s-app",
-                        "operator": "In",
-                        "values": ["coredns", "kube-dns"],
-                    }
-                ],
-                policy["spec"]["egress"][0]["to"][0]["podSelector"]["matchExpressions"],
-            )
+            if filename == "qwen3-8b.yaml":
+                self.assertEqual([], policy["spec"]["egress"])
+            else:
+                self.assertEqual(
+                    [
+                        {
+                            "key": "k8s-app",
+                            "operator": "In",
+                            "values": ["coredns", "kube-dns"],
+                        }
+                    ],
+                    policy["spec"]["egress"][0]["to"][0]["podSelector"][
+                        "matchExpressions"
+                    ],
+                )
             self.assertNotIn("ipBlock", json.dumps(policy["spec"]))
 
     def test_empty_cache_fails_offline_preflight_without_a_network_fallback(self) -> None:

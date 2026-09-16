@@ -207,10 +207,80 @@ variables {
     }
   }
   nvcrio_dockerconfigjson = "{\"auths\":{}}"
+
+  # A complete valid fixture lets CIDR adversaries override only the address
+  # under test. Runs that exercise the disabled state explicitly turn it off.
+  scientific_artifacts = {
+    enabled               = true
+    handle_ttl_seconds    = 600
+    max_artifact_bytes    = 1099511627776
+    retention_days        = 90
+    egress_cidrs          = ["195.242.0.14/32"]
+    media_types           = ["application/json", "chemical/x-pdb"]
+    credential_generation = 1
+    storage_contract = {
+      schema     = "fs2-serve.nebius.ai/scientific-artifact-storage/v1"
+      project_id = "project-modelexpresstest"
+      region     = "us-north1"
+      object_storage = {
+        id                = "storagebucket-scientifictest"
+        name              = "fs2-modelexpress-test-scientific-artifacts"
+        endpoint          = "https://storage.us-north1.nebius.cloud"
+        max_size_gib      = 4096
+        versioning_policy = "ENABLED"
+        storage_class     = "STANDARD"
+        addressing_style  = "path"
+        verify_tls        = true
+      }
+      writer = {
+        service_account_id = "serviceaccount-scientifictest"
+        group_id           = "group-scientifictest"
+        role               = "storage.object-editor"
+        paths              = ["scientific/v1/*"]
+        secret_delivery    = "MYSTERY_BOX"
+      }
+      layout = {
+        root             = "scientific/v1"
+        tenant_prefix    = "scientific/v1/tenants/<tenant>"
+        operation_prefix = "scientific/v1/tenants/<tenant>/operations/<operation>"
+        object_key       = "scientific/v1/tenants/<tenant>/operations/<operation>/stages/<stage>/shards/<shard>/attempts/<attempt>/<input|output>/sha256/<digest>"
+        object_uri       = "s3://fs2-modelexpress-test-scientific-artifacts/scientific/v1/tenants/<tenant>/operations/<operation>/stages/<stage>/shards/<shard>/attempts/<attempt>/<input|output>/sha256/<digest>"
+      }
+      retention = {
+        artifact_retention_days                = 90
+        abort_incomplete_multipart_upload_days = 1
+        noncurrent_version_expiration_days     = 1
+        expired_object_delete_marker           = true
+        current_object_expiration              = "application-owned"
+        lifecycle_rule_ids = [
+          "abort-incomplete-multipart-uploads",
+          "expire-noncurrent-versions",
+          "remove-expired-delete-markers",
+        ]
+      }
+      lifecycle = {
+        retention_mode     = "disposable"
+        destroy_status     = "eligible-only-while-bucket-empty"
+        destroy_completion = "full-only-when-versioned-bucket-empty"
+        adoption_status    = "not-applicable"
+        retained_ids       = null
+      }
+    }
+    object_storage_access = {
+      key_id              = "accesskey-scientifictest"
+      access_key_id       = "AJE000SCIENTIFICTEST"
+      secret_reference_id = "mysteryboxsecret-scientifictest"
+      resource_version    = 0
+    }
+  }
 }
 
 run "the_store_is_absent_from_the_chart_until_it_is_enabled" {
   command = plan
+
+  variables {
+    scientific_artifacts = merge(var.scientific_artifacts, { enabled = false })
+  }
 
   plan_options {
     target = [terraform_data.scientific_artifacts_contract]
@@ -365,6 +435,59 @@ run "storage_only_projects_the_canonical_chart_values" {
   }
 }
 
+run "scientific_artifacts_accepts_an_exact_ipv6_host" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.scientific_artifacts_contract]
+  }
+
+  variables {
+    scientific_artifacts = merge(var.scientific_artifacts, {
+      egress_cidrs = ["2001:db8::10/128"]
+    })
+  }
+
+  assert {
+    condition = (
+      join(",", terraform_data.scientific_artifacts_contract.input.chart_values.scientificArtifacts.egressCidrs) == "2001:db8::10/128"
+    )
+    error_message = "An exact IPv6 /128 object-store host must remain admissible."
+  }
+}
+
+run "scientific_artifacts_rejects_ipv6_32_routes" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.scientific_artifacts_contract]
+  }
+
+  variables {
+    scientific_artifacts = merge(var.scientific_artifacts, {
+      egress_cidrs = ["2001:db8::/32"]
+    })
+  }
+
+  expect_failures = [var.scientific_artifacts]
+}
+
+run "scientific_artifacts_rejects_ipv6_64_routes" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.scientific_artifacts_contract]
+  }
+
+  variables {
+    scientific_artifacts = merge(var.scientific_artifacts, {
+      egress_cidrs = ["2001:db8:1::/64"]
+    })
+  }
+
+  expect_failures = [var.scientific_artifacts]
+}
+
 run "the_credential_revision_is_the_only_rotation_trigger" {
   command = plan
 
@@ -495,6 +618,7 @@ run "batch_execution_without_the_store_is_refused" {
   }
 
   variables {
+    scientific_artifacts = merge(var.scientific_artifacts, { enabled = false })
     scientific_batch = {
       enabled        = true
       writes_enabled = true
@@ -517,6 +641,7 @@ run "kubernetes_writes_without_the_batch_gate_are_refused" {
   }
 
   variables {
+    scientific_artifacts = merge(var.scientific_artifacts, { enabled = false })
     scientific_batch = {
       enabled        = false
       writes_enabled = true

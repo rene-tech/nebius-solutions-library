@@ -335,7 +335,10 @@ variable "scientific_artifacts" {
         length(var.scientific_artifacts.egress_cidrs) > 0 &&
         alltrue([
           for cidr in var.scientific_artifacts.egress_cidrs :
-          can(cidrhost(cidr, 0)) && (endswith(cidr, "/32") || endswith(cidr, "/128"))
+          can(cidrhost(cidr, 0)) && (
+            (can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/32$", cidr)) && endswith(cidr, "/32")) ||
+            (strcontains(cidr, ":") && endswith(cidr, "/128"))
+          )
         ]) &&
         var.scientific_artifacts.handle_ttl_seconds >= 30 &&
         var.scientific_artifacts.handle_ttl_seconds <= 900 &&
@@ -1125,7 +1128,11 @@ variable "model_express" {
         ) &&
         alltrue([
           for cidr in var.model_express.external_network.coordinator_cidrs :
-          try("${cidrhost(cidr, 0)}/${element(split("/", cidr), 1)}" == cidr, false)
+          can(cidrhost(cidr, 0)) &&
+          try("${cidrhost(cidr, 0)}/${element(split("/", cidr), 1)}" == cidr, false) && (
+            (can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/32$", cidr)) && endswith(cidr, "/32")) ||
+            (strcontains(cidr, ":") && endswith(cidr, "/128"))
+          )
         ]) &&
         (
           var.model_express.external_network.coordinator_namespace == null ||
@@ -1193,7 +1200,7 @@ variable "model_express" {
       ),
       false,
     )
-    error_message = "enabled ModelExpress models require controller ownership, must be selected explicit vLLM runtimes using client 0.5.1, resolve one endpoint and a scoped external coordinator route, and declare fallback or an explicit qualified RDMA extended resource."
+    error_message = "enabled ModelExpress models require controller ownership, must be selected explicit vLLM runtimes using client 0.5.1, resolve one endpoint and an exact IPv4 /32 or IPv6 /128 coordinator host route, and declare fallback or an explicit qualified RDMA extended resource."
   }
 }
 

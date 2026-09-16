@@ -662,8 +662,32 @@ locals {
       )
     })
   ]
-  model_documents = [
+  network_profiled_model_documents = [
     for document in local.shared_cache_model_documents : merge(document, {
+      manifest = jsondecode(
+        document.manifest.kind == "Deployment" ?
+        jsonencode(merge(document.manifest, {
+          spec = merge(document.manifest.spec, {
+            template = merge(document.manifest.spec.template, {
+              metadata = merge(document.manifest.spec.template.metadata, {
+                labels = merge(try(document.manifest.spec.template.metadata.labels, {}), {
+                  "app.kubernetes.io/component" = "model-runtime"
+                  (local.model_runtime_network_profile_label) = format(
+                    "gateway-%s-tcp-%d-v1",
+                    contains(local.model_runtime_zero_egress_model_ids, document.model_id) ? "zero-egress" : "dns",
+                    local.selected_routes[document.model_id].service.port,
+                  )
+                })
+              })
+            })
+          })
+        })) :
+        jsonencode(document.manifest)
+      )
+    })
+  ]
+  model_documents = [
+    for document in local.network_profiled_model_documents : merge(document, {
       manifest = jsondecode(document.autoscaled ? jsonencode(merge(document.manifest, {
         spec = merge(document.manifest.spec, {
           replicas = 0

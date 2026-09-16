@@ -222,7 +222,10 @@ variable "academic_network_policy" {
   validation {
     condition = alltrue([
       for cidr in var.academic_network_policy.object_store_cidrs :
-      can(cidrhost(cidr, 0)) && (endswith(cidr, "/32") || endswith(cidr, "/128"))
+      can(cidrhost(cidr, 0)) && (
+        (can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/32$", cidr)) && endswith(cidr, "/32")) ||
+        (strcontains(cidr, ":") && endswith(cidr, "/128"))
+      )
     ])
     error_message = "academic_network_policy object-store destinations must be exact IPv4 /32 or IPv6 /128 CIDRs; default routes are forbidden."
   }

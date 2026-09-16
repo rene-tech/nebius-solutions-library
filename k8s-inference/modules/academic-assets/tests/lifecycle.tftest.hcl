@@ -256,6 +256,47 @@ run "scientific_workload_policy_rejects_internet_wide_object_store_routes" {
   expect_failures = [var.academic_network_policy]
 }
 
+run "scientific_workload_policy_rejects_ipv6_32_routes" {
+  command = plan
+
+  variables {
+    academic_network_policy = merge(var.academic_network_policy, {
+      object_store_cidrs = ["2001:db8::/32"]
+    })
+  }
+
+  expect_failures = [var.academic_network_policy]
+}
+
+run "scientific_workload_policy_rejects_ipv6_64_routes" {
+  command = plan
+
+  variables {
+    academic_network_policy = merge(var.academic_network_policy, {
+      object_store_cidrs = ["2001:db8:1::/64"]
+    })
+  }
+
+  expect_failures = [var.academic_network_policy]
+}
+
+run "scientific_workload_policy_accepts_exact_ipv6_hosts" {
+  command = plan
+
+  variables {
+    academic_network_policy = merge(var.academic_network_policy, {
+      object_store_cidrs = ["2001:db8::10/128"]
+    })
+  }
+
+  assert {
+    condition = (
+      kubernetes_network_policy_v1.academic_scientific_workloads[0].spec[0].egress[2].to[0].ip_block[0].cidr == "2001:db8::10/128"
+    )
+    error_message = "An exact IPv6 /128 object-store host must remain admissible."
+  }
+}
+
 run "delivery_invariants_are_reported_to_consumers" {
   command = plan
 
