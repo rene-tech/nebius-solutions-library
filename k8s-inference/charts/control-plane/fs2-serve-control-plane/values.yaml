@@ -81,8 +81,11 @@ modelController:
     enabled: true
     minAvailable: 1
   admission:
-    # The API-server gate is required before controller writes are enabled. It
-    # survives chart rollback and rejects pre-protocol-v2 images.
+    # The API-server gates are required before controller writes are enabled.
+    # They reject pre-protocol-v2 images and unsafe autoscaler creation. A
+    # separate, externally owned admission/RBAC boundary must protect these
+    # policies, bindings, and parameter ConfigMaps from update or deletion;
+    # Kubernetes admission policies cannot protect their own deletion.
     enabled: false
     # Additional immutable digest references explicitly approved by the
     # release owner for binary rollback. The current chart image is always

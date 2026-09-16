@@ -960,9 +960,7 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     assert policy["spec"]["matchConstraints"]["resourceRules"][0]["operations"] == ["DELETE"]
     assert "observedGeneration == oldObject.metadata.generation" in policy["spec"]["validations"][0]["expression"]
     release_policy = named[("ValidatingAdmissionPolicy", "fs2-serve-control-plane-model-controller-release")]
-    release_binding = named[
-        ("ValidatingAdmissionPolicyBinding", "fs2-serve-control-plane-model-controller-release")
-    ]
+    release_binding = named[("ValidatingAdmissionPolicyBinding", "fs2-serve-control-plane-model-controller-release")]
     assert release_policy["metadata"]["annotations"] == {"helm.sh/resource-policy": "keep"}
     assert release_binding["metadata"]["annotations"] == {"helm.sh/resource-policy": "keep"}
     assert release_policy["spec"]["failurePolicy"] == "Fail"
@@ -983,14 +981,35 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     ]
     release_expression = release_policy["spec"]["validations"][0]["expression"]
     assert "scale-ownership-protocol'] == '2'" in release_expression
-    assert f'c.image in ["{rollback_image}"]' in release_expression
+    assert "containers.size() == 1" in release_expression
+    assert "containers.all(c" in release_expression
+    assert "params.data.exists(k, params.data[k] == c.image)" in release_expression
+    release_images = named[("ConfigMap", "fs2-serve-control-plane-model-controller-release-images")]
+    assert release_images["metadata"]["annotations"] == {"helm.sh/resource-policy": "keep"}
+    assert release_images["data"] == {"current": rollback_image}
     assert release_binding["spec"] == {
         "policyName": "fs2-serve-control-plane-model-controller-release",
-        "validationActions": ["Deny"],
-        "matchResources": {
-            "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}}
+        "paramRef": {
+            "name": "fs2-serve-control-plane-model-controller-release-images",
+            "namespace": "fs2-system",
+            "parameterNotFoundAction": "Deny",
         },
+        "validationActions": ["Deny"],
+        "matchResources": {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}}},
     }
+    scale_gate = named[("ConfigMap", "fs2-model-controller-scale-gates")]
+    assert scale_gate["metadata"]["namespace"] == "fs2-models"
+    assert scale_gate["metadata"]["annotations"] == {"helm.sh/resource-policy": "keep"}
+    gate_policy = named[("ValidatingAdmissionPolicy", "fs2-serve-control-plane-model-controller-scale-gates")]
+    assert gate_policy["spec"]["paramKind"] == {"apiVersion": "v1", "kind": "ConfigMap"}
+    assert gate_policy["spec"]["validations"] == [
+        {
+            "expression": "!has(params.data) || !(object.spec.scaleTargetRef.name in params.data)",
+            "message": "fixed-scale gate blocks autoscaler targetRef creation",
+            "reason": "Forbidden",
+        }
+    ]
+    assert not any("admission-protector" in name for _, name in named)
     network = named[("NetworkPolicy", "fs2-serve-control-plane-model-controller")]
     egress = network["spec"]["egress"]
     assert next(rule for rule in egress if rule["ports"] == [{"port": 443, "protocol": "TCP"}])["to"] == [
@@ -1016,15 +1035,16 @@ def test_model_controller_release_gate_accepts_only_explicit_immutable_rollback_
         "--set",
         "networkPolicy.kubernetesApiCidrs[0]=10.0.0.1/32",
     )
-    policy = next(
+    release_images = next(
         document
         for document in documents
-        if document["kind"] == "ValidatingAdmissionPolicy"
-        and document["metadata"]["name"] == "fs2-serve-control-plane-model-controller-release"
+        if document["kind"] == "ConfigMap"
+        and document["metadata"]["name"] == "fs2-serve-control-plane-model-controller-release-images"
     )
-    expression = policy["spec"]["validations"][0]["expression"]
-    assert f'"{TEST_REPOSITORY}@{TEST_DIGEST}"' in expression
-    assert f'"{approved}"' in expression
+    assert release_images["data"] == {
+        "current": f"{TEST_REPOSITORY}@{TEST_DIGEST}",
+        "rollback-0": approved,
+    }
 
     rejected = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
         render_command(
