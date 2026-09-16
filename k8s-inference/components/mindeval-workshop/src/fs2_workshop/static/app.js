@@ -1,7 +1,10 @@
 import {PCMPlayback} from './playback.js';
+import {CommandGate, newestRun, submissionState} from './controls.js';
 
 const $ = (id) => document.getElementById(id);
 let token = '', selected = null, runs = [], polling = false, mic = null, micPending = false;
+let visibleRun = null;
+const commandGate = new CommandGate();
 const audioUrls = new Map();
 const terminal = new Set(['completed', 'failed', 'aborted']);
 const playback = new PCMPlayback(), recordings = new Set();
@@ -102,7 +105,7 @@ function fillSelect(id, values, label, initial = false) {
 function disconnect() {
   closePlayback(); playback.close(); recordings.clear();
   $('connection-status').textContent = '';
-  stopMic(true); token = ''; selected = null; runs = []; $('key').value = ''; $('workspace').hidden = true; $('login').hidden = false;
+  stopMic(true); token = ''; selected = null; visibleRun = null; runs = []; $('key').value = ''; $('workspace').hidden = true; $('login').hidden = false;
   audioUrls.forEach(URL.revokeObjectURL); audioUrls.clear(); notice('Disconnected. Submitted evaluations continue on the server.');
 }
 $('signout').onclick = disconnect;
@@ -162,18 +165,26 @@ async function refresh() {
 $('refresh').onclick = refresh;
 setInterval(refresh, 3000);
 let renderedVersion = '';
+function updateSubmissionControls() {
+  const run = visibleRun?.id === selected ? visibleRun : null;
+  const state = submissionState(run, $('role').value, commandGate.busy);
+  document.querySelectorAll('[data-action], #role, #intervention-form button, #intervention-form textarea').forEach(b => { b.disabled = state.blocked; });
+  $('say').disabled = !state.canSay;
+  $('microphone').disabled = Boolean(mic) || micPending || !state.canRecord;
+  $('auto-finish').disabled = state.blocked || Boolean(mic) || micPending || run?.state.config.mode !== 'spoken' || run?.state.config.language !== 'en';
+}
+$('role').onchange = updateSubmissionControls;
 async function showRun() {
-  const id = selected; const run = await json(`/v1/workshop/runs/${id}`); if (id !== selected) return;
+  const id = selected; const received = await json(`/v1/workshop/runs/${id}`); if (id !== selected) return;
+  const run = newestRun(visibleRun, received); visibleRun = run;
   followPlayback(run);
   $('detail').hidden = false; $('run-status').textContent = `${run.status} · ${run.id}`;
   $('run-title').textContent = `${run.state.config.profile_id} · ${run.state.config.clinician_model.split('/').pop()}`;
   const s = run.state;
   const ended = terminal.has(run.status);
-  document.querySelectorAll('[data-action], #role, #intervention-form button, #intervention-form textarea').forEach(b => { b.disabled = ended; });
+  updateSubmissionControls();
   if (ended && mic) await stopMic(true);
   const canRecord = run.status === 'takeover' && s.takeover_role === s.next_role;
-  $('microphone').disabled = Boolean(mic) || micPending || !canRecord;
-  $('auto-finish').disabled = ended || Boolean(mic) || micPending || s.config.mode !== 'spoken' || s.config.language !== 'en';
   if (s.config.mode !== 'spoken' || s.config.language !== 'en') $('auto-finish').checked = false;
   if (!mic && !micPending) $('mic-status').textContent = ended ? 'This run has ended; new messages and microphone capture are disabled.' : canRecord ? `Ready to record as ${s.takeover_role}.` : s.takeover_role ? `Waiting for the ${s.takeover_role} turn before microphone capture.` : 'Take over the current speaker to use the microphone.';
   const fingerprint = `${id}:${run.version}`; if (fingerprint === renderedVersion) return; renderedVersion = fingerprint;
@@ -203,11 +214,20 @@ async function showRun() {
   const events = await json(`/v1/workshop/runs/${id}/events`); if (selected === id) $('events').textContent = events.data.map(e => `${e.created_at} ${e.kind}\n${JSON.stringify(e.data, null, 2)}`).join('\n\n');
 }
 async function command(action, text) {
-  if (!selected) return;
-  // Stop locally before awaiting HTTP. Network latency must not delay barge-in.
-  if (action !== 'resume') { stopPlayback('Barge-in · local speech stopped; recording intervention…'); playbackBlocked = true; }
-  try { const updated = await json(`/v1/workshop/runs/${selected}/interventions`, {method: 'POST', body: JSON.stringify({action, role: $('role').value, ...(text ? {text} : {})})}); playbackVersion = updated.version; playbackBlocked = ['paused', 'takeover', 'aborted', 'failed', 'interrupted'].includes(updated.status); $('message').value = ''; await refresh(); notice(`Recorded: ${action}. This run is labeled as intervened.`); }
-  catch (error) { notice(`${error.message}. Local playback is stopped; the server intervention was not confirmed.`, true); }
+  if (!selected || commandGate.busy) return;
+  const id = selected, role = $('role').value;
+  if (action === 'say' && !submissionState(visibleRun?.id === id ? visibleRun : null, role).canSay) {
+    notice('Wait for takeover of the selected speaker before sending your typed turn.', true); return;
+  }
+  return commandGate.run(async () => {
+    // Stop locally before awaiting HTTP. Network latency must not delay barge-in.
+    if (action !== 'resume') { stopPlayback('Barge-in · local speech stopped; recording intervention…'); playbackBlocked = true; }
+    try {
+      const updated = await json(`/v1/workshop/runs/${id}/interventions`, {method: 'POST', body: JSON.stringify({action, role, ...(text ? {text} : {})})});
+      if (selected === id) { visibleRun = newestRun(visibleRun, updated); playbackVersion = updated.version; playbackBlocked = ['paused', 'takeover', 'aborted', 'failed', 'interrupted'].includes(updated.status); $('message').value = ''; }
+      await refresh(); notice(`Recorded: ${action}. This run is labeled as intervened.`);
+    } catch (error) { notice(`${error.message}. Local playback is stopped; the server intervention was not confirmed.`, true); }
+  }, updateSubmissionControls);
 }
 document.querySelectorAll('[data-action]').forEach(b => { b.onclick = () => command(b.dataset.action); });
 $('nudge').onclick = () => command('nudge', $('message').value);

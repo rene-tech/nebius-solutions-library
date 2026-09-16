@@ -31,6 +31,9 @@ async page => {
     await page.locator('#role').selectOption(role);
     const takeover = await submit(page.getByRole('button', {name: 'Take over', exact: true}), path);
     check(takeover.state.takeover_role === role, `${role} takeover persisted`);
+    await page.waitForFunction(() => document.querySelector('#run-status').textContent.startsWith('takeover') &&
+      !document.querySelector('#say').disabled, null, {timeout: 90000});
+    check(await page.locator('#role').inputValue() === role, `${role} selected and ready for typed takeover`);
     await page.locator('#message').fill(role === 'patient'
       ? 'This is a synthetic patient turn for the workshop. I would like to discuss my sleep.'
       : 'This is a synthetic clinician turn. Thank you for sharing your experience.');

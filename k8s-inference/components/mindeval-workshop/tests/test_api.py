@@ -101,3 +101,23 @@ async def test_ungranted_workflow_is_denied(api, respx_mock):
     response.headers["x-fs2-models"] = '["cosmos3-nano"]'
     respx_mock.get("http://platform/internal/ext-authz").mock(return_value=response)
     assert (await api.get("/v1/workshop/runs", headers={"Authorization": "Bearer team1"})).status_code == 403
+
+
+async def test_pending_takeover_rejects_typed_say_without_mutation(api, auth):
+    body = {"profile_ids": ["profile-000"], "patient_model": "patient", "clinician_models": ["clinician"]}
+    created = await api.post("/v1/workshop/runs", headers={**auth, "Idempotency-Key": "pending"}, json=body)
+    path = f"/v1/workshop/runs/{created.json()['data'][0]['id']}"
+    taken = await api.post(path + "/interventions", headers=auth, json={"action": "takeover", "role": "patient"})
+    assert taken.json()["status"] == "queued" and taken.json()["state"]["next_role"] == "clinician"
+    rejected = await api.post(
+        path + "/interventions", headers=auth, json={"action": "say", "role": "patient", "text": "Too early"}
+    )
+    assert rejected.status_code == 409
+    current = (await api.get(path, headers=auth)).json()
+    assert current["version"] == taken.json()["version"]
+    assert not any(turn.get("human") for turn in current["state"]["transcript"])
+    await api.post(path + "/interventions", headers=auth, json={"action": "takeover", "role": "clinician"})
+    said = await api.post(
+        path + "/interventions", headers=auth, json={"action": "say", "role": "clinician", "text": "Ready now"}
+    )
+    assert said.status_code == 200 and said.json()["state"]["transcript"][-1]["human"]
