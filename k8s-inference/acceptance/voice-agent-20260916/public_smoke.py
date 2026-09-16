@@ -1,6 +1,7 @@
 """Ordinary public grants, complete WAV and sibling ASR regression; revoke test keys."""
 
 import argparse
+import asyncio
 import base64
 import hashlib
 import io
@@ -16,6 +17,11 @@ import httpx
 
 ASR = ["nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b"]
 MAGPIE = "magpie-tts-multilingual-357m"
+VOICE_MODELS = [
+    MAGPIE,
+    "parakeet-realtime-eou-120m-v1",
+    "diar-streaming-sortformer-4spk-v2-1",
+]
 
 
 def main(args):
@@ -51,7 +57,7 @@ def main(args):
                     "name": "voice-acceptance-" + uuid4().hex[:10],
                     "tenant_id": "rene",
                     "principal_id": "rene",
-                    "models": ASR + ([MAGPIE] if args.voice else []),
+                    "models": ASR + (VOICE_MODELS if args.voice else []),
                     "scopes": [
                         "catalog.read",
                         "inference.invoke",
@@ -169,6 +175,11 @@ def main(args):
                         "artifact": artifact,
                         "stream_matches_durable_wav": True,
                     }
+                    from public_stream import run
+
+                    receipt["voice_streams"] = asyncio.run(
+                        run(args.origin, key, args.english)
+                    )
                 else:
                     denied = client.post(
                         "/v1/voice/synthesize",
