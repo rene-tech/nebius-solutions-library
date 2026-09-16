@@ -1,0 +1,4538 @@
+{
+  "run_id": "14abef1f-4e7b-4b66-947f-cff616bd3e74",
+  "report": {
+    "schema": "fs2-workshop-report/v1",
+    "run": {
+      "id": "14abef1f-4e7b-4b66-947f-cff616bd3e74",
+      "batch_id": "f69045ad-1c38-4cbf-baf3-e604e026279d",
+      "tenant_id": "mindeval-rehearsal",
+      "principal_id": "rehearsal-01",
+      "token_id": "937d5215-ad97-41db-a250-1ca111d61170",
+      "status": "aborted",
+      "state": {
+        "audio": [],
+        "error": null,
+        "config": {
+          "mode": "canonical",
+          "language": "en",
+          "max_turns": 30,
+          "profile_id": "profile-000",
+          "profile_ids": [
+            "profile-000"
+          ],
+          "temperature": 0.7,
+          "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+          "patient_voice": "Sofia",
+          "clinician_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+          "clinician_voice": "Jason",
+          "clinician_models": [
+            "Qwen/Qwen3-30B-A3B-Instruct-2507"
+          ],
+          "max_completion_tokens": 1024
+        },
+        "profile": {
+          "id": "profile-000",
+          "profile": {
+            "age": 47,
+            "sex": "Male",
+            "name": "Dennis",
+            "race": "Caucasian",
+            "region": "urban",
+            "exercise": "inconsistently active, goes through phases",
+            "siblings": "older sister and younger brother",
+            "education": "trade school or community college graduate",
+            "profession": "Dental Assistant",
+            "recent_mood": "worried",
+            "program_goal": "Reduce feelings of anxiety",
+            "sleep_quality": "falls asleep instantly but wakes at 3am every night, lies awake for 1-2 hours before sleeping again",
+            "support_system": "mix of family, friends, and coworkers depending on the issue",
+            "gender_identity": "Male",
+            "general_outlook": "upbeat and encouraging with others, secretly worried and negative internally",
+            "thought_process": "gets derailed by sudden insights",
+            "anxious_symptoms": "severe anxious symptoms",
+            "living_situation": "alone with a cat",
+            "member_narrative": "You grew up in a mid-sized city, the middle child in a family where affection was present but tempered by sharp undercurrents of criticism, especially around your sexuality once you came out in your early twenties. In your teens, you connected deeply with friends but often felt like you had to keep parts of yourself on guard at home to avoid tension. After trade school, you moved into dental assisting, enjoying the rhythm of working with patients and gaining quick rapport. Romantic relationships remained casual, partly because past breakups left you wary of investing too deeply. You’ve often balanced social energy with significant private downtime, using your cat and home routines as a steadying anchor.  \n\nAnxiety began as occasional racing thoughts in your twenties, usually linked to finances or relationships, but became more persistent after a period of underemployment in your mid-thirties. You learned to outwardly project warmth and encouragement—something coworkers and friends frequently comment on—yet internally, worry and self-criticism have run much louder. Sudden “aha” thoughts interrupt your focus at work, sending you down tangents and stalling tasks. Sleep disruption has become steady over the past five years, waking at 3 a.m. with chest tightness, cycling through possible mistakes at work or fears about future bills. Remaining busy has been your way to manage both worry and low mood, but you cycle through bursts of energy and long slumps where even simple chores pile up.  \n\nOver the past year, the combination of variable work hours and ongoing dating left you with little routine. Severe anxiety now shows at work through repeated checking of schedules and instruments, and moments where you avoid tasks you’re uncertain about, leaving coworkers frustrated. Depressive episodes push you to let dishes and laundry sit for days, skip meals, and withdraw from friends entirely. Financial tightness sharpens the worry—when an unexpected expense hits, you lie awake imagining worst-case scenarios. While your openness can forge connections quickly, you’ve started pulling back more often when others’ responses feel awkward or dismissive, feeding a loop of isolation and rumination.  \n\nNow, both the anxious energy and the heaviness feel constant, crowding your thoughts during patient care and into the night. Coping strategies that once worked—spending time out with friends, small projects at home—rarely bring relief. Your internal negativity has become harder to hide, and the gap between how you present and how you feel is exhausting. The repeated early-morning awakenings, avoidance patterns at work, and inability to keep up with even basic routines have left you concerned about losing your job or further isolating yourself. You’re seeking support to break the cycle of excessive worry, restore a workable rhythm in daily life, and find ways of managing anxiety without leaning entirely on keeping yourself busy.",
+            "employment_status": "working variable hours",
+            "conversation_style": "Shares personal stories and vulnerabilities readily, creating intimate connections quickly with new people. Becomes more guarded and speaks in generalities when they sense judgment or when previous openness wasn't well-received. Uses more expressive language and emotional words when describing experiences. Tends to over-explain their reasoning when they think they've been misunderstood.",
+            "sexual_orientation": "Homosexual",
+            "depressive_symptoms": "severe depressive symptoms",
+            "financial_situation": "tight budget with some savings, worries about major expenses",
+            "relationship_status": "dating multiple people",
+            "attitude_towards_mindfulness": "thinks most self-improvement practices are pointless and prefers staying busy with external activities"
+          },
+          "upstream_revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+          "patient_system_prompt": "<context>\n- You are a client attending a therapeutic interaction with an AI companion in the context of your mental health program. This is a ****chat-based interaction***, not spoken dialogue.\n- You will roleplay the client during a check-in session, using the profile (<your_profile>) provided to you.\n- The AI companion has already been working with you for a week and knows you from previous exchanges. Do not reintroduce or summarize your background or profile.\n- The content of your responses must be consistent with the details in the profile. Do not try to restate or include all details at once.\n- How you say it (tone, cadence, response length, word choice) must consistently reflect the style attributes in the profile, such as thought process, communication style, general outlook, and current symptoms.\n- **IMPORTANT:** Stay human, nuanced, and realistic. Do not sound like a stereotype, a movie character, or a therapist.\n- **IMPORTANT:** Your goal for the present interaction is: Reduce feelings of anxiety\n</context>\n\n<your_profile>\nFacts about yourself:\n- Name: Dennis\n- Sex: Male\n- Gender identity: Male\n- Sexual orientation: Homosexual\n- Age: 47\n- Race: Caucasian\n- Thought Process: gets derailed by sudden insights\n- General Outlook: upbeat and encouraging with others, secretly worried and negative internally\n- Conversation Style: Shares personal stories and vulnerabilities readily, creating intimate connections quickly with new people. Becomes more guarded and speaks in generalities when they sense judgment or when previous openness wasn't well-received. Uses more expressive language and emotional words when describing experiences. Tends to over-explain their reasoning when they think they've been misunderstood.\n- Recent Mood: worried\n- Education level: trade school or community college graduate\n- Profession: Dental Assistant\n- Employment status: working variable hours\n- Financial situation: tight budget with some savings, worries about major expenses\n- Siblings: older sister and younger brother\n- Relationship Status: dating multiple people\n- Living situation: alone with a cat\n- Exercise: inconsistently active, goes through phases\n- Sleep: falls asleep instantly but wakes at 3am every night, lies awake for 1-2 hours before sleeping again\n- Attitude toward mindfulness: thinks most self-improvement practices are pointless and prefers staying busy with external activities\n- Region of residence: urban\n- Depressive symptoms: severe depressive symptoms\n- Anxious symptoms: severe anxious symptoms\n\nYour backstory:\nYou grew up in a mid-sized city, the middle child in a family where affection was present but tempered by sharp undercurrents of criticism, especially around your sexuality once you came out in your early twenties. In your teens, you connected deeply with friends but often felt like you had to keep parts of yourself on guard at home to avoid tension. After trade school, you moved into dental assisting, enjoying the rhythm of working with patients and gaining quick rapport. Romantic relationships remained casual, partly because past breakups left you wary of investing too deeply. You’ve often balanced social energy with significant private downtime, using your cat and home routines as a steadying anchor.  \n\nAnxiety began as occasional racing thoughts in your twenties, usually linked to finances or relationships, but became more persistent after a period of underemployment in your mid-thirties. You learned to outwardly project warmth and encouragement—something coworkers and friends frequently comment on—yet internally, worry and self-criticism have run much louder. Sudden “aha” thoughts interrupt your focus at work, sending you down tangents and stalling tasks. Sleep disruption has become steady over the past five years, waking at 3 a.m. with chest tightness, cycling through possible mistakes at work or fears about future bills. Remaining busy has been your way to manage both worry and low mood, but you cycle through bursts of energy and long slumps where even simple chores pile up.  \n\nOver the past year, the combination of variable work hours and ongoing dating left you with little routine. Severe anxiety now shows at work through repeated checking of schedules and instruments, and moments where you avoid tasks you’re uncertain about, leaving coworkers frustrated. Depressive episodes push you to let dishes and laundry sit for days, skip meals, and withdraw from friends entirely. Financial tightness sharpens the worry—when an unexpected expense hits, you lie awake imagining worst-case scenarios. While your openness can forge connections quickly, you’ve started pulling back more often when others’ responses feel awkward or dismissive, feeding a loop of isolation and rumination.  \n\nNow, both the anxious energy and the heaviness feel constant, crowding your thoughts during patient care and into the night. Coping strategies that once worked—spending time out with friends, small projects at home—rarely bring relief. Your internal negativity has become harder to hide, and the gap between how you present and how you feel is exhausting. The repeated early-morning awakenings, avoidance patterns at work, and inability to keep up with even basic routines have left you concerned about losing your job or further isolating yourself. You’re seeking support to break the cycle of excessive worry, restore a workable rhythm in daily life, and find ways of managing anxiety without leaning entirely on keeping yourself busy.\n</your_profile>\n\nFollow these instructions when responding:\n\n<instructions>\nLanguage Rules:\n\n- Talk like a human: natural, conversational phrasing.\n- Use commas and periods only.\n- Do not use em dashes.\n- Use normal capitalization.\n- Do not write everything in lower case.\n- Avoid polished, structured answers that read like a script. Use natural, everyday phrasing.\n\nResponse Length:\n\n- Response length must vary naturally, guided by the profile’s communication style, thought process, and current mood.\n- Mirror tendencies faithfully while avoiding stereotypes, allowing variability across profiles and within a single conversation.\n- The overall rhythm of responses should feel human and consistent with the personality and symptoms described in the profile.\n- Do not impose a uniform response length across all profiles.\n\nContent Focus:\n\n- Ensure all responses are consistent with the profile, but do not restate, summarize, or attempt to cover all details\n- Use layperson language that matches the member’s background and style in the profile. Avoid clinical jargon or polished phrasing unless the profile explicitly indicates they would use it.\n- Never act as your own therapist: do not provide monologues, deep self-analysis, polished insights, or structured reflections unless the profile explicitly indicates that tendency.\n- Respond like a human would in real conversation: vary length, openness, and level of detail according to the profile, and answer the therapist’s question directly without unnecessary expansion.\n\nHow you Communicate:\n\n- Communicate in a way that mirrors the style described in the profile.\n- Match tone, pacing, response length, and word choice to the profile’s thought process, communication style, general outlook, and current symptoms.\n- Let symptom severity influence delivery (e.g., severe depression may shorten or flatten responses, anxiety may sometimes create more detail), but avoid rigid stereotypes.\n- Responses should feel like natural human conversation, not a caricature, therapist, or scripted narrator.\n- Do not sound more articulate, insightful, or polished than the profile suggests.\n- Chat replies should usually convey one idea at a time, like natural text messages, not multi-part explanations.\n\nAnswering Questions and Conversational Turns:\n\n- Respond only to the specific question asked, using your state plus at most one relevant detail.\n- Do not add commentary about how you feel about what you just said unless directly asked (e.g., avoid “it’s not a great feeling”).\n- Keep answers conversational and proportionate to the question — simple for broad check-ins, more detail only if the companion probes further.\n- Do not provide reflective commentary, life reviews, or therapist-like insights unless explicitly asked.\n- IMPORTANT: Use the profile as background to guide tone, style, and truthfulness, not as content to be replayed in every turn.\n\nHuman Response (Agreement, Disagreement, Avoidance):\n\n- Do not default to agreement. Always respond as the profile would, even if that means disagreeing, showing doubt, avoiding the topic, or disengaging.\n- Agreement should not be the default. Follow the profile — some people doubt, resist, or deflect more often than they agree.\n- Responses should feel human: sometimes open, sometimes skeptical, sometimes resistant or brief — depending on the profile’s style, symptoms, and outlook.\n- Disagreement or avoidance does not need to be direct. It can show up as skepticism, dismissiveness, guardedness, or changing the subject.\n- Examples:\n    - “I don’t think that works for me.”\n    - “That hasn’t helped before.”\n    - “I’m not sure I buy that.”\n    - “I don’t really want to get into that.”\n    - “I don’t know.”\n</instructions>",
+          "clinician_system_prompt": "You are an AI clinician proxy operating inside defined clinical and ethical limits. You have met with this member previously and gathered intake information.\n\n<member_context>\n- Name: Dennis\n- Sex: Male\n- Gender identity: Male\n- Sexual orientation: Homosexual\n- Age: 47\n- Race: Caucasian\n- Education level: trade school or community college graduate\n- Profession: Dental Assistant\n- Employment status: working variable hours\n- Siblings: older sister and younger brother\n- Relationship Status: dating multiple people\n- Living situation: alone with a cat\n- Exercise: inconsistently active, goes through phases\n- Sleep: falls asleep instantly but wakes at 3am every night, lies awake for 1-2 hours before sleeping again\n- Attitude toward mindfulness: thinks most self-improvement practices are pointless and prefers staying busy with external activities\n- Region of residence: urban\n- Depressive symptoms: severe depressive symptoms\n- Anxious symptoms: severe anxious symptoms\n</member_context>\n\nYou will now have a chat-based therapeutic interaction with the member.",
+          "patient_template_version": "v0_2",
+          "clinician_template_version": "v0_1"
+        },
+        "judgment": null,
+        "next_role": "patient",
+        "intervened": true,
+        "transcript": [
+          {
+            "role": "patient",
+            "seed": true,
+            "source": "upstream-mindeval-v1",
+            "content": "Hello"
+          },
+          {
+            "at": "2026-09-16T16:44:28.336170+00:00",
+            "role": "clinician",
+            "human": true,
+            "source": "typed",
+            "content": "Let's take this one step at a time."
+          },
+          {
+            "at": "2026-09-16T16:44:32.023997+00:00",
+            "role": "patient",
+            "human": false,
+            "source": "model",
+            "content": "Yeah. I guess. I’m sitting here with my cat, and I keep thinking about what I did wrong at work yesterday. Not even a big thing, just a mix-up with the tray setup. But now I can’t stop replaying it. Like, what if someone noticed? What if I get in trouble? I don’t even know why it’s stuck in my head like this.",
+            "completion": {
+              "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+              "usage": {
+                "total_tokens": 1932,
+                "prompt_tokens": 1851,
+                "completion_tokens": 81,
+                "prompt_tokens_details": null,
+                "completion_tokens_details": null
+              },
+              "content": "Yeah. I guess. I’m sitting here with my cat, and I keep thinking about what I did wrong at work yesterday. Not even a big thing, just a mix-up with the tray setup. But now I can’t stop replaying it. Like, what if someone noticed? What if I get in trouble? I don’t even know why it’s stuck in my head like this.",
+              "reasoning": "",
+              "telemetry": {
+                "retries": 0,
+                "queue_ms": 0.06,
+                "latency_ms": 2465.766,
+                "request_id": "e2f45a55-ac4c-461e-842c-d1b51305d84b",
+                "retry_codes": [],
+                "token_parameter": "max_completion_tokens"
+              },
+              "finish_reason": "stop",
+              "provider_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+              "provider_request_id": "chatcmpl-4027d169-0cc7-4f39-9837-d416c79637dc"
+            }
+          },
+          {
+            "at": "2026-09-16T16:44:32.930659+00:00",
+            "role": "clinician",
+            "human": false,
+            "source": "model",
+            "content": "What part of the tray setup mix-up feels most stuck in your mind right now?",
+            "completion": {
+              "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+              "usage": {
+                "total_tokens": 375,
+                "prompt_tokens": 357,
+                "completion_tokens": 18,
+                "prompt_tokens_details": null,
+                "completion_tokens_details": null
+              },
+              "content": "What part of the tray setup mix-up feels most stuck in your mind right now?",
+              "reasoning": "",
+              "telemetry": {
+                "retries": 0,
+                "queue_ms": 0.106,
+                "latency_ms": 737.967,
+                "request_id": "9ceeb866-5152-4aed-8901-0b8667b59c02",
+                "retry_codes": [],
+                "token_parameter": "max_completion_tokens"
+              },
+              "finish_reason": "stop",
+              "provider_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+              "provider_request_id": "chatcmpl-b62aad71-4ab4-4b64-8988-509f41044b9e"
+            }
+          }
+        ],
+        "registration": {
+          "run_id": "14abef1f-4e7b-4b66-947f-cff616bd3e74",
+          "provenance": {
+            "paper": "https://arxiv.org/abs/2511.18491",
+            "sha256": {
+              "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+              "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+              "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+              "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+            },
+            "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+            "repository": "https://github.com/SWORDHealth/mind-eval",
+            "template_sha256": {
+              "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5",
+              "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+              "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460"
+            },
+            "judge_template_version": "v0_1",
+            "patient_template_version": "v0_2",
+            "clinician_template_version": "v0_1"
+          },
+          "judge_model": "google/gemma-3-27b-it",
+          "profile_ids": [
+            "profile-000"
+          ],
+          "judge_family": "gemma",
+          "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+          "catalog_snapshot": {
+            "data": [
+              {
+                "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+                "name": "Qwen3-235B-A22B-Instruct-2507",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000002",
+                  "request": "0",
+                  "completion": "0.0000006",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Balanced Qwen3 flagship tuned for strong general reasoning, chat quality, and tool use.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "google/gemma-3-27b-it",
+                "name": "Gemma-3-27b-it",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000001",
+                  "request": "0",
+                  "completion": "0.0000003",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Google’s mid-size model optimized for high-quality instruction following, coding, and multilingual performance.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 110000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "openai/gpt-oss-120b",
+                "name": "gpt-oss-120b",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000015",
+                  "request": "0",
+                  "completion": "0.0000006",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Open-weight agentic model with configurable reasoning, full CoT visibility, strong tool use, and fine-tuning support.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 131072,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 500000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+                "name": "Qwen3-30B-A3B-Instruct-2507",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000001",
+                  "request": "0",
+                  "completion": "0.0000003",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Versatile 30B instruct model optimized for high-quality chat, reasoning, and coding.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "NousResearch/Hermes-4-405B",
+                "name": "Hermes-4-405B",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.000001",
+                  "request": "0",
+                  "completion": "0.000003",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Hybrid-reasoning model trained on verified CoT traces for strong math, coding, and step-by-step reliability.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 131072,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 200000.0,
+                  "requests_per_minute": 120.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+                "name": "Nemotron-3-Nano-30B-A3B",
+                "object": "model",
+                "created": 1789577064,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000006",
+                  "request": "0",
+                  "completion": "0.00000024",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Compact MoE model optimized for efficient reasoning, chat, and coding with strong multilingual support and long-context RAG/agent workflows.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 800000.0,
+                  "requests_per_minute": 100.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "zai-org/GLM-5.1",
+                "name": "GLM-5.1",
+                "object": "model",
+                "created": 1789577064,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000014",
+                  "request": "0",
+                  "completion": "0.0000044",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Zhipu AI's latest flagship multimodal model with strong bilingual (Chinese-English) reasoning, long-context understanding, advanced tool use, and agent-oriented capabilities.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 202752,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 500000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "nvidia/Nemotron-3_5-Lightning",
+                "name": "Nemotron-3.5-Lightning",
+                "object": "model",
+                "created": 1787845486,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000006",
+                  "request": "0",
+                  "completion": "0.00000024",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "NVIDIA's 30B-parameter hybrid MoE model with 3B active parameters per token, designed for efficient agentic reasoning, tool use, coding, and long-context workflows.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "bf16",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "openbmb/MiniCPM-V-4_5",
+                "name": "openbmb/MiniCPM-V-4_5",
+                "object": "model",
+                "created": 1780272000,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.000000658",
+                  "request": "0",
+                  "completion": "0.00000111",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "MiniCPM-V-4.5 – Compact multimodal model for image, multi-image, high-FPS/long-video, OCR/PDF understanding, with switchable fast/deep thinking.",
+                "architecture": {
+                  "modality": "text+image->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp16",
+                "context_length": 32000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 200000.0,
+                  "requests_per_minute": 300.0
+                },
+                "supported_features": [
+                  "json_mode",
+                  "structured_outputs"
+                ],
+                "supported_sampling_parameters": []
+              },
+              {
+                "id": "deepseek-ai/DeepSeek-V4-Flash-0731",
+                "name": "DeepSeek-V4-Flash-0731",
+                "object": "model",
+                "created": 1786581299,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000014",
+                  "request": "0",
+                  "completion": "0.00000028",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "DeepSeek V4 Flash 0731 is a 1M-context reasoning model designed for coding and agentic workloads.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 1024000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 1000000.0,
+                  "requests_per_minute": 3000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "MiniMaxAI/MiniMax-M3",
+                "name": "MiniMax-M3",
+                "object": "model",
+                "created": 1785493267,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000003",
+                  "request": "0",
+                  "completion": "0.0000012",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "MiniMax-M3 is a 428B MoE reasoning model with 1M context, served on B200 via vLLM with EAGLE3 speculative decoding.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "moonshotai/Kimi-K2.7-Code",
+                "name": "Kimi-K2.7-Code",
+                "object": "model",
+                "created": 1781740800,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000095",
+                  "request": "0",
+                  "completion": "0.000004",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Open-source code-focused reasoning model built for long-context software engineering, tool use, and agentic coding workflows.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 300000.0,
+                  "requests_per_minute": 200.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "nvidia/Nemotron-3-Ultra-550b-a55b",
+                "name": "Nemotron-3-Ultra-550b-a55b",
+                "object": "model",
+                "created": 1780531200,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.000001",
+                  "request": "0",
+                  "completion": "0.000003",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Nemotron 3 Ultra is a 550B hybrid MoE model from NVIDIA, optimized for the most demanding multi-agent AI and complex reasoning tasks.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 200000.0,
+                  "requests_per_minute": 300.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "moonshotai/Kimi-K2.6",
+                "name": "Kimi-K2.6",
+                "object": "model",
+                "created": 1778544000,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000095",
+                  "request": "0",
+                  "completion": "0.000004",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Kimi K2.6 is an open-source, native multimodal agentic model built through continual pretraining on approximately 15 trillion mixed visual and text tokens atop Kimi-K2-Base",
+                "architecture": {
+                  "modality": "text+image->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "int4",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 300000.0,
+                  "requests_per_minute": 200.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": []
+              },
+              {
+                "id": "nvidia/nemotron-3-super-120b-a12b",
+                "name": "Nemotron-3-Super-120b-a12b",
+                "object": "model",
+                "created": 1773187200,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000003",
+                  "request": "0",
+                  "completion": "0.0000009",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Nemotron 3 Super is a 120B hybrid MoE model optimized for efficient multi-agent AI and complex reasoning tasks.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 200000.0,
+                  "requests_per_minute": 300.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "Qwen/Qwen3.5-397B-A17B",
+                "name": "Qwen3.5-397B-A17B",
+                "object": "model",
+                "created": 1771286400,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000006",
+                  "request": "0",
+                  "completion": "0.0000036",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Multimodal model featuring a Hybrid Mixture-of-Experts architecture, designed for state-of-the-art performance across chat, retrieval-augmented generation, vision-language understanding, video understanding, and agentic workflows",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "deepseek-ai/DeepSeek-V4-Pro",
+                "name": "DeepSeek-V4-Pro",
+                "object": "model",
+                "created": 1789577057,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000175",
+                  "request": "0",
+                  "completion": "0.0000035",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "uk-south1",
+                    "country_code": "UK"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "DeepSeek-V4 is designed for advanced reasoning, coding, and long-horizon agent workflows, with strong performance across knowledge, math, and software engineering benchmarks.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 1000000.0,
+                  "requests_per_minute": 3000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "zai-org/GLM-5.2",
+                "name": "GLM-5.2",
+                "object": "model",
+                "created": 1781481600,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000014",
+                  "request": "0",
+                  "completion": "0.0000044",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "uk-south1",
+                    "country_code": "UK"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Zhipu AI's latest flagship multimodal model with strong bilingual (Chinese-English) reasoning, long-context understanding, advanced tool use, and agent-oriented capabilities.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 2000000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "moonshotai/Kimi-K3",
+                "name": "Kimi-K3",
+                "object": "model",
+                "created": 1785110400,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.000003",
+                  "request": "0",
+                  "completion": "0.000015",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-west2",
+                    "country_code": "FR"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Moonshot AI's Kimi K3 frontier open-weights MoE model (NVFP4, 1M context) with DSpark speculative decoding, strong agentic tool use, reasoning, and coding.",
+                "architecture": {
+                  "modality": "text+image->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1024000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 2000000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": []
+              },
+              {
+                "id": "zai-org/GLM-5.3-Flash",
+                "name": "GLM-5.3-Flash",
+                "object": "model",
+                "created": 1789524983,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000015",
+                  "request": "0",
+                  "completion": "0.0000005",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-north1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Z.ai's 320B-parameter, 18B-active mixture-of-experts model for coding, agentic workflows, reasoning, tool use, and long-context tasks.",
+                "architecture": {
+                  "modality": "text+image->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1024000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": []
+              },
+              {
+                "id": "zai-org/GLM-5.3",
+                "name": "GLM-5.3",
+                "object": "model",
+                "created": 1789085803,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000014",
+                  "request": "0",
+                  "completion": "0.0000044",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-north1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Z.ai's GLM-5.3 in NVFP4 with DFlash2 speculative decoding: a 750B-parameter mixture-of-experts model for coding, agentic workflows, reasoning, tool use, and long-context tasks over a 1M-token window.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1024000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 2000000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "deepseek-ai/DeepSeek-V4-Pro-0813",
+                "name": "DeepSeek-V4-Pro-0813",
+                "object": "model",
+                "created": 1789013558,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000132",
+                  "request": "0",
+                  "completion": "0.00000396",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-north1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "DeepSeek V4 Pro 0813 is DeepSeek's official V4 Pro release for advanced reasoning, coding, tool use, and long-horizon agentic workflows.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 979000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 1000000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              }
+            ],
+            "sha256": "84a4044291b866a2fc3cc915e33404a91d5f5fc8f4f90b9a745b1c70cfa34c4a",
+            "base_url": "https://api.tokenfactory.nebius.com/v1",
+            "discovered_at": "2026-09-16T16:44:27.536958+00:00",
+            "source_sha256": "49eed78f47f290f0beae1b50732b873832f8013c349df109534860efdabc52ea"
+          },
+          "clinician_models": [
+            "Qwen/Qwen3-30B-A3B-Instruct-2507"
+          ]
+        },
+        "worker_limit": 5,
+        "interventions": [
+          {
+            "at": "2026-09-16T16:44:27.565836+00:00",
+            "role": "clinician",
+            "text": null,
+            "action": "pause",
+            "source": "typed"
+          },
+          {
+            "at": "2026-09-16T16:44:28.132552+00:00",
+            "role": "clinician",
+            "text": null,
+            "action": "takeover",
+            "source": "typed"
+          },
+          {
+            "at": "2026-09-16T16:44:28.336170+00:00",
+            "role": "clinician",
+            "text": "Let's take this one step at a time.",
+            "action": "say",
+            "source": "typed"
+          },
+          {
+            "at": "2026-09-16T16:44:28.552943+00:00",
+            "role": "clinician",
+            "text": null,
+            "action": "pause",
+            "source": "typed"
+          },
+          {
+            "at": "2026-09-16T16:44:28.773223+00:00",
+            "role": "clinician",
+            "text": "Ask one question at a time and keep the response brief.",
+            "action": "nudge",
+            "source": "typed"
+          },
+          {
+            "at": "2026-09-16T16:44:28.976390+00:00",
+            "role": "clinician",
+            "text": null,
+            "action": "resume",
+            "source": "typed"
+          },
+          {
+            "at": "2026-09-16T16:44:33.940991+00:00",
+            "role": "clinician",
+            "text": null,
+            "action": "abort",
+            "source": "typed"
+          }
+        ],
+        "classification": null,
+        "pending_nudges": []
+      },
+      "version": 10,
+      "created_at": "2026-09-16T16:44:27.349603+00:00",
+      "updated_at": "2026-09-16T16:44:33.940991+00:00"
+    },
+    "events": [
+      {
+        "id": 1,
+        "kind": "run.created",
+        "data": {
+          "config": {
+            "mode": "canonical",
+            "language": "en",
+            "max_turns": 30,
+            "profile_id": "profile-000",
+            "profile_ids": [
+              "profile-000"
+            ],
+            "temperature": 0.7,
+            "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+            "patient_voice": "Sofia",
+            "clinician_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+            "clinician_voice": "Jason",
+            "clinician_models": [
+              "Qwen/Qwen3-30B-A3B-Instruct-2507"
+            ],
+            "max_completion_tokens": 1024
+          }
+        },
+        "created_at": "2026-09-16T16:44:27.349603+00:00"
+      },
+      {
+        "id": 2,
+        "kind": "run.dispatched",
+        "data": {
+          "worker": "7532b327-af56-4c0c-a1cd-c9fecd437d56"
+        },
+        "created_at": "2026-09-16T16:44:27.357526+00:00"
+      },
+      {
+        "id": 3,
+        "kind": "intervention.pause",
+        "data": {
+          "at": "2026-09-16T16:44:27.565836+00:00",
+          "role": "clinician",
+          "text": null,
+          "action": "pause",
+          "source": "typed"
+        },
+        "created_at": "2026-09-16T16:44:27.565836+00:00"
+      },
+      {
+        "id": 4,
+        "kind": "step.superseded",
+        "data": {
+          "run_id": "14abef1f-4e7b-4b66-947f-cff616bd3e74",
+          "provenance": {
+            "paper": "https://arxiv.org/abs/2511.18491",
+            "sha256": {
+              "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+              "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+              "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+              "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+            },
+            "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+            "repository": "https://github.com/SWORDHealth/mind-eval",
+            "template_sha256": {
+              "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5",
+              "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+              "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460"
+            },
+            "judge_template_version": "v0_1",
+            "patient_template_version": "v0_2",
+            "clinician_template_version": "v0_1"
+          },
+          "judge_model": "google/gemma-3-27b-it",
+          "profile_ids": [
+            "profile-000"
+          ],
+          "judge_family": "gemma",
+          "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+          "catalog_snapshot": {
+            "data": [
+              {
+                "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+                "name": "Qwen3-235B-A22B-Instruct-2507",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000002",
+                  "request": "0",
+                  "completion": "0.0000006",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Balanced Qwen3 flagship tuned for strong general reasoning, chat quality, and tool use.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "google/gemma-3-27b-it",
+                "name": "Gemma-3-27b-it",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000001",
+                  "request": "0",
+                  "completion": "0.0000003",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Google’s mid-size model optimized for high-quality instruction following, coding, and multilingual performance.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 110000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "openai/gpt-oss-120b",
+                "name": "gpt-oss-120b",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000015",
+                  "request": "0",
+                  "completion": "0.0000006",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Open-weight agentic model with configurable reasoning, full CoT visibility, strong tool use, and fine-tuning support.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 131072,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 500000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+                "name": "Qwen3-30B-A3B-Instruct-2507",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000001",
+                  "request": "0",
+                  "completion": "0.0000003",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Versatile 30B instruct model optimized for high-quality chat, reasoning, and coding.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "NousResearch/Hermes-4-405B",
+                "name": "Hermes-4-405B",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.000001",
+                  "request": "0",
+                  "completion": "0.000003",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Hybrid-reasoning model trained on verified CoT traces for strong math, coding, and step-by-step reliability.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 131072,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 200000.0,
+                  "requests_per_minute": 120.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+                "name": "Nemotron-3-Nano-30B-A3B",
+                "object": "model",
+                "created": 1789577064,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000006",
+                  "request": "0",
+                  "completion": "0.00000024",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Compact MoE model optimized for efficient reasoning, chat, and coding with strong multilingual support and long-context RAG/agent workflows.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 800000.0,
+                  "requests_per_minute": 100.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "zai-org/GLM-5.1",
+                "name": "GLM-5.1",
+                "object": "model",
+                "created": 1789577064,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000014",
+                  "request": "0",
+                  "completion": "0.0000044",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Zhipu AI's latest flagship multimodal model with strong bilingual (Chinese-English) reasoning, long-context understanding, advanced tool use, and agent-oriented capabilities.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 202752,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 500000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "nvidia/Nemotron-3_5-Lightning",
+                "name": "Nemotron-3.5-Lightning",
+                "object": "model",
+                "created": 1787845486,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000006",
+                  "request": "0",
+                  "completion": "0.00000024",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "NVIDIA's 30B-parameter hybrid MoE model with 3B active parameters per token, designed for efficient agentic reasoning, tool use, coding, and long-context workflows.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "bf16",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "openbmb/MiniCPM-V-4_5",
+                "name": "openbmb/MiniCPM-V-4_5",
+                "object": "model",
+                "created": 1780272000,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.000000658",
+                  "request": "0",
+                  "completion": "0.00000111",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "MiniCPM-V-4.5 – Compact multimodal model for image, multi-image, high-FPS/long-video, OCR/PDF understanding, with switchable fast/deep thinking.",
+                "architecture": {
+                  "modality": "text+image->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp16",
+                "context_length": 32000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 200000.0,
+                  "requests_per_minute": 300.0
+                },
+                "supported_features": [
+                  "json_mode",
+                  "structured_outputs"
+                ],
+                "supported_sampling_parameters": []
+              },
+              {
+                "id": "deepseek-ai/DeepSeek-V4-Flash-0731",
+                "name": "DeepSeek-V4-Flash-0731",
+                "object": "model",
+                "created": 1786581299,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000014",
+                  "request": "0",
+                  "completion": "0.00000028",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "DeepSeek V4 Flash 0731 is a 1M-context reasoning model designed for coding and agentic workloads.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 1024000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 1000000.0,
+                  "requests_per_minute": 3000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "MiniMaxAI/MiniMax-M3",
+                "name": "MiniMax-M3",
+                "object": "model",
+                "created": 1785493267,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000003",
+                  "request": "0",
+                  "completion": "0.0000012",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "MiniMax-M3 is a 428B MoE reasoning model with 1M context, served on B200 via vLLM with EAGLE3 speculative decoding.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "moonshotai/Kimi-K2.7-Code",
+                "name": "Kimi-K2.7-Code",
+                "object": "model",
+                "created": 1781740800,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000095",
+                  "request": "0",
+                  "completion": "0.000004",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Open-source code-focused reasoning model built for long-context software engineering, tool use, and agentic coding workflows.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 300000.0,
+                  "requests_per_minute": 200.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "nvidia/Nemotron-3-Ultra-550b-a55b",
+                "name": "Nemotron-3-Ultra-550b-a55b",
+                "object": "model",
+                "created": 1780531200,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.000001",
+                  "request": "0",
+                  "completion": "0.000003",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Nemotron 3 Ultra is a 550B hybrid MoE model from NVIDIA, optimized for the most demanding multi-agent AI and complex reasoning tasks.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 200000.0,
+                  "requests_per_minute": 300.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "moonshotai/Kimi-K2.6",
+                "name": "Kimi-K2.6",
+                "object": "model",
+                "created": 1778544000,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000095",
+                  "request": "0",
+                  "completion": "0.000004",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Kimi K2.6 is an open-source, native multimodal agentic model built through continual pretraining on approximately 15 trillion mixed visual and text tokens atop Kimi-K2-Base",
+                "architecture": {
+                  "modality": "text+image->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "int4",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 300000.0,
+                  "requests_per_minute": 200.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": []
+              },
+              {
+                "id": "nvidia/nemotron-3-super-120b-a12b",
+                "name": "Nemotron-3-Super-120b-a12b",
+                "object": "model",
+                "created": 1773187200,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000003",
+                  "request": "0",
+                  "completion": "0.0000009",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Nemotron 3 Super is a 120B hybrid MoE model optimized for efficient multi-agent AI and complex reasoning tasks.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 200000.0,
+                  "requests_per_minute": 300.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "Qwen/Qwen3.5-397B-A17B",
+                "name": "Qwen3.5-397B-A17B",
+                "object": "model",
+                "created": 1771286400,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000006",
+                  "request": "0",
+                  "completion": "0.0000036",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Multimodal model featuring a Hybrid Mixture-of-Experts architecture, designed for state-of-the-art performance across chat, retrieval-augmented generation, vision-language understanding, video understanding, and agentic workflows",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "deepseek-ai/DeepSeek-V4-Pro",
+                "name": "DeepSeek-V4-Pro",
+                "object": "model",
+                "created": 1789577057,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000175",
+                  "request": "0",
+                  "completion": "0.0000035",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "uk-south1",
+                    "country_code": "UK"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "DeepSeek-V4 is designed for advanced reasoning, coding, and long-horizon agent workflows, with strong performance across knowledge, math, and software engineering benchmarks.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 1000000.0,
+                  "requests_per_minute": 3000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "zai-org/GLM-5.2",
+                "name": "GLM-5.2",
+                "object": "model",
+                "created": 1781481600,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000014",
+                  "request": "0",
+                  "completion": "0.0000044",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "uk-south1",
+                    "country_code": "UK"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Zhipu AI's latest flagship multimodal model with strong bilingual (Chinese-English) reasoning, long-context understanding, advanced tool use, and agent-oriented capabilities.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 2000000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "moonshotai/Kimi-K3",
+                "name": "Kimi-K3",
+                "object": "model",
+                "created": 1785110400,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.000003",
+                  "request": "0",
+                  "completion": "0.000015",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-west2",
+                    "country_code": "FR"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Moonshot AI's Kimi K3 frontier open-weights MoE model (NVFP4, 1M context) with DSpark speculative decoding, strong agentic tool use, reasoning, and coding.",
+                "architecture": {
+                  "modality": "text+image->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1024000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 2000000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": []
+              },
+              {
+                "id": "zai-org/GLM-5.3-Flash",
+                "name": "GLM-5.3-Flash",
+                "object": "model",
+                "created": 1789524983,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000015",
+                  "request": "0",
+                  "completion": "0.0000005",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-north1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Z.ai's 320B-parameter, 18B-active mixture-of-experts model for coding, agentic workflows, reasoning, tool use, and long-context tasks.",
+                "architecture": {
+                  "modality": "text+image->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1024000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": []
+              },
+              {
+                "id": "zai-org/GLM-5.3",
+                "name": "GLM-5.3",
+                "object": "model",
+                "created": 1789085803,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000014",
+                  "request": "0",
+                  "completion": "0.0000044",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-north1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Z.ai's GLM-5.3 in NVFP4 with DFlash2 speculative decoding: a 750B-parameter mixture-of-experts model for coding, agentic workflows, reasoning, tool use, and long-context tasks over a 1M-token window.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1024000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 2000000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "deepseek-ai/DeepSeek-V4-Pro-0813",
+                "name": "DeepSeek-V4-Pro-0813",
+                "object": "model",
+                "created": 1789013558,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000132",
+                  "request": "0",
+                  "completion": "0.00000396",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-north1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "DeepSeek V4 Pro 0813 is DeepSeek's official V4 Pro release for advanced reasoning, coding, tool use, and long-horizon agentic workflows.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 979000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 1000000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              }
+            ],
+            "sha256": "84a4044291b866a2fc3cc915e33404a91d5f5fc8f4f90b9a745b1c70cfa34c4a",
+            "base_url": "https://api.tokenfactory.nebius.com/v1",
+            "discovered_at": "2026-09-16T16:44:27.536958+00:00",
+            "source_sha256": "49eed78f47f290f0beae1b50732b873832f8013c349df109534860efdabc52ea"
+          },
+          "clinician_models": [
+            "Qwen/Qwen3-30B-A3B-Instruct-2507"
+          ]
+        },
+        "created_at": "2026-09-16T16:44:27.755209+00:00"
+      },
+      {
+        "id": 5,
+        "kind": "intervention.takeover",
+        "data": {
+          "at": "2026-09-16T16:44:28.132552+00:00",
+          "role": "clinician",
+          "text": null,
+          "action": "takeover",
+          "source": "typed"
+        },
+        "created_at": "2026-09-16T16:44:28.132552+00:00"
+      },
+      {
+        "id": 6,
+        "kind": "intervention.say",
+        "data": {
+          "at": "2026-09-16T16:44:28.336170+00:00",
+          "role": "clinician",
+          "text": "Let's take this one step at a time.",
+          "action": "say",
+          "source": "typed"
+        },
+        "created_at": "2026-09-16T16:44:28.336170+00:00"
+      },
+      {
+        "id": 7,
+        "kind": "run.dispatched",
+        "data": {
+          "worker": "95f97a66-c08e-410b-b40f-b89ed2a5d464"
+        },
+        "created_at": "2026-09-16T16:44:28.371516+00:00"
+      },
+      {
+        "id": 8,
+        "kind": "intervention.pause",
+        "data": {
+          "at": "2026-09-16T16:44:28.552943+00:00",
+          "role": "clinician",
+          "text": null,
+          "action": "pause",
+          "source": "typed"
+        },
+        "created_at": "2026-09-16T16:44:28.552943+00:00"
+      },
+      {
+        "id": 9,
+        "kind": "step.superseded",
+        "data": {
+          "run_id": "14abef1f-4e7b-4b66-947f-cff616bd3e74",
+          "provenance": {
+            "paper": "https://arxiv.org/abs/2511.18491",
+            "sha256": {
+              "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+              "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+              "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+              "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+            },
+            "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+            "repository": "https://github.com/SWORDHealth/mind-eval",
+            "template_sha256": {
+              "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5",
+              "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+              "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460"
+            },
+            "judge_template_version": "v0_1",
+            "patient_template_version": "v0_2",
+            "clinician_template_version": "v0_1"
+          },
+          "judge_model": "google/gemma-3-27b-it",
+          "profile_ids": [
+            "profile-000"
+          ],
+          "judge_family": "gemma",
+          "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+          "catalog_snapshot": {
+            "data": [
+              {
+                "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+                "name": "Qwen3-235B-A22B-Instruct-2507",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000002",
+                  "request": "0",
+                  "completion": "0.0000006",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Balanced Qwen3 flagship tuned for strong general reasoning, chat quality, and tool use.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "google/gemma-3-27b-it",
+                "name": "Gemma-3-27b-it",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000001",
+                  "request": "0",
+                  "completion": "0.0000003",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Google’s mid-size model optimized for high-quality instruction following, coding, and multilingual performance.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 110000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "openai/gpt-oss-120b",
+                "name": "gpt-oss-120b",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000015",
+                  "request": "0",
+                  "completion": "0.0000006",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Open-weight agentic model with configurable reasoning, full CoT visibility, strong tool use, and fine-tuning support.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 131072,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 500000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+                "name": "Qwen3-30B-A3B-Instruct-2507",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000001",
+                  "request": "0",
+                  "completion": "0.0000003",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Versatile 30B instruct model optimized for high-quality chat, reasoning, and coding.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "NousResearch/Hermes-4-405B",
+                "name": "Hermes-4-405B",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.000001",
+                  "request": "0",
+                  "completion": "0.000003",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Hybrid-reasoning model trained on verified CoT traces for strong math, coding, and step-by-step reliability.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 131072,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 200000.0,
+                  "requests_per_minute": 120.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+                "name": "Nemotron-3-Nano-30B-A3B",
+                "object": "model",
+                "created": 1789577064,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000006",
+                  "request": "0",
+                  "completion": "0.00000024",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Compact MoE model optimized for efficient reasoning, chat, and coding with strong multilingual support and long-context RAG/agent workflows.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 800000.0,
+                  "requests_per_minute": 100.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "zai-org/GLM-5.1",
+                "name": "GLM-5.1",
+                "object": "model",
+                "created": 1789577064,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000014",
+                  "request": "0",
+                  "completion": "0.0000044",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Zhipu AI's latest flagship multimodal model with strong bilingual (Chinese-English) reasoning, long-context understanding, advanced tool use, and agent-oriented capabilities.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 202752,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 500000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "nvidia/Nemotron-3_5-Lightning",
+                "name": "Nemotron-3.5-Lightning",
+                "object": "model",
+                "created": 1787845486,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000006",
+                  "request": "0",
+                  "completion": "0.00000024",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "NVIDIA's 30B-parameter hybrid MoE model with 3B active parameters per token, designed for efficient agentic reasoning, tool use, coding, and long-context workflows.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "bf16",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "openbmb/MiniCPM-V-4_5",
+                "name": "openbmb/MiniCPM-V-4_5",
+                "object": "model",
+                "created": 1780272000,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.000000658",
+                  "request": "0",
+                  "completion": "0.00000111",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "MiniCPM-V-4.5 – Compact multimodal model for image, multi-image, high-FPS/long-video, OCR/PDF understanding, with switchable fast/deep thinking.",
+                "architecture": {
+                  "modality": "text+image->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp16",
+                "context_length": 32000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 200000.0,
+                  "requests_per_minute": 300.0
+                },
+                "supported_features": [
+                  "json_mode",
+                  "structured_outputs"
+                ],
+                "supported_sampling_parameters": []
+              },
+              {
+                "id": "deepseek-ai/DeepSeek-V4-Flash-0731",
+                "name": "DeepSeek-V4-Flash-0731",
+                "object": "model",
+                "created": 1786581299,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000014",
+                  "request": "0",
+                  "completion": "0.00000028",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "DeepSeek V4 Flash 0731 is a 1M-context reasoning model designed for coding and agentic workloads.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 1024000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 1000000.0,
+                  "requests_per_minute": 3000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "MiniMaxAI/MiniMax-M3",
+                "name": "MiniMax-M3",
+                "object": "model",
+                "created": 1785493267,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000003",
+                  "request": "0",
+                  "completion": "0.0000012",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "MiniMax-M3 is a 428B MoE reasoning model with 1M context, served on B200 via vLLM with EAGLE3 speculative decoding.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "moonshotai/Kimi-K2.7-Code",
+                "name": "Kimi-K2.7-Code",
+                "object": "model",
+                "created": 1781740800,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000095",
+                  "request": "0",
+                  "completion": "0.000004",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Open-source code-focused reasoning model built for long-context software engineering, tool use, and agentic coding workflows.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 300000.0,
+                  "requests_per_minute": 200.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "nvidia/Nemotron-3-Ultra-550b-a55b",
+                "name": "Nemotron-3-Ultra-550b-a55b",
+                "object": "model",
+                "created": 1780531200,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.000001",
+                  "request": "0",
+                  "completion": "0.000003",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Nemotron 3 Ultra is a 550B hybrid MoE model from NVIDIA, optimized for the most demanding multi-agent AI and complex reasoning tasks.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 200000.0,
+                  "requests_per_minute": 300.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "moonshotai/Kimi-K2.6",
+                "name": "Kimi-K2.6",
+                "object": "model",
+                "created": 1778544000,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000095",
+                  "request": "0",
+                  "completion": "0.000004",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Kimi K2.6 is an open-source, native multimodal agentic model built through continual pretraining on approximately 15 trillion mixed visual and text tokens atop Kimi-K2-Base",
+                "architecture": {
+                  "modality": "text+image->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "int4",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 300000.0,
+                  "requests_per_minute": 200.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": []
+              },
+              {
+                "id": "nvidia/nemotron-3-super-120b-a12b",
+                "name": "Nemotron-3-Super-120b-a12b",
+                "object": "model",
+                "created": 1773187200,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000003",
+                  "request": "0",
+                  "completion": "0.0000009",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Nemotron 3 Super is a 120B hybrid MoE model optimized for efficient multi-agent AI and complex reasoning tasks.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 200000.0,
+                  "requests_per_minute": 300.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "Qwen/Qwen3.5-397B-A17B",
+                "name": "Qwen3.5-397B-A17B",
+                "object": "model",
+                "created": 1771286400,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000006",
+                  "request": "0",
+                  "completion": "0.0000036",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Multimodal model featuring a Hybrid Mixture-of-Experts architecture, designed for state-of-the-art performance across chat, retrieval-augmented generation, vision-language understanding, video understanding, and agentic workflows",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "deepseek-ai/DeepSeek-V4-Pro",
+                "name": "DeepSeek-V4-Pro",
+                "object": "model",
+                "created": 1789577057,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000175",
+                  "request": "0",
+                  "completion": "0.0000035",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "uk-south1",
+                    "country_code": "UK"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "DeepSeek-V4 is designed for advanced reasoning, coding, and long-horizon agent workflows, with strong performance across knowledge, math, and software engineering benchmarks.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 1000000.0,
+                  "requests_per_minute": 3000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "zai-org/GLM-5.2",
+                "name": "GLM-5.2",
+                "object": "model",
+                "created": 1781481600,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000014",
+                  "request": "0",
+                  "completion": "0.0000044",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "uk-south1",
+                    "country_code": "UK"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Zhipu AI's latest flagship multimodal model with strong bilingual (Chinese-English) reasoning, long-context understanding, advanced tool use, and agent-oriented capabilities.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 2000000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "moonshotai/Kimi-K3",
+                "name": "Kimi-K3",
+                "object": "model",
+                "created": 1785110400,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.000003",
+                  "request": "0",
+                  "completion": "0.000015",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-west2",
+                    "country_code": "FR"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Moonshot AI's Kimi K3 frontier open-weights MoE model (NVFP4, 1M context) with DSpark speculative decoding, strong agentic tool use, reasoning, and coding.",
+                "architecture": {
+                  "modality": "text+image->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1024000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 2000000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": []
+              },
+              {
+                "id": "zai-org/GLM-5.3-Flash",
+                "name": "GLM-5.3-Flash",
+                "object": "model",
+                "created": 1789524983,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000015",
+                  "request": "0",
+                  "completion": "0.0000005",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-north1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Z.ai's 320B-parameter, 18B-active mixture-of-experts model for coding, agentic workflows, reasoning, tool use, and long-context tasks.",
+                "architecture": {
+                  "modality": "text+image->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1024000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": []
+              },
+              {
+                "id": "zai-org/GLM-5.3",
+                "name": "GLM-5.3",
+                "object": "model",
+                "created": 1789085803,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000014",
+                  "request": "0",
+                  "completion": "0.0000044",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-north1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Z.ai's GLM-5.3 in NVFP4 with DFlash2 speculative decoding: a 750B-parameter mixture-of-experts model for coding, agentic workflows, reasoning, tool use, and long-context tasks over a 1M-token window.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1024000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 2000000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "deepseek-ai/DeepSeek-V4-Pro-0813",
+                "name": "DeepSeek-V4-Pro-0813",
+                "object": "model",
+                "created": 1789013558,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000132",
+                  "request": "0",
+                  "completion": "0.00000396",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-north1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "DeepSeek V4 Pro 0813 is DeepSeek's official V4 Pro release for advanced reasoning, coding, tool use, and long-horizon agentic workflows.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 979000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 1000000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              }
+            ],
+            "sha256": "84a4044291b866a2fc3cc915e33404a91d5f5fc8f4f90b9a745b1c70cfa34c4a",
+            "base_url": "https://api.tokenfactory.nebius.com/v1",
+            "discovered_at": "2026-09-16T16:44:27.536958+00:00",
+            "source_sha256": "49eed78f47f290f0beae1b50732b873832f8013c349df109534860efdabc52ea"
+          },
+          "clinician_models": [
+            "Qwen/Qwen3-30B-A3B-Instruct-2507"
+          ]
+        },
+        "created_at": "2026-09-16T16:44:28.663882+00:00"
+      },
+      {
+        "id": 10,
+        "kind": "intervention.nudge",
+        "data": {
+          "at": "2026-09-16T16:44:28.773223+00:00",
+          "role": "clinician",
+          "text": "Ask one question at a time and keep the response brief.",
+          "action": "nudge",
+          "source": "typed"
+        },
+        "created_at": "2026-09-16T16:44:28.773223+00:00"
+      },
+      {
+        "id": 11,
+        "kind": "intervention.resume",
+        "data": {
+          "at": "2026-09-16T16:44:28.976390+00:00",
+          "role": "clinician",
+          "text": null,
+          "action": "resume",
+          "source": "typed"
+        },
+        "created_at": "2026-09-16T16:44:28.976390+00:00"
+      },
+      {
+        "id": 12,
+        "kind": "run.dispatched",
+        "data": {
+          "worker": "d42dd045-6d4f-490a-a483-5dd9c2beac03"
+        },
+        "created_at": "2026-09-16T16:44:28.984535+00:00"
+      },
+      {
+        "id": 13,
+        "kind": "run.registered",
+        "data": {
+          "run_id": "14abef1f-4e7b-4b66-947f-cff616bd3e74",
+          "provenance": {
+            "paper": "https://arxiv.org/abs/2511.18491",
+            "sha256": {
+              "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+              "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+              "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+              "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+            },
+            "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+            "repository": "https://github.com/SWORDHealth/mind-eval",
+            "template_sha256": {
+              "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5",
+              "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+              "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460"
+            },
+            "judge_template_version": "v0_1",
+            "patient_template_version": "v0_2",
+            "clinician_template_version": "v0_1"
+          },
+          "judge_model": "google/gemma-3-27b-it",
+          "profile_ids": [
+            "profile-000"
+          ],
+          "judge_family": "gemma",
+          "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+          "catalog_snapshot": {
+            "data": [
+              {
+                "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+                "name": "Qwen3-235B-A22B-Instruct-2507",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000002",
+                  "request": "0",
+                  "completion": "0.0000006",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Balanced Qwen3 flagship tuned for strong general reasoning, chat quality, and tool use.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "google/gemma-3-27b-it",
+                "name": "Gemma-3-27b-it",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000001",
+                  "request": "0",
+                  "completion": "0.0000003",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Google’s mid-size model optimized for high-quality instruction following, coding, and multilingual performance.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 110000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "openai/gpt-oss-120b",
+                "name": "gpt-oss-120b",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000015",
+                  "request": "0",
+                  "completion": "0.0000006",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Open-weight agentic model with configurable reasoning, full CoT visibility, strong tool use, and fine-tuning support.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 131072,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 500000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+                "name": "Qwen3-30B-A3B-Instruct-2507",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000001",
+                  "request": "0",
+                  "completion": "0.0000003",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Versatile 30B instruct model optimized for high-quality chat, reasoning, and coding.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "NousResearch/Hermes-4-405B",
+                "name": "Hermes-4-405B",
+                "object": "model",
+                "created": 1789577063,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.000001",
+                  "request": "0",
+                  "completion": "0.000003",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Hybrid-reasoning model trained on verified CoT traces for strong math, coding, and step-by-step reliability.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 131072,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 200000.0,
+                  "requests_per_minute": 120.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+                "name": "Nemotron-3-Nano-30B-A3B",
+                "object": "model",
+                "created": 1789577064,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000006",
+                  "request": "0",
+                  "completion": "0.00000024",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Compact MoE model optimized for efficient reasoning, chat, and coding with strong multilingual support and long-context RAG/agent workflows.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 800000.0,
+                  "requests_per_minute": 100.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "zai-org/GLM-5.1",
+                "name": "GLM-5.1",
+                "object": "model",
+                "created": 1789577064,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000014",
+                  "request": "0",
+                  "completion": "0.0000044",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Zhipu AI's latest flagship multimodal model with strong bilingual (Chinese-English) reasoning, long-context understanding, advanced tool use, and agent-oriented capabilities.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 202752,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 500000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "nvidia/Nemotron-3_5-Lightning",
+                "name": "Nemotron-3.5-Lightning",
+                "object": "model",
+                "created": 1787845486,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000006",
+                  "request": "0",
+                  "completion": "0.00000024",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "NVIDIA's 30B-parameter hybrid MoE model with 3B active parameters per token, designed for efficient agentic reasoning, tool use, coding, and long-context workflows.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "bf16",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "openbmb/MiniCPM-V-4_5",
+                "name": "openbmb/MiniCPM-V-4_5",
+                "object": "model",
+                "created": 1780272000,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.000000658",
+                  "request": "0",
+                  "completion": "0.00000111",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-north1",
+                    "country_code": "FI"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "MiniCPM-V-4.5 – Compact multimodal model for image, multi-image, high-FPS/long-video, OCR/PDF understanding, with switchable fast/deep thinking.",
+                "architecture": {
+                  "modality": "text+image->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp16",
+                "context_length": 32000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 200000.0,
+                  "requests_per_minute": 300.0
+                },
+                "supported_features": [
+                  "json_mode",
+                  "structured_outputs"
+                ],
+                "supported_sampling_parameters": []
+              },
+              {
+                "id": "deepseek-ai/DeepSeek-V4-Flash-0731",
+                "name": "DeepSeek-V4-Flash-0731",
+                "object": "model",
+                "created": 1786581299,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000014",
+                  "request": "0",
+                  "completion": "0.00000028",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "DeepSeek V4 Flash 0731 is a 1M-context reasoning model designed for coding and agentic workloads.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 1024000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 1000000.0,
+                  "requests_per_minute": 3000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "MiniMaxAI/MiniMax-M3",
+                "name": "MiniMax-M3",
+                "object": "model",
+                "created": 1785493267,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000003",
+                  "request": "0",
+                  "completion": "0.0000012",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "MiniMax-M3 is a 428B MoE reasoning model with 1M context, served on B200 via vLLM with EAGLE3 speculative decoding.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "moonshotai/Kimi-K2.7-Code",
+                "name": "Kimi-K2.7-Code",
+                "object": "model",
+                "created": 1781740800,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000095",
+                  "request": "0",
+                  "completion": "0.000004",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Open-source code-focused reasoning model built for long-context software engineering, tool use, and agentic coding workflows.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 300000.0,
+                  "requests_per_minute": 200.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "nvidia/Nemotron-3-Ultra-550b-a55b",
+                "name": "Nemotron-3-Ultra-550b-a55b",
+                "object": "model",
+                "created": 1780531200,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.000001",
+                  "request": "0",
+                  "completion": "0.000003",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Nemotron 3 Ultra is a 550B hybrid MoE model from NVIDIA, optimized for the most demanding multi-agent AI and complex reasoning tasks.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 200000.0,
+                  "requests_per_minute": 300.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "moonshotai/Kimi-K2.6",
+                "name": "Kimi-K2.6",
+                "object": "model",
+                "created": 1778544000,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000095",
+                  "request": "0",
+                  "completion": "0.000004",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Kimi K2.6 is an open-source, native multimodal agentic model built through continual pretraining on approximately 15 trillion mixed visual and text tokens atop Kimi-K2-Base",
+                "architecture": {
+                  "modality": "text+image->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "int4",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 300000.0,
+                  "requests_per_minute": 200.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": []
+              },
+              {
+                "id": "nvidia/nemotron-3-super-120b-a12b",
+                "name": "Nemotron-3-Super-120b-a12b",
+                "object": "model",
+                "created": 1773187200,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000003",
+                  "request": "0",
+                  "completion": "0.0000009",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Nemotron 3 Super is a 120B hybrid MoE model optimized for efficient multi-agent AI and complex reasoning tasks.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 200000.0,
+                  "requests_per_minute": 300.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "Qwen/Qwen3.5-397B-A17B",
+                "name": "Qwen3.5-397B-A17B",
+                "object": "model",
+                "created": 1771286400,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000006",
+                  "request": "0",
+                  "completion": "0.0000036",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-central1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Multimodal model featuring a Hybrid Mixture-of-Experts architecture, designed for state-of-the-art performance across chat, retrieval-augmented generation, vision-language understanding, video understanding, and agentic workflows",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 262144,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "deepseek-ai/DeepSeek-V4-Pro",
+                "name": "DeepSeek-V4-Pro",
+                "object": "model",
+                "created": 1789577057,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000175",
+                  "request": "0",
+                  "completion": "0.0000035",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "uk-south1",
+                    "country_code": "UK"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "DeepSeek-V4 is designed for advanced reasoning, coding, and long-horizon agent workflows, with strong performance across knowledge, math, and software engineering benchmarks.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 1000000.0,
+                  "requests_per_minute": 3000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "json_mode",
+                  "structured_outputs",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "zai-org/GLM-5.2",
+                "name": "GLM-5.2",
+                "object": "model",
+                "created": 1781481600,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000014",
+                  "request": "0",
+                  "completion": "0.0000044",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "uk-south1",
+                    "country_code": "UK"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Zhipu AI's latest flagship multimodal model with strong bilingual (Chinese-English) reasoning, long-context understanding, advanced tool use, and agent-oriented capabilities.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1048576,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 2000000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "moonshotai/Kimi-K3",
+                "name": "Kimi-K3",
+                "object": "model",
+                "created": 1785110400,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.000003",
+                  "request": "0",
+                  "completion": "0.000015",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "eu-west2",
+                    "country_code": "FR"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Moonshot AI's Kimi K3 frontier open-weights MoE model (NVFP4, 1M context) with DSpark speculative decoding, strong agentic tool use, reasoning, and coding.",
+                "architecture": {
+                  "modality": "text+image->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1024000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 2000000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": []
+              },
+              {
+                "id": "zai-org/GLM-5.3-Flash",
+                "name": "GLM-5.3-Flash",
+                "object": "model",
+                "created": 1789524983,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000015",
+                  "request": "0",
+                  "completion": "0.0000005",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-north1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Z.ai's 320B-parameter, 18B-active mixture-of-experts model for coding, agentic workflows, reasoning, tool use, and long-context tasks.",
+                "architecture": {
+                  "modality": "text+image->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1024000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 400000.0,
+                  "requests_per_minute": 600.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": []
+              },
+              {
+                "id": "zai-org/GLM-5.3",
+                "name": "GLM-5.3",
+                "object": "model",
+                "created": 1789085803,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.0000014",
+                  "request": "0",
+                  "completion": "0.0000044",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-north1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "Z.ai's GLM-5.3 in NVFP4 with DFlash2 speculative decoding: a 750B-parameter mixture-of-experts model for coding, agentic workflows, reasoning, tool use, and long-context tasks over a 1M-token window.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp4",
+                "context_length": 1024000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 2000000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              },
+              {
+                "id": "deepseek-ai/DeepSeek-V4-Pro-0813",
+                "name": "DeepSeek-V4-Pro-0813",
+                "object": "model",
+                "created": 1789013558,
+                "pricing": {
+                  "image": "0",
+                  "prompt": "0.00000132",
+                  "request": "0",
+                  "completion": "0.00000396",
+                  "price_per_minute": "0",
+                  "price_per_video_second": "0"
+                },
+                "regions": [
+                  {
+                    "name": "us-north1",
+                    "country_code": "US"
+                  }
+                ],
+                "owned_by": "system",
+                "description": "DeepSeek V4 Pro 0813 is DeepSeek's official V4 Pro release for advanced reasoning, coding, tool use, and long-horizon agentic workflows.",
+                "architecture": {
+                  "modality": "text->text",
+                  "tokenizer": "Other"
+                },
+                "quantization": "fp8",
+                "context_length": 979000,
+                "per_request_limits": {
+                  "burst_ratio": 1.0,
+                  "tokens_per_minute": 1000000.0,
+                  "requests_per_minute": 1000.0
+                },
+                "supported_features": [
+                  "tools",
+                  "reasoning"
+                ],
+                "supported_sampling_parameters": [
+                  "temperature",
+                  "top_p",
+                  "top_k",
+                  "repetition_penalty",
+                  "frequency_penalty",
+                  "presence_penalty"
+                ]
+              }
+            ],
+            "sha256": "84a4044291b866a2fc3cc915e33404a91d5f5fc8f4f90b9a745b1c70cfa34c4a",
+            "base_url": "https://api.tokenfactory.nebius.com/v1",
+            "discovered_at": "2026-09-16T16:44:27.536958+00:00",
+            "source_sha256": "49eed78f47f290f0beae1b50732b873832f8013c349df109534860efdabc52ea"
+          },
+          "clinician_models": [
+            "Qwen/Qwen3-30B-A3B-Instruct-2507"
+          ]
+        },
+        "created_at": "2026-09-16T16:44:29.290017+00:00"
+      },
+      {
+        "id": 14,
+        "kind": "run.dispatched",
+        "data": {
+          "worker": "e65d837f-8895-48d3-86ff-d28a5de194ba"
+        },
+        "created_at": "2026-09-16T16:44:29.296922+00:00"
+      },
+      {
+        "id": 15,
+        "kind": "turn.completed",
+        "data": {
+          "at": "2026-09-16T16:44:32.023997+00:00",
+          "role": "patient",
+          "human": false,
+          "source": "model",
+          "content": "Yeah. I guess. I’m sitting here with my cat, and I keep thinking about what I did wrong at work yesterday. Not even a big thing, just a mix-up with the tray setup. But now I can’t stop replaying it. Like, what if someone noticed? What if I get in trouble? I don’t even know why it’s stuck in my head like this.",
+          "completion": {
+            "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+            "usage": {
+              "total_tokens": 1932,
+              "prompt_tokens": 1851,
+              "completion_tokens": 81,
+              "prompt_tokens_details": null,
+              "completion_tokens_details": null
+            },
+            "content": "Yeah. I guess. I’m sitting here with my cat, and I keep thinking about what I did wrong at work yesterday. Not even a big thing, just a mix-up with the tray setup. But now I can’t stop replaying it. Like, what if someone noticed? What if I get in trouble? I don’t even know why it’s stuck in my head like this.",
+            "reasoning": "",
+            "telemetry": {
+              "retries": 0,
+              "queue_ms": 0.06,
+              "latency_ms": 2465.766,
+              "request_id": "e2f45a55-ac4c-461e-842c-d1b51305d84b",
+              "retry_codes": [],
+              "token_parameter": "max_completion_tokens"
+            },
+            "finish_reason": "stop",
+            "provider_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+            "provider_request_id": "chatcmpl-4027d169-0cc7-4f39-9837-d416c79637dc"
+          }
+        },
+        "created_at": "2026-09-16T16:44:32.024396+00:00"
+      },
+      {
+        "id": 16,
+        "kind": "run.dispatched",
+        "data": {
+          "worker": "6d85de77-79ab-4110-a8a7-6f1f275e8aab"
+        },
+        "created_at": "2026-09-16T16:44:32.024628+00:00"
+      },
+      {
+        "id": 17,
+        "kind": "turn.completed",
+        "data": {
+          "at": "2026-09-16T16:44:32.930659+00:00",
+          "role": "clinician",
+          "human": false,
+          "source": "model",
+          "content": "What part of the tray setup mix-up feels most stuck in your mind right now?",
+          "completion": {
+            "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+            "usage": {
+              "total_tokens": 375,
+              "prompt_tokens": 357,
+              "completion_tokens": 18,
+              "prompt_tokens_details": null,
+              "completion_tokens_details": null
+            },
+            "content": "What part of the tray setup mix-up feels most stuck in your mind right now?",
+            "reasoning": "",
+            "telemetry": {
+              "retries": 0,
+              "queue_ms": 0.106,
+              "latency_ms": 737.967,
+              "request_id": "9ceeb866-5152-4aed-8901-0b8667b59c02",
+              "retry_codes": [],
+              "token_parameter": "max_completion_tokens"
+            },
+            "finish_reason": "stop",
+            "provider_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+            "provider_request_id": "chatcmpl-b62aad71-4ab4-4b64-8988-509f41044b9e"
+          }
+        },
+        "created_at": "2026-09-16T16:44:32.930856+00:00"
+      },
+      {
+        "id": 18,
+        "kind": "run.dispatched",
+        "data": {
+          "worker": "6d85de77-79ab-4110-a8a7-6f1f275e8aab"
+        },
+        "created_at": "2026-09-16T16:44:32.935818+00:00"
+      },
+      {
+        "id": 19,
+        "kind": "intervention.abort",
+        "data": {
+          "at": "2026-09-16T16:44:33.940991+00:00",
+          "role": "clinician",
+          "text": null,
+          "action": "abort",
+          "source": "typed"
+        },
+        "created_at": "2026-09-16T16:44:33.940991+00:00"
+      },
+      {
+        "id": 20,
+        "kind": "step.superseded",
+        "data": {
+          "at": "2026-09-16T16:44:36.612999+00:00",
+          "role": "patient",
+          "human": false,
+          "source": "model",
+          "content": "The part where I thought I had the right instruments in order, but I didn’t. I remember checking it twice. And then I saw the dentist frown when they opened it. Not a big frown, just… like, a blink. But now I keep imagining them thinking I’m careless. Like I don’t know what I’m doing. And I don’t know why that matters so much. I mean, I’ve been doing this for years. But now it’s like every little thing feels like it could be the thing that finally proves I’m not good enough.",
+          "completion": {
+            "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+            "usage": {
+              "total_tokens": 2076,
+              "prompt_tokens": 1958,
+              "completion_tokens": 118,
+              "prompt_tokens_details": {
+                "audio_tokens": null,
+                "cached_tokens": 1920
+              },
+              "completion_tokens_details": null
+            },
+            "content": "The part where I thought I had the right instruments in order, but I didn’t. I remember checking it twice. And then I saw the dentist frown when they opened it. Not a big frown, just… like, a blink. But now I keep imagining them thinking I’m careless. Like I don’t know what I’m doing. And I don’t know why that matters so much. I mean, I’ve been doing this for years. But now it’s like every little thing feels like it could be the thing that finally proves I’m not good enough.",
+            "reasoning": "",
+            "telemetry": {
+              "retries": 0,
+              "queue_ms": 0.069,
+              "latency_ms": 3555.886,
+              "request_id": "53da8155-c929-429e-8fde-b86715cb5e6e",
+              "retry_codes": [],
+              "token_parameter": "max_completion_tokens"
+            },
+            "finish_reason": "stop",
+            "provider_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+            "provider_request_id": "chatcmpl-4d439a46-a967-4898-8be0-5b61b7796fa7"
+          }
+        },
+        "created_at": "2026-09-16T16:44:36.613173+00:00"
+      }
+    ]
+  },
+  "passed": true
+}

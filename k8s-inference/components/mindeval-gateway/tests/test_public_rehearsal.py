@@ -57,6 +57,26 @@ def test_full_dialogue_checks_complete_round_count():
     runner.validate_completed(row, "judge", turns=10)
 
 
+def test_classifier_requires_actual_full_prefix_coverage():
+    row = {"state": {"transcript": [{"role": "patient"}], "classification": {"status": "unavailable"}}}
+    with pytest.raises(runner.AcceptanceFailure, match="unavailable"):
+        runner.validate_classification(row)
+    classification = {
+        "status": "completed",
+        "input_user_turns": 1,
+        "evaluated_user_turns": 1,
+        "assessments": [{"status": "completed", "error": None, "coverage": {"truncated": False}}],
+    }
+    row["state"]["classification"] = classification
+    runner.validate_classification(row)
+    classification["assessments"][0]["coverage"]["truncated"] = True
+    with pytest.raises(runner.AcceptanceFailure, match="truncated"):
+        runner.validate_classification(row)
+    classification["evaluated_user_turns"] = 0
+    with pytest.raises(runner.AcceptanceFailure, match="every patient prefix"):
+        runner.validate_classification(row)
+
+
 def test_duplicate_credentials_fail(tmp_path):
     path = tmp_path / "keys.json"
     path.write_text(json.dumps(["duplicate"] * 10))

@@ -55,6 +55,27 @@ def validate_completed(row, judge, turns=2):
     check(len(row["state"]["transcript"]) == 1 + 2 * turns, "canonical transcript has wrong length")
 
 
+def validate_classification(row):
+    classification = row["state"].get("classification") or {}
+    expected = sum(turn["role"] == "patient" for turn in row["state"]["transcript"])
+    check(classification.get("status") == "completed", "classifier assessment is unavailable or incomplete")
+    check(
+        classification.get("input_user_turns") == expected
+        and classification.get("evaluated_user_turns") == expected
+        and len(classification.get("assessments", [])) == expected,
+        "classifier did not assess every patient prefix",
+    )
+    check(
+        all(
+            item.get("status") == "completed"
+            and not item.get("error")
+            and item.get("coverage", {}).get("truncated") is False
+            for item in classification["assessments"]
+        ),
+        "classifier prefix failed or was truncated",
+    )
+
+
 def read_credentials(path, denied_path=None):
     data = json.loads(Path(path).read_text())
     teams = data if isinstance(data, list) else data["teams"]
@@ -360,6 +381,7 @@ class Rehearsal:
                     judgment = row["state"].get("judgment") or {}
                     try:
                         validate_completed(row, self.catalog["judge_model"])
+                        validate_classification(row)
                     except (AcceptanceFailure, KeyError, TypeError) as exc:
                         failures.append({"run_id": run_id, "status": row["status"], "error": str(exc)})
                     for turn in row["state"]["transcript"]:
@@ -464,7 +486,7 @@ class Rehearsal:
         self.save("full-dialogue.json", {"report": report, "gateway_events": gateway_events})
         check(row["status"] == "completed", f"full dialogue {row['status']}: {row['state'].get('error')}")
         validate_completed(row, self.catalog["judge_model"], self.args.full_dialogue_turns)
-        check(row["state"].get("classification") is not None, "full dialogue classifier coverage missing")
+        validate_classification(row)
         self.summary["full_dialogue"].update(
             {
                 "passed": True,

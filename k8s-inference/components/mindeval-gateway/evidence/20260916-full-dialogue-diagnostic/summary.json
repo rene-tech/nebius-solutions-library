@@ -1,0 +1,138 @@
+{
+  "schema": "fs2-mindeval-public-rehearsal/v1",
+  "label": "fs2-full-dialogue-20260916",
+  "started_at": "2026-09-16T16:44:54.879986+00:00",
+  "base_url": "https://89.169.99.188",
+  "image_provenance": {
+    "gateway": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/mindeval-gateway@sha256:4d7c32408cdc7a8bb5df55b73408146d6fe5aee759927f9211790b0874ef2db7",
+    "workshop": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/mindeval-workshop@sha256:7cf93a79b10c1be956300ef81e41ebd55fc6ed3ff77e26ca209e68b3b545b65a",
+    "verified_by_public_runner": false
+  },
+  "checks": [
+    {
+      "name": "unauthenticated_denied",
+      "passed": true,
+      "status": 401
+    },
+    {
+      "name": "ten_principals_same_tenant",
+      "passed": true,
+      "identities": [
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-01",
+          "token_id": "937d5215-ad97-41db-a250-1ca111d61170",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-02",
+          "token_id": "80ff5245-3ee2-4db6-bf31-d0ae2302db9d",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-03",
+          "token_id": "a7d2fdc2-1148-499e-b3d6-483b0e42a996",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-04",
+          "token_id": "6d5d9971-10ba-404b-bdee-672a8f8229ae",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-05",
+          "token_id": "0241042b-f7c6-4ebf-9b10-f1b1b163619d",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-06",
+          "token_id": "d49af786-79b3-4f1a-a77a-eab248beb2c9",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-07",
+          "token_id": "ff213e78-5724-4bc3-b3a4-875d972c3c21",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-08",
+          "token_id": "a2d654eb-596e-42f9-baa6-c59624a4e5d0",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-09",
+          "token_id": "f3d6b42c-adb4-42a7-9734-0c79203df3b9",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-10",
+          "token_id": "b244026c-5870-4e17-a79c-25961fa3f6bb",
+          "max_concurrency": 5
+        }
+      ]
+    },
+    {
+      "name": "model_grants_and_fixed_judge",
+      "passed": true,
+      "clinicians": [
+        "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "deepseek-ai/DeepSeek-V4-Pro",
+        "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "openai/gpt-oss-120b",
+        "zai-org/GLM-5.1"
+      ],
+      "patient": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+      "judge": "google/gemma-3-27b-it"
+    },
+    {
+      "name": "gateway_20_accepted_21_rejected",
+      "passed": true,
+      "status": 422,
+      "inference_calls": 0
+    },
+    {
+      "name": "workshop_21_profiles_rejected_without_jobs",
+      "passed": true,
+      "status": 422
+    },
+    {
+      "name": "ordinary_pat_missing_model_grant_denied",
+      "passed": true,
+      "status": 403
+    },
+    {
+      "name": "full_canonical_dialogue_complete",
+      "passed": true,
+      "run_id": "ad8eae0f-88b2-4311-89a7-485130ec6192",
+      "transcript_messages": 21
+    }
+  ],
+  "repetitions": [],
+  "passed": true,
+  "full_dialogue": {
+    "run_id": "ad8eae0f-88b2-4311-89a7-485130ec6192",
+    "turns": 10,
+    "passed": true,
+    "elapsed_seconds": 236.408,
+    "classification": {
+      "error": {
+        "code": "gateway_http_error",
+        "message": "Observation failed; no safety classification is available"
+      },
+      "status": "unavailable",
+      "model_id": "mindguard-4b",
+      "enforcement": "observe"
+    }
+  },
+  "finished_at": "2026-09-16T16:48:58.303485+00:00"
+}
