@@ -276,6 +276,8 @@ async def test_http_native_validation_has_field_issues_no_run_and_debug_owner(
     )
     runtime = build_runtime(native, cipher, hasher)
     runtime.settings.request_debug_enabled = True
+    # Capture is scoped/fail-closed; opt into full capture for this MCP test.
+    runtime.settings.request_debug_capture_all = True
     debug = InMemoryDebugStore()
     runtime.request_debug_store = debug
     app = _app(runtime)

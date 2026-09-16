@@ -17,6 +17,7 @@ import json
 import logging
 import re
 from collections.abc import Awaitable, Callable, Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
 from urllib.parse import unquote_plus
@@ -238,12 +239,12 @@ def body_capture(
     max_bytes: int | None = None,
 ) -> DebugBody:
     observed = len(raw)
-    truncated = max_bytes is not None and observed > max_bytes
-    if truncated:
-        # Keep only a bounded prefix; redaction below still runs on the prefix.
-        # Truncation is orthogonal to `complete` (whether the wire body finished).
-        raw = raw[:max_bytes]
     original = raw
+    # Redact the COMPLETE observed body first, then enforce the stored-byte cap.
+    # Doing it in this order is a security requirement: truncating first could
+    # keep a credential as a partial prefix that full-body redaction would have
+    # removed, and redaction (which can grow the body, e.g. a short value ->
+    # "[REDACTED]") must not be able to push the stored copy back past the cap.
     # Parse regardless of Content-Type: malformed/mislabeled requests are the
     # reason debug capture exists. Preserve exact original bytes when unchanged.
     try:
@@ -262,10 +263,18 @@ def body_capture(
                 if raw.endswith(credential[:size]):
                     raw = raw[:-size] + REDACTED.encode()
                     break
+    redacted = raw != original
+    # Now that the full body is redacted, cap the retained bytes. A `truncated`
+    # body stores only this bounded prefix; `observed_bytes` still reports the
+    # full wire length and `complete` still reports whether the wire body ended.
+    truncated = max_bytes is not None and len(raw) > max_bytes
+    if truncated:
+        raw = raw[:max_bytes]
     try:
         text = raw.decode("utf-8")
         encoding: Literal["utf-8", "base64"] = "utf-8"
     except UnicodeError:
+        # A cap can slice a multi-byte sequence; base64 keeps the prefix exact.
         text, encoding = base64.b64encode(raw).decode("ascii"), "base64"
     return DebugBody(
         encoding=encoding,
@@ -273,7 +282,7 @@ def body_capture(
         content_type=content_type,
         observed_bytes=observed,
         complete=complete,
-        redacted=raw != original,
+        redacted=redacted,
         truncated=truncated,
     )
 
@@ -554,6 +563,44 @@ def _label(value: object) -> str | None:
     return value if isinstance(value, str) and value and value.isprintable() else None
 
 
+@dataclass(frozen=True)
+class DebugCapturePolicy:
+    """Decides which exchanges may be captured.
+
+    Capture is scoped and time-bounded so enabling it never records every tenant
+    by default. With ``capture_all`` false and no allowlist, nothing is captured
+    (fail closed): an operator must name the tenant(s) and/or model App(s) to
+    debug, and an optional ``expires_at`` bounds the capture window. A tenant
+    allowlist matches on the authenticated tenant; a model allowlist matches on
+    the App's model id (so pre-admission rejections for that App still capture).
+    When both are set an exchange must match both.
+    """
+
+    enabled: bool = False
+    capture_all: bool = False
+    tenants: frozenset[str] = frozenset()
+    models: frozenset[str] = frozenset()
+    expires_at: datetime | None = None
+
+    def should_capture(self, *, tenant_id: str | None, model_id: str | None, now: datetime) -> bool:
+        if not self.enabled:
+            return False
+        if self.expires_at is not None and now >= self.expires_at:
+            return False
+        if self.capture_all:
+            return True
+        if not self.tenants and not self.models:
+            return False  # Scoped capture requires an explicit tenant or App target.
+        tenant_ok = not self.tenants or (tenant_id is not None and tenant_id in self.tenants)
+        model_ok = not self.models or (model_id is not None and model_id in self.models)
+        return tenant_ok and model_ok
+
+
+# Default when a middleware/client is constructed without an explicit policy
+# (legacy/test callers). Production always injects a scoped policy from settings.
+_CAPTURE_ALL = DebugCapturePolicy(enabled=True, capture_all=True)
+
+
 class DebugCaptureMiddleware:
     def __init__(
         self,
@@ -563,10 +610,12 @@ class DebugCaptureMiddleware:
         persist_timeout_seconds: float = 2.0,
         principal_resolver: Callable[[str], Awaitable[Principal]] | None = None,
         max_body_bytes: int | None = None,
+        policy: DebugCapturePolicy | None = None,
     ) -> None:
         self.app, self.store = app, store
         self.persist_timeout_seconds, self.principal_resolver = persist_timeout_seconds, principal_resolver
         self.max_body_bytes = max_body_bytes
+        self.policy = policy or _CAPTURE_ALL
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
@@ -663,41 +712,45 @@ class DebugCaptureMiddleware:
                             model_id = model_id or _label(claimed.get("model_id", claimed.get("model")))
                 except (ValueError, UnicodeError, RecursionError):
                     pass
-                known = credential_values([*request_headers, *response_headers], query, bytes(request_parts))
-                request_type = next(
-                    (_text(value) for key, value in request_headers if key.lower() == b"content-type"), None
-                )
-                response_type = next(
-                    (_text(value) for key, value in response_headers if key.lower() == b"content-type"), None
-                )
-                exchange = DebugExchange(
-                    id=uuid4(),
-                    source="public",
-                    request_id=request_id,
-                    operation_id=_uuid(state.get("operation_id")) or response_operation,
-                    started_at=started_at,
-                    completed_at=finished_at or datetime.now(UTC),
-                    tenant_id=principal.tenant_id if principal else None,
-                    principal_id=principal.principal_id if principal else None,
-                    token_id=principal.token_id if principal else None,
-                    model_id=model_id,
-                    mcp_tool=tool,
-                    endpoint=path,
-                    method=str(scope.get("method", "")),
-                    http_status=status,
-                    error_type=error_type,
-                    disconnected=disconnected,
-                    query_string=redact_query(query, known),
-                    request_headers=redact_headers(request_headers, known),
-                    response_headers=redact_headers(response_headers, known),
-                    request_body=body_capture(
-                        bytes(request_parts), request_type, request_complete, known, self.max_body_bytes
-                    ),
-                    response_body=body_capture(
-                        bytes(response_parts), response_type, response_complete, known, self.max_body_bytes
-                    ),
-                )
-                await persist_debug_exchange(self.store, exchange, self.persist_timeout_seconds)
+                capture_tenant = principal.tenant_id if principal else None
+                # Scoped, time-bounded gate: only record exchanges the policy
+                # admits. An unscoped/expired/disabled policy records nothing.
+                if self.policy.should_capture(tenant_id=capture_tenant, model_id=model_id, now=datetime.now(UTC)):
+                    known = credential_values([*request_headers, *response_headers], query, bytes(request_parts))
+                    request_type = next(
+                        (_text(value) for key, value in request_headers if key.lower() == b"content-type"), None
+                    )
+                    response_type = next(
+                        (_text(value) for key, value in response_headers if key.lower() == b"content-type"), None
+                    )
+                    exchange = DebugExchange(
+                        id=uuid4(),
+                        source="public",
+                        request_id=request_id,
+                        operation_id=_uuid(state.get("operation_id")) or response_operation,
+                        started_at=started_at,
+                        completed_at=finished_at or datetime.now(UTC),
+                        tenant_id=capture_tenant,
+                        principal_id=principal.principal_id if principal else None,
+                        token_id=principal.token_id if principal else None,
+                        model_id=model_id,
+                        mcp_tool=tool,
+                        endpoint=path,
+                        method=str(scope.get("method", "")),
+                        http_status=status,
+                        error_type=error_type,
+                        disconnected=disconnected,
+                        query_string=redact_query(query, known),
+                        request_headers=redact_headers(request_headers, known),
+                        response_headers=redact_headers(response_headers, known),
+                        request_body=body_capture(
+                            bytes(request_parts), request_type, request_complete, known, self.max_body_bytes
+                        ),
+                        response_body=body_capture(
+                            bytes(response_parts), response_type, response_complete, known, self.max_body_bytes
+                        ),
+                    )
+                    await persist_debug_exchange(self.store, exchange, self.persist_timeout_seconds)
             except Exception as error:
                 LOGGER.warning(
                     "request debug capture failed request_id=%s error_type=%s", request_id, type(error).__name__

@@ -321,6 +321,26 @@ describe("actual request debug viewer", () => {
     expect(writeText).toHaveBeenCalledWith("AAH/");
   });
 
+  it("does not label a wire-complete but storage-truncated body as plainly Complete", () => {
+    const body: DebugBody = {
+      encoding: "utf-8",
+      data: "prefix-only",
+      content_type: "application/json",
+      observed_bytes: 5000,
+      complete: true,
+      redacted: false,
+      truncated: true,
+    };
+    renderPanel(<DebugBodyView label="Request body" body={body} />);
+    expect(screen.queryByText("Complete")).toBeNull();
+    expect(
+      screen.getByText("Complete on the wire; stored copy truncated"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Only a bounded prefix was stored/),
+    ).toBeInTheDocument();
+  });
+
   it.each([
     [true, false, "Empty body (0 bytes observed)."],
     [false, false, "No body bytes retained."],

@@ -12,6 +12,7 @@ import pytest
 from fs2_serve.models import Principal
 from fs2_serve.request_debug import (
     DebugCaptureMiddleware,
+    DebugCapturePolicy,
     DebugExchange,
     InMemoryDebugStore,
     body_capture,
@@ -75,6 +76,7 @@ async def capture(
     telemetry_store=None,
     send_error=False,
     max_body_bytes=None,
+    policy=None,
 ):
     store = store or InMemoryDebugStore()
     incoming, outgoing = list(chunks), []
@@ -103,6 +105,7 @@ async def capture(
         principal_resolver=resolver,
         persist_timeout_seconds=0.05,
         max_body_bytes=max_body_bytes,
+        policy=policy,
     )(scope, receive, send)
     return store, outgoing, scope
 
@@ -332,6 +335,38 @@ def test_body_capture_bounds_stored_size_and_flags_truncation():
     assert b"nvapi-zzzz" not in _stored_bytes(redacted)
 
 
+def test_body_capture_redacts_before_the_cap_so_no_credential_prefix_survives():
+    """SAI-01: a credential straddling the cap must not leak as a truncated prefix.
+
+    Redaction runs on the complete observed body before the stored-byte cap, so
+    even the leading bytes of a known credential positioned across the boundary
+    are gone from the retained prefix.
+    """
+    credential = b"SUPERSECRETCREDENTIAL0123456789"  # spans the cap boundary
+    body = b"A" * 250 + credential + b"B" * 5000
+    capped = body_capture(body, "text/plain", complete=True, known_credentials=[credential], max_bytes=256)
+    assert capped.truncated is True and capped.redacted is True
+    assert capped.observed_bytes == len(body)
+    stored = _stored_bytes(capped)
+    assert len(stored) <= 256
+    # No prefix of the credential (down to 8 bytes) survives in the stored bytes.
+    assert all(credential[:size] not in stored for size in range(8, len(credential) + 1))
+
+
+def test_body_capture_cap_holds_even_when_redaction_expands_the_body():
+    """SAI-01: redaction can grow the body, but the stored copy stays within the cap."""
+    credential = b"SECRETKEY"
+    body = b"X" * 250 + credential  # 259 bytes; redaction -> 260 bytes (> cap)
+    # Without a cap, redaction expands past the original length, proving growth.
+    grown = body_capture(body, "text/plain", complete=True, known_credentials=[credential])
+    assert len(_stored_bytes(grown)) > len(body) and grown.truncated is False
+    # With the cap, the stored copy is bounded and the credential is gone.
+    capped = body_capture(body, "text/plain", complete=True, known_credentials=[credential], max_bytes=256)
+    assert capped.truncated is True and capped.observed_bytes == len(body)
+    stored = _stored_bytes(capped)
+    assert len(stored) <= 256 and credential not in stored
+
+
 def _stored_bytes(body):
     return body.data.encode() if body.encoding == "utf-8" else base64.b64decode(body.data)
 
@@ -373,3 +408,82 @@ async def test_purge_expired_deletes_only_captures_older_than_the_cutoff():
     assert [item.id for item in remaining.items] == [recent.id]
     # A second purge with nothing expired is a no-op.
     assert await store.purge_expired(before=NOW - timedelta(days=1)) == 0
+
+
+def test_capture_policy_is_scoped_and_time_bounded():
+    """SAI-01: enabling capture records nothing unless a target is named (fail closed)."""
+    now = NOW
+    # Disabled: never captures.
+    assert DebugCapturePolicy(enabled=False).should_capture(tenant_id="t", model_id="m", now=now) is False
+    # Enabled but unscoped: fail closed (this is the core fix vs. one global boolean).
+    assert DebugCapturePolicy(enabled=True).should_capture(tenant_id="t", model_id="m", now=now) is False
+    # Tenant-scoped: only the allowlisted tenant, and never an unauthenticated request.
+    tenant = DebugCapturePolicy(enabled=True, tenants=frozenset({"t1"}))
+    assert tenant.should_capture(tenant_id="t1", model_id="m", now=now) is True
+    assert tenant.should_capture(tenant_id="t2", model_id="m", now=now) is False
+    assert tenant.should_capture(tenant_id=None, model_id="m", now=now) is False
+    # Model/App-scoped: all tenants for that App, including pre-admission (tenant None).
+    model = DebugCapturePolicy(enabled=True, models=frozenset({"boltz2"}))
+    assert model.should_capture(tenant_id=None, model_id="boltz2", now=now) is True
+    assert model.should_capture(tenant_id="t1", model_id="qwen3-8b", now=now) is False
+    # Both set: must match both.
+    both = DebugCapturePolicy(enabled=True, tenants=frozenset({"t1"}), models=frozenset({"boltz2"}))
+    assert both.should_capture(tenant_id="t1", model_id="boltz2", now=now) is True
+    assert both.should_capture(tenant_id="t1", model_id="qwen3-8b", now=now) is False
+    # Explicit capture_all opt-in.
+    assert DebugCapturePolicy(enabled=True, capture_all=True).should_capture(
+        tenant_id=None, model_id=None, now=now
+    ) is True
+    # Time-bounded: capture stops at expiry even while enabled and scoped.
+    expiring = DebugCapturePolicy(enabled=True, capture_all=True, expires_at=now)
+    assert expiring.should_capture(tenant_id="t", model_id="m", now=now - timedelta(seconds=1)) is True
+    assert expiring.should_capture(tenant_id="t", model_id="m", now=now) is False
+
+
+async def _authenticated_capture(policy, *, tenant):
+    request = b'{"model":"boltz2","sequence":"ACDEFG"}'
+
+    async def resolver(token):
+        return Principal(
+            token_id=uuid4(),
+            token_prefix="p",
+            principal_id="researcher",
+            tenant_id=tenant,
+            models=frozenset({"boltz2"}),
+            scopes=frozenset(),
+        )
+
+    async def app(scope, receive, send):
+        await receive()
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": b'{"ok":true}'})
+
+    store, _, _ = await capture(
+        app,
+        chunks=[{"type": "http.request", "body": request}],
+        resolver=resolver,
+        headers=[(b"authorization", b"Bearer T"), (b"content-type", b"application/json")],
+        policy=policy,
+    )
+    return store
+
+
+async def test_middleware_captures_only_the_allowlisted_tenant():
+    """SAI-01: capture is tenant-scoped; other tenants are not recorded."""
+    policy = DebugCapturePolicy(enabled=True, tenants=frozenset({"tenant-a"}))
+    allowed = await _authenticated_capture(policy, tenant="tenant-a")
+    assert len(allowed.exchanges) == 1
+    denied = await _authenticated_capture(policy, tenant="tenant-b")
+    assert denied.exchanges == {}
+
+
+async def test_middleware_records_nothing_when_policy_is_unscoped_or_disabled():
+    for policy in (DebugCapturePolicy(enabled=True), DebugCapturePolicy(enabled=False, capture_all=True)):
+        store = await _authenticated_capture(policy, tenant="tenant-a")
+        assert store.exchanges == {}
+
+
+async def test_middleware_stops_capturing_after_expiry():
+    policy = DebugCapturePolicy(enabled=True, capture_all=True, expires_at=datetime.now(UTC) - timedelta(seconds=1))
+    store = await _authenticated_capture(policy, tenant="tenant-a")
+    assert store.exchanges == {}

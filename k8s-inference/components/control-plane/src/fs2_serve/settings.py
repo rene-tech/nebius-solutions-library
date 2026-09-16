@@ -10,10 +10,11 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import SplitResult, urlsplit
 
-from pydantic import Field, model_validator
+from pydantic import AwareDatetime, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .models import ModelId, Scope
+from .request_debug import DebugCapturePolicy
 
 _PUBLIC_HOST_MAX_LENGTH = 253
 _PUBLIC_URL_MAX_LENGTH = 2048
@@ -263,6 +264,14 @@ class Settings(BaseSettings):
     # TTL for transport telemetry (metadata only, no payloads/headers/bodies).
     # Longer than the debug TTL because it feeds observability, but still bounded.
     request_telemetry_retention_seconds: int = Field(default=2592000, ge=3600, le=31536000)
+    # Scope + time-bound for capture. Enabling request_debug alone records
+    # nothing: an operator must name the tenant(s) and/or model App(s) to debug,
+    # or explicitly opt into capture_all. request_debug_expires_at bounds the
+    # window (capture stops at that instant even while enabled).
+    request_debug_capture_all: bool = False
+    request_debug_tenants: str = Field(default="", max_length=8192)
+    request_debug_models: str = Field(default="", max_length=8192)
+    request_debug_expires_at: AwareDatetime | None = None
     payload_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
     scientific_artifacts_enabled: bool = False
     artifact_store_endpoint: str = Field(
@@ -488,6 +497,22 @@ class Settings(BaseSettings):
         """Return the exact media-type allowlist accepted for scientific bytes."""
 
         return frozenset(item.strip().lower() for item in self.artifact_media_types.split(",") if item.strip())
+
+    def debug_capture_policy(self) -> DebugCapturePolicy:
+        """Build the scoped, time-bounded request-debug capture policy from env.
+
+        Enabling capture alone records nothing: capture_all must be set, or the
+        tenant/model allowlists must name a target. request_debug_expires_at
+        bounds the window regardless.
+        """
+
+        return DebugCapturePolicy(
+            enabled=self.request_debug_enabled,
+            capture_all=self.request_debug_capture_all,
+            tenants=frozenset(item.strip() for item in self.request_debug_tenants.split(",") if item.strip()),
+            models=frozenset(item.strip() for item in self.request_debug_models.split(",") if item.strip()),
+            expires_at=self.request_debug_expires_at,
+        )
 
     def artifact_store_credentials(self) -> tuple[str, str]:
         """Read the object-store key pair from its mounted secret, not from env."""

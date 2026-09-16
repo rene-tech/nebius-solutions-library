@@ -20,6 +20,7 @@ from .federation import FederationRouter, FederationTransportError
 from .models import ClaimedOperation, ReportedUsage, RuntimeIdentity, RuntimeLifecycleObservation, RuntimeResult
 from .registry import OperationalModel, ProbeSpec
 from .request_debug import (
+    DebugCapturePolicy,
     DebugExchange,
     DebugStore,
     body_capture,
@@ -282,6 +283,7 @@ class RuntimeClient:
         federation: FederationRouter | None = None,
         debug_store: DebugStore | None = None,
         debug_max_body_bytes: int | None = None,
+        debug_capture_policy: DebugCapturePolicy | None = None,
     ) -> None:
         self.activation_timeout_seconds = activation_timeout_seconds
         self.runtime_timeout_seconds = runtime_timeout_seconds
@@ -292,6 +294,8 @@ class RuntimeClient:
         self.federation = federation or FederationRouter({})
         self.debug_store = debug_store
         self.debug_max_body_bytes = debug_max_body_bytes
+        # Legacy/test default records everything; production injects a scoped policy.
+        self.debug_capture_policy = debug_capture_policy or DebugCapturePolicy(enabled=True, capture_all=True)
 
     @asynccontextmanager
     async def _debug_stream(
@@ -327,7 +331,9 @@ class RuntimeClient:
             capture.failed(error)
             raise
         finally:
-            if self.debug_store is not None:
+            if self.debug_store is not None and self.debug_capture_policy.should_capture(
+                tenant_id=operation.tenant_id, model_id=operation.model_id, now=datetime.now(UTC)
+            ):
                 try:
                     await persist_debug_exchange(self.debug_store, capture.exchange())
                 except Exception as error:

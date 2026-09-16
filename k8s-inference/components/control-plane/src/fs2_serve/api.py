@@ -620,6 +620,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             store=debug_store,
             principal_resolver=runtime.tokens.verify,
             max_body_bytes=runtime.settings.request_debug_max_body_bytes,
+            policy=runtime.settings.debug_capture_policy(),
         )
 
     @app.middleware("http")

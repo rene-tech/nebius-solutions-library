@@ -45,6 +45,8 @@ def test_capture_is_opt_in_and_admin_traffic_is_not_captured(registry, cipher, h
 def test_malformed_authenticated_payload_is_captured_without_a_run_or_auth_secret(registry, cipher, hasher):
     runtime = _runtime(registry, cipher, hasher)
     runtime.settings.request_debug_enabled = True
+    # Capture is scoped: enabling it alone records nothing, so opt into the tenant.
+    runtime.settings.request_debug_tenants = "debug-tenant"
     token = asyncio.run(
         runtime.tokens.issue(
             TokenCreate(

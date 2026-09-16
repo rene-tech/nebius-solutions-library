@@ -252,6 +252,16 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.config.requestDebugEnabled | quote }}
 - name: FS2_REQUEST_DEBUG_MAX_BODY_BYTES
   value: {{ .Values.config.requestDebugMaxBodyBytes | quote }}
+- name: FS2_REQUEST_DEBUG_CAPTURE_ALL
+  value: {{ .Values.config.requestDebugCaptureAll | quote }}
+- name: FS2_REQUEST_DEBUG_TENANTS
+  value: {{ .Values.config.requestDebugTenants | quote }}
+- name: FS2_REQUEST_DEBUG_MODELS
+  value: {{ .Values.config.requestDebugModels | quote }}
+{{- if .Values.config.requestDebugExpiresAt }}
+- name: FS2_REQUEST_DEBUG_EXPIRES_AT
+  value: {{ .Values.config.requestDebugExpiresAt | quote }}
+{{- end }}
 - name: FS2_SYNC_WAIT_SECONDS
   value: {{ .Values.config.syncWaitSeconds | quote }}
 - name: FS2_MAX_SYNC_WAIT_SECONDS

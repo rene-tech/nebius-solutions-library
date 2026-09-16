@@ -28,7 +28,24 @@ disabled again once the investigation is complete. Reading a captured exchange
 requires an **ADMIN** operator (tenant scoping still applies); customer API keys
 do not gain access to the admin debug API.
 
-Two chart values bound capture and are safe to leave at their defaults:
+**Enabling capture alone records nothing.** Capture is scoped and time-bounded so
+it never records every tenant by default. In addition to `request_debug_enabled`,
+name what to capture:
+
+- `config.requestDebugTenants` — comma-separated tenant IDs to capture. Only the
+  named tenants are recorded; unauthenticated/rejected requests (no tenant) are not.
+- `config.requestDebugModels` — comma-separated model (App) IDs to capture. All
+  tenants' use of those Apps is recorded, including pre-admission rejections for
+  the App. When both allowlists are set, an exchange must match both.
+- `config.requestDebugExpiresAt` — an RFC3339 instant after which capture stops
+  even while enabled, so a debugging window is self-closing.
+- `config.requestDebugCaptureAll` (default `false`) — explicit opt-in to capture
+  every tenant/App. Use only for a deliberate full-capture window; prefer the
+  tenant/model allowlists.
+
+With `requestDebugCaptureAll` false and no allowlist entries, nothing is captured.
+
+Two more chart values bound each retained record and are safe to leave at defaults:
 
 - `config.requestDebugMaxBodyBytes` (default `65536`) caps the stored size of each
   captured request/response body. Only a bounded, redacted prefix is kept.
@@ -36,9 +53,10 @@ Two chart values bound capture and are safe to leave at their defaults:
   the maintenance job deletes captured exchanges. `config.requestTelemetryRetentionSeconds`
   (default `2592000`) bounds the metadata-only transport telemetry table the same way.
 
-Capture covers observed public `/v1/` HTTP exchanges and `/mcp` traffic, including
-validation failures and requests rejected before an operation exists. Token
-management endpoints are excluded. Admin/debug endpoints are not themselves
+Capture covers observed public `/v1/` HTTP exchanges and `/mcp` traffic that the
+policy admits, including validation failures and requests rejected before an
+operation exists. Token management endpoints (and the storage-credentials
+endpoint) are excluded. Admin/debug endpoints are not themselves
 captured. Actual dispatched model HTTP exchanges are recorded separately as
 `upstream`, including individual federation HTTP attempts. This is not a recording
 of every internal Python call, GPU kernel, or scientific stage's internal network

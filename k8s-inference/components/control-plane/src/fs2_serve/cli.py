@@ -509,6 +509,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         federation=federation,
         debug_store=request_debug_store if settings.request_debug_enabled else None,
         debug_max_body_bytes=settings.request_debug_max_body_bytes,
+        debug_capture_policy=settings.debug_capture_policy(),
     )
 
     async def refresh_routes() -> bool:
