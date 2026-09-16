@@ -4788,6 +4788,89 @@ def _live_utc(value: object, label: str, *, now: datetime) -> datetime:
     return parsed
 
 
+def _postgresql_primary_archiver_evidence(
+    args: argparse.Namespace,
+    dynamic: Mapping[str, Any],
+    cluster_status: Mapping[str, Any],
+    *,
+    backup_wal: str,
+    backup_completed_at: datetime,
+    now: datetime,
+) -> dict[str, Any]:
+    """Read WAL archival progress from the current CNPG primary's real metrics."""
+    primary = cluster_status.get("currentPrimary")
+    timeline = cluster_status.get("timelineID")
+    if (
+        not re.fullmatch(r"[0-9A-F]{24}", backup_wal)
+        or int(backup_wal, 16) == 0
+        or not isinstance(primary, str)
+        or not re.fullmatch(r"fs2-control-db-[1-9][0-9]*", primary)
+        or not isinstance(timeline, int)
+        or isinstance(timeline, bool)
+        or timeline < 1
+        or timeline > 0xFFFFFFFF
+    ):
+        raise DeploymentError(
+            "live PostgreSQL selected Backup WAL, current primary or timeline is "
+            "malformed; no resource was changed"
+        )
+    metrics = _kubectl_raw(
+        args,
+        dynamic,
+        f"/api/v1/namespaces/fs2-data/pods/{primary}:9187/proxy/metrics",
+    )
+    archived_count = _prometheus_scalar(
+        metrics, "cnpg_pg_stat_archiver_archived_count"
+    )
+    archived_at_epoch = _prometheus_scalar(
+        metrics, "cnpg_pg_stat_archiver_last_archived_time"
+    )
+    archived_wal_start_lsn = _prometheus_scalar(
+        metrics, "cnpg_pg_stat_archiver_last_archived_wal_start_lsn"
+    )
+    in_recovery = _prometheus_scalar(metrics, "cnpg_pg_replication_in_recovery")
+    if (
+        not archived_count.is_integer()
+        or archived_count < 1
+        or not archived_wal_start_lsn.is_integer()
+        or archived_wal_start_lsn < 1
+        or archived_wal_start_lsn > (1 << 53) - 1
+        or in_recovery != 0
+    ):
+        raise DeploymentError(
+            "live PostgreSQL primary archiver counters or WAL identity are invalid; "
+            "no resource was changed"
+        )
+    try:
+        archived_at = datetime.fromtimestamp(archived_at_epoch, UTC)
+    except (OverflowError, OSError, ValueError) as error:
+        raise DeploymentError(
+            "live PostgreSQL primary archive timestamp is invalid; no resource was "
+            "changed"
+        ) from error
+    current_wal = f"{timeline:08X}{int(archived_wal_start_lsn):016X}"
+    if (
+        archived_at > now + timedelta(minutes=5)
+        or now - archived_at > timedelta(minutes=10)
+        or archived_at < backup_completed_at
+        or timeline < int(backup_wal[:8], 16)
+        or int(current_wal[8:], 16) <= int(backup_wal[8:], 16)
+    ):
+        raise DeploymentError(
+            "live PostgreSQL primary WAL archive has not advanced recently beyond "
+            "the selected Backup; no resource was changed"
+        )
+    return {
+        "current_primary": primary,
+        "timeline_id": timeline,
+        "archived_count": int(archived_count),
+        "in_recovery": False,
+        "last_archived_at": archived_at.isoformat().replace("+00:00", "Z"),
+        "last_archived_wal": current_wal,
+        "metrics_sha256": hashlib.sha256(metrics.encode()).hexdigest(),
+    }
+
+
 def validate_postgresql_live_recovery_boundary(
     args: argparse.Namespace,
     contract: Mapping[str, Any],
@@ -4846,6 +4929,10 @@ def validate_postgresql_live_recovery_boundary(
         or not isinstance(schedule_metadata, Mapping)
         or schedule_metadata.get("name") != "fs2-control-db"
         or schedule_metadata.get("namespace") != "fs2-data"
+        or not re.fullmatch(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            str(schedule_metadata.get("uid", "")),
+        )
         or not isinstance(cluster_status, Mapping)
         or not isinstance(schedule_spec, Mapping)
         or not isinstance(schedule_status, Mapping)
@@ -4855,10 +4942,10 @@ def validate_postgresql_live_recovery_boundary(
         or not backup_items
         or schedule_spec.get("suspend") is True
         or schedule_spec.get("schedule") != configured_schedule
+        or schedule_spec.get("backupOwnerReference") != "self"
         or not isinstance(schedule_status.get("lastCheckTime"), str)
         or not cluster_status.get("firstRecoverabilityPoint")
         or not cluster_status.get("lastSuccessfulBackup")
-        or not cluster_status.get("lastArchivedWal")
     ):
         raise DeploymentError(
             "live PostgreSQL backup, schedule or recoverability point is not ready; "
@@ -4875,6 +4962,7 @@ def validate_postgresql_live_recovery_boundary(
         None,
     )
     cluster_uid = str(cluster_metadata["uid"])
+    schedule_uid = str(schedule_metadata["uid"])
     completed: list[tuple[Mapping[str, Any], datetime, str, str]] = []
     for item in backup_items:
         if not isinstance(item, Mapping):
@@ -4888,9 +4976,9 @@ def validate_postgresql_live_recovery_boundary(
         owner_matches = isinstance(owner_references, list) and any(
             isinstance(owner, Mapping)
             and owner.get("apiVersion") == "postgresql.cnpg.io/v1"
-            and owner.get("kind") == "Cluster"
+            and owner.get("kind") == "ScheduledBackup"
             and owner.get("name") == "fs2-control-db"
-            and owner.get("uid") == cluster_uid
+            and owner.get("uid") == schedule_uid
             and owner.get("controller") is True
             for owner in owner_references
         )
@@ -4938,7 +5026,6 @@ def validate_postgresql_live_recovery_boundary(
     last_check = _live_utc(
         schedule_status["lastCheckTime"], "schedule last check", now=current
     )
-    last_wal = cluster_status["lastArchivedWal"]
     selected_backup, selected_time, backup_uid, backup_wal = max(
         completed, key=lambda candidate: candidate[1]
     )
@@ -4951,9 +5038,6 @@ def validate_postgresql_live_recovery_boundary(
         or current - last_backup > timedelta(hours=36)
         or current - last_check > timedelta(hours=36)
         or first_recoverability > last_backup
-        or not re.fullmatch(r"[0-9A-F]{24}", str(last_wal))
-        or int(str(last_wal), 16) == 0
-        or int(str(last_wal), 16) <= int(backup_wal, 16)
         or not re.fullmatch(r"[a-z][a-z0-9]{5,11}", str(expected_run_id))
         or not re.fullmatch(r"[0-9a-f]{40}", source_commit)
         or not re.fullmatch(r"[0-9a-f]{40}", source_tree)
@@ -4963,6 +5047,15 @@ def validate_postgresql_live_recovery_boundary(
             "live PostgreSQL recovery timestamps or archived WAL identity are stale "
             "or malformed; no resource was changed"
         )
+    archiver = _postgresql_primary_archiver_evidence(
+        args,
+        dynamic,
+        cluster_status,
+        backup_wal=backup_wal,
+        backup_completed_at=selected_time,
+        now=current,
+    )
+    last_wal = str(archiver["last_archived_wal"])
     receipt_binding = {
         "backup_name": backup_name,
         "backup_uid": backup_uid,
@@ -4993,6 +5086,7 @@ def validate_postgresql_live_recovery_boundary(
         ),
         "completed_backup_count": len(completed),
         "continuous_archiving": True,
+        "primary_archiver": archiver,
         "schedule_last_check_time": schedule_status["lastCheckTime"],
         "provider_bucket": provider,
         "object_inventory": inventory,

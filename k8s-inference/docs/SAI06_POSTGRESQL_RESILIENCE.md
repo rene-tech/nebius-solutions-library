@@ -112,6 +112,24 @@ almost-eight-day receipt could pass, and recovery evidence was not refreshed
 after destroy planning. This successor corrects only those findings and keeps
 `e3051f8` as immutable negative evidence.
 
+The final independent review then rejected
+`cfa4fed03f41f3fbd6e66165228bb22c5d3db194` / tree
+`e23127dcd65637c41bbd381d02fe0a20c4bf3fc9`. Its complete immutable-source
+snapshot, sealed-plan, semantic-action, bound-receipt and immediate
+pre-action recovery checks materially fixed the preceding blockers. It
+remained source NO-GO because the validator modeled generated Backups as
+directly controlled by the Cluster even though the configured
+`backupOwnerReference = "self"` makes the exact ScheduledBackup their owner,
+and because it required a nonexistent `Cluster.status.lastArchivedWal` field.
+This additive successor instead binds each Backup to the exact ScheduledBackup
+UID and obtains WAL advancement from the documented `pg_stat_archiver` metrics
+of the exact `Cluster.status.currentPrimary` pod, combined with the current
+`timelineID`. No synthetic Cluster status field is accepted.
+The contract follows CloudNativePG's official
+[Backup owner-reference semantics](https://cloudnative-pg.io/docs/1.28/backup/#backup-owner-reference-specbackupownerreference),
+[Cluster status API](https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1/#clusterstatus),
+and [predefined PostgreSQL metrics](https://cloudnative-pg.io/docs/1.28/monitoring/#predefined-set-of-metrics).
+
 ## Non-destructive execution boundary
 
 The task owner imposed a hard non-destructive constraint after the preceding
@@ -330,12 +348,18 @@ the rules to the plugin metric names in the same reviewed rollout.
    three different nodes. Confirm two Envoy replicas become Ready on distinct
    nodes and the PDB has one allowed disruption.
 4. Wait for a completed scheduled `Backup` and a non-null
-   `status.firstRecoverabilityPoint`. Record `lastArchivedWal` twice across a
-   controlled non-sensitive marker write and require it to advance; confirm
-   continuous WAL archive health from CNPG status/events without reading backup
-   contents. Query Prometheus for all SAI-06 rules and require their health;
-   verify the bucket inventory reports current plus non-current bytes and is
-   below the reviewed ceiling.
+   `status.firstRecoverabilityPoint`. Require the generated Backup's controller
+   owner to be the exact ScheduledBackup UID. From the exact current primary
+   named by `Cluster.status.currentPrimary`, record the documented
+   `cnpg_pg_stat_archiver_last_archived_wal_start_lsn` and
+   `cnpg_pg_stat_archiver_last_archived_time` metrics across a controlled
+   non-sensitive marker write. Combine the WAL start LSN with the current
+   `timelineID`, and require a recent archive strictly beyond the selected
+   Backup's `status.endWal`; do not read a fabricated Cluster status field.
+   Confirm continuous WAL archive health without reading backup contents.
+   Query Prometheus for all SAI-06 rules and require their health; verify the
+   bucket inventory reports current plus non-current bytes and is below the
+   reviewed ceiling.
 5. Run the marker-preparation apply for the exact completed Backup. Capture the
    payload-free marker A/B LSNs and emitted target time. Run the distinct
    recovery apply and require marker A present, marker B absent, a replay LSN at
@@ -363,8 +387,11 @@ Example non-secret verification commands:
 kubectl --context k8s-inference-h100 -n fs2-data get scheduledbackups,backups
 kubectl --context k8s-inference-h100 -n fs2-data get cluster fs2-control-db \
   -o jsonpath='{.status.firstRecoverabilityPoint}{"\n"}'
-kubectl --context k8s-inference-h100 -n fs2-data get cluster fs2-control-db \
-  -o jsonpath='{.status.lastArchivedWal}{"\n"}'
+PRIMARY=$(kubectl --context k8s-inference-h100 -n fs2-data get cluster fs2-control-db \
+  -o jsonpath='{.status.currentPrimary}')
+kubectl --context k8s-inference-h100 get --raw \
+  "/api/v1/namespaces/fs2-data/pods/${PRIMARY}:9187/proxy/metrics" \
+  | grep '^cnpg_\(pg_replication_in_recovery\|pg_stat_archiver_\(archived_count\|last_archived_time\|last_archived_wal_start_lsn\)\) '
 kubectl --context k8s-inference-h100 -n fs2-data get pods \
   -l cnpg.io/cluster=fs2-control-db -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName,READY:.status.containerStatuses[0].ready
 kubectl --context k8s-inference-h100 -n envoy-gateway-system get pods \
@@ -406,10 +433,13 @@ handoffs. It then performs a provider GET for that exact bucket and requires
 its current parent project, region, name, capacity, active state, versioning,
 storage class, anonymous-access posture and both lifecycle rules to match. The
 current Kubernetes API objects must include a UUID cluster UID, the exact
-active ScheduledBackup, a recent completed Backup controlled by that same
-cluster UID with its own UUID and nonzero end-WAL, bounded real UTC timestamps,
-a recent first recoverability point, a nonzero archived WAL strictly later than
-that Backup and healthy `ContinuousArchiving`. Finally, the
+active ScheduledBackup with its own UUID and `backupOwnerReference=self`, a
+recent completed Backup controlled by that ScheduledBackup UID and naming the
+same source Cluster, bounded real UTC timestamps, a recent first recoverability
+point and healthy `ContinuousArchiving`. The exact current primary's real
+`pg_stat_archiver` metrics must report a recent successful archive whose
+timeline plus WAL start LSN is strictly later than that Backup's nonzero
+`status.endWal`. Finally, the
 read-only inventory exporter must have a fresh successful scrape, at least one
 current object/version, internally consistent current plus non-current byte
 counts, a matching bucket ceiling, safe remaining capacity and a fresh

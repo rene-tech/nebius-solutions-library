@@ -1206,6 +1206,7 @@ def test_destroy_rejects_invalid_retained_postgresql_boundary_before_any_plan(
 
 def _live_recovery_documents() -> list[dict]:
     cluster_uid = "11111111-2222-3333-4444-555555555555"
+    schedule_uid = "22222222-3333-4444-5555-666666666666"
     return [
         {
             "metadata": {
@@ -1216,16 +1217,22 @@ def _live_recovery_documents() -> list[dict]:
             "status": {
                 "firstRecoverabilityPoint": "2026-09-16T08:00:00Z",
                 "lastSuccessfulBackup": "2026-09-16T08:10:00Z",
-                "lastArchivedWal": "00000001000000000000000A",
+                "currentPrimary": "fs2-control-db-1",
+                "timelineID": 1,
                 "conditions": [{"type": "ContinuousArchiving", "status": "True"}],
             },
         },
         {
-            "metadata": {"name": "fs2-control-db", "namespace": "fs2-data"},
+            "metadata": {
+                "name": "fs2-control-db",
+                "namespace": "fs2-data",
+                "uid": schedule_uid,
+            },
             "spec": {
                 "schedule": "0 0 2 * * *",
                 "suspend": False,
                 "cluster": {"name": "fs2-control-db"},
+                "backupOwnerReference": "self",
             },
             "status": {"lastCheckTime": "2026-09-16T08:20:00Z"},
         },
@@ -1239,9 +1246,9 @@ def _live_recovery_documents() -> list[dict]:
                         "ownerReferences": [
                             {
                                 "apiVersion": "postgresql.cnpg.io/v1",
-                                "kind": "Cluster",
+                                "kind": "ScheduledBackup",
                                 "name": "fs2-control-db",
-                                "uid": cluster_uid,
+                                "uid": schedule_uid,
                                 "controller": True,
                             }
                         ],
@@ -1256,6 +1263,25 @@ def _live_recovery_documents() -> list[dict]:
             ]
         },
     ]
+
+
+def _primary_archiver_metrics(
+    *,
+    archived_wal_start_lsn: int = 10,
+    archived_at: datetime = datetime(2026, 9, 16, 8, 59, tzinfo=UTC),
+    in_recovery: int = 0,
+) -> str:
+    return "\n".join(
+        (
+            "cnpg_pg_stat_archiver_archived_count 42",
+            "cnpg_pg_stat_archiver_last_archived_time "
+            f"{int(archived_at.timestamp())}",
+            "cnpg_pg_stat_archiver_last_archived_wal_start_lsn "
+            f"{archived_wal_start_lsn}",
+            f"cnpg_pg_replication_in_recovery {in_recovery}",
+            "",
+        )
+    )
 
 
 def _provider_bucket_document() -> dict:
@@ -1336,6 +1362,9 @@ def test_live_destroy_gate_requires_backup_wal_and_recoverability_point(
             STACK, "_kubectl_json", side_effect=_live_recovery_documents()
         ),
         mock.patch.object(
+            STACK, "_kubectl_raw", return_value=_primary_archiver_metrics()
+        ) as archiver_metrics,
+        mock.patch.object(
             STACK, "_postgresql_inventory_evidence", return_value=_inventory_evidence()
         ) as inventory,
     ):
@@ -1350,6 +1379,13 @@ def test_live_destroy_gate_requires_backup_wal_and_recoverability_point(
     assert result["completed_backup_count"] == 1
     assert result["continuous_archiving"] is True
     assert result["selected_backup_uid"] == "66666666-7777-8888-9999-aaaaaaaaaaaa"
+    assert result["last_archived_wal"] == "00000001000000000000000A"
+    assert result["primary_archiver"]["current_primary"] == "fs2-control-db-1"
+    archiver_metrics.assert_called_once_with(
+        args,
+        dynamic,
+        "/api/v1/namespaces/fs2-data/pods/fs2-control-db-1:9187/proxy/metrics",
+    )
     inventory.assert_called_once()
     inventory_kwargs = inventory.call_args.kwargs
     assert inventory_kwargs["receipt_binding"] == {
@@ -1371,12 +1407,8 @@ def test_live_destroy_gate_requires_backup_wal_and_recoverability_point(
         lambda documents: documents[0]["status"]["conditions"][0].update(
             {"status": "False"}
         ),
-        lambda documents: documents[0]["status"].update(
-            {"lastArchivedWal": "arbitrary-wal"}
-        ),
-        lambda documents: documents[0]["status"].update(
-            {"lastArchivedWal": "000000000000000000000000"}
-        ),
+        lambda documents: documents[0]["status"].update({"currentPrimary": "db-1"}),
+        lambda documents: documents[0]["status"].update({"timelineID": True}),
         lambda documents: documents[2]["items"][0]["status"].update(
             {"endWal": "00000001000000000000000A"}
         ),
@@ -1386,6 +1418,17 @@ def test_live_destroy_gate_requires_backup_wal_and_recoverability_point(
         lambda documents: documents[2]["items"][0]["metadata"][
             "ownerReferences"
         ][0].update({"uid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}),
+        lambda documents: documents[2]["items"][0]["metadata"][
+            "ownerReferences"
+        ][0].update(
+            {
+                "kind": "Cluster",
+                "uid": "11111111-2222-3333-4444-555555555555",
+            }
+        ),
+        lambda documents: documents[1]["spec"].update(
+            {"backupOwnerReference": "cluster"}
+        ),
     ):
         documents = _live_recovery_documents()
         mutate(documents)
@@ -1396,6 +1439,9 @@ def test_live_destroy_gate_requires_backup_wal_and_recoverability_point(
                 return_value={"bucket_id": "storagebucket-postgresql-test"},
             ),
             mock.patch.object(STACK, "_kubectl_json", side_effect=documents),
+            mock.patch.object(
+                STACK, "_kubectl_raw", return_value=_primary_archiver_metrics()
+            ),
             mock.patch.object(
                 STACK,
                 "_postgresql_inventory_evidence",
@@ -1411,6 +1457,61 @@ def test_live_destroy_gate_requires_backup_wal_and_recoverability_point(
                 source_tree="b" * 40,
                 now=now,
             )
+
+
+@pytest.mark.parametrize(
+    ("cluster_status", "metrics"),
+    (
+        (
+            {"currentPrimary": "fs2-control-db-1", "timelineID": 1},
+            _primary_archiver_metrics(archived_wal_start_lsn=9),
+        ),
+        (
+            {"currentPrimary": "fs2-control-db-1", "timelineID": 1},
+            _primary_archiver_metrics(
+                archived_at=datetime(2026, 9, 16, 8, 49, tzinfo=UTC)
+            ),
+        ),
+        (
+            {"currentPrimary": "fs2-control-db-0", "timelineID": 1},
+            _primary_archiver_metrics(),
+        ),
+        (
+            {"currentPrimary": "fs2-control-db-1", "timelineID": 0},
+            _primary_archiver_metrics(),
+        ),
+        (
+            {"currentPrimary": "fs2-control-db-1", "timelineID": 2},
+            _primary_archiver_metrics(archived_wal_start_lsn=8),
+        ),
+        (
+            {"currentPrimary": "fs2-control-db-1", "timelineID": 1},
+            _primary_archiver_metrics(in_recovery=1),
+        ),
+        (
+            {"currentPrimary": "fs2-control-db-1", "timelineID": 1},
+            "cnpg_pg_stat_archiver_archived_count 42\n",
+        ),
+    ),
+)
+def test_primary_archiver_evidence_rejects_invalid_or_stale_real_metrics(
+    cluster_status: dict,
+    metrics: str,
+) -> None:
+    args = SimpleNamespace(kubectl="kubectl")
+    dynamic = {"kubeconfig_path": "/non-secret", "kube_context": "test"}
+    with (
+        mock.patch.object(STACK, "_kubectl_raw", return_value=metrics),
+        pytest.raises(STACK.DeploymentError, match="no resource was changed"),
+    ):
+        STACK._postgresql_primary_archiver_evidence(
+            args,
+            dynamic,
+            cluster_status,
+            backup_wal="000000010000000000000009",
+            backup_completed_at=datetime(2026, 9, 16, 8, 10, tzinfo=UTC),
+            now=datetime(2026, 9, 16, 9, 0, tzinfo=UTC),
+        )
 
 
 def test_destroy_gate_gets_exact_provider_bucket_and_object_versions(
