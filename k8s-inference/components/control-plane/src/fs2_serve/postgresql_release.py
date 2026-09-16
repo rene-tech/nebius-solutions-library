@@ -105,6 +105,14 @@ EXPECTED_MIGRATIONS: Final = (
         "0031_retention_scan_hardening.sql",
         "8e6ae5ad1d32dfd1f98f0e63b4902d76b277430da4387f20ad4d164d02d3121e",
     ),
+    (
+        "0032_scientific_admission_completion.sql",
+        "d59cfc474e82aeab21a0f80bf872adbec2ef46749119ac57d7e1fdfc243d08f5",
+    ),
+    (
+        "0033_retention_privilege_and_token_scan.sql",
+        "c9c61b604fef4f9ab5c7f62f2317f5fcb077a2900586e483b5469299975fa394",
+    ),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {

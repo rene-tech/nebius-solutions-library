@@ -62,9 +62,13 @@ the outbox immediately. Every supervised batch worker also drains pending rows
 before claiming runnable batches, so a process exit after the transaction
 commits needs neither a client resubmission nor a regenerated policy decision.
 Materialization is idempotent: it verifies the outbox against its parent
-Operation, creates or compares the immutable batch admission, and deletes the
-outbox row only after the batch row is durable. A crash before that deletion
-simply repeats the same comparison.
+Operation and creates or compares the immutable batch admission. A fixed-path,
+database-owned `AFTER INSERT` trigger consumes only an outbox row whose complete
+immutable tenant, operation, batch, workload, model, variant, artifact, plan,
+scheduling, adapter, access, manifest, and runtime-artifact binding matches the
+new durable batch. Runtime has no outbox UPDATE or DELETE privilege and cannot
+execute the trigger function directly. An older exact outbox row is consumed
+only when the additive migration proves the same durable binding.
 
 The scheduling types are an internal frozen consumption model, not a competing
 Kueue policy authority. Integration must project the reviewed Kueue scheduling

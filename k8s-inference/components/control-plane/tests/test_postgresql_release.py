@@ -37,9 +37,9 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0031_retention_scan_hardening.sql",
-        "migration_count": 31,
-        "migration_set_sha256": "271954790fc6df4c524096ac5f5c5f8429fb38df732172dd662c172fbc2f76ae",
+        "last_migration_version": "0033_retention_privilege_and_token_scan.sql",
+        "migration_count": 33,
+        "migration_set_sha256": "a76e0bb289fbce02a7880de6822d8f1feb902a950a16f178f56b27a77bb3d91d",
         "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
@@ -49,7 +49,7 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     assert [migration["ordinal"] for migration in migrations] == list(range(1, receipt["migration_count"] + 1))
 
 
-def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -> None:
+def test_scientific_runtime_grants_converge_to_trigger_bound_completion() -> None:
     base_sql = (MIGRATIONS / "0021_scientific_admission_outbox_runtime_grant.sql").read_text(encoding="utf-8")
     base_normalized = " ".join(base_sql.split())
     assert "IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'fs2_serve_runtime')" in base_normalized
@@ -64,12 +64,23 @@ def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -
     batch_normalized = " ".join(batch_sql.split())
     assert "IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'fs2_serve_runtime')" in batch_normalized
     assert "GRANT UPDATE (scheduling_digest) ON TABLE fs2_scientific_batches TO fs2_serve_runtime" in batch_normalized
+    completion_sql = (MIGRATIONS / "0032_scientific_admission_completion.sql").read_text(encoding="utf-8")
+    completion_normalized = " ".join(completion_sql.split())
+    assert "SECURITY DEFINER SET search_path = pg_catalog, public" in completion_normalized
+    assert "AFTER INSERT ON fs2_scientific_batches" in completion_normalized
+    assert (
+        "REVOKE UPDATE,DELETE ON TABLE fs2_scientific_admission_outbox FROM fs2_serve_runtime" in completion_normalized
+    )
+    assert "REVOKE ALL ON FUNCTION fs2_scientific_consume_admission_outbox() FROM PUBLIC" in completion_normalized
 
     wait_source = inspect.getsource(PostgresStore.wait_for_schema)
     assert "has_table_privilege('fs2_serve_runtime'" in wait_source
     assert "has_table_privilege(current_user" in wait_source
     for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
         assert wait_source.count(f"fs2_scientific_admission_outbox','{privilege}'") == 2
+    assert wait_source.count("NOT has_table_privilege") >= 4
+    assert wait_source.count("NOT has_function_privilege") == 2
+    assert "fs2_scientific_consume_admission_outbox_trigger" in wait_source
     assert wait_source.count("fs2_scientific_batches','scheduling_digest','UPDATE'") == 2
     assert "SELECT,INSERT" not in wait_source
     assert "database schema runtime privileges are incomplete" in wait_source
@@ -89,6 +100,18 @@ def test_retention_scan_hardening_is_versioned_and_future_functions_fail_closed(
     ):
         assert f"CREATE INDEX {index}" in normalized
     assert "ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC" in normalized
+
+    successor = (MIGRATIONS / "0033_retention_privilege_and_token_scan.sql").read_text(encoding="utf-8")
+    successor_normalized = " ".join(successor.split())
+    assert "CREATE INDEX fs2_operations_token_retention_idx ON fs2_operations (token_id)" in successor_normalized
+    for object_class in ("TABLES", "SEQUENCES", "FUNCTIONS"):
+        assert f"ALTER DEFAULT PRIVILEGES REVOKE ALL ON {object_class} FROM PUBLIC" in successor_normalized
+        assert f"ALTER DEFAULT PRIVILEGES REVOKE ALL ON {object_class} FROM %I" in successor_normalized
+        assert (
+            f"ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON {object_class} FROM PUBLIC"
+            in successor_normalized
+        )
+        assert f"ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON {object_class} FROM %I" in successor_normalized
 
 
 def _updated_columns(source: str, table: str) -> set[str]:
@@ -127,8 +150,8 @@ def test_scientific_runtime_update_grants_cover_every_repository_statement() -> 
 
     # PostgreSQL row-locking reads require UPDATE privilege. These are all the
     # restricted scientific tables read with FOR UPDATE/FOR SHARE; each is in
-    # the audited column-grant map. The outbox has a dedicated table-level
-    # grant because it is also deleted after materialization.
+    # the audited column-grant map. Admission outbox recovery uses plain reads
+    # and therefore needs neither UPDATE nor DELETE.
     locked_scientific_tables = {
         match.lower()
         for source in (batch_source, artifact_source)
@@ -144,7 +167,7 @@ def test_scientific_runtime_update_grants_cover_every_repository_statement() -> 
         # Retention uses the same module but a distinct maintenance-only pool.
         "fs2_scientific_retention_claims",
     }
-    assert "FOR SHARE" in inspect.getsource(PostgresStore._stage_scientific_admission)
+    assert "FOR SHARE" not in inspect.getsource(PostgresStore._stage_scientific_admission)
 
 
 @pytest.mark.parametrize("mutation", ["missing", "extra", "renamed", "changed", "symlink"])

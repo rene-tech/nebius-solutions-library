@@ -127,6 +127,45 @@ SCIENTIFIC_RUNTIME_UPDATE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
     ),
 }
 
+# Keep expired-token discovery proportional to the configured batch rather
+# than to the retained token/operation population. Each partial index supplies
+# at most one batch, the bounded union is deduplicated, and only those IDs get
+# an indexed FK eligibility probe. Referenced candidates are retried after the
+# operation-retention pass removes their last child.
+RETENTION_ID_CANDIDATES_SQL: Final = """
+    WITH revoked_candidates AS MATERIALIZED (
+        SELECT id,revoked_at AS expired_at
+        FROM fs2_tokens
+        WHERE revoked_at IS NOT NULL
+          AND revoked_at < statement_timestamp()-make_interval(secs=>$1::double precision)
+        ORDER BY revoked_at,id
+        LIMIT $2
+    ), expiry_candidates AS MATERIALIZED (
+        SELECT id,expires_at AS expired_at
+        FROM fs2_tokens
+        WHERE expires_at IS NOT NULL
+          AND expires_at < statement_timestamp()-make_interval(secs=>$1::double precision)
+        ORDER BY expires_at,id
+        LIMIT $2
+    ), deduplicated AS MATERIALIZED (
+        SELECT candidate.id,min(candidate.expired_at) AS expired_at
+        FROM (
+            SELECT id,expired_at FROM revoked_candidates
+            UNION ALL
+            SELECT id,expired_at FROM expiry_candidates
+        ) AS candidate
+        GROUP BY candidate.id
+    )
+    SELECT candidate.id
+    FROM deduplicated AS candidate
+    WHERE NOT EXISTS (
+        SELECT 1 FROM fs2_operations AS operation
+        WHERE operation.token_id=candidate.id
+    )
+    ORDER BY candidate.expired_at,candidate.id
+    LIMIT $2
+"""
+
 _TERMINAL = {"succeeded", "failed", "cancelled", "preempted", "expired"}
 _CLAIM_BATCH_SIZE = 16
 _MAX_AUDIT_DETAIL_CHARS = 64 * 1024
@@ -457,6 +496,28 @@ class PostgresStore:
             quoted_maintenance = f'"{maintenance_role}"'
             quoted_activation = f'"{activation_role}"'
             all_roles = (quoted_reporting, quoted_runtime, quoted_maintenance, quoted_activation)
+            # Future objects created by the schema owner are private until an
+            # explicit release grant is reviewed. PostgreSQL's factory default
+            # grants PUBLIC execute on functions, and a prior operator can add
+            # table/sequence defaults for a group role, so reconcile all three
+            # object classes on every migration run.
+            await connection.execute("ALTER DEFAULT PRIVILEGES REVOKE ALL ON TABLES FROM PUBLIC")
+            await connection.execute("ALTER DEFAULT PRIVILEGES REVOKE ALL ON SEQUENCES FROM PUBLIC")
+            await connection.execute("ALTER DEFAULT PRIVILEGES REVOKE ALL ON FUNCTIONS FROM PUBLIC")
+            await connection.execute("ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM PUBLIC")
+            await connection.execute("ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM PUBLIC")
+            await connection.execute("ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM PUBLIC")
+            for role in all_roles:
+                await connection.execute(f"ALTER DEFAULT PRIVILEGES REVOKE ALL ON TABLES FROM {role}")
+                await connection.execute(f"ALTER DEFAULT PRIVILEGES REVOKE ALL ON SEQUENCES FROM {role}")
+                await connection.execute(f"ALTER DEFAULT PRIVILEGES REVOKE ALL ON FUNCTIONS FROM {role}")
+                await connection.execute(f"ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM {role}")
+                await connection.execute(
+                    f"ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM {role}"
+                )
+                await connection.execute(
+                    f"ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM {role}"
+                )
             for role in all_roles:
                 await connection.execute(
                     f"REVOKE ALL ON fs2_schema_migrations,fs2_tokens,fs2_operations,"
@@ -503,6 +564,7 @@ class PostgresStore:
                     f"fs2_scientific_validate_upload_transition(),"
                     f"fs2_scientific_reject_mutation(),"
                     f"fs2_scientific_guard_retention_delete(),"
+                    f"fs2_scientific_consume_admission_outbox(),"
                     f"fs2_scientific_batch_state_immutable(),"
                     f"fs2_scientific_batch_append_only(),"
                     f"fs2_scientific_model_policy_forward(),"
@@ -598,14 +660,10 @@ class PostgresStore:
             for table, columns in SCIENTIFIC_RUNTIME_UPDATE_COLUMNS.items():
                 await connection.execute(f"GRANT UPDATE ({','.join(columns)}) ON {table} TO {quoted_runtime}")
             await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_batch_events TO {quoted_runtime}")
-            # The admission outbox is a bounded one-row crash-recovery handoff,
-            # not immutable scientific provenance. Runtime deletes that row
-            # only after the corresponding batch is durably materialized.
-            # Immutable attempts/artifacts/results/events/claims/ledger retain
-            # no runtime DELETE grant and are purged only by maintenance.
-            await connection.execute(
-                f"GRANT SELECT,INSERT,UPDATE,DELETE ON fs2_scientific_admission_outbox TO {quoted_runtime}"
-            )
+            # Runtime can create and read admission handoffs but cannot update
+            # or delete any outbox row. A non-callable database-owned trigger
+            # consumes only the exact handoff bound to a newly durable batch.
+            await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_admission_outbox TO {quoted_runtime}")
             # Operator dispatch policy: the API writes rows under an advisory
             # lock and the controller evaluates the shared SQL predicate; no
             # DELETE exists because a cleared policy is an explicit revision.
@@ -811,18 +869,33 @@ class PostgresStore:
                             "'public.fs2_scientific_admission_outbox','SELECT') AND "
                             "has_table_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_admission_outbox','INSERT') AND "
-                            "has_table_privilege('fs2_serve_runtime',"
+                            "NOT has_table_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_admission_outbox','UPDATE') AND "
-                            "has_table_privilege('fs2_serve_runtime',"
+                            "NOT has_table_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_admission_outbox','DELETE') AND "
                             "has_table_privilege(current_user,"
                             "'public.fs2_scientific_admission_outbox','SELECT') AND "
                             "has_table_privilege(current_user,"
                             "'public.fs2_scientific_admission_outbox','INSERT') AND "
-                            "has_table_privilege(current_user,"
+                            "NOT has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_consume_admission_outbox()','EXECUTE')"
+                            " AND (current_user=pg_get_userbyid((SELECT relowner FROM pg_class "
+                            "WHERE oid='public.fs2_schema_migrations'::regclass)) OR ("
+                            "NOT has_table_privilege(current_user,"
                             "'public.fs2_scientific_admission_outbox','UPDATE') AND "
-                            "has_table_privilege(current_user,"
-                            "'public.fs2_scientific_admission_outbox','DELETE')"
+                            "NOT has_table_privilege(current_user,"
+                            "'public.fs2_scientific_admission_outbox','DELETE') AND "
+                            "NOT has_function_privilege(current_user,"
+                            "'public.fs2_scientific_consume_admission_outbox()','EXECUTE')))"
+                            " AND EXISTS ("
+                            "SELECT 1 FROM pg_trigger AS t "
+                            "JOIN pg_proc AS p ON p.oid=t.tgfoid "
+                            "WHERE t.tgname='fs2_scientific_consume_admission_outbox_trigger' "
+                            "AND t.tgrelid='public.fs2_scientific_batches'::regclass "
+                            "AND NOT t.tgisinternal AND t.tgenabled='O' "
+                            "AND p.proname='fs2_scientific_consume_admission_outbox' "
+                            "AND p.prosecdef "
+                            "AND p.proconfig @> ARRAY['search_path=pg_catalog, public'])"
                             " AND has_column_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_batches','scheduling_digest','UPDATE')"
                             " AND has_column_privilege(current_user,"
@@ -843,6 +916,35 @@ class PostgresStore:
                             "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
                             " AND has_function_privilege(current_user,"
                             "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
+                            " AND NOT EXISTS ("
+                            "SELECT 1 "
+                            "FROM (SELECT relowner AS owner_oid FROM pg_class "
+                            "WHERE oid='public.fs2_schema_migrations'::regclass) AS owner "
+                            "CROSS JOIN (VALUES ('r'::\"char\"),('S'::\"char\"),('f'::\"char\")) "
+                            "AS object_kind(object_type) "
+                            "CROSS JOIN LATERAL ("
+                            "SELECT COALESCE((SELECT defaults.defaclacl FROM pg_default_acl AS defaults "
+                            "WHERE defaults.defaclrole=owner.owner_oid "
+                            "AND defaults.defaclnamespace=0 "
+                            "AND defaults.defaclobjtype=object_kind.object_type),"
+                            "acldefault(object_kind.object_type,owner.owner_oid)) AS acl"
+                            ") AS factory "
+                            "CROSS JOIN LATERAL aclexplode(factory.acl) AS privilege "
+                            "WHERE privilege.grantee=0 OR privilege.grantee IN ("
+                            "SELECT oid FROM pg_roles WHERE rolname IN ("
+                            "'fs2_serve_reporting','fs2_serve_runtime',"
+                            "'fs2_serve_maintenance','fs2_serve_activation')))"
+                            " AND NOT EXISTS ("
+                            "SELECT 1 FROM pg_default_acl AS defaults "
+                            "CROSS JOIN LATERAL aclexplode(defaults.defaclacl) AS privilege "
+                            "WHERE defaults.defaclrole=(SELECT relowner FROM pg_class "
+                            "WHERE oid='public.fs2_schema_migrations'::regclass) "
+                            "AND defaults.defaclnamespace='public'::regnamespace "
+                            "AND defaults.defaclobjtype IN ('r','S','f') "
+                            "AND (privilege.grantee=0 OR privilege.grantee IN ("
+                            "SELECT oid FROM pg_roles WHERE rolname IN ("
+                            "'fs2_serve_reporting','fs2_serve_runtime',"
+                            "'fs2_serve_maintenance','fs2_serve_activation'))))"
                         )
                     if not runtime_privileges_ready:
                         raise RuntimeError("database schema runtime privileges are incomplete")
@@ -2762,7 +2864,7 @@ class PostgresStore:
             # consumed outbox from today's policy or execution bindings.
             return
         if operation.reused and await connection.fetchval(
-            "SELECT true FROM fs2_scientific_admission_outbox WHERE operation_id=$1 FOR SHARE",
+            "SELECT true FROM fs2_scientific_admission_outbox WHERE operation_id=$1",
             operation.id,
         ):
             # Exact request-HMAC replay keeps the original accepted payload,
@@ -2782,7 +2884,7 @@ class PostgresStore:
             payload_json,
         )
         stored = await connection.fetchval(
-            "SELECT payload FROM fs2_scientific_admission_outbox WHERE operation_id=$1 FOR SHARE",
+            "SELECT payload FROM fs2_scientific_admission_outbox WHERE operation_id=$1",
             operation.id,
         )
         if stored is None or _decode_configuration_json(stored, "scientific admission outbox") != payload:
@@ -2826,10 +2928,12 @@ class PostgresStore:
 
     async def complete_scientific_admission(self, operation_id: UUID) -> None:
         async with self.pool.acquire() as connection:
-            await connection.execute(
-                "DELETE FROM fs2_scientific_admission_outbox WHERE operation_id=$1",
+            pending = await connection.fetchval(
+                "SELECT true FROM fs2_scientific_admission_outbox WHERE operation_id=$1",
                 operation_id,
             )
+        if pending:
+            raise ConflictError("scientific admission was not consumed by its exact durable batch")
 
     async def get_operation(self, operation_id: UUID, *, tenant_id: str | None = None) -> OperationView:
         async with self.pool.acquire() as connection:
@@ -3900,15 +4004,7 @@ class PostgresStore:
             )
         async with self.pool.acquire() as connection:
             candidates = await connection.fetch(
-                """
-                SELECT t.id FROM fs2_tokens t
-                WHERE ((t.revoked_at IS NOT NULL AND
-                          t.revoked_at < clock_timestamp()-make_interval(secs=>$1::double precision))
-                       OR (t.expires_at IS NOT NULL AND
-                          t.expires_at < clock_timestamp()-make_interval(secs=>$1::double precision)))
-                  AND NOT EXISTS (SELECT 1 FROM fs2_operations o WHERE o.token_id=t.id)
-                ORDER BY COALESCE(t.revoked_at,t.expires_at),t.id LIMIT $2
-                """,
+                RETENTION_ID_CANDIDATES_SQL,
                 token_retention_seconds,
                 batch_size,
             )

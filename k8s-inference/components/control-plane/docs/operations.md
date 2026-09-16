@@ -314,6 +314,10 @@ and typed usage fields; an existing nine-migration database applies only
 The migration command validates four distinct configurable group-role names
 and creates missing reporting, runtime, maintenance, and activation roles as `NOLOGIN`; it
 rejects a pre-existing group role with login capability.
+It also reconciles schema-owner global and `public`-schema factory privileges
+for functions, tables, and sequences: neither `PUBLIC` nor any configured
+service group receives access to a future object until the current-object grant
+ledger explicitly names it.
 ExternalSecret-backed database users must be separate `LOGIN` members of only
 their corresponding group role. On every migration pass, the DDL owner revokes
 the complete application table, sequence, view, and function surface from all
@@ -348,7 +352,7 @@ fs2-serve postgresql-release-contract
 ```
 
 The emitter verifies that the migration directory contains exactly the ordered
-`0001` through `0031` set, no missing/extra/renamed/symlinked file, and the
+`0001` through `0033` set, no missing/extra/renamed/symlinked file, and the
 contracted SHA-256 for every file. The migrator and `wait-schema` use the same
 validator. They also require the applied migration ledger to be an exact
 ordered prefix while an upgrade is running and the exact full set before a
@@ -356,13 +360,13 @@ runtime becomes ready; extra or reordered database rows fail closed.
 
 The required final release-receipt inputs are the ordered full-manifest
 migration-set SHA-256
-`271954790fc6df4c524096ac5f5c5f8429fb38df732172dd662c172fbc2f76ae`,
-count `31`, first version `0001_initial.sql`, last version
-`0031_retention_scan_hardening.sql`,
+`a76e0bb289fbce02a7880de6822d8f1feb902a950a16f178f56b27a77bb3d91d`,
+count `33`, first version `0001_initial.sql`, last version
+`0033_retention_privilege_and_token_scan.sql`,
 and namespace/role ownership SHA-256
 `47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca`.
 The whole logical contract payload is SHA-256
-`341f4571cc5daf91ddf66dc768e40a20742b81c0bd33b490d9ba140a66877db9`.
+`c70a1c797394d21ea7cfc9e3093676d66203b25884d551081e21abebea4ca612`.
 The migration Job emits the payload, ordered-set digest, count, first/last
 version, and namespace/role digest as annotations. A later additive migration
 updates this one manifest contract; Helm and PostgreSQL code must not
@@ -433,7 +437,13 @@ at most `FS2_RETENTION_BATCH_SIZE` rows per retention class. A Job runs at most
 per minute without an unbounded transaction. Operators must size that product
 above the measured peak write rate. If eligible rows remain after the final
 batch, the Job exits unsuccessfully and `Fs2ServeMaintenanceJobFailed` alerts
-on the non-converging backlog. When scientific artifact storage is enabled,
+on the non-converging backlog. Revoked and naturally expired PAT candidates
+are selected from separate ordered partial indexes, each capped at one batch,
+then deduplicated. At most two batches receive indexed operation-FK probes, so
+candidate work remains
+batch-bounded even when the retained PAT and operation populations are large;
+referenced heads are retried after the preceding operation-retention pass.
+When scientific artifact storage is enabled,
 every bounded pass removes up to the same batch size of expired object and
 metadata sets under `FS2_ARTIFACT_RETENTION_SECONDS`. Both terminal results and
 old terminal operations whose scientific flow ended before publishing a result
@@ -675,7 +685,7 @@ Kueue allows its Pod to start; reusable chart installs remain queue-independent
 unless `maintenance.queueName` is configured.
 
 PostgreSQL migrations are forward-only. After migration `0030` (and every
-successor, including retention scan hardening in `0031`), a raw Helm rollback
+successor, including retention and privilege hardening through `0033`), a raw Helm rollback
 is forbidden: an image packaged only through `0029` rejects the extra applied
 migration in `wait-schema`, and its maintenance command does not contain the
 corrected FK-safe retention path. Use the current chart as a forward

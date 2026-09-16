@@ -1408,10 +1408,15 @@ async def test_postgres_terminal_result_fences_writes_and_retention_purges(
                 "SELECT has_table_privilege(current_user,$1,'DELETE')",
                 table,
             )
-        # The bounded one-row admission handoff is not immutable provenance:
-        # runtime consumes it only after durable batch materialization.
-        assert await connection.fetchval(
-            "SELECT has_table_privilege(current_user,'fs2_scientific_admission_outbox','DELETE')"
+        # Exact admission completion is a non-callable database-owned trigger;
+        # runtime has no arbitrary outbox mutation or trigger execution path.
+        for privilege in ("UPDATE", "DELETE"):
+            assert not await connection.fetchval(
+                "SELECT has_table_privilege(current_user,'fs2_scientific_admission_outbox',$1)",
+                privilege,
+            )
+        assert not await connection.fetchval(
+            "SELECT has_function_privilege(current_user,'fs2_scientific_consume_admission_outbox()','EXECUTE')"
         )
         assert await connection.fetchval(
             "SELECT has_table_privilege(current_user,'fs2_scientific_stage_attempts','INSERT')"

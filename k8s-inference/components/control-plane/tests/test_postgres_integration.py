@@ -88,7 +88,12 @@ from fs2_serve.models import (
     TokenCreate,
     UsageDirection,
 )
-from fs2_serve.postgres import PostgresMaintenanceStore, PostgresStore, _decode_audit_detail
+from fs2_serve.postgres import (
+    RETENTION_ID_CANDIDATES_SQL,
+    PostgresMaintenanceStore,
+    PostgresStore,
+    _decode_audit_detail,
+)
 from fs2_serve.postgresql_release import EXPECTED_MIGRATIONS
 from fs2_serve.runtime import ActivationError, StubRuntimeClient
 from fs2_serve.scientific_artifacts import FinalizeArtifactUpload, PostgresArtifactRepository, ScientificArtifactService
@@ -883,13 +888,39 @@ async def test_migration_and_schema_wait_entrypoints_need_only_database_credenti
             "fs2_request_telemetry_retention_idx",
             "fs2_scientific_stage_attempts_retention_idx",
             "fs2_scientific_artifacts_retention_idx",
+            "fs2_operations_token_retention_idx",
         } <= indexes
 
-        # The migration owner creates future schema functions without the
-        # PostgreSQL default PUBLIC EXECUTE grant. Keep this probe transactional
-        # so the test leaves no function behind.
+        await connection.execute("ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO PUBLIC,fs2_serve_runtime")
+        await connection.execute("ALTER DEFAULT PRIVILEGES GRANT USAGE ON SEQUENCES TO PUBLIC,fs2_serve_runtime")
+        await connection.execute("ALTER DEFAULT PRIVILEGES GRANT EXECUTE ON FUNCTIONS TO PUBLIC,fs2_serve_runtime")
+        await connection.execute(
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO PUBLIC,fs2_serve_maintenance"
+        )
+        await connection.execute(
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO PUBLIC,fs2_serve_activation"
+        )
+        await connection.execute(
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO PUBLIC,fs2_serve_reporting"
+        )
+
+    with pytest.raises(RuntimeError, match="database schema runtime privileges are incomplete"):
+        await PostgresStore.wait_for_schema(database_url, migrations_dir, timeout_seconds=1)
+    try:
+        await PostgresStore.migrate_database(database_url, migrations_dir)
+        await PostgresStore.wait_for_schema(database_url, migrations_dir, timeout_seconds=1)
+    finally:
+        # Reconcile the owner defaults even if a later probe assertion fails.
+        await PostgresStore.migrate_database(database_url, migrations_dir)
+
+    async with postgres_store.pool.acquire() as connection:
+        # Future tables, sequences, and functions remain private from PUBLIC
+        # and every configured service group until a current-object grant is
+        # explicitly reconciled. Keep the objects transactional.
         transaction = connection.transaction()
         await transaction.start()
+        await connection.execute("CREATE TABLE fs2_future_table_acl_probe(id integer)")
+        await connection.execute("CREATE SEQUENCE fs2_future_sequence_acl_probe")
         await connection.execute("CREATE FUNCTION fs2_future_acl_probe() RETURNS integer LANGUAGE sql AS 'SELECT 1'")
         assert not await connection.fetchval(
             """
@@ -902,6 +933,48 @@ async def test_migration_and_schema_wait_entrypoints_need_only_database_credenti
             )
             """
         )
+        assert not await connection.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_class c,
+                     LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
+                WHERE c.oid='fs2_future_table_acl_probe'::regclass AND acl.grantee=0
+            )
+            """
+        )
+        assert not await connection.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_class c,
+                     LATERAL aclexplode(COALESCE(c.relacl,acldefault('S',c.relowner))) acl
+                WHERE c.oid='fs2_future_sequence_acl_probe'::regclass AND acl.grantee=0
+            )
+            """
+        )
+        for role in (
+            "fs2_serve_reporting",
+            "fs2_serve_runtime",
+            "fs2_serve_maintenance",
+            "fs2_serve_activation",
+        ):
+            for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+                assert not await connection.fetchval(
+                    "SELECT has_table_privilege($1,'fs2_future_table_acl_probe',$2)",
+                    role,
+                    privilege,
+                )
+            for privilege in ("SELECT", "USAGE", "UPDATE"):
+                assert not await connection.fetchval(
+                    "SELECT has_sequence_privilege($1,'fs2_future_sequence_acl_probe',$2)",
+                    role,
+                    privilege,
+                )
+            assert not await connection.fetchval(
+                "SELECT has_function_privilege($1,'fs2_future_acl_probe()','EXECUTE')",
+                role,
+            )
         await transaction.rollback()
 
 
@@ -1005,14 +1078,20 @@ async def test_scientific_grant_migrations_repair_drift_and_runtime_wait_checks_
                 == EXPECTED_MIGRATIONS[-1][0]
             )
             for role in ("fs2_serve_runtime", runtime_login):
-                for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                for privilege in ("SELECT", "INSERT"):
                     assert await migrated.fetchval(
                         "SELECT has_table_privilege($1,'fs2_scientific_admission_outbox',$2)",
                         role,
                         privilege,
                     )
+                for privilege in ("UPDATE", "DELETE", "TRUNCATE"):
+                    assert not await migrated.fetchval(
+                        "SELECT has_table_privilege($1,'fs2_scientific_admission_outbox',$2)",
+                        role,
+                        privilege,
+                    )
                 assert not await migrated.fetchval(
-                    "SELECT has_table_privilege($1,'fs2_scientific_admission_outbox','TRUNCATE')",
+                    "SELECT has_function_privilege($1,'fs2_scientific_consume_admission_outbox()','EXECUTE')",
                     role,
                 )
                 assert await migrated.fetchval(
@@ -1024,7 +1103,9 @@ async def test_scientific_grant_migrations_repair_drift_and_runtime_wait_checks_
                     role,
                 )
             await migrated.execute("SET ROLE fs2_serve_runtime")
-            await migrated.fetch("SELECT payload FROM fs2_scientific_admission_outbox WHERE false FOR SHARE")
+            await migrated.fetch("SELECT payload FROM fs2_scientific_admission_outbox WHERE false")
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await migrated.fetch("SELECT payload FROM fs2_scientific_admission_outbox WHERE false FOR SHARE")
             await migrated.execute("UPDATE fs2_scientific_batches SET scheduling_digest=scheduling_digest WHERE false")
             await migrated.execute("RESET ROLE")
             await migrated.execute("REVOKE UPDATE (scheduling_digest) ON fs2_scientific_batches FROM fs2_serve_runtime")
@@ -1037,7 +1118,10 @@ async def test_scientific_grant_migrations_repair_drift_and_runtime_wait_checks_
         await PostgresStore.migrate_database(upgrade_url, CONTROL_ROOT / "migrations")
         repaired = await asyncpg.connect(upgrade_url)
         try:
-            await repaired.execute("REVOKE UPDATE ON fs2_scientific_admission_outbox FROM fs2_serve_runtime")
+            await repaired.execute("GRANT UPDATE,DELETE ON fs2_scientific_admission_outbox TO fs2_serve_runtime")
+            await repaired.execute(
+                "GRANT EXECUTE ON FUNCTION fs2_scientific_consume_admission_outbox() TO fs2_serve_runtime"
+            )
         finally:
             await repaired.close()
 
@@ -1046,6 +1130,20 @@ async def test_scientific_grant_migrations_repair_drift_and_runtime_wait_checks_
 
         await PostgresStore.migrate_database(upgrade_url, CONTROL_ROOT / "migrations")
         await PostgresStore.wait_for_schema(runtime_url, CONTROL_ROOT / "migrations", timeout_seconds=1)
+        verified = await asyncpg.connect(upgrade_url)
+        try:
+            assert not await verified.fetchval(
+                "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_admission_outbox','DELETE')"
+            )
+            assert not await verified.fetchval(
+                "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_admission_outbox','UPDATE')"
+            )
+            assert not await verified.fetchval(
+                "SELECT has_function_privilege("
+                "'fs2_serve_runtime','fs2_scientific_consume_admission_outbox()','EXECUTE')"
+            )
+        finally:
+            await verified.close()
     finally:
         await admin.execute(f'DROP DATABASE IF EXISTS "{database_name}" WITH (FORCE)')
         if runtime_role_created:
@@ -2053,6 +2151,22 @@ async def test_distinct_configured_roles_run_activation_and_retention_with_close
             activation_role,
         )
         async with postgres_store.pool.acquire() as connection:
+            await connection.execute(f'ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO "{runtime_role}"')
+            await connection.execute(
+                f'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO "{maintenance_role}"'
+            )
+            await connection.execute(
+                f'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO "{activation_role}"'
+            )
+        await PostgresStore.migrate_database(
+            database_url,
+            CONTROL_ROOT / "migrations",
+            reporting_role,
+            runtime_role,
+            maintenance_role,
+            activation_role,
+        )
+        async with postgres_store.pool.acquire() as connection:
             role_rows = await connection.fetch(
                 "SELECT rolname,rolcanlogin FROM pg_roles WHERE rolname=ANY($1::text[])",
                 [reporting_role, runtime_role, maintenance_role, activation_role],
@@ -2063,6 +2177,26 @@ async def test_distinct_configured_roles_run_activation_and_retention_with_close
                 maintenance_role: False,
                 activation_role: False,
             }
+            transaction = connection.transaction()
+            await transaction.start()
+            await connection.execute(f'CREATE TABLE "fs2_custom_table_acl_{suffix}" (id integer)')
+            await connection.execute(f'CREATE SEQUENCE "fs2_custom_sequence_acl_{suffix}"')
+            await connection.execute(
+                f"CREATE FUNCTION \"fs2_custom_function_acl_{suffix}\"() RETURNS integer LANGUAGE sql AS 'SELECT 1'"
+            )
+            assert not await connection.fetchval(
+                f"SELECT has_table_privilege($1,'fs2_custom_table_acl_{suffix}','SELECT')",
+                runtime_role,
+            )
+            assert not await connection.fetchval(
+                f"SELECT has_sequence_privilege($1,'fs2_custom_sequence_acl_{suffix}','USAGE')",
+                maintenance_role,
+            )
+            assert not await connection.fetchval(
+                f"SELECT has_function_privilege($1,'fs2_custom_function_acl_{suffix}()','EXECUTE')",
+                activation_role,
+            )
+            await transaction.rollback()
             await connection.execute(
                 f'CREATE ROLE "{runtime_login}" LOGIN PASSWORD \'{runtime_password}\' IN ROLE "{runtime_role}"'
             )
@@ -2451,7 +2585,13 @@ async def test_activation_role_cannot_read_operation_identity_payload_or_result_
             await connection.execute("RESET ROLE")
 
 
-async def add_token(store: PostgresStore, token_id: UUID | None = None, *, max_concurrency: int = 4) -> Principal:
+async def add_token(
+    store: PostgresStore,
+    token_id: UUID | None = None,
+    *,
+    max_concurrency: int = 4,
+    tenant_id: str = "tenant-a",
+) -> Principal:
     token_id = token_id or uuid4()
     await store.issue_token(
         token_id=token_id,
@@ -2460,7 +2600,7 @@ async def add_token(store: PostgresStore, token_id: UUID | None = None, *, max_c
         digest="argon2-test-digest",
         request=TokenCreate(
             principal_id=f"principal-{token_id.hex[:8]}",
-            tenant_id="tenant-a",
+            tenant_id=tenant_id,
             scopes={Scope.INFERENCE_INVOKE},
             models={"qwen3-8b"},
             gpu_seconds_budget=1000,
@@ -2472,7 +2612,7 @@ async def add_token(store: PostgresStore, token_id: UUID | None = None, *, max_c
         token_id=token_id,
         token_prefix=f"fs2_pat_{token_id.hex[:12]}",
         principal_id=f"principal-{token_id.hex[:8]}",
-        tenant_id="tenant-a",
+        tenant_id=tenant_id,
         scopes=frozenset({"inference.invoke"}),
         models=frozenset({"qwen3-8b"}),
         gpu_seconds_budget=1000,
@@ -3377,6 +3517,85 @@ async def test_audit_retention_is_bounded_independently(postgres_store: Postgres
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
+async def test_token_retention_candidate_plan_is_index_and_batch_bounded(
+    postgres_store: PostgresStore,
+) -> None:
+    token_count = 200_000
+    operation_count = 100_000
+    batch_size = 1_000
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            """
+            INSERT INTO fs2_tokens(
+                id,prefix,pepper_key_id,digest,principal_id,tenant_id,scopes,models,
+                expires_at,max_concurrency,created_by,revoked_at
+            )
+            SELECT md5('retention-token-' || ordinal::text)::uuid,
+                   'fs2_scale_' || ordinal::text,
+                   'pepper-v1','scale-digest-' || ordinal::text,
+                   'scale-principal-' || ordinal::text,'scale-tenant',
+                   ARRAY['inference.invoke'],ARRAY['qwen3-8b'],
+                   CASE WHEN ordinal>$1/2 THEN statement_timestamp()-interval '30 days' END,
+                   4,'retention-scale-test',
+                   CASE WHEN ordinal<=$1/2 THEN statement_timestamp()-interval '30 days' END
+            FROM generate_series(1,$1) AS ordinal
+            """,
+            token_count,
+        )
+        await connection.execute(
+            """
+            INSERT INTO fs2_operations(
+                id,tenant_id,principal_id,token_id,model_id,model_revision,protocol,operation,
+                idempotency_key,request_hmac_key_id,request_hmac,request_content_type,
+                payload_expires_at,max_attempts
+            )
+            SELECT md5('retention-operation-' || ordinal::text)::uuid,
+                   'scale-tenant','scale-principal-' || ordinal::text,
+                   md5('retention-token-' || ordinal::text)::uuid,
+                   'qwen3-8b','scale-revision','openai-chat','chat',
+                   'scale-key-' || ordinal::text,'hmac-v1',repeat('a',64),
+                   'application/json',statement_timestamp()+interval '1 day',1
+            FROM generate_series(1,$1*2,2) AS ordinal
+            """,
+            operation_count,
+        )
+        await connection.execute("ANALYZE fs2_tokens")
+        await connection.execute("ANALYZE fs2_operations")
+        raw_plan = await connection.fetchval(
+            "EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) " + RETENTION_ID_CANDIDATES_SQL,
+            604800,
+            batch_size,
+        )
+
+    plan_document = json.loads(raw_plan) if isinstance(raw_plan, str) else raw_plan
+    root = plan_document[0]["Plan"]
+    nodes = []
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        nodes.append(node)
+        stack.extend(child for child in node.get("Plans", []) if isinstance(child, dict))
+    index_nodes = {str(node.get("Index Name")): node for node in nodes if node.get("Index Name")}
+    assert {
+        "fs2_tokens_revoked_retention_idx",
+        "fs2_tokens_expiry_retention_idx",
+        "fs2_operations_token_retention_idx",
+    } <= index_nodes.keys()
+    assert not any(
+        node.get("Node Type") == "Seq Scan" and node.get("Relation Name") in {"fs2_tokens", "fs2_operations"}
+        for node in nodes
+    )
+    for name in ("fs2_tokens_revoked_retention_idx", "fs2_tokens_expiry_retention_idx"):
+        assert int(index_nodes[name]["Actual Rows"]) <= batch_size
+        assert int(index_nodes[name]["Actual Loops"]) == 1
+    operation_probe = index_nodes["fs2_operations_token_retention_idx"]
+    assert int(operation_probe["Actual Loops"]) <= batch_size * 2
+    assert int(operation_probe["Actual Rows"]) <= 1
+    assert int(root["Actual Rows"]) <= batch_size
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
 async def test_request_debug_and_telemetry_retention_are_bounded_independently(
     postgres_store: PostgresStore,
 ) -> None:
@@ -3602,49 +3821,55 @@ async def test_customer_input_upload_is_verified_and_terminal_in_postgres(
 @pytest.mark.asyncio
 async def test_scientific_admission_outbox_recovers_after_committed_operation_without_client_replay(
     postgres_store: PostgresStore,
+    scientific_runtime_pool: asyncpg.Pool,
 ) -> None:
     principal = await add_token(postgres_store)
     input_artifact_id = uuid4()
     plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="design", max_attempts=2),))
 
-    def frozen_admission(operation) -> dict[str, object]:
-        scheduling = SchedulingSnapshot(
-            policy_revision=hashlib.sha256(b"atomic-scientific-policy").hexdigest(),
-            captured_at=operation.accepted_at,
-            service_class=ServiceClass.CUSTOMER_BATCH,
-            tenant_queue="scientific",
-            model_lane="qwen3-8b",
-            workload_namespace="fs2-models",
-            route_namespace="fs2-models",
-            stages=(
-                StageSchedulingDecision(
-                    stage_id="design",
-                    resource_class=ResourceClass.GPU,
-                    resolved_cluster_queue="inference-accelerators",
-                    resolved_local_queue="scientific",
-                    workload_priority_class="customer-batch",
-                    workload_priority_value=100,
-                    resolved_pool_preference=("h100-preemptible",),
-                    accelerator_resource_name="nvidia.com/gpu",
-                    accelerator_count=1,
-                    max_queue_seconds=None,
-                    max_execution_seconds=None,
-                    checkpoint_mode=CheckpointMode.RESTART,
-                    preemption_mode=PreemptionMode.RESTARTABLE,
+    def admission_factory(admission_principal: Principal, artifact_id: UUID, policy: bytes):
+        def frozen_admission(operation) -> dict[str, object]:
+            scheduling = SchedulingSnapshot(
+                policy_revision=hashlib.sha256(policy).hexdigest(),
+                captured_at=operation.accepted_at,
+                service_class=ServiceClass.CUSTOMER_BATCH,
+                tenant_queue="scientific",
+                model_lane="qwen3-8b",
+                workload_namespace="fs2-models",
+                route_namespace="fs2-models",
+                stages=(
+                    StageSchedulingDecision(
+                        stage_id="design",
+                        resource_class=ResourceClass.GPU,
+                        resolved_cluster_queue="inference-accelerators",
+                        resolved_local_queue="scientific",
+                        workload_priority_class="customer-batch",
+                        workload_priority_value=100,
+                        resolved_pool_preference=("h100-preemptible",),
+                        accelerator_resource_name="nvidia.com/gpu",
+                        accelerator_count=1,
+                        max_queue_seconds=None,
+                        max_execution_seconds=None,
+                        checkpoint_mode=CheckpointMode.RESTART,
+                        preemption_mode=PreemptionMode.RESTARTABLE,
+                    ),
                 ),
-            ),
-        )
-        return state_to_value(
-            ScientificBatchState.admit(
-                operation_id=operation.id,
-                tenant_id=principal.tenant_id,
-                model_id="qwen3-8b",
-                variant_id="qwen3-8b-h100",
-                input_artifact_id=input_artifact_id,
-                plan=plan,
-                scheduling=scheduling,
             )
-        )
+            return state_to_value(
+                ScientificBatchState.admit(
+                    operation_id=operation.id,
+                    tenant_id=admission_principal.tenant_id,
+                    model_id="qwen3-8b",
+                    variant_id="qwen3-8b-h100",
+                    input_artifact_id=artifact_id,
+                    plan=plan,
+                    scheduling=scheduling,
+                )
+            )
+
+        return frozen_admission
+
+    frozen_admission = admission_factory(principal, input_artifact_id, b"atomic-scientific-policy")
 
     async def insert_then_crash() -> None:
         await postgres_store.append_operation(
@@ -3676,6 +3901,30 @@ async def test_scientific_admission_outbox_recovers_after_committed_operation_wi
     )
     assert await postgres_store.claim_operation("generic-worker", lease_seconds=30) is None
 
+    other_principal = await add_token(postgres_store, tenant_id="tenant-b")
+    other_operation = await postgres_store.append_operation(
+        principal=other_principal,
+        admission=AdmissionRequest(
+            model_id="qwen3-8b",
+            operation="design",
+            protocol="scientific-batch-v1",
+            idempotency_key="postgres-scientific-cross-tenant-0001",
+            request_body=b'{"schema":"fs2-serve.nebius.ai/scientific-run-request/v1"}',
+        ),
+        model_revision="b968826d",
+        reserved_gpu_seconds=0,
+        max_attempts=1,
+        scientific_admission_factory=admission_factory(
+            other_principal,
+            uuid4(),
+            b"cross-tenant-scientific-policy",
+        ),
+    )
+    assert {item.operation_id for item in await postgres_store.list_scientific_admissions()} == {
+        frozen.operation_id,
+        other_operation.id,
+    }
+
     input_attempt_id = uuid4()
     input_digest = "sha256:" + "1" * 64
     async with postgres_store.pool.acquire() as connection:
@@ -3706,13 +3955,60 @@ async def test_scientific_admission_outbox_recovers_after_committed_operation_wi
             f"scientific/v1/tenants/{principal.tenant_id}/operations/{frozen.operation_id}/stages/input/"
             f"shards/-/attempts/{input_attempt_id}/input/sha256/{input_digest.removeprefix('sha256:')}",
         )
-        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+        for privilege in ("SELECT", "INSERT"):
             assert await connection.fetchval(
                 "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_admission_outbox',$1)",
                 privilege,
             )
+        for privilege in ("UPDATE", "DELETE"):
+            assert not await connection.fetchval(
+                "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_admission_outbox',$1)",
+                privilege,
+            )
+        assert not await connection.fetchval(
+            "SELECT has_function_privilege('fs2_serve_runtime','fs2_scientific_consume_admission_outbox()','EXECUTE')"
+        )
 
-    batches = PostgresScientificBatchRepository(postgres_store.pool)
+    async with scientific_runtime_pool.acquire() as runtime:
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await runtime.execute(
+                "DELETE FROM fs2_scientific_admission_outbox WHERE operation_id=$1",
+                frozen.operation_id,
+            )
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await runtime.execute(
+                """
+                DELETE FROM fs2_scientific_admission_outbox AS outbox
+                USING fs2_operations AS operation
+                WHERE outbox.operation_id=operation.id AND operation.tenant_id=$1
+                """,
+                other_principal.tenant_id,
+            )
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await runtime.execute("DELETE FROM fs2_scientific_admission_outbox")
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await runtime.execute(
+                "UPDATE fs2_scientific_admission_outbox SET payload=payload WHERE operation_id=$1",
+                frozen.operation_id,
+            )
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await runtime.execute(
+                """
+                UPDATE fs2_scientific_admission_outbox AS outbox SET payload=outbox.payload
+                FROM fs2_operations AS operation
+                WHERE outbox.operation_id=operation.id AND operation.tenant_id=$1
+                """,
+                other_principal.tenant_id,
+            )
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await runtime.execute("UPDATE fs2_scientific_admission_outbox SET payload=payload")
+
+    assert {item.operation_id for item in await postgres_store.list_scientific_admissions()} == {
+        frozen.operation_id,
+        other_operation.id,
+    }
+
+    batches = PostgresScientificBatchRepository(scientific_runtime_pool)
     recovered = await batches.create(
         operation_id=frozen.operation_id,
         tenant_id=frozen.tenant_id,
@@ -3729,6 +4025,9 @@ async def test_scientific_admission_outbox_recovers_after_committed_operation_wi
     await postgres_store.complete_scientific_admission(frozen.operation_id)
     assert recovered == frozen
     assert await postgres_store.get_scientific_admission(frozen.operation_id) is None
+    assert await postgres_store.get_scientific_admission(other_operation.id) is not None
+    with pytest.raises(ConflictError, match="not consumed by its exact durable batch"):
+        await postgres_store.complete_scientific_admission(other_operation.id)
 
 
 @pytest.mark.postgres
